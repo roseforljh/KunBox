@@ -136,9 +136,12 @@ fun AppRuleEditorDialog(
     }
 
     if (showOutboundModeDialog) {
-        val options = RuleSetOutboundMode.entries.map { stringResource(it.displayNameRes) }
-        SingleSelectDialog(title = stringResource(R.string.rulesets_select_outbound), options = options, selectedIndex = RuleSetOutboundMode.entries.indexOf(outboundMode), onSelect = { index ->
-            val selectedMode = RuleSetOutboundMode.entries[index]
+        // 应用分流不显示直连选项
+        val appRoutingModes = RuleSetOutboundMode.entries.filter { it != RuleSetOutboundMode.DIRECT }
+        val options = appRoutingModes.map { stringResource(it.displayNameRes) }
+        val currentIndex = appRoutingModes.indexOf(outboundMode).coerceAtLeast(0)
+        SingleSelectDialog(title = stringResource(R.string.rulesets_select_outbound), options = options, selectedIndex = currentIndex, onSelect = { index ->
+            val selectedMode = appRoutingModes[index]
             outboundMode = selectedMode
             if (selectedMode != initialRule?.outboundMode) outboundValue = null
             showOutboundModeDialog = false
@@ -706,13 +709,16 @@ fun AppGroupEditorDialog(
     }
     
     if (showOutboundModeDialog) {
-        val options = RuleSetOutboundMode.entries.map { stringResource(it.displayNameRes) }
+        // 应用分流不显示直连选项
+        val appRoutingModes = RuleSetOutboundMode.entries.filter { it != RuleSetOutboundMode.DIRECT }
+        val options = appRoutingModes.map { stringResource(it.displayNameRes) }
+        val currentIndex = appRoutingModes.indexOf(outboundMode).coerceAtLeast(0)
         SingleSelectDialog(
             title = stringResource(R.string.rulesets_select_outbound),
             options = options,
-            selectedIndex = RuleSetOutboundMode.entries.indexOf(outboundMode),
+            selectedIndex = currentIndex,
             onSelect = { index ->
-                val selectedMode = RuleSetOutboundMode.entries[index]
+                val selectedMode = appRoutingModes[index]
                 outboundMode = selectedMode
                 if (selectedMode != initialGroup?.outboundMode) {
                     outboundValue = null

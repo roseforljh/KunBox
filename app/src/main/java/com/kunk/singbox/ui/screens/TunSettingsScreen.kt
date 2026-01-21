@@ -57,7 +57,6 @@ fun TunSettingsScreen(
     var showRouteCidrsDialog by remember { mutableStateOf(false) }
     var showAppModeDialog by remember { mutableStateOf(false) }
     var showAllowlistDialog by remember { mutableStateOf(false) }
-    var showBlocklistDialog by remember { mutableStateOf(false) }
 
     if (showStackDialog) {
         val options = TunStack.entries.map { stringResource(it.displayNameRes) }
@@ -160,27 +159,6 @@ fun TunSettingsScreen(
         )
     }
 
-    if (showBlocklistDialog) {
-        val selected = settings.vpnBlocklist
-            .split("\n", "\r", ",", ";", " ", "\t")
-            .map { it.trim() }
-            .filter { it.isNotEmpty() }
-            .toSet()
-
-        AppMultiSelectDialog(
-            title = stringResource(R.string.tun_settings_select_bypass_apps),
-            selectedPackages = selected,
-            enableQuickSelectCommonApps = true,
-            quickSelectExcludeCommonApps = true,
-            onConfirm = { packages ->
-                settingsViewModel.setVpnBlocklist(packages.joinToString("\n"))
-                showBlocklistDialog = false
-            },
-            onDismiss = { showBlocklistDialog = false }
-        )
-
-    }
-
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
@@ -252,10 +230,6 @@ fun TunSettingsScreen(
                 .split("\n", "\r", ",", ";", " ", "\t")
                 .map { it.trim() }
                 .count { it.isNotEmpty() }
-            val blockCount = settings.vpnBlocklist
-                .split("\n", "\r", ",", ";", " ", "\t")
-                .map { it.trim() }
-                .count { it.isNotEmpty() }
 
             StandardCard {
                 SettingItem(
@@ -277,11 +251,6 @@ fun TunSettingsScreen(
                     title = stringResource(R.string.tun_settings_allowlist),
                     value = if (settings.vpnAppMode == VpnAppMode.ALLOWLIST) stringResource(R.string.tun_settings_allowlist_configured, allowCount) else "-",
                     onClick = { if (settings.vpnAppMode == VpnAppMode.ALLOWLIST) showAllowlistDialog = true }
-                )
-                SettingItem(
-                    title = stringResource(R.string.tun_settings_blocklist),
-                    value = if (settings.vpnAppMode == VpnAppMode.BLOCKLIST) stringResource(R.string.tun_settings_blocklist_configured, blockCount) else "-",
-                    onClick = { if (settings.vpnAppMode == VpnAppMode.BLOCKLIST) showBlocklistDialog = true }
                 )
             }
         }

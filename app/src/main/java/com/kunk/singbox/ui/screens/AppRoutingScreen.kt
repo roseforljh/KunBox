@@ -1,6 +1,8 @@
 package com.kunk.singbox.ui.screens
 
 import com.kunk.singbox.R
+import android.content.pm.ApplicationInfo
+import android.content.pm.PackageManager
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -14,17 +16,15 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import com.kunk.singbox.model.*
-import com.kunk.singbox.repository.InstalledAppsRepository
-import com.kunk.singbox.ui.components.AppListLoadingDialog
 import com.kunk.singbox.ui.components.ConfirmDialog
 import com.kunk.singbox.ui.theme.Neutral500
-import com.kunk.singbox.viewmodel.InstalledAppsViewModel
 import com.kunk.singbox.viewmodel.NodesViewModel
 import com.kunk.singbox.viewmodel.ProfilesViewModel
 import com.kunk.singbox.viewmodel.SettingsViewModel
@@ -35,10 +35,10 @@ fun AppRoutingScreen(
     navController: NavController,
     settingsViewModel: SettingsViewModel = viewModel(),
     nodesViewModel: NodesViewModel = viewModel(),
-    profilesViewModel: ProfilesViewModel = viewModel(),
-    installedAppsViewModel: InstalledAppsViewModel = viewModel()
+    profilesViewModel: ProfilesViewModel = viewModel()
 ) {
     val settings by settingsViewModel.settings.collectAsState()
+    val context = LocalContext.current
     var selectedTab by remember { mutableStateOf(0) }
     val tabs = listOf(stringResource(R.string.app_rules_tabs_groups), stringResource(R.string.app_rules_tabs_individual))
 
@@ -61,18 +61,25 @@ fun AppRoutingScreen(
         }
     }
 
-    // 使用 InstalledAppsViewModel 获取应用列表
-    val installedApps by installedAppsViewModel.installedApps.collectAsState()
-    val loadingState by installedAppsViewModel.loadingState.collectAsState()
-    val isLoading = loadingState !is InstalledAppsRepository.LoadingState.Loaded
-
-    // 触发加载
-    LaunchedEffect(Unit) {
-        installedAppsViewModel.loadAppsIfNeeded()
+    // 仅显示在 allowlist 中的应用，直接根据包名获取应用信息
+    val installedApps = remember(settings.vpnAllowlist) {
+        val pm = context.packageManager
+        settings.vpnAllowlist
+            .split("\n", "\r", ",", ";", " ", "\t")
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .mapNotNull { packageName ->
+                try {
+                    val appInfo = pm.getApplicationInfo(packageName, 0)
+                    val appName = appInfo.loadLabel(pm).toString()
+                    val isSystemApp = (appInfo.flags and ApplicationInfo.FLAG_SYSTEM) != 0
+                    InstalledApp(packageName, appName, isSystemApp)
+                } catch (e: PackageManager.NameNotFoundException) {
+                    null
+                }
+            }
+            .sortedBy { it.appName.lowercase() }
     }
-
-    // 显示加载对话框
-    AppListLoadingDialog(loadingState = loadingState)
 
     if (showAddGroupDialog) {
         AppGroupEditorDialog(
@@ -210,53 +217,47 @@ fun AppRoutingScreen(
             }
         }
     ) { padding ->
-        if (isLoading) {
-            Box(modifier = Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
-            }
-        } else {
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding)
-                    .padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                if (selectedTab == 0) {
-                    if (settings.appGroups.isEmpty()) {
-                        item {
-                            EmptyState(Icons.Rounded.Folder, stringResource(R.string.app_rules_empty_groups), stringResource(R.string.app_rules_empty_groups_hint))
-                        }
-                    } else {
-                        items(settings.appGroups) { group ->
-                            val mode = group.outboundMode ?: RuleSetOutboundMode.DIRECT
-                            val outboundText = resolveOutboundText(mode, group.outboundValue, allNodes, profiles)
-                            AppGroupCard(
-                                group = group,
-                                outboundText = "${stringResource(mode.displayNameRes)} → $outboundText",
-                                onClick = { editingGroup = group },
-                                onToggle = { settingsViewModel.toggleAppGroupEnabled(group.id) },
-                                onDelete = { showDeleteGroupConfirm = group }
-                            )
-                        }
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            if (selectedTab == 0) {
+                if (settings.appGroups.isEmpty()) {
+                    item {
+                        EmptyState(Icons.Rounded.Folder, stringResource(R.string.app_rules_empty_groups), stringResource(R.string.app_rules_empty_groups_hint))
                     }
                 } else {
-                    if (settings.appRules.isEmpty()) {
-                        item {
-                            EmptyState(Icons.Rounded.Apps, stringResource(R.string.app_rules_empty_individual), stringResource(R.string.app_rules_empty_individual_hint))
-                        }
-                    } else {
-                        items(settings.appRules) { rule ->
-                            val mode = rule.outboundMode ?: RuleSetOutboundMode.DIRECT
-                            val outboundText = resolveOutboundText(mode, rule.outboundValue, allNodes, profiles)
-                            AppRuleItem(
-                                rule = rule,
-                                outboundText = "${stringResource(mode.displayNameRes)} → $outboundText",
-                                onClick = { editingRule = rule },
-                                onToggle = { settingsViewModel.toggleAppRuleEnabled(rule.id) },
-                                onDelete = { showDeleteRuleConfirm = rule }
-                            )
-                        }
+                    items(settings.appGroups) { group ->
+                        val mode = group.outboundMode ?: RuleSetOutboundMode.PROXY
+                        val outboundText = resolveOutboundText(mode, group.outboundValue, allNodes, profiles)
+                        AppGroupCard(
+                            group = group,
+                            outboundText = "${stringResource(mode.displayNameRes)} -> $outboundText",
+                            onClick = { editingGroup = group },
+                            onToggle = { settingsViewModel.toggleAppGroupEnabled(group.id) },
+                            onDelete = { showDeleteGroupConfirm = group }
+                        )
+                    }
+                }
+            } else {
+                if (settings.appRules.isEmpty()) {
+                    item {
+                        EmptyState(Icons.Rounded.Apps, stringResource(R.string.app_rules_empty_individual), stringResource(R.string.app_rules_empty_individual_hint))
+                    }
+                } else {
+                    items(settings.appRules) { rule ->
+                        val mode = rule.outboundMode ?: RuleSetOutboundMode.PROXY
+                        val outboundText = resolveOutboundText(mode, rule.outboundValue, allNodes, profiles)
+                        AppRuleItem(
+                            rule = rule,
+                            outboundText = "${stringResource(mode.displayNameRes)} -> $outboundText",
+                            onClick = { editingRule = rule },
+                            onToggle = { settingsViewModel.toggleAppRuleEnabled(rule.id) },
+                            onDelete = { showDeleteRuleConfirm = rule }
+                        )
                     }
                 }
             }

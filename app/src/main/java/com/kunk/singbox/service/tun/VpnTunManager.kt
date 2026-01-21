@@ -192,16 +192,6 @@ class VpnTunManager(
                         }
                     }
                 }
-                VpnAppMode.BLOCKLIST -> {
-                    blockPkgs.forEach { pkg ->
-                        try {
-                            builder.addDisallowedApplication(pkg)
-                        } catch (e: PackageManager.NameNotFoundException) {
-                            Log.w(TAG, "Blocked app not found: $pkg")
-                        }
-                    }
-                    builder.addDisallowedApplication(selfPackage)
-                }
             }
         } catch (e: Exception) {
             Log.w(TAG, "Failed to apply per-app VPN settings", e)
