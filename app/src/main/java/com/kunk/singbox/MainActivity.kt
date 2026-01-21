@@ -162,6 +162,13 @@ fun SingBoxApp() {
     // 这确保从后台返回时 IPC 连接是有效的
     LifecycleEventEffect(Lifecycle.Event.ON_START) {
         SingBoxRemote.rebind(context)
+        // 2025-fix-v6: 通知服务端应用进入前台
+        SingBoxRemote.notifyAppLifecycle(isForeground = true)
+    }
+
+    // 2025-fix-v6: 在 ON_STOP 时通知服务端应用进入后台
+    LifecycleEventEffect(Lifecycle.Event.ON_STOP) {
+        SingBoxRemote.notifyAppLifecycle(isForeground = false)
     }
 
     // 当语言设置变化时,缓存到 SharedPreferences 供 attachBaseContext 使用

@@ -10,6 +10,7 @@ import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.os.SystemClock
 import android.util.Log
 import com.kunk.singbox.aidl.ISingBoxService
 import com.kunk.singbox.aidl.ISingBoxServiceCallback
@@ -21,22 +22,25 @@ import java.lang.ref.WeakReference
 
 /**
  * SingBoxRemote - IPC 客户端
- * 
- * 2025-fix-v5: 学习 NekoBox SagerConnection 的完整实现
- * 
+ *
+ * 2025-fix-v6: 解决后台恢复后 UI 一直加载中的问题
+ *
  * 核心改进:
- * 1. connectionActive 标志位 - 防止重复绑定/解绑
- * 2. binderDied 立即重连 - 不使用延迟重试
- * 3. 前后台切换优化 - 支持连接优先级更新
- * 4. 连接有效性检测强化 - 主动断开 stale 连接后重连
- * 
+ * 1. VpnStateStore 双重验证 - 回调失效时从 MMKV 读取真实状态
+ * 2. 回调心跳检测 - 检测回调通道是否正常工作
+ * 3. 强制重连机制 - rebind() 时直接断开再重连，不尝试复用
+ * 4. 状态同步超时 - 如果回调超过阈值未更新，主动从 VpnStateStore 恢复
+ *
  * 参考: NekoBox SagerConnection.kt
- * - https://github.com/MatsuriDayo/NekoBoxForAndroid/blob/main/app/src/main/java/io/nekohasekai/sagernet/bg/SagerConnection.kt
  */
 object SingBoxRemote {
     private const val TAG = "SingBoxRemote"
     private const val RECONNECT_DELAY_MS = 300L
     private const val MAX_RECONNECT_ATTEMPTS = 5
+    // 2025-fix-v6: 回调超时阈值，超过此时间未收到回调则认为回调通道失效
+    private const val CALLBACK_TIMEOUT_MS = 10_000L
+    // 2025-fix-v6: 强制从 VpnStateStore 同步的阈值
+    private const val FORCE_STORE_SYNC_THRESHOLD_MS = 5_000L
 
     private val _state = MutableStateFlow(SingBoxService.ServiceState.STOPPED)
     val state: StateFlow<SingBoxService.ServiceState> = _state.asStateFlow()
@@ -59,8 +63,6 @@ object SingBoxRemote {
     @Volatile
     private var service: ISingBoxService? = null
 
-    // 2025-fix-v5: 使用 connectionActive 替代简单的 bound 标志
-    // 参考 NekoBox SagerConnection: connectionActive 在 connect() 时设置，disconnect() 时清除
     @Volatile
     private var connectionActive = false
 
@@ -82,13 +84,20 @@ object SingBoxRemote {
     @Volatile
     private var lastSyncTimeMs = 0L
 
+    // 2025-fix-v6: 上次收到回调的时间 (基于 SystemClock.elapsedRealtime)
+    @Volatile
+    private var lastCallbackReceivedAtMs = 0L
+
     private val mainHandler = Handler(Looper.getMainLooper())
 
     private val callback = object : ISingBoxServiceCallback.Stub() {
         override fun onStateChanged(state: Int, activeLabel: String?, lastError: String?, manuallyStopped: Boolean) {
+            // 2025-fix-v6: 记录回调接收时间
+            lastCallbackReceivedAtMs = SystemClock.elapsedRealtime()
             val st = SingBoxService.ServiceState.values().getOrNull(state)
                 ?: SingBoxService.ServiceState.STOPPED
             updateState(st, activeLabel, lastError, manuallyStopped)
+            Log.d(TAG, "Callback received: state=$st, activeLabel=$activeLabel")
         }
     }
 
@@ -105,6 +114,26 @@ object SingBoxRemote {
         lastError?.let { _lastError.value = it }
         manuallyStopped?.let { _manuallyStopped.value = it }
         lastSyncTimeMs = System.currentTimeMillis()
+    }
+
+    /**
+     * 2025-fix-v6: 从 VpnStateStore 同步状态 (不依赖 AIDL 回调)
+     * 当回调通道失效时，直接从 MMKV 读取跨进程共享的真实状态
+     */
+    private fun syncStateFromStore() {
+        val isActive = VpnStateStore.getActive()
+        val storedLabel = VpnStateStore.getActiveLabel()
+        val storedError = VpnStateStore.getLastError()
+        val storedManuallyStopped = VpnStateStore.isManuallyStopped()
+
+        val newState = if (isActive) {
+            SingBoxService.ServiceState.RUNNING
+        } else {
+            SingBoxService.ServiceState.STOPPED
+        }
+
+        Log.i(TAG, "syncStateFromStore: isActive=$isActive, label=$storedLabel")
+        updateState(newState, storedLabel, storedError, storedManuallyStopped)
     }
 
     private val deathRecipient = object : IBinder.DeathRecipient {
@@ -332,38 +361,41 @@ object SingBoxRemote {
 
     /**
      * NekoBox 风格: 强制重新绑定
-     * 
-     * Fix B: Doze 唤醒后强制重新注册 callback，确保 IPC 回调通道畅通
+     *
+     * 2025-fix-v6: 增强版 - 直接断开再重连，不尝试复用 stale 连接
+     * 这是解决后台恢复后 UI 卡住的关键修复
      */
     fun rebind(context: Context) {
+        Log.i(TAG, "rebind: forcing disconnect -> connect cycle")
         contextRef = WeakReference(context.applicationContext)
         reconnectAttempts = 0
 
-        val s = service
-        if (connectionActive && bound && s != null) {
-            val isAlive = runCatching { s.state; true }.getOrDefault(false)
-
-            if (isAlive) {
-                runCatching {
-                    if (callbackRegistered) {
-                        s.unregisterCallback(callback)
-                    }
-                    s.registerCallback(callback)
-                    callbackRegistered = true
-                    syncStateFromService(s)
-                    Log.i(TAG, "Rebind: callback re-registered, state synced")
-                }.onFailure {
-                    Log.w(TAG, "Rebind: re-register failed, forcing reconnect", it)
-                    disconnect(context)
-                    connect(context)
-                }
-                return
-            }
-        }
-
-        Log.i(TAG, "Rebind: connection invalid, forcing reconnect")
+        // 2025-fix-v6: 不再尝试复用现有连接，直接断开再重连
+        // 原来的逻辑是先检查连接有效性再决定是否重连，但这无法检测回调通道失效
         disconnect(context)
         connect(context)
+
+        // 2025-fix-v6: 在重连期间，先从 VpnStateStore 恢复状态
+        // 这样 UI 不会显示过时状态，即使回调还没到达
+        syncStateFromStore()
+    }
+
+    /**
+     * 2025-fix-v6: 检测回调通道是否超时
+     * 如果超过阈值未收到回调，返回 true
+     */
+    fun isCallbackStale(): Boolean {
+        if (lastCallbackReceivedAtMs == 0L) return false
+        val elapsed = SystemClock.elapsedRealtime() - lastCallbackReceivedAtMs
+        return elapsed > CALLBACK_TIMEOUT_MS
+    }
+
+    /**
+     * 2025-fix-v6: 强制从 VpnStateStore 同步状态
+     * 用于 Activity onResume 时确保 UI 显示正确状态
+     */
+    fun forceStoreSync() {
+        syncStateFromStore()
     }
 
     fun isBound(): Boolean = connectionActive && bound && service != null

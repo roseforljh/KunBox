@@ -1,10 +1,12 @@
 package com.kunk.singbox.ipc
 
 import android.os.RemoteCallbackList
+import android.os.SystemClock
 import android.util.Log
 import com.kunk.singbox.aidl.ISingBoxServiceCallback
 import com.kunk.singbox.service.SingBoxService
 import com.kunk.singbox.service.manager.BackgroundPowerManager
+import java.util.concurrent.atomic.AtomicLong
 
 object SingBoxIpcHub {
     private const val TAG = "SingBoxIpcHub"
@@ -31,6 +33,9 @@ object SingBoxIpcHub {
     @Volatile
     private var powerManager: BackgroundPowerManager? = null
 
+    // 2025-fix-v6: 状态更新时间戳，用于检测回调通道是否正常
+    private val lastStateUpdateAtMs = AtomicLong(0L)
+
     fun setPowerManager(manager: BackgroundPowerManager?) {
         powerManager = manager
         Log.d(TAG, "PowerManager ${if (manager != null) "set" else "cleared"}")
@@ -56,6 +61,11 @@ object SingBoxIpcHub {
 
     fun isManuallyStopped(): Boolean = manuallyStopped
 
+    /**
+     * 2025-fix-v6: 获取上次状态更新时间戳
+     */
+    fun getLastStateUpdateTime(): Long = lastStateUpdateAtMs.get()
+
     fun update(
         state: SingBoxService.ServiceState? = null,
         activeLabel: String? = null,
@@ -64,10 +74,28 @@ object SingBoxIpcHub {
     ) {
         var shouldStartBroadcast = false
         synchronized(broadcastLock) {
-            state?.let { stateOrdinal = it.ordinal }
-            activeLabel?.let { this.activeLabel = it }
-            lastError?.let { this.lastError = it }
-            manuallyStopped?.let { this.manuallyStopped = it }
+            state?.let {
+                stateOrdinal = it.ordinal
+                // 2025-fix-v6: 同步状态到 VpnStateStore (跨进程持久化)
+                // 这确保主进程恢复时可以直接读取真实状态，不依赖回调
+                VpnStateStore.setActive(it == SingBoxService.ServiceState.RUNNING)
+            }
+            activeLabel?.let {
+                this.activeLabel = it
+                // 2025-fix-v6: 同步 activeLabel 到 VpnStateStore
+                VpnStateStore.setActiveLabel(it)
+            }
+            lastError?.let {
+                this.lastError = it
+                VpnStateStore.setLastError(it)
+            }
+            manuallyStopped?.let {
+                this.manuallyStopped = it
+                VpnStateStore.setManuallyStopped(it)
+            }
+
+            // 更新时间戳
+            lastStateUpdateAtMs.set(SystemClock.elapsedRealtime())
 
             if (broadcasting) {
                 broadcastPending = true

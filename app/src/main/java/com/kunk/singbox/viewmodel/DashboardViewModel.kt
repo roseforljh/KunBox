@@ -505,39 +505,60 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     /**
-     * 2025-fix-v5: 刷新 VPN 状态 (NekoBox + v2rayNG 混合策略)
-     * 
-     * 关键改进: 如果状态同步失败，强制调用 rebind 重新建立连接
-     * Fix C: 添加陈旧状态检测，超过 30 秒未同步则强制 rebind
+     * 2025-fix-v6: 刷新 VPN 状态 (增强版)
+     *
+     * 核心改进:
+     * 1. 回调超时检测 - 如果回调通道失效，不再依赖它
+     * 2. 强制从 VpnStateStore 同步 - 直接读取跨进程共享的真实状态
+     * 3. 强制重连 - rebind() 直接断开再重连，确保回调通道畅通
+     *
+     * 这是解决 "后台恢复后 UI 一直加载中" 问题的关键修复
      */
     fun refreshState() {
         viewModelScope.launch {
             val context = getApplication<Application>()
-            
+
+            // 2025-fix-v6: 第一步 - 立即从 VpnStateStore 恢复状态
+            // 这确保 UI 不会显示过时状态，即使 IPC 还没完成
+            SingBoxRemote.forceStoreSync()
+
+            // 同步更新 UI 状态
+            val isActive = VpnStateStore.getActive()
+            if (isActive) {
+                setConnectionState(ConnectionState.Connected)
+            } else if (!SingBoxRemote.isStarting.value) {
+                setConnectionState(ConnectionState.Idle)
+            }
+
+            // 2025-fix-v6: 第二步 - 检测回调通道是否超时
+            val isCallbackStale = SingBoxRemote.isCallbackStale()
             val lastSyncAge = SingBoxRemote.getLastSyncAge()
-            val isStale = lastSyncAge > 30_000L
-            
-            if (isStale && SingBoxRemote.isRunning.value) {
-                Log.w(TAG, "refreshState: stale state detected (${lastSyncAge}ms), forcing rebind")
+
+            if (isCallbackStale || lastSyncAge > 30_000L) {
+                // 回调通道可能失效，强制重连
+                Log.w(TAG, "refreshState: callback stale (age=${lastSyncAge}ms), forcing rebind")
                 SingBoxRemote.rebind(context)
             } else {
+                // 回调通道正常，尝试同步
                 val synced = runCatching { SingBoxRemote.queryAndSyncState(context) }.getOrDefault(false)
-                
+
                 if (!synced) {
                     Log.w(TAG, "refreshState: queryAndSyncState failed, forcing rebind")
                     SingBoxRemote.rebind(context)
                 }
             }
 
+            // 等待 IPC 绑定完成
             var retries = 0
             while (!SingBoxRemote.isBound() && retries < 15) {
                 delay(100)
                 retries++
             }
 
+            // 最终状态同步
             val state = SingBoxRemote.state.value
             Log.i(TAG, "refreshState: state=$state, bound=${SingBoxRemote.isBound()}")
-            
+
             when (state) {
                 SingBoxService.ServiceState.RUNNING -> setConnectionState(ConnectionState.Connected)
                 SingBoxService.ServiceState.STARTING -> setConnectionState(ConnectionState.Connecting)
