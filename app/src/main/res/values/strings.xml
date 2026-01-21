@@ -228,6 +228,7 @@
     <string name="profiles_camera_permission_required">需要相机权限才能扫描二维码</string>
     <string name="profiles_import_success">导入成功: %s</string>
     <string name="profiles_import_failed">导入失败: %s</string>
+    <string name="profiles_parse_failed">无法解析内容</string>
     <string name="profiles_content_empty">内容为空</string>
     <string name="profiles_updated">配置已更新</string>
     <string name="profiles_deleted">已删除配置</string>

@@ -105,21 +105,32 @@ class Base64Parser(private val nodeParser: (String) -> Outbound?) : Subscription
     }
 
     override fun parse(content: String): SingBoxConfig? {
-        val decoded = tryDecodeBase64(content.trim()) ?: content
+        android.util.Log.d("Base64Parser", "Parsing content, length: ${content.length}, starts with: ${content.take(20)}")
+        val trimmed = content.trim()
+
+        // 如果内容已经是协议链接，不要尝试 base64 解码
+        val isAlreadyLink = LINK_PREFIXES.any { trimmed.startsWith(it) }
+        val decoded = if (isAlreadyLink) trimmed else (tryDecodeBase64(trimmed) ?: trimmed)
         val normalized = decoded
             .replace("\u2028", "\n")
             .replace("\u2029", "\n")
         val candidates = normalized.lines().flatMap { extractLinksFromLine(it) }
             .ifEmpty { normalized.split(Regex("\\s+")).flatMap { extractLinksFromLine(it) } }
+        android.util.Log.d("Base64Parser", "Found ${candidates.size} link candidates")
         val outbounds = mutableListOf<Outbound>()
 
         for (candidate in candidates) {
+            android.util.Log.d("Base64Parser", "Trying to parse candidate: ${candidate.take(30)}...")
             val outbound = nodeParser(candidate)
             if (outbound != null) {
+                android.util.Log.d("Base64Parser", "Successfully parsed: ${outbound.tag}")
                 outbounds.add(outbound)
+            } else {
+                android.util.Log.w("Base64Parser", "Failed to parse candidate")
             }
         }
 
+        android.util.Log.d("Base64Parser", "Total outbounds parsed: ${outbounds.size}")
         if (outbounds.isEmpty()) return null
 
         return SingBoxConfig(outbounds = outbounds)
@@ -136,22 +147,48 @@ class Base64Parser(private val nodeParser: (String) -> Outbound?) : Subscription
 
         if (normalized.isBlank()) return emptyList()
 
-        val indices = LINK_PREFIXES.mapNotNull { prefix ->
-            val index = normalized.indexOf(prefix)
-            if (index >= 0) index else null
-        }.distinct().sorted()
+        // 按前缀长度降序排列，确保长前缀（如 vmess://）先于短前缀（如 ss://）被匹配
+        // 这样可以避免 vmess:// 被误识别为 ss://
+        val sortedPrefixes = LINK_PREFIXES.sortedByDescending { it.length }
 
-        if (indices.isEmpty()) return emptyList()
+        // 找到所有链接的起始位置，使用贪婪匹配（最长前缀优先）
+        val linkPositions = mutableListOf<Pair<Int, String>>() // (位置, 前缀)
+        val usedPositions = mutableSetOf<Int>()
+
+        for (prefix in sortedPrefixes) {
+            var searchFrom = 0
+            while (searchFrom < normalized.length) {
+                val index = normalized.indexOf(prefix, searchFrom)
+                if (index < 0) break
+
+                // 检查这个位置是否已经被更长的前缀占用
+                val isOverlapped = usedPositions.any { usedPos ->
+                    index >= usedPos && index < usedPos + sortedPrefixes.find {
+                        normalized.substring(usedPos).startsWith(it)
+                    }!!.length
+                }
+
+                if (!isOverlapped) {
+                    linkPositions.add(index to prefix)
+                    usedPositions.add(index)
+                }
+                searchFrom = index + 1
+            }
+        }
+
+        if (linkPositions.isEmpty()) return emptyList()
+
+        // 按位置排序
+        val sortedPositions = linkPositions.sortedBy { it.first }
 
         val results = mutableListOf<String>()
-        for (i in indices.indices) {
-            val start = indices[i]
-            val end = if (i + 1 < indices.size) indices[i + 1] else normalized.length
+        for (i in sortedPositions.indices) {
+            val start = sortedPositions[i].first
+            val end = if (i + 1 < sortedPositions.size) sortedPositions[i + 1].first else normalized.length
             var candidate = normalized.substring(start, end).trim()
             candidate = candidate.trimEnd(',', ';')
-            val candidateTrimmed = candidate.trim()
-            if (LINK_PREFIXES.any { candidateTrimmed.startsWith(it) }) {
-                results.add(candidateTrimmed)
+            if (candidate.isNotBlank()) {
+                results.add(candidate)
             }
         }
         return results

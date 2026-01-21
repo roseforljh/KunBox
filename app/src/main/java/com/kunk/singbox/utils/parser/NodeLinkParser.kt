@@ -217,17 +217,23 @@ class NodeLinkParser(private val gson: Gson) {
     }
 
     private fun tryDecodeBase64(content: String): String? {
+        // 清理内容中的空白字符
+        val cleaned = content.trim()
+            .replace("\n", "")
+            .replace("\r", "")
+            .replace(" ", "")
+
         val candidates = arrayOf(
-            Base64.URL_SAFE or Base64.NO_PADDING or Base64.NO_WRAP,
-            Base64.URL_SAFE or Base64.NO_WRAP,
             Base64.DEFAULT,
-            Base64.NO_WRAP
+            Base64.NO_WRAP,
+            Base64.URL_SAFE or Base64.NO_WRAP,
+            Base64.URL_SAFE or Base64.NO_PADDING or Base64.NO_WRAP
         )
         for (flags in candidates) {
             try {
-                val decoded = Base64.decode(content, flags)
+                val decoded = Base64.decode(cleaned, flags)
                 // Basic validation: string should not contain excessive control chars
-                return String(decoded)
+                return String(decoded, Charsets.UTF_8)
             } catch (e: Exception) {
                 // Continue
             }
@@ -257,8 +263,14 @@ class NodeLinkParser(private val gson: Gson) {
 
     private fun parseVMessLink(link: String): Outbound? {
         try {
-            val base64Part = link.removePrefix("vmess://")
-            val decoded = String(Base64.decode(base64Part, Base64.DEFAULT))
+            val base64Part = link.removePrefix("vmess://").trim()
+            Log.d("NodeLinkParser", "Parsing VMess, base64 length: ${base64Part.length}")
+            val decoded = tryDecodeBase64(base64Part)
+            if (decoded == null) {
+                Log.e("NodeLinkParser", "Failed to decode VMess base64, first 50 chars: ${base64Part.take(50)}")
+                return null
+            }
+            Log.d("NodeLinkParser", "VMess decoded successfully, JSON length: ${decoded.length}")
             // 这里需要一个简单的内部类来映射 VMess 链接的 JSON
             val json = gson.fromJson(decoded, Map::class.java)
             

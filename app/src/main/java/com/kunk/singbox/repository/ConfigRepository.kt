@@ -1068,7 +1068,7 @@ class ConfigRepository(private val context: Context) {
             }
 
             if (fetchResult == null) {
-                return@withContext Result.failure(Exception(context.getString(R.string.profiles_import_failed)))
+                return@withContext Result.failure(Exception(context.getString(R.string.profiles_parse_failed)))
             }
             
             val config = fetchResult.config
@@ -1149,7 +1149,7 @@ class ConfigRepository(private val context: Context) {
 
             val normalized = normalizeImportedContent(content)
             val config = subscriptionManager.parse(normalized)
-                ?: return@withContext Result.failure(Exception(context.getString(R.string.profiles_import_failed)))
+                ?: return@withContext Result.failure(Exception(context.getString(R.string.profiles_parse_failed)))
 
             onProgress(context.getString(R.string.profiles_extracting_nodes, 0, 0))
 

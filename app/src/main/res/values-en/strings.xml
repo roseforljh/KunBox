@@ -228,6 +228,7 @@
     <string name="profiles_camera_permission_required">Camera permission required to scan QR code</string>
     <string name="profiles_import_success">Import successful: %s</string>
     <string name="profiles_import_failed">Import failed: %s</string>
+    <string name="profiles_parse_failed">Failed to parse content</string>
     <string name="profiles_content_empty">Content is empty</string>
     <string name="profiles_updated">Profile updated</string>
     <string name="profiles_deleted">Profile deleted</string>
