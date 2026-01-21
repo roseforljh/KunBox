@@ -4,6 +4,7 @@ import android.os.RemoteCallbackList
 import android.os.SystemClock
 import android.util.Log
 import com.kunk.singbox.aidl.ISingBoxServiceCallback
+import com.kunk.singbox.core.BoxWrapperManager
 import com.kunk.singbox.service.SingBoxService
 import com.kunk.singbox.service.manager.BackgroundPowerManager
 import java.util.concurrent.atomic.AtomicLong
@@ -36,6 +37,12 @@ object SingBoxIpcHub {
     // 2025-fix-v6: 状态更新时间戳，用于检测回调通道是否正常
     private val lastStateUpdateAtMs = AtomicLong(0L)
 
+    // 2025-fix-v7: 上次应用返回前台的时间戳，用于防抖
+    private val lastForegroundAtMs = AtomicLong(0L)
+
+    // 2025-fix-v7: 前台恢复后重置连接的最小间隔 (5秒)
+    private const val FOREGROUND_RESET_DEBOUNCE_MS = 5_000L
+
     fun setPowerManager(manager: BackgroundPowerManager?) {
         powerManager = manager
         Log.d(TAG, "PowerManager ${if (manager != null) "set" else "cleared"}")
@@ -43,11 +50,41 @@ object SingBoxIpcHub {
 
     /**
      * 接收主进程的 App 生命周期通知
+     *
+     * 2025-fix-v7: 当应用返回前台时，立即重置所有连接
+     * 这是解决 "后台恢复后 TG 等应用一直加载中" 问题的关键修复
+     *
+     * 参考 NekoBox: 在 onServiceConnected() 时无条件调用 resetAllConnections()
      */
     fun onAppLifecycle(isForeground: Boolean) {
         Log.i(TAG, "onAppLifecycle: isForeground=$isForeground")
+
         if (isForeground) {
             powerManager?.onAppForeground()
+
+            // 2025-fix-v7: 应用返回前台时，重置所有连接
+            // 这确保 sing-box 内核不会使用后台期间可能已失效的连接
+            val isVpnRunning = stateOrdinal == SingBoxService.ServiceState.RUNNING.ordinal
+            if (isVpnRunning) {
+                val now = SystemClock.elapsedRealtime()
+                val lastForeground = lastForegroundAtMs.get()
+                val elapsed = now - lastForeground
+
+                // 防抖: 避免频繁切换前后台时重复重置
+                if (elapsed >= FOREGROUND_RESET_DEBOUNCE_MS) {
+                    lastForegroundAtMs.set(now)
+
+                    Log.i(TAG, "[Foreground] VPN running, resetting all connections")
+                    val success = BoxWrapperManager.resetAllConnections(true)
+                    if (success) {
+                        Log.i(TAG, "[Foreground] resetAllConnections success")
+                    } else {
+                        Log.w(TAG, "[Foreground] resetAllConnections failed, VPN may have stale connections")
+                    }
+                } else {
+                    Log.d(TAG, "[Foreground] skipped reset (debounce, elapsed=${elapsed}ms)")
+                }
+            }
         } else {
             powerManager?.onAppBackground()
         }
