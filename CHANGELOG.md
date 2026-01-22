@@ -1,5 +1,16 @@
 # Changelog
 
+## [2.4.6](https://github.com/roseforljh/KunBox/compare/v2.4.5...v2.4.6) (2026-01-22)
+
+
+### Bug Fixes
+
+* **ipc:** 修复从后台恢复后 UI 一直加载中的问题 ([4593912](https://github.com/roseforljh/KunBox/commit/4593912a9b7f2a42ead365e38a1ec21e32b9294f))
+* **ipc:** 应用返回前台时重置所有连接，修复 TG 等应用一直加载中的问题 ([9f5a444](https://github.com/roseforljh/KunBox/commit/9f5a44402205f90ef7d703bb263016647976d204))
+* **parser:** 修复 vmess 链接无法从剪贴板导入的问题 ([4c6046a](https://github.com/roseforljh/KunBox/commit/4c6046a3ca4a27716a4f5e620e018249a3e6194c))
+* **ui:** InputDialog 输入框支持水平滚动 ([baa1d60](https://github.com/roseforljh/KunBox/commit/baa1d601014142420cec99ade3e9eedefc5dfcda))
+* **ui:** 应用分流仅显示仅允许列表中的应用并移除直连选项 ([f58f50e](https://github.com/roseforljh/KunBox/commit/f58f50e642136c70dda0ac79d8682d19446ce44a))
+
 ## [2.4.5](https://github.com/roseforljh/KunBox/compare/v2.4.4...v2.4.5) (2026-01-18)
 
 
