@@ -2,7 +2,6 @@ package com.kunk.singbox.service.manager
 
 import android.app.NotificationManager
 import android.content.Context
-import android.content.Intent
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.os.Build

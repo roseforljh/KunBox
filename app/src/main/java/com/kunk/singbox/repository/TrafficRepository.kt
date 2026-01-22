@@ -98,19 +98,19 @@ class TrafficRepository private constructor(private val context: Context) {
 
     fun addTraffic(nodeId: String, uploadDiff: Long, downloadDiff: Long) {
         if (uploadDiff <= 0 && downloadDiff <= 0) return
-        
+
         val stats = trafficMap.getOrPut(nodeId) { NodeTrafficStats(nodeId) }
         stats.upload += uploadDiff
         stats.download += downloadDiff
         stats.lastUpdated = System.currentTimeMillis()
-        
+
         // Auto-save occasionally handled by service calling saveStats() explicitly or implicit throttling
     }
 
     fun getStats(nodeId: String): NodeTrafficStats? {
         return trafficMap[nodeId]
     }
-    
+
     fun getMonthlyTotal(nodeId: String): Long {
         val stats = trafficMap[nodeId] ?: return 0
         return stats.upload + stats.download

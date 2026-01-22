@@ -50,10 +50,10 @@ class TrafficMonitor(
 
     @Volatile
     private var isPaused: Boolean = false
-    
+
     @Volatile
     private var cachedUid: Int = 0
-    
+
     @Volatile
     private var cachedListener: Listener? = null
 
@@ -202,7 +202,7 @@ class TrafficMonitor(
     fun resume() {
         if (!isPaused) return
         isPaused = false
-        
+
         val uid = cachedUid
         val listener = cachedListener
         if (uid > 0 && listener != null) {

@@ -48,7 +48,7 @@ class QrScannerActivity : AppCompatActivity() {
         setContentView(R.layout.activity_qr_scanner)
 
         barcodeScannerView = findViewById(R.id.barcode_scanner)
-        
+
         // 初始化扫描管理器
         capture = CaptureManager(this, barcodeScannerView)
         capture.initializeFromIntent(intent, savedInstanceState)
@@ -79,7 +79,7 @@ class QrScannerActivity : AppCompatActivity() {
             try {
                 val inputStream: InputStream? = contentResolver.openInputStream(uri)
                 val bitmap = BitmapFactory.decodeStream(inputStream)
-                
+
                 if (bitmap != null) {
                     val result = decodeQRCode(bitmap)
                     withContext(Dispatchers.Main) {

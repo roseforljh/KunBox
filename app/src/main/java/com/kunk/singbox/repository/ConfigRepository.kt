@@ -8,7 +8,6 @@ import android.util.Base64
 import android.util.Log
 import com.google.gson.Gson
 import com.google.gson.JsonParser
-import com.google.gson.JsonSyntaxException
 import com.google.gson.reflect.TypeToken
 import com.kunk.singbox.core.SingBoxCore
 import com.kunk.singbox.ipc.VpnStateStore
@@ -21,8 +20,8 @@ import com.kunk.singbox.utils.parser.NodeLinkParser
 import com.kunk.singbox.utils.parser.SingBoxParser
 import com.kunk.singbox.repository.config.OutboundFixer
 import com.kunk.singbox.repository.config.InboundBuilder
+import com.kunk.singbox.repository.config.NodeLinkExporter
 import com.kunk.singbox.utils.parser.SubscriptionManager
-import com.kunk.singbox.repository.TrafficRepository
 import com.kunk.singbox.database.AppDatabase
 import com.kunk.singbox.database.entity.ProfileEntity
 import com.kunk.singbox.database.entity.ActiveStateEntity
@@ -31,7 +30,6 @@ import java.io.File
 import java.util.Collections
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
@@ -41,15 +39,13 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import com.kunk.singbox.utils.NetworkClient
 import com.kunk.singbox.utils.StringBuilderPool
-import org.yaml.snakeyaml.Yaml
-import org.yaml.snakeyaml.error.YAMLException
 import com.tencent.mmkv.MMKV
 
 /**
  * 配置仓库 - 负责获取、解析和存储配置
  */
 class ConfigRepository(private val context: Context) {
-    
+
     companion object {
         private const val TAG = "ConfigRepository"
 
@@ -58,12 +54,14 @@ class ConfigRepository(private val context: Context) {
 
         // 预编译的 Regex 常量 - 避免重复编译
         private val REGEX_TRAFFIC = Regex("([\\d.]+)\\s*([KMGTPE]?)B?")
-        private val REGEX_KV_PAIRS = Regex("(?i)\\b(upload|download|total|expire)\\b\\s*[:=]\\s*\"?([^,;\\s\\n\\r}]+)\"?")
+        private val REGEX_KV_PAIRS =
+            Regex("(?i)\\b(upload|download|total|expire)\\b\\s*[:=]\\s*\"?([^,;\\s\\n\\r}]+)\"?")
         private val REGEX_SUBSCRIPTION_USERINFO = Regex("(?i)subscription[-_]userinfo\\s*[:=]\\s*\"?([^\"\\n\\r]+)\"?")
         private val REGEX_TOTAL = Regex("TOT:([\\d.]+[KMGTPE]?)B?")
         private val REGEX_EXPIRE_DATE = Regex("Expires:(\\d{4}-\\d{2}-\\d{2})")
         private val REGEX_TRAFFIC_VALUE = Regex("([\\d.]+[KMGTPE]?)B?")
-        private val REGEX_REMAINING = Regex("(?i)(剩余流量|流量剩余|remaining|balance)\\s*[:：]?\\s*([\\d.]+\\s*[KMGTPE]?)\\s*B?")
+        private val REGEX_REMAINING =
+            Regex("(?i)(剩余流量|流量剩余|remaining|balance)\\s*[:：]?\\s*([\\d.]+\\s*[KMGTPE]?)\\s*B?")
         private val REGEX_EXPIRE = Regex("(?i)(套餐到期|到期|expiry|expire)\\s*[:：]?\\s*([^\\s,;]+)")
         private val REGEX_SANITIZE_UUID = Regex("(?i)uuid\\s*[:=]\\s*[^\\\\n]+")
         private val REGEX_SANITIZE_PASSWORD = Regex("(?i)password\\s*[:=]\\s*[^\\\\n]+")
@@ -163,16 +161,16 @@ class ConfigRepository(private val context: Context) {
         // User-Agent 列表，按优先级排序
         private val USER_AGENTS = listOf(
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36", // Browser - 优先尝试获取通用 Base64 订阅，以绕过服务端的客户端过滤
-            "ClashMeta/1.18.0",             // ClashMeta - 次选
-            "sing-box/1.10.0",              // Sing-box
+            "ClashMeta/1.18.0", // ClashMeta - 次选
+            "sing-box/1.10.0", // Sing-box
             "Clash.Meta/1.18.0",
             "Clash/1.18.0",
             "SFA/1.10.0"
         )
-        
+
         @Volatile
         private var instance: ConfigRepository? = null
-        
+
         fun getInstance(context: Context): ConfigRepository {
             return instance ?: synchronized(this) {
                 instance ?: ConfigRepository(context.applicationContext).also { instance = it }
@@ -235,7 +233,7 @@ class ConfigRepository(private val context: Context) {
             NetworkClient.createClientWithoutRetry(timeout, timeout, timeout)
         }
     }
-    
+
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
     // 节点链接解析器 - 复用实例避免重复创建
@@ -249,7 +247,7 @@ class ConfigRepository(private val context: Context) {
 
     private val _profiles = MutableStateFlow<List<ProfileUi>>(emptyList())
     val profiles: StateFlow<List<ProfileUi>> = _profiles.asStateFlow()
-    
+
     private val _nodes = MutableStateFlow<List<NodeUi>>(emptyList())
     val nodes: StateFlow<List<NodeUi>> = _nodes.asStateFlow()
 
@@ -258,10 +256,10 @@ class ConfigRepository(private val context: Context) {
 
     private val _activeProfileId = MutableStateFlow<String?>(null)
     val activeProfileId: StateFlow<String?> = _activeProfileId.asStateFlow()
-    
+
     private val _activeNodeId = MutableStateFlow<String?>(null)
     val activeNodeId: StateFlow<String?> = _activeNodeId.asStateFlow()
-    
+
     private val maxConfigCacheSize = 10
     // 使用 LinkedHashMap 实现 LRU 缓存，线程安全
     private val configCache: MutableMap<String, SingBoxConfig> = Collections.synchronizedMap(
@@ -284,7 +282,7 @@ class ConfigRepository(private val context: Context) {
 
     private val allNodesUiActiveCount = AtomicInteger(0)
     @Volatile private var allNodesLoadedForUi: Boolean = false
-    
+
     @Volatile private var lastTagToNodeName: Map<String, String> = emptyMap()
     // 缓存上一次运行的配置中的 Outbound Tags 集合，用于判断是否需要重启 VPN
     @Volatile private var lastRunOutboundTags: Set<String>? = null
@@ -310,7 +308,7 @@ class ConfigRepository(private val context: Context) {
             }
         }
     }
-    
+
     private val configDir: File
         get() = File(context.filesDir, "configs").also { it.mkdirs() }
 
@@ -347,7 +345,7 @@ class ConfigRepository(private val context: Context) {
     private fun getProfileLastSelectedNode(profileId: String): String? {
         return profileLastSelectedNode[profileId]
     }
-    
+
     private fun loadConfig(profileId: String): SingBoxConfig? {
         configCache[profileId]?.let { return it }
 
@@ -446,7 +444,7 @@ class ConfigRepository(private val context: Context) {
             Log.e(TAG, "Failed to save profiles", e)
         }
     }
-    
+
     private fun updateAllNodesAndGroups() {
         if (allNodesUiActiveCount.get() <= 0) {
             _allNodes.value = emptyList()
@@ -646,7 +644,7 @@ class ConfigRepository(private val context: Context) {
      */
     private fun loadActiveProfileNodes(activeProfileId: String?, activeNodeId: String?) {
         if (activeProfileId == null) return
-        val configFile = File(configDir, "${activeProfileId}.json")
+        val configFile = File(configDir, "$activeProfileId.json")
         if (!configFile.exists()) return
 
         scope.launch {
@@ -695,7 +693,7 @@ class ConfigRepository(private val context: Context) {
             }
         }
     }
-    
+
     /**
      * 从订阅 URL 导入配置
      */
@@ -717,10 +715,10 @@ class ConfigRepository(private val context: Context) {
     private fun parseTrafficString(value: String): Long {
         val trimmed = value.trim().uppercase()
         val match = REGEX_TRAFFIC.find(trimmed) ?: return 0L
-        
+
         val (numStr, unit) = match.destructured
         val num = numStr.toDoubleOrNull() ?: return 0L
-        
+
         val multiplier = when (unit) {
             "K" -> 1024L
             "M" -> 1024L * 1024
@@ -729,7 +727,7 @@ class ConfigRepository(private val context: Context) {
             "P" -> 1024L * 1024 * 1024 * 1024 * 1024
             else -> 1L
         }
-        
+
         return (num * multiplier).toLong()
     }
 
@@ -780,7 +778,6 @@ class ConfigRepository(private val context: Context) {
             val normalized = raw.trim().trim('"', '\'')
             return normalized.toLongOrNull() ?: parseTrafficString(normalized)
         }
-
 
         fun applyKeyValue(key: String, rawValue: String) {
             when (key.lowercase()) {
@@ -955,11 +952,11 @@ class ConfigRepository(private val context: Context) {
         onProgress: (String) -> Unit = {}
     ): FetchResult? {
         var lastError: Exception? = null
-        
+
         for ((index, userAgent) in USER_AGENTS.withIndex()) {
             try {
                 onProgress("尝试获取订阅 (${index + 1}/${USER_AGENTS.size})...")
-                
+
                 val request = Request.Builder()
                     .url(url)
                     .header("User-Agent", userAgent)
@@ -1023,7 +1020,7 @@ class ConfigRepository(private val context: Context) {
                 }
             }
         }
-        
+
         // 理论上不会执行到这里，因为最后一次尝试会抛出异常
         lastError?.let { Log.e(TAG, "All User-Agents failed", it) }
         return null
@@ -1045,7 +1042,7 @@ class ConfigRepository(private val context: Context) {
     private fun parseClashYamlConfig(content: String): SingBoxConfig? {
         return com.kunk.singbox.utils.parser.ClashYamlParser().parse(content)
     }
-    
+
     /**
      * 从订阅 URL 导入配置
      */
@@ -1057,7 +1054,7 @@ class ConfigRepository(private val context: Context) {
     ): Result<ProfileUi> = withContext(Dispatchers.IO) {
         try {
             onProgress("正在获取订阅...")
-            
+
             // 使用智能 User-Agent 切换策略获取订阅
             val fetchResult = try {
                 fetchAndParseSubscription(url, onProgress)
@@ -1070,24 +1067,24 @@ class ConfigRepository(private val context: Context) {
             if (fetchResult == null) {
                 return@withContext Result.failure(Exception(context.getString(R.string.profiles_parse_failed)))
             }
-            
+
             val config = fetchResult.config
             val userInfo = fetchResult.userInfo
 
             onProgress(context.getString(R.string.profiles_extracting_nodes, 0, 0))
-            
+
             val profileId = UUID.randomUUID().toString()
             val deduplicatedConfig = deduplicateTags(config)
             val nodes = extractNodesFromConfig(deduplicatedConfig, profileId, onProgress)
-            
+
             if (nodes.isEmpty()) {
-                return@withContext Result.failure(Exception("No valid nodes found")) // TODO: add to strings.xml
+                return@withContext Result.failure(Exception(context.getString(R.string.nodes_no_valid_found)))
             }
-            
+
             // 保存配置文件
             val configFile = File(configDir, "$profileId.json")
             configFile.writeText(gson.toJson(deduplicatedConfig))
-            
+
             // 创建配置
             val profile = ProfileUi(
                 id = profileId,
@@ -1102,33 +1099,33 @@ class ConfigRepository(private val context: Context) {
                 totalTraffic = userInfo?.total ?: 0,
                 usedTraffic = (userInfo?.upload ?: 0) + (userInfo?.download ?: 0)
             )
-            
+
             // 保存到内存
             cacheConfig(profileId, deduplicatedConfig)
             profileNodes[profileId] = nodes
             updateAllNodesAndGroups()
-            
+
             // 更新状态
             _profiles.update { it + profile }
             saveProfiles()
-            
+
             // 如果是第一个配置，自动激活
             if (_activeProfileId.value == null) {
                 setActiveProfile(profileId)
             }
-            
+
             // 调度自动更新任务
             if (autoUpdateInterval > 0) {
                 com.kunk.singbox.service.SubscriptionAutoUpdateWorker.schedule(context, profileId, autoUpdateInterval)
             }
-            
+
             onProgress(context.getString(R.string.profiles_import_success, nodes.size.toString()))
-            
+
             Result.success(profile)
         } catch (e: Exception) {
             Log.e(TAG, "Subscription import failed", e)
             // 确保抛出的异常信息对用户友好
-            val msg = when(e) {
+            val msg = when (e) {
                 is java.net.SocketTimeoutException -> "Connection timeout, please check your network"
                 is java.net.UnknownHostException -> "Failed to resolve domain, please check the link"
                 is javax.net.ssl.SSLHandshakeException -> "SSL certificate validation failed"
@@ -1158,7 +1155,7 @@ class ConfigRepository(private val context: Context) {
             val nodes = extractNodesFromConfig(deduplicatedConfig, profileId, onProgress)
 
             if (nodes.isEmpty()) {
-                return@withContext Result.failure(Exception("No valid nodes found")) // TODO: add to strings.xml
+                return@withContext Result.failure(Exception(context.getString(R.string.nodes_no_valid_found)))
             }
 
             val configFile = File(configDir, "$profileId.json")
@@ -1234,7 +1231,7 @@ class ConfigRepository(private val context: Context) {
         }
         return null
     }
-    
+
     /**
      * 从配置中只提取节点信息，忽略规则配置
      * 防止因 sing-box 规则版本更新导致解析失败
@@ -1322,21 +1319,20 @@ class ConfigRepository(private val context: Context) {
                 }
             } catch (_: Exception) {
             }
-
         } catch (e: Exception) {
             // 继续尝试其他格式
         }
-        
+
         // 3. 尝试解析为节点链接列表 (每行一个链接)
         try {
             val lines = normalizedContent.trim().lines().filter { it.isNotBlank() }
             if (lines.isNotEmpty()) {
                 // 尝试 Base64 解码整体
                 val decoded = tryDecodeBase64(normalizedContent) ?: normalizedContent
-                
+
                 val decodedLines = decoded.trim().lines().filter { it.isNotBlank() }
                 val outbounds = mutableListOf<Outbound>()
-                
+
                 for (line in decodedLines) {
                     val cleanedLine = line.trim()
                         .removePrefix("- ")
@@ -1348,7 +1344,7 @@ class ConfigRepository(private val context: Context) {
                         outbounds.add(outbound)
                     }
                 }
-                
+
                 if (outbounds.isNotEmpty()) {
                     // 创建一个包含这些节点的配置
                     return SingBoxConfig(
@@ -1404,7 +1400,7 @@ class ConfigRepository(private val context: Context) {
         // 收集所有被其他 outbound 作为 detour 引用的 tag（这些是辅助 outbound，不应显示为独立节点）
         val detourTags = outbounds.mapNotNull { it.detour }.toSet()
 
-        val validOutbounds = outbounds.filter { 
+        val validOutbounds = outbounds.filter {
             it.type in proxyTypes && it.tag !in detourTags
         }
         if (validOutbounds.isEmpty()) return@withContext emptyList()
@@ -1540,7 +1536,7 @@ class ConfigRepository(private val context: Context) {
             }
         )
     }
-    
+
     /**
      * 检测字符串是否包含国旗 Emoji
      */
@@ -1580,8 +1576,8 @@ class ConfigRepository(private val context: Context) {
 
             // 3. 检查需要词边界的短代码 (使用预编译 Regex)
             if (rule.wordBoundaryKeywords.any { word ->
-                WORD_BOUNDARY_REGEX_MAP[word]?.containsMatchIn(lowerName) == true
-            }) {
+                    WORD_BOUNDARY_REGEX_MAP[word]?.containsMatchIn(lowerName) == true
+                }) {
                 regionFlagCache[name] = rule.flag
                 return rule.flag
             }
@@ -1590,7 +1586,7 @@ class ConfigRepository(private val context: Context) {
         regionFlagCache[name] = "🌐"
         return "🌐"
     }
-    
+
     fun setActiveProfile(profileId: String, targetNodeId: String? = null) {
         val currentProfileId = _activeProfileId.value
         val currentNodeId = _activeNodeId.value
@@ -1635,7 +1631,7 @@ class ConfigRepository(private val context: Context) {
                 profileNodes[profileId] = nodesWithLatency
 
                 updateState(nodesWithLatency)
-                
+
                 if (allNodesUiActiveCount.get() > 0) {
                     updateAllNodesAndGroups()
                 }
@@ -1643,7 +1639,7 @@ class ConfigRepository(private val context: Context) {
         }
         saveProfilesImmediate()
     }
-    
+
     sealed class NodeSwitchResult {
         object Success : NodeSwitchResult()
         object NotRunning : NodeSwitchResult()
@@ -1690,7 +1686,6 @@ class ConfigRepository(private val context: Context) {
             }
 
             setActiveProfile(targetNode.sourceProfileId, nodeId)
-
         }
 
         _activeNodeId.value = nodeId
@@ -1701,11 +1696,11 @@ class ConfigRepository(private val context: Context) {
             Log.i(TAG, "setActiveNodeWithResult: VPN not running, skip hot switch")
             return NodeSwitchResult.NotRunning
         }
-        
+
         return withContext(Dispatchers.IO) {
             // 尝试从当前配置查找节点
             var node = _nodes.value.find { it.id == nodeId }
-            
+
             // 如果找不到，尝试从所有节点查找（支持跨配置切换）
             if (node == null) {
                 node = allNodesSnapshot.find { it.id == nodeId }
@@ -1716,7 +1711,7 @@ class ConfigRepository(private val context: Context) {
                 Log.w(TAG, msg)
                 return@withContext NodeSwitchResult.Failed(msg)
             }
-            
+
             try {
                 val generationResult = generateConfigFile()
                 if (generationResult == null) {
@@ -1726,7 +1721,7 @@ class ConfigRepository(private val context: Context) {
                 }
 
                 // ... [Skipping comments for brevity in replacement]
-                
+
                 // 修正 cache.db 清理逻辑
                 // 注意：这里删除可能不生效，因为 Service 进程关闭时可能会再次写入 cache.db
                 // 因此我们在 Service 进程启动时增加了一个 EXTRA_CLEAN_CACHE 参数来确保删除
@@ -1740,14 +1735,14 @@ class ConfigRepository(private val context: Context) {
                 // 或者当前配置 ID 发生了变化（跨配置切换），则必须重启 VPN 以加载新的配置文件。
                 val currentTags = generationResult.outboundTags
                 val currentProfileId = _activeProfileId.value
-                
+
                 // 2025-fix: 改进 profileChanged 判断逻辑
                 // 问题：当 App 重启后 lastRunProfileId 为 null，但 VPN 已在运行时，
                 // 跨配置切换不会触发重启，导致热切换使用旧配置中的 selector
                 // 修复：如果 VPN 已在运行但 lastRunProfileId 为 null，视为首次切换，需要重启以确保配置同步
                 val isFirstSwitchWhileRunning = lastRunProfileId == null && remoteRunning
                 val profileChanged = (lastRunProfileId != null && lastRunProfileId != currentProfileId) || isFirstSwitchWhileRunning
-                
+
                 // 2025-fix-v5: 统一的重启判断逻辑
                 // 需要重启 VPN 的场景：
                 // 1. outboundTags 实际发生变化（节点列表不同）
@@ -1761,11 +1756,10 @@ class ConfigRepository(private val context: Context) {
                 val tagsChanged = tagsActuallyChanged || profileChanged || isVpnStartingNotReady || needsConfigReload
 
                 Log.d(TAG, "Switch decision: profileChanged=$profileChanged (last=$lastRunProfileId, cur=$currentProfileId, firstSwitch=$isFirstSwitchWhileRunning), tagsActuallyChanged=$tagsActuallyChanged, isVpnStartingNotReady=$isVpnStartingNotReady, needsConfigReload=$needsConfigReload, tagsChanged=$tagsChanged")
-                
+
                 // 更新缓存（在判断之后更新，确保下次能正确比较）
                 lastRunOutboundTags = currentTags
                 lastRunProfileId = currentProfileId
-
 
                 val coreMode = VpnStateStore.getMode()
 
@@ -1850,7 +1844,7 @@ class ConfigRepository(private val context: Context) {
         Log.i(TAG, "Synced active node from service selection: $proxyName -> ${matched.id}")
         return true
     }
-    
+
     fun deleteProfile(profileId: String) {
         // 取消自动更新任务
         com.kunk.singbox.service.SubscriptionAutoUpdateWorker.cancel(context, profileId)
@@ -1944,7 +1938,7 @@ class ConfigRepository(private val context: Context) {
             }
         }
         saveProfiles()
-        
+
         // 调度或取消自动更新任务
         com.kunk.singbox.service.SubscriptionAutoUpdateWorker.schedule(context, profileId, autoUpdateInterval)
     }
@@ -2095,7 +2089,7 @@ class ConfigRepository(private val context: Context) {
         singBoxCore.testOutboundsLatency(outbounds) { tag, latency ->
             val info = tagToInfo[tag] ?: return@testOutboundsLatency
             val latencyValue = if (latency > 0) latency else -1L
-            
+
             _nodes.update { list ->
                 list.map {
                     if (it.id == info.nodeId) it.copy(latencyMs = latencyValue) else it
@@ -2105,7 +2099,7 @@ class ConfigRepository(private val context: Context) {
             profileNodes[info.profileId] = profileNodes[info.profileId]?.map {
                 if (it.id == info.nodeId) it.copy(latencyMs = latencyValue) else it
             } ?: emptyList()
-            
+
             updateLatencyInAllNodes(info.nodeId, latency)
 
             onNodeComplete?.invoke(info.nodeId, latencyValue)
@@ -2138,21 +2132,21 @@ class ConfigRepository(private val context: Context) {
             details = results
         )
     }
-    
+
     suspend fun updateProfile(profileId: String): SubscriptionUpdateResult {
         val profile = _profiles.value.find { it.id == profileId }
             ?: return SubscriptionUpdateResult.Failed("未知配置", "配置不存在")
-        
+
         if (profile.url.isNullOrBlank()) {
             return SubscriptionUpdateResult.Failed(profile.name, "无订阅链接")
         }
-        
+
         _profiles.update { list ->
             list.map {
                 if (it.id == profileId) it.copy(updateStatus = UpdateStatus.Updating) else it
             }
         }
-        
+
         val result = try {
             importFromSubscriptionUpdate(profile)
         } catch (e: Exception) {
@@ -2187,39 +2181,39 @@ class ConfigRepository(private val context: Context) {
             profileResetJobs.remove(profileId, resetJob)
         }
         profileResetJobs[profileId] = resetJob
-        
+
         return result
     }
-    
+
     private suspend fun importFromSubscriptionUpdate(profile: ProfileUi): SubscriptionUpdateResult = withContext(Dispatchers.IO) {
         try {
             // 获取旧的节点列表用于比较
             val oldNodes = profileNodes[profile.id] ?: emptyList()
             val oldNodeNames = oldNodes.map { it.name }.toSet()
-            
+
             // 使用智能 User-Agent 切换策略获取订阅
             val fetchResult = fetchAndParseSubscription(profile.url!!) { /* 静默更新，不显示进度 */ }
                 ?: return@withContext SubscriptionUpdateResult.Failed(profile.name, "无法解析配置")
-            
+
             val config = fetchResult.config
             val userInfo = fetchResult.userInfo
 
             val deduplicatedConfig = deduplicateTags(config)
             val newNodes = extractNodesFromConfig(deduplicatedConfig, profile.id)
             val newNodeNames = newNodes.map { it.name }.toSet()
-            
+
             // 计算变化
             val addedNodes = newNodeNames - oldNodeNames
             val removedNodes = oldNodeNames - newNodeNames
-            
+
             // 更新存储
             val configFile = File(configDir, "${profile.id}.json")
             configFile.writeText(gson.toJson(deduplicatedConfig))
-            
+
             cacheConfig(profile.id, deduplicatedConfig)
             profileNodes[profile.id] = newNodes
             updateAllNodesAndGroups()
-            
+
             // 如果是当前活跃配置，更新节点列表
             if (_activeProfileId.value == profile.id) {
                 _nodes.value = newNodes
@@ -2241,7 +2235,7 @@ class ConfigRepository(private val context: Context) {
             }
 
             saveProfiles()
-            
+
             // 返回结果
             if (addedNodes.isNotEmpty() || removedNodes.isNotEmpty()) {
                 SubscriptionUpdateResult.SuccessWithChanges(
@@ -2260,7 +2254,7 @@ class ConfigRepository(private val context: Context) {
             SubscriptionUpdateResult.Failed(profile.name, e.message ?: "未知错误")
         }
     }
-    
+
     data class ConfigGenerationResult(
         val path: String,
         val activeNodeTag: String?,
@@ -2273,19 +2267,19 @@ class ConfigRepository(private val context: Context) {
      */
     suspend fun generateConfigFile(): ConfigGenerationResult? = withContext(Dispatchers.IO) {
         try {
-            val activeId = _activeProfileId.value 
-                ?: activeStateDao.getSync()?.activeProfileId 
+            val activeId = _activeProfileId.value
+                ?: activeStateDao.getSync()?.activeProfileId
                 ?: return@withContext null
             val config = loadConfig(activeId) ?: return@withContext null
-            
+
             // 优先使用内存中的值，若为空则从数据库同步读取（解决异步加载竞态问题）
-            val activeNodeId = _activeNodeId.value 
+            val activeNodeId = _activeNodeId.value
                 ?: activeStateDao.getSync()?.activeNodeId
-            
+
             val allNodesSnapshot = _allNodes.value.takeIf { it.isNotEmpty() } ?: loadAllNodesSnapshot()
             val activeNode = _nodes.value.find { it.id == activeNodeId }
                 ?: allNodesSnapshot.find { it.id == activeNodeId }
-            
+
             // 获取当前设置
             val settings = settingsRepository.settings.first()
 
@@ -2293,14 +2287,15 @@ class ConfigRepository(private val context: Context) {
             val log = buildRunLogConfig()
             val experimental = buildRunExperimentalConfig(settings)
             val inbounds = buildRunInbounds(settings)
-            
+
             // 先构建有效的规则集列表，供 DNS 和 Route 模块共用
             val customRuleSets = buildCustomRuleSets(settings)
-            
+
             val dns = buildRunDns(settings, customRuleSets)
 
             val outboundsContext = buildRunOutbounds(config, activeNode, settings, allNodesSnapshot)
-            val route = buildRunRoute(settings, outboundsContext.selectorTag, outboundsContext.outbounds, outboundsContext.nodeTagResolver, customRuleSets)
+            val route =
+                buildRunRoute(settings, outboundsContext.selectorTag, outboundsContext.outbounds, outboundsContext.nodeTagResolver, customRuleSets)
 
             lastTagToNodeName = outboundsContext.nodeTagMap.mapNotNull { (nodeId, tag) ->
                 val name = allNodesSnapshot.firstOrNull { it.id == nodeId }?.name
@@ -2322,19 +2317,19 @@ class ConfigRepository(private val context: Context) {
                 Log.e(TAG, "Config pre-validation failed: $msg", e)
                 throw Exception("Config validation failed: $msg", e)
             }
-            
+
             // 写入临时配置文件
             val configFile = File(context.filesDir, "running_config.json")
             configFile.writeText(gson.toJson(runConfig))
-            
+
             // 收集所有 Outbound 的 tag
             val allTags = runConfig.outbounds?.map { it.tag }?.toSet() ?: emptySet()
-            
+
             // 解析当前选中的节点在运行配置中的实际 Tag
             // 关键修复：确保 resolvedTag 指向一个实际存在的 outbound
             val candidateTag = activeNodeId?.let { outboundsContext.nodeTagMap[it] }
                 ?: activeNode?.name
-            
+
             val resolvedTag = if (candidateTag != null && allTags.contains(candidateTag)) {
                 candidateTag
             } else {
@@ -2380,7 +2375,7 @@ class ConfigRepository(private val context: Context) {
                         Log.w(TAG, "Rule set file too small, ignoring: ${ruleSet.tag} (${file.length()} bytes)")
                         return@map null
                     }
-                    
+
                     // 检查文件头是否为 HTML (下载错误常见情况)
                     try {
                         val header = file.inputStream().use { input ->
@@ -2536,9 +2531,9 @@ class ConfigRepository(private val context: Context) {
 
         // 记录所有可用的 outbound tags，用于调试
         val availableTags = outbounds.map { it.tag }
-        
+
         val validTags = validRuleSets.mapNotNull { it.tag }.toSet()
-        
+
         // 对规则集进行排序：更具体的规则应该排在前面
         // 优先级：单节点/分组 > 代理 > 直连 > 拦截
         // 同时，特定服务的规则（如 google, youtube）应该优先于泛化规则（如 geolocation-!cn）
@@ -2567,10 +2562,9 @@ class ConfigRepository(private val context: Context) {
                 }
             )
         )
-        
-        
+
         sortedRuleSets.forEach { ruleSet ->
-            
+
             val outboundTag = when (ruleSet.outboundMode ?: RuleSetOutboundMode.DIRECT) {
                 RuleSetOutboundMode.DIRECT -> "direct"
                 RuleSetOutboundMode.BLOCK -> "block"
@@ -2578,21 +2572,21 @@ class ConfigRepository(private val context: Context) {
                 RuleSetOutboundMode.NODE -> {
                     val resolvedTag = nodeTagResolver(ruleSet.outboundValue)
                     if (resolvedTag != null) {
-                         resolvedTag
+                        resolvedTag
                     } else {
-                         Log.w(TAG, "Node ID '${ruleSet.outboundValue}' not resolved to any tag, falling back to $defaultProxyTag")
-                         defaultProxyTag
+                        Log.w(TAG, "Node ID '${ruleSet.outboundValue}' not resolved to any tag, falling back to $defaultProxyTag")
+                        defaultProxyTag
                     }
                 }
                 RuleSetOutboundMode.PROFILE -> {
-                     val profileId = ruleSet.outboundValue
-                     val profileName = _profiles.value.find { it.id == profileId }?.name ?: "Profile_$profileId"
-                     val tag = "P:$profileName"
-                     if (outbounds.any { it.tag == tag }) {
-                         tag
-                     } else {
-                         defaultProxyTag
-                     }
+                    val profileId = ruleSet.outboundValue
+                    val profileName = _profiles.value.find { it.id == profileId }?.name ?: "Profile_$profileId"
+                    val tag = "P:$profileName"
+                    if (outbounds.any { it.tag == tag }) {
+                        tag
+                    } else {
+                        defaultProxyTag
+                    }
                 }
             }
 
@@ -2602,7 +2596,7 @@ class ConfigRepository(private val context: Context) {
             } else {
                 // 将简化的 "tun", "mixed" 映射为实际的 inbound tag
                 ruleSet.inbounds.map {
-                    when(it) {
+                    when (it) {
                         "tun" -> "tun-in"
                         "mixed" -> "mixed-in" // 假设有这个 inbound
                         else -> it
@@ -2615,7 +2609,6 @@ class ConfigRepository(private val context: Context) {
                 outbound = outboundTag,
                 inbound = inboundTags
             ))
-            
         }
 
         return rules
@@ -2640,7 +2633,7 @@ class ConfigRepository(private val context: Context) {
                 0
             }
         }
-        
+
         fun resolveOutboundTag(mode: RuleSetOutboundMode?, value: String?): String {
             return when (mode ?: RuleSetOutboundMode.DIRECT) {
                 RuleSetOutboundMode.DIRECT -> "direct"
@@ -2679,13 +2672,12 @@ class ConfigRepository(private val context: Context) {
                     outbound = outboundTag
                 )
             )
-            
         }
-        
+
         // 2. 处理应用分组
         settings.appGroups.filter { it.enabled }.forEach { group ->
             val outboundTag = resolveOutboundTag(group.outboundMode, group.outboundValue)
-            
+
             // 将分组中的所有应用包名添加到一条规则中
             val packageNames = group.apps.map { it.packageName }
             if (packageNames.isNotEmpty()) {
@@ -2705,7 +2697,6 @@ class ConfigRepository(private val context: Context) {
                         outbound = outboundTag
                     )
                 )
-                
             }
         }
 
@@ -2742,7 +2733,6 @@ class ConfigRepository(private val context: Context) {
         )
     }
 
-
     private fun buildRunInbounds(settings: AppSettings): List<Inbound> =
         InboundBuilder.build(settings, getEffectiveTunStack(settings.tunStack))
 
@@ -2750,7 +2740,7 @@ class ConfigRepository(private val context: Context) {
         // 添加 DNS 配置
         val dnsServers = mutableListOf<DnsServer>()
         val dnsRules = mutableListOf<DnsRule>()
-        
+
         // 关键：代理节点服务器域名必须使用直连 DNS 解析，避免循环依赖
         // outbound: ["any"] 匹配所有 outbound 服务器的域名
         dnsRules.add(
@@ -2781,7 +2771,7 @@ class ConfigRepository(private val context: Context) {
             )
         )
         // 也可以使用一个多地址的 Server (如果内核支持)
-        
+
         // 1. 本地 DNS
         val localDnsAddr = settings.localDns.takeIf { it.isNotBlank() } ?: "https://dns.alidns.com/dns-query"
         dnsServers.add(
@@ -2892,8 +2882,8 @@ class ConfigRepository(private val context: Context) {
         // 规则集的 DNS 处理（在自定义规则之后）
         val proxyRuleSets = mutableListOf<String>()
         val possibleProxyTags = listOf(
-            "geosite-geolocation-!cn", "geosite-google", "geosite-openai", 
-            "geosite-youtube", "geosite-telegram", "geosite-github", 
+            "geosite-geolocation-!cn", "geosite-google", "geosite-openai",
+            "geosite-youtube", "geosite-telegram", "geosite-github",
             "geosite-twitter", "geosite-netflix", "geosite-apple",
             "geosite-facebook", "geosite-instagram", "geosite-tiktok",
             "geosite-disney", "geosite-microsoft", "geosite-amazon"
@@ -2922,7 +2912,7 @@ class ConfigRepository(private val context: Context) {
 
         val directRuleSets = mutableListOf<String>()
         if (validRuleSets.any { it.tag == "geosite-cn" }) directRuleSets.add("geosite-cn")
-        
+
         if (directRuleSets.isNotEmpty()) {
             dnsRules.add(
                 DnsRule(
@@ -2931,11 +2921,11 @@ class ConfigRepository(private val context: Context) {
                 )
             )
         }
-        
+
         // 5. 应用特定 DNS 规则（确保应用分流的应用 DNS 走正确的服务器）
         val appPackagesForDns = (settings.appRules.filter { it.enabled }.map { it.packageName } +
-                settings.appGroups.filter { it.enabled }.flatMap { it.apps.map { it.packageName } }).distinct()
-        
+            settings.appGroups.filter { it.enabled }.flatMap { it.apps.map { it.packageName } }).distinct()
+
         if (appPackagesForDns.isNotEmpty()) {
             val serverTag = if (settings.fakeDnsEnabled) "fakeip-dns" else "remote"
             val uids = appPackagesForDns.map {
@@ -2964,7 +2954,7 @@ class ConfigRepository(private val context: Context) {
                 )
             )
         }
-        
+
         // Fake DNS 兜底
         if (settings.fakeDnsEnabled) {
             dnsRules.add(
@@ -2981,7 +2971,7 @@ class ConfigRepository(private val context: Context) {
             val fakeIpRanges = settings.fakeIpRange.split(",").map { it.trim() }.filter { it.isNotEmpty() }
             val inet4Range = fakeIpRanges.firstOrNull { it.contains(".") } ?: "198.18.0.0/15"
             val inet6Range = fakeIpRanges.firstOrNull { it.contains(":") } ?: "fc00::/18"
-            
+
             DnsFakeIpConfig(
                 enabled = true,
                 inet4Range = inet4Range,
@@ -3101,7 +3091,7 @@ class ConfigRepository(private val context: Context) {
         // 建立 NodeID -> OutboundTag 的映射
         val nodeTagMap = mutableMapOf<String, String>()
         val existingTags = fixedOutbounds.map { it.tag }.toMutableSet()
-        
+
         // 2025-fix: 调试日志，帮助定位节点映射问题
         Log.d(TAG, "buildRunOutbounds: activeProfileId=$activeProfileId, existingTags count=${existingTags.size}")
         Log.d(TAG, "  existingTags (first 10): ${existingTags.take(10)}")
@@ -3149,7 +3139,7 @@ class ConfigRepository(private val context: Context) {
                 Log.e(TAG, "Failed to load source config for cross-profile node: profileId=$sourceProfileId, nodeName=${node.name}")
                 return@forEach
             }
-            
+
             // 尝试多种方式匹配 outbound
             val sourceOutbound = sourceConfig.outbounds?.find { it.tag == node.name }
                 ?: sourceConfig.outbounds?.find { it.tag.equals(node.name, ignoreCase = true) }
@@ -3160,7 +3150,7 @@ class ConfigRepository(private val context: Context) {
                         ignoreCase = true
                     )
                 }
-            
+
             if (sourceOutbound == null) {
                 Log.e(TAG, "Cross-profile outbound not found: nodeName=${node.name}, profileId=$sourceProfileId, available tags: ${sourceConfig.outbounds?.map { it.tag }?.take(10)}")
                 return@forEach
@@ -3186,7 +3176,6 @@ class ConfigRepository(private val context: Context) {
             fixedOutbounds.add(fixedSourceOutbound)
             existingTags.add(finalTag)
             nodeTagMap[nodeId] = finalTag
-
         }
 
         // 3. 处理需要的配置 (Create Profile selectors)
@@ -3233,7 +3222,7 @@ class ConfigRepository(private val context: Context) {
             ?.let { nodeTagMap[it.id] ?: it.name }
             ?.takeIf { it in proxyTags }
             ?: proxyTags.firstOrNull()
-        
+
         // 2025-fix: 调试日志，帮助定位 selector default 设置问题
         if (activeNode != null) {
             val mappedTag = nodeTagMap[activeNode.id]
@@ -3267,7 +3256,6 @@ class ConfigRepository(private val context: Context) {
         // 将 Selector 添加到 outbounds 列表的最前面（或者合适的位置）
         fixedOutbounds.add(0, selectorOutbound)
 
-
         // 定义节点标签解析器
         val nodeTagResolver: (String?) -> String? = { value ->
             if (value.isNullOrBlank()) {
@@ -3289,7 +3277,7 @@ class ConfigRepository(private val context: Context) {
                 if (safeRefs.size != (outbound.outbounds?.size ?: 0)) {
                     Log.w(TAG, "Filtered invalid refs in ${outbound.tag}: ${outbound.outbounds} -> $safeRefs")
                 }
-                
+
                 // Ensure default is valid
                 val currentDefault = outbound.default
                 val safeDefault = if (currentDefault != null && safeRefs.contains(currentDefault)) {
@@ -3297,7 +3285,7 @@ class ConfigRepository(private val context: Context) {
                 } else {
                     safeRefs.firstOrNull()
                 }
-                
+
                 outbound.copy(outbounds = safeRefs, default = safeDefault)
             } else {
                 outbound
@@ -3323,7 +3311,8 @@ class ConfigRepository(private val context: Context) {
         val appRoutingRules = buildAppRoutingRules(settings, selectorTag, outbounds, nodeTagResolver)
 
         // 构建自定义规则集路由规则（只针对有效的规则集）
-        val customRuleSetRules = buildCustomRuleSetRules(settings, selectorTag, outbounds, nodeTagResolver, validRuleSets)
+        val customRuleSetRules =
+            buildCustomRuleSetRules(settings, selectorTag, outbounds, nodeTagResolver, validRuleSets)
 
         val quicRule = if (settings.blockQuic) {
             listOf(RouteRule(protocolRaw = listOf("quic"), outbound = "block"))
@@ -3368,7 +3357,7 @@ class ConfigRepository(private val context: Context) {
         // sing-box 1.10+ 需要显式添加 sniff action 规则来启用协议嗅探
         // 这是域名分流生效的关键：通过嗅探 TLS/HTTP 协议获取原始域名
         val sniffRule = listOf(RouteRule(action = "sniff"))
-        
+
         // DNS 劫持规则：将 DNS 流量重定向到 sing-box DNS 模块处理
         val hijackDnsRule = listOf(RouteRule(protocolRaw = listOf("dns"), action = "hijack-dns"))
 
@@ -3400,7 +3389,7 @@ class ConfigRepository(private val context: Context) {
             autoDetectInterface = true
         )
     }
-    
+
     /**
      * 获取当前活跃配置的原始 JSON
      */
@@ -3408,14 +3397,14 @@ class ConfigRepository(private val context: Context) {
         val id = _activeProfileId.value ?: return null
         return loadConfig(id)
     }
-    
+
     /**
      * 获取指定配置的原始 JSON
      */
     fun getConfig(profileId: String): SingBoxConfig? {
         return loadConfig(profileId)
     }
-    
+
     private fun mapDnsStrategy(strategy: DnsStrategy): String? {
         return when (strategy) {
             DnsStrategy.AUTO -> null
@@ -3434,7 +3423,7 @@ class ConfigRepository(private val context: Context) {
         val config = loadConfig(node.sourceProfileId) ?: return null
         return config.outbounds?.find { it.tag == node.name }
     }
-    
+
     /**
      * 根据节点ID获取NodeUi
      * 优先从当前配置的节点中查找，如果找不到则从所有已加载的配置中查找
@@ -3454,7 +3443,7 @@ class ConfigRepository(private val context: Context) {
 
         return null
     }
-    
+
     /**
      * 删除节点
      */
@@ -3642,11 +3631,11 @@ class ConfigRepository(private val context: Context) {
         try {
             val outbound = parseNodeLink(link.trim())
                 ?: return@withContext Result.failure(Exception("Failed to parse node link"))
-            
+
             val profileId: String
             val existingConfig: SingBoxConfig?
             var isNewProfile = false
-            
+
             when {
                 targetProfileId != null -> {
                     val profile = _profiles.value.find { it.id == targetProfileId }
@@ -3674,12 +3663,12 @@ class ConfigRepository(private val context: Context) {
                     }
                 }
             }
-            
+
             val newOutbounds = mutableListOf<Outbound>()
             existingConfig?.outbounds?.let { existing ->
                 newOutbounds.addAll(existing.filter { it.type !in listOf("direct", "block", "dns") })
             }
-            
+
             var finalTag = outbound.tag
             var counter = 1
             while (newOutbounds.any { it.tag == finalTag }) {
@@ -3688,7 +3677,7 @@ class ConfigRepository(private val context: Context) {
             }
             val finalOutbound = if (finalTag != outbound.tag) outbound.copy(tag = finalTag) else outbound
             newOutbounds.add(finalOutbound)
-            
+
             if (newOutbounds.none { it.tag == "direct" }) {
                 newOutbounds.add(Outbound(type = "direct", tag = "direct"))
             }
@@ -3698,16 +3687,16 @@ class ConfigRepository(private val context: Context) {
             if (newOutbounds.none { it.tag == "dns-out" }) {
                 newOutbounds.add(Outbound(type = "dns", tag = "dns-out"))
             }
-            
+
             val newConfig = deduplicateTags(SingBoxConfig(outbounds = newOutbounds))
-            
+
             val configFile = File(configDir, "$profileId.json")
             configFile.writeText(gson.toJson(newConfig))
-            
+
             cacheConfig(profileId, newConfig)
             val nodes = extractNodesFromConfig(newConfig, profileId)
             profileNodes[profileId] = nodes
-            
+
             if (isNewProfile || existingConfig == null) {
                 val profileName = newProfileName ?: "Manual"
                 val newProfile = ProfileUi(
@@ -3725,19 +3714,19 @@ class ConfigRepository(private val context: Context) {
                     list.map { if (it.id == profileId) it.copy(lastUpdated = System.currentTimeMillis()) else it }
                 }
             }
-            
+
             updateAllNodesAndGroups()
-            
+
             setActiveProfile(profileId)
             val addedNode = nodes.find { it.name == finalTag }
             if (addedNode != null) {
                 _activeNodeId.value = addedNode.id
             }
-            
+
             saveProfiles()
-            
+
             Log.i(TAG, "Added single node: $finalTag to profile $profileId")
-            
+
             Result.success(addedNode ?: nodes.last())
         } catch (e: Exception) {
             Log.e(TAG, "Failed to add single node", e)
@@ -3887,267 +3876,7 @@ class ConfigRepository(private val context: Context) {
             return null
         }
 
-
-        val link = when (outbound.type) {
-            "vless" -> generateVLessLink(outbound)
-            "vmess" -> generateVMessLink(outbound)
-            "shadowsocks" -> generateShadowsocksLink(outbound)
-            "trojan" -> generateTrojanLink(outbound)
-            "hysteria2" -> {
-                val hy2 = generateHysteria2Link(outbound)
-                hy2
-            }
-            "hysteria" -> generateHysteriaLink(outbound)
-            "anytls" -> generateAnyTLSLink(outbound)
-            "tuic" -> generateTuicLink(outbound)
-            else -> {
-                Log.e(TAG, "exportNode: Unsupported type ${outbound.type}")
-                null
-            }
-        }
-
-        return link?.takeIf { it.isNotBlank() }
-    }
-
-    private fun encodeUrlComponent(value: String): String {
-        return java.net.URLEncoder.encode(value, "UTF-8").replace("+", "%20")
-    }
-
-    private fun formatServerHost(server: String): String {
-        val s = server.trim()
-        return if (s.contains(":") && !s.startsWith("[") && !s.endsWith("]")) {
-            "[$s]"
-        } else {
-            s
-        }
-    }
-
-    private fun buildOptionalQuery(params: List<String>): String {
-        val query = params.filter { it.isNotBlank() }.joinToString("&")
-        return if (query.isNotEmpty()) "?$query" else ""
-    }
-
-    private fun generateVLessLink(outbound: Outbound): String {
-        val uuid = outbound.uuid ?: return ""
-        val server = outbound.server?.let { formatServerHost(it) } ?: return ""
-        val port = outbound.serverPort ?: 443
-        val params = mutableListOf<String>()
-        
-        params.add("type=${outbound.transport?.type ?: "tcp"}")
-        params.add("encryption=none")
-        
-        outbound.flow?.let { params.add("flow=$it") }
-        
-        if (outbound.tls?.enabled == true) {
-            if (outbound.tls.reality?.enabled == true) {
-                 params.add("security=reality")
-                 outbound.tls.reality.publicKey?.let { params.add("pbk=${encodeUrlComponent(it)}") }
-                 outbound.tls.reality.shortId?.let { params.add("sid=${encodeUrlComponent(it)}") }
-                 outbound.tls.serverName?.let { params.add("sni=${encodeUrlComponent(it)}") }
-            } else {
-                 params.add("security=tls")
-                 outbound.tls.serverName?.let { params.add("sni=${encodeUrlComponent(it)}") }
-            }
-            outbound.tls.utls?.fingerprint?.let { params.add("fp=${encodeUrlComponent(it)}") }
-            if (outbound.tls.insecure == true) {
-                params.add("allowInsecure=1")
-            }
-            outbound.tls.alpn?.let { 
-                if (it.isNotEmpty()) params.add("alpn=${encodeUrlComponent(it.joinToString(","))}") 
-            }
-        } else {
-             // params.add("security=none") // default is none
-        }
-        
-        outbound.packetEncoding?.let { params.add("packetEncoding=$it") }
-        
-        // Transport specific
-        when (outbound.transport?.type) {
-            "ws" -> {
-                val host = outbound.transport.headers?.get("Host") 
-                    ?: outbound.transport.host?.firstOrNull()
-                host?.let { params.add("host=${encodeUrlComponent(it)}") }
-                
-                var path = outbound.transport.path ?: "/"
-                // Handle early data (ed)
-                outbound.transport.maxEarlyData?.let { ed ->
-                    if (ed != 0) { // Only add if not 0, though usually it's 2048 or something
-                        val separator = if (path.contains("?")) "&" else "?"
-                        path = "$path${separator}ed=$ed"
-                    }
-                }
-                
-                params.add("path=${encodeUrlComponent(path)}") 
-            }
-            "grpc" -> {
-                outbound.transport.serviceName?.let { 
-                    params.add("serviceName=${encodeUrlComponent(it)}") 
-                }
-                params.add("mode=gun")
-            }
-            "http", "h2" -> {
-                 outbound.transport.path?.let { params.add("path=${encodeUrlComponent(it)}") }
-                 outbound.transport.host?.firstOrNull()?.let { params.add("host=${encodeUrlComponent(it)}") }
-            }
-        }
-
-        val name = encodeUrlComponent(outbound.tag)
-        val queryPart = buildOptionalQuery(params)
-        return "vless://$uuid@$server:$port${queryPart}#$name"
-    }
-
-    private fun generateVMessLink(outbound: Outbound): String {
-        // Simple implementation for VMess
-        try {
-            val json = VMessLinkConfig(
-                v = "2",
-                ps = outbound.tag,
-                add = outbound.server,
-                port = outbound.serverPort?.toString(),
-                id = outbound.uuid,
-                aid = "0", // sing-box 只支持 alterId=0
-                scy = outbound.security,
-                net = outbound.transport?.type ?: "tcp",
-                type = "none",
-                host = outbound.transport?.headers?.get("Host") ?: outbound.transport?.host?.firstOrNull() ?: "",
-                path = outbound.transport?.path ?: "",
-                tls = if (outbound.tls?.enabled == true) "tls" else "",
-                sni = outbound.tls?.serverName ?: "",
-                alpn = outbound.tls?.alpn?.joinToString(","),
-                fp = outbound.tls?.utls?.fingerprint
-            )
-            val jsonStr = gson.toJson(json)
-            val base64 = Base64.encodeToString(jsonStr.toByteArray(), Base64.NO_WRAP)
-            return "vmess://$base64"
-        } catch (e: Exception) {
-            return ""
-        }
-    }
-
-    private fun generateShadowsocksLink(outbound: Outbound): String {
-        val method = outbound.method ?: return ""
-        val password = outbound.password ?: return ""
-        val server = outbound.server?.let { formatServerHost(it) } ?: return ""
-        val port = outbound.serverPort ?: return ""
-        val userInfo = "$method:$password"
-        val encodedUserInfo = Base64.encodeToString(userInfo.toByteArray(), Base64.NO_WRAP)
-        val serverPart = "$server:$port"
-        val name = encodeUrlComponent(outbound.tag)
-        return "ss://$encodedUserInfo@$serverPart#$name"
-    }
-    
-    private fun generateTrojanLink(outbound: Outbound): String {
-         val password = encodeUrlComponent(outbound.password ?: "")
-         val server = outbound.server?.let { formatServerHost(it) } ?: return ""
-         val port = outbound.serverPort ?: 443
-         val name = encodeUrlComponent(outbound.tag)
-         
-         val params = mutableListOf<String>()
-         if (outbound.tls?.enabled == true) {
-             params.add("security=tls")
-             outbound.tls.serverName?.let { params.add("sni=${encodeUrlComponent(it)}") }
-             if (outbound.tls.insecure == true) params.add("allowInsecure=1")
-         }
-
-         val queryPart = buildOptionalQuery(params)
-         return "trojan://$password@$server:$port${queryPart}#$name"
-    }
-
-    private fun generateHysteria2Link(outbound: Outbound): String {
-         val password = encodeUrlComponent(outbound.password ?: "")
-         val server = outbound.server?.let { formatServerHost(it) } ?: return ""
-         val port = outbound.serverPort ?: 443
-         val name = encodeUrlComponent(outbound.tag)
-         
-         val params = mutableListOf<String>()
-         
-         outbound.tls?.serverName?.let { params.add("sni=${encodeUrlComponent(it)}") }
-         if (outbound.tls?.insecure == true) params.add("insecure=1")
-         
-         outbound.obfs?.let { obfs ->
-             obfs.type?.let { params.add("obfs=${encodeUrlComponent(it)}") }
-             obfs.password?.let { params.add("obfs-password=${encodeUrlComponent(it)}") }
-         }
-
-         val queryPart = buildOptionalQuery(params)
-         return "hysteria2://$password@$server:$port${queryPart}#$name"
-    }
-
-    private fun generateHysteriaLink(outbound: Outbound): String {
-         val server = outbound.server?.let { formatServerHost(it) } ?: return ""
-         val port = outbound.serverPort ?: 443
-         val name = encodeUrlComponent(outbound.tag)
-         
-         val params = mutableListOf<String>()
-         outbound.authStr?.let { params.add("auth=${encodeUrlComponent(it)}") }
-         outbound.upMbps?.let { params.add("upmbps=$it") }
-         outbound.downMbps?.let { params.add("downmbps=$it") }
-         
-         outbound.tls?.serverName?.let { params.add("sni=${encodeUrlComponent(it)}") }
-         if (outbound.tls?.insecure == true) params.add("insecure=1")
-         outbound.tls?.alpn?.let { 
-             if (it.isNotEmpty()) params.add("alpn=${encodeUrlComponent(it.joinToString(","))}") 
-         }
-         
-         outbound.obfs?.let { obfs ->
-             obfs.type?.let { params.add("obfs=${encodeUrlComponent(it)}") }
-         }
-
-         val queryPart = buildOptionalQuery(params)
-         return "hysteria://$server:$port${queryPart}#$name"
-    }
-    
-    /**
-     * 生成 AnyTLS 链接
-     */
-    private fun generateAnyTLSLink(outbound: Outbound): String {
-        val password = encodeUrlComponent(outbound.password ?: "")
-        val server = outbound.server?.let { formatServerHost(it) } ?: return ""
-        val port = outbound.serverPort ?: 443
-        val name = encodeUrlComponent(outbound.tag)
-        
-        val params = mutableListOf<String>()
-        
-        outbound.tls?.serverName?.let { params.add("sni=${encodeUrlComponent(it)}") }
-        if (outbound.tls?.insecure == true) params.add("insecure=1")
-        outbound.tls?.alpn?.let {
-            if (it.isNotEmpty()) params.add("alpn=${encodeUrlComponent(it.joinToString(","))}")
-        }
-        outbound.tls?.utls?.fingerprint?.let { params.add("fp=${encodeUrlComponent(it)}") }
-        
-        outbound.idleSessionCheckInterval?.let { params.add("idle_session_check_interval=$it") }
-        outbound.idleSessionTimeout?.let { params.add("idle_session_timeout=$it") }
-        outbound.minIdleSession?.let { params.add("min_idle_session=$it") }
-        
-        val queryPart = buildOptionalQuery(params)
-        return "anytls://$password@$server:$port${queryPart}#$name"
-    }
-    
-    /**
-     * 生成 TUIC 链接
-     */
-    private fun generateTuicLink(outbound: Outbound): String {
-        val uuid = outbound.uuid ?: ""
-        val password = encodeUrlComponent(outbound.password ?: "")
-        val server = outbound.server?.let { formatServerHost(it) } ?: return ""
-        val port = outbound.serverPort ?: 443
-        val name = encodeUrlComponent(outbound.tag)
-        
-        val params = mutableListOf<String>()
-        
-        outbound.congestionControl?.let { params.add("congestion_control=${encodeUrlComponent(it)}") }
-        outbound.udpRelayMode?.let { params.add("udp_relay_mode=${encodeUrlComponent(it)}") }
-        if (outbound.zeroRttHandshake == true) params.add("reduce_rtt=1")
-        
-        outbound.tls?.serverName?.let { params.add("sni=${encodeUrlComponent(it)}") }
-        if (outbound.tls?.insecure == true) params.add("allow_insecure=1")
-        outbound.tls?.alpn?.let {
-            if (it.isNotEmpty()) params.add("alpn=${encodeUrlComponent(it.joinToString(","))}")
-        }
-        outbound.tls?.utls?.fingerprint?.let { params.add("fp=${encodeUrlComponent(it)}") }
-        
-        val queryPart = buildOptionalQuery(params)
-        return "tuic://$uuid:$password@$server:$port${queryPart}#$name"
+        return NodeLinkExporter.export(outbound, gson)
     }
 
     /**
@@ -4156,35 +3885,35 @@ class ConfigRepository(private val context: Context) {
     private fun deduplicateTags(config: SingBoxConfig): SingBoxConfig {
         val outbounds = config.outbounds ?: return config
         val seenTags = mutableSetOf<String>()
-        
+
         val newOutbounds = outbounds.map { outbound ->
             var tag = outbound.tag
             // 处理空 tag
             if (tag.isBlank()) {
                 tag = "unnamed"
             }
-            
+
             var newTag = tag
             var counter = 1
-            
+
             // 如果 tag 已经存在，则添加后缀直到不冲突
             while (seenTags.contains(newTag)) {
                 newTag = "${tag}_$counter"
                 counter++
             }
-            
+
             seenTags.add(newTag)
-            
+
             if (newTag != outbound.tag) {
                 outbound.copy(tag = newTag)
             } else {
                 outbound
             }
         }
-        
+
         return config.copy(outbounds = newOutbounds)
     }
-    
+
     /**
      * 查找可用端口，从指定端口开始尝试
      * 如果指定端口被占用，尝试下一个端口，最多尝试100次
@@ -4192,8 +3921,8 @@ class ConfigRepository(private val context: Context) {
     private fun findAvailablePort(startPort: Int): Int {
         for (port in startPort until startPort + 100) {
             try {
-                java.net.ServerSocket(port).use { 
-                    return port 
+                java.net.ServerSocket(port).use {
+                    return port
                 }
             } catch (_: Exception) {
                 // 端口被占用，尝试下一个
@@ -4205,7 +3934,7 @@ class ConfigRepository(private val context: Context) {
 
     /**
      * 清理资源，取消协程 scope
-     * 
+     *
      * 注意：由于 ConfigRepository 是单例且生命周期与 Application 相同，
      * 通常不需要手动调用此方法。此方法主要用于：
      * 1. 测试场景中清理资源

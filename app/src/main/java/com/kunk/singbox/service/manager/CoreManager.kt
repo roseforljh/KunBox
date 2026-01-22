@@ -12,7 +12,6 @@ import com.kunk.singbox.core.SingBoxCore
 import com.kunk.singbox.core.BoxWrapperManager
 import com.kunk.singbox.core.SelectorManager
 import com.kunk.singbox.model.AppSettings
-import com.kunk.singbox.repository.LogRepository
 import com.kunk.singbox.repository.SettingsRepository
 import com.kunk.singbox.service.tun.VpnTunManager
 import com.kunk.singbox.utils.perf.PerfTracer
@@ -220,7 +219,6 @@ class CoreManager(
             Log.i(TAG, "Libbox started in ${durationMs}ms")
 
             StartResult.Success(durationMs, configContent)
-
         } catch (e: CancellationException) {
             PerfTracer.end(PerfTracer.Phases.LIBBOX_START)
             Log.i(TAG, "Libbox start cancelled")

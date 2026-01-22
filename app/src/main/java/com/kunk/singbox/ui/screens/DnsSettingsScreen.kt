@@ -45,7 +45,7 @@ fun DnsSettingsScreen(
 ) {
     val scrollState = rememberScrollState()
     val settings by settingsViewModel.settings.collectAsState()
-    
+
     // State for Dialogs
     var showLocalDnsDialog by remember { mutableStateOf(false) }
     var showRemoteDnsDialog by remember { mutableStateOf(false) }
@@ -60,38 +60,38 @@ fun DnsSettingsScreen(
         InputDialog(
             title = stringResource(R.string.settings_local_dns),
             initialValue = settings.localDns,
-            onConfirm = { 
+            onConfirm = {
                 settingsViewModel.setLocalDns(it)
-                showLocalDnsDialog = false 
+                showLocalDnsDialog = false
             },
             onDismiss = { showLocalDnsDialog = false }
         )
     }
-    
+
     if (showRemoteDnsDialog) {
         InputDialog(
             title = stringResource(R.string.settings_remote_dns),
             initialValue = settings.remoteDns,
-            onConfirm = { 
+            onConfirm = {
                 settingsViewModel.setRemoteDns(it)
-                showRemoteDnsDialog = false 
+                showRemoteDnsDialog = false
             },
             onDismiss = { showRemoteDnsDialog = false }
         )
     }
-    
+
     if (showFakeIpDialog) {
         InputDialog(
             title = stringResource(R.string.dns_settings_fake_ip_range),
             initialValue = settings.fakeIpRange,
-            onConfirm = { 
+            onConfirm = {
                 settingsViewModel.setFakeIpRange(it)
-                showFakeIpDialog = false 
+                showFakeIpDialog = false
             },
             onDismiss = { showFakeIpDialog = false }
         )
     }
-    
+
     if (showStrategyDialog) {
         val options = DnsStrategy.entries.map { stringResource(it.displayNameRes) }
         SingleSelectDialog(
@@ -147,7 +147,7 @@ fun DnsSettingsScreen(
             onDismiss = { showServerStrategyDialog = false }
         )
     }
-    
+
     if (showCacheDialog) {
         val options = listOf(stringResource(R.string.common_enabled), stringResource(R.string.common_disabled))
         val currentIndex = if (settings.dnsCacheEnabled) 0 else 1
@@ -177,39 +177,39 @@ fun DnsSettingsScreen(
             )
         }
     ) { padding ->
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(padding)
-            .padding(16.dp)
-            .verticalScroll(scrollState)
-    ) {
-        StandardCard {
-            SettingItem(title = stringResource(R.string.settings_local_dns), value = settings.localDns, onClick = { showLocalDnsDialog = true })
-            SettingItem(title = stringResource(R.string.settings_remote_dns), value = settings.remoteDns, onClick = { showRemoteDnsDialog = true })
-        }
-        
-        Spacer(modifier = Modifier.height(16.dp))
-        
-        StandardCard {
-            SettingSwitchItem(
-                title = "Fake DNS",
-                subtitle = stringResource(R.string.dns_settings_fake_dns_subtitle),
-                checked = settings.fakeDnsEnabled,
-                onCheckedChange = { settingsViewModel.setFakeDnsEnabled(it) }
-            )
-            SettingItem(title = stringResource(R.string.dns_settings_fake_ip_range), value = settings.fakeIpRange, onClick = { showFakeIpDialog = true })
-        }
-        
-        Spacer(modifier = Modifier.height(16.dp))
-        
-        StandardCard {
-            SettingItem(title = stringResource(R.string.dns_settings_strategy), value = stringResource(settings.dnsStrategy.displayNameRes), onClick = { showStrategyDialog = true })
-            SettingItem(title = stringResource(R.string.dns_settings_remote_strategy), value = stringResource(settings.remoteDnsStrategy.displayNameRes), onClick = { showRemoteStrategyDialog = true })
-            SettingItem(title = stringResource(R.string.dns_settings_direct_strategy), value = stringResource(settings.directDnsStrategy.displayNameRes), onClick = { showDirectStrategyDialog = true })
-            SettingItem(title = stringResource(R.string.dns_settings_server_strategy), value = stringResource(settings.serverAddressStrategy.displayNameRes), onClick = { showServerStrategyDialog = true })
-            SettingItem(title = stringResource(R.string.dns_settings_cache), value = if (settings.dnsCacheEnabled) stringResource(R.string.common_enabled) else stringResource(R.string.common_disabled), onClick = { showCacheDialog = true })
-        }
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .padding(16.dp)
+                .verticalScroll(scrollState)
+        ) {
+            StandardCard {
+                SettingItem(title = stringResource(R.string.settings_local_dns), value = settings.localDns, onClick = { showLocalDnsDialog = true })
+                SettingItem(title = stringResource(R.string.settings_remote_dns), value = settings.remoteDns, onClick = { showRemoteDnsDialog = true })
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            StandardCard {
+                SettingSwitchItem(
+                    title = "Fake DNS",
+                    subtitle = stringResource(R.string.dns_settings_fake_dns_subtitle),
+                    checked = settings.fakeDnsEnabled,
+                    onCheckedChange = { settingsViewModel.setFakeDnsEnabled(it) }
+                )
+                SettingItem(title = stringResource(R.string.dns_settings_fake_ip_range), value = settings.fakeIpRange, onClick = { showFakeIpDialog = true })
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            StandardCard {
+                SettingItem(title = stringResource(R.string.dns_settings_strategy), value = stringResource(settings.dnsStrategy.displayNameRes), onClick = { showStrategyDialog = true })
+                SettingItem(title = stringResource(R.string.dns_settings_remote_strategy), value = stringResource(settings.remoteDnsStrategy.displayNameRes), onClick = { showRemoteStrategyDialog = true })
+                SettingItem(title = stringResource(R.string.dns_settings_direct_strategy), value = stringResource(settings.directDnsStrategy.displayNameRes), onClick = { showDirectStrategyDialog = true })
+                SettingItem(title = stringResource(R.string.dns_settings_server_strategy), value = stringResource(settings.serverAddressStrategy.displayNameRes), onClick = { showServerStrategyDialog = true })
+                SettingItem(title = stringResource(R.string.dns_settings_cache), value = if (settings.dnsCacheEnabled) stringResource(R.string.common_enabled) else stringResource(R.string.common_disabled), onClick = { showCacheDialog = true })
+            }
         }
     }
 }

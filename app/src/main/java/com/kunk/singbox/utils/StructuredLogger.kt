@@ -27,13 +27,13 @@ object L {
      * 日志类别
      */
     enum class Category(val prefix: String, val emoji: String) {
-        CONNECTION("CONN", "\uD83D\uDD17"),  // 🔗
-        VPN("VPN", "\uD83D\uDEE1\uFE0F"),    // 🛡️
-        CONFIG("CFG", "\u2699\uFE0F"),        // ⚙️
-        NETWORK("NET", "\uD83C\uDF10"),       // 🌐
-        ERROR("ERR", "\u274C"),               // ❌
-        DEBUG("DBG", "\uD83D\uDC1B"),         // 🐛
-        INFO("INFO", "\u2139\uFE0F")          // ℹ️
+        CONNECTION("CONN", "\uD83D\uDD17"), // 🔗
+        VPN("VPN", "\uD83D\uDEE1\uFE0F"), // 🛡️
+        CONFIG("CFG", "\u2699\uFE0F"), // ⚙️
+        NETWORK("NET", "\uD83C\uDF10"), // 🌐
+        ERROR("ERR", "\u274C"), // ❌
+        DEBUG("DBG", "\uD83D\uDC1B"), // 🐛
+        INFO("INFO", "\u2139\uFE0F") // ℹ️
     }
 
     /**

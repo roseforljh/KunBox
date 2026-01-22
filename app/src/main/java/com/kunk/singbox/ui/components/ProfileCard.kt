@@ -22,7 +22,6 @@ import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Error
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.material.icons.rounded.AccessTime
 import androidx.compose.material.icons.rounded.DateRange
 import androidx.compose.material.icons.rounded.ImportExport
 import androidx.compose.material.icons.rounded.MoreVert
@@ -47,8 +46,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.ui.draw.alpha
-import com.kunk.singbox.ui.theme.Neutral700
-
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -99,7 +96,6 @@ fun ProfileCard(
         return sdf.format(Date(timestamp * 1000)) // Subscription usually returns unix timestamp in seconds
     }
 
-    
     fun formatLastUpdated(timestamp: Long): String {
         if (timestamp <= 0) return neverUpdatedMsg
         val sdf = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
@@ -140,9 +136,9 @@ fun ProfileCard(
             } else {
                 Spacer(modifier = Modifier.size(24.dp))
             }
-            
+
             Spacer(modifier = Modifier.width(16.dp))
-            
+
             Column {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
@@ -182,9 +178,9 @@ fun ProfileCard(
                         }
                     }
                 }
-                
+
                 Spacer(modifier = Modifier.height(4.dp))
-                
+
                 // 显示最后更新时间（替换原来的 Type 显示）
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
@@ -199,9 +195,9 @@ fun ProfileCard(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-                
+
                 Spacer(modifier = Modifier.height(4.dp))
-                
+
                 // 流量信息块（保持高度一致，即使为空也占位）
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
@@ -255,9 +251,6 @@ fun ProfileCard(
                         )
                     }
                 }
-
-
-
             }
         }
 

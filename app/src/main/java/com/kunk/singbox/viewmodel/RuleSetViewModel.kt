@@ -13,12 +13,9 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
-import okhttp3.OkHttpClient
 import okhttp3.Request
 import com.kunk.singbox.utils.NetworkClient
-import java.io.IOException
 import android.util.Log
-import com.google.gson.annotations.SerializedName
 import com.kunk.singbox.repository.RuleSetRepository
 import com.kunk.singbox.repository.SettingsRepository
 import com.kunk.singbox.model.GithubTreeResponse
@@ -28,14 +25,14 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 
 class RuleSetViewModel(application: Application) : AndroidViewModel(application) {
-    
+
     companion object {
         private const val TAG = "RuleSetViewModel"
     }
-    
+
     private val ruleSetRepository = RuleSetRepository.getInstance(application)
     private val settingsRepository = SettingsRepository.getInstance(application)
-    
+
     // 监听 settings 变化，用于判断规则集是否已添加
     val settings: StateFlow<AppSettings> = settingsRepository.settings
         .stateIn(
@@ -43,13 +40,13 @@ class RuleSetViewModel(application: Application) : AndroidViewModel(application)
             started = SharingStarted.WhileSubscribed(5000),
             initialValue = AppSettings()
         )
-    
+
     private val _ruleSets = MutableStateFlow<List<HubRuleSet>>(emptyList())
     val ruleSets: StateFlow<List<HubRuleSet>> = _ruleSets.asStateFlow()
-    
+
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
-    
+
     /**
      * 检查规则集是否已添加到用户的规则集列表中
      * 这里检查的是用户配置中是否存在该规则集，而不是物理文件是否存在
@@ -72,13 +69,13 @@ class RuleSetViewModel(application: Application) : AndroidViewModel(application)
             if (!SingBoxRemote.isRunning.value) {
                 fetchRuleSets()
             }
-            
+
             SingBoxRemote.isRunning.collectLatest { isRunning ->
                 if (isRunning) {
                     // VPN 刚启动，网络环境可能正在切换 (TUN建立 -> 路由重置)
                     // 等待一段时间让 Socket 稳定，避免 "use of closed network connection"
                     delay(2000)
-                    
+
                     if (_ruleSets.value.isEmpty() || _error.value != null) {
                         Log.i(TAG, "VPN 已连接，自动重试加载规则集...")
                         fetchRuleSets()
@@ -97,7 +94,7 @@ class RuleSetViewModel(application: Application) : AndroidViewModel(application)
             _error.value = null
             try {
                 val sagerNetRules = fetchFromSagerNet()
-                
+
                 if (sagerNetRules.isEmpty()) {
                     Log.w(TAG, "Online results empty, using built-in rule sets")
                     // 确保一定有数据
@@ -108,7 +105,7 @@ class RuleSetViewModel(application: Application) : AndroidViewModel(application)
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to fetch rule sets", e)
-                _error.value = getApplication<Application>().getString(R.string.settings_update_failed) + ", please check your network" // TODO: better string
+                _error.value = getApplication<Application>().getString(R.string.ruleset_update_network_error)
                 // 即使失败，也加载内置规则集，保证页面不为空
                 val current = _ruleSets.value
                 if (current.isEmpty()) {
@@ -194,5 +191,4 @@ class RuleSetViewModel(application: Application) : AndroidViewModel(application)
             emptyList()
         }
     }
-
 }

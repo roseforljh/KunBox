@@ -14,9 +14,7 @@ import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Bolt
 import androidx.compose.material.icons.rounded.CallSplit
 import androidx.compose.material.icons.rounded.CompareArrows
-import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.Dns
-import androidx.compose.material.icons.rounded.Extension
 import androidx.compose.material.icons.rounded.Fingerprint
 import androidx.compose.material.icons.rounded.Key
 import androidx.compose.material.icons.rounded.Language
@@ -32,7 +30,6 @@ import androidx.compose.material.icons.rounded.Save
 import androidx.compose.material.icons.rounded.Security
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.SettingsInputAntenna
-import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.Speed
 import androidx.compose.material.icons.rounded.SwapHoriz
 import androidx.compose.material.icons.rounded.Tag
@@ -167,18 +164,18 @@ fun NodeDetailScreen(
             )
         }
     ) { padding ->
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(padding)
-            .padding(16.dp)
-            .verticalScroll(rememberScrollState())
-    ) {
-        if (editingOutbound == null) {
-            StandardCard {
-                SettingItem(title = stringResource(R.string.common_loading), value = "")
-            }
-        } else {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .padding(16.dp)
+                .verticalScroll(rememberScrollState())
+        ) {
+            if (editingOutbound == null) {
+                StandardCard {
+                    SettingItem(title = stringResource(R.string.common_loading), value = "")
+                }
+            } else {
                 val outbound = editingOutbound!!
                 val type = outbound.type
 
@@ -212,7 +209,7 @@ fun NodeDetailScreen(
                             onValueChange = { editingOutbound = outbound.copy(serverPort = it.toIntOrNull() ?: 0) }
                         )
                     }
-                    
+
                     // --- Protocol Specific Fields ---
 
                     // 1. Shadowsocks
@@ -241,14 +238,14 @@ fun NodeDetailScreen(
                             title = "Plugin (Optional)", // TODO: add to strings.xml
                             value = outbound.plugin ?: "",
                             icon = Icons.Rounded.Settings,
-                            onValueChange = { editingOutbound = outbound.copy(plugin = if(it.isEmpty()) null else it) }
+                            onValueChange = { editingOutbound = outbound.copy(plugin = if (it.isEmpty()) null else it) }
                         )
                         if (!outbound.plugin.isNullOrBlank()) {
                             EditableTextItem(
                                 title = stringResource(R.string.node_detail_plugin_options),
                                 value = outbound.pluginOpts ?: "",
                                 icon = Icons.Rounded.Settings,
-                                onValueChange = { editingOutbound = outbound.copy(pluginOpts = if(it.isEmpty()) null else it) }
+                                onValueChange = { editingOutbound = outbound.copy(pluginOpts = if (it.isEmpty()) null else it) }
                             )
                         }
                         // UDP over TCP
@@ -269,7 +266,7 @@ fun NodeDetailScreen(
                             icon = Icons.Rounded.Person,
                             onValueChange = { editingOutbound = outbound.copy(uuid = it) }
                         )
-                        
+
                         if (type == "vmess") {
                             EditableSelectionItem(
                                 title = stringResource(R.string.node_detail_encryption),
@@ -280,7 +277,7 @@ fun NodeDetailScreen(
                             )
                             // 此字段已从模型中移除
                         }
-                        
+
                         if (type == "vless") {
                             EditableSelectionItem(
                                 title = "Flow",
@@ -290,13 +287,13 @@ fun NodeDetailScreen(
                                 onValueChange = { editingOutbound = outbound.copy(flow = it) }
                             )
                         }
-                        
+
                         EditableSelectionItem(
                             title = stringResource(R.string.node_detail_packet_encoding),
                             value = outbound.packetEncoding ?: "",
                             options = listOf("", "xudp", "packet"),
                             icon = Icons.Rounded.Layers,
-                            onValueChange = { editingOutbound = outbound.copy(packetEncoding = if(it.isEmpty()) null else it) }
+                            onValueChange = { editingOutbound = outbound.copy(packetEncoding = if (it.isEmpty()) null else it) }
                         )
                     }
 
@@ -312,7 +309,7 @@ fun NodeDetailScreen(
 
                     // 4. Hysteria 2
                     if (type == "hysteria2") {
-                         EditableTextItem(
+                        EditableTextItem(
                             title = stringResource(R.string.node_detail_password),
                             value = outbound.password ?: "",
                             icon = Icons.Rounded.Password,
@@ -322,7 +319,7 @@ fun NodeDetailScreen(
                             title = "Ports (Jumping)", // TODO: add to strings.xml
                             value = outbound.ports ?: "",
                             icon = Icons.Rounded.Numbers,
-                            onValueChange = { editingOutbound = outbound.copy(ports = if(it.isEmpty()) null else it) }
+                            onValueChange = { editingOutbound = outbound.copy(ports = if (it.isEmpty()) null else it) }
                         )
                         EditableTextItem(
                             title = stringResource(R.string.node_detail_obfs_type),
@@ -369,44 +366,44 @@ fun NodeDetailScreen(
                             icon = Icons.Rounded.Password,
                             onValueChange = { editingOutbound = outbound.copy(password = it) }
                         )
-                            EditableSelectionItem(
-                                title = stringResource(R.string.node_detail_congestion_control),
-                                value = outbound.congestionControl ?: "bbr",
-                                options = listOf("bbr", "cubic", "new_reno"),
-                                icon = Icons.Rounded.Speed,
-                                onValueChange = { editingOutbound = outbound.copy(congestionControl = it) }
-                            )
-                            EditableSelectionItem(
-                                title = "UDP Relay Mode", // TODO: add to strings.xml
-                                value = outbound.udpRelayMode ?: "native",
-                                options = listOf("native", "quic"),
-                                icon = Icons.Rounded.SwapHoriz,
-                                onValueChange = { editingOutbound = outbound.copy(udpRelayMode = it) }
-                            )
-                            EditableTextItem(
-                                title = "Heartbeat", // TODO: add to strings.xml
-                                value = outbound.heartbeat ?: "3s",
-                                icon = Icons.Rounded.Bolt,
-                                onValueChange = { editingOutbound = outbound.copy(heartbeat = it) }
-                            )
-                            SettingSwitchItem(
-                                title = "Zero RTT", // TODO: add to strings.xml
-                                checked = outbound.zeroRttHandshake == true,
-                                icon = Icons.Rounded.Bolt,
-                                onCheckedChange = { editingOutbound = outbound.copy(zeroRttHandshake = it) }
-                            )
-                            SettingSwitchItem(
-                                title = "Disable SNI", // TODO: add to strings.xml
-                                checked = outbound.disableSni == true,
-                                icon = Icons.Rounded.Fingerprint,
-                                onCheckedChange = { editingOutbound = outbound.copy(disableSni = it) }
-                            )
-                        }
+                        EditableSelectionItem(
+                            title = stringResource(R.string.node_detail_congestion_control),
+                            value = outbound.congestionControl ?: "bbr",
+                            options = listOf("bbr", "cubic", "new_reno"),
+                            icon = Icons.Rounded.Speed,
+                            onValueChange = { editingOutbound = outbound.copy(congestionControl = it) }
+                        )
+                        EditableSelectionItem(
+                            title = "UDP Relay Mode", // TODO: add to strings.xml
+                            value = outbound.udpRelayMode ?: "native",
+                            options = listOf("native", "quic"),
+                            icon = Icons.Rounded.SwapHoriz,
+                            onValueChange = { editingOutbound = outbound.copy(udpRelayMode = it) }
+                        )
+                        EditableTextItem(
+                            title = "Heartbeat", // TODO: add to strings.xml
+                            value = outbound.heartbeat ?: "3s",
+                            icon = Icons.Rounded.Bolt,
+                            onValueChange = { editingOutbound = outbound.copy(heartbeat = it) }
+                        )
+                        SettingSwitchItem(
+                            title = "Zero RTT", // TODO: add to strings.xml
+                            checked = outbound.zeroRttHandshake == true,
+                            icon = Icons.Rounded.Bolt,
+                            onCheckedChange = { editingOutbound = outbound.copy(zeroRttHandshake = it) }
+                        )
+                        SettingSwitchItem(
+                            title = "Disable SNI", // TODO: add to strings.xml
+                            checked = outbound.disableSni == true,
+                            icon = Icons.Rounded.Fingerprint,
+                            onCheckedChange = { editingOutbound = outbound.copy(disableSni = it) }
+                        )
+                    }
 
                     // 6. WireGuard
                     if (type == "wireguard") {
                         val peer = outbound.peers?.firstOrNull() ?: WireGuardPeer()
-                        
+
                         EditableTextItem(
                             title = stringResource(R.string.node_detail_server_address),
                             value = peer.server ?: "",
@@ -445,7 +442,7 @@ fun NodeDetailScreen(
                             value = peer.preSharedKey ?: "",
                             icon = Icons.Rounded.Key,
                             onValueChange = {
-                                val newPeer = peer.copy(preSharedKey = if(it.isEmpty()) null else it)
+                                val newPeer = peer.copy(preSharedKey = if (it.isEmpty()) null else it)
                                 editingOutbound = outbound.copy(peers = listOf(newPeer))
                             }
                         )
@@ -474,7 +471,7 @@ fun NodeDetailScreen(
                             }
                         )
                     }
-                    
+
                     // 7. SSH
                     if (type == "ssh") {
                         EditableTextItem(
@@ -487,19 +484,19 @@ fun NodeDetailScreen(
                             title = stringResource(R.string.node_detail_password),
                             value = outbound.password ?: "",
                             icon = Icons.Rounded.Password,
-                            onValueChange = { editingOutbound = outbound.copy(password = if(it.isEmpty()) null else it) }
+                            onValueChange = { editingOutbound = outbound.copy(password = if (it.isEmpty()) null else it) }
                         )
                         EditableTextItem(
                             title = stringResource(R.string.node_detail_private_key),
                             value = outbound.privateKey ?: "",
                             icon = Icons.Rounded.Key,
-                            onValueChange = { editingOutbound = outbound.copy(privateKey = if(it.isEmpty()) null else it) }
+                            onValueChange = { editingOutbound = outbound.copy(privateKey = if (it.isEmpty()) null else it) }
                         )
-                         EditableTextItem(
+                        EditableTextItem(
                             title = "Passphrase", // TODO: add to strings.xml
                             value = outbound.privateKeyPassphrase ?: "",
                             icon = Icons.Rounded.Key,
-                            onValueChange = { editingOutbound = outbound.copy(privateKeyPassphrase = if(it.isEmpty()) null else it) }
+                            onValueChange = { editingOutbound = outbound.copy(privateKeyPassphrase = if (it.isEmpty()) null else it) }
                         )
                         EditableTextItem(
                             title = "Host Key", // TODO: add to strings.xml
@@ -511,7 +508,7 @@ fun NodeDetailScreen(
                             }
                         )
                     }
-                    
+
                     // 8. AnyTLS
                     if (type == "anytls") {
                         EditableTextItem(
@@ -539,7 +536,7 @@ fun NodeDetailScreen(
                             onValueChange = { editingOutbound = outbound.copy(minIdleSession = it.toIntOrNull()) }
                         )
                     }
-                    
+
                     // 9. SOCKS
                     if (type == "socks") {
                         EditableSelectionItem(
@@ -553,32 +550,32 @@ fun NodeDetailScreen(
                             title = "Username (Optional)", // TODO: add to strings.xml
                             value = outbound.username ?: "",
                             icon = Icons.Rounded.Person,
-                            onValueChange = { editingOutbound = outbound.copy(username = if(it.isEmpty()) null else it) }
+                            onValueChange = { editingOutbound = outbound.copy(username = if (it.isEmpty()) null else it) }
                         )
                         EditableTextItem(
                             title = "Password (Optional)", // TODO: add to strings.xml
                             value = outbound.password ?: "",
                             icon = Icons.Rounded.Password,
-                            onValueChange = { editingOutbound = outbound.copy(password = if(it.isEmpty()) null else it) }
+                            onValueChange = { editingOutbound = outbound.copy(password = if (it.isEmpty()) null else it) }
                         )
                     }
-                    
+
                     // 10. HTTP
                     if (type == "http") {
                         EditableTextItem(
                             title = "Username (Optional)", // TODO: add to strings.xml
                             value = outbound.username ?: "",
                             icon = Icons.Rounded.Person,
-                            onValueChange = { editingOutbound = outbound.copy(username = if(it.isEmpty()) null else it) }
+                            onValueChange = { editingOutbound = outbound.copy(username = if (it.isEmpty()) null else it) }
                         )
                         EditableTextItem(
                             title = "Password (Optional)", // TODO: add to strings.xml
                             value = outbound.password ?: "",
                             icon = Icons.Rounded.Password,
-                            onValueChange = { editingOutbound = outbound.copy(password = if(it.isEmpty()) null else it) }
+                            onValueChange = { editingOutbound = outbound.copy(password = if (it.isEmpty()) null else it) }
                         )
                     }
-                    
+
                     // 11. ShadowTLS
                     if (type == "shadowtls") {
                         EditableSelectionItem(
@@ -598,10 +595,10 @@ fun NodeDetailScreen(
                             title = stringResource(R.string.node_detail_common_settings),
                             value = outbound.detour ?: "",
                             icon = Icons.Rounded.Route,
-                            onValueChange = { editingOutbound = outbound.copy(detour = if(it.isEmpty()) null else it) }
+                            onValueChange = { editingOutbound = outbound.copy(detour = if (it.isEmpty()) null else it) }
                         )
                     }
-                    
+
                     // 12. Hysteria (v1)
                     if (type == "hysteria") {
                         EditableTextItem(
@@ -648,7 +645,7 @@ fun NodeDetailScreen(
                     StandardCard {
                         val transport = outbound.transport ?: TransportConfig(type = "tcp")
                         val currentType = transport.type ?: "tcp"
-                        
+
                         EditableSelectionItem(
                             title = stringResource(R.string.node_detail_transport_protocol),
                             value = currentType,
@@ -689,7 +686,7 @@ fun NodeDetailScreen(
                                 title = "Early Data Header",
                                 value = transport.earlyDataHeaderName ?: "",
                                 icon = Icons.Rounded.Title,
-                                onValueChange = { editingOutbound = outbound.copy(transport = transport.copy(earlyDataHeaderName = if(it.isEmpty()) null else it)) }
+                                onValueChange = { editingOutbound = outbound.copy(transport = transport.copy(earlyDataHeaderName = if (it.isEmpty()) null else it)) }
                             )
                         }
 
@@ -725,14 +722,14 @@ fun NodeDetailScreen(
                 }
 
                 Spacer(modifier = Modifier.height(16.dp))
-                
+
                 // --- TLS ---
                 if (type !in listOf("wireguard", "ssh", "shadowsocks")) {
                     SectionHeader("TLS Settings") // TODO: add to strings.xml
                     StandardCard {
                         val tls = outbound.tls ?: TlsConfig(enabled = false)
                         val isTlsIntrinsic = type in listOf("hysteria2", "hysteria", "tuic", "anytls")
-                        
+
                         // Security type selector
                         val securityType = if (isTlsIntrinsic || tls.enabled == true) {
                             if (tls.reality?.enabled == true) "reality" else "tls"
@@ -763,17 +760,17 @@ fun NodeDetailScreen(
                                 icon = Icons.Rounded.Dns,
                                 onValueChange = { editingOutbound = outbound.copy(tls = tls.copy(serverName = it)) }
                             )
-                            
+
                             EditableTextItem(
                                 title = "ALPN",
                                 value = tls.alpn?.joinToString(", ") ?: "",
                                 icon = Icons.Rounded.Merge,
-                                onValueChange = { 
+                                onValueChange = {
                                     val alpnList = it.split(",").map { s -> s.trim() }.filter { s -> s.isNotEmpty() }
                                     editingOutbound = outbound.copy(tls = tls.copy(alpn = alpnList))
                                 }
                             )
-                            
+
                             SettingSwitchItem(
                                 title = "Allow Insecure", // TODO: add to strings.xml
                                 subtitle = "Disable certificate verification", // TODO: add to strings.xml
@@ -785,21 +782,21 @@ fun NodeDetailScreen(
                                 title = "CA 证书 (PEM)",
                                 value = tls.ca ?: "",
                                 icon = Icons.Rounded.Security,
-                                onValueChange = { editingOutbound = outbound.copy(tls = tls.copy(ca = if(it.isEmpty()) null else it)) }
+                                onValueChange = { editingOutbound = outbound.copy(tls = tls.copy(ca = if (it.isEmpty()) null else it)) }
                             )
 
                             EditableTextItem(
                                 title = "客户端证书 (PEM)",
                                 value = tls.certificate ?: "",
                                 icon = Icons.Rounded.Security,
-                                onValueChange = { editingOutbound = outbound.copy(tls = tls.copy(certificate = if(it.isEmpty()) null else it)) }
+                                onValueChange = { editingOutbound = outbound.copy(tls = tls.copy(certificate = if (it.isEmpty()) null else it)) }
                             )
 
                             EditableTextItem(
                                 title = "客户端私钥 (PEM)",
                                 value = tls.key ?: "",
                                 icon = Icons.Rounded.Key,
-                                onValueChange = { editingOutbound = outbound.copy(tls = tls.copy(key = if(it.isEmpty()) null else it)) }
+                                onValueChange = { editingOutbound = outbound.copy(tls = tls.copy(key = if (it.isEmpty()) null else it)) }
                             )
 
                             // uTLS
@@ -838,7 +835,7 @@ fun NodeDetailScreen(
                                     onValueChange = { editingOutbound = outbound.copy(tls = tls.copy(reality = reality.copy(spiderX = it))) }
                                 )
                             }
-                            
+
                             // ECH
                             val ech = tls.ech ?: EchConfig(enabled = false)
                             Spacer(modifier = Modifier.height(8.dp))
@@ -875,7 +872,7 @@ fun NodeDetailScreen(
                 }
 
                 Spacer(modifier = Modifier.height(16.dp))
-                
+
                 // --- Transport ---
                 // ...
                 // --- Multiplex ---
@@ -940,7 +937,7 @@ fun NodeDetailScreen(
                         title = stringResource(R.string.common_outbound) + " (Detour)",
                         value = outbound.detour ?: "",
                         icon = Icons.Rounded.Route,
-                        onValueChange = { editingOutbound = outbound.copy(detour = if(it.isEmpty()) null else it) }
+                        onValueChange = { editingOutbound = outbound.copy(detour = if (it.isEmpty()) null else it) }
                     )
                     SettingSwitchItem(
                         title = "TCP Fast Open",

@@ -40,9 +40,6 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collect
-import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -532,7 +529,6 @@ class ProxyOnlyService : Service() {
                 notifyRemoteState(state = SingBoxService.ServiceState.RUNNING)
                 updateTileState()
                 requestNotificationUpdate(force = true)
-
             } catch (e: CancellationException) {
                 return@launch
             } catch (e: Exception) {

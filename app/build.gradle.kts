@@ -4,6 +4,7 @@ plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("com.google.devtools.ksp")
+    id("io.gitlab.arturbosch.detekt")
 }
 
 val libboxInputAar = file("libs/libbox.aar")
@@ -347,6 +348,11 @@ android {
     aaptOptions {
         noCompress("srs")
     }
+    
+    // 单元测试配置：返回 Android API 默认值，避免 android.util.* 抛异常
+    testOptions {
+        unitTests.isReturnDefaultValues = true
+    }
 }
 
 // 如果 libbox.aar 已经是精简版（只包含目标架构），可以跳过 strip 任务
@@ -427,4 +433,14 @@ dependencies {
     androidTestImplementation("androidx.compose.ui:ui-test-junit4")
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
+    
+    detektPlugins("io.gitlab.arturbosch.detekt:detekt-formatting:1.23.7")
+}
+
+detekt {
+    buildUponDefaultConfig = true
+    allRules = false
+    config.setFrom(files("$rootDir/config/detekt/detekt.yml"))
+    baseline = file("$rootDir/config/detekt/baseline.xml")
+    autoCorrect = true
 }

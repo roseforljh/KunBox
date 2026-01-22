@@ -49,7 +49,7 @@ fun SelectProfileDialog(
     var selectedProfileId by remember { mutableStateOf(profiles.firstOrNull()?.id) }
 
     val isValid = (isCreatingNew && newProfileName.isNotBlank()) ||
-            (!isCreatingNew && selectedProfileId != null)
+        (!isCreatingNew && selectedProfileId != null)
 
     AlertDialog(
         onDismissRequest = onDismiss,

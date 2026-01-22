@@ -41,34 +41,34 @@ class DataExportRepository(private val context: Context) {
     // 使用 Application Scope 替代 GlobalScope,避免内存泄漏
     // Repository 是单例且生命周期与应用相同,使用 SupervisorJob 确保子协程异常不影响父协程
     private val repositoryScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    
+
     private val gson: Gson = GsonBuilder()
         .setPrettyPrinting()
         .serializeNulls()
         .create()
-    
+
     private val settingsRepository = SettingsRepository.getInstance(context)
     private val configRepository = ConfigRepository.getInstance(context)
     private val ruleSetRepository = RuleSetRepository.getInstance(context)
-    
+
     private val configDir: File
         get() = File(context.filesDir, "configs").also { it.mkdirs() }
-    
+
     /**
      * 导出所有数据
      * @return 导出数据的 JSON 字符串
      */
     suspend fun exportAllData(): Result<String> = withContext(Dispatchers.IO) {
         try {
-            
+
             // 1. 获取当前设置
             val settings = settingsRepository.settings.first()
-            
+
             // 2. 获取配置列表和节点数据
             val profiles = configRepository.profiles.value
             val activeProfileId = configRepository.activeProfileId.value
             val activeNodeId = configRepository.activeNodeId.value
-            
+
             // 3. 加载每个配置的完整节点数据
             val profileExportDataList = profiles.mapNotNull { profile ->
                 try {
@@ -86,11 +86,11 @@ class DataExportRepository(private val context: Context) {
                     null
                 }
             }
-            
+
             // 4. 构建导出数据
             val packageInfo = context.packageManager.getPackageInfo(context.packageName, 0)
             val appVersionName = packageInfo.versionName ?: "Unknown"
-            
+
             val exportData = ExportData(
                 version = CURRENT_VERSION,
                 exportTime = System.currentTimeMillis(),
@@ -100,17 +100,17 @@ class DataExportRepository(private val context: Context) {
                 activeProfileId = activeProfileId,
                 activeNodeId = activeNodeId
             )
-            
+
             // 5. 序列化为 JSON
             val jsonString = gson.toJson(exportData)
-            
+
             Result.success(jsonString)
         } catch (e: Exception) {
             Log.e(TAG, "Export failed", e)
             Result.failure(e)
         }
     }
-    
+
     /**
      * 导出到文件
      * @param uri 目标文件 URI
@@ -121,21 +121,21 @@ class DataExportRepository(private val context: Context) {
             if (jsonResult.isFailure) {
                 return@withContext Result.failure(jsonResult.exceptionOrNull() ?: Exception(context.getString(R.string.export_failed)))
             }
-            
+
             val jsonString = jsonResult.getOrThrow()
-            
+
             context.contentResolver.openOutputStream(uri)?.use { outputStream ->
                 outputStream.write(jsonString.toByteArray(Charsets.UTF_8))
                 outputStream.flush()
             } ?: throw Exception("Could not open file for writing")
-            
+
             Result.success(Unit)
         } catch (e: Exception) {
             Log.e(TAG, "Export to file failed", e)
             Result.failure(e)
         }
     }
-    
+
     /**
      * 验证导入数据
      * @param jsonData 导入的 JSON 字符串
@@ -144,19 +144,19 @@ class DataExportRepository(private val context: Context) {
     suspend fun validateImportData(jsonData: String): Result<ExportData> = withContext(Dispatchers.IO) {
         try {
             val exportData = gson.fromJson(jsonData, ExportData::class.java)
-            
+
             // 验证版本
             if (exportData.version > CURRENT_VERSION) {
                 return@withContext Result.failure(
                     Exception("Data version too high (v${exportData.version}), please update app and try again")
                 )
             }
-            
+
             // 验证必要字段
             if (exportData.settings == null) {
                 return@withContext Result.failure(Exception("Data format error: missing settings info"))
             }
-            
+
             Result.success(exportData)
         } catch (e: JsonSyntaxException) {
             Log.e(TAG, "Invalid JSON format", e)
@@ -166,7 +166,7 @@ class DataExportRepository(private val context: Context) {
             Result.failure(e)
         }
     }
-    
+
     /**
      * 获取导入数据摘要
      * @param exportData 导出数据
@@ -182,7 +182,7 @@ class DataExportRepository(private val context: Context) {
                 )
             } ?: 0
         }
-        
+
         return ExportDataSummary(
             version = exportData.version,
             exportTime = exportData.exportTime,
@@ -195,7 +195,7 @@ class DataExportRepository(private val context: Context) {
             hasAppRules = exportData.settings.appRules.isNotEmpty() || exportData.settings.appGroups.isNotEmpty()
         )
     }
-    
+
     /**
      * 导入数据
      * @param jsonData 导入的 JSON 字符串
@@ -210,18 +210,18 @@ class DataExportRepository(private val context: Context) {
                 return@withContext Result.failure(validateResult.exceptionOrNull()!!)
             }
             val exportData = validateResult.getOrThrow()
-            
+
             var profilesImported = 0
             var nodesImported = 0
             var settingsImported = false
             val errors = mutableListOf<String>()
-            
+
             // 2. 导入设置
             if (options.importSettings) {
                 try {
                     importSettings(exportData.settings)
                     settingsImported = true
-                    
+
                     // 触发规则集下载
                     if (exportData.settings.ruleSets.isNotEmpty()) {
                         Log.i(TAG, "Triggering rule set download after import...")
@@ -241,7 +241,7 @@ class DataExportRepository(private val context: Context) {
                     errors.add("Failed to import settings: ${e.message}")
                 }
             }
-            
+
             // 3. 导入配置和节点
             if (options.importProfiles) {
                 for (profileData in exportData.profiles) {
@@ -255,7 +255,7 @@ class DataExportRepository(private val context: Context) {
                     }
                 }
             }
-            
+
             // 4. 恢复活跃状态
             if (options.importProfiles && exportData.activeProfileId != null) {
                 try {
@@ -271,7 +271,7 @@ class DataExportRepository(private val context: Context) {
                     Log.w(TAG, "Failed to restore active profile", e)
                 }
             }
-            
+
             // 5. 返回结果
             val result = when {
                 errors.isEmpty() -> ImportResult.Success(
@@ -286,14 +286,14 @@ class DataExportRepository(private val context: Context) {
                 )
                 else -> ImportResult.Failed(errors.joinToString("\n"))
             }
-            
+
             Result.success(result)
         } catch (e: Exception) {
             Log.e(TAG, "Import failed", e)
             Result.failure(e)
         }
     }
-    
+
     /**
      * 从文件导入
      * @param uri 源文件 URI
@@ -304,14 +304,14 @@ class DataExportRepository(private val context: Context) {
             val jsonData = context.contentResolver.openInputStream(uri)?.use { inputStream ->
                 inputStream.bufferedReader().readText()
             } ?: throw Exception("Could not read file")
-            
+
             importData(jsonData, options)
         } catch (e: Exception) {
             Log.e(TAG, "Import from file failed", e)
             Result.failure(e)
         }
     }
-    
+
     /**
      * 从文件验证数据（用于预览）
      */
@@ -320,14 +320,14 @@ class DataExportRepository(private val context: Context) {
             val jsonData = context.contentResolver.openInputStream(uri)?.use { inputStream ->
                 inputStream.bufferedReader().readText()
             } ?: throw Exception("Could not read file")
-            
+
             validateImportData(jsonData)
         } catch (e: Exception) {
             Log.e(TAG, "Validate from file failed", e)
             Result.failure(e)
         }
     }
-    
+
     /**
      * 导入设置
      */
@@ -336,7 +336,7 @@ class DataExportRepository(private val context: Context) {
         settingsRepository.setAutoConnect(settings.autoConnect)
         settingsRepository.setExcludeFromRecent(settings.excludeFromRecent)
         settingsRepository.setAppTheme(settings.appTheme)
-        
+
         // TUN/VPN 设置
         settingsRepository.setTunEnabled(settings.tunEnabled)
         settingsRepository.setTunStack(settings.tunStack)
@@ -350,7 +350,7 @@ class DataExportRepository(private val context: Context) {
         settingsRepository.setVpnAppMode(settings.vpnAppMode)
         settingsRepository.setVpnAllowlist(settings.vpnAllowlist)
         settingsRepository.setVpnBlocklist(settings.vpnBlocklist)
-        
+
         // DNS 设置
         settingsRepository.setLocalDns(settings.localDns)
         settingsRepository.setRemoteDns(settings.remoteDns)
@@ -361,7 +361,7 @@ class DataExportRepository(private val context: Context) {
         settingsRepository.setDirectDnsStrategy(settings.directDnsStrategy)
         settingsRepository.setServerAddressStrategy(settings.serverAddressStrategy)
         settingsRepository.setDnsCacheEnabled(settings.dnsCacheEnabled)
-        
+
         // 路由设置
         settingsRepository.setRoutingMode(settings.routingMode, notifyRestartRequired = false)
         settingsRepository.setDefaultRule(settings.defaultRule)
@@ -369,37 +369,37 @@ class DataExportRepository(private val context: Context) {
         settingsRepository.setBypassLan(settings.bypassLan)
         settingsRepository.setBlockQuic(settings.blockQuic)
         settingsRepository.setDebugLoggingEnabled(settings.debugLoggingEnabled)
-        
+
         // 延迟测试设置
         settingsRepository.setLatencyTestMethod(settings.latencyTestMethod)
         settingsRepository.setLatencyTestUrl(settings.latencyTestUrl)
-        
+
         // 镜像设置
         if (settings.ghProxyMirror != null) {
             settingsRepository.setGhProxyMirror(settings.ghProxyMirror)
         }
-        
+
         // 代理端口设置
         settingsRepository.setProxyPort(settings.proxyPort)
         settingsRepository.setAllowLan(settings.allowLan)
         settingsRepository.setAppendHttpProxy(settings.appendHttpProxy)
-        
+
         // 高级路由规则
         settingsRepository.setCustomRules(settings.customRules)
         settingsRepository.setRuleSets(settings.ruleSets, notify = false)
         settingsRepository.setAppRules(settings.appRules)
         settingsRepository.setAppGroups(settings.appGroups)
-        
+
         // 规则集自动更新
         settingsRepository.setRuleSetAutoUpdateEnabled(settings.ruleSetAutoUpdateEnabled)
         settingsRepository.setRuleSetAutoUpdateInterval(settings.ruleSetAutoUpdateInterval)
-        
+
         // 节点列表设置
         settingsRepository.setNodeFilter(settings.nodeFilter)
         settingsRepository.setNodeSortType(settings.nodeSortType)
         settingsRepository.setCustomNodeOrder(settings.customNodeOrder)
     }
-    
+
     /**
      * 导入单个配置
      * @return 导入的节点数量
@@ -452,7 +452,7 @@ class DataExportRepository(private val context: Context) {
 
     /**
      * 清理资源，取消协程 scope
-     * 
+     *
      * 注意：由于 DataExportRepository 是单例且生命周期与 Application 相同，
      * 通常不需要手动调用此方法。此方法主要用于：
      * 1. 测试场景中清理资源

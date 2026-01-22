@@ -22,13 +22,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.kunk.singbox.ui.theme.Neutral500
-import com.kunk.singbox.ui.theme.Neutral700
-import com.kunk.singbox.ui.theme.Neutral800
 
 /**
  * A dropdown-style field that clearly indicates it is clickable.
@@ -51,7 +47,7 @@ fun ClickableDropdownField(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             fontWeight = FontWeight.Medium
         )
-        
+
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -109,7 +105,7 @@ fun StyledTextField(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             fontWeight = FontWeight.Medium
         )
-        
+
         androidx.compose.material3.OutlinedTextField(
             value = value,
             onValueChange = onValueChange,

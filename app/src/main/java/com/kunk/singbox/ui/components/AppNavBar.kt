@@ -66,70 +66,70 @@ fun AppNavBar(
         )
 
         NavigationBar(
-        containerColor = MaterialTheme.colorScheme.background,
-        contentColor = MaterialTheme.colorScheme.onBackground,
-        modifier = Modifier.height(64.dp) // Reduced height
-    ) {
-        val navBackStackEntry by navController.currentBackStackEntryAsState()
-        val currentRoute = navBackStackEntry?.destination?.route
+            containerColor = MaterialTheme.colorScheme.background,
+            contentColor = MaterialTheme.colorScheme.onBackground,
+            modifier = Modifier.height(64.dp) // Reduced height
+        ) {
+            val navBackStackEntry by navController.currentBackStackEntryAsState()
+            val currentRoute = navBackStackEntry?.destination?.route
 
-        items.forEach { screen ->
-            val isSelected = getTabForRoute(currentRoute) == screen.route
+            items.forEach { screen ->
+                val isSelected = getTabForRoute(currentRoute) == screen.route
 
-            NavigationBarItem(
-                icon = {
-                    Box(
-                        modifier = Modifier.size(48.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = if (isSelected) {
-                            when(screen) {
-                                Screen.Dashboard -> Icons.Filled.Dashboard
-                                Screen.Nodes -> Icons.Filled.Dns
-                                Screen.Profiles -> Icons.Filled.FolderCopy
-                                Screen.Settings -> Icons.Filled.Settings
-                                else -> Icons.Filled.Dashboard
-                            }
-                        } else {
-                            when(screen) {
-                                Screen.Dashboard -> Icons.Outlined.Dashboard
-                                Screen.Nodes -> Icons.Outlined.Dns
-                                Screen.Profiles -> Icons.Outlined.FolderCopy
-                                Screen.Settings -> Icons.Outlined.Settings
-                                else -> Icons.Outlined.Dashboard
-                            }
-                            },
-                            contentDescription = screen.route,
-                            modifier = Modifier.size(24.dp)
-                        )
-                    }
-                },
-                label = null, // Removed text label
-                selected = isSelected,
-                onClick = {
-                    val currentTab = getTabForRoute(currentRoute)
-                    // Only navigate if switching to a different tab
-                    if (currentTab != screen.route) {
-                        navController.navigate(screen.route) {
-                            popUpTo(Screen.Dashboard.route) {
-                                saveState = true
-                            }
-                            launchSingleTop = true
-                            restoreState = screen != Screen.Settings
+                NavigationBarItem(
+                    icon = {
+                        Box(
+                            modifier = Modifier.size(48.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = if (isSelected) {
+                                    when (screen) {
+                                        Screen.Dashboard -> Icons.Filled.Dashboard
+                                        Screen.Nodes -> Icons.Filled.Dns
+                                        Screen.Profiles -> Icons.Filled.FolderCopy
+                                        Screen.Settings -> Icons.Filled.Settings
+                                        else -> Icons.Filled.Dashboard
+                                    }
+                                } else {
+                                    when (screen) {
+                                        Screen.Dashboard -> Icons.Outlined.Dashboard
+                                        Screen.Nodes -> Icons.Outlined.Dns
+                                        Screen.Profiles -> Icons.Outlined.FolderCopy
+                                        Screen.Settings -> Icons.Outlined.Settings
+                                        else -> Icons.Outlined.Dashboard
+                                    }
+                                },
+                                contentDescription = screen.route,
+                                modifier = Modifier.size(24.dp)
+                            )
                         }
-                    } else if (screen == Screen.Settings) {
-                        // If user taps Settings again while inside a Settings sub-screen, return to Settings root.
-                        navController.popBackStack(Screen.Settings.route, false)
-                    }
-                },
-                colors = NavigationBarItemDefaults.colors(
-                    selectedIconColor = MaterialTheme.colorScheme.onBackground,
-                    indicatorColor = Color.Transparent, // No pill indicator
-                    unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                    label = null, // Removed text label
+                    selected = isSelected,
+                    onClick = {
+                        val currentTab = getTabForRoute(currentRoute)
+                        // Only navigate if switching to a different tab
+                        if (currentTab != screen.route) {
+                            navController.navigate(screen.route) {
+                                popUpTo(Screen.Dashboard.route) {
+                                    saveState = true
+                                }
+                                launchSingleTop = true
+                                restoreState = screen != Screen.Settings
+                            }
+                        } else if (screen == Screen.Settings) {
+                            // If user taps Settings again while inside a Settings sub-screen, return to Settings root.
+                            navController.popBackStack(Screen.Settings.route, false)
+                        }
+                    },
+                    colors = NavigationBarItemDefaults.colors(
+                        selectedIconColor = MaterialTheme.colorScheme.onBackground,
+                        indicatorColor = Color.Transparent, // No pill indicator
+                        unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 )
-            )
-        }
+            }
         }
     }
 }

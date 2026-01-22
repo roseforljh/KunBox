@@ -7,15 +7,12 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
-import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.compose.setContent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.EnterTransition
-import androidx.compose.animation.ExitTransition
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -64,7 +61,6 @@ import com.kunk.singbox.ipc.SingBoxRemote
 import com.kunk.singbox.service.VpnTileService
 import com.kunk.singbox.ui.components.AppNavBar
 import com.kunk.singbox.ui.navigation.AppNavigation
-import com.kunk.singbox.ui.theme.OLEDBlack
 import com.kunk.singbox.ui.theme.PureWhite
 import com.kunk.singbox.ui.theme.SingBoxTheme
 import android.content.ComponentName
@@ -98,11 +94,11 @@ class MainActivity : ComponentActivity() {
         } else {
             AppLanguage.SYSTEM
         }
-        
+
         val context = LocaleHelper.wrap(newBase, language)
         super.attachBaseContext(context)
     }
-    
+
     override fun onCreate(savedInstanceState: Bundle?) {
         // 在 super.onCreate 之前启用边到边显示
         enableEdgeToEdge(
@@ -264,8 +260,8 @@ fun SingBoxApp() {
 
     // 自动连接逻辑
     LaunchedEffect(settings?.autoConnect, connectionState) {
-        if (settings?.autoConnect == true && 
-            connectionState == ConnectionState.Idle && 
+        if (settings?.autoConnect == true &&
+            connectionState == ConnectionState.Idle &&
             !isRunning &&
             !isStarting &&
             !manuallyStopped
@@ -281,7 +277,7 @@ fun SingBoxApp() {
     // 在最近任务中隐藏逻辑
     LaunchedEffect(settings?.excludeFromRecent) {
         val am = context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
-        am?.appTasks?.forEach { 
+        am?.appTasks?.forEach {
             it.setExcludeFromRecents(settings?.excludeFromRecent == true)
         }
     }
@@ -307,7 +303,7 @@ fun SingBoxApp() {
 
     SingBoxTheme(appTheme = appTheme) {
         val navController = rememberNavController()
-        
+
         // Handle pending navigation from App Shortcuts
         LaunchedEffect(pendingNavigation) {
             pendingNavigation?.let { route ->
@@ -322,7 +318,7 @@ fun SingBoxApp() {
                 pendingNavigation = null
             }
         }
-        
+
         // Get current destination
         val navBackStackEntry = navController.currentBackStackEntryAsState()
         val currentRoute = navBackStackEntry.value?.destination?.route
@@ -381,7 +377,7 @@ fun SingBoxApp() {
                         }
                     )
                 },
-                bottomBar = { 
+                bottomBar = {
                     if (showBottomBar) {
                         AppNavBar(navController = navController)
                     }

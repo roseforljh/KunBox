@@ -2,13 +2,11 @@ package com.kunk.singbox.service.manager
 
 import android.content.Context
 import android.content.Intent
-import android.os.Build
 import android.util.Log
 import com.kunk.singbox.ipc.VpnStateStore
 import com.kunk.singbox.repository.ConfigRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
-import java.io.File
 
 /**
  * 节点切换管理器

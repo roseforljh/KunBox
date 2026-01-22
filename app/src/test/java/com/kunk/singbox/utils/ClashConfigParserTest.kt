@@ -34,15 +34,15 @@ class ClashConfigParserTest {
         val config = ClashConfigParser.parse(yaml)
         assertNotNull(config)
         assertNotNull(config?.outbounds)
-        
+
         val outbounds = config!!.outbounds!!
         assertEquals(2, outbounds.size) // ss1 + PROXY selector
-        
+
         val ss1 = outbounds.find { it.tag == "ss1" }
         assertNotNull(ss1)
         assertEquals("shadowsocks", ss1?.type)
         assertEquals("1.2.3.4", ss1?.server)
-        
+
         val proxyGroup = outbounds.find { it.tag == "PROXY" }
         assertNotNull(proxyGroup)
         assertEquals("selector", proxyGroup?.type)
@@ -72,7 +72,7 @@ class ClashConfigParserTest {
 
         val config = ClashConfigParser.parse(yaml)
         assertNotNull(config)
-        
+
         val vless = config?.outbounds?.find { it.tag == "vless-reality" }
         assertNotNull(vless)
         assertEquals("vless", vless?.type)
@@ -81,7 +81,7 @@ class ClashConfigParserTest {
         assertNotNull(vless?.tls?.reality)
         assertEquals("pbk", vless?.tls?.reality?.publicKey)
         assertEquals("chrome", vless?.tls?.utls?.fingerprint)
-        
+
         assertNotNull(vless?.transport)
         assertEquals("ws", vless?.transport?.type)
         assertEquals("/path?ed=2048", vless?.transport?.path)
@@ -150,10 +150,10 @@ class ClashConfigParserTest {
         assertNotNull(config?.outbounds)
 
         val outbounds = config!!.outbounds!!
-        
+
         println("Parsed outbounds:")
         outbounds.forEach { println("  - ${it.tag}: ${it.type}") }
-        
+
         assertEquals(2, outbounds.size)
 
         val ss = outbounds.find { it.tag == "ss-shadowtls" }

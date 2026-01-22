@@ -41,18 +41,18 @@ object VpnServiceManager {
         )
         val persistedActive = prefs.getBoolean(KEY_VPN_ACTIVE, false)
         val pending = prefs.getString(KEY_VPN_PENDING, "") ?: ""
-        
+
         if (pending.isNotEmpty()) {
             return persistedActive || pending == "starting"
         }
-        
+
         if (persistedActive) {
             return true
         }
 
         return SingBoxRemote.isRunning.value
     }
-    
+
     private const val PREFS_VPN_STATE = "vpn_state"
     private const val KEY_VPN_ACTIVE = "vpn_active"
     private const val KEY_VPN_PENDING = "vpn_pending"

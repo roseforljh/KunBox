@@ -1,11 +1,6 @@
 package com.kunk.singbox.ui.screens
 
 import android.text.format.Formatter
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -28,7 +23,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Bolt
 import androidx.compose.material.icons.rounded.BugReport
 import androidx.compose.material.icons.rounded.Terminal
-import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material3.Icon
 import androidx.compose.foundation.layout.size
@@ -48,11 +42,9 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.res.stringResource
 import androidx.navigation.NavController
 import com.kunk.singbox.model.ConnectionState
@@ -71,10 +63,8 @@ import com.kunk.singbox.ui.components.StatusChip
 import com.kunk.singbox.ui.theme.Neutral500
 import com.kunk.singbox.R
 import com.kunk.singbox.viewmodel.NodesViewModel
-import androidx.compose.ui.res.painterResource
 import android.widget.Toast
 import android.app.Activity
-import android.content.Intent
 import android.net.VpnService
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -92,7 +82,7 @@ fun DashboardScreen(
     nodesViewModel: NodesViewModel = viewModel()
 ) {
     val context = LocalContext.current
-    
+
     val connectionState by viewModel.connectionState.collectAsState()
     val stats by viewModel.stats.collectAsState()
     val profiles by viewModel.profiles.collectAsState()
@@ -103,7 +93,7 @@ fun DashboardScreen(
     val isPingTesting by viewModel.isPingTesting.collectAsState()
     val nodes by viewModel.nodes.collectAsState()
     val settings by settingsViewModel.settings.collectAsState()
-    
+
     val nodesForSelector by nodesViewModel.nodes.collectAsState()
     val testingNodeIds by nodesViewModel.testingNodeIds.collectAsState()
 
@@ -130,19 +120,19 @@ fun DashboardScreen(
     var showProfileDialog by remember { mutableStateOf(false) }
     var showNodeDialog by remember { mutableStateOf(false) }
     var lastConnectionState by remember { mutableStateOf<ConnectionState?>(null) }
-    
+
     val updateStatus by viewModel.updateStatus.collectAsState()
     val testStatus by viewModel.testStatus.collectAsState()
     val actionStatus by viewModel.actionStatus.collectAsState()
     val vpnPermissionNeeded by viewModel.vpnPermissionNeeded.collectAsState()
-    
+
     // VPN 权限请求处理
     val vpnPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult()
     ) { result ->
         viewModel.onVpnPermissionResult(result.resultCode == Activity.RESULT_OK)
     }
-    
+
     // 当需要 VPN 权限时启动请求
     LaunchedEffect(vpnPermissionNeeded) {
         if (vpnPermissionNeeded) {
@@ -168,7 +158,7 @@ fun DashboardScreen(
             Toast.makeText(context, it, Toast.LENGTH_SHORT).show()
         }
     }
-    
+
     // Monitor test status
     LaunchedEffect(testStatus) {
         testStatus?.let {
@@ -201,7 +191,7 @@ fun DashboardScreen(
             onDismiss = { showModeDialog = false }
         )
     }
-    
+
     if (showUpdateDialog) {
         ConfirmDialog(
             title = stringResource(R.string.dashboard_update_subscription),
@@ -214,7 +204,7 @@ fun DashboardScreen(
             onDismiss = { showUpdateDialog = false }
         )
     }
-    
+
     if (showTestDialog) {
         ConfirmDialog(
             title = stringResource(R.string.dashboard_latency_test),
@@ -260,16 +250,16 @@ fun DashboardScreen(
             onDismiss = { showNodeDialog = false }
         )
     }
-    
+
     // Helper to format bytes
     fun formatBytes(bytes: Long): String = Formatter.formatFileSize(context, bytes)
 
     val statusBarPadding = WindowInsets.statusBars.asPaddingValues()
-    
+
     // Background Animation
     val isRunning = connectionState == ConnectionState.Connected || connectionState == ConnectionState.Connecting
     val infiniteTransition = rememberInfiniteTransition(label = "BackgroundAnimation")
-    
+
     val pulseScale by infiniteTransition.animateFloat(
         initialValue = 1f,
         targetValue = if (isRunning) 1.05f else 1f,
@@ -392,19 +382,19 @@ fun DashboardScreen(
                         label = stringResource(connectionState.displayNameRes),
                         isActive = connectionState == ConnectionState.Connected
                     )
-                    
+
                     val indicatorColor = when (connectionState) {
                         ConnectionState.Connected -> Color(0xFF4CAF50) // Green
                         ConnectionState.Error -> Color(0xFFF44336) // Red
                         else -> Neutral500 // Grey
                     }
-                    
+
                     ModeChip(
                         mode = currentMode,
                         indicatorColor = indicatorColor
                     ) { showModeDialog = true }
                 }
-                
+
                 val noProfileMsg = stringResource(R.string.dashboard_no_profiles_available)
                 val noNodeMsg = stringResource(R.string.dashboard_no_nodes_available)
 
@@ -416,7 +406,7 @@ fun DashboardScreen(
                         label = activeProfileName ?: stringResource(R.string.dashboard_no_profile_selected),
                         onClick = {
                             if (profiles.isNotEmpty()) {
-                                 showProfileDialog = true
+                                showProfileDialog = true
                             } else {
                                 Toast.makeText(context, noProfileMsg, Toast.LENGTH_SHORT).show()
                             }
@@ -469,7 +459,7 @@ fun DashboardScreen(
                 val timeoutMsg = stringResource(R.string.common_timeout)
                 val pingText = when {
                     !isConnected -> "-"
-                    displayPing != null && displayPing > 0 -> "${displayPing} ms"
+                    displayPing != null && displayPing > 0 -> "$displayPing ms"
                     displayPing == -1L -> timeoutMsg
                     else -> "-"
                 }

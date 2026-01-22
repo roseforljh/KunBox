@@ -57,7 +57,7 @@ class SelectorManager {
      */
     fun canHotSwitch(nodeTag: String): Boolean {
         return CoreSelectorManager.hasSelector() &&
-                CoreSelectorManager.isNodeInCurrentSelector(nodeTag)
+            CoreSelectorManager.isNodeInCurrentSelector(nodeTag)
     }
 
     /**

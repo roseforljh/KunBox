@@ -2,7 +2,6 @@ package com.kunk.singbox.service.manager
 
 import android.content.Context
 import android.os.SystemClock
-import android.util.Log
 import com.google.gson.Gson
 import com.kunk.singbox.core.SingBoxCore
 import com.kunk.singbox.model.SingBoxConfig

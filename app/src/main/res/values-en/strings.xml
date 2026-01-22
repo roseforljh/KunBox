@@ -595,4 +595,25 @@
 
     <!-- Infinite Date -->
     <string name="date_infinite">No Expiry</string>
+
+    <!-- Node Switch Messages -->
+    <string name="node_switch_success">Switched to %s</string>
+    <string name="node_switch_not_running">Switched to %s (service not running)</string>
+    <string name="node_switch_failed">Failed to switch to %s</string>
+    <string name="node_start_failed">Start failed: %s</string>
+    <string name="nodes_no_valid_found">No valid nodes found</string>
+
+    <!-- Subscription Update Messages -->
+    <string name="subscription_update_success_with_changes">Update successful (%1$s, %2$d nodes)</string>
+    <string name="subscription_update_success_no_changes">Update complete, no changes (%d nodes)</string>
+    <string name="ruleset_update_network_error">Update failed, please check your network</string>
+
+    <!-- App Groups -->
+    <string name="app_groups_name_placeholder">e.g. Social, Games</string>
+
+    <!-- RuleSet Hub -->
+    <string name="ruleset_hub_rule_count">Rules count: %d</string>
+
+    <!-- RuleSets Screen -->
+    <string name="rulesets_selection_mode">%d selected</string>
 </resources>

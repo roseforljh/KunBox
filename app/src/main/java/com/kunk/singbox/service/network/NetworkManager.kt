@@ -146,7 +146,7 @@ class NetworkManager(
         return cm.activeNetwork?.takeIf {
             val caps = cm.getNetworkCapabilities(it)
             caps?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true &&
-            caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN) == true
+                caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN) == true
         }
     }
 
@@ -162,7 +162,7 @@ class NetworkManager(
 
         val caps = connectivityManager?.getNetworkCapabilities(network)
         val isValidPhysical = caps?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true &&
-                              caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN) == true
+            caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN) == true
 
         if (!isValidPhysical) {
             return false

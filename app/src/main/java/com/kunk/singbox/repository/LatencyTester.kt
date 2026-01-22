@@ -4,7 +4,6 @@ import android.content.Context
 import android.util.Log
 import com.kunk.singbox.R
 import com.kunk.singbox.core.SingBoxCore
-import com.kunk.singbox.model.NodeUi
 import com.kunk.singbox.model.Outbound
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers

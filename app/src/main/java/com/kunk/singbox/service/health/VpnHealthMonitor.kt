@@ -11,7 +11,7 @@ class VpnHealthMonitor(
     private val context: HealthCheckContext,
     private val serviceScope: CoroutineScope
 ) {
-companion object {
+    companion object {
         private const val TAG = "VpnHealthMonitor"
 
         private const val DEFAULT_INTERVAL_MS = 15_000L
@@ -44,7 +44,7 @@ companion object {
     @Volatile
     private var consecutiveHealthyChecks: Int = 0
 
-@Volatile
+    @Volatile
     private var consecutiveHealthCheckFailures: Int = 0
 
     @Volatile
@@ -54,7 +54,7 @@ companion object {
      * 启动周期性健康检查
      * 定期检查 boxService 是否仍在正常运行，防止 native 崩溃导致僵尸状态
      */
-fun start() {
+    fun start() {
         stop()
         resetCounters()
         healthCheckIntervalMs = if (isPowerSavingMode) POWER_SAVING_INTERVAL_MS else DEFAULT_INTERVAL_MS
@@ -98,7 +98,6 @@ fun start() {
                             handleFailure("boxService exception: ${e.message}")
                         }
                     }
-
                 } catch (e: Exception) {
                     Log.e(TAG, "Periodic health check encountered exception", e)
                     handleFailure("health check exception: ${e.message}")
@@ -157,7 +156,6 @@ fun start() {
 
             Log.i(TAG, "[ScreenOn] Health check passed (NekoBox-style)")
             consecutiveHealthCheckFailures = 0
-
         } catch (e: Exception) {
             Log.e(TAG, "[ScreenOn] Health check failed", e)
             handleFailure("Screen-on check exception: ${e.message}")
@@ -197,7 +195,6 @@ fun start() {
 
             Log.i(TAG, "[AppForeground] Health check passed (NekoBox-style)")
             consecutiveHealthCheckFailures = 0
-
         } catch (e: Exception) {
             Log.e(TAG, "[AppForeground] Health check failed", e)
             handleFailure("App foreground check exception: ${e.message}")
@@ -223,7 +220,6 @@ fun start() {
             }
 
             Log.i(TAG, "[Lightweight Check] Health check passed")
-
         } catch (e: Exception) {
             Log.w(TAG, "Lightweight health check failed", e)
         }
@@ -276,7 +272,7 @@ fun start() {
     /**
      * 清理资源
      */
-fun cleanup() {
+    fun cleanup() {
         stop()
         resetCounters()
         healthCheckIntervalMs = DEFAULT_INTERVAL_MS

@@ -15,7 +15,7 @@ import org.yaml.snakeyaml.error.YAMLException
 class ClashYamlParser : SubscriptionParser {
     override fun canParse(content: String): Boolean {
         val trimmed = content.trim()
-        
+
         // 排除明显是节点链接的情况
         val nodeLinkPrefixes = listOf(
             "vmess://", "vless://", "ss://", "trojan://",
@@ -25,7 +25,7 @@ class ClashYamlParser : SubscriptionParser {
         if (nodeLinkPrefixes.any { trimmed.startsWith(it) }) {
             return false
         }
-        
+
         // 简单特征判断：包含 proxies: 或 proxy-groups: 关键字
         return trimmed.contains("proxies:") || trimmed.contains("proxy-groups:")
     }
@@ -67,7 +67,7 @@ class ClashYamlParser : SubscriptionParser {
         if (skippedCount > 0) {
             android.util.Log.d("ClashYamlParser", "Parsed ${outbounds.size} proxies, skipped $skippedCount")
         }
-        
+
         // 解析 proxy-groups
         val proxyGroupsRaw = rootMap["proxy-groups"] as? List<*>
         if (proxyGroupsRaw != null) {
@@ -372,7 +372,7 @@ class ClashYamlParser : SubscriptionParser {
 
     /**
      * SS + ShadowTLS/obfs 插件解析
-     * 
+     *
      * Clash 格式 (plugin: shadow-tls):
      *   - type: ss
      *     plugin: shadow-tls
@@ -380,15 +380,15 @@ class ClashYamlParser : SubscriptionParser {
      *       host: example.com
      *       password: xxx
      *       version: 3
-     * 
+     *
      * sing-box 需要两个 outbound:
      *   1. shadowtls outbound (连接实际服务器)
      *   2. shadowsocks outbound (通过 detour 指向 shadowtls)
      */
     private fun parseShadowsocksWithPlugin(
-        map: Map<*, *>, 
-        name: String, 
-        server: String?, 
+        map: Map<*, *>,
+        name: String,
+        server: String?,
         port: Int?,
         globalFingerprint: String?
     ): List<Outbound>? {
@@ -397,24 +397,24 @@ class ClashYamlParser : SubscriptionParser {
         val password = asString(map["password"]) ?: return null
         val plugin = asString(map["plugin"])?.lowercase()
         val pluginOpts = map["plugin-opts"] as? Map<*, *>
-        
+
         val multiplex = parseSmux(map)
         val udpEnabled = asBool(map["udp"]) != false
-        
+
         when (plugin) {
             "shadow-tls", "shadowtls" -> {
                 if (pluginOpts == null) {
                     android.util.Log.w("ClashYamlParser", "SS node '$name' has shadow-tls plugin but no plugin-opts")
                     return null
                 }
-                
+
                 val stlsPassword = asString(pluginOpts["password"]) ?: return null
                 val stlsVersion = asInt(pluginOpts["version"]) ?: 3
                 val stlsHost = asString(pluginOpts["host"]) ?: server
                 val fingerprint = asString(map["client-fingerprint"]) ?: globalFingerprint
-                
+
                 val shadowTlsTag = "${name}_shadowtls"
-                
+
                 val shadowTlsOutbound = Outbound(
                     type = "shadowtls",
                     tag = shadowTlsTag,
@@ -428,7 +428,7 @@ class ClashYamlParser : SubscriptionParser {
                         utls = fingerprint?.let { UtlsConfig(enabled = true, fingerprint = it) }
                     )
                 )
-                
+
                 val ssOutbound = Outbound(
                     type = "shadowsocks",
                     tag = name,
@@ -438,14 +438,14 @@ class ClashYamlParser : SubscriptionParser {
                     multiplex = multiplex,
                     network = if (!udpEnabled) "tcp" else null
                 )
-                
+
                 return listOf(ssOutbound, shadowTlsOutbound)
             }
-            
+
             "obfs", "obfs-local", "simple-obfs" -> {
                 val obfsMode = asString(pluginOpts?.get("mode"))?.lowercase()
                 val obfsHost = asString(pluginOpts?.get("host")) ?: server
-                
+
                 val transport = when (obfsMode) {
                     "http" -> TransportConfig(
                         type = "http",
@@ -454,7 +454,7 @@ class ClashYamlParser : SubscriptionParser {
                     "tls" -> null
                     else -> null
                 }
-                
+
                 return listOf(Outbound(
                     type = "shadowsocks",
                     tag = name,
@@ -467,14 +467,14 @@ class ClashYamlParser : SubscriptionParser {
                     network = if (!udpEnabled) "tcp" else null
                 ))
             }
-            
+
             "v2ray-plugin" -> {
                 val mode = asString(pluginOpts?.get("mode"))?.lowercase() ?: "websocket"
                 val tlsEnabled = asBool(pluginOpts?.get("tls")) == true
                 val host = asString(pluginOpts?.get("host")) ?: server
                 val path = asString(pluginOpts?.get("path")) ?: "/"
                 val fingerprint = asString(map["client-fingerprint"]) ?: globalFingerprint
-                
+
                 val transport = when (mode) {
                     "websocket", "ws" -> TransportConfig(
                         type = "ws",
@@ -488,7 +488,7 @@ class ClashYamlParser : SubscriptionParser {
                     )
                     else -> null
                 }
-                
+
                 val tlsConfig = if (tlsEnabled) {
                     TlsConfig(
                         enabled = true,
@@ -496,7 +496,7 @@ class ClashYamlParser : SubscriptionParser {
                         utls = fingerprint?.let { UtlsConfig(enabled = true, fingerprint = it) }
                     )
                 } else null
-                
+
                 return listOf(Outbound(
                     type = "shadowsocks",
                     tag = name,
@@ -510,7 +510,7 @@ class ClashYamlParser : SubscriptionParser {
                     network = if (!udpEnabled) "tcp" else null
                 ))
             }
-            
+
             null, "" -> {
                 return listOf(Outbound(
                     type = "shadowsocks",
@@ -523,7 +523,7 @@ class ClashYamlParser : SubscriptionParser {
                     network = if (!udpEnabled) "tcp" else null
                 ))
             }
-            
+
             else -> {
                 android.util.Log.w("ClashYamlParser", "SS node '$name' has unsupported plugin: $plugin")
                 return listOf(Outbound(
@@ -699,13 +699,13 @@ class ClashYamlParser : SubscriptionParser {
             )
         )
     }
-    
+
     private fun parseSSH(map: Map<*, *>, name: String, server: String?, port: Int?): Outbound? {
         if (server == null || port == null) return null
         val user = asString(map["username"]) ?: "root"
         val password = asString(map["password"])
         val privateKey = asString(map["private-key"])
-        
+
         return Outbound(
             type = "ssh",
             tag = name,
@@ -724,7 +724,7 @@ class ClashYamlParser : SubscriptionParser {
         val preSharedKey = asString(map["pre-shared-key"])
         val address = asStringList(map["ip"]) // Local Address
         val mtu = asInt(map["mtu"]) ?: 1420
-        
+
         val peer = com.kunk.singbox.model.WireGuardPeer(
             server = server,
             serverPort = port,
@@ -902,7 +902,7 @@ class ClashYamlParser : SubscriptionParser {
         val version = asInt(map["version"]) ?: 3
         val sni = asString(map["sni"]) ?: server
         val fingerprint = asString(map["client-fingerprint"]) ?: globalFingerprint
-        
+
         return Outbound(
             type = "shadowtls",
             tag = name,

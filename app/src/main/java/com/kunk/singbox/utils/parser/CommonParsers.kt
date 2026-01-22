@@ -22,7 +22,7 @@ class SingBoxParser(private val gson: Gson) : SubscriptionParser {
     override fun canParse(content: String): Boolean {
         val trimmed = content.trim()
         return (trimmed.startsWith("{") && trimmed.endsWith("}")) ||
-               (trimmed.startsWith("[") && trimmed.endsWith("]"))
+            (trimmed.startsWith("[") && trimmed.endsWith("]"))
     }
 
     override fun parse(content: String): SingBoxConfig? {
@@ -136,7 +136,6 @@ class Base64Parser(private val nodeParser: (String) -> Outbound?) : Subscription
         return SingBoxConfig(outbounds = outbounds)
     }
 
-
     private fun extractLinksFromLine(line: String): List<String> {
         val normalized = line.trim()
             .trimStart('\uFEFF', '\u200B', '\u200C', '\u200D')
@@ -207,11 +206,11 @@ class Base64Parser(private val nodeParser: (String) -> Outbound?) : Subscription
                 val text = String(decoded)
                 // 验证解码结果是否看起来像文本 (包含常见协议头或换行)
                 if (text.isNotBlank() && (
-                    text.contains("://") || 
-                    text.contains("\n") || 
-                    text.contains("\r") ||
-                    text.all { it.isLetterOrDigit() || it.isWhitespace() || "=/-_:.".contains(it) }
-                )) {
+                        text.contains("://") ||
+                            text.contains("\n") ||
+                            text.contains("\r") ||
+                            text.all { it.isLetterOrDigit() || it.isWhitespace() || "=/-_:.".contains(it) }
+                        )) {
                     return text
                 }
             } catch (_: Exception) {}

@@ -74,57 +74,57 @@ fun ConnectionSettingsScreen(
             )
         }
     ) { padding ->
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(padding)
-            .padding(16.dp)
-            .verticalScroll(scrollState)
-    ) {
-        StandardCard {
-            SettingSwitchItem(
-                title = stringResource(R.string.connection_settings_auto_connect),
-                subtitle = stringResource(R.string.connection_settings_auto_connect_subtitle),
-                checked = settings.autoConnect,
-                onCheckedChange = { settingsViewModel.setAutoConnect(it) }
-            )
-            SettingSwitchItem(
-                title = stringResource(R.string.connection_settings_hide_recent),
-                subtitle = stringResource(R.string.connection_settings_hide_recent_subtitle),
-                checked = settings.excludeFromRecent,
-                onCheckedChange = { settingsViewModel.setExcludeFromRecent(it) }
-            )
-            SettingSwitchItem(
-                title = stringResource(R.string.connection_settings_show_notification_speed),
-                subtitle = stringResource(R.string.connection_settings_show_notification_speed_subtitle),
-                checked = settings.showNotificationSpeed,
-                onCheckedChange = { settingsViewModel.setShowNotificationSpeed(it) }
-            )
-        }
-        
-        Spacer(modifier = Modifier.height(16.dp))
-        
-        StandardCard {
-            SettingSwitchItem(
-                title = stringResource(R.string.connection_settings_network_change_reset),
-                subtitle = stringResource(R.string.connection_settings_network_change_reset_subtitle),
-                checked = settings.networkChangeResetConnections,
-                onCheckedChange = { settingsViewModel.setNetworkChangeResetConnections(it) }
-            )
-            SettingSwitchItem(
-                title = stringResource(R.string.connection_settings_wake_reset),
-                subtitle = stringResource(R.string.connection_settings_wake_reset_subtitle),
-                checked = settings.wakeResetConnections,
-                onCheckedChange = { settingsViewModel.setWakeResetConnections(it) }
-            )
-            SettingItem(
-                title = stringResource(R.string.connection_settings_power_saving),
-                subtitle = stringResource(R.string.connection_settings_power_saving_subtitle),
-                value = stringResource(settings.backgroundPowerSavingDelay.displayNameRes),
-                onClick = { showPowerSavingDelayDialog = true }
-            )
-        }
-            
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .padding(16.dp)
+                .verticalScroll(scrollState)
+        ) {
+            StandardCard {
+                SettingSwitchItem(
+                    title = stringResource(R.string.connection_settings_auto_connect),
+                    subtitle = stringResource(R.string.connection_settings_auto_connect_subtitle),
+                    checked = settings.autoConnect,
+                    onCheckedChange = { settingsViewModel.setAutoConnect(it) }
+                )
+                SettingSwitchItem(
+                    title = stringResource(R.string.connection_settings_hide_recent),
+                    subtitle = stringResource(R.string.connection_settings_hide_recent_subtitle),
+                    checked = settings.excludeFromRecent,
+                    onCheckedChange = { settingsViewModel.setExcludeFromRecent(it) }
+                )
+                SettingSwitchItem(
+                    title = stringResource(R.string.connection_settings_show_notification_speed),
+                    subtitle = stringResource(R.string.connection_settings_show_notification_speed_subtitle),
+                    checked = settings.showNotificationSpeed,
+                    onCheckedChange = { settingsViewModel.setShowNotificationSpeed(it) }
+                )
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            StandardCard {
+                SettingSwitchItem(
+                    title = stringResource(R.string.connection_settings_network_change_reset),
+                    subtitle = stringResource(R.string.connection_settings_network_change_reset_subtitle),
+                    checked = settings.networkChangeResetConnections,
+                    onCheckedChange = { settingsViewModel.setNetworkChangeResetConnections(it) }
+                )
+                SettingSwitchItem(
+                    title = stringResource(R.string.connection_settings_wake_reset),
+                    subtitle = stringResource(R.string.connection_settings_wake_reset_subtitle),
+                    checked = settings.wakeResetConnections,
+                    onCheckedChange = { settingsViewModel.setWakeResetConnections(it) }
+                )
+                SettingItem(
+                    title = stringResource(R.string.connection_settings_power_saving),
+                    subtitle = stringResource(R.string.connection_settings_power_saving_subtitle),
+                    value = stringResource(settings.backgroundPowerSavingDelay.displayNameRes),
+                    onClick = { showPowerSavingDelayDialog = true }
+                )
+            }
+
             Spacer(modifier = Modifier.height(16.dp))
 
             StandardCard {
@@ -132,7 +132,7 @@ fun ConnectionSettingsScreen(
                     title = "代理端口",
                     subtitle = "本地混合代理端口 (Mixed Port)",
                     value = settings.proxyPort.toString(),
-                    onValueChange = { 
+                    onValueChange = {
                         it.toIntOrNull()?.let { port -> settingsViewModel.updateProxyPort(port) }
                     }
                 )
@@ -149,7 +149,7 @@ fun ConnectionSettingsScreen(
                     onCheckedChange = { settingsViewModel.updateAppendHttpProxy(it) }
                 )
             }
-            
+
             Spacer(modifier = Modifier.height(16.dp))
 
             StandardCard {
@@ -170,7 +170,7 @@ fun ConnectionSettingsScreen(
                     }
                 )
             }
-            
+
             Spacer(modifier = Modifier.height(32.dp))
         }
     }

@@ -11,7 +11,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.ArrowBack
-import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material3.*
 import androidx.compose.ui.res.stringResource
@@ -31,7 +30,6 @@ import com.kunk.singbox.ui.components.SingleSelectDialog
 import com.kunk.singbox.ui.components.StandardCard
 import com.kunk.singbox.ui.components.StyledTextField
 import androidx.compose.foundation.shape.RoundedCornerShape
-import com.kunk.singbox.ui.theme.Neutral800
 import com.kunk.singbox.viewmodel.SettingsViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -176,7 +174,7 @@ fun CustomRuleEditorDialog(
     var type by remember { mutableStateOf(initialRule?.type ?: RuleType.DOMAIN_SUFFIX) }
     var value by remember { mutableStateOf(initialRule?.value ?: "") }
     var outbound by remember { mutableStateOf(initialRule?.outbound ?: OutboundTag.PROXY) }
-    
+
     var showTypeDialog by remember { mutableStateOf(false) }
     var showOutboundDialog by remember { mutableStateOf(false) }
     var showDeleteConfirm by remember { mutableStateOf(false) }
@@ -208,7 +206,7 @@ fun CustomRuleEditorDialog(
             onDismiss = { showOutboundDialog = false }
         )
     }
-    
+
     if (showDeleteConfirm) {
         ConfirmDialog(
             title = stringResource(R.string.custom_rules_delete_title),
@@ -257,7 +255,7 @@ fun CustomRuleEditorDialog(
                     label = stringResource(R.string.custom_rules_content),
                     value = value,
                     onValueChange = { value = it },
-                    placeholder = when(type) {
+                    placeholder = when (type) {
                         RuleType.DOMAIN -> "example.com"
                         RuleType.DOMAIN_SUFFIX -> "example.com"
                         RuleType.IP_CIDR -> "192.168.0.0/16"

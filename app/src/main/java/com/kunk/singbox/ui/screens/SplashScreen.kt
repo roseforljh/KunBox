@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -23,7 +22,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -40,7 +38,7 @@ fun SplashScreen(
     val scale = remember { Animatable(0.3f) }
     val alpha = remember { Animatable(0f) }
     val textAlpha = remember { Animatable(0f) }
-    
+
     LaunchedEffect(Unit) {
         // Logo animation
         scale.animateTo(
@@ -54,18 +52,18 @@ fun SplashScreen(
             targetValue = 1f,
             animationSpec = tween(durationMillis = 600)
         )
-        
+
         // Text fade in
         textAlpha.animateTo(
             targetValue = 1f,
             animationSpec = tween(durationMillis = 500)
         )
-        
+
         // Wait and navigate
         delay(800)
         onSplashComplete()
     }
-    
+
     // Start alpha animation immediately
     LaunchedEffect(Unit) {
         alpha.animateTo(
@@ -73,7 +71,7 @@ fun SplashScreen(
             animationSpec = tween(durationMillis = 600)
         )
     }
-    
+
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -110,7 +108,7 @@ fun SplashScreen(
                         radius = size.minDimension / 2 - 4.dp.toPx(),
                         style = androidx.compose.ui.graphics.drawscope.Stroke(width = 4.dp.toPx())
                     )
-                    
+
                     // Draw inner decorative ring
                     drawCircle(
                         color = PureWhite.copy(alpha = 0.3f),
@@ -118,7 +116,7 @@ fun SplashScreen(
                         style = androidx.compose.ui.graphics.drawscope.Stroke(width = 2.dp.toPx())
                     )
                 }
-                
+
                 // S letter in center
                 Text(
                     text = "S",
@@ -127,9 +125,9 @@ fun SplashScreen(
                     color = PureWhite
                 )
             }
-            
+
             Spacer(modifier = Modifier.height(32.dp))
-            
+
             // App name
             Text(
                 text = "KunBox",
@@ -140,9 +138,9 @@ fun SplashScreen(
                 color = PureWhite,
                 modifier = Modifier.alpha(textAlpha.value)
             )
-            
+
             Spacer(modifier = Modifier.height(8.dp))
-            
+
             // Tagline
             Text(
                 text = stringResource(R.string.splash_tagline),
@@ -151,9 +149,9 @@ fun SplashScreen(
                 modifier = Modifier.alpha(textAlpha.value),
                 letterSpacing = 4.sp
             )
-            
+
             Spacer(modifier = Modifier.height(80.dp))
-            
+
             // Version
             Text(
                 text = "v1.0.0",

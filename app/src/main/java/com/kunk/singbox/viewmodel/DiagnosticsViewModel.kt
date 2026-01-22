@@ -15,7 +15,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import okhttp3.OkHttpClient
 import okhttp3.Request
 import com.kunk.singbox.utils.NetworkClient
 import java.io.File
@@ -23,7 +22,6 @@ import java.net.InetAddress
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-import java.util.concurrent.TimeUnit
 
 class DiagnosticsViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -163,7 +161,7 @@ class DiagnosticsViewModel(application: Application) : AndroidViewModel(applicat
                 }
                 val end = System.currentTimeMillis()
                 val duration = end - start
-                
+
                 if (response.isSuccessful || response.code == 204) {
                     _resultMessage.value = "Target: www.google.com\nStatus: Success (${response.code})\nDuration: ${duration}ms\n\nNote: If proxy is enabled, this reflects proxy connection quality; otherwise, it reflects local network quality."
                 } else {
@@ -189,7 +187,7 @@ class DiagnosticsViewModel(application: Application) : AndroidViewModel(applicat
             try {
                 val results = mutableListOf<Long>()
                 val count = 4
-                
+
                 // 执行 TCP Ping 4 次
                 repeat(count) {
                     val rtt = TcpPing.connect(host, port)
@@ -197,19 +195,19 @@ class DiagnosticsViewModel(application: Application) : AndroidViewModel(applicat
                         results.add(rtt)
                     }
                 }
-                
+
                 val summary = if (results.isNotEmpty()) {
                     val min = results.minOrNull() ?: 0
                     val max = results.maxOrNull() ?: 0
                     val avg = results.average().toInt()
                     val loss = ((count - results.size).toDouble() / count * 100).toInt()
-                    
+
                     "Sent: $count, Received: ${results.size}, Loss: $loss%\n" +
-                    "Min: ${min}ms, Avg: ${avg}ms, Max: ${max}ms"
+                        "Min: ${min}ms, Avg: ${avg}ms, Max: ${max}ms"
                 } else {
                     "Sent: $count, Received: 0, Loss: 100%"
                 }
-                
+
                 _resultMessage.value = "Target: $host:$port (Google DNS)\nMethod: TCP Ping (Java Socket)\n\n$summary"
             } catch (e: Exception) {
                 _resultMessage.value = "TCP Ping failed: ${e.message}"
@@ -248,7 +246,7 @@ class DiagnosticsViewModel(application: Application) : AndroidViewModel(applicat
             _isRoutingLoading.value = true
             _resultTitle.value = "Routing Test"
             val testDomain = "baidu.com"
-            
+
             val config = configRepository.getActiveConfig()
             if (config == null) {
                 _resultMessage.value = "Cannot execute test: active configuration not loaded."
@@ -351,27 +349,27 @@ class DiagnosticsViewModel(application: Application) : AndroidViewModel(applicat
 
     private fun findMatch(config: SingBoxConfig, domain: String): MatchResult {
         val rules = config.route?.rules ?: return MatchResult("Default (no rules)", config.route?.finalOutbound ?: "direct")
-        
+
         for (rule in rules) {
             // Domain match
             if (rule.domain?.contains(domain) == true) {
                 return MatchResult("domain: $domain", rule.outbound ?: "unknown")
             }
-            
+
             // Domain suffix match
             rule.domainSuffix?.forEach { suffix ->
                 if (domain.endsWith(suffix)) {
                     return MatchResult("domain_suffix: $suffix", rule.outbound ?: "unknown")
                 }
             }
-            
+
             // Domain keyword match
             rule.domainKeyword?.forEach { keyword ->
                 if (domain.contains(keyword)) {
                     return MatchResult("domain_keyword: $keyword", rule.outbound ?: "unknown")
                 }
             }
-            
+
             // Geosite match (Simplified: just checking if rule has geosite and domain is known to be in it)
             // This is a very rough approximation because we don't have the geosite db loaded here.
             // For demonstration, we can check common ones if we want, or just skip.
@@ -379,13 +377,13 @@ class DiagnosticsViewModel(application: Application) : AndroidViewModel(applicat
             // we will skip geosite matching in this pure-kotlin implementation unless we want to hardcode some.
             // However, if the rule is "geosite:cn" and domain is "baidu.com", we might want to simulate it.
             if (rule.geosite?.contains("cn") == true && (domain.endsWith(".cn") || domain == "baidu.com" || domain == "qq.com")) {
-                 return MatchResult("geosite:cn", rule.outbound ?: "unknown")
+                return MatchResult("geosite:cn", rule.outbound ?: "unknown")
             }
-             if (rule.geosite?.contains("google") == true && (domain.contains("google") || domain.contains("youtube"))) {
-                 return MatchResult("geosite:google", rule.outbound ?: "unknown")
+            if (rule.geosite?.contains("google") == true && (domain.contains("google") || domain.contains("youtube"))) {
+                return MatchResult("geosite:google", rule.outbound ?: "unknown")
             }
         }
-        
+
         return MatchResult("Final (No match)", config.route?.finalOutbound ?: "direct")
     }
 }

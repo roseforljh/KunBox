@@ -338,7 +338,7 @@ class NetworkHelper(
             val cm = connectivityManager ?: return
             val caps = cm.getNetworkCapabilities(network)
             val isValidPhysical = caps?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true &&
-                    caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN) == true
+                caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN) == true
 
             if (!isValidPhysical) return
 
@@ -385,7 +385,7 @@ class NetworkHelper(
     private fun isValidPhysicalNetwork(cm: ConnectivityManager, network: Network): Boolean {
         val caps = cm.getNetworkCapabilities(network) ?: return false
         return caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
-                caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN)
+            caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN)
     }
 
     /**

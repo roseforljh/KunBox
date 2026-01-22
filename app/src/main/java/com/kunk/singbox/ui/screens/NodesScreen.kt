@@ -37,7 +37,6 @@ import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
-import kotlinx.coroutines.launch
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Bolt
 import androidx.compose.material.icons.rounded.Close
@@ -73,7 +72,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
@@ -145,7 +143,6 @@ fun NodesScreen(
     var searchQuery by remember { mutableStateOf("") }
     var isSearchExpanded by remember { mutableStateOf(false) }
     val isTesting by viewModel.isTesting.collectAsState()
-
 
     LaunchedEffect(Unit) {
         viewModel.toastEvents.collectLatest { message ->
@@ -287,108 +284,108 @@ fun NodesScreen(
                             verticalArrangement = Arrangement.spacedBy(16.dp),
                             modifier = Modifier.padding(bottom = 16.dp)
                         ) {
-                        // Clear Latency
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                text = stringResource(R.string.nodes_clear_latency),
-                                color = MaterialTheme.colorScheme.onBackground,
-                                modifier = Modifier.padding(end = 8.dp),
-                                style = MaterialTheme.typography.labelMedium
-                            )
-                            SmallFloatingActionButton(
-                                onClick = {
-                                    viewModel.clearLatency()
-                                    isFabExpanded = false
-                                },
-                                containerColor = MaterialTheme.colorScheme.primary,
-                                contentColor = MaterialTheme.colorScheme.onPrimary
-                            ) {
-                                Icon(Icons.Rounded.Delete, contentDescription = stringResource(R.string.nodes_clear_latency))
+                            // Clear Latency
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = stringResource(R.string.nodes_clear_latency),
+                                    color = MaterialTheme.colorScheme.onBackground,
+                                    modifier = Modifier.padding(end = 8.dp),
+                                    style = MaterialTheme.typography.labelMedium
+                                )
+                                SmallFloatingActionButton(
+                                    onClick = {
+                                        viewModel.clearLatency()
+                                        isFabExpanded = false
+                                    },
+                                    containerColor = MaterialTheme.colorScheme.primary,
+                                    contentColor = MaterialTheme.colorScheme.onPrimary
+                                ) {
+                                    Icon(Icons.Rounded.Delete, contentDescription = stringResource(R.string.nodes_clear_latency))
+                                }
                             }
-                        }
-                        
-                        // Add Node
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                text = stringResource(R.string.nodes_add),
-                                color = MaterialTheme.colorScheme.onBackground,
-                                modifier = Modifier.padding(end = 8.dp),
-                                style = MaterialTheme.typography.labelMedium
-                            )
-                            SmallFloatingActionButton(
-                                onClick = {
-                                    showAddNodeDialog = true
-                                    isFabExpanded = false
-                                },
-                                containerColor = MaterialTheme.colorScheme.primary,
-                                contentColor = MaterialTheme.colorScheme.onPrimary
-                            ) {
-                                Icon(Icons.Rounded.Add, contentDescription = stringResource(R.string.nodes_add))
-                            }
-                        }
 
-                        // Manual Create Node
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                text = stringResource(R.string.nodes_manual_create),
-                                color = MaterialTheme.colorScheme.onBackground,
-                                modifier = Modifier.padding(end = 8.dp),
-                                style = MaterialTheme.typography.labelMedium
-                            )
-                            SmallFloatingActionButton(
-                                onClick = {
-                                    showProtocolSelectDialog = true
-                                    isFabExpanded = false
-                                },
-                                containerColor = MaterialTheme.colorScheme.primary,
-                                contentColor = MaterialTheme.colorScheme.onPrimary
-                            ) {
-                                Icon(Icons.Rounded.Edit, contentDescription = stringResource(R.string.nodes_manual_create))
+                            // Add Node
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = stringResource(R.string.nodes_add),
+                                    color = MaterialTheme.colorScheme.onBackground,
+                                    modifier = Modifier.padding(end = 8.dp),
+                                    style = MaterialTheme.typography.labelMedium
+                                )
+                                SmallFloatingActionButton(
+                                    onClick = {
+                                        showAddNodeDialog = true
+                                        isFabExpanded = false
+                                    },
+                                    containerColor = MaterialTheme.colorScheme.primary,
+                                    contentColor = MaterialTheme.colorScheme.onPrimary
+                                ) {
+                                    Icon(Icons.Rounded.Add, contentDescription = stringResource(R.string.nodes_add))
+                                }
                             }
-                        }
-                        
-                        // Test Latency
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                text = if (isTesting) stringResource(R.string.nodes_stop_test) else stringResource(R.string.nodes_test_latency),
-                                color = MaterialTheme.colorScheme.onBackground,
-                                modifier = Modifier.padding(end = 8.dp),
-                                style = MaterialTheme.typography.labelMedium
-                            )
-                            SmallFloatingActionButton(
-                                onClick = {
-                                    viewModel.testAllLatency()
-                                    isFabExpanded = false
-                                },
-                                containerColor = MaterialTheme.colorScheme.primary,
-                                contentColor = MaterialTheme.colorScheme.onPrimary
-                            ) {
-                                if (isTesting) {
-                                    CircularProgressIndicator(
-                                        modifier = Modifier.size(20.dp),
-                                        color = MaterialTheme.colorScheme.onPrimary,
-                                        strokeWidth = 2.dp
-                                    )
-                                } else {
-                                    Icon(Icons.Rounded.Bolt, contentDescription = stringResource(R.string.nodes_test_latency))
+
+                            // Manual Create Node
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = stringResource(R.string.nodes_manual_create),
+                                    color = MaterialTheme.colorScheme.onBackground,
+                                    modifier = Modifier.padding(end = 8.dp),
+                                    style = MaterialTheme.typography.labelMedium
+                                )
+                                SmallFloatingActionButton(
+                                    onClick = {
+                                        showProtocolSelectDialog = true
+                                        isFabExpanded = false
+                                    },
+                                    containerColor = MaterialTheme.colorScheme.primary,
+                                    contentColor = MaterialTheme.colorScheme.onPrimary
+                                ) {
+                                    Icon(Icons.Rounded.Edit, contentDescription = stringResource(R.string.nodes_manual_create))
+                                }
+                            }
+
+                            // Test Latency
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = if (isTesting) stringResource(R.string.nodes_stop_test) else stringResource(R.string.nodes_test_latency),
+                                    color = MaterialTheme.colorScheme.onBackground,
+                                    modifier = Modifier.padding(end = 8.dp),
+                                    style = MaterialTheme.typography.labelMedium
+                                )
+                                SmallFloatingActionButton(
+                                    onClick = {
+                                        viewModel.testAllLatency()
+                                        isFabExpanded = false
+                                    },
+                                    containerColor = MaterialTheme.colorScheme.primary,
+                                    contentColor = MaterialTheme.colorScheme.onPrimary
+                                ) {
+                                    if (isTesting) {
+                                        CircularProgressIndicator(
+                                            modifier = Modifier.size(20.dp),
+                                            color = MaterialTheme.colorScheme.onPrimary,
+                                            strokeWidth = 2.dp
+                                        )
+                                    } else {
+                                        Icon(Icons.Rounded.Bolt, contentDescription = stringResource(R.string.nodes_test_latency))
+                                    }
                                 }
                             }
                         }
                     }
-                }
-                
-                FloatingActionButton(
-                    onClick = { isFabExpanded = !isFabExpanded },
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    contentColor = MaterialTheme.colorScheme.onPrimary
-                ) {
-                    Icon(
-                        imageVector = if (isFabExpanded) Icons.Rounded.Close else Icons.Rounded.Add,
-                        contentDescription = stringResource(R.string.common_menu)
-                    )
+
+                    FloatingActionButton(
+                        onClick = { isFabExpanded = !isFabExpanded },
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onPrimary
+                    ) {
+                        Icon(
+                            imageVector = if (isFabExpanded) Icons.Rounded.Close else Icons.Rounded.Add,
+                            contentDescription = stringResource(R.string.common_menu)
+                        )
+                    }
                 }
             }
-        }
         }
     ) { padding ->
         Column(
@@ -504,70 +501,70 @@ fun NodesScreen(
                     contentPadding = PaddingValues(bottom = 88.dp, top = 12.dp, start = 16.dp, end = 16.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                itemsIndexed(
-                    items = filteredNodes,
-                    key = { _, node -> node.id },
-                    contentType = { _, _ -> "node" }
-                ) { index, node ->
-                    val isSelected = activeNodeId == node.id
-                    val isTestingNode = testingNodeIds.contains(node.id)
+                    itemsIndexed(
+                        items = filteredNodes,
+                        key = { _, node -> node.id },
+                        contentType = { _, _ -> "node" }
+                    ) { index, node ->
+                        val isSelected = activeNodeId == node.id
+                        val isTestingNode = testingNodeIds.contains(node.id)
 
-                    val onNodeClick = remember(node.id) { { viewModel.setActiveNode(node.id) } }
-                    val onEdit = remember(node.id) {
-                        { navController.navigate(Screen.NodeDetail.createRoute(node.id)) }
-                    }
-                    val onExport = remember(node.id) {
-                        {
-                            val link = viewModel.exportNode(node.id)
-                            if (link != null) {
-                                exportLink = link
+                        val onNodeClick = remember(node.id) { { viewModel.setActiveNode(node.id) } }
+                        val onEdit = remember(node.id) {
+                            { navController.navigate(Screen.NodeDetail.createRoute(node.id)) }
+                        }
+                        val onExport = remember(node.id) {
+                            {
+                                val link = viewModel.exportNode(node.id)
+                                if (link != null) {
+                                    exportLink = link
+                                }
                             }
                         }
+                        val onLatency = remember(node.id) { { viewModel.testLatency(node.id) } }
+                        val onDelete = remember(node.id) { { viewModel.deleteNode(node.id) } }
+
+                        // Scroll-triggered animation for all items
+                        var visible by remember { mutableStateOf(false) }
+                        LaunchedEffect(Unit) {
+                            visible = true
+                        }
+
+                        val alpha by animateFloatAsState(
+                            targetValue = if (visible) 1f else 0f,
+                            animationSpec = tween(durationMillis = 300),
+                            label = "alpha"
+                        )
+                        val translateY by animateFloatAsState(
+                            targetValue = if (visible) 0f else 50f,
+                            animationSpec = tween(durationMillis = 300),
+                            label = "translateY"
+                        )
+
+                        NodeCard(
+                            name = node.displayName,
+                            type = node.protocolDisplay,
+                            latency = node.latencyMs,
+                            isSelected = isSelected,
+                            isTesting = isTestingNode,
+                            regionFlag = node.regionFlag,
+                            trafficUsed = node.trafficUsed,
+                            onClick = onNodeClick,
+                            onEdit = onEdit,
+                            onExport = onExport,
+                            onLatency = onLatency,
+                            onDelete = onDelete,
+                            modifier = Modifier
+                                .animateItemPlacement()
+                                .graphicsLayer(
+                                    alpha = alpha,
+                                    translationY = translateY
+                                )
+                        )
                     }
-                    val onLatency = remember(node.id) { { viewModel.testLatency(node.id) } }
-                    val onDelete = remember(node.id) { { viewModel.deleteNode(node.id) } }
-
-                    // Scroll-triggered animation for all items
-                    var visible by remember { mutableStateOf(false) }
-                    LaunchedEffect(Unit) {
-                        visible = true
-                    }
-
-                    val alpha by animateFloatAsState(
-                        targetValue = if (visible) 1f else 0f,
-                        animationSpec = tween(durationMillis = 300),
-                        label = "alpha"
-                    )
-                    val translateY by animateFloatAsState(
-                        targetValue = if (visible) 0f else 50f,
-                        animationSpec = tween(durationMillis = 300),
-                        label = "translateY"
-                    )
-
-                    NodeCard(
-                        name = node.displayName,
-                        type = node.protocolDisplay,
-                        latency = node.latencyMs,
-                        isSelected = isSelected,
-                        isTesting = isTestingNode,
-                        regionFlag = node.regionFlag,
-                        trafficUsed = node.trafficUsed,
-                        onClick = onNodeClick,
-                        onEdit = onEdit,
-                        onExport = onExport,
-                        onLatency = onLatency,
-                        onDelete = onDelete,
-                        modifier = Modifier
-                            .animateItemPlacement()
-                            .graphicsLayer(
-                                alpha = alpha,
-                                translationY = translateY
-                            )
-                    )
                 }
             }
         }
-    }
     }
 }
 

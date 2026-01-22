@@ -2,8 +2,6 @@ package com.kunk.singbox.ui.screens
 
 import com.kunk.singbox.R
 import android.content.Intent
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -125,7 +123,7 @@ fun LogsScreen(navController: NavController, viewModel: LogViewModel = viewModel
                     } else {
                         log
                     }
-                    
+
                     Text(
                         text = displayLog,
                         color = when {

@@ -37,9 +37,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import com.kunk.singbox.R
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.delay
 import kotlin.random.Random
-
 
 @Composable
 fun BigToggle(
@@ -59,7 +57,7 @@ fun BigToggle(
 
     // Use updateTransition for coordinated animations
     val transition = updateTransition(targetState = isRunning, label = "BigToggleTransition")
-    
+
     // Vertical offset animation - 关闭时下移 (使用明确时长的 tween 动画)
     val verticalOffset by transition.animateDp(
         transitionSpec = {
@@ -72,7 +70,7 @@ fun BigToggle(
     ) { running ->
         if (running) 0.dp else 20.dp
     }
-    
+
     // 控制晃动动画的 key，每次 isRunning 变为 true 时重置
     // 使用 mutableStateOf 并显式类型，避免 MutableIntState 委托的兼容性问题
     var shakeKey by remember { androidx.compose.runtime.mutableStateOf(0) }
@@ -81,10 +79,10 @@ fun BigToggle(
             shakeKey = shakeKey + 1
         }
     }
-    
+
     // 晃动动画 - 使用 Animatable 手动控制
     val rotation = remember { Animatable(0f) }
-    
+
     // 弹跳动画 - 开启时先弹起再落下
     val bounceOffset = remember { Animatable(0f) }
 
@@ -106,13 +104,13 @@ fun BigToggle(
             floatOffset.animateTo(0f, animationSpec = tween(300))
         }
     }
-    
+
     LaunchedEffect(shakeKey) {
         if (isRunning) {
             // 并行执行弹跳和抖动动画
             bounceOffset.snapTo(0f)
             rotation.snapTo(0f)
-            
+
             // 同时启动弹跳和抖动
             val bounceJob = launch {
                 // 慢速弹起到 -100dp (负值表示向上)
@@ -129,7 +127,7 @@ fun BigToggle(
                     )
                 )
             }
-            
+
             val shakeJob = launch {
                 // 晃动动画 - 仅在弹起阶段进行 (约300ms)
                 // 快速晃动几下
@@ -150,7 +148,7 @@ fun BigToggle(
                 // 确保最后回到 0
                 rotation.snapTo(0f)
             }
-            
+
             // 等待两个动画都完成
             bounceJob.join()
             shakeJob.join()
@@ -163,7 +161,6 @@ fun BigToggle(
     // Color animations
     // 移除绿色背景，改为透明或极淡的颜色
     val backgroundColor = Color.Transparent
-    
 
     // 使用 Box 保持居中，移除硬编码的 padding
     Box(
@@ -184,8 +181,8 @@ fun BigToggle(
                     targetState = isRunning,
                     transitionSpec = {
                         fadeIn(animationSpec = tween(400)) togetherWith
-                        fadeOut(animationSpec = tween(400)) using
-                        SizeTransform(clip = false)
+                            fadeOut(animationSpec = tween(400)) using
+                            SizeTransform(clip = false)
                     },
                     label = "IconCrossfade"
                 ) { running ->
@@ -203,7 +200,7 @@ fun BigToggle(
                             }
                     )
                 }
-                
+
                 Box(
                     modifier = Modifier
                         .size(200.dp)

@@ -112,12 +112,12 @@ object FakeRepository {
         // Simulate latency test
         delay(Random.nextLong(200, 800))
         _nodes.update { list ->
-            list.map { 
-                if (it.id == nodeId) it.copy(latencyMs = Random.nextInt(20, 300).toLong()) else it 
+            list.map {
+                if (it.id == nodeId) it.copy(latencyMs = Random.nextInt(20, 300).toLong()) else it
             }
         }
     }
-    
+
     fun setActiveNode(nodeId: String) {
         _activeNodeId.value = nodeId
     }

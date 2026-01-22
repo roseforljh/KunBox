@@ -6,7 +6,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -51,7 +50,7 @@ fun DiagnosticsScreen(
     val showResultDialog by viewModel.showResultDialog.collectAsState()
     val resultTitle by viewModel.resultTitle.collectAsState()
     val resultMessage by viewModel.resultMessage.collectAsState()
-    
+
     val isConnectivityLoading by viewModel.isConnectivityLoading.collectAsState()
     val isPingLoading by viewModel.isPingLoading.collectAsState()
     val isDnsLoading by viewModel.isDnsLoading.collectAsState()

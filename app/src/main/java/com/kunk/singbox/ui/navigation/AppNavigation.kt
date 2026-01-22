@@ -5,12 +5,8 @@ import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.unit.IntOffset
 import androidx.navigation.NavBackStackEntry
@@ -41,7 +37,7 @@ sealed class Screen(val route: String) {
     object Nodes : Screen("nodes")
     object Profiles : Screen("profiles")
     object Settings : Screen("settings")
-    
+
     // Details & Wizards
     object ProfileEditor : Screen("profile_editor")
     object NodeDetail : Screen("node_detail/{nodeId}") {
@@ -215,7 +211,7 @@ fun AppNavigation(navController: NavHostController) {
             popEnterTransition = tabPopEnterTransition,
             popExitTransition = tabExitTransition
         ) { SettingsScreen(navController) }
-        
+
         // Sub Screens
         composable(
             route = Screen.ProfileEditor.route,

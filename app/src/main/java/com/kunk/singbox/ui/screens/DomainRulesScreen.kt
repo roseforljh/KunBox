@@ -52,7 +52,6 @@ import com.kunk.singbox.ui.components.ProfileNodeSelectDialog
 import com.kunk.singbox.ui.components.SingleSelectDialog
 import com.kunk.singbox.ui.components.StandardCard
 import com.kunk.singbox.ui.components.StyledTextField
-import com.kunk.singbox.ui.theme.Neutral800
 import com.kunk.singbox.viewmodel.NodesViewModel
 import com.kunk.singbox.viewmodel.ProfilesViewModel
 import com.kunk.singbox.viewmodel.SettingsViewModel
@@ -417,7 +416,7 @@ private fun DomainRuleEditorDialog(
                     onValueChange = { value = it },
                     placeholder = "google.com / =exact.com / *keyword*"
                 )
-                
+
                 val smartHint = getSmartTypeHint(value)
                 if (smartHint.isNotEmpty()) {
                     Text(
@@ -492,7 +491,7 @@ private fun DomainRuleEditorDialog(
 
                     val smartType = parseSmartDomainType(rawValue)
                     val finalValue = cleanDomainValue(rawValue)
-                    
+
                     val finalName = generateRuleNameFromValue(finalValue)
                     if (finalName.isEmpty()) return@TextButton
 

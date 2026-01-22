@@ -4,7 +4,6 @@ import com.kunk.singbox.R
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.layout.wrapContentSize
@@ -15,7 +14,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.mutableStateMapOf
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
@@ -24,15 +22,10 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
-import androidx.compose.material.icons.rounded.ArrowDownward
-import androidx.compose.material.icons.rounded.ArrowUpward
-import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.CloudDownload
 import androidx.compose.material.icons.rounded.Delete
-import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.MoreVert
-import androidx.compose.material.icons.rounded.Sort
 import androidx.compose.material3.*
 import androidx.compose.foundation.layout.Box
 import androidx.compose.ui.res.stringResource
@@ -53,8 +46,6 @@ import com.kunk.singbox.ui.components.StandardCard
 import com.kunk.singbox.ui.components.StyledTextField
 import com.kunk.singbox.ui.navigation.Screen
 import androidx.compose.foundation.shape.RoundedCornerShape
-import com.kunk.singbox.ui.theme.Neutral800
-import com.kunk.singbox.ui.theme.Neutral700
 import com.kunk.singbox.viewmodel.DefaultRuleSetDownloadState
 import com.kunk.singbox.viewmodel.NodesViewModel
 import com.kunk.singbox.viewmodel.ProfilesViewModel
@@ -101,17 +92,17 @@ fun RuleSetsScreen(
             settingsViewModel.ensureDefaultRuleSetsReady()
         }
     }
-    
+
     var showAddDialog by remember { mutableStateOf(false) }
     var editingRuleSet by remember { mutableStateOf<RuleSet?>(null) }
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     val listState = rememberLazyListState()
-    
+
     var isSelectionMode by remember { mutableStateOf(false) }
     val selectedItems = remember { mutableStateMapOf<String, Boolean>() }
     var showDeleteConfirmDialog by remember { mutableStateOf(false) }
-    
+
     // Outbound/Inbound dialog states
     var outboundEditingRuleSet by remember { mutableStateOf<RuleSet?>(null) }
     var showOutboundModeDialog by remember { mutableStateOf(false) }
@@ -123,7 +114,7 @@ fun RuleSetsScreen(
     val availableInbounds = listOf("tun", "mixed")
 
     val selectionNodes = nodesForSelection
-    
+
     // Helper functions for node resolution
     fun resolveNodeByStoredValue(value: String?): NodeUi? {
         if (value.isNullOrBlank()) return null
@@ -135,7 +126,7 @@ fun RuleSetsScreen(
         }
         return allNodes.find { it.id == value } ?: allNodes.find { it.name == value }
     }
-    
+
     fun toNodeRef(node: NodeUi): String = "${node.sourceProfileId}::${node.name}"
 
     // Reordering State
@@ -144,14 +135,14 @@ fun RuleSetsScreen(
     val isDragging = remember { mutableStateOf(false) }
     var suppressPlacementAnimation by remember { mutableStateOf(false) }
     val enablePlacementAnimation = false
-    
+
     LaunchedEffect(settings.ruleSets) {
         if (!isDragging.value) {
             // Only update if the set of IDs has changed or size changed
             // This prevents overwriting local reordering with stale remote data immediately after drop
             val currentIds = ruleSets.map { it.id }.toSet()
             val newIds = settings.ruleSets.map { it.id }.toSet()
-            
+
             if (currentIds != newIds || ruleSets.size != settings.ruleSets.size || ruleSets.isEmpty()) {
                 ruleSets.clear()
                 ruleSets.addAll(settings.ruleSets)
@@ -179,15 +170,15 @@ fun RuleSetsScreen(
     var draggingItemIndex by remember { mutableStateOf<Int?>(null) }
     var draggingItemOffset by remember { mutableStateOf(0f) }
     var itemHeightPx by remember { mutableStateOf(0f) }
-    
+
     val density = androidx.compose.ui.platform.LocalDensity.current
     val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
-    
+
     fun exitSelectionMode() {
         isSelectionMode = false
         selectedItems.clear()
     }
-    
+
     fun toggleSelection(id: String) {
         selectedItems[id] = !(selectedItems[id] ?: false)
         if (selectedItems.none { it.value }) {
@@ -226,11 +217,11 @@ fun RuleSetsScreen(
             onCancel = { settingsViewModel.cancelDefaultRuleSetDownload() }
         )
     }
-    
+
     // Pre-load string resources for use in callbacks
     val profilesDeletedMsg = stringResource(R.string.profiles_deleted)
     val selectProfileMsg = stringResource(R.string.rulesets_select_profile)
-    
+
     if (showDeleteConfirmDialog) {
         val selectedCount = selectedItems.count { it.value }
         ConfirmDialog(
@@ -249,7 +240,7 @@ fun RuleSetsScreen(
             onDismiss = { showDeleteConfirmDialog = false }
         )
     }
-    
+
     // Outbound Mode Dialog
     if (showOutboundModeDialog && outboundEditingRuleSet != null) {
         val options = RuleSetOutboundMode.entries.map { stringResource(it.displayNameRes) }
@@ -404,7 +395,7 @@ fun RuleSetsScreen(
             TopAppBar(
                 title = {
                     if (isSelectionMode) {
-                        Text(stringResource(R.string.profiles_search), color = MaterialTheme.colorScheme.onBackground) // TODO: better string
+                        Text(stringResource(R.string.rulesets_selection_mode, selectedItems.count { it.value }), color = MaterialTheme.colorScheme.onBackground)
                     } else {
                         Text(stringResource(R.string.rulesets_title), color = MaterialTheme.colorScheme.onBackground)
                     }
@@ -476,18 +467,18 @@ fun RuleSetsScreen(
             } else {
                 items(ruleSets.size, key = { ruleSets[it].id }) { index ->
                     val ruleSet = ruleSets[index]
-                    
+
                     // Calculate visual offset based on drag state
                     // We DO NOT swap the list during drag to avoid recomposition issues.
                     // Instead, we visually shift items.
-                    
+
                     val currentDraggingIndex = draggingItemIndex
                     val currentDragOffset = draggingItemOffset
-                    
+
                     // Calculate the "projected" index of the dragged item
                     var translationY = 0f
                     var zIndex = 0f
-                    
+
                     if (currentDraggingIndex != null && itemHeightPx > 0) {
                         if (index == currentDraggingIndex) {
                             translationY = currentDragOffset
@@ -496,7 +487,7 @@ fun RuleSetsScreen(
                             // Determine if this item should shift
                             val dist = (currentDragOffset / itemHeightPx).toInt()
                             val targetIndex = (currentDraggingIndex + dist).coerceIn(0, ruleSets.lastIndex)
-                            
+
                             if (currentDraggingIndex < targetIndex) {
                                 // Dragging down: items between current and target shift UP
                                 if (index in (currentDraggingIndex + 1)..targetIndex) {
@@ -586,12 +577,12 @@ fun RuleSetsScreen(
                                                 } else {
                                                     null
                                                 }
-                                                
+
                                                 if (startIdx != endIdx) {
                                                     // Immediately update UI list state to reflect final position
                                                     val item = ruleSets.removeAt(startIdx)
                                                     ruleSets.add(endIdx, item)
-                                                    
+
                                                     // Asynchronously sync with ViewModel
                                                     settingsViewModel.reorderRuleSets(ruleSets.toList())
                                                 }
@@ -606,11 +597,11 @@ fun RuleSetsScreen(
                                                         listState.scrollToItem(targetIndex, targetOffset)
                                                     }
                                                 }
-                                                
+
                                                 // Reset drag state
                                                 draggingItemIndex = null
                                                 draggingItemOffset = 0f
-                                                
+
                                                 // IMPORTANT: Reset isDragging AFTER clearing indices to ensure
                                                 // UI recomposes correctly without ghost overlays
                                                 isDragging.value = false
@@ -659,7 +650,7 @@ fun RuleSetItem(
 ) {
     var showMenu by remember { mutableStateOf(false) }
     var showDeleteConfirm by remember { mutableStateOf(false) }
-    
+
     if (showDeleteConfirm) {
         ConfirmDialog(
             title = stringResource(R.string.rulesets_delete_title),
@@ -672,7 +663,7 @@ fun RuleSetItem(
             onDismiss = { showDeleteConfirm = false }
         )
     }
-    
+
     StandardCard(modifier = modifier) {
         Row(
             modifier = Modifier
@@ -881,7 +872,7 @@ fun RuleSetEditorDialog(
     var format by remember { mutableStateOf(initialRuleSet?.format ?: "binary") }
     var url by remember { mutableStateOf(initialRuleSet?.url ?: "") }
     var path by remember { mutableStateOf(initialRuleSet?.path ?: "") }
-    
+
     var showTypeDialog by remember { mutableStateOf(false) }
     var showFormatDialog by remember { mutableStateOf(false) }
     var showDeleteConfirm by remember { mutableStateOf(false) }
@@ -913,7 +904,7 @@ fun RuleSetEditorDialog(
             onDismiss = { showFormatDialog = false }
         )
     }
-    
+
     if (showDeleteConfirm) {
         ConfirmDialog(
             title = stringResource(R.string.rulesets_delete_title),

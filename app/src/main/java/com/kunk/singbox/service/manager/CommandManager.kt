@@ -70,7 +70,7 @@ class CommandManager(
     /**
      * 启动 Command Server 和 Client
      */
-fun start(boxService: BoxService): Result<Unit> = runCatching {
+    fun start(boxService: BoxService): Result<Unit> = runCatching {
         cachedBoxService = boxService
         val serverHandler = object : CommandServerHandler {
             override fun serviceReload() {}
@@ -397,7 +397,7 @@ fun start(boxService: BoxService): Result<Unit> = runCatching {
             ?: lastTag
     }
 
-fun cleanup() {
+    fun cleanup() {
         stop()
         groupSelectedOutbounds.clear()
         realTimeNodeName = null

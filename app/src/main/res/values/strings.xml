@@ -619,4 +619,25 @@
     <string name="connection_settings_power_saving">后台省电延迟</string>
     <string name="connection_settings_power_saving_subtitle">应用进入后台多久后暂停非核心进程</string>
 
+    <!-- Node Switch Messages -->
+    <string name="node_switch_success">已切换到 %s</string>
+    <string name="node_switch_not_running">已切换到 %s（服务未运行）</string>
+    <string name="node_switch_failed">切换到 %s 失败</string>
+    <string name="node_start_failed">启动失败: %s</string>
+    <string name="nodes_no_valid_found">未找到有效节点</string>
+
+    <!-- Subscription Update Messages -->
+    <string name="subscription_update_success_with_changes">更新成功 (%1$s, %2$d 个节点)</string>
+    <string name="subscription_update_success_no_changes">更新完成，无变化 (%d 个节点)</string>
+    <string name="ruleset_update_network_error">更新失败，请检查网络</string>
+
+    <!-- App Groups -->
+    <string name="app_groups_name_placeholder">例如: 社交, 游戏</string>
+
+    <!-- RuleSet Hub -->
+    <string name="ruleset_hub_rule_count">规则数量: %d</string>
+
+    <!-- RuleSets Screen -->
+    <string name="rulesets_selection_mode">已选择 %d 个</string>
+
 </resources>

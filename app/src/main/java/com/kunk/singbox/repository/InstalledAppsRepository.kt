@@ -23,17 +23,17 @@ class InstalledAppsRepository private constructor(private val context: Context) 
     sealed class LoadingState {
         /** 空闲状态，尚未加载 */
         object Idle : LoadingState()
-        
+
         /** 加载中 */
         data class Loading(
             val progress: Float,
             val current: Int,
             val total: Int
         ) : LoadingState()
-        
+
         /** 加载完成 */
         object Loaded : LoadingState()
-        
+
         /** 加载出错 */
         data class Error(val message: String) : LoadingState()
     }

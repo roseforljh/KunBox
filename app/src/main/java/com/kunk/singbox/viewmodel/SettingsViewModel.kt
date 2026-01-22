@@ -50,11 +50,11 @@ data class DefaultRuleSetDownloadState(
 )
 
 class SettingsViewModel(application: Application) : AndroidViewModel(application) {
-    
+
     private val repository = SettingsRepository.getInstance(application)
     private val ruleSetRepository = RuleSetRepository.getInstance(application)
     private val dataExportRepository = DataExportRepository.getInstance(application)
-    
+
     private val _downloadingRuleSets = MutableStateFlow<Set<String>>(emptySet())
     val downloadingRuleSets: StateFlow<Set<String>> = _downloadingRuleSets.asStateFlow()
 
@@ -63,11 +63,11 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 
     private var defaultRuleSetDownloadJob: Job? = null
     private val defaultRuleSetDownloadTags = mutableSetOf<String>()
-    
+
     // 导入导出状态
     private val _exportState = MutableStateFlow<ExportState>(ExportState.Idle)
     val exportState: StateFlow<ExportState> = _exportState.asStateFlow()
-    
+
     private val _importState = MutableStateFlow<ImportState>(ImportState.Idle)
     val importState: StateFlow<ImportState> = _importState.asStateFlow()
 
@@ -77,7 +77,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             started = SharingStarted.WhileSubscribed(5000),
             initialValue = AppSettings()
         )
-    
+
     fun ensureDefaultRuleSetsReady() {
         viewModelScope.launch {
             if (defaultRuleSetDownloadJob?.isActive == true) return@launch
@@ -171,11 +171,11 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     fun setExcludeFromRecent(value: Boolean) {
         viewModelScope.launch { repository.setExcludeFromRecent(value) }
     }
-    
+
     fun setAppTheme(value: AppThemeMode) {
         viewModelScope.launch { repository.setAppTheme(value) }
     }
-    
+
     fun setAppLanguage(value: AppLanguage) {
         viewModelScope.launch { repository.setAppLanguage(value) }
     }
@@ -191,11 +191,11 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             com.kunk.singbox.lifecycle.AppLifecycleObserver.setBackgroundTimeout(value.delayMs)
         }
     }
-    
+
     fun setShowNotificationSpeed(value: Boolean) {
         viewModelScope.launch {
             repository.setShowNotificationSpeed(value)
-            
+
             // 跨进程通知 Service 立即更新设置 (因为 Service 运行在独立进程，无法实时监听 DataStore)
             if (com.kunk.singbox.ipc.SingBoxRemote.isRunning.value) {
                 try {
@@ -216,23 +216,23 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     fun setTunEnabled(value: Boolean) {
         viewModelScope.launch { repository.setTunEnabled(value) }
     }
-    
+
     fun setTunStack(value: TunStack) {
         viewModelScope.launch { repository.setTunStack(value) }
     }
-    
+
     fun setTunMtu(value: Int) {
         viewModelScope.launch { repository.setTunMtu(value) }
     }
-    
+
     fun setTunInterfaceName(value: String) {
         viewModelScope.launch { repository.setTunInterfaceName(value) }
     }
-    
+
     fun setAutoRoute(value: Boolean) {
         viewModelScope.launch { repository.setAutoRoute(value) }
     }
-    
+
     fun setStrictRoute(value: Boolean) {
         viewModelScope.launch { repository.setStrictRoute(value) }
     }
@@ -260,24 +260,24 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     fun setVpnBlocklist(value: String) {
         viewModelScope.launch { repository.setVpnBlocklist(value) }
     }
-    
+
     // DNS 设置
     fun setLocalDns(value: String) {
         viewModelScope.launch { repository.setLocalDns(value) }
     }
-    
+
     fun setRemoteDns(value: String) {
         viewModelScope.launch { repository.setRemoteDns(value) }
     }
-    
+
     fun setFakeDnsEnabled(value: Boolean) {
         viewModelScope.launch { repository.setFakeDnsEnabled(value) }
     }
-    
+
     fun setFakeIpRange(value: String) {
         viewModelScope.launch { repository.setFakeIpRange(value) }
     }
-    
+
     fun setDnsStrategy(value: DnsStrategy) {
         viewModelScope.launch { repository.setDnsStrategy(value) }
     }
@@ -293,24 +293,24 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     fun setServerAddressStrategy(value: DnsStrategy) {
         viewModelScope.launch { repository.setServerAddressStrategy(value) }
     }
-    
+
     fun setDnsCacheEnabled(value: Boolean) {
         viewModelScope.launch { repository.setDnsCacheEnabled(value) }
     }
-    
+
     // 路由设置
     fun setRoutingMode(value: RoutingMode, notifyRestartRequired: Boolean = true) {
         viewModelScope.launch { repository.setRoutingMode(value, notifyRestartRequired) }
     }
-    
+
     fun setDefaultRule(value: DefaultRule) {
         viewModelScope.launch { repository.setDefaultRule(value) }
     }
-    
+
     fun setBlockAds(value: Boolean) {
         viewModelScope.launch { repository.setBlockAds(value) }
     }
-    
+
     fun setBlockQuic(value: Boolean) {
         viewModelScope.launch { repository.setBlockQuic(value) }
     }
@@ -318,35 +318,35 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     fun setDebugLoggingEnabled(value: Boolean) {
         viewModelScope.launch { repository.setDebugLoggingEnabled(value) }
     }
-    
+
     fun setLatencyTestMethod(value: LatencyTestMethod) {
         viewModelScope.launch { repository.setLatencyTestMethod(value) }
     }
-    
+
     fun setLatencyTestUrl(value: String) {
         viewModelScope.launch { repository.setLatencyTestUrl(value) }
     }
-    
+
     fun setLatencyTestTimeout(value: Int) {
         viewModelScope.launch { repository.setLatencyTestTimeout(value) }
     }
-    
+
     fun setBypassLan(value: Boolean) {
         viewModelScope.launch { repository.setBypassLan(value) }
     }
-    
+
     fun setNetworkChangeResetConnections(value: Boolean) {
         viewModelScope.launch { repository.setNetworkChangeResetConnections(value) }
     }
-    
+
     fun setWakeResetConnections(value: Boolean) {
         viewModelScope.launch { repository.setWakeResetConnections(value) }
     }
-    
+
     fun updateLatencyTestConcurrency(value: Int) {
         viewModelScope.launch { repository.setLatencyTestConcurrency(value) }
     }
-    
+
     fun updateLatencyTestTimeout(value: Int) {
         viewModelScope.launch { repository.setLatencyTestTimeout(value) }
     }
@@ -354,7 +354,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     fun setGhProxyMirror(value: GhProxyMirror) {
         viewModelScope.launch { repository.setGhProxyMirror(value) }
     }
-    
+
     fun setSubscriptionUpdateTimeout(value: Int) {
         viewModelScope.launch { repository.setSubscriptionUpdateTimeout(value) }
     }
@@ -405,19 +405,19 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             fun normalizeRuleSetUrl(url: String, mirrorUrl: String): String {
                 val rawPrefix = "https://raw.githubusercontent.com/"
                 val cdnPrefix = "https://cdn.jsdelivr.net/gh/"
-                
+
                 // 先还原到原始 URL
                 var rawUrl = url
-                
+
                 // 1. 如果是 jsDelivr 格式，还原为 raw 格式
                 if (rawUrl.startsWith(cdnPrefix)) {
-                     val path = rawUrl.removePrefix(cdnPrefix)
-                     val parts = path.split("@", limit = 2)
-                     if (parts.size == 2) {
-                         val userRepo = parts[0]
-                         val branchPath = parts[1]
-                         rawUrl = "$rawPrefix$userRepo/$branchPath"
-                     }
+                    val path = rawUrl.removePrefix(cdnPrefix)
+                    val parts = path.split("@", limit = 2)
+                    if (parts.size == 2) {
+                        val userRepo = parts[0]
+                        val branchPath = parts[1]
+                        rawUrl = "$rawPrefix$userRepo/$branchPath"
+                    }
                 } else {
                     // 2. 如果是其他前缀代理，移除前缀
                     val oldMirrors = listOf(
@@ -428,7 +428,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                         "https://ghfast.top/",
                         "https://gh-proxy.com/"
                     )
-                    
+
                     for (mirror in oldMirrors) {
                         if (rawUrl.startsWith(mirror)) {
                             rawUrl = rawUrl.replace(mirror, rawPrefix)
@@ -442,7 +442,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                 }
 
                 var updatedUrl = rawUrl
-                
+
                 // 应用当前选择的镜像
                 if (mirrorUrl.contains("cdn.jsdelivr.net")) {
                     if (rawUrl.startsWith(rawPrefix)) {
@@ -457,11 +457,11 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                         }
                     }
                 } else if (mirrorUrl != rawPrefix) {
-                     if (rawUrl.startsWith(rawPrefix)) {
-                         updatedUrl = rawUrl.replace(rawPrefix, mirrorUrl)
-                     }
+                    if (rawUrl.startsWith(rawPrefix)) {
+                        updatedUrl = rawUrl.replace(rawPrefix, mirrorUrl)
+                    }
                 }
-                
+
                 return updatedUrl
             }
 
@@ -491,7 +491,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                         _downloadingRuleSets.value -= normalizedRuleSet.tag
                     }
                 }
-                
+
                 if (downloadOk) {
                     onResult(true, getApplication<Application>().getString(R.string.rulesets_added_downloaded, normalizedRuleSet.tag))
                 } else {
@@ -509,19 +509,19 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             fun normalizeRuleSetUrl(url: String, mirrorUrl: String): String {
                 val rawPrefix = "https://raw.githubusercontent.com/"
                 val cdnPrefix = "https://cdn.jsdelivr.net/gh/"
-                
+
                 // 先还原到原始 URL
                 var rawUrl = url
-                
+
                 // 1. 如果是 jsDelivr 格式，还原为 raw 格式
                 if (rawUrl.startsWith(cdnPrefix)) {
-                     val path = rawUrl.removePrefix(cdnPrefix)
-                     val parts = path.split("@", limit = 2)
-                     if (parts.size == 2) {
-                         val userRepo = parts[0]
-                         val branchPath = parts[1]
-                         rawUrl = "$rawPrefix$userRepo/$branchPath"
-                     }
+                    val path = rawUrl.removePrefix(cdnPrefix)
+                    val parts = path.split("@", limit = 2)
+                    if (parts.size == 2) {
+                        val userRepo = parts[0]
+                        val branchPath = parts[1]
+                        rawUrl = "$rawPrefix$userRepo/$branchPath"
+                    }
                 } else {
                     // 2. 如果是其他前缀代理，移除前缀
                     val oldMirrors = listOf(
@@ -532,7 +532,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                         "https://ghfast.top/",
                         "https://gh-proxy.com/"
                     )
-                    
+
                     for (mirror in oldMirrors) {
                         if (rawUrl.startsWith(mirror)) {
                             rawUrl = rawUrl.replace(mirror, rawPrefix)
@@ -546,7 +546,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                 }
 
                 var updatedUrl = rawUrl
-                
+
                 // 应用当前选择的镜像
                 if (mirrorUrl.contains("cdn.jsdelivr.net")) {
                     if (rawUrl.startsWith(rawPrefix)) {
@@ -561,11 +561,11 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                         }
                     }
                 } else if (mirrorUrl != rawPrefix) {
-                     if (rawUrl.startsWith(rawPrefix)) {
-                         updatedUrl = rawUrl.replace(rawPrefix, mirrorUrl)
-                     }
+                    if (rawUrl.startsWith(rawPrefix)) {
+                        updatedUrl = rawUrl.replace(rawPrefix, mirrorUrl)
+                    }
                 }
-                
+
                 return updatedUrl
             }
 
@@ -638,7 +638,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             repository.setRuleSets(currentSets)
         }
     }
-    
+
     fun deleteRuleSets(ruleSetIds: List<String>) {
         viewModelScope.launch {
             val idsToDelete = ruleSetIds.toSet()
@@ -647,13 +647,13 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             repository.setRuleSets(currentSets)
         }
     }
-    
+
     // 全局规则集自动更新设置
     fun setRuleSetAutoUpdateEnabled(value: Boolean) {
         viewModelScope.launch {
             val currentSettings = repository.settings.first()
             repository.setRuleSetAutoUpdateEnabled(value)
-            
+
             // 根据开关状态调度或取消自动更新任务
             if (value && currentSettings.ruleSetAutoUpdateInterval > 0) {
                 RuleSetAutoUpdateWorker.schedule(
@@ -665,12 +665,12 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             }
         }
     }
-    
+
     fun setRuleSetAutoUpdateInterval(value: Int) {
         viewModelScope.launch {
             val currentSettings = repository.settings.first()
             repository.setRuleSetAutoUpdateInterval(value)
-            
+
             // 如果自动更新已启用，重新调度任务
             if (currentSettings.ruleSetAutoUpdateEnabled && value > 0) {
                 RuleSetAutoUpdateWorker.schedule(getApplication(), value)
@@ -765,18 +765,18 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             }
         }
     }
-    
+
     // ==================== 导入导出功能 ====================
-    
+
     /**
      * 导出数据到文件
      */
     fun exportData(uri: Uri) {
         viewModelScope.launch {
             _exportState.value = ExportState.Exporting
-            
+
             val result = dataExportRepository.exportToFile(uri)
-            
+
             _exportState.value = if (result.isSuccess) {
                 ExportState.Success
             } else {
@@ -784,16 +784,16 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             }
         }
     }
-    
+
     /**
      * 验证导入文件（用于预览）
      */
     fun validateImportFile(uri: Uri) {
         viewModelScope.launch {
             _importState.value = ImportState.Validating
-            
+
             val result = dataExportRepository.validateFromFile(uri)
-            
+
             _importState.value = if (result.isSuccess) {
                 val exportData = result.getOrThrow()
                 val summary = dataExportRepository.getExportDataSummary(exportData)
@@ -803,16 +803,16 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             }
         }
     }
-    
+
     /**
      * 确认导入数据
      */
     fun confirmImport(uri: Uri, options: ImportOptions = ImportOptions()) {
         viewModelScope.launch {
             _importState.value = ImportState.Importing
-            
+
             val result = dataExportRepository.importFromFile(uri, options)
-            
+
             _importState.value = if (result.isSuccess) {
                 when (val importResult = result.getOrThrow()) {
                     is ImportResult.Success -> ImportState.Success(
@@ -832,14 +832,14 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             }
         }
     }
-    
+
     /**
      * 重置导出状态
      */
     fun resetExportState() {
         _exportState.value = ExportState.Idle
     }
-    
+
     /**
      * 重置导入状态
      */

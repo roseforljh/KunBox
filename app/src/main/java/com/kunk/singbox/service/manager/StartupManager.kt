@@ -7,17 +7,13 @@ import android.content.Context
 import android.content.Intent
 import android.net.Network
 import android.net.VpnService
-import android.os.Build
-import android.provider.Settings
 import android.util.Log
 import com.google.gson.Gson
 import com.kunk.singbox.R
 import com.kunk.singbox.model.AppSettings
 import com.kunk.singbox.model.SingBoxConfig
-import com.kunk.singbox.repository.LogRepository
 import com.kunk.singbox.repository.RuleSetRepository
 import com.kunk.singbox.repository.SettingsRepository
-import com.kunk.singbox.service.VpnTileService
 import com.kunk.singbox.service.notification.VpnNotificationManager
 import com.kunk.singbox.utils.perf.PerfTracer
 import kotlinx.coroutines.*
@@ -199,7 +195,6 @@ class StartupManager(
             Log.i(TAG, "VPN startup completed in ${totalMs}ms")
 
             StartResult.Success(configContent, totalMs)
-
         } catch (e: CancellationException) {
             PerfTracer.end(PerfTracer.Phases.VPN_STARTUP)
             callbacks.onCancelled()
@@ -313,8 +308,8 @@ class StartupManager(
                 "Start failed: system lockdown VPN enabled ($lockedBy)"
             }
             msg.contains("VPN interface establish failed", ignoreCase = true) ||
-            msg.contains("configure tun interface", ignoreCase = true) ||
-            msg.contains("fd=-1", ignoreCase = true) -> {
+                msg.contains("configure tun interface", ignoreCase = true) ||
+                msg.contains("fd=-1", ignoreCase = true) -> {
                 "Start failed: could not establish VPN interface"
             }
             else -> "Failed to start VPN: ${e.javaClass.simpleName}: ${e.message}"

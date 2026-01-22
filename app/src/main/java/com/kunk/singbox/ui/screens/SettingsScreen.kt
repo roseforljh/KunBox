@@ -23,7 +23,6 @@ import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Language
-import androidx.compose.material.icons.rounded.Layers
 import androidx.compose.material.icons.rounded.PowerSettingsNew
 import androidx.compose.material.icons.rounded.Route
 import androidx.compose.material.icons.rounded.Sync
@@ -65,7 +64,6 @@ import com.kunk.singbox.ui.components.SingleSelectDialog
 import com.kunk.singbox.ui.components.StandardCard
 import com.kunk.singbox.ui.components.ValidatingDialog
 import com.kunk.singbox.ui.navigation.Screen
-import com.kunk.singbox.viewmodel.ExportState
 import com.kunk.singbox.viewmodel.ImportState
 import com.kunk.singbox.viewmodel.SettingsViewModel
 import kotlinx.coroutines.launch
@@ -84,27 +82,27 @@ fun SettingsScreen(
     val settings by viewModel.settings.collectAsState()
     val exportState by viewModel.exportState.collectAsState()
     val importState by viewModel.importState.collectAsState()
-    
+
     var showAboutDialog by remember { mutableStateOf(false) }
     var showThemeDialog by remember { mutableStateOf(false) }
     var showLanguageDialog by remember { mutableStateOf(false) }
     var isUpdatingRuleSets by remember { mutableStateOf(false) }
     var updateMessage by remember { mutableStateOf("") }
-    
+
     // 文件选择器 - 导出
     val exportLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("application/json")
     ) { uri ->
         uri?.let { viewModel.exportData(it) }
     }
-    
+
     // 文件选择器 - 导入
     val importLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
     ) { uri ->
         uri?.let { viewModel.validateImportFile(it) }
     }
-    
+
     // 生成导出文件名
     fun generateExportFileName(): String {
         val dateFormat = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault())
@@ -129,7 +127,7 @@ fun SettingsScreen(
             onDismiss = { showThemeDialog = false }
         )
     }
-    
+
     if (showLanguageDialog) {
         SingleSelectDialog(
             title = stringResource(R.string.settings_app_language),
@@ -148,13 +146,13 @@ fun SettingsScreen(
             onDismiss = { showLanguageDialog = false }
         )
     }
-    
+
     // 导出状态对话框
     ExportProgressDialog(
         state = exportState,
         onDismiss = { viewModel.resetExportState() }
     )
-    
+
     // 导入预览对话框
     if (importState is ImportState.Preview) {
         val previewState = importState as ImportState.Preview
@@ -166,18 +164,18 @@ fun SettingsScreen(
             onDismiss = { viewModel.resetImportState() }
         )
     }
-    
+
     // 导入进度/结果对话框
     ImportProgressDialog(
         state = importState,
         onDismiss = { viewModel.resetImportState() }
     )
-    
+
     // 验证中对话框
     if (importState is ImportState.Validating) {
         ValidatingDialog()
     }
-    
+
     // 导入错误处理（如果在 Preview 之前就出错）
     LaunchedEffect(importState) {
         if (importState is ImportState.Error) {
@@ -186,7 +184,7 @@ fun SettingsScreen(
     }
 
     val statusBarPadding = WindowInsets.statusBars.asPaddingValues()
-    
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -232,7 +230,7 @@ fun SettingsScreen(
                 onClick = { navController.navigate(Screen.ConnectionSettings.route) }
             )
         }
-        
+
         Spacer(modifier = Modifier.height(16.dp))
 
         // 2. Network
@@ -267,7 +265,7 @@ fun SettingsScreen(
         val updateFailedMsg = stringResource(R.string.settings_update_failed)
         val rulesetUpdateSuccessMsg = stringResource(R.string.settings_ruleset_update_success)
         val rulesetUpdateFailedMsg = stringResource(R.string.settings_ruleset_update_failed)
-        
+
         SettingsGroupTitle(stringResource(R.string.settings_tools))
         StandardCard {
             SettingItem(
@@ -361,7 +359,7 @@ fun SettingsScreen(
         }
 
         Spacer(modifier = Modifier.height(16.dp))
-        
+
         // 4. 数据管理
         SettingsGroupTitle(stringResource(R.string.settings_data_management))
         StandardCard {
@@ -394,7 +392,7 @@ fun SettingsScreen(
                 onClick = { showAboutDialog = true }
             )
         }
-        
+
         Spacer(modifier = Modifier.height(32.dp))
     }
 }

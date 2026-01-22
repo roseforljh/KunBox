@@ -123,7 +123,7 @@ class VpnTileService : TileService() {
 
     private fun handleClick() {
         val tile = qsTile ?: return
-        
+
         // 1. 检查 VPN 权限，如果需要授权则无法抢跑，必须跳转 Activity
         val prepareIntent = VpnService.prepare(this)
         if (prepareIntent != null) {
@@ -135,7 +135,7 @@ class VpnTileService : TileService() {
         // 如果当前是 Active 或 Active (Starting)，则认为是想关闭
         // 如果是 Inactive，则认为是想开启
         val isActive = tile.state == Tile.STATE_ACTIVE
-        
+
         if (isActive) {
             // 用户想关闭
             // 立即更新 UI 为关闭状态
@@ -149,7 +149,7 @@ class VpnTileService : TileService() {
                 Log.w("VpnTileService", "Failed to set tile subtitle", e)
             }
             tile.updateTile()
-            
+
             // 异步执行停止逻辑
             executeStopVpn()
         } else {
@@ -158,7 +158,7 @@ class VpnTileService : TileService() {
             tile.state = Tile.STATE_ACTIVE
             tile.label = getString(R.string.connection_connecting)
             tile.updateTile()
-            
+
             // 异步执行开启逻辑
             executeStartVpn()
         }
@@ -195,7 +195,7 @@ class VpnTileService : TileService() {
         }
 
         val tile = qsTile ?: return
-        
+
         // 如果正在启动序列中，强制显示为 Active，覆盖中间的 STOPPED 状态
         if (isStartingSequence) {
             tile.state = Tile.STATE_ACTIVE
@@ -326,7 +326,7 @@ class VpnTileService : TileService() {
         persistVpnPending(this@VpnTileService, "")
         persistVpnState(this@VpnTileService, false)
         lastServiceState = SingBoxService.ServiceState.STOPPED
-        
+
         withContext(Dispatchers.Main) {
             revertToInactive()
             Toast.makeText(this@VpnTileService, reason, Toast.LENGTH_LONG).show()
@@ -339,7 +339,7 @@ class VpnTileService : TileService() {
         tile.label = getString(R.string.app_name)
         tile.updateTile()
     }
-    
+
     // 保留 toggle 方法以防其他地方调用（虽然这是 private）
     private fun toggle() {
         // Redirect to new logic

@@ -79,7 +79,6 @@ class SettingsStore private constructor(context: Context) {
 
             // 使用默认设置
             Log.i(TAG, "No existing settings, using defaults")
-
         } catch (e: Exception) {
             Log.e(TAG, "Failed to load settings", e)
         }

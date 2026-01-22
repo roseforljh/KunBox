@@ -4,7 +4,6 @@ import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.Call
-import okhttp3.Connection
 import okhttp3.EventListener
 import okhttp3.OkHttpClient
 import okhttp3.Protocol
@@ -168,7 +167,6 @@ object PreciseLatencyTester {
                 firstByteMs = (timingListener.responseHeadersStart.get() - timingListener.callStart.get()).coerceAtLeast(0),
                 totalMs = (timingListener.callEnd.get() - timingListener.callStart.get()).coerceAtLeast(0)
             )
-
         } catch (e: Exception) {
             Log.w(TAG, "Latency test failed: ${e.message}")
             LatencyResult(-1L)

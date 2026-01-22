@@ -40,7 +40,8 @@ fun AppRoutingScreen(
     val settings by settingsViewModel.settings.collectAsState()
     val context = LocalContext.current
     var selectedTab by remember { mutableStateOf(0) }
-    val tabs = listOf(stringResource(R.string.app_rules_tabs_groups), stringResource(R.string.app_rules_tabs_individual))
+    val tabs =
+        listOf(stringResource(R.string.app_rules_tabs_groups), stringResource(R.string.app_rules_tabs_individual))
 
     var showAddGroupDialog by remember { mutableStateOf(false) }
     var editingGroup by remember { mutableStateOf<AppGroup?>(null) }
@@ -113,7 +114,7 @@ fun AppRoutingScreen(
     if (showDeleteGroupConfirm != null) {
         ConfirmDialog(
             title = stringResource(R.string.app_groups_delete_title),
-            message = stringResource(R.string.app_rules_delete_confirm, showDeleteGroupConfirm?.name ?: ""), // TODO: check string
+            message = stringResource(R.string.app_groups_delete_confirm, showDeleteGroupConfirm?.name ?: "", showDeleteGroupConfirm?.apps?.size ?: 0),
             confirmText = stringResource(R.string.common_delete),
             onConfirm = {
                 settingsViewModel.deleteAppGroup(showDeleteGroupConfirm!!.id)

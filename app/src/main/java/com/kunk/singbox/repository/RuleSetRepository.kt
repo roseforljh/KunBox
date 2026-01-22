@@ -2,18 +2,15 @@ package com.kunk.singbox.repository
 
 import android.content.Context
 import android.util.Log
-import com.google.gson.Gson
 import com.kunk.singbox.model.AppSettings
 import com.kunk.singbox.model.RuleSet
 import com.kunk.singbox.model.RuleSetType
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
-import okhttp3.OkHttpClient
 import okhttp3.Request
 import com.kunk.singbox.utils.NetworkClient
 import java.io.File
-import java.util.concurrent.TimeUnit
 
 /**
  * 规则集仓库 - 负责规则集的下载、缓存和管理
@@ -173,7 +170,7 @@ class RuleSetRepository(private val context: Context) {
     private fun installBaselineRuleSet(tag: String, targetFile: File): Boolean {
         return try {
             val assetPath = "rulesets/$tag.srs"
-            
+
             context.assets.open(assetPath).use { input ->
                 targetFile.outputStream().use { output ->
                     input.copyTo(output)
@@ -216,69 +213,69 @@ class RuleSetRepository(private val context: Context) {
 
     private suspend fun downloadCustomRuleSet(ruleSet: RuleSet): Boolean {
         if (ruleSet.url.isBlank()) return false
-        
+
         val settings = settingsRepository.settings.first()
         val mirrorUrl = settings.ghProxyMirror.url
-        
+
         // 1. 尝试使用镜像下载
         val mirrorUrlString = normalizeRuleSetUrl(ruleSet.url, mirrorUrl)
         val success = downloadFile(mirrorUrlString, getRuleSetFile(ruleSet.tag))
-        
+
         if (success) return true
-        
+
         // 2. 如果镜像下载失败，且 URL 被修改过（即使用了镜像），则尝试原始 URL
         if (mirrorUrlString != ruleSet.url) {
             Log.w(TAG, "Mirror download failed, trying original URL: ${ruleSet.url}")
             return downloadFile(ruleSet.url, getRuleSetFile(ruleSet.tag))
         }
-        
+
         return false
     }
 
     private fun normalizeRuleSetUrl(url: String, mirrorUrl: String): String {
         val rawPrefix = "https://raw.githubusercontent.com/"
         val cdnPrefix = "https://cdn.jsdelivr.net/gh/"
-        
+
         // 先还原到原始 URL (raw.githubusercontent.com)
         var rawUrl = url
-        
+
         // 1. 如果是 jsDelivr 格式，还原为 raw 格式
         // 示例: https://cdn.jsdelivr.net/gh/SagerNet/sing-geosite@rule-set/geosite-cn.srs
         if (rawUrl.startsWith(cdnPrefix)) {
-             val path = rawUrl.removePrefix(cdnPrefix)
-             // 提取 user/repo
-             val parts = path.split("@", limit = 2)
-             if (parts.size == 2) {
-                 val userRepo = parts[0]
-                 val branchPath = parts[1]
-                 rawUrl = "$rawPrefix$userRepo/$branchPath"
-             }
+            val path = rawUrl.removePrefix(cdnPrefix)
+            // 提取 user/repo
+            val parts = path.split("@", limit = 2)
+            if (parts.size == 2) {
+                val userRepo = parts[0]
+                val branchPath = parts[1]
+                rawUrl = "$rawPrefix$userRepo/$branchPath"
+            }
         }
-        
+
         // 2. 如果包含 raw.githubusercontent.com，无论是否有其他前缀，都提取出原始路径
         // 示例: https://ghproxy.com/https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-cn.srs
         // 或者: https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-cn.srs
         if (rawUrl.contains("raw.githubusercontent.com")) {
-             // 关键修复: 这里不应该只看 substringAfter，还要看 path 是否已经是完整的 URL
-             // rawUrl: https://raw.githubusercontent.com/https://raw.githubusercontent.com/... 这种错误情况
-             var path = rawUrl.substringAfter("raw.githubusercontent.com/")
-             
-             // 如果 path 本身又以 https://raw.githubusercontent.com/ 开头（之前的错误叠加），需要递归清理
-             while (path.contains("raw.githubusercontent.com/")) {
-                 path = path.substringAfter("raw.githubusercontent.com/")
-             }
-             
-             // 如果 path 以 http 开头，说明截取错了位置，这里假设正常路径不包含协议头
-             if (path.startsWith("https://") || path.startsWith("http://")) {
-                 // 这通常意味着 substringAfter 取到了参数或者错误的部分，尝试更严格的清洗
-                 path = path.replace("https://", "").replace("http://", "")
-             }
-             
-             rawUrl = rawPrefix + path
+            // 关键修复: 这里不应该只看 substringAfter，还要看 path 是否已经是完整的 URL
+            // rawUrl: https://raw.githubusercontent.com/https://raw.githubusercontent.com/... 这种错误情况
+            var path = rawUrl.substringAfter("raw.githubusercontent.com/")
+
+            // 如果 path 本身又以 https://raw.githubusercontent.com/ 开头（之前的错误叠加），需要递归清理
+            while (path.contains("raw.githubusercontent.com/")) {
+                path = path.substringAfter("raw.githubusercontent.com/")
+            }
+
+            // 如果 path 以 http 开头，说明截取错了位置，这里假设正常路径不包含协议头
+            if (path.startsWith("https://") || path.startsWith("http://")) {
+                // 这通常意味着 substringAfter 取到了参数或者错误的部分，尝试更严格的清洗
+                path = path.replace("https://", "").replace("http://", "")
+            }
+
+            rawUrl = rawPrefix + path
         }
 
         var updatedUrl = rawUrl
-        
+
         // 应用当前选择的镜像
         if (mirrorUrl.contains("cdn.jsdelivr.net")) {
             // 转换为 jsDelivr 格式: https://cdn.jsdelivr.net/gh/user/repo@branch/path
@@ -295,12 +292,12 @@ class RuleSetRepository(private val context: Context) {
                 }
             }
         } else if (mirrorUrl != rawPrefix) {
-             // 其他镜像通常直接拼接
-             if (rawUrl.startsWith(rawPrefix)) {
-                 updatedUrl = rawUrl.replace(rawPrefix, mirrorUrl)
-             }
+            // 其他镜像通常直接拼接
+            if (rawUrl.startsWith(rawPrefix)) {
+                updatedUrl = rawUrl.replace(rawPrefix, mirrorUrl)
+            }
         }
-        
+
         return updatedUrl
     }
 
@@ -315,7 +312,7 @@ class RuleSetRepository(private val context: Context) {
 
                 val body = response.body ?: return false
                 val tempFile = File(targetFile.parent, "${targetFile.name}.tmp")
-                
+
                 body.byteStream().use { input ->
                     tempFile.outputStream().use { output ->
                         input.copyTo(output)
@@ -331,9 +328,9 @@ class RuleSetRepository(private val context: Context) {
                     }
                     val trimmedHeader = header.trim()
                     val isInvalid = trimmedHeader.startsWith("<!DOCTYPE html", ignoreCase = true) ||
-                                 trimmedHeader.startsWith("<html", ignoreCase = true) ||
-                                 trimmedHeader.startsWith("{") // JSON error
-                    
+                        trimmedHeader.startsWith("<html", ignoreCase = true) ||
+                        trimmedHeader.startsWith("{") // JSON error
+
                     if (isInvalid) {
                         Log.e(TAG, "Downloaded file is invalid (HTML/JSON), discarding: ${targetFile.name}")
                         false

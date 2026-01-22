@@ -180,7 +180,6 @@ class VpnKeepaliveWorker(
                 VpnStateStore.setMode(VpnStateStore.CoreMode.NONE)
                 VpnTileService.persistVpnState(applicationContext, false)
             }
-
         } catch (e: Exception) {
             Log.e(TAG, "VPN recovery failed", e)
         }

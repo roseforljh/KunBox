@@ -56,19 +56,19 @@ import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
 
 class DashboardViewModel(application: Application) : AndroidViewModel(application) {
-    
+
     companion object {
         private const val TAG = "DashboardViewModel"
     }
-    
+
     private val configRepository = ConfigRepository.getInstance(application)
     private val settingsRepository = SettingsRepository.getInstance(application)
     private val singBoxCore = SingBoxCore.getInstance(application)
-    
+
     // Connection state
     private val _connectionState = MutableStateFlow(ConnectionState.Idle)
     val connectionState: StateFlow<ConnectionState> = _connectionState.asStateFlow()
-    
+
     // Stats
     private val _statsBase = MutableStateFlow(ConnectionStats(0, 0, 0, 0, 0))
     private val _connectedAtElapsedMs = MutableStateFlow<Long?>(null)
@@ -92,7 +92,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         val name = profiles.value.find { it.id == profileId }?.name
         if (!name.isNullOrBlank()) {
             viewModelScope.launch {
-                val msg = getApplication<Application>().getString(R.string.profiles_updated) + ": $name" // TODO: better string
+                val msg = getApplication<Application>().getString(R.string.node_switch_success, name)
                 _actionStatus.value = msg
                 delay(1500)
                 if (_actionStatus.value == msg) {
@@ -100,7 +100,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                 }
             }
         }
-        
+
         // 2025-fix: 如果VPN正在运行，切换配置后需要触发热切换/重启以加载新配置
         // 否则VPN仍然使用旧配置，导致用户看到"选中"了新配置的节点但实际没网
         if (SingBoxRemote.isRunning.value || SingBoxRemote.isStarting.value) {
@@ -128,9 +128,9 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
             if (SingBoxRemote.isRunning.value && node != null) {
                 val msg = when (result) {
                     is ConfigRepository.NodeSwitchResult.Success,
-                    is ConfigRepository.NodeSwitchResult.NotRunning -> "Switched to ${node.name}" // TODO: add to strings.xml
+                    is ConfigRepository.NodeSwitchResult.NotRunning -> getApplication<Application>().getString(R.string.node_switch_success, node.name)
 
-                    is ConfigRepository.NodeSwitchResult.Failed -> "Failed to switch to ${node.name}" // TODO: add to strings.xml
+                    is ConfigRepository.NodeSwitchResult.Failed -> getApplication<Application>().getString(R.string.node_switch_failed, node.name)
                 }
                 _actionStatus.value = msg
                 delay(1500)
@@ -148,24 +148,24 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         started = SharingStarted.WhileSubscribed(5000),
         initialValue = ConnectionStats(0, 0, 0, 0, 0)
     )
-    
+
     // 当前节点的实时延迟（VPN启动后测得的）
     // null = 未测试, -1 = 测试失败/超时, >0 = 实际延迟
     private val _currentNodePing = MutableStateFlow<Long?>(null)
     val currentNodePing: StateFlow<Long?> = _currentNodePing.asStateFlow()
-    
+
     // Ping 测试状态：true = 正在测试中
     private val _isPingTesting = MutableStateFlow(false)
     val isPingTesting: StateFlow<Boolean> = _isPingTesting.asStateFlow()
-    
+
     private var pingTestJob: Job? = null
     private var lastErrorToastJob: Job? = null
     private var startMonitorJob: Job? = null
-    
+
     // 用于平滑流量显示的缓存
     private var lastUploadSpeed: Long = 0
     private var lastDownloadSpeed: Long = 0
-    
+
     // Active profile and node from ConfigRepository
     val activeProfileId: StateFlow<String?> = configRepository.activeProfileId
         .stateIn(
@@ -173,7 +173,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
             started = SharingStarted.WhileSubscribed(5000),
             initialValue = null
         )
-    
+
     val activeNodeId: StateFlow<String?> = configRepository.activeNodeId
         .stateIn(
             scope = viewModelScope,
@@ -188,7 +188,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         started = SharingStarted.WhileSubscribed(5000),
         initialValue = null
     )
-    
+
     val profiles: StateFlow<List<ProfileUi>> = configRepository.profiles
         .stateIn(
             scope = viewModelScope,
@@ -220,7 +220,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                 else nodes.filter { node -> keywords.none { keyword -> node.displayName.contains(keyword, ignoreCase = true) } }
             }
         }
-        
+
         // 应用排序
         val sorted = when (sortType) {
             NodeSortType.DEFAULT -> filtered
@@ -238,7 +238,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                 filtered.sortedBy { orderMap[it.id] ?: Int.MAX_VALUE }
             }
         }
-        
+
         // 2025-fix: 移除自动选择第一个节点的逻辑
         // 原因: 配置切换时 ProfilesViewModel/DashboardViewModel.setActiveProfile() 已经处理了节点切换
         // 这里再次调用 setActiveNode() 会导致重复触发 VPN 重启，造成 TG 等应用二次加载
@@ -250,18 +250,18 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         started = SharingStarted.WhileSubscribed(5000),
         initialValue = emptyList()
     )
-    
+
     private var trafficSmoothingJob: Job? = null
     private var trafficBaseTxBytes: Long = 0
     private var trafficBaseRxBytes: Long = 0
     private var lastTrafficTxBytes: Long = 0
     private var lastTrafficRxBytes: Long = 0
     private var lastTrafficSampleAtElapsedMs: Long = 0
-    
+
     // Status
     private val _updateStatus = MutableStateFlow<String?>(null)
     val updateStatus: StateFlow<String?> = _updateStatus.asStateFlow()
-    
+
     private val _testStatus = MutableStateFlow<String?>(null)
     val testStatus: StateFlow<String?> = _testStatus.asStateFlow()
 
@@ -614,7 +614,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
             }
         }
     }
-    
+
     fun restartVpn() {
         viewModelScope.launch {
             val context = getApplication<Application>()
@@ -699,7 +699,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
             }
         }
     }
-    
+
     private fun startCore() {
         viewModelScope.launch {
             val context = getApplication<Application>()
@@ -766,7 +766,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                 // 原因: 已经通过状态机等待 STOPPED,只需短暂缓冲即可
                 delay(200)
             }
-            
+
             // 生成配置文件并启动 VPN 服务
             try {
                 // 在生成配置前先执行强制迁移，修复可能导致 404 的旧配置
@@ -782,7 +782,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                     _testStatus.value = null
                     return@launch
                 }
-                
+
                 val useTun = desiredMode == VpnStateStore.CoreMode.VPN
                 val intent = if (useTun) {
                     Intent(context, SingBoxService::class.java).apply {
@@ -853,13 +853,13 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                 }
             } catch (e: Exception) {
                 _connectionState.value = ConnectionState.Error
-                _testStatus.value = "Start failed: ${e.message}" // TODO: add to strings.xml
+                _testStatus.value = getApplication<Application>().getString(R.string.node_start_failed, e.message ?: "")
                 delay(2000)
                 _testStatus.value = null
             }
         }
     }
-    
+
     private fun stopVpn() {
         val context = getApplication<Application>()
         startMonitorJob?.cancel()
@@ -871,7 +871,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         _connectedAtElapsedMs.value = null
         _statsBase.value = ConnectionStats(0, 0, 0, 0, 0)
         _currentNodePing.value = null
-        
+
         val mode = VpnStateStore.getMode()
         val intent = when (mode) {
             VpnStateStore.CoreMode.PROXY -> Intent(context, ProxyOnlyService::class.java).apply {
@@ -883,7 +883,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         }
         context.startService(intent)
     }
-    
+
     /**
      * 启动当前节点的延迟测试
      * 使用5秒超时限制，测不出来就终止并显示超时状态
@@ -906,22 +906,22 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         // If it was valid, keep showing old value until new one arrives?
         // No, UI usually shows spinner. Let's clear to indicate "refreshing".
         _currentNodePing.value = null
-        
+
         pingTestJob = viewModelScope.launch {
             try {
                 // 设置测试中状态
                 _isPingTesting.value = true
                 _currentNodePing.value = null
-                
+
                 // 等待一小段时间确保 VPN 完全启动
                 delay(1000)
-                
+
                 // 检查 VPN 是否还在运行
                 if (_connectionState.value != ConnectionState.Connected) {
                     _isPingTesting.value = false
                     return@launch
                 }
-                
+
                 val activeNodeId = activeNodeId.value ?: withTimeoutOrNull(1500L) {
                     this@DashboardViewModel.activeNodeId.filterNotNull().first()
                 }
@@ -931,7 +931,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                     _currentNodePing.value = -1L // 标记为失败
                     return@launch
                 }
-                
+
                 val nodeName = configRepository.getNodeById(activeNodeId)?.name
                 if (nodeName == null) {
                     Log.w(TAG, "Node name not found for id: $activeNodeId")
@@ -939,16 +939,15 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                     _currentNodePing.value = -1L // 标记为失败
                     return@launch
                 }
-                
-                
+
                 // 使用5秒超时包装整个测试过程
                 val delay = withTimeoutOrNull(5000L) {
                     configRepository.testNodeLatency(activeNodeId)
                 }
-                
+
                 // 测试完成，更新状态
                 _isPingTesting.value = false
-                
+
                 // 再次检查 VPN 是否还在运行（测试可能需要一些时间）
                 if (_connectionState.value == ConnectionState.Connected && pingTestJob?.isActive == true) {
                     if (delay != null && delay > 0) {
@@ -966,7 +965,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
             }
         }
     }
-    
+
     /**
      * 停止延迟测试
      */
@@ -983,7 +982,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         _currentNodePing.value = null
         startPingTest()
     }
-    
+
     fun onVpnPermissionResult(granted: Boolean) {
         _vpnPermissionNeeded.value = false
         if (granted) {
@@ -994,9 +993,9 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
     fun updateAllSubscriptions() {
         viewModelScope.launch {
             _updateStatus.value = getApplication<Application>().getString(R.string.common_loading)
-            
+
             val result = configRepository.updateAllProfiles()
-            
+
             // 根据结果显示不同的提示
             _updateStatus.value = result.toDisplayMessage(getApplication())
             delay(2500)
@@ -1014,7 +1013,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
             _testStatus.value = null
         }
     }
-    
+
     private fun startTrafficMonitor() {
         stopTrafficMonitor()
 
@@ -1077,9 +1076,9 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                 val downloadSmoothFactor = calculateAdaptiveSmoothFactor(down, lastDownloadSpeed)
 
                 val smoothedUp = if (lastUploadSpeed == 0L) up
-                    else (lastUploadSpeed * (1 - uploadSmoothFactor) + up * uploadSmoothFactor).toLong()
+                else (lastUploadSpeed * (1 - uploadSmoothFactor) + up * uploadSmoothFactor).toLong()
                 val smoothedDown = if (lastDownloadSpeed == 0L) down
-                    else (lastDownloadSpeed * (1 - downloadSmoothFactor) + down * downloadSmoothFactor).toLong()
+                else (lastDownloadSpeed * (1 - downloadSmoothFactor) + down * downloadSmoothFactor).toLong()
 
                 lastUploadSpeed = smoothedUp
                 lastDownloadSpeed = smoothedDown
@@ -1137,42 +1136,42 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
 
         // 根据变化幅度返回不同的平滑因子
         return when {
-            ratio > 2.0 -> 0.7  // 大幅变化(200%+),快速响应
-            ratio > 0.5 -> 0.4  // 中等变化(50%-200%),平衡响应
+            ratio > 2.0 -> 0.7 // 大幅变化(200%+),快速响应
+            ratio > 0.5 -> 0.4 // 中等变化(50%-200%),平衡响应
             ratio > 0.1 -> 0.25 // 小幅变化(10%-50%),适度平滑
-            else -> 0.15        // 微小变化(<10%),高度平滑
+            else -> 0.15 // 微小变化(<10%),高度平滑
         }
     }
-    
+
     private fun getRegionWeight(flag: String?): Int {
         if (flag.isNullOrBlank()) return 9999
         // Priority order: CN, HK, MO, TW, JP, KR, SG, US, Others
         return when (flag) {
-            "🇨🇳" -> 0   // China
-            "🇭🇰" -> 1   // Hong Kong
-            "🇲🇴" -> 2   // Macau
-            "🇹🇼" -> 3   // Taiwan
-            "🇯🇵" -> 4   // Japan
-            "🇰🇷" -> 5   // South Korea
-            "🇸🇬" -> 6   // Singapore
-            "🇺🇸" -> 7   // USA
-            "🇻🇳" -> 8   // Vietnam
-            "🇹🇭" -> 9   // Thailand
-            "🇵🇭" -> 10  // Philippines
-            "🇲🇾" -> 11  // Malaysia
-            "🇮🇩" -> 12  // Indonesia
-            "🇮🇳" -> 13  // India
-            "🇷🇺" -> 14  // Russia
-            "🇹🇷" -> 15  // Turkey
-            "🇮🇹" -> 16  // Italy
-            "🇩🇪" -> 17  // Germany
-            "🇫🇷" -> 18  // France
-            "🇳🇱" -> 19  // Netherlands
-            "🇬🇧" -> 20  // UK
-            "🇦🇺" -> 21  // Australia
-            "🇨🇦" -> 22  // Canada
-            "🇧🇷" -> 23  // Brazil
-            "🇦🇷" -> 24  // Argentina
+            "🇨🇳" -> 0 // China
+            "🇭🇰" -> 1 // Hong Kong
+            "🇲🇴" -> 2 // Macau
+            "🇹🇼" -> 3 // Taiwan
+            "🇯🇵" -> 4 // Japan
+            "🇰🇷" -> 5 // South Korea
+            "🇸🇬" -> 6 // Singapore
+            "🇺🇸" -> 7 // USA
+            "🇻🇳" -> 8 // Vietnam
+            "🇹🇭" -> 9 // Thailand
+            "🇵🇭" -> 10 // Philippines
+            "🇲🇾" -> 11 // Malaysia
+            "🇮🇩" -> 12 // Indonesia
+            "🇮🇳" -> 13 // India
+            "🇷🇺" -> 14 // Russia
+            "🇹🇷" -> 15 // Turkey
+            "🇮🇹" -> 16 // Italy
+            "🇩🇪" -> 17 // Germany
+            "🇫🇷" -> 18 // France
+            "🇳🇱" -> 19 // Netherlands
+            "🇬🇧" -> 20 // UK
+            "🇦🇺" -> 21 // Australia
+            "🇨🇦" -> 22 // Canada
+            "🇧🇷" -> 23 // Brazil
+            "🇦🇷" -> 24 // Argentina
             else -> 1000 // Others
         }
     }
@@ -1184,7 +1183,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         val activeId = activeProfileId.value ?: return null
         return profiles.value.find { it.id == activeId }?.name
     }
-    
+
     /**
      * 获取活跃节点的名称
      * 使用改进的 getNodeById 方法确保即使配置切换或节点列表未完全加载时也能正确显示
@@ -1193,7 +1192,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         val activeId = activeNodeId.value ?: return null
         return configRepository.getNodeById(activeId)?.displayName
     }
-    
+
     override fun onCleared() {
         super.onCleared()
         startMonitorJob?.cancel()

@@ -289,6 +289,6 @@ class ConnectManager(
     private fun isValidPhysicalNetwork(caps: NetworkCapabilities?): Boolean {
         if (caps == null) return false
         return caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
-                caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN)
+            caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN)
     }
 }

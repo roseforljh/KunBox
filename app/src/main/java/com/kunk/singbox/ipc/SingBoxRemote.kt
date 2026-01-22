@@ -141,7 +141,7 @@ object SingBoxRemote {
             Log.w(TAG, "Binder died, performing NekoBox-style immediate reconnect")
             service = null
             callbackRegistered = false
-            
+
             mainHandler.post {
                 val ctx = contextRef?.get()
                 if (ctx != null && !SagerConnection_restartingApp) {
@@ -309,7 +309,7 @@ object SingBoxRemote {
     /**
      * v2rayNG 风格: 主动查询并同步状态
      * 用于 Activity onResume 时确保 UI 与服务状态一致
-     * 
+     *
      * 2025-fix-v5: 增强版 - 如果连接 stale 则强制重连
      */
     fun queryAndSyncState(context: Context): Boolean {

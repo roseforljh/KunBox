@@ -8,7 +8,7 @@ import com.kunk.singbox.model.AppLanguage
 import java.util.Locale
 
 object LocaleHelper {
-    
+
     /**
      * 根据 AppLanguage 设置应用语言
      */
@@ -18,10 +18,10 @@ object LocaleHelper {
             AppLanguage.CHINESE -> Locale.SIMPLIFIED_CHINESE
             AppLanguage.ENGLISH -> Locale.ENGLISH
         }
-        
+
         return updateResources(context, locale)
     }
-    
+
     /**
      * 获取系统默认语言
      */
@@ -33,23 +33,23 @@ object LocaleHelper {
             Locale.getDefault()
         }
     }
-    
+
     /**
      * 更新 Context 的资源配置
      */
     private fun updateResources(context: Context, locale: Locale): Context {
         Locale.setDefault(locale)
-        
+
         val configuration = Configuration(context.resources.configuration)
-        
+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
             configuration.setLocales(LocaleList(locale))
         }
         configuration.setLocale(locale)
-        
+
         return context.createConfigurationContext(configuration)
     }
-    
+
     /**
      * 获取当前 AppLanguage 对应的显示名称（本地化）
      */
@@ -60,7 +60,7 @@ object LocaleHelper {
             AppLanguage.ENGLISH -> "English"
         }
     }
-    
+
     /**
      * 包装 Activity 的 Context
      * 在 Activity 的 attachBaseContext 中调用

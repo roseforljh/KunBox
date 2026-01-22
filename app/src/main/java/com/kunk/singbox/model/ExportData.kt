@@ -9,13 +9,13 @@ import com.google.gson.annotations.SerializedName
  */
 @Keep
 data class ExportData(
-    @SerializedName("version") val version: Int = 1,                    // 数据格式版本号
-    @SerializedName("exportTime") val exportTime: Long,                 // 导出时间戳
-    @SerializedName("appVersion") val appVersion: String,               // 应用版本号
-    @SerializedName("settings") val settings: AppSettings,              // 应用设置
-    @SerializedName("profiles") val profiles: List<ProfileExportData>,  // 配置列表
-    @SerializedName("activeProfileId") val activeProfileId: String?,    // 活跃配置 ID
-    @SerializedName("activeNodeId") val activeNodeId: String?           // 活跃节点 ID
+    @SerializedName("version") val version: Int = 1, // 数据格式版本号
+    @SerializedName("exportTime") val exportTime: Long, // 导出时间戳
+    @SerializedName("appVersion") val appVersion: String, // 应用版本号
+    @SerializedName("settings") val settings: AppSettings, // 应用设置
+    @SerializedName("profiles") val profiles: List<ProfileExportData>, // 配置列表
+    @SerializedName("activeProfileId") val activeProfileId: String?, // 活跃配置 ID
+    @SerializedName("activeNodeId") val activeNodeId: String? // 活跃节点 ID
 )
 
 /**
@@ -24,8 +24,8 @@ data class ExportData(
  */
 @Keep
 data class ProfileExportData(
-    @SerializedName("profile") val profile: ProfileUi,                  // 配置元数据
-    @SerializedName("config") val config: SingBoxConfig                 // 完整的节点配置
+    @SerializedName("profile") val profile: ProfileUi, // 配置元数据
+    @SerializedName("config") val config: SingBoxConfig // 完整的节点配置
 )
 
 /**
@@ -33,10 +33,10 @@ data class ProfileExportData(
  */
 @Keep
 data class ImportOptions(
-    val overwriteExisting: Boolean = true,     // 是否覆盖现有数据（默认覆盖）
-    val importSettings: Boolean = true,        // 是否导入设置
-    val importProfiles: Boolean = true,        // 是否导入配置
-    val importRules: Boolean = true            // 是否导入规则
+    val overwriteExisting: Boolean = true, // 是否覆盖现有数据（默认覆盖）
+    val importSettings: Boolean = true, // 是否导入设置
+    val importProfiles: Boolean = true, // 是否导入配置
+    val importRules: Boolean = true // 是否导入规则
 )
 
 /**
@@ -52,7 +52,7 @@ sealed class ImportResult {
         val nodesImported: Int,
         val settingsImported: Boolean
     ) : ImportResult()
-    
+
     /**
      * 部分成功
      */
@@ -61,7 +61,7 @@ sealed class ImportResult {
         val profilesFailed: Int,
         val errors: List<String>
     ) : ImportResult()
-    
+
     /**
      * 导入失败
      */

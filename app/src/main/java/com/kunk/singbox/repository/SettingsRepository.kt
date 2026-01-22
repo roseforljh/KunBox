@@ -24,7 +24,6 @@ import com.kunk.singbox.model.NodeFilter
 import com.kunk.singbox.model.BackgroundPowerSavingDelay
 import com.kunk.singbox.repository.store.SettingsStore
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow

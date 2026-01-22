@@ -1,17 +1,10 @@
 package com.kunk.singbox.service
 
-import android.app.Application
 import android.app.Notification
-import android.app.NotificationChannel
 import android.app.NotificationManager
-import android.app.PendingIntent
-import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.net.ConnectivityManager
 import android.net.Network
-import android.net.NetworkCapabilities
-import android.net.NetworkRequest
 import android.net.VpnService
 import android.os.Build
 import android.os.ParcelFileDescriptor
@@ -21,21 +14,16 @@ import android.util.Log
 import android.service.quicksettings.TileService
 import android.content.ComponentName
 import com.google.gson.Gson
-import com.kunk.singbox.MainActivity
 import com.kunk.singbox.R
-import com.kunk.singbox.core.SingBoxCore
 import com.kunk.singbox.ipc.SingBoxIpcHub
 import com.kunk.singbox.ipc.VpnStateStore
 import com.kunk.singbox.model.AppSettings
-import com.kunk.singbox.model.Outbound
 import com.kunk.singbox.model.SingBoxConfig
 import com.kunk.singbox.repository.ConfigRepository
 import com.kunk.singbox.repository.LogRepository
 import com.kunk.singbox.repository.RuleSetRepository
 import com.kunk.singbox.repository.SettingsRepository
 import com.kunk.singbox.repository.TrafficRepository
-import com.kunk.singbox.utils.DefaultNetworkListener
-import com.kunk.singbox.core.LibboxCompat
 import com.kunk.singbox.core.BoxWrapperManager
 import com.kunk.singbox.core.SelectorManager
 import com.kunk.singbox.service.network.NetworkManager
@@ -55,9 +43,9 @@ import com.kunk.singbox.service.manager.ForeignVpnMonitor
 import com.kunk.singbox.service.manager.CoreNetworkResetManager
 import com.kunk.singbox.service.manager.NodeSwitchManager
 import com.kunk.singbox.service.manager.BackgroundPowerManager
+import com.kunk.singbox.service.manager.ServiceStateHolder
+import com.kunk.singbox.service.manager.ConnectionOwnerStatsSnapshot
 import com.kunk.singbox.model.BackgroundPowerSavingDelay
-import com.kunk.singbox.utils.perf.PerfTracer
-import com.kunk.singbox.utils.perf.StateCache
 import com.kunk.singbox.utils.L
 import com.kunk.singbox.utils.NetworkClient
 import io.nekohasekai.libbox.*
@@ -69,10 +57,8 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import java.io.File
-import java.net.NetworkInterface
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
-import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 
 class SingBoxService : VpnService() {
@@ -198,21 +184,21 @@ class SingBoxService : VpnService() {
             this@SingBoxService.setUnderlyingNetworks(networks)
         }
 
-        override fun isRunning(): Boolean = SingBoxService.isRunning
-        override fun isStarting(): Boolean = SingBoxService.isStarting
-        override fun isManuallyStopped(): Boolean = SingBoxService.isManuallyStopped
-        override fun getLastConfigPath(): String? = lastConfigPath
+        override fun isRunning(): Boolean = ServiceStateHolder.isRunning
+        override fun isStarting(): Boolean = ServiceStateHolder.isStarting
+        override fun isManuallyStopped(): Boolean = ServiceStateHolder.isManuallyStopped
+        override fun getLastConfigPath(): String? = ServiceStateHolder.lastConfigPath
         override fun getCurrentSettings(): AppSettings? = currentSettings
 
-        override fun incrementConnectionOwnerCalls() { connectionOwnerCalls.incrementAndGet() }
-        override fun incrementConnectionOwnerInvalidArgs() { connectionOwnerInvalidArgs.incrementAndGet() }
-        override fun incrementConnectionOwnerUidResolved() { connectionOwnerUidResolved.incrementAndGet() }
-        override fun incrementConnectionOwnerSecurityDenied() { connectionOwnerSecurityDenied.incrementAndGet() }
-        override fun incrementConnectionOwnerOtherException() { connectionOwnerOtherException.incrementAndGet() }
-        override fun setConnectionOwnerLastEvent(event: String) { connectionOwnerLastEvent = event }
-        override fun setConnectionOwnerLastUid(uid: Int) { connectionOwnerLastUid = uid }
-        override fun isConnectionOwnerPermissionDeniedLogged(): Boolean = connectionOwnerPermissionDeniedLogged
-        override fun setConnectionOwnerPermissionDeniedLogged(logged: Boolean) { connectionOwnerPermissionDeniedLogged = logged }
+        override fun incrementConnectionOwnerCalls() { ServiceStateHolder.incrementConnectionOwnerCalls() }
+        override fun incrementConnectionOwnerInvalidArgs() { ServiceStateHolder.incrementConnectionOwnerInvalidArgs() }
+        override fun incrementConnectionOwnerUidResolved() { ServiceStateHolder.incrementConnectionOwnerUidResolved() }
+        override fun incrementConnectionOwnerSecurityDenied() { ServiceStateHolder.incrementConnectionOwnerSecurityDenied() }
+        override fun incrementConnectionOwnerOtherException() { ServiceStateHolder.incrementConnectionOwnerOtherException() }
+        override fun setConnectionOwnerLastEvent(event: String) { ServiceStateHolder.setConnectionOwnerLastEvent(event) }
+        override fun setConnectionOwnerLastUid(uid: Int) { ServiceStateHolder.setConnectionOwnerLastUid(uid) }
+        override fun isConnectionOwnerPermissionDeniedLogged(): Boolean = ServiceStateHolder.connectionOwnerPermissionDeniedLogged
+        override fun setConnectionOwnerPermissionDeniedLogged(logged: Boolean) { ServiceStateHolder.connectionOwnerPermissionDeniedLogged = logged }
 
         override fun cacheUidToPackage(uid: Int, packageName: String) {
             this@SingBoxService.cacheUidToPackage(uid, packageName)
@@ -231,115 +217,52 @@ class SingBoxService : VpnService() {
     private val lastRemoteStateUpdateAtMs = AtomicLong(0L)
     @Volatile private var remoteStateUpdateJob: Job? = null
 
-    data class ConnectionOwnerStatsSnapshot(
-        val calls: Long,
-        val invalidArgs: Long,
-        val uidResolved: Long,
-        val securityDenied: Long,
-        val otherException: Long,
-        val lastUid: Int,
-        val lastEvent: String
-    )
-
     companion object {
         private const val TAG = "SingBoxService"
 
-        const val ACTION_START = "com.kunk.singbox.START"
-        const val ACTION_STOP = "com.kunk.singbox.STOP"
-        const val ACTION_SWITCH_NODE = "com.kunk.singbox.SWITCH_NODE"
-        const val ACTION_SERVICE = "com.kunk.singbox.SERVICE"
-        const val ACTION_UPDATE_SETTING = "com.kunk.singbox.UPDATE_SETTING"
-        /**
-         * 预清理 Action: 在跨配置切换导致 VPN 重启前发送
-         * 用于提前关闭现有连接并触发网络震荡，让应用立即感知网络中断
-         * 避免应用在旧连接上等待超时
-         */
-        const val ACTION_PREPARE_RESTART = "com.kunk.singbox.PREPARE_RESTART"
-        /**
-         * 热重载 Action: 在 VPN 运行时重载配置，不销毁 VPN 服务
-         * 使用内核级热重载，保留 TUN 接口和 VPN 连接
-         */
-        const val ACTION_HOT_RELOAD = "com.kunk.singbox.HOT_RELOAD"
-        const val EXTRA_CONFIG_PATH = "config_path"
-        const val EXTRA_CONFIG_CONTENT = "config_content"
-        const val EXTRA_CLEAN_CACHE = "clean_cache"
-        const val EXTRA_SETTING_KEY = "setting_key"
-        const val EXTRA_SETTING_VALUE_BOOL = "setting_value_bool"
-        
-        @Volatile
-        var instance: SingBoxService? = null
-            private set
+        const val ACTION_START = ServiceStateHolder.ACTION_START
+        const val ACTION_STOP = ServiceStateHolder.ACTION_STOP
+        const val ACTION_SWITCH_NODE = ServiceStateHolder.ACTION_SWITCH_NODE
+        const val ACTION_SERVICE = ServiceStateHolder.ACTION_SERVICE
+        const val ACTION_UPDATE_SETTING = ServiceStateHolder.ACTION_UPDATE_SETTING
+        const val ACTION_PREPARE_RESTART = ServiceStateHolder.ACTION_PREPARE_RESTART
+        const val ACTION_HOT_RELOAD = ServiceStateHolder.ACTION_HOT_RELOAD
+        const val EXTRA_CONFIG_PATH = ServiceStateHolder.EXTRA_CONFIG_PATH
+        const val EXTRA_CONFIG_CONTENT = ServiceStateHolder.EXTRA_CONFIG_CONTENT
+        const val EXTRA_CLEAN_CACHE = ServiceStateHolder.EXTRA_CLEAN_CACHE
+        const val EXTRA_SETTING_KEY = ServiceStateHolder.EXTRA_SETTING_KEY
+        const val EXTRA_SETTING_VALUE_BOOL = ServiceStateHolder.EXTRA_SETTING_VALUE_BOOL
 
-        @Volatile
-        var isRunning = false
-            private set(value) {
-                field = value
-                _isRunningFlow.value = value
-            }
+        var instance: SingBoxService?
+            get() = ServiceStateHolder.instance
+            private set(value) { ServiceStateHolder.instance = value }
 
-        private val _isRunningFlow = kotlinx.coroutines.flow.MutableStateFlow(false)
-        val isRunningFlow = _isRunningFlow.asStateFlow()
+        var isRunning: Boolean
+            get() = ServiceStateHolder.isRunning
+            private set(value) { ServiceStateHolder.isRunning = value }
 
-        private val _isStartingFlow = kotlinx.coroutines.flow.MutableStateFlow(false)
-        val isStartingFlow = _isStartingFlow.asStateFlow()
+        val isRunningFlow get() = ServiceStateHolder.isRunningFlow
 
-        private val _lastErrorFlow = kotlinx.coroutines.flow.MutableStateFlow<String?>(null)
-        val lastErrorFlow = _lastErrorFlow.asStateFlow()
+        var isStarting: Boolean
+            get() = ServiceStateHolder.isStarting
+            private set(value) { ServiceStateHolder.isStarting = value }
 
-        @Volatile
-        var isStarting = false
-            private set(value) {
-                field = value
-                _isStartingFlow.value = value
-            }
+        val isStartingFlow get() = ServiceStateHolder.isStartingFlow
 
-        @Volatile
-        var isManuallyStopped = false
-            private set
-        
-        private var lastConfigPath: String? = null
+        val lastErrorFlow get() = ServiceStateHolder.lastErrorFlow
 
-        private fun setLastError(message: String?) {
-            _lastErrorFlow.value = message
-            if (!message.isNullOrBlank()) {
-                try {
-                    com.kunk.singbox.repository.LogRepository.getInstance()
-                        .addLog("ERROR SingBoxService: $message")
-                } catch (_: Exception) {
-                }
-            }
-        }
+        var isManuallyStopped: Boolean
+            get() = ServiceStateHolder.isManuallyStopped
+            private set(value) { ServiceStateHolder.isManuallyStopped = value }
 
-        private val connectionOwnerCalls = AtomicLong(0)
-        private val connectionOwnerInvalidArgs = AtomicLong(0)
-        private val connectionOwnerUidResolved = AtomicLong(0)
-        private val connectionOwnerSecurityDenied = AtomicLong(0)
-        private val connectionOwnerOtherException = AtomicLong(0)
+        private var lastConfigPath: String?
+            get() = ServiceStateHolder.lastConfigPath
+            set(value) { ServiceStateHolder.lastConfigPath = value }
 
-        @Volatile private var connectionOwnerLastUid: Int = 0
-        @Volatile private var connectionOwnerLastEvent: String = ""
+        private fun setLastError(message: String?) = ServiceStateHolder.setLastError(message)
 
-        fun getConnectionOwnerStatsSnapshot(): ConnectionOwnerStatsSnapshot {
-            return ConnectionOwnerStatsSnapshot(
-                calls = connectionOwnerCalls.get(),
-                invalidArgs = connectionOwnerInvalidArgs.get(),
-                uidResolved = connectionOwnerUidResolved.get(),
-                securityDenied = connectionOwnerSecurityDenied.get(),
-                otherException = connectionOwnerOtherException.get(),
-                lastUid = connectionOwnerLastUid,
-                lastEvent = connectionOwnerLastEvent
-            )
-        }
-
-        fun resetConnectionOwnerStats() {
-            connectionOwnerCalls.set(0)
-            connectionOwnerInvalidArgs.set(0)
-            connectionOwnerUidResolved.set(0)
-            connectionOwnerSecurityDenied.set(0)
-            connectionOwnerOtherException.set(0)
-            connectionOwnerLastUid = 0
-            connectionOwnerLastEvent = ""
-        }
+        fun getConnectionOwnerStatsSnapshot() = ServiceStateHolder.getConnectionOwnerStatsSnapshot()
+        fun resetConnectionOwnerStats() = ServiceStateHolder.resetConnectionOwnerStats()
     }
 
     private fun tryRegisterRunningServiceForLibbox() {
@@ -971,7 +894,6 @@ class SingBoxService : VpnService() {
     @Volatile private var pendingStartConfigPath: String? = null
     @Volatile private var pendingCleanCache: Boolean = false
     @Volatile private var pendingHotSwitchNodeId: String? = null
-    @Volatile private var connectionOwnerPermissionDeniedLogged = false
     @Volatile private var startVpnJob: Job? = null
     @Volatile private var realTimeNodeName: String? = null
     // @Volatile private var nodePollingJob: Job? = null // Removed in favor of CommandClient
@@ -988,7 +910,7 @@ class SingBoxService : VpnService() {
     @Volatile private var showNotificationSpeed: Boolean = true
     private var currentUploadSpeed: Long = 0L
     private var currentDownloadSpeed: Long = 0L
-    
+
     // TrafficMonitor 实例 - 统一管理流量监控和卡死检测
     private val trafficMonitor = TrafficMonitor(serviceScope)
     private val trafficListener = object : TrafficMonitor.Listener {
@@ -999,12 +921,12 @@ class SingBoxService : VpnService() {
                 requestNotificationUpdate(force = false)
             }
         }
-        
+
         override fun onTrafficStall(consecutiveCount: Int) {
             // 流量停滞检测 - 触发轻量级健康检查
             stallRefreshAttempts++
             Log.w(TAG, "Traffic stall detected (count=$consecutiveCount, refreshAttempt=$stallRefreshAttempts/$maxStallRefreshAttempts)")
-            
+
             if (stallRefreshAttempts >= maxStallRefreshAttempts) {
                 Log.e(TAG, "Too many stall refresh attempts ($stallRefreshAttempts), restarting VPN service")
                 LogRepository.getInstance().addLog(
@@ -1041,7 +963,7 @@ class SingBoxService : VpnService() {
             }
         }
     }
-    
+
     // ⭐ P1修复: 连续stall刷新失败后自动重启服务
     private var stallRefreshAttempts: Int = 0
     private val maxStallRefreshAttempts: Int = 3 // 连续3次stall刷新后仍无流量则重启服务
@@ -1139,7 +1061,6 @@ class SingBoxService : VpnService() {
     @Volatile private var lastConnectionsResetAtMs: Long = 0L
     private val connectionsResetDebounceMs: Long = 2000L // 2秒内不重复重置
 
-    
     private fun findBestPhysicalNetwork(): Network? {
         // 优先使用 ConnectManager (新架构)
         connectManager.getCurrentNetwork()?.let { return it }
@@ -1206,7 +1127,7 @@ class SingBoxService : VpnService() {
                 }
             }
         }
-        
+
         // 监听通知栏速度显示设置变化
         serviceScope.launch {
             SettingsRepository.getInstance(this@SingBoxService)
@@ -1501,7 +1422,7 @@ class SingBoxService : VpnService() {
     private fun handleHotReloadFailure(errorMsg: String) {
         Log.e(TAG, "[HotReload] $errorMsg, stopping VPN")
         LogRepository.getInstance().addLog("ERROR [HotReload] $errorMsg")
-        
+
         serviceScope.launch(Dispatchers.Main) {
             android.widget.Toast.makeText(
                 applicationContext,
@@ -1509,7 +1430,7 @@ class SingBoxService : VpnService() {
                 android.widget.Toast.LENGTH_LONG
             ).show()
         }
-        
+
         isManuallyStopped = false
         stopVpn(stopService = true)
     }
@@ -1702,7 +1623,7 @@ class SingBoxService : VpnService() {
     private fun createNotification(): Notification {
         return notificationManager.createNotification(buildNotificationState())
     }
-    
+
     override fun onDestroy() {
         Log.i(TAG, "onDestroy called -> stopVpn(stopService=false) pid=${android.os.Process.myPid()}")
         TrafficRepository.getInstance(this).saveStats()
@@ -1716,11 +1637,11 @@ class SingBoxService : VpnService() {
 
         // Ensure critical state is saved synchronously before we potentially halt
         if (!isManuallyStopped) {
-             // If we are being destroyed but not manually stopped (e.g. app update or system kill),
-             // ensure we don't accidentally mark it as manually stopped, but we DO mark VPN as inactive.
-             VpnTileService.persistVpnState(applicationContext, false)
-             VpnStateStore.setMode(VpnStateStore.CoreMode.NONE)
-             Log.i(TAG, "onDestroy: Persisted vpn_active=false, mode=NONE")
+            // If we are being destroyed but not manually stopped (e.g. app update or system kill),
+            // ensure we don't accidentally mark it as manually stopped, but we DO mark VPN as inactive.
+            VpnTileService.persistVpnState(applicationContext, false)
+            VpnStateStore.setMode(VpnStateStore.CoreMode.NONE)
+            Log.i(TAG, "onDestroy: Persisted vpn_active=false, mode=NONE")
         }
 
         val shouldStop = runCatching {
@@ -1765,7 +1686,7 @@ class SingBoxService : VpnService() {
 
         Runtime.getRuntime().halt(0)
     }
-     
+
     override fun onRevoke() {
         Log.i(TAG, "onRevoke called -> stopVpn(stopService=true)")
         isManuallyStopped = true
@@ -1775,11 +1696,11 @@ class SingBoxService : VpnService() {
         setLastError("VPN revoked by system (another VPN may have started)")
         updateServiceState(ServiceState.STOPPED)
         updateTileState()
-        
+
         // 记录日志，告知用户原因
         com.kunk.singbox.repository.LogRepository.getInstance()
             .addLog("WARN: VPN permission revoked by system (possibly another VPN app started)")
-            
+
         // 发送通知提醒用户
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val manager = getSystemService(NotificationManager::class.java)
@@ -1791,7 +1712,7 @@ class SingBoxService : VpnService() {
                 .build()
             manager.notify(VpnNotificationManager.NOTIFICATION_ID + 1, notification)
         }
-        
+
         // 停止服务
         stopVpn(stopService = true)
         super.onRevoke()

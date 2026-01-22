@@ -6,7 +6,6 @@ import okhttp3.Dispatcher
 import okhttp3.Interceptor
 import okhttp3.OkHttpClient
 import okhttp3.Protocol
-import okhttp3.Response
 import java.io.IOException
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
@@ -38,8 +37,8 @@ object NetworkClient {
 
     // 调度器配置：限制并发请求数
     private val dispatcher = Dispatcher().apply {
-        maxRequests = 64           // 最大并发请求数
-        maxRequestsPerHost = 10    // 每个 Host 最大并发
+        maxRequests = 64 // 最大并发请求数
+        maxRequestsPerHost = 10 // 每个 Host 最大并发
     }
 
     // VPN 状态追踪
@@ -98,11 +97,11 @@ object NetworkClient {
     private fun isRetryableError(e: IOException): Boolean {
         val msg = e.message ?: return false
         return msg.contains("Connection reset", ignoreCase = true) ||
-               msg.contains("Connection refused", ignoreCase = true) ||
-               msg.contains("timeout", ignoreCase = true) ||
-               msg.contains("connection closed", ignoreCase = true) ||
-               msg.contains("broken pipe", ignoreCase = true) ||
-               msg.contains("ECONNRESET", ignoreCase = true)
+            msg.contains("Connection refused", ignoreCase = true) ||
+            msg.contains("timeout", ignoreCase = true) ||
+            msg.contains("connection closed", ignoreCase = true) ||
+            msg.contains("broken pipe", ignoreCase = true) ||
+            msg.contains("ECONNRESET", ignoreCase = true)
     }
 
     /**
@@ -262,8 +261,8 @@ object NetworkClient {
 
         override fun toString(): String {
             return "PoolStatus(idle=$idleConnections, total=$totalConnections, " +
-                   "requests=$totalRequests, failed=$failedRequests, " +
-                   "successRate=${String.format("%.1f", successRate)}%, vpn=$isVpnActive)"
+                "requests=$totalRequests, failed=$failedRequests, " +
+                "successRate=${String.format("%.1f", successRate)}%, vpn=$isVpnActive)"
         }
     }
 }

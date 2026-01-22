@@ -72,8 +72,8 @@ class LogRepository private constructor() {
         // 过滤掉过于频繁的无用日志
         if (message.contains("DEBUG") &&
             (message.contains("selector: selected outbound") ||
-             message.contains("dns: exchange") ||
-             message.contains("internet v4 address"))) {
+                message.contains("dns: exchange") ||
+                message.contains("internet v4 address"))) {
             return
         }
 
@@ -202,11 +202,11 @@ class LogRepository private constructor() {
             appendLine("========================")
             appendLine()
         }
-        
+
         val logContent = synchronized(buffer) {
             buffer.joinToString("\n")
         }
-        
+
         return header + logContent
     }
 

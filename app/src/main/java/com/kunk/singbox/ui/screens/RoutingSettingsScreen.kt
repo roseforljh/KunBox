@@ -27,7 +27,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.ui.Modifier
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.width
@@ -40,7 +39,6 @@ import com.kunk.singbox.model.DefaultRule
 import com.kunk.singbox.model.RoutingMode
 import com.kunk.singbox.model.GhProxyMirror
 import com.kunk.singbox.model.LatencyTestMethod
-import com.kunk.singbox.ui.components.ConfirmDialog
 import com.kunk.singbox.ui.components.InputDialog
 import com.kunk.singbox.ui.components.SettingItem
 import com.kunk.singbox.ui.components.SettingSwitchItem
@@ -58,7 +56,7 @@ fun RoutingSettingsScreen(
 ) {
     val scrollState = rememberScrollState()
     val settings by settingsViewModel.settings.collectAsState()
-    
+
     // Dialog States
     var showModeDialog by remember { mutableStateOf(false) }
     var showDefaultRuleDialog by remember { mutableStateOf(false) }
@@ -123,7 +121,7 @@ fun RoutingSettingsScreen(
             onDismiss = { showModeDialog = false }
         )
     }
-    
+
     if (showDefaultRuleDialog) {
         val options = DefaultRule.entries.map { stringResource(it.displayNameRes) }
         SingleSelectDialog(
@@ -151,7 +149,7 @@ fun RoutingSettingsScreen(
             onDismiss = { showMirrorDialog = false }
         )
     }
-    
+
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
@@ -166,19 +164,19 @@ fun RoutingSettingsScreen(
             )
         }
     ) { padding ->
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(padding)
-            .padding(16.dp)
-            .verticalScroll(scrollState)
-    ) {
-        StandardCard {
-            SettingItem(title = stringResource(R.string.routing_settings_mode), value = stringResource(settings.routingMode.displayNameRes), onClick = { showModeDialog = true })
-            SettingItem(title = stringResource(R.string.routing_settings_default_rule), value = stringResource(settings.defaultRule.displayNameRes), onClick = { showDefaultRuleDialog = true })
-            SettingItem(title = stringResource(R.string.routing_settings_latency_test_method), value = stringResource(settings.latencyTestMethod.displayNameRes), onClick = { showLatencyMethodDialog = true })
-            SettingItem(
-                title = stringResource(R.string.routing_settings_latency_test_url),
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .padding(16.dp)
+                .verticalScroll(scrollState)
+        ) {
+            StandardCard {
+                SettingItem(title = stringResource(R.string.routing_settings_mode), value = stringResource(settings.routingMode.displayNameRes), onClick = { showModeDialog = true })
+                SettingItem(title = stringResource(R.string.routing_settings_default_rule), value = stringResource(settings.defaultRule.displayNameRes), onClick = { showDefaultRuleDialog = true })
+                SettingItem(title = stringResource(R.string.routing_settings_latency_test_method), value = stringResource(settings.latencyTestMethod.displayNameRes), onClick = { showLatencyMethodDialog = true })
+                SettingItem(
+                    title = stringResource(R.string.routing_settings_latency_test_url),
                     onClick = { showLatencyUrlDialog = true },
                     trailing = {
                         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -206,9 +204,9 @@ fun RoutingSettingsScreen(
                     onClick = { showSubscriptionTimeoutDialog = true }
                 )
             }
-            
+
             Spacer(modifier = Modifier.height(16.dp))
-            
+
             StandardCard {
                 SettingSwitchItem(
                     title = stringResource(R.string.routing_settings_block_ads),
@@ -229,9 +227,9 @@ fun RoutingSettingsScreen(
                     onCheckedChange = { settingsViewModel.setBypassLan(it) }
                 )
             }
-            
+
             Spacer(modifier = Modifier.height(16.dp))
-            
+
             StandardCard {
                 SettingItem(
                     title = stringResource(R.string.routing_settings_app_routing),

@@ -142,7 +142,7 @@ class HealthMonitor(
     /**
      * 是否已初始化
      */
-fun isInitialized(): Boolean = delegate != null
+    fun isInitialized(): Boolean = delegate != null
 
     fun enterPowerSavingMode(): Result<Unit> {
         return runCatching {

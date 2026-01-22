@@ -4,7 +4,6 @@ import com.kunk.singbox.R
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.kunk.singbox.ipc.SingBoxRemote
 import com.kunk.singbox.ipc.VpnStateStore
 import com.kunk.singbox.model.FilterMode
 import com.kunk.singbox.model.NodeFilter
@@ -23,11 +22,10 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 class NodesViewModel(application: Application) : AndroidViewModel(application) {
-    
+
     private val configRepository = ConfigRepository.getInstance(application)
     private val settingsRepository = SettingsRepository.getInstance(application)
 
@@ -35,11 +33,11 @@ class NodesViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _isTesting = MutableStateFlow(false)
     val isTesting: StateFlow<Boolean> = _isTesting.asStateFlow()
-    
+
     // 正在测试延迟的节点 ID 集合
     private val _testingNodeIds = MutableStateFlow<Set<String>>(emptySet())
     val testingNodeIds: StateFlow<Set<String>> = _testingNodeIds.asStateFlow()
-    
+
     private val _sortType = MutableStateFlow(NodeSortType.DEFAULT)
     val sortType: StateFlow<NodeSortType> = _sortType.asStateFlow()
 
@@ -111,8 +109,8 @@ class NodesViewModel(application: Application) : AndroidViewModel(application) {
                 if (l == null || l <= 0) Long.MAX_VALUE else l
             })
             NodeSortType.NAME -> filtered.sortedBy { it.name }
-            NodeSortType.REGION -> filtered.sortedWith(compareBy<NodeUi> { 
-                getRegionWeight(it.regionFlag) 
+            NodeSortType.REGION -> filtered.sortedWith(compareBy<NodeUi> {
+                getRegionWeight(it.regionFlag)
             }.thenBy { it.name })
             NodeSortType.CUSTOM -> {
                 val orderMap = customOrder.withIndex().associate { it.value to it.index }
@@ -129,31 +127,31 @@ class NodesViewModel(application: Application) : AndroidViewModel(application) {
         if (flag.isNullOrBlank()) return 9999
         // Priority order: CN, HK, MO, TW, JP, KR, SG, US, Others
         return when (flag) {
-            "🇨🇳" -> 0   // China
-            "🇭🇰" -> 1   // Hong Kong
-            "🇲🇴" -> 2   // Macau
-            "🇹🇼" -> 3   // Taiwan
-            "🇯🇵" -> 4   // Japan
-            "🇰🇷" -> 5   // South Korea
-            "🇸🇬" -> 6   // Singapore
-            "🇺🇸" -> 7   // USA
-            "🇻🇳" -> 8   // Vietnam
-            "🇹🇭" -> 9   // Thailand
-            "🇵🇭" -> 10  // Philippines
-            "🇲🇾" -> 11  // Malaysia
-            "🇮🇩" -> 12  // Indonesia
-            "🇮🇳" -> 13  // India
-            "🇷🇺" -> 14  // Russia
-            "🇹🇷" -> 15  // Turkey
-            "🇮🇹" -> 16  // Italy
-            "🇩🇪" -> 17  // Germany
-            "🇫🇷" -> 18  // France
-            "🇳🇱" -> 19  // Netherlands
-            "🇬🇧" -> 20  // UK
-            "🇦🇺" -> 21  // Australia
-            "🇨🇦" -> 22  // Canada
-            "🇧🇷" -> 23  // Brazil
-            "🇦🇷" -> 24  // Argentina
+            "🇨🇳" -> 0 // China
+            "🇭🇰" -> 1 // Hong Kong
+            "🇲🇴" -> 2 // Macau
+            "🇹🇼" -> 3 // Taiwan
+            "🇯🇵" -> 4 // Japan
+            "🇰🇷" -> 5 // South Korea
+            "🇸🇬" -> 6 // Singapore
+            "🇺🇸" -> 7 // USA
+            "🇻🇳" -> 8 // Vietnam
+            "🇹🇭" -> 9 // Thailand
+            "🇵🇭" -> 10 // Philippines
+            "🇲🇾" -> 11 // Malaysia
+            "🇮🇩" -> 12 // Indonesia
+            "🇮🇳" -> 13 // India
+            "🇷🇺" -> 14 // Russia
+            "🇹🇷" -> 15 // Turkey
+            "🇮🇹" -> 16 // Italy
+            "🇩🇪" -> 17 // Germany
+            "🇫🇷" -> 18 // France
+            "🇳🇱" -> 19 // Netherlands
+            "🇬🇧" -> 20 // UK
+            "🇦🇺" -> 21 // Australia
+            "🇨🇦" -> 22 // Canada
+            "🇧🇷" -> 23 // Brazil
+            "🇦🇷" -> 24 // Argentina
             else -> 1000 // Others
         }
     }
@@ -197,8 +195,8 @@ class NodesViewModel(application: Application) : AndroidViewModel(application) {
                 if (l == null || l <= 0) Long.MAX_VALUE else l
             })
             NodeSortType.NAME -> filtered.sortedBy { it.name }
-            NodeSortType.REGION -> filtered.sortedWith(compareBy<NodeUi> { 
-                getRegionWeight(it.regionFlag) 
+            NodeSortType.REGION -> filtered.sortedWith(compareBy<NodeUi> {
+                getRegionWeight(it.regionFlag)
             }.thenBy { it.name })
             NodeSortType.CUSTOM -> {
                 // filteredAllNodes 不使用 customOrder，或者我们可以简单地回退到 DEFAULT
@@ -285,7 +283,7 @@ class NodesViewModel(application: Application) : AndroidViewModel(application) {
     fun clearSwitchResult() {
         _switchResult.value = null
     }
-    
+
     fun testLatency(nodeId: String) {
         if (_testingNodeIds.value.contains(nodeId)) return
         viewModelScope.launch {
@@ -321,19 +319,19 @@ class NodesViewModel(application: Application) : AndroidViewModel(application) {
             _testProgress.value = null
             return
         }
-        
+
         testingJob = viewModelScope.launch {
             _isTesting.value = true
-            
+
             val currentOrder = nodes.value.map { it.id }
             setCustomNodeOrder(currentOrder)
             setSortType(NodeSortType.CUSTOM)
-            
+
             val currentNodes = nodes.value
             val targetIds = currentNodes.map { it.id }
             val totalCount = targetIds.size
             _testingNodeIds.value = targetIds.toSet()
-            
+
             var completedCount = 0
             var successCount = 0
             var timeoutCount = 0
@@ -374,14 +372,14 @@ class NodesViewModel(application: Application) : AndroidViewModel(application) {
     fun exportNode(nodeId: String): String? {
         return configRepository.exportNode(nodeId)
     }
-    
+
     fun setSortType(type: NodeSortType) {
         _sortType.value = type
         viewModelScope.launch {
             settingsRepository.setNodeSortType(type)
         }
     }
-    
+
     // 设置节点过滤条件
     fun setNodeFilter(filter: NodeFilter) {
         _nodeFilter.value = filter
@@ -390,7 +388,7 @@ class NodesViewModel(application: Application) : AndroidViewModel(application) {
         }
         emitToast(getApplication<Application>().getString(R.string.nodes_filter_applied))
     }
-    
+
     // 清除节点过滤条件
     fun clearNodeFilter() {
         val emptyFilter = NodeFilter()
@@ -400,14 +398,14 @@ class NodesViewModel(application: Application) : AndroidViewModel(application) {
         }
         emitToast(getApplication<Application>().getString(R.string.nodes_filter_cleared))
     }
-    
+
     fun clearLatency() {
         viewModelScope.launch {
             // 清空前冻结当前顺序，防止列表跳动
             val currentOrder = nodes.value.map { it.id }
             setCustomNodeOrder(currentOrder)
             setSortType(NodeSortType.CUSTOM)
-            
+
             configRepository.clearAllNodesLatency()
             emitToast(getApplication<Application>().getString(R.string.nodes_latency_cleared))
         }
@@ -423,7 +421,7 @@ class NodesViewModel(application: Application) : AndroidViewModel(application) {
     fun setAllNodesUiActive(active: Boolean) {
         configRepository.setAllNodesUiActive(active)
     }
-    
+
     fun addNode(
         content: String,
         targetProfileId: String? = null,
@@ -431,20 +429,20 @@ class NodesViewModel(application: Application) : AndroidViewModel(application) {
     ) {
         viewModelScope.launch {
             val trimmedContent = content.trim()
-            
+
             val supportedPrefixes = listOf(
                 "vmess://", "vless://", "ss://", "trojan://",
                 "hysteria2://", "hy2://", "hysteria://",
                 "tuic://", "anytls://", "wireguard://", "ssh://"
             )
-            
+
             if (supportedPrefixes.none { trimmedContent.startsWith(it) }) {
                 val msg = getApplication<Application>().getString(R.string.nodes_unsupported_format)
                 _addNodeResult.value = msg
                 emitToast(msg)
                 return@launch
             }
-            
+
             val result = configRepository.addSingleNode(
                 link = trimmedContent,
                 targetProfileId = targetProfileId,

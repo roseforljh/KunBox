@@ -50,9 +50,9 @@ fun AddNodeDialog(
     var selectedProfileId by remember { mutableStateOf(profiles.firstOrNull()?.id) }
 
     val isValid = nodeLink.isNotBlank() && (
-            (isCreatingNew && newProfileName.isNotBlank()) ||
-                    (!isCreatingNew && selectedProfileId != null)
-            )
+        (isCreatingNew && newProfileName.isNotBlank()) ||
+            (!isCreatingNew && selectedProfileId != null)
+        )
 
     AlertDialog(
         onDismissRequest = onDismiss,

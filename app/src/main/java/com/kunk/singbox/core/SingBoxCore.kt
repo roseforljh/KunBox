@@ -4,7 +4,6 @@ import android.content.Context
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
-import android.net.NetworkRequest
 import android.os.Process
 import android.util.Log
 import com.google.gson.Gson
@@ -30,14 +29,8 @@ import java.net.NetworkInterface
 import java.net.ServerSocket
 import java.net.URI
 import java.net.InetSocketAddress
-import java.net.Proxy
 import java.net.Socket
-import java.util.concurrent.TimeUnit
-import okhttp3.OkHttpClient
-import okhttp3.Request
 import com.kunk.singbox.utils.PreciseLatencyTester
-import java.lang.reflect.Modifier
-import java.lang.reflect.Method
 import java.util.Collections
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
@@ -45,15 +38,15 @@ import java.util.concurrent.atomic.AtomicBoolean
 /**
  * Sing-box 核心封装类
  * 负责与 libbox 交互，提供延迟测试等功能
- * 
+ *
  * 如果 libbox 不可用，将使用降级方案进行测试
  */
 class SingBoxCore private constructor(private val context: Context) {
-    
+
     private val gson = Gson()
     private val workDir: File = File(context.filesDir, "singbox_work")
     private val tempDir: File = File(context.cacheDir, "singbox_temp")
-    
+
     // libbox 是否可用
     private var libboxAvailable = false
 
@@ -106,12 +99,12 @@ class SingBoxCore private constructor(private val context: Context) {
             }
         }
     }
-    
+
     init {
         // 确保工作目录存在
         workDir.mkdirs()
         tempDir.mkdirs()
-        
+
         // 尝试初始化 libbox
         libboxAvailable = initLibbox()
 
@@ -133,7 +126,7 @@ class SingBoxCore private constructor(private val context: Context) {
             false
         }
     }
-    
+
     /**
      * 检查 libbox 是否可用
      */
@@ -184,7 +177,7 @@ class SingBoxCore private constructor(private val context: Context) {
 
     // private var discoveredUrlTestMethod: java.lang.reflect.Method? = null
     // private var discoveredMethodType: Int = 0 // 0: long, 1: URLTest object
-    
+
     /**
      * 解析 outbound 的依赖 outbounds
      * 例如 SS + ShadowTLS 节点，SS 的 detour 字段指向 shadowtls outbound
@@ -234,7 +227,7 @@ class SingBoxCore private constructor(private val context: Context) {
             original
         }
     }
-    
+
     // Removed reflection helpers: extractDelayFromUrlTest, hasDelayAccessors, buildUrlTestArgs
 
     private suspend fun testWithLocalHttpProxy(
@@ -301,7 +294,7 @@ class SingBoxCore private constructor(private val context: Context) {
             val testDbPath = File(tempDir, "test_${UUID.randomUUID()}.db").absolutePath
 
             val config = SingBoxConfig(
-                log = com.kunk.singbox.model.LogConfig(level = "debug", timestamp = true),  // 使用 debug 级别诊断问题
+                log = com.kunk.singbox.model.LogConfig(level = "debug", timestamp = true), // 使用 debug 级别诊断问题
                 // 测速服务使用纯 IP DNS，避免 DoH 请求被 VPN 拦截
                 // 添加多个 DNS 服务器作为备份，提高可靠性
                 // 关键: 必须设置 finalServer，否则 sing-box 不知道使用哪个 DNS 服务器
@@ -320,8 +313,8 @@ class SingBoxCore private constructor(private val context: Context) {
                             strategy = "ipv4_only"
                         )
                     ),
-                    finalServer = "dns-direct",  // 指定默认 DNS 服务器
-                    strategy = "ipv4_only"       // 全局 DNS 策略
+                    finalServer = "dns-direct", // 指定默认 DNS 服务器
+                    strategy = "ipv4_only" // 全局 DNS 策略
                 ),
                 inbounds = listOf(inbound),
                 outbounds = allOutbounds,
@@ -469,11 +462,11 @@ class SingBoxCore private constructor(private val context: Context) {
         // 为了避免单次启动配置过大，我们按 50 个节点一批进行处理
         // 这样既能享受批量优势，又能避免内存或配置过大问题
         val batchSize = 50
-        
+
         // 获取设置中的并发数
         val settings = SettingsRepository.getInstance(context).settings.first()
         val concurrency = settings.latencyTestConcurrency
-        
+
         outbounds.chunked(batchSize).forEach { batch ->
             // 对每一批节点启动一次服务
             testOutboundsLatencyBatchInternal(batch, targetUrl, fallbackUrl, timeoutMs, concurrency, onResult)
@@ -524,19 +517,19 @@ class SingBoxCore private constructor(private val context: Context) {
                 }
                 return
             }
-            
+
             // 2. 构建 Inbounds 和 Rules
             val inbounds = ArrayList<com.kunk.singbox.model.Inbound>()
             val rules = ArrayList<com.kunk.singbox.model.RouteRule>()
-            
+
             // 建立 端口 -> 原始Tag 的映射，方便后续测试
             val portToTagMap = mutableMapOf<Int, String>()
-            
+
             batchOutbounds.forEachIndexed { index, outbound ->
                 val port = ports[index]
                 val inboundTag = "test-in-$index"
                 portToTagMap[port] = outbound.tag
-                
+
                 // 每个节点对应一个监听端口
                 inbounds.add(com.kunk.singbox.model.Inbound(
                     type = "mixed",
@@ -544,7 +537,7 @@ class SingBoxCore private constructor(private val context: Context) {
                     listen = "127.0.0.1",
                     listenPort = port
                 ))
-                
+
                 // 该端口的流量强制转发到对应节点
                 rules.add(com.kunk.singbox.model.RouteRule(
                     inbound = listOf(inboundTag),
@@ -560,8 +553,8 @@ class SingBoxCore private constructor(private val context: Context) {
                     com.kunk.singbox.model.DnsServer(tag = "dns-direct", address = "223.5.5.5", detour = "direct", strategy = "ipv4_only"),
                     com.kunk.singbox.model.DnsServer(tag = "dns-backup", address = "119.29.29.29", detour = "direct", strategy = "ipv4_only")
                 ),
-                finalServer = "dns-direct",  // 指定默认 DNS 服务器
-                strategy = "ipv4_only"       // 全局 DNS 策略
+                finalServer = "dns-direct", // 指定默认 DNS 服务器
+                strategy = "ipv4_only" // 全局 DNS 策略
             )
 
             // 确保有 direct 和 block
@@ -588,7 +581,7 @@ class SingBoxCore private constructor(private val context: Context) {
             val batchTestDbPath = File(tempDir, "batch_test_${UUID.randomUUID()}.db").absolutePath
 
             val config = SingBoxConfig(
-                log = com.kunk.singbox.model.LogConfig(level = "debug", timestamp = true),  // 使用 debug 级别诊断问题
+                log = com.kunk.singbox.model.LogConfig(level = "debug", timestamp = true), // 使用 debug 级别诊断问题
                 dns = dnsConfig,
                 inbounds = inbounds,
                 outbounds = safeOutbounds,
@@ -737,7 +730,6 @@ class SingBoxCore private constructor(private val context: Context) {
                     }
                     jobs.awaitAll()
                 }
-
             } catch (e: Exception) {
                 Log.e(TAG, "Batch test failed", e)
                 batchOutbounds.forEach { onResult(it.tag, -1L) }
@@ -828,7 +820,8 @@ class SingBoxCore private constructor(private val context: Context) {
             }
         } catch (_: Exception) { url }
 
-        val rtt = testWithTemporaryServiceUrlTestOnRunning(outbound, url, fallbackUrl, timeoutMs, settings.latencyTestMethod, dependencyOutbounds)
+        val rtt =
+            testWithTemporaryServiceUrlTestOnRunning(outbound, url, fallbackUrl, timeoutMs, settings.latencyTestMethod, dependencyOutbounds)
         if (rtt >= 0) {
             return@withContext rtt
         }
@@ -836,7 +829,7 @@ class SingBoxCore private constructor(private val context: Context) {
         val fallback = testWithLocalHttpProxy(outbound, url, fallbackUrl, timeoutMs, dependencyOutbounds)
         return@withContext fallback
     }
-    
+
     /**
      * 批量测试节点延迟
      * @param outbounds 节点列表
@@ -852,7 +845,7 @@ class SingBoxCore private constructor(private val context: Context) {
         // If VPN is running AND native URLTest is supported, use it.
         // Otherwise (VPN off OR native URLTest unsupported), use our efficient batch test.
         val isNativeUrlTestSupported = false // Currently false for official libbox
-        
+
         if (libboxAvailable && VpnStateStore.getActive() && isNativeUrlTestSupported) {
             // 先做一次轻量预热，避免批量首个请求落在 link 验证/路由冷启动窗口
             try {
@@ -911,7 +904,7 @@ class SingBoxCore private constructor(private val context: Context) {
         }
         throw RuntimeException("Failed to allocate local port after $maxAttempts attempts")
     }
-    
+
     private fun isPortAvailable(port: Int): Boolean {
         return try {
             ServerSocket(port).use { true }
@@ -955,7 +948,6 @@ class SingBoxCore private constructor(private val context: Context) {
         return linkProps?.interfaceName
     }
 
-
     /**
      * 验证配置是否有效
      */
@@ -968,7 +960,7 @@ class SingBoxCore private constructor(private val context: Context) {
                 Result.failure(e)
             }
         }
-        
+
         try {
             val configJson = gson.toJson(config)
             Libbox.checkConfig(configJson)
@@ -978,7 +970,7 @@ class SingBoxCore private constructor(private val context: Context) {
             Result.failure(e)
         }
     }
-    
+
     fun formatConfig(config: SingBoxConfig): String = gson.toJson(config)
 
     // --- Inner Classes for Platform Interface ---
@@ -1037,7 +1029,7 @@ class SingBoxCore private constructor(private val context: Context) {
             // 注意: 不能在 cgo 回调中注册 NetworkCallback，会导致 Go runtime 栈溢出崩溃
             // 但我们可以同步获取当前网络状态并立即通知
             if (listener == null) return
-            
+
             try {
                 val activeNetwork = connectivityManager.activeNetwork
                 if (activeNetwork != null) {
@@ -1131,7 +1123,7 @@ class SingBoxCore private constructor(private val context: Context) {
         override fun next(): String = list[index++]
         override fun len(): Int = list.size
     }
-    
+
     fun cleanup() {
     }
 }

@@ -25,15 +25,15 @@ object LocalResolverImpl : LocalDNSTransport {
                 }
             }
             if (result.isEmpty() && addresses.isNotEmpty()) {
-                 // No matching IP version found, but domain exists. 
-                 // Maybe we should return empty success?
-                 // Or maybe we don't filter strict if network is just "ip"?
-                 // Sing-box usually passes "ip4" or "ip6".
+                // No matching IP version found, but domain exists.
+                // Maybe we should return empty success?
+                // Or maybe we don't filter strict if network is just "ip"?
+                // Sing-box usually passes "ip4" or "ip6".
             }
             ctx.success(result.toString())
         } catch (e: Exception) {
             // RCode 3 = NXDOMAIN, 2 = SERVFAIL
-            ctx.errorCode(2) 
+            ctx.errorCode(2)
         }
     }
 

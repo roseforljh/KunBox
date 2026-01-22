@@ -37,7 +37,7 @@ fun NodeCard(
     modifier: Modifier = Modifier
 ) {
     var showMenu by remember { mutableStateOf(false) }
-    
+
     fun formatTraffic(bytes: Long): String {
         if (bytes <= 0) return ""
         val units = arrayOf("B", "KB", "MB", "GB", "TB")
@@ -88,9 +88,9 @@ fun NodeCard(
                 } else {
                     Spacer(modifier = Modifier.size(24.dp))
                 }
-                
+
                 Spacer(modifier = Modifier.width(16.dp))
-                
+
                 Column {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         // 如果名称中已经包含该国旗，则不重复显示
@@ -117,9 +117,9 @@ fun NodeCard(
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
-                        
+
                         Spacer(modifier = Modifier.width(8.dp))
-                        
+
                         if (trafficUsed > 0) {
                             Text(
                                 text = formatTraffic(trafficUsed),
@@ -128,7 +128,7 @@ fun NodeCard(
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                         }
-                        
+
                         if (isTesting) {
                             CircularProgressIndicator(
                                 modifier = Modifier.size(12.dp),
@@ -141,10 +141,10 @@ fun NodeCard(
                                 when {
                                     latency == null -> placeholderColor
                                     latency < 0 -> Color.Red
-                                    latency <= 100 -> Color(0xFF00BFA5)  // Teal: <=100ms
-                                    latency <= 200 -> Color(0xFF4CAF50)  // Green: <=200ms
-                                    latency <= 500 -> Color(0xFFFF9800)  // Orange: <=500ms
-                                    else -> Color.Red                    // Red: >500ms
+                                    latency <= 100 -> Color(0xFF00BFA5) // Teal: <=100ms
+                                    latency <= 200 -> Color(0xFF4CAF50) // Green: <=200ms
+                                    latency <= 500 -> Color(0xFFFF9800) // Orange: <=500ms
+                                    else -> Color.Red // Red: >500ms
                                 }
                             }
                             val latencyText = remember(latency) {

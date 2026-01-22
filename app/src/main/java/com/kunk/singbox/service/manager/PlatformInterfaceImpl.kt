@@ -657,7 +657,7 @@ class PlatformInterfaceImpl(
             val cm = connectivityManager ?: return
             val caps = cm.getNetworkCapabilities(network)
             val isValidPhysical = caps?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true &&
-                                  caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN) == true
+                caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN) == true
 
             if (!isValidPhysical) return
 

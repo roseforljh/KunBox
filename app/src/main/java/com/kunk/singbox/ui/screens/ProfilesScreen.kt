@@ -60,7 +60,6 @@ import androidx.compose.material3.TextButton
 import androidx.compose.ui.res.stringResource
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -100,13 +99,13 @@ fun ProfilesScreen(
     val activeProfileId by viewModel.activeProfileId.collectAsState()
     val importState by viewModel.importState.collectAsState()
     val updateStatus by viewModel.updateStatus.collectAsState()
-    
+
     var showSearchDialog by remember { mutableStateOf(false) }
     var showImportSelection by remember { mutableStateOf(false) }
     var showSubscriptionInput by remember { mutableStateOf(false) }
     var showClipboardInput by remember { mutableStateOf(false) }
     var editingProfile by remember { mutableStateOf<com.kunk.singbox.model.ProfileUi?>(null) }
-    
+
     val context = LocalContext.current
     val clipboardManager = androidx.compose.ui.platform.LocalClipboardManager.current
 
@@ -201,7 +200,7 @@ fun ProfilesScreen(
                             }
                         } ?: ""
                     }
-                    
+
                     if (content.isNotBlank()) {
                         // 从 URI 中提取文件名作为配置名称
                         val fileName = uri.lastPathSegment?.let { segment ->
@@ -211,7 +210,7 @@ fun ProfilesScreen(
                                 .substringBeforeLast(".")
                                 .takeIf { it.isNotBlank() }
                         } ?: context.getString(R.string.profiles_file_import)
-                        
+
                         viewModel.importFromContent(fileName, content)
                     } else {
                         Toast.makeText(context, context.getString(R.string.profiles_file_empty), Toast.LENGTH_SHORT).show()
@@ -222,7 +221,7 @@ fun ProfilesScreen(
             }
         }
     }
-    
+
     // 二维码扫描 Launcher
     val qrCodeLauncher = rememberLauncherForActivityResult(
         contract = ScanContract()
@@ -232,16 +231,16 @@ fun ProfilesScreen(
             // 检查扫描结果是否为有效的节点链接或配置
             val isNodeLink = scannedContent.let {
                 it.startsWith("vmess://") || it.startsWith("vless://") ||
-                it.startsWith("ss://") || it.startsWith("ssr://") ||
-                it.startsWith("trojan://") || it.startsWith("hysteria://") ||
-                it.startsWith("hysteria2://") || it.startsWith("hy2://") ||
-                it.startsWith("tuic://") || it.startsWith("wireguard://") ||
-                it.startsWith("ssh://") || it.startsWith("anytls://")
+                    it.startsWith("ss://") || it.startsWith("ssr://") ||
+                    it.startsWith("trojan://") || it.startsWith("hysteria://") ||
+                    it.startsWith("hysteria2://") || it.startsWith("hy2://") ||
+                    it.startsWith("tuic://") || it.startsWith("wireguard://") ||
+                    it.startsWith("ssh://") || it.startsWith("anytls://")
             }
-            
+
             val isSubscriptionUrl = scannedContent.startsWith("http://") ||
-                                    scannedContent.startsWith("https://")
-            
+                scannedContent.startsWith("https://")
+
             when {
                 isNodeLink -> {
                     // 单节点链接，使用剪贴板导入方式
@@ -262,20 +261,20 @@ fun ProfilesScreen(
             }
         }
     }
-    
+
     // 创建扫描选项的辅助函数
     fun createScanOptions(): ScanOptions {
         return ScanOptions().apply {
             setDesiredBarcodeFormats(ScanOptions.QR_CODE)
-            setPrompt("")  // 我们在自定义布局中显示提示
+            setPrompt("") // 我们在自定义布局中显示提示
             setCameraId(0)
             setBeepEnabled(true)
             setBarcodeImageEnabled(false)
             setOrientationLocked(false)
-            setCaptureActivity(QrScannerActivity::class.java)  // 使用自定义正方形扫描框
+            setCaptureActivity(QrScannerActivity::class.java) // 使用自定义正方形扫描框
         }
     }
-    
+
     // 相机权限请求 Launcher
     val cameraPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
@@ -303,7 +302,7 @@ fun ProfilesScreen(
                             "text/plain",
                             "application/x-yaml",
                             "text/yaml",
-                            "*/*"  // 允许选择任意文件类型
+                            "*/*" // 允许选择任意文件类型
                         ))
                     }
                     ProfileImportType.QRCode -> {
@@ -686,7 +685,7 @@ private fun SubscriptionInputDialog(
                 color = MaterialTheme.colorScheme.onSurface
             )
             Spacer(modifier = Modifier.height(16.dp))
-            
+
             androidx.compose.material3.OutlinedTextField(
                 value = name,
                 onValueChange = { name = it },
@@ -703,9 +702,9 @@ private fun SubscriptionInputDialog(
                     unfocusedLabelColor = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             )
-            
+
             Spacer(modifier = Modifier.height(12.dp))
-            
+
             androidx.compose.material3.OutlinedTextField(
                 value = url,
                 onValueChange = { url = it },
@@ -722,9 +721,9 @@ private fun SubscriptionInputDialog(
                     unfocusedLabelColor = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             )
-            
+
             Spacer(modifier = Modifier.height(16.dp))
-            
+
             // 自动更新开关
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -745,7 +744,7 @@ private fun SubscriptionInputDialog(
                     )
                 )
             }
-            
+
             // 自动更新间隔输入框（带动画显示/隐藏）
             AnimatedVisibility(
                 visible = autoUpdateEnabled,
@@ -762,7 +761,7 @@ private fun SubscriptionInputDialog(
             ) {
                 Column {
                     Spacer(modifier = Modifier.height(12.dp))
-                    
+
                     androidx.compose.material3.OutlinedTextField(
                         value = autoUpdateMinutes,
                         onValueChange = { newValue ->
@@ -796,36 +795,36 @@ private fun SubscriptionInputDialog(
                     )
                 }
             }
-            
+
             Spacer(modifier = Modifier.height(24.dp))
-            
+
             val context = LocalContext.current
-            
+
             Button(
                 onClick = {
                     // 校验订阅链接是否为单节点链接
                     val isNodeLink = url.trim().let {
                         it.startsWith("vmess://") || it.startsWith("vless://") ||
-                        it.startsWith("ss://") || it.startsWith("ssr://") ||
-                        it.startsWith("trojan://") || it.startsWith("hysteria://") ||
-                        it.startsWith("hysteria2://") || it.startsWith("hy2://") ||
-                        it.startsWith("tuic://") || it.startsWith("bean://") ||
-                        it.startsWith("wireguard://") || it.startsWith("ssh://")
+                            it.startsWith("ss://") || it.startsWith("ssr://") ||
+                            it.startsWith("trojan://") || it.startsWith("hysteria://") ||
+                            it.startsWith("hysteria2://") || it.startsWith("hy2://") ||
+                            it.startsWith("tuic://") || it.startsWith("bean://") ||
+                            it.startsWith("wireguard://") || it.startsWith("ssh://")
                     }
-                    
+
                     if (isNodeLink) {
                         Toast.makeText(context,
                             context.getString(R.string.profiles_subscription_node_warning),
                             Toast.LENGTH_LONG).show()
                         return@Button
                     }
-                    
+
                     // 校验名称是否非法（看起来像链接）
                     if (name.contains("://")) {
                         Toast.makeText(context, context.getString(R.string.profiles_name_invalid), Toast.LENGTH_SHORT).show()
                         return@Button
                     }
-                    
+
                     // 计算最终的自动更新间隔
                     val finalInterval = if (autoUpdateEnabled) {
                         val minutes = autoUpdateMinutes.toIntOrNull() ?: 0
@@ -846,9 +845,9 @@ private fun SubscriptionInputDialog(
             ) {
                 Text(stringResource(R.string.common_ok), fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimary)
             }
-            
+
             Spacer(modifier = Modifier.height(8.dp))
-            
+
             androidx.compose.material3.TextButton(
                 onClick = onDismiss,
                 modifier = Modifier.fillMaxWidth().height(50.dp),

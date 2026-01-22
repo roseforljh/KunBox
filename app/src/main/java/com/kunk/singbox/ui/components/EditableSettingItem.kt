@@ -8,8 +8,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import com.kunk.singbox.R
-import com.kunk.singbox.ui.components.InputDialog
-import com.kunk.singbox.ui.components.SingleSelectDialog
 
 @Composable
 fun EditableTextItem(
@@ -28,7 +26,7 @@ fun EditableTextItem(
             confirmText = stringResource(R.string.common_ok),
             onConfirm = {
                 onValueChange(it)
-                showDialog = false 
+                showDialog = false
             },
             onDismiss = { showDialog = false }
         )

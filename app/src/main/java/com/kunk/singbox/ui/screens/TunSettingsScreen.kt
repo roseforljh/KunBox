@@ -48,7 +48,7 @@ fun TunSettingsScreen(
 ) {
     val scrollState = rememberScrollState()
     val settings by settingsViewModel.settings.collectAsState()
-    
+
     // Dialog States
     var showStackDialog by remember { mutableStateOf(false) }
     var showMtuDialog by remember { mutableStateOf(false) }
@@ -71,26 +71,26 @@ fun TunSettingsScreen(
             onDismiss = { showStackDialog = false }
         )
     }
-    
+
     if (showMtuDialog) {
         InputDialog(
             title = stringResource(R.string.tun_settings_mtu),
             initialValue = settings.tunMtu.toString(),
-            onConfirm = { 
+            onConfirm = {
                 it.toIntOrNull()?.let { mtu -> settingsViewModel.setTunMtu(mtu) }
-                showMtuDialog = false 
+                showMtuDialog = false
             },
             onDismiss = { showMtuDialog = false }
         )
     }
-    
+
     if (showInterfaceDialog) {
         InputDialog(
             title = stringResource(R.string.tun_settings_interface_name),
             initialValue = settings.tunInterfaceName,
-            onConfirm = { 
+            onConfirm = {
                 settingsViewModel.setTunInterfaceName(it)
-                showInterfaceDialog = false 
+                showInterfaceDialog = false
             },
             onDismiss = { showInterfaceDialog = false }
         )
@@ -173,52 +173,52 @@ fun TunSettingsScreen(
             )
         }
     ) { padding ->
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(padding)
-            .padding(16.dp)
-            .verticalScroll(scrollState)
-    ) {
-        StandardCard {
-            SettingSwitchItem(
-                title = stringResource(R.string.tun_settings_enable),
-                subtitle = stringResource(R.string.tun_settings_enable_subtitle),
-                checked = settings.tunEnabled,
-                onCheckedChange = { settingsViewModel.setTunEnabled(it) }
-            )
-        }
-        
-        Spacer(modifier = Modifier.height(16.dp))
-        
-        StandardCard {
-            SettingItem(title = stringResource(R.string.tun_settings_stack), value = stringResource(settings.tunStack.displayNameRes), onClick = { showStackDialog = true })
-            SettingItem(title = stringResource(R.string.tun_settings_mtu), value = settings.tunMtu.toString(), onClick = { showMtuDialog = true })
-            SettingItem(title = stringResource(R.string.tun_settings_interface_name), value = settings.tunInterfaceName, onClick = { showInterfaceDialog = true })
-        }
-        
-        Spacer(modifier = Modifier.height(16.dp))
-        
-        StandardCard {
-            SettingSwitchItem(
-                title = stringResource(R.string.tun_settings_auto_route),
-                subtitle = stringResource(R.string.tun_settings_auto_route_subtitle),
-                checked = settings.autoRoute,
-                onCheckedChange = { settingsViewModel.setAutoRoute(it) }
-            )
-            SettingSwitchItem(
-                title = stringResource(R.string.tun_settings_endpoint_independent_nat),
-                subtitle = stringResource(R.string.tun_settings_endpoint_independent_nat_subtitle),
-                checked = settings.endpointIndependentNat,
-                onCheckedChange = { settingsViewModel.setEndpointIndependentNat(it) }
-            )
-            SettingSwitchItem(
-                title = stringResource(R.string.tun_settings_strict_route),
-                subtitle = stringResource(R.string.tun_settings_strict_route_subtitle),
-                checked = settings.strictRoute,
-                onCheckedChange = { settingsViewModel.setStrictRoute(it) }
-            )
-        }
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .padding(16.dp)
+                .verticalScroll(scrollState)
+        ) {
+            StandardCard {
+                SettingSwitchItem(
+                    title = stringResource(R.string.tun_settings_enable),
+                    subtitle = stringResource(R.string.tun_settings_enable_subtitle),
+                    checked = settings.tunEnabled,
+                    onCheckedChange = { settingsViewModel.setTunEnabled(it) }
+                )
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            StandardCard {
+                SettingItem(title = stringResource(R.string.tun_settings_stack), value = stringResource(settings.tunStack.displayNameRes), onClick = { showStackDialog = true })
+                SettingItem(title = stringResource(R.string.tun_settings_mtu), value = settings.tunMtu.toString(), onClick = { showMtuDialog = true })
+                SettingItem(title = stringResource(R.string.tun_settings_interface_name), value = settings.tunInterfaceName, onClick = { showInterfaceDialog = true })
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            StandardCard {
+                SettingSwitchItem(
+                    title = stringResource(R.string.tun_settings_auto_route),
+                    subtitle = stringResource(R.string.tun_settings_auto_route_subtitle),
+                    checked = settings.autoRoute,
+                    onCheckedChange = { settingsViewModel.setAutoRoute(it) }
+                )
+                SettingSwitchItem(
+                    title = stringResource(R.string.tun_settings_endpoint_independent_nat),
+                    subtitle = stringResource(R.string.tun_settings_endpoint_independent_nat_subtitle),
+                    checked = settings.endpointIndependentNat,
+                    onCheckedChange = { settingsViewModel.setEndpointIndependentNat(it) }
+                )
+                SettingSwitchItem(
+                    title = stringResource(R.string.tun_settings_strict_route),
+                    subtitle = stringResource(R.string.tun_settings_strict_route_subtitle),
+                    checked = settings.strictRoute,
+                    onCheckedChange = { settingsViewModel.setStrictRoute(it) }
+                )
+            }
 
             Spacer(modifier = Modifier.height(16.dp))
 

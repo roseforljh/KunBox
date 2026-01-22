@@ -2,7 +2,6 @@ package com.kunk.singbox.ui.screens
 
 import com.kunk.singbox.R
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -28,8 +27,6 @@ import com.kunk.singbox.model.RuleSet
 import com.kunk.singbox.model.RuleSetType
 import com.kunk.singbox.model.HubRuleSet
 import com.kunk.singbox.ui.components.StandardCard
-import com.kunk.singbox.ui.components.StyledTextField
-import com.kunk.singbox.ui.theme.Neutral700
 import com.kunk.singbox.viewmodel.RuleSetViewModel
 import com.kunk.singbox.viewmodel.SettingsViewModel
 import kotlinx.coroutines.launch
@@ -47,7 +44,7 @@ fun RuleSetHubScreen(
         viewModelStoreOwner = (navController.context as? androidx.activity.ComponentActivity)
             ?: throw IllegalStateException("Context is not a ComponentActivity")
     )
-    
+
     var searchQuery by remember { mutableStateOf("") }
     val ruleSets by activityRuleSetViewModel.ruleSets.collectAsState()
     val isLoading by activityRuleSetViewModel.isLoading.collectAsState()
@@ -55,12 +52,12 @@ fun RuleSetHubScreen(
     val downloadingRuleSets by settingsViewModel.downloadingRuleSets.collectAsState()
     // 收集 settings 以便在规则集列表变化时自动更新 UI（如删除规则集后）
     val ruleSetSettings by activityRuleSetViewModel.settings.collectAsState()
-    
+
     // 创建一个 Set 用于快速查找已添加的规则集
     val addedRuleSetTags = remember(ruleSetSettings.ruleSets) {
         ruleSetSettings.ruleSets.map { it.tag }.toSet()
     }
-    
+
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
 
@@ -132,7 +129,7 @@ fun RuleSetHubScreen(
                     )
                 )
             }
-            
+
             if (isLoading) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
@@ -155,11 +152,11 @@ fun RuleSetHubScreen(
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     items(filteredRuleSets) { ruleSet ->
-                HubRuleSetItem(
-                    ruleSet = ruleSet,
-                    isDownloading = downloadingRuleSets.contains(ruleSet.name),
-                    isDownloaded = addedRuleSetTags.contains(ruleSet.name),
-                    onAddSource = {
+                        HubRuleSetItem(
+                            ruleSet = ruleSet,
+                            isDownloading = downloadingRuleSets.contains(ruleSet.name),
+                            isDownloaded = addedRuleSetTags.contains(ruleSet.name),
+                            onAddSource = {
                                 settingsViewModel.addRuleSet(
                                     RuleSet(
                                         tag = ruleSet.name,
@@ -245,7 +242,7 @@ fun HubRuleSetItem(
                         }
                     }
                 }
-                
+
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     ruleSet.tags.forEach { tag ->
                         Surface(
@@ -263,20 +260,20 @@ fun HubRuleSetItem(
                     }
                 }
             }
-            
+
             Spacer(modifier = Modifier.height(8.dp))
-            
+
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "Rules count: ${ruleSet.ruleCount}", // TODO: add to strings.xml
+                    text = stringResource(R.string.ruleset_hub_rule_count, ruleSet.ruleCount),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                
+
                 Icon(
                     imageVector = Icons.Rounded.Visibility,
                     contentDescription = stringResource(R.string.common_view),
@@ -284,9 +281,9 @@ fun HubRuleSetItem(
                     modifier = Modifier.size(16.dp)
                 )
             }
-            
+
             Spacer(modifier = Modifier.height(12.dp))
-            
+
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.End,
@@ -298,7 +295,7 @@ fun HubRuleSetItem(
                 ) {
                     Text(stringResource(R.string.common_add) + " Source", fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
                 }
-                
+
                 TextButton(
                     onClick = onAddBinary,
                     contentPadding = PaddingValues(horizontal = 8.dp)

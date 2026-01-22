@@ -12,7 +12,7 @@ import io.nekohasekai.libbox.Libbox
  */
 object VersionInfo {
     private const val TAG = "VersionInfo"
-    
+
     /**
      * 获取应用版本名称
      */
@@ -33,7 +33,7 @@ object VersionInfo {
             "Unknown"
         }
     }
-    
+
     /**
      * 获取应用版本号 (versionCode)
      */
@@ -59,7 +59,7 @@ object VersionInfo {
             0L
         }
     }
-    
+
     /**
      * 获取 sing-box 内核版本
      */
@@ -77,7 +77,7 @@ object VersionInfo {
             "Not loaded"
         }
     }
-    
+
     /**
      * 获取格式化的版本信息字符串
      */
@@ -85,7 +85,7 @@ object VersionInfo {
         val appVersion = getAppVersionName(context)
         val appVersionCode = getAppVersionCode(context)
         val singBoxVersion = getSingBoxVersion()
-        
+
         return buildString {
             appendLine("应用版本: $appVersion ($appVersionCode)")
             appendLine("内核版本: $singBoxVersion")

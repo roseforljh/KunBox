@@ -119,7 +119,7 @@ data class InboundUser(
 data class Outbound(
     @SerializedName("type") val type: String = "",
     @SerializedName("tag") val tag: String = "",
-    
+
     @SerializedName("server") val server: String? = null,
     @SerializedName("server_port") val serverPort: Int? = null,
     @SerializedName("tcp_fast_open") val tcpFastOpen: Boolean? = null,
@@ -136,21 +136,21 @@ data class Outbound(
     @SerializedName("interval") val interval: String? = null,
     @SerializedName("tolerance") val tolerance: Int? = null,
     @SerializedName("interrupt_exist_connections") val interruptExistConnections: Boolean? = null,
-    
+
     // Shadowsocks 字段
     @SerializedName("method") val method: String? = null,
     @SerializedName("password") val password: String? = null,
     @SerializedName("plugin") val plugin: String? = null,
     @SerializedName("plugin_opts") val pluginOpts: String? = null,
     @SerializedName("udp_over_tcp") val udpOverTcp: UdpOverTcpConfig? = null,
-    
+
     // VMess/VLESS 字段
     @SerializedName("uuid") val uuid: String? = null,
     @SerializedName(value = "security", alternate = ["cipher"]) val security: String? = null,
     // 注意：sing-box 不支持 alter_id 字段，只支持 AEAD 加密的 VMess (alterId=0)
     @SerializedName("flow") val flow: String? = null,
     @SerializedName("packet_encoding") val packetEncoding: String? = null,
-    
+
     // Hysteria/Hysteria2 字段
     @SerializedName("up_mbps") val upMbps: Int? = null,
     @SerializedName("down_mbps") val downMbps: Int? = null,
@@ -161,21 +161,21 @@ data class Outbound(
     @SerializedName("disable_mtu_discovery") val disableMtuDiscovery: Boolean? = null,
     @SerializedName("hop_interval") val hopInterval: String? = null,
     @SerializedName("ports") val ports: String? = null,
-    
+
     // AnyTLS 字段
     @SerializedName("idle_session_check_interval") val idleSessionCheckInterval: String? = null,
     @SerializedName("idle_session_timeout") val idleSessionTimeout: String? = null,
     @SerializedName("min_idle_session") val minIdleSession: Int? = null,
-    
+
     // TLS 配置
     @SerializedName("tls") val tls: TlsConfig? = null,
-    
+
     // 传输层配置
     @SerializedName("transport") val transport: TransportConfig? = null,
-    
+
     // 多路复用配置
     @SerializedName("multiplex") val multiplex: MultiplexConfig? = null,
-    
+
     // TUIC 特有字段
     @SerializedName("congestion_control") val congestionControl: String? = null,
     @SerializedName("udp_relay_mode") val udpRelayMode: String? = null,
@@ -183,7 +183,7 @@ data class Outbound(
     @SerializedName("heartbeat") val heartbeat: String? = null,
     @SerializedName("disable_sni") val disableSni: Boolean? = null,
     @SerializedName("mtu") val mtu: Int? = null,
-    
+
     // WireGuard 字段
     @SerializedName("local_address") val localAddress: List<String>? = null,
     @SerializedName("private_key") val privateKey: String? = null,
@@ -191,7 +191,7 @@ data class Outbound(
     @SerializedName("pre_shared_key") val preSharedKey: String? = null,
     @SerializedName("reserved") val reserved: List<Int>? = null,
     @SerializedName("peers") val peers: List<WireGuardPeer>? = null,
-    
+
     // SSH 字段
     @SerializedName("user") val user: String? = null,
     @SerializedName("private_key_path") val privateKeyPath: String? = null,
@@ -199,11 +199,11 @@ data class Outbound(
     @SerializedName("host_key") val hostKey: List<String>? = null,
     @SerializedName("host_key_algorithms") val hostKeyAlgorithms: List<String>? = null,
     @SerializedName("client_version") val clientVersion: String? = null,
-    
+
     // ShadowTLS 字段
     @SerializedName("version") val version: Int? = null,
     @SerializedName("detour") val detour: String? = null,
-    
+
     // SOCKS/HTTP 字段
     @SerializedName("username") val username: String? = null,
     @SerializedName("network") val network: String? = null,
@@ -240,7 +240,7 @@ data class TlsConfig(
     @SerializedName("server_name") val serverName: String? = null,
     @SerializedName("insecure") val insecure: Boolean? = null,
     @SerializedName("alpn") val alpn: List<String>? = null,
-    @SerializedName("min_version") val minVersion: String? = null,  // TLS 版本限制: "1.2" 或 "1.3"
+    @SerializedName("min_version") val minVersion: String? = null, // TLS 版本限制: "1.2" 或 "1.3"
     @SerializedName("max_version") val maxVersion: String? = null,
     @SerializedName("utls") val utls: UtlsConfig? = null,
     @SerializedName("reality") val reality: RealityConfig? = null,
@@ -367,4 +367,3 @@ data class ClashApiConfig(
     @SerializedName("secret") val secret: String? = null,
     @SerializedName("default_mode") val defaultMode: String? = null
 )
-

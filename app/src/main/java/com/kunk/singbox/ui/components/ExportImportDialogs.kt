@@ -33,7 +33,7 @@ fun ExportProgressDialog(
     onDismiss: () -> Unit
 ) {
     if (state == ExportState.Idle) return
-    
+
     Dialog(
         onDismissRequest = {
             if (state !is ExportState.Exporting) {
@@ -131,7 +131,7 @@ fun ImportPreviewDialog(
     onDismiss: () -> Unit
 ) {
     val dateFormat = remember { SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()) }
-    
+
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false)
@@ -153,9 +153,9 @@ fun ImportPreviewDialog(
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold
                 )
-                
+
                 Spacer(modifier = Modifier.height(16.dp))
-                
+
                 // 数据摘要
                 Card(
                     modifier = Modifier.fillMaxWidth(),
@@ -171,23 +171,23 @@ fun ImportPreviewDialog(
                         SummaryRow(stringResource(R.string.import_export_time), dateFormat.format(Date(summary.exportTime)))
                         SummaryRow(stringResource(R.string.import_app_version), summary.appVersion)
                         SummaryRow(stringResource(R.string.import_data_version), "v${summary.version}")
-                        
+
                         HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
-                        
+
                         SummaryRow(stringResource(R.string.import_profile_count), stringResource(R.string.import_count_items, summary.profileCount))
                         SummaryRow(stringResource(R.string.import_node_count), stringResource(R.string.import_count_items, summary.totalNodeCount))
-                        
+
                         HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
-                        
+
                         SummaryRow(stringResource(R.string.import_has_settings), if (summary.hasSettings) stringResource(R.string.common_yes) else stringResource(R.string.common_no))
                         SummaryRow(stringResource(R.string.import_has_custom_rules), if (summary.hasCustomRules) stringResource(R.string.common_yes) else stringResource(R.string.common_no))
                         SummaryRow(stringResource(R.string.import_has_rulesets), if (summary.hasRuleSets) stringResource(R.string.common_yes) else stringResource(R.string.common_no))
                         SummaryRow(stringResource(R.string.import_has_app_rules), if (summary.hasAppRules) stringResource(R.string.common_yes) else stringResource(R.string.common_no))
                     }
                 }
-                
+
                 Spacer(modifier = Modifier.height(16.dp))
-                
+
                 // 警告信息
                 Card(
                     modifier = Modifier.fillMaxWidth(),
@@ -215,9 +215,9 @@ fun ImportPreviewDialog(
                         )
                     }
                 }
-                
+
                 Spacer(modifier = Modifier.height(24.dp))
-                
+
                 // 按钮
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -273,9 +273,9 @@ fun ImportProgressDialog(
         is ImportState.Error -> true
         else -> false
     }
-    
+
     if (!shouldShow) return
-    
+
     Dialog(
         onDismissRequest = {
             if (state !is ImportState.Importing && state !is ImportState.Validating) {

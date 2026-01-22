@@ -43,11 +43,11 @@ class ProfilesViewModel(application: Application) : AndroidViewModel(application
             started = SharingStarted.WhileSubscribed(5000),
             initialValue = null
         )
-    
+
     // 导入状态
     private val _importState = MutableStateFlow<ImportState>(ImportState.Idle)
     val importState: StateFlow<ImportState> = _importState.asStateFlow()
-    
+
     // 单个配置更新状态
     private val _updateStatus = MutableStateFlow<String?>(null)
     val updateStatus: StateFlow<String?> = _updateStatus.asStateFlow()
@@ -69,7 +69,7 @@ class ProfilesViewModel(application: Application) : AndroidViewModel(application
             if (!name.isNullOrBlank()) {
                 emitToast(getApplication<Application>().getString(R.string.profiles_updated) + ": $name")
             }
-            
+
             // 2025-fix: 切换配置后自动触发节点切换，确保VPN加载新配置
             viewModelScope.launch {
                 delay(100)
@@ -102,25 +102,25 @@ class ProfilesViewModel(application: Application) : AndroidViewModel(application
     fun updateProfile(profileId: String) {
         viewModelScope.launch {
             _updateStatus.value = getApplication<Application>().getString(R.string.common_loading)
-            
+
             val result = configRepository.updateProfile(profileId)
-            
+
             // 根据结果生成提示消息
             _updateStatus.value = when (result) {
                 is SubscriptionUpdateResult.SuccessWithChanges -> {
                     val changes = mutableListOf<String>()
                     if (result.addedCount > 0) changes.add("+${result.addedCount}")
                     if (result.removedCount > 0) changes.add("-${result.removedCount}")
-                    getApplication<Application>().getString(R.string.settings_update_success) + " (${changes.joinToString("/")}, ${result.totalCount} nodes)" // TODO: better string
+                    getApplication<Application>().getString(R.string.subscription_update_success_with_changes, changes.joinToString("/"), result.totalCount)
                 }
                 is SubscriptionUpdateResult.SuccessNoChanges -> {
-                    getApplication<Application>().getString(R.string.update_status_success_no_changes) + " (${result.totalCount} nodes)" // TODO: better string
+                    getApplication<Application>().getString(R.string.subscription_update_success_no_changes, result.totalCount)
                 }
                 is SubscriptionUpdateResult.Failed -> {
                     getApplication<Application>().getString(R.string.settings_update_failed) + ": ${result.error}"
                 }
             }
-            
+
             delay(2500)
             _updateStatus.value = null
         }

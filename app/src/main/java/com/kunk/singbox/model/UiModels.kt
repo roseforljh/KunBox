@@ -55,7 +55,7 @@ sealed class SubscriptionUpdateResult {
         val removedCount: Int,
         val totalCount: Int
     ) : SubscriptionUpdateResult()
-    
+
     /**
      * 更新成功，无变化
      * @param profileName 配置名称
@@ -65,7 +65,7 @@ sealed class SubscriptionUpdateResult {
         val profileName: String,
         val totalCount: Int
     ) : SubscriptionUpdateResult()
-    
+
     /**
      * 更新失败
      * @param profileName 配置名称
@@ -88,7 +88,7 @@ data class BatchUpdateResult(
 ) {
     val totalCount: Int get() = successWithChanges + successNoChanges + failed
     val successCount: Int get() = successWithChanges + successNoChanges
-    
+
     fun toDisplayMessage(context: Context): String {
         return when {
             totalCount == 0 -> context.getString(R.string.update_status_no_subscription)
@@ -124,8 +124,8 @@ data class NodeUi(
      */
     val protocolDisplay: String
         get() = when (protocol.lowercase()) {
-            "http" -> "HTTPS"  // HTTP 类型配置了 TLS 就是 HTTPS
-            "socks" -> "SOCKS5"  // SOCKS 协议的现代版本
+            "http" -> "HTTPS" // HTTP 类型配置了 TLS 就是 HTTPS
+            "socks" -> "SOCKS5" // SOCKS 协议的现代版本
             "shadowsocks" -> "SS"
             "vmess" -> "VMess"
             "vless" -> "VLESS"
@@ -191,19 +191,19 @@ data class SavedProfilesData(
 @Keep
 data class VMessLinkConfig(
     @SerializedName("v") val v: String? = null,
-    @SerializedName("ps") val ps: String? = null,      // 名称
-    @SerializedName("add") val add: String? = null,     // 服务器地址
-    @SerializedName("port") val port: String? = null,    // 端口
-    @SerializedName("id") val id: String? = null,      // UUID
-    @SerializedName("aid") val aid: String? = null,     // alterId
-    @SerializedName("scy") val scy: String? = null,     // 加密方式
-    @SerializedName("net") val net: String? = null,     // 传输协议
-    @SerializedName("type") val type: String? = null,    // 伪装类型
-    @SerializedName("host") val host: String? = null,    // 伪装域名
-    @SerializedName("path") val path: String? = null,    // 路径
-    @SerializedName("tls") val tls: String? = null,     // TLS
-    @SerializedName("sni") val sni: String? = null,     // SNI
+    @SerializedName("ps") val ps: String? = null, // 名称
+    @SerializedName("add") val add: String? = null, // 服务器地址
+    @SerializedName("port") val port: String? = null, // 端口
+    @SerializedName("id") val id: String? = null, // UUID
+    @SerializedName("aid") val aid: String? = null, // alterId
+    @SerializedName("scy") val scy: String? = null, // 加密方式
+    @SerializedName("net") val net: String? = null, // 传输协议
+    @SerializedName("type") val type: String? = null, // 伪装类型
+    @SerializedName("host") val host: String? = null, // 伪装域名
+    @SerializedName("path") val path: String? = null, // 路径
+    @SerializedName("tls") val tls: String? = null, // TLS
+    @SerializedName("sni") val sni: String? = null, // SNI
     @SerializedName("alpn") val alpn: String? = null,
-    @SerializedName("fp") val fp: String? = null,      // fingerprint
+    @SerializedName("fp") val fp: String? = null, // fingerprint
     @SerializedName("packetEncoding") val packetEncoding: String? = null // packet encoding
 )

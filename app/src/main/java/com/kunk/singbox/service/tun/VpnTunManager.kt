@@ -14,7 +14,6 @@ import android.util.Log
 import com.kunk.singbox.model.AppSettings
 import com.kunk.singbox.model.VpnAppMode
 import com.kunk.singbox.model.VpnRouteMode
-import com.kunk.singbox.repository.LogRepository
 import io.nekohasekai.libbox.TunOptions
 import java.net.InetAddress
 import java.util.concurrent.atomic.AtomicBoolean

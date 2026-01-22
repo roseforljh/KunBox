@@ -3,7 +3,6 @@ package com.kunk.singbox.ui.screens
 import com.kunk.singbox.R
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
@@ -145,7 +144,7 @@ fun AppGroupsScreen(
                     StandardCard {
                         Column(modifier = Modifier.padding(16.dp)) {
                             Text(
-                                text = "Create groups to categorize multiple apps and set proxy rules collectively", // TODO: add to strings.xml
+                                text = stringResource(R.string.app_groups_description),
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )

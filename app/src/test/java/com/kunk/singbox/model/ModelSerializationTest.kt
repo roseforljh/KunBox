@@ -17,10 +17,10 @@ class ModelSerializationTest {
             latencyMs = 120,
             sourceProfileId = "profile-1"
         )
-        
+
         val json = gson.toJson(node)
         val decoded = gson.fromJson(json, NodeUi::class.java)
-        
+
         assertEquals(node.id, decoded.id)
         assertEquals(node.name, decoded.name)
         assertEquals(node.latencyMs, decoded.latencyMs)
@@ -34,10 +34,10 @@ class ModelSerializationTest {
                 Outbound(type = "vmess", tag = "proxy", server = "1.1.1.1", serverPort = 443)
             )
         )
-        
+
         val json = gson.toJson(config)
         val decoded = gson.fromJson(json, SingBoxConfig::class.java)
-        
+
         assertNotNull(decoded.outbounds)
         assertEquals(2, decoded.outbounds?.size)
         assertEquals("proxy", decoded.outbounds?.get(1)?.tag)

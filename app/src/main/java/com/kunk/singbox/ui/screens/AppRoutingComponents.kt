@@ -1,7 +1,6 @@
 package com.kunk.singbox.ui.screens
 
 import com.kunk.singbox.R
-import android.content.pm.PackageManager
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -85,10 +84,10 @@ fun AppRuleItem(
                 Spacer(modifier = Modifier.height(2.dp))
                 Text(text = "${stringResource(mode.displayNameRes)} → $outboundText", style = MaterialTheme.typography.bodySmall, color = color, maxLines = 1)
             }
-        IconButton(onClick = onDelete, modifier = Modifier.size(36.dp)) {
-            Icon(Icons.Rounded.Delete, contentDescription = stringResource(R.string.common_delete), tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(20.dp))
-        }
-        Switch(checked = rule.enabled, onCheckedChange = { onToggle() }, colors = SwitchDefaults.colors(checkedThumbColor = MaterialTheme.colorScheme.onPrimary, checkedTrackColor = MaterialTheme.colorScheme.primary, uncheckedThumbColor = Neutral500, uncheckedTrackColor = Neutral700))
+            IconButton(onClick = onDelete, modifier = Modifier.size(36.dp)) {
+                Icon(Icons.Rounded.Delete, contentDescription = stringResource(R.string.common_delete), tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(20.dp))
+            }
+            Switch(checked = rule.enabled, onCheckedChange = { onToggle() }, colors = SwitchDefaults.colors(checkedThumbColor = MaterialTheme.colorScheme.onPrimary, checkedTrackColor = MaterialTheme.colorScheme.primary, uncheckedThumbColor = Neutral500, uncheckedTrackColor = Neutral700))
         }
     }
 }
@@ -231,7 +230,7 @@ fun AppPickerDialog(apps: List<InstalledApp>, existingPackages: Set<String>, onS
             matchesSearch && matchesFilter && notExisting
         }
     }
-    
+
     AlertDialog(
         onDismissRequest = onDismiss,
         shape = RoundedCornerShape(20.dp),
@@ -280,9 +279,9 @@ fun AppPickerDialog(apps: List<InstalledApp>, existingPackages: Set<String>, onS
                         Text(stringResource(R.string.common_system), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
-                
+
                 Spacer(modifier = Modifier.height(8.dp))
-                
+
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),
                     verticalArrangement = Arrangement.spacedBy(2.dp)
@@ -310,7 +309,7 @@ fun AppListItem(app: InstalledApp, onClick: () -> Unit) {
             context.packageManager.getApplicationIcon(app.packageName).toBitmap(96, 96).asImageBitmap()
         } catch (e: Exception) { null }
     }
-    
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -345,7 +344,7 @@ fun AppIconSmall(packageName: String) {
             context.packageManager.getApplicationIcon(packageName).toBitmap(128, 128).asImageBitmap()
         } catch (e: Exception) { null }
     }
-    
+
     if (appIcon != null) {
         Image(
             bitmap = appIcon,
@@ -458,7 +457,7 @@ fun SelectedAppChip(app: AppInfo, onRemove: () -> Unit) {
             context.packageManager.getApplicationIcon(app.packageName).toBitmap(96, 96).asImageBitmap()
         } catch (e: Exception) { null }
     }
-    
+
     Row(
         modifier = Modifier
             .clip(RoundedCornerShape(20.dp))
@@ -594,9 +593,9 @@ fun MultiAppSelectorDialog(
                         Text(stringResource(R.string.common_system), fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
-                
+
                 Spacer(modifier = Modifier.height(8.dp))
-                
+
                 OutlinedTextField(
                     value = searchQuery,
                     onValueChange = { searchQuery = it },
@@ -613,9 +612,9 @@ fun MultiAppSelectorDialog(
                         cursorColor = MaterialTheme.colorScheme.primary
                     )
                 )
-                
+
                 Spacer(modifier = Modifier.height(8.dp))
-                
+
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),
                     verticalArrangement = Arrangement.spacedBy(2.dp)
@@ -671,12 +670,12 @@ fun AppGroupEditorDialog(
     var outboundMode by remember { mutableStateOf(initialGroup?.outboundMode ?: RuleSetOutboundMode.PROXY) }
     var outboundValue by remember { mutableStateOf(initialGroup?.outboundValue) }
     var selectedApps by remember { mutableStateOf(initialGroup?.apps?.toSet() ?: emptySet()) }
-    
+
     var showAppSelector by remember { mutableStateOf(false) }
     var showOutboundModeDialog by remember { mutableStateOf(false) }
     var showTargetSelectionDialog by remember { mutableStateOf(false) }
     var showNodeSelectionDialog by remember { mutableStateOf(false) }
-    
+
     var targetSelectionTitle by remember { mutableStateOf("") }
     var targetOptions by remember { mutableStateOf<List<Pair<String, String>>>(emptyList()) }
     val context = LocalContext.current
@@ -707,7 +706,7 @@ fun AppGroupEditorDialog(
             onDismiss = { showAppSelector = false }
         )
     }
-    
+
     if (showOutboundModeDialog) {
         // 应用分流不显示直连选项
         val appRoutingModes = RuleSetOutboundMode.entries.filter { it != RuleSetOutboundMode.DIRECT }
@@ -793,7 +792,7 @@ fun AppGroupEditorDialog(
                     label = stringResource(R.string.app_groups_name),
                     value = groupName,
                     onValueChange = { groupName = it },
-                    placeholder = "e.g. Social, Games" // TODO: add to strings.xml
+                    placeholder = stringResource(R.string.app_groups_name_placeholder)
                 )
 
                 ClickableDropdownField(
@@ -849,7 +848,7 @@ fun AppGroupEditorDialog(
                             Text(stringResource(R.string.app_groups_select_apps))
                         }
                     }
-                    
+
                     if (selectedApps.isEmpty()) {
                         Box(
                             modifier = Modifier
