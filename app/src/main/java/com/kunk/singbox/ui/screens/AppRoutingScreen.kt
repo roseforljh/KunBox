@@ -1,8 +1,6 @@
 package com.kunk.singbox.ui.screens
 
 import com.kunk.singbox.R
-import android.content.pm.ApplicationInfo
-import android.content.pm.PackageManager
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -16,7 +14,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -25,6 +22,7 @@ import androidx.navigation.NavController
 import com.kunk.singbox.model.*
 import com.kunk.singbox.ui.components.ConfirmDialog
 import com.kunk.singbox.ui.theme.Neutral500
+import com.kunk.singbox.viewmodel.InstalledAppsViewModel
 import com.kunk.singbox.viewmodel.NodesViewModel
 import com.kunk.singbox.viewmodel.ProfilesViewModel
 import com.kunk.singbox.viewmodel.SettingsViewModel
@@ -35,10 +33,10 @@ fun AppRoutingScreen(
     navController: NavController,
     settingsViewModel: SettingsViewModel = viewModel(),
     nodesViewModel: NodesViewModel = viewModel(),
-    profilesViewModel: ProfilesViewModel = viewModel()
+    profilesViewModel: ProfilesViewModel = viewModel(),
+    installedAppsViewModel: InstalledAppsViewModel = viewModel()
 ) {
     val settings by settingsViewModel.settings.collectAsState()
-    val context = LocalContext.current
     var selectedTab by remember { mutableStateOf(0) }
     val tabs =
         listOf(stringResource(R.string.app_rules_tabs_groups), stringResource(R.string.app_rules_tabs_individual))
@@ -62,24 +60,12 @@ fun AppRoutingScreen(
         }
     }
 
-    val installedApps = remember(settings.vpnAllowlist) {
-        val pm = context.packageManager
-        settings.vpnAllowlist
-            .split("\n", "\r", ",", ";", " ", "\t")
-            .map { it.trim() }
-            .filter { it.isNotEmpty() }
-            .mapNotNull { packageName ->
-                try {
-                    val appInfo = pm.getApplicationInfo(packageName, 0)
-                    val appName = appInfo.loadLabel(pm).toString()
-                    val isSystemApp = (appInfo.flags and ApplicationInfo.FLAG_SYSTEM) != 0
-                    InstalledApp(packageName, appName, isSystemApp)
-                } catch (e: PackageManager.NameNotFoundException) {
-                    null
-                }
-            }
-            .sortedBy { it.appName.lowercase() }
+    LaunchedEffect(Unit) {
+        installedAppsViewModel.loadAppsIfNeeded()
     }
+
+    val allInstalledApps by installedAppsViewModel.installedApps.collectAsState()
+    val installedApps = allInstalledApps
 
     if (showAddGroupDialog) {
         AppGroupEditorDialog(
