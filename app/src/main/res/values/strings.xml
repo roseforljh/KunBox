@@ -264,6 +264,8 @@
     <string name="profiles_dns_server_cloudflare">Cloudflare (1.1.1.1)</string>
     <string name="profiles_dns_server_google">Google (8.8.8.8)</string>
     <string name="profiles_dns_server_alidns">阿里 DNS (223.5.5.5)</string>
+    <string name="profiles_dns_override">DNS 覆写</string>
+    <string name="profiles_dns_override_hint">追加自定义 DNS 配置（JSON 格式，包含 servers 和 rules 字段）</string>
     <string name="profiles_name_label">名称</string>
     <string name="profiles_url_label">订阅链接</string>
     <string name="profiles_subscription_node_warning">禁止在订阅链接中填入单节点，请使用\'剪贴板\'导入或\'添加节点\'功能</string>

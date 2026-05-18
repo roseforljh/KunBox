@@ -3590,7 +3590,8 @@ class ConfigRepository(private val context: Context) {
         newUrl: String?,
         autoUpdateInterval: Int = 0,
         dnsPreResolve: Boolean = false,
-        dnsServer: String? = null
+        dnsServer: String? = null,
+        dnsOverride: String? = null
     ) {
         _profiles.update { list ->
             list.map {
@@ -3600,7 +3601,8 @@ class ConfigRepository(private val context: Context) {
                         url = newUrl,
                         autoUpdateInterval = autoUpdateInterval,
                         dnsPreResolve = dnsPreResolve,
-                        dnsServer = dnsServer
+                        dnsServer = dnsServer,
+                        dnsOverride = dnsOverride
                     )
                 } else {
                     it
@@ -3993,7 +3995,7 @@ class ConfigRepository(private val context: Context) {
                 config, activeNode, settings, allNodesSnapshot,
                 activeProfile?.dnsPreResolve ?: false, activeId
             )
-            val dns = buildRunDns(settings, customRuleSets, outboundsContext)
+            val dns = buildRunDns(settings, customRuleSets, outboundsContext, activeProfile?.dnsOverride, config.dns)
             val route = buildRunRoute(
                 settings,
                 outboundsContext.selectorTag,
@@ -4534,7 +4536,9 @@ class ConfigRepository(private val context: Context) {
     private fun buildRunDns(
         settings: AppSettings,
         validRuleSets: List<RuleSetConfig>,
-        outboundsContext: RunOutboundsContext
+        outboundsContext: RunOutboundsContext,
+        dnsOverride: String? = null,
+        originalDns: DnsConfig? = null
     ): DnsConfig {
         val dnsServers = mutableListOf<DnsServer>()
         val dnsRules = mutableListOf<DnsRule>()
@@ -4945,6 +4949,35 @@ class ConfigRepository(private val context: Context) {
             fakeDnsEnabled = settings.fakeDnsEnabled,
             proxyServerTag = proxyServerTag
         )
+
+        // 追加订阅原始配置中的 DNS servers 和 rules
+        if (originalDns != null) {
+            originalDns.servers?.forEach { server ->
+                if (server.tag != null && dnsServers.none { it.tag == server.tag }) {
+                    dnsServers.add(server)
+                }
+            }
+            originalDns.rules?.forEach { rule ->
+                dnsRules.add(rule)
+            }
+        }
+
+        // 追加用户自定义 DNS 覆写（来自 Profile 级别配置）
+        if (!dnsOverride.isNullOrBlank()) {
+            try {
+                val overrideConfig = gson.fromJson(dnsOverride, DnsConfig::class.java)
+                overrideConfig?.servers?.forEach { server ->
+                    if (server.tag != null && dnsServers.none { it.tag == server.tag }) {
+                        dnsServers.add(server)
+                    }
+                }
+                overrideConfig?.rules?.forEach { rule ->
+                    dnsRules.add(rule)
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to parse dnsOverride JSON, skipping", e)
+            }
+        }
 
         return DnsConfig(
             servers = dnsServers,

@@ -26,7 +26,8 @@ data class ProfileEntity(
     val sortOrder: Int = 0,
 
     val dnsPreResolve: Boolean = false,
-    val dnsServer: String? = null
+    val dnsServer: String? = null,
+    val dnsOverride: String? = null
 ) {
     /**
      */
@@ -43,7 +44,8 @@ data class ProfileEntity(
         totalTraffic = totalTraffic,
         usedTraffic = usedTraffic,
         dnsPreResolve = dnsPreResolve,
-        dnsServer = dnsServer
+        dnsServer = dnsServer,
+        dnsOverride = dnsOverride
     )
 
     companion object {
@@ -63,7 +65,8 @@ data class ProfileEntity(
             usedTraffic = ui.usedTraffic,
             sortOrder = sortOrder,
             dnsPreResolve = ui.dnsPreResolve,
-            dnsServer = ui.dnsServer
+            dnsServer = ui.dnsServer,
+            dnsOverride = ui.dnsOverride
         )
     }
 }

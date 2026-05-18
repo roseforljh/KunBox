@@ -30,7 +30,7 @@ import com.kunk.singbox.database.entity.SettingsEntity
         NodeLatencyEntity::class,
         SettingsEntity::class
     ],
-    version = 5,
+    version = 6,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -61,7 +61,7 @@ abstract class AppDatabase : RoomDatabase() {
                 DATABASE_NAME
             )
                 .allowMainThreadQueries()
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
                 .build()
         }
 
@@ -148,6 +148,12 @@ abstract class AppDatabase : RoomDatabase() {
                 db.execSQL("CREATE INDEX IF NOT EXISTS index_nodes_protocol ON nodes(protocol)")
                 db.execSQL("CREATE INDEX IF NOT EXISTS index_nodes_group ON nodes(`group`)")
                 db.execSQL("CREATE INDEX IF NOT EXISTS index_nodes_isFavorite ON nodes(isFavorite)")
+            }
+        }
+
+        private val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE profiles ADD COLUMN dnsOverride TEXT")
             }
         }
 

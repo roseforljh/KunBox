@@ -107,9 +107,10 @@ class ProfilesViewModel(application: Application) : AndroidViewModel(application
         newUrl: String?,
         autoUpdateInterval: Int = 0,
         dnsPreResolve: Boolean = false,
-        dnsServer: String? = null
+        dnsServer: String? = null,
+        dnsOverride: String? = null
     ) {
-        configRepository.updateProfileMetadata(profileId, newName, newUrl, autoUpdateInterval, dnsPreResolve, dnsServer)
+        configRepository.updateProfileMetadata(profileId, newName, newUrl, autoUpdateInterval, dnsPreResolve, dnsServer, dnsOverride)
         emitToast(getApplication<Application>().getString(R.string.profiles_updated))
     }
 

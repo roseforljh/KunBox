@@ -24,6 +24,7 @@ data class ProfileUi(
 
     @SerializedName("dnsPreResolve") val dnsPreResolve: Boolean = false,
     @SerializedName("dnsServer") val dnsServer: String? = null,
+    @SerializedName("dnsOverride") val dnsOverride: String? = null,
     @Transient val updateStage: SubscriptionUpdateStage? = null
 )
 

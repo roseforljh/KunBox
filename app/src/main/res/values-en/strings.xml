@@ -252,6 +252,8 @@
     <string name="profiles_dns_server_cloudflare">Cloudflare (1.1.1.1)</string>
     <string name="profiles_dns_server_google">Google (8.8.8.8)</string>
     <string name="profiles_dns_server_alidns">Alibaba DNS (223.5.5.5)</string>
+    <string name="profiles_dns_override">DNS Override</string>
+    <string name="profiles_dns_override_hint">Append custom DNS config (JSON format, with servers and rules fields)</string>
     <string name="profiles_name_label">Name</string>
     <string name="profiles_url_label">Subscription URL</string>
     <string name="profiles_subscription_node_warning">Cannot enter single node link in subscription URL, please use \'Clipboard\' import or \'Add Node\' feature</string>

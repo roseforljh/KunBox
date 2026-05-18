@@ -47,6 +47,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
@@ -89,7 +91,10 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.navigation.NavController
 import com.journeyapps.barcodescanner.ScanContract
@@ -437,7 +442,7 @@ fun ProfilesScreen(
     if (showSubscriptionInput) {
         SubscriptionInputDialog(
             onDismiss = { showSubscriptionInput = false },
-            onConfirm = { name, url, autoUpdateInterval, dnsPreResolve, dnsServer ->
+            onConfirm = { name, url, autoUpdateInterval, dnsPreResolve, dnsServer, dnsOverride ->
                 viewModel.importSubscription(name, url, autoUpdateInterval, dnsPreResolve, dnsServer)
                 showSubscriptionInput = false
             }
@@ -519,10 +524,11 @@ fun ProfilesScreen(
             initialAutoUpdateInterval = profile.autoUpdateInterval,
             initialDnsPreResolve = profile.dnsPreResolve,
             initialDnsServer = profile.dnsServer,
+            initialDnsOverride = profile.dnsOverride,
             title = stringResource(R.string.profiles_edit_profile),
             onDismiss = { editingProfile = null },
-            onConfirm = { name, url, autoUpdateInterval, dnsPreResolve, dnsServer ->
-                viewModel.updateProfileMetadata(profile.id, name, url, autoUpdateInterval, dnsPreResolve, dnsServer)
+            onConfirm = { name, url, autoUpdateInterval, dnsPreResolve, dnsServer, dnsOverride ->
+                viewModel.updateProfileMetadata(profile.id, name, url, autoUpdateInterval, dnsPreResolve, dnsServer, dnsOverride)
                 editingProfile = null
             }
         )
@@ -1230,9 +1236,10 @@ private fun SubscriptionInputDialog(
     initialAutoUpdateInterval: Int = 0,
     initialDnsPreResolve: Boolean = false,
     initialDnsServer: String? = null,
+    initialDnsOverride: String? = null,
     title: String = stringResource(R.string.profiles_add_subscription),
     onDismiss: () -> Unit,
-    onConfirm: (name: String, url: String, autoUpdateInterval: Int, dnsPreResolve: Boolean, dnsServer: String?) -> Unit
+    onConfirm: (name: String, url: String, autoUpdateInterval: Int, dnsPreResolve: Boolean, dnsServer: String?, dnsOverride: String?) -> Unit
 ) {
     var name by remember { mutableStateOf(initialName) }
     var url by remember { mutableStateOf(initialUrl) }
@@ -1241,6 +1248,8 @@ private fun SubscriptionInputDialog(
     var dnsPreResolveEnabled by remember { mutableStateOf(initialDnsPreResolve) }
     var selectedDnsServer by remember { mutableStateOf(initialDnsServer ?: "https://cloudflare-dns.com/dns-query") }
     var dnsDropdownExpanded by remember { mutableStateOf(false) }
+    var dnsOverrideText by remember { mutableStateOf(initialDnsOverride ?: "") }
+    var showDnsOverride by remember { mutableStateOf(!initialDnsOverride.isNullOrBlank()) }
 
     val dnsServerOptions = listOf(
         "https://cloudflare-dns.com/dns-query" to stringResource(R.string.profiles_dns_server_cloudflare),
@@ -1252,8 +1261,10 @@ private fun SubscriptionInputDialog(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .heightIn(max = 560.dp)
                 .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(28.dp))
                 .padding(24.dp)
+                .verticalScroll(rememberScrollState())
         ) {
             Text(
                 text = title,
@@ -1505,6 +1516,55 @@ private fun SubscriptionInputDialog(
                 }
             }
 
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    text = stringResource(R.string.profiles_dns_override),
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                androidx.compose.material3.Switch(
+                    checked = showDnsOverride,
+                    onCheckedChange = { showDnsOverride = it }
+                )
+            }
+
+            androidx.compose.animation.AnimatedVisibility(visible = showDnsOverride) {
+                Column {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = stringResource(R.string.profiles_dns_override_hint),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    androidx.compose.material3.OutlinedTextField(
+                        value = dnsOverrideText,
+                        onValueChange = { dnsOverrideText = it },
+                        label = { Text("DNS JSON") },
+                        modifier = Modifier.fillMaxWidth().height(160.dp),
+                        textStyle = TextStyle(
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 12.sp
+                        ),
+                        shape = RoundedCornerShape(16.dp),
+                        colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                            unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
+                            focusedBorderColor = MaterialTheme.colorScheme.primary,
+                            unfocusedBorderColor = MaterialTheme.colorScheme.outline,
+                            focusedLabelColor = MaterialTheme.colorScheme.primary,
+                            unfocusedLabelColor = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    )
+                }
+            }
+
             Spacer(modifier = Modifier.height(24.dp))
 
             val context = LocalContext.current
@@ -1555,7 +1615,8 @@ private fun SubscriptionInputDialog(
                         url,
                         finalInterval,
                         dnsPreResolveEnabled,
-                        if (dnsPreResolveEnabled) selectedDnsServer else null
+                        if (dnsPreResolveEnabled) selectedDnsServer else null,
+                        if (showDnsOverride && dnsOverrideText.isNotBlank()) dnsOverrideText else null
                     )
                 },
                 modifier = Modifier.fillMaxWidth().height(50.dp),
