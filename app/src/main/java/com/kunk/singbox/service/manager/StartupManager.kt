@@ -10,6 +10,7 @@ import android.net.VpnService
 import android.os.SystemClock
 import android.util.Log
 import com.google.gson.Gson
+import com.kunk.singbox.R
 import com.kunk.singbox.model.AppSettings
 import com.kunk.singbox.model.SingBoxConfig
 import com.kunk.singbox.repository.LogRepository
@@ -575,7 +576,7 @@ class StartupManager(
                 val notification = Notification.Builder(context, VpnNotificationManager.CHANNEL_ID)
                     .setContentTitle("VPN Permission Required")
                     .setContentText("Tap to grant VPN permission")
-                    .setSmallIcon(android.R.drawable.ic_dialog_info)
+                    .setSmallIcon(R.drawable.ic_notification)
                     .setContentIntent(pi)
                     .setAutoCancel(true)
                     .build()

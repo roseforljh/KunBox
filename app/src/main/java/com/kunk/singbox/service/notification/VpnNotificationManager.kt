@@ -164,7 +164,7 @@ class VpnNotificationManager(
             return buildNotificationBuilder()
                 .setContentTitle("KunBox VPN")
                 .setContentText(context.getString(R.string.connection_disconnecting))
-                .setSmallIcon(android.R.drawable.ic_lock_idle_low_battery)
+                .setSmallIcon(R.drawable.ic_notification)
                 .setOngoing(true)
                 .build()
         }
@@ -214,7 +214,7 @@ class VpnNotificationManager(
         return buildNotificationBuilder()
             .setContentTitle("KunBox VPN - $nodeName")
             .setContentText(contentText)
-            .setSmallIcon(android.R.drawable.ic_lock_lock)
+            .setSmallIcon(R.drawable.ic_notification)
             .setContentIntent(mainPendingIntent)
             .setOngoing(true)
             .addAction(
@@ -247,7 +247,7 @@ class VpnNotificationManager(
         return buildNotificationBuilder()
             .setContentTitle("KunBox VPN")
             .setContentText(message)
-            .setSmallIcon(android.R.drawable.ic_popup_sync)
+            .setSmallIcon(R.drawable.ic_notification)
             .setOngoing(true)
             .build()
     }

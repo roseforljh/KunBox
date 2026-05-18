@@ -1,0 +1,34 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="44"
+    android:viewportHeight="44">
+
+    <group
+        android:translateX="-32"
+        android:translateY="-32">
+        
+        <!-- Main Box Outline -->
+        <path
+            android:fillColor="#00000000"
+            android:strokeColor="#FFFFFF"
+            android:strokeWidth="4"
+            android:strokeLineJoin="round"
+            android:strokeLineCap="round"
+            android:pathData="M54,36 L72,45 L72,63 L54,72 L36,63 L36,45 Z" />
+            
+        <!-- Inner Y shape -->
+        <path
+            android:fillColor="#00000000"
+            android:strokeColor="#FFFFFF"
+            android:strokeWidth="4"
+            android:strokeLineJoin="round"
+            android:strokeLineCap="round"
+            android:pathData="M54,54 L54,72 M54,54 L36,45 M54,54 L72,45" />
+            
+        <!-- Top detail -->
+        <path
+            android:fillColor="#FFFFFF"
+            android:pathData="M54,42 L60,45 L54,48 L48,45 Z" />
+    </group>
+</vector>

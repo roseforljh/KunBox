@@ -3192,7 +3192,7 @@ class SingBoxService : VpnService() {
             val notification = Notification.Builder(this, VpnNotificationManager.CHANNEL_ID)
                 .setContentTitle("VPN Disconnected")
                 .setContentText("VPN permission revoked, possibly by another VPN app.")
-                .setSmallIcon(android.R.drawable.ic_dialog_alert)
+                .setSmallIcon(R.drawable.ic_notification)
                 .setAutoCancel(true)
                 .build()
             manager.notify(VpnNotificationManager.NOTIFICATION_ID + 1, notification)

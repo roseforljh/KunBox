@@ -10,6 +10,7 @@ import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.NetworkRequest
+import com.kunk.singbox.R
 import android.os.Build
 import android.os.IBinder
 import android.os.SystemClock
@@ -808,7 +809,7 @@ class ProxyOnlyService : Service() {
             Notification.Builder(this, CHANNEL_ID)
                 .setContentTitle("KunBox")
                 .setContentText("Proxy-only running")
-                .setSmallIcon(android.R.drawable.stat_sys_upload)
+                .setSmallIcon(R.drawable.ic_notification)
                 .setContentIntent(pendingIntent)
                 .setOngoing(true)
                 .build()
@@ -817,7 +818,7 @@ class ProxyOnlyService : Service() {
             Notification.Builder(this)
                 .setContentTitle("KunBox")
                 .setContentText("Proxy-only running")
-                .setSmallIcon(android.R.drawable.stat_sys_upload)
+                .setSmallIcon(R.drawable.ic_notification)
                 .setContentIntent(pendingIntent)
                 .setOngoing(true)
                 .build()
