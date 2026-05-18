@@ -50,7 +50,7 @@ class SingBoxApplication : Application(), Configuration.Provider {
         cleanupOrphanedTempFiles()
 
         if (isMainProcess()) {
-            AppLifecycleObserver.register()
+            AppLifecycleObserver.register(this)
 
             applicationScope.launch {
 

@@ -1,7 +1,10 @@
-﻿package com.kunk.singbox.lifecycle
+package com.kunk.singbox.lifecycle
 
-import android.os.Handler
-import android.os.Looper
+import android.app.AlarmManager
+import android.app.PendingIntent
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
 import android.os.SystemClock
 import android.util.Log
 import androidx.lifecycle.DefaultLifecycleObserver
@@ -16,6 +19,8 @@ import kotlinx.coroutines.flow.asStateFlow
 
 object AppLifecycleObserver : DefaultLifecycleObserver {
     private const val TAG = "AppLifecycleObserver"
+    private const val ACTION_KILL_PROCESS = "com.kunk.singbox.ACTION_KILL_MAIN_PROCESS"
+    private const val REQUEST_CODE_KILL = 19527
 
     private val _isAppInForeground = MutableStateFlow(true)
     val isAppInForeground: StateFlow<Boolean> = _isAppInForeground.asStateFlow()
@@ -29,18 +34,16 @@ object AppLifecycleObserver : DefaultLifecycleObserver {
     @Volatile
     private var backgroundAtMs: Long = 0L
 
-    private val mainHandler = Handler(Looper.getMainLooper())
-    private var killProcessRunnable: Runnable? = null
+    private var appContext: Context? = null
 
-    fun register() {
+    fun register(context: Context) {
         if (isRegistered) return
         isRegistered = true
+        appContext = context.applicationContext
         ProcessLifecycleOwner.get().lifecycle.addObserver(this)
         Log.i(TAG, "AppLifecycleObserver registered with ProcessLifecycleOwner")
     }
 
-    /**
-     */
     fun setBackgroundTimeout(timeoutMs: Long) {
         backgroundTimeoutMs = timeoutMs
         val displayMin = if (timeoutMs == Long.MAX_VALUE) "NEVER" else "${timeoutMs / 1000 / 60}min"
@@ -52,7 +55,7 @@ object AppLifecycleObserver : DefaultLifecycleObserver {
         _isAppInForeground.value = true
         backgroundAtMs = 0L
 
-        cancelKillProcess()
+        cancelKillAlarm()
 
         SingBoxRemote.notifyAppLifecycle(isForeground = true)
     }
@@ -64,47 +67,80 @@ object AppLifecycleObserver : DefaultLifecycleObserver {
 
         SingBoxRemote.notifyAppLifecycle(isForeground = false)
 
-        scheduleKillProcess()
+        scheduleKillAlarm()
     }
 
-    /**
-     */
-    private fun scheduleKillProcess() {
+    private fun scheduleKillAlarm() {
         if (backgroundTimeoutMs == Long.MAX_VALUE) {
-            Log.d(TAG, "Power saving disabled, skip scheduling kill process")
+            Log.d(TAG, "Power saving disabled, skip scheduling kill alarm")
             return
         }
 
         if (!VpnStateStore.getActive()) {
-            Log.d(TAG, "VPN not running (VpnStateStore), skip scheduling kill process")
+            Log.d(TAG, "VPN not running (VpnStateStore), skip scheduling kill alarm")
             return
         }
 
-        cancelKillProcess()
+        val context = appContext ?: return
 
-        killProcessRunnable = Runnable {
+        cancelKillAlarm()
 
-            if (!_isAppInForeground.value && VpnStateStore.getActive()) {
-                Log.i(TAG, ">>> Background timeout reached, killing main process to save power")
-                Log.i(TAG, ">>> VPN will continue running in :bg process")
-
-                android.os.Process.killProcess(android.os.Process.myPid())
-            }
+        val intent = Intent(context, KillProcessReceiver::class.java).apply {
+            action = ACTION_KILL_PROCESS
         }
+        val pendingIntent = PendingIntent.getBroadcast(
+            context,
+            REQUEST_CODE_KILL,
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
 
-        killProcessRunnable?.let { runnable ->
-            mainHandler.postDelayed(runnable, backgroundTimeoutMs)
-        }
-        Log.i(TAG, "Scheduled kill process in ${backgroundTimeoutMs / 1000 / 60}min")
+        val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager ?: return
+        val triggerAtMillis = SystemClock.elapsedRealtime() + backgroundTimeoutMs
+
+        alarmManager.setAndAllowWhileIdle(
+            AlarmManager.ELAPSED_REALTIME_WAKEUP,
+            triggerAtMillis,
+            pendingIntent
+        )
+
+        Log.i(TAG, "Scheduled kill alarm in ${backgroundTimeoutMs / 1000 / 60}min")
     }
 
-    /**
-     */
-    private fun cancelKillProcess() {
-        killProcessRunnable?.let {
-            mainHandler.removeCallbacks(it)
-            killProcessRunnable = null
-            Log.d(TAG, "Cancelled pending kill process")
+    private fun cancelKillAlarm() {
+        val context = appContext ?: return
+        val intent = Intent(context, KillProcessReceiver::class.java).apply {
+            action = ACTION_KILL_PROCESS
+        }
+        val pendingIntent = PendingIntent.getBroadcast(
+            context,
+            REQUEST_CODE_KILL,
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_NO_CREATE
+        )
+        if (pendingIntent != null) {
+            val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager
+            alarmManager?.cancel(pendingIntent)
+            pendingIntent.cancel()
+            Log.d(TAG, "Cancelled pending kill alarm")
+        }
+    }
+
+    class KillProcessReceiver : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent?) {
+            if (intent?.action != ACTION_KILL_PROCESS) return
+
+            if (!_isAppInForeground.value && VpnStateStore.getActive()) {
+                Log.i(TAG, ">>> Kill alarm fired, killing main process to save power")
+                Log.i(TAG, ">>> VPN will continue running in :bg process")
+                android.os.Process.killProcess(android.os.Process.myPid())
+            } else {
+                Log.d(
+                    TAG,
+                    "Kill alarm fired but conditions not met " +
+                        "(fg=${_isAppInForeground.value}, vpn=${VpnStateStore.getActive()})"
+                )
+            }
         }
     }
 }

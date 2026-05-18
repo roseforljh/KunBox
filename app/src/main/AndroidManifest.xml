@@ -135,6 +135,10 @@
                 android:value="androidx.startup"
                 tools:node="remove" />
         </provider>
+
+        <receiver
+            android:name=".lifecycle.AppLifecycleObserver$KillProcessReceiver"
+            android:exported="false" />
     </application>
 
 </manifest>
