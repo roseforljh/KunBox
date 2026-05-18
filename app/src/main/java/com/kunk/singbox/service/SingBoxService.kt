@@ -327,6 +327,22 @@ class SingBoxService : VpnService() {
             return request.reason == RecoveryReason.NETWORK_TYPE_CHANGED && success
         }
 
+        internal fun shouldUseForegroundFastLane(request: RecoveryRequest): Boolean {
+            return request.reason == RecoveryReason.APP_FOREGROUND &&
+                request.force &&
+                request.rawReason == "app_foreground"
+        }
+
+        internal fun shouldScheduleForegroundHardFallback(
+            request: RecoveryRequest,
+            mode: BoxWrapperManager.RecoveryMode,
+            success: Boolean
+        ): Boolean {
+            return request.reason == RecoveryReason.APP_FOREGROUND &&
+                mode == BoxWrapperManager.RecoveryMode.SOFT &&
+                success
+        }
+
         internal fun hasStrongNetworkTypeChangedRecoverySignal(
             probeSucceeded: Boolean,
             networkRecoveryNeeded: Boolean
@@ -1510,7 +1526,7 @@ class SingBoxService : VpnService() {
         synchronized(this) {
             // 2025-fix-v7: APP_FOREGROUND + force 走快车道，不进合并窗口
             // 直接 wake + resetNetwork，跳过 800ms 合并等待和多级探测
-            if (request.reason == RecoveryReason.APP_FOREGROUND && request.force && !recoveryInFlight) {
+            if (shouldUseForegroundFastLane(request) && !recoveryInFlight) {
                 recoveryInFlight = true
                 serviceScope.launch {
                     try {
@@ -1912,16 +1928,12 @@ class SingBoxService : VpnService() {
             skipped = false,
             outcome = if (isHy2) "hy2_fast_path(${elapsedMs}ms)" else "fast_path(${elapsedMs}ms)"
         )
-    }
 
-    private fun shouldScheduleForegroundHardFallback(
-        request: RecoveryRequest,
-        mode: BoxWrapperManager.RecoveryMode,
-        success: Boolean
-    ): Boolean {
-        if (request.reason != RecoveryReason.APP_FOREGROUND) return false
-        if (request.force) return false
-        return mode == BoxWrapperManager.RecoveryMode.SOFT && success
+        scheduleForegroundHardFallbackIfNeeded(
+            request = request,
+            mode = BoxWrapperManager.RecoveryMode.SOFT,
+            success = true
+        )
     }
 
     private fun evaluateForegroundFallbackState(): ForegroundFallbackState {

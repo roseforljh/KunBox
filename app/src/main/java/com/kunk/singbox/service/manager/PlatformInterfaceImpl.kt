@@ -52,6 +52,13 @@ class PlatformInterfaceImpl(
             return isActiveDefault && !isVpn && isValidPhysical
         }
 
+        internal fun shouldHandoverToRequestedDefaultNetwork(
+            isVpn: Boolean,
+            isValidPhysical: Boolean
+        ): Boolean {
+            return !isVpn && isValidPhysical
+        }
+
         internal fun shouldForceConnectionOwnerRouting(settings: AppSettings?): Boolean {
             if (settings?.routingMode != RoutingMode.RULE) return false
             return settings.appRules.any { it.enabled } || settings.appGroups.any { it.enabled }
@@ -534,7 +541,12 @@ class PlatformInterfaceImpl(
                 val isValidated = caps?.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED) == true
                 val isValidPhysical = caps?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true &&
                     caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN)
-                if (!shouldHandoverToActiveDefaultNetwork(isActiveDefault, isVpn, isValidPhysical)) {
+                val shouldHandover = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                    shouldHandoverToRequestedDefaultNetwork(isVpn, isValidPhysical)
+                } else {
+                    shouldHandoverToActiveDefaultNetwork(isActiveDefault, isVpn, isValidPhysical)
+                }
+                if (!shouldHandover) {
                     return
                 }
 
@@ -582,7 +594,12 @@ class PlatformInterfaceImpl(
                 val isValidated = caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
                 val isValidPhysical = caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
                     caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN)
-                if (shouldHandoverToActiveDefaultNetwork(isActiveDefault, isVpn, isValidPhysical)) {
+                val shouldHandover = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                    shouldHandoverToRequestedDefaultNetwork(isVpn, isValidPhysical)
+                } else {
+                    shouldHandoverToActiveDefaultNetwork(isActiveDefault, isVpn, isValidPhysical)
+                }
+                if (shouldHandover) {
                     networkCallbackReady = true
                     if (!isValidated) {
                         Log.d(TAG, "Active network $network not yet validated, updating underlying network first")
@@ -592,14 +609,22 @@ class PlatformInterfaceImpl(
             }
         }
 
-        val request = NetworkRequest.Builder()
+        val requestBuilder = NetworkRequest.Builder()
             .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
-            .addCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN)
-            .build()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            requestBuilder.addCapability(NetworkCapabilities.NET_CAPABILITY_NOT_RESTRICTED)
+        } else {
+            requestBuilder.addCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN)
+        }
+        val request = requestBuilder.build()
 
         val defaultCallback = networkCallback ?: return
         try {
-            cm.registerNetworkCallback(request, defaultCallback)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                cm.requestNetwork(request, defaultCallback)
+            } else {
+                cm.registerNetworkCallback(request, defaultCallback)
+            }
         } catch (e: Exception) {
             Log.w(TAG, "Failed to register network callback", e)
         }

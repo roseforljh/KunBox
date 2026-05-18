@@ -367,6 +367,48 @@ class RecoveryLogicTest {
     }
 
     @Test
+    fun foregroundFastLaneOnlyAppliesToRealForegroundReturn() {
+        val foregroundRequest = SingBoxService.RecoveryRequest(
+            reason = SingBoxService.RecoveryReason.APP_FOREGROUND,
+            rawReason = "app_foreground",
+            force = true,
+            requestedAtMs = 100L,
+            merged = false
+        )
+        val hardFallbackRequest = foregroundRequest.copy(rawReason = "app_foreground_hard_fallback")
+
+        assertTrue(SingBoxService.shouldUseForegroundFastLane(foregroundRequest))
+        assertFalse(SingBoxService.shouldUseForegroundFastLane(hardFallbackRequest))
+    }
+
+    @Test
+    fun foregroundHardFallbackRunsAfterForcedFastRecovery() {
+        val request = makeRequest(SingBoxService.RecoveryReason.APP_FOREGROUND, force = true)
+
+        assertTrue(
+            SingBoxService.shouldScheduleForegroundHardFallback(
+                request = request,
+                mode = com.kunk.singbox.core.BoxWrapperManager.RecoveryMode.SOFT,
+                success = true
+            )
+        )
+        assertFalse(
+            SingBoxService.shouldScheduleForegroundHardFallback(
+                request = request,
+                mode = com.kunk.singbox.core.BoxWrapperManager.RecoveryMode.HARD,
+                success = true
+            )
+        )
+        assertFalse(
+            SingBoxService.shouldScheduleForegroundHardFallback(
+                request = request,
+                mode = com.kunk.singbox.core.BoxWrapperManager.RecoveryMode.SOFT,
+                success = false
+            )
+        )
+    }
+
+    @Test
     fun networkTypeChangedStrongSignalRequiresProbeAndNoPendingKernelRecovery() {
         assertTrue(
             SingBoxService.hasStrongNetworkTypeChangedRecoverySignal(

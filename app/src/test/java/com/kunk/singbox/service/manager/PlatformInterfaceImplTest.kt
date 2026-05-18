@@ -62,6 +62,16 @@ class PlatformInterfaceImplTest {
     }
 
     @Test
+    fun testRequestedDefaultNetworkHandoverDoesNotRequireActiveNetworkIdentity() {
+        val result = PlatformInterfaceImpl.shouldHandoverToRequestedDefaultNetwork(
+            isVpn = false,
+            isValidPhysical = true
+        )
+
+        assertTrue(result)
+    }
+
+    @Test
     fun testShouldProtectAndBindPhysicalNetworkForOutboundSockets() {
         val result = PlatformInterfaceImpl.shouldBindProtectedSocketToPhysicalNetwork(
             protected = true,
