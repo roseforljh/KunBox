@@ -75,6 +75,25 @@ class PlatformInterfaceImpl(
         ): Boolean {
             return protected && physicalNetworkAvailable
         }
+
+        internal fun networkInterfaceTypeForName(name: String): Int {
+            return when {
+                isCellularInterfaceName(name) -> 1
+                name.startsWith("wlan", ignoreCase = true) -> 0
+                name.startsWith("eth", ignoreCase = true) -> 2
+                else -> 3
+            }
+        }
+
+        internal fun isCellularInterfaceName(name: String): Boolean {
+            val lower = name.lowercase()
+            return lower.startsWith("rmnet") ||
+                lower.startsWith("ccmni") ||
+                lower.startsWith("ccemni") ||
+                lower.startsWith("pdp_ip") ||
+                lower.startsWith("wwan") ||
+                lower.startsWith("usb")
+        }
     }
 
     private val networkSwitchManager: NetworkSwitchManager by lazy {
@@ -752,6 +771,7 @@ class PlatformInterfaceImpl(
                         if (iface.isPointToPoint) flagsStr = flagsStr or 8
                         if (iface.supportsMulticast()) flagsStr = flagsStr or 16
                         flags = flagsStr
+                        type = networkInterfaceTypeForName(iface.name)
 
                         val addrList = ArrayList<String>()
                         for (addr in iface.interfaceAddresses) {

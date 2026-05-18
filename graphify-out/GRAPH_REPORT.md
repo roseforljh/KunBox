@@ -1,13 +1,13 @@
 # Graph Report - .  (2026-05-18)
 
 ## Corpus Check
-- 206 files Â· ~213,408 words
+- 206 files ¡¤ ~213,687 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 3302 nodes Â· 3098 edges Â· 206 communities detected
-- Extraction: 100% EXTRACTED Â· 0% INFERRED Â· 0% AMBIGUOUS
-- Token cost: 0 input Â· 0 output
+- 3307 nodes ¡¤ 3103 edges ¡¤ 206 communities detected
+- Extraction: 100% EXTRACTED ¡¤ 0% INFERRED ¡¤ 0% AMBIGUOUS
+- Token cost: 0 input ¡¤ 0 output
 
 ## God Nodes (most connected - your core abstractions)
 1. `ConfigRepository` - 155 edges
@@ -412,43 +412,43 @@ Nodes (1): SettingsDao
 
 ### Community 96 - "Community 96"
 Cohesion: 0.2
-Nodes (0): 
+Nodes (2): AppLifecycleObserver, KillProcessReceiver
 
 ### Community 97 - "Community 97"
-Cohesion: 0.22
-Nodes (8): ExportData, ExportDataSummary, Failed, ImportOptions, ImportResult, PartialSuccess, ProfileExportData, Success
+Cohesion: 0.2
+Nodes (0): 
 
 ### Community 98 - "Community 98"
 Cohesion: 0.22
-Nodes (1): LatencyCache
+Nodes (8): ExportData, ExportDataSummary, Failed, ImportOptions, ImportResult, PartialSuccess, ProfileExportData, Success
 
 ### Community 99 - "Community 99"
 Cohesion: 0.22
-Nodes (3): FetchResult, SubscriptionFetcher, SubscriptionUserInfo
+Nodes (1): LatencyCache
 
 ### Community 100 - "Community 100"
 Cohesion: 0.22
-Nodes (2): Callbacks, ForeignVpnMonitor
+Nodes (3): FetchResult, SubscriptionFetcher, SubscriptionUserInfo
 
 ### Community 101 - "Community 101"
 Cohesion: 0.22
-Nodes (2): AppLogger, Level
+Nodes (2): Callbacks, ForeignVpnMonitor
 
 ### Community 102 - "Community 102"
 Cohesion: 0.22
-Nodes (1): PlatformInterfaceImplTest
+Nodes (2): AppLogger, Level
 
 ### Community 103 - "Community 103"
 Cohesion: 0.22
-Nodes (1): UrlTestTagMatcherTest
+Nodes (1): PlatformInterfaceImplTest
 
 ### Community 104 - "Community 104"
 Cohesion: 0.22
-Nodes (1): DiagnosticsViewModelNodeLineTest
+Nodes (1): UrlTestTagMatcherTest
 
 ### Community 105 - "Community 105"
-Cohesion: 0.25
-Nodes (1): AppLifecycleObserver
+Cohesion: 0.22
+Nodes (1): DiagnosticsViewModelNodeLineTest
 
 ### Community 106 - "Community 106"
 Cohesion: 0.25
@@ -596,59 +596,59 @@ Nodes (1): InstalledAppsViewModel
 
 ### Community 142 - "Community 142"
 Cohesion: 0.4
-Nodes (1): BoxWrapperManagerRecoveryPolicyTest
+Nodes (1): AppShortcutsResourceTest
 
 ### Community 143 - "Community 143"
 Cohesion: 0.4
-Nodes (1): SingBoxIpcHubStateTest
+Nodes (1): BoxWrapperManagerRecoveryPolicyTest
 
 ### Community 144 - "Community 144"
 Cohesion: 0.4
-Nodes (1): VpnStateStoreTest
+Nodes (1): SingBoxIpcHubStateTest
 
 ### Community 145 - "Community 145"
 Cohesion: 0.4
-Nodes (1): ModelSerializationTest
+Nodes (1): VpnStateStoreTest
 
 ### Community 146 - "Community 146"
 Cohesion: 0.4
-Nodes (1): LatencyProbePolicyTest
+Nodes (1): ModelSerializationTest
 
 ### Community 147 - "Community 147"
 Cohesion: 0.4
-Nodes (1): LogRepositoryTest
+Nodes (1): LatencyProbePolicyTest
 
 ### Community 148 - "Community 148"
 Cohesion: 0.4
-Nodes (1): NodeLinkExporterTest
+Nodes (1): LogRepositoryTest
 
 ### Community 149 - "Community 149"
 Cohesion: 0.4
-Nodes (1): NetworkSwitchManagerTest
+Nodes (1): NodeLinkExporterTest
 
 ### Community 150 - "Community 150"
 Cohesion: 0.4
-Nodes (1): RouteGroupSelectorTest
+Nodes (1): NetworkSwitchManagerTest
 
 ### Community 151 - "Community 151"
-Cohesion: 0.5
-Nodes (1): ProfileEntity
+Cohesion: 0.4
+Nodes (1): RouteGroupSelectorTest
 
 ### Community 152 - "Community 152"
 Cohesion: 0.5
-Nodes (3): GithubFile, GithubTreeItem, GithubTreeResponse
+Nodes (1): ProfileEntity
 
 ### Community 153 - "Community 153"
 Cohesion: 0.5
-Nodes (0): 
+Nodes (3): GithubFile, GithubTreeItem, GithubTreeResponse
 
 ### Community 154 - "Community 154"
 Cohesion: 0.5
-Nodes (2): VpnTunAddressPlan, VpnTunAddressPlanner
+Nodes (0): 
 
 ### Community 155 - "Community 155"
 Cohesion: 0.5
-Nodes (0): 
+Nodes (2): VpnTunAddressPlan, VpnTunAddressPlanner
 
 ### Community 156 - "Community 156"
 Cohesion: 0.5
@@ -660,11 +660,11 @@ Nodes (0):
 
 ### Community 158 - "Community 158"
 Cohesion: 0.5
-Nodes (1): NodeDisplaySettings
+Nodes (0): 
 
 ### Community 159 - "Community 159"
 Cohesion: 0.5
-Nodes (1): AppShortcutsResourceTest
+Nodes (1): NodeDisplaySettings
 
 ### Community 160 - "Community 160"
 Cohesion: 0.5
@@ -852,7 +852,7 @@ Nodes (0):
 
 ## Knowledge Gaps
 - **264 isolated node(s):** `RecoveryMode`, `RecoveryLevel`, `SmartRecoveryResult`, `ProbeTarget`, `ProbeResult` (+259 more)
-  These have â‰¤1 connection - possible missing edges or undocumented components.
+  These have ¡Ü1 connection - possible missing edges or undocumented components.
 - **Thin community `Community 182`** (2 nodes): `ActiveStateEntity.kt`, `ActiveStateEntity`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
 - **Thin community `Community 183`** (2 nodes): `NodeLatencyEntity.kt`, `NodeLatencyEntity`

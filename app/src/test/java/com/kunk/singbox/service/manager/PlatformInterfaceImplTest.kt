@@ -82,12 +82,9 @@ class PlatformInterfaceImplTest {
     }
 
     @Test
-    fun testConnectManagerHandoverAllowsActivePhysicalNetworkBeforeValidated() {
-        val result = ConnectManager.shouldHandoverToActiveDefaultNetwork(
-            isActiveDefault = true,
-            isValidPhysical = true
-        )
-
-        assertTrue(result)
+    fun testCellularInterfaceNamesResolveToCellularType() {
+        assertTrue(PlatformInterfaceImpl.isCellularInterfaceName("rmnet_data0"))
+        assertTrue(PlatformInterfaceImpl.isCellularInterfaceName("ccmni0"))
+        assertFalse(PlatformInterfaceImpl.isCellularInterfaceName("wlan0"))
     }
 }

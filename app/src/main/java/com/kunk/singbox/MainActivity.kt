@@ -138,14 +138,6 @@ fun SingBoxApp() {
         dashboardViewModel.refreshState()
     }
 
-    LifecycleEventEffect(Lifecycle.Event.ON_START) {
-        SingBoxRemote.notifyAppLifecycle(true)
-    }
-
-    LifecycleEventEffect(Lifecycle.Event.ON_STOP) {
-        SingBoxRemote.notifyAppLifecycle(false)
-    }
-
     LaunchedEffect(settings?.appLanguage) {
         val language = settings?.appLanguage ?: return@LaunchedEffect
         val prefs = context.getSharedPreferences("settings", Context.MODE_PRIVATE)

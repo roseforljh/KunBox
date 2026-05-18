@@ -4550,7 +4550,7 @@ class ConfigRepository(private val context: Context) {
         fun dnsRouteToDirect(server: String, rule: DnsRule): DnsRule =
             buildDnsRouteToDirect(server, directServerTag, rule)
 
-        fun dnsReject(rule: DnsRule): DnsRule = rule.copy(action = "reject", method = "default")
+        fun dnsReject(rule: DnsRule): DnsRule = rule.copy(action = "predefined", rcode = "NOERROR")
 
         fun parseDomainList(input: String): List<String> {
             return input

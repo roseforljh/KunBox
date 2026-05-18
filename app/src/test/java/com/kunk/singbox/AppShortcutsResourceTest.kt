@@ -25,4 +25,14 @@ class AppShortcutsResourceTest {
 
         assertFalse(content.contains("com.kunk.singbox.action.TOGGLE"))
     }
+
+    @Test
+    fun blockedDnsRulesUsePredefinedNoErrorInsteadOfReject() {
+        val content = File("src/main/java/com/kunk/singbox/repository/ConfigRepository.kt").readText()
+
+        assertTrue(content.contains("fun dnsReject(rule: DnsRule): DnsRule ="))
+        assertTrue(content.contains("action = \"predefined\""))
+        assertTrue(content.contains("rcode = \"NOERROR\""))
+        assertFalse(content.contains("fun dnsReject(rule: DnsRule): DnsRule = rule.copy(action = \"reject\""))
+    }
 }

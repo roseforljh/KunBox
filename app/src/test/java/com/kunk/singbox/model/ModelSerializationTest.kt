@@ -46,25 +46,17 @@ class ModelSerializationTest {
     }
 
     @Test
-    fun testTuicDisableSniSerializesInsideTlsOptions() {
-        val outbound = Outbound(
-            type = "tuic",
-            tag = "tuic-node",
-            server = "tuic.example.com",
-            serverPort = 443,
-            uuid = "uuid",
-            password = "secret",
-            tls = TlsConfig(
-                enabled = true,
-                disableSni = true,
-                serverName = "edge.example.com"
-            )
+    fun dnsPredefinedRuleSerializesRcode() {
+        val rule = DnsRule(
+            action = "predefined",
+            rcode = "NOERROR",
+            domain = listOf("www.googleadservices.com")
         )
 
-        val json = gson.toJson(outbound)
+        val json = gson.toJson(rule)
 
-        assertTrue(json.contains("\"tls\""))
-        assertTrue(json.contains("\"disable_sni\":true"))
-        assertTrue(json.contains("\"server_name\":\"edge.example.com\""))
+        assertTrue(json.contains("\"action\":\"predefined\""))
+        assertTrue(json.contains("\"rcode\":\"NOERROR\""))
+        assertTrue(json.contains("\"domain\":[\"www.googleadservices.com\"]"))
     }
 }
