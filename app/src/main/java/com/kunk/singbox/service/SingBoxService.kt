@@ -1024,10 +1024,10 @@ class SingBoxService : VpnService() {
         val activeLabel = runCatching {
             val repo = ConfigRepository.getInstance(applicationContext)
             val activeNodeId = repo.activeNodeId.value
-            // 2025-fix: 与 buildNotificationState 保持一致的优先级
+            // fix: 与 buildNotificationState 保持一致的优先级
             realTimeNodeName
-                ?: VpnStateStore.getActiveLabel().takeIf { it.isNotBlank() }
                 ?: repo.nodes.value.find { it.id == activeNodeId }?.name
+                ?: VpnStateStore.getActiveLabel().takeIf { it.isNotBlank() }
                 ?: ""
         }.getOrDefault("")
 
@@ -2931,6 +2931,16 @@ class SingBoxService : VpnService() {
 
         lastConfigPath = configPath
 
+        // fix: 启动前同步当前选中节点名到 VpnStateStore，避免通知显示上次运行的旧节点
+        runCatching {
+            val repo = ConfigRepository.getInstance(this)
+            val nodeId = repo.activeNodeId.value
+            val name = repo.nodes.value.find { it.id == nodeId }?.name
+            if (!name.isNullOrBlank()) {
+                VpnStateStore.setActiveLabel(name)
+            }
+        }
+
         // 启动前台通知（必须在协程前调用）
         try {
             val notification = createNotification()
@@ -3080,11 +3090,11 @@ class SingBoxService : VpnService() {
     private fun buildNotificationState(): VpnNotificationManager.NotificationState {
         val configRepository = ConfigRepository.getInstance(this)
         val activeNodeId = configRepository.activeNodeId.value
-        // 2025-fix: 优先使用内存中的 realTimeNodeName，然后是持久化的 VpnStateStore.activeLabel
-        // 最后才回退到 configRepository（可能在跨进程时不同步）
+        // fix: realTimeNodeName > ConfigRepository当前选中 > VpnStateStore持久化缓存
+        // VpnStateStore.activeLabel 是上次运行时的值，磁贴启动时可能已过期
         val nodeName = realTimeNodeName
-            ?: VpnStateStore.getActiveLabel().takeIf { it.isNotBlank() }
             ?: configRepository.nodes.value.find { it.id == activeNodeId }?.name
+            ?: VpnStateStore.getActiveLabel().takeIf { it.isNotBlank() }
 
         return VpnNotificationManager.NotificationState(
             isRunning = isRunning,
