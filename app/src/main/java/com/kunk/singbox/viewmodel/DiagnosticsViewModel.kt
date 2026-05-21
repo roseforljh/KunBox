@@ -25,6 +25,7 @@ import kotlinx.coroutines.flow.first
 import okhttp3.Request
 import com.kunk.singbox.repository.SettingsRepository
 import com.kunk.singbox.utils.NetworkClient
+import com.kunk.singbox.ipc.VpnStateStore
 import java.io.File
 import java.net.InetAddress
 import java.text.SimpleDateFormat
@@ -59,6 +60,9 @@ class DiagnosticsViewModel(application: Application) : AndroidViewModel(applicat
 
     private val _isDnsLoading = MutableStateFlow(false)
     val isDnsLoading = _isDnsLoading.asStateFlow()
+
+    private val _isDnsLeakCheckLoading = MutableStateFlow(false)
+    val isDnsLeakCheckLoading = _isDnsLeakCheckLoading.asStateFlow()
 
     private val _isRoutingLoading = MutableStateFlow(false)
     val isRoutingLoading = _isRoutingLoading.asStateFlow()
@@ -122,6 +126,10 @@ class DiagnosticsViewModel(application: Application) : AndroidViewModel(applicat
         } catch (_: Exception) {
             null
         }
+    }
+
+    private suspend fun loadCurrentRunConfig(): SingBoxConfig? = withContext(Dispatchers.IO) {
+        loadRunConfig(File(getApplication<Application>().filesDir, "running_config.json").absolutePath)
     }
 
     private fun resolveNetworkType(): String {
@@ -375,6 +383,26 @@ class DiagnosticsViewModel(application: Application) : AndroidViewModel(applicat
                 _resultMessage.value = buildDnsQueryFailureMessage(host, e.message ?: "unknown")
             } finally {
                 _isDnsLoading.value = false
+                _showResultDialog.value = true
+            }
+        }
+    }
+
+    fun runDnsLeakCheck() {
+        if (_isDnsLeakCheckLoading.value) return
+        viewModelScope.launch {
+            _isDnsLeakCheckLoading.value = true
+            _resultTitle.value = getApplication<Application>().getString(R.string.diagnostics_dns_leak_check)
+            try {
+                val runConfig = loadCurrentRunConfig()
+                _resultMessage.value = buildDnsLeakCheckReport(
+                    coreActive = VpnStateStore.getActive(),
+                    runConfig = runConfig
+                )
+            } catch (e: Exception) {
+                _resultMessage.value = "DNS 泄露: 是\n\n原因:\n- DNS 泄露检测失败: ${e.message ?: "unknown"}"
+            } finally {
+                _isDnsLeakCheckLoading.value = false
                 _showResultDialog.value = true
             }
         }

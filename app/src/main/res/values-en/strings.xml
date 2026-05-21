@@ -525,6 +525,9 @@
     <string name="diagnostics_ping_test_subtitle">ICMP Ping (8.8.8.8)</string>
     <string name="diagnostics_dns_query">DNS Query</string>
     <string name="diagnostics_dns_query_subtitle">Domain resolution (www.google.com)</string>
+    <string name="diagnostics_dns_leak_check">DNS Leak Check</string>
+    <string name="diagnostics_dns_leak_check_subtitle">Check current running config for DNS leaks</string>
+    <string name="diagnostics_dns_leak_check_loading">Checking...</string>
     <string name="diagnostics_routing_test">Routing Test</string>
     <string name="diagnostics_routing_test_subtitle">Rule matching simulation (baidu.com)</string>
     <string name="diagnostics_routing_test_loading">Testing...</string>

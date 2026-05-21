@@ -8,6 +8,9 @@ import com.kunk.singbox.ipc.SingBoxRemote
 import com.kunk.singbox.ipc.VpnStateStore
 import com.kunk.singbox.model.NodeUi
 import com.kunk.singbox.model.Outbound
+import com.kunk.singbox.model.DnsServer
+import com.kunk.singbox.model.RouteRule
+import com.kunk.singbox.model.SingBoxConfig
 import com.kunk.singbox.repository.ConfigRepository
 import com.kunk.singbox.repository.SettingsRepository
 import com.kunk.singbox.utils.NetworkClient
@@ -131,6 +134,120 @@ internal fun buildDnsQueryFailureMessage(host: String, errorMessage: String?): S
     return "Domain: $host\n\n" +
         "Failed: ${errorMessage ?: "unknown"}\n\n" +
         "Note: System DNS only. KunBox app is excluded from VPN, so this does not represent current node DNS."
+}
+
+internal fun buildDnsLeakCheckReport(coreActive: Boolean, runConfig: SingBoxConfig?): String {
+    if (!coreActive) {
+        return buildString {
+            appendLine("DNS 泄露: 是")
+            appendLine()
+            appendLine("原因:")
+            appendLine("- 核心未运行，当前连接未被 KunBox VPN 接管。")
+        }
+    }
+    if (runConfig == null) {
+        return buildString {
+            appendLine("DNS 泄露: 是")
+            appendLine()
+            appendLine("原因:")
+            appendLine("- 无法读取运行配置，不能确认 DNS 已被接管。")
+        }
+    }
+
+    val reasons = buildDnsLeakReasons(runConfig)
+    return buildString {
+        appendLine("DNS 泄露: ${if (reasons.isEmpty()) "否" else "是"}")
+        appendLine()
+        if (reasons.isEmpty()) {
+            appendLine("检查结果:")
+            appendLine("- 运行配置包含 TUN 入站。")
+            appendLine("- route.rules 已包含覆盖 tun-in:53 或 protocol=dns 的 hijack-dns。")
+            appendLine("- DNS final 指向有效且安全的 server tag。")
+            appendLine("- 未发现系统 DNS 或明文直连 DNS server。")
+        } else {
+            appendLine("原因:")
+            reasons.forEach { appendLine("- $it") }
+        }
+    }
+}
+
+private fun buildDnsLeakReasons(runConfig: SingBoxConfig): List<String> {
+    val reasons = mutableListOf<String>()
+    val tunInbound = runConfig.inbounds.orEmpty().firstOrNull { it.type == "tun" }
+    if (tunInbound == null) {
+        reasons.add("运行配置缺少 TUN 入站，系统 DNS 流量不会进入 KunBox VPN。")
+    } else if (tunInbound.autoRoute == false) {
+        reasons.add("TUN 入站 auto_route 未启用，系统 DNS 路由可能不会进入 KunBox VPN。")
+    }
+
+    val routeRules = runConfig.route?.rules.orEmpty()
+    if (!routeRules.any { it.isEffectiveDnsHijackRule() }) {
+        reasons.add("运行配置缺少覆盖 tun-in:53 或 protocol=dns 的 DNS 劫持规则。")
+    }
+
+    val dns = runConfig.dns
+    val servers = dns?.servers.orEmpty()
+    val finalServer = dns?.finalServer.orEmpty()
+    val serversByTag = servers.mapNotNull { server -> server.tag?.let { it to server } }.toMap()
+    if (finalServer.isBlank()) {
+        reasons.add("DNS final 为空，最终 DNS 路径不明确。")
+    } else {
+        val finalDnsServer = serversByTag[finalServer]
+        if (finalDnsServer == null) {
+            reasons.add("DNS final 指向 $finalServer，但 servers 中不存在该 tag。")
+        } else if (finalDnsServer.unsafeDnsReason(serversByTag, runConfig.outbounds.orEmpty()) != null) {
+            reasons.add("DNS final 指向不安全服务器 $finalServer。")
+        }
+    }
+
+    servers.mapNotNull { server -> server.unsafeDnsReason(serversByTag, runConfig.outbounds.orEmpty()) }
+        .forEach { reasons.add(it) }
+    return reasons.distinct()
+}
+
+private fun RouteRule.isEffectiveDnsHijackRule(): Boolean {
+    if (action != "hijack-dns") return false
+    val coversTunPort53 = inbound.orEmpty().contains("tun-in") && port.orEmpty().contains(53)
+    val coversDnsProtocol = protocol.orEmpty().any { it.equals("dns", ignoreCase = true) }
+    return coversTunPort53 || coversDnsProtocol
+}
+
+private fun DnsServer.unsafeDnsReason(serversByTag: Map<String, DnsServer>, outbounds: List<Outbound>): String? {
+    val label = tag ?: "(untagged)"
+    val normalizedType = type?.lowercase().orEmpty()
+    val target = server ?: address ?: "local"
+    return when {
+        normalizedType == "local" || normalizedType == "dhcp" -> {
+            "DNS 服务器 $label 使用系统 DNS 类型 $normalizedType。"
+        }
+        normalizedType == "udp" || normalizedType == "tcp" || normalizedType.isBlank() -> {
+            unsafePlainDnsReason(label, normalizedType, target, serversByTag, outbounds)
+        }
+        target.equals("local", ignoreCase = true) -> {
+            "DNS 服务器 $label 指向系统 DNS local。"
+        }
+        else -> null
+    }
+}
+
+private fun DnsServer.unsafePlainDnsReason(
+    label: String,
+    normalizedType: String,
+    target: String,
+    serversByTag: Map<String, DnsServer>,
+    outbounds: List<Outbound>
+): String? {
+    val dnsType = normalizedType.ifBlank { "legacy" }
+    val detourTag = detour?.takeIf { it.isNotBlank() }
+    val outbound = detourTag?.let { tag -> outbounds.firstOrNull { it.tag == tag } }
+    return when {
+        detourTag == null -> "DNS 服务器 $label 使用明文直连 DNS $dnsType://$target。"
+        serversByTag.containsKey(detourTag) -> "DNS 服务器 $label detour 指向 DNS server $detourTag，不是出站代理。"
+        outbound == null -> "DNS 服务器 $label detour 指向不存在的出站 $detourTag。"
+        outbound.type.equals("direct", ignoreCase = true) -> "DNS 服务器 $label detour 指向直连出站 $detourTag。"
+        outbound.type.equals("block", ignoreCase = true) -> "DNS 服务器 $label detour 指向阻断出站 $detourTag，DNS 路径不可用。"
+        else -> null
+    }
 }
 
 private data class NodeLineQueryData(

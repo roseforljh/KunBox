@@ -56,6 +56,7 @@ fun DiagnosticsScreen(
     val isConnectivityLoading by viewModel.isConnectivityLoading.collectAsState()
     val isPingLoading by viewModel.isPingLoading.collectAsState()
     val isDnsLoading by viewModel.isDnsLoading.collectAsState()
+    val isDnsLeakCheckLoading by viewModel.isDnsLeakCheckLoading.collectAsState()
     val isRoutingLoading by viewModel.isRoutingLoading.collectAsState()
     val isRunConfigLoading by viewModel.isRunConfigLoading.collectAsState()
     val isAppRoutingDiagLoading by viewModel.isAppRoutingDiagLoading.collectAsState()
@@ -165,6 +166,17 @@ fun DiagnosticsScreen(
                     icon = Icons.Rounded.Dns,
                     onClick = { viewModel.runDnsQuery() },
                     enabled = !isDnsLoading
+                )
+                SettingItem(
+                    title = stringResource(R.string.diagnostics_dns_leak_check),
+                    subtitle = if (isDnsLeakCheckLoading) {
+                        stringResource(R.string.diagnostics_dns_leak_check_loading)
+                    } else {
+                        stringResource(R.string.diagnostics_dns_leak_check_subtitle)
+                    },
+                    icon = Icons.Rounded.Dns,
+                    onClick = { viewModel.runDnsLeakCheck() },
+                    enabled = !isDnsLeakCheckLoading
                 )
                 SettingItem(
                     title = stringResource(R.string.diagnostics_routing_test),

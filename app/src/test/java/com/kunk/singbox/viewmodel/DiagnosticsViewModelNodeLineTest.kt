@@ -1,6 +1,13 @@
 package com.kunk.singbox.viewmodel
 
+import com.kunk.singbox.model.DnsConfig
+import com.kunk.singbox.model.DnsServer
+import com.kunk.singbox.model.Inbound
 import com.kunk.singbox.model.NodeUi
+import com.kunk.singbox.model.Outbound
+import com.kunk.singbox.model.RouteConfig
+import com.kunk.singbox.model.RouteRule
+import com.kunk.singbox.model.SingBoxConfig
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -87,6 +94,150 @@ class DiagnosticsViewModelNodeLineTest {
         assertTrue(message.contains("does not represent current node DNS"))
     }
 
+    @Test
+    fun buildDnsLeakCheckReport_reportsLeakWhenHijackDnsRuleMissing() {
+        val report = buildDnsLeakCheckReport(
+            coreActive = true,
+            runConfig = createConfig(routeRules = emptyList())
+        )
+
+        assertTrue(report.contains("DNS 泄露: 是"))
+        assertTrue(report.contains("运行配置缺少覆盖 tun-in:53 或 protocol=dns 的 DNS 劫持规则"))
+    }
+
+    @Test
+    fun buildDnsLeakCheckReport_reportsLeakWhenSystemDnsServerExists() {
+        val report = buildDnsLeakCheckReport(
+            coreActive = true,
+            runConfig = createConfig(dnsServers = listOf(DnsServer(tag = "local", type = "local")))
+        )
+
+        assertTrue(report.contains("DNS 泄露: 是"))
+        assertTrue(report.contains("DNS 服务器 local 使用系统 DNS 类型 local"))
+    }
+
+    @Test
+    fun buildDnsLeakCheckReport_reportsLeakWhenFinalDnsServerMissing() {
+        val report = buildDnsLeakCheckReport(
+            coreActive = true,
+            runConfig = createConfig(dnsServers = listOf(DnsServer(tag = "remote", type = "https")))
+        )
+
+        assertTrue(report.contains("DNS 泄露: 是"))
+        assertTrue(report.contains("DNS final 指向 local，但 servers 中不存在该 tag"))
+    }
+
+    @Test
+    fun buildDnsLeakCheckReport_reportsLeakWhenTunInboundMissing() {
+        val report = buildDnsLeakCheckReport(
+            coreActive = true,
+            runConfig = createConfig(inbounds = emptyList())
+        )
+
+        assertTrue(report.contains("DNS 泄露: 是"))
+        assertTrue(report.contains("运行配置缺少 TUN 入站"))
+    }
+
+    @Test
+    fun buildDnsLeakCheckReport_reportsLeakWhenHijackDnsRuleDoesNotCoverTunDns() {
+        val report = buildDnsLeakCheckReport(
+            coreActive = true,
+            runConfig = createConfig(
+                routeRules = listOf(
+                    RouteRule(inbound = listOf("mixed-in"), action = "hijack-dns")
+                )
+            )
+        )
+
+        assertTrue(report.contains("DNS 泄露: 是"))
+        assertTrue(report.contains("运行配置缺少覆盖 tun-in:53 或 protocol=dns 的 DNS 劫持规则"))
+    }
+
+    @Test
+    fun buildDnsLeakCheckReport_reportsLeakWhenUdpDirectDnsServerExists() {
+        val report = buildDnsLeakCheckReport(
+            coreActive = true,
+            runConfig = createConfig(dnsServers = listOf(DnsServer(tag = "local", type = "udp", server = "223.5.5.5")))
+        )
+
+        assertTrue(report.contains("DNS 泄露: 是"))
+        assertTrue(report.contains("DNS 服务器 local 使用明文直连 DNS udp://223.5.5.5"))
+    }
+
+    @Test
+    fun buildDnsLeakCheckReport_reportsLeakWhenFinalDnsServerIsUnsafe() {
+        val report = buildDnsLeakCheckReport(
+            coreActive = true,
+            runConfig = createConfig(
+                dnsServers = listOf(
+                    DnsServer(tag = "local", type = "https"),
+                    DnsServer(tag = "remote", type = "udp", server = "1.1.1.1")
+                ),
+                finalServer = "remote"
+            )
+        )
+
+        assertTrue(report.contains("DNS 泄露: 是"))
+        assertTrue(report.contains("DNS final 指向不安全服务器 remote"))
+    }
+
+    @Test
+    fun buildDnsLeakCheckReport_reportsLeakWhenDnsDetourMissing() {
+        val report = buildDnsLeakCheckReport(
+            coreActive = true,
+            runConfig = createConfig(
+                dnsServers = listOf(
+                    DnsServer(tag = "local", type = "udp", server = "223.5.5.5", detour = "proxy-node")
+                )
+            )
+        )
+
+        assertTrue(report.contains("DNS 泄露: 是"))
+        assertTrue(report.contains("DNS 服务器 local detour 指向不存在的出站 proxy-node"))
+    }
+
+    @Test
+    fun buildDnsLeakCheckReport_reportsLeakWhenDnsDetourIsDirect() {
+        val report = buildDnsLeakCheckReport(
+            coreActive = true,
+            runConfig = createConfig(
+                dnsServers = listOf(
+                    DnsServer(tag = "local", type = "udp", server = "223.5.5.5", detour = "direct")
+                ),
+                outbounds = listOf(Outbound(type = "direct", tag = "direct"))
+            )
+        )
+
+        assertTrue(report.contains("DNS 泄露: 是"))
+        assertTrue(report.contains("DNS 服务器 local detour 指向直连出站 direct"))
+    }
+
+    @Test
+    fun buildDnsLeakCheckReport_reportsLeakWhenTunAutoRouteDisabled() {
+        val report = buildDnsLeakCheckReport(
+            coreActive = true,
+            runConfig = createConfig(
+                inbounds = listOf(Inbound(type = "tun", tag = "tun-in", autoRoute = false, strictRoute = true))
+            )
+        )
+
+        assertTrue(report.contains("DNS 泄露: 是"))
+        assertTrue(report.contains("TUN 入站 auto_route 未启用"))
+    }
+
+    @Test
+    fun buildDnsLeakCheckReport_reportsSafeWhenConfigIsProtected() {
+        val report = buildDnsLeakCheckReport(
+            coreActive = true,
+            runConfig = createConfig()
+        )
+
+        assertTrue(report.contains("DNS 泄露: 否"))
+        assertTrue(report.contains("route.rules 已包含覆盖 tun-in:53 或 protocol=dns 的 hijack-dns"))
+        assertTrue(report.contains("DNS final 指向有效且安全的 server tag"))
+        assertTrue(report.contains("未发现系统 DNS 或明文直连 DNS server"))
+    }
+
     private fun createNode(id: String, name: String): NodeUi {
         return NodeUi(
             id = id,
@@ -94,6 +245,24 @@ class DiagnosticsViewModelNodeLineTest {
             protocol = "vmess",
             group = "test",
             sourceProfileId = "profile-1"
+        )
+    }
+
+    private fun createConfig(
+        routeRules: List<RouteRule> = listOf(
+            RouteRule(inbound = listOf("tun-in"), port = listOf(53), action = "hijack-dns"),
+            RouteRule(protocolRaw = listOf("dns"), action = "hijack-dns")
+        ),
+        dnsServers: List<DnsServer> = listOf(DnsServer(tag = "local", type = "https", server = "dns.alidns.com")),
+        finalServer: String = "local",
+        inbounds: List<Inbound> = listOf(Inbound(type = "tun", tag = "tun-in", autoRoute = true, strictRoute = true)),
+        outbounds: List<Outbound> = listOf(Outbound(type = "selector", tag = "PROXY"))
+    ): SingBoxConfig {
+        return SingBoxConfig(
+            dns = DnsConfig(servers = dnsServers, finalServer = finalServer),
+            inbounds = inbounds,
+            outbounds = outbounds,
+            route = RouteConfig(rules = routeRules)
         )
     }
 }

@@ -546,6 +546,9 @@
     <string name="diagnostics_ping_test_subtitle">ICMP Ping (8.8.8.8)</string>
     <string name="diagnostics_dns_query">DNS 查询</string>
     <string name="diagnostics_dns_query_subtitle">域名解析 (www.google.com)</string>
+    <string name="diagnostics_dns_leak_check">DNS 泄露检测</string>
+    <string name="diagnostics_dns_leak_check_subtitle">检查当前运行配置是否存在 DNS 泄露</string>
+    <string name="diagnostics_dns_leak_check_loading">正在检测...</string>
     <string name="diagnostics_routing_test">路由测试</string>
     <string name="diagnostics_routing_test_subtitle">规则匹配模拟 (baidu.com)</string>
     <string name="diagnostics_routing_test_loading">正在测试...</string>
