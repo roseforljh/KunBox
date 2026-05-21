@@ -1,5 +1,18 @@
 # Changelog
 
+## [2.15.0](https://github.com/roseforljh/KunBox/compare/v2.14.0...v2.15.0) (2026-05-21)
+
+
+### Features
+
+* 添加DNS泄露检测 ([43d81f6](https://github.com/roseforljh/KunBox/commit/43d81f67eaca52d9311a5951045b71e11e0e0787))
+
+
+### Bug Fixes
+
+* DNS泄露全面修复及DoH解析优化 ([6b22dd2](https://github.com/roseforljh/KunBox/commit/6b22dd250bc9052820548b09b68c8858035f5444))
+* VPN DNS服务器使用TUN本地地址导致Chrome报DNS_PROBE_FINISHED_BAD_CONFIG ([5ae6171](https://github.com/roseforljh/KunBox/commit/5ae61717775ae4bbb383ab526f222f1c2e23231d))
+
 ## [2.14.0](https://github.com/roseforljh/KunBox/compare/v2.13.4...v2.14.0) (2026-05-18)
 
 
