@@ -1,5 +1,21 @@
 # Changelog
 
+## [2.14.0](https://github.com/roseforljh/KunBox/compare/v2.13.4...v2.14.0) (2026-05-18)
+
+
+### Features
+
+* DNS覆写支持，合并订阅原始DNS配置及Profile级自定义DNS JSON ([21df88d](https://github.com/roseforljh/KunBox/commit/21df88de171c055204e18dfe5ca90bbd6b3d35db))
+
+
+### Bug Fixes
+
+* improve VPN network recovery ([b7afd43](https://github.com/roseforljh/KunBox/commit/b7afd43142b539bf830d91619d5e300c85038955))
+* lifecycle重复通知、广告DNS重试风暴、网络接口类型误判 ([41bbd00](https://github.com/roseforljh/KunBox/commit/41bbd00e42549de214d864e5b2acafbaf0f1a2ec))
+* 应用分流选择器列表为空 ([dccf94e](https://github.com/roseforljh/KunBox/commit/dccf94efeaf91c3163c8f1e629245ef5a3543203))
+* 省电模式息屏后失效，改用AlarmManager穿透Doze ([d20fc6e](https://github.com/roseforljh/KunBox/commit/d20fc6e2ef6a64660f4aa8b5258b3bfe1b03149a))
+* 统一通知状态栏图标为应用logo ([9e84b09](https://github.com/roseforljh/KunBox/commit/9e84b09706c52fa88e6f6bb48dc06cca964ba606))
+
 ## [2.13.4](https://github.com/roseforljh/KunBox/compare/v2.13.3...v2.13.4) (2026-05-16)
 
 
