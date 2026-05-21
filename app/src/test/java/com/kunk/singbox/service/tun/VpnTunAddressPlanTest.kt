@@ -49,7 +49,15 @@ class VpnTunAddressPlanTest {
         )
 
         assertEquals(
-            listOf("8.8.8.8" to 32, "198.18.0.0" to 15, "fc00::" to 18),
+            listOf(
+                "8.8.8.8" to 32,
+                "223.5.5.5" to 32,
+                "119.29.29.29" to 32,
+                "1.1.1.1" to 32,
+                "2606:4700:4700::1111" to 128,
+                "198.18.0.0" to 15,
+                "fc00::" to 18
+            ),
             routes
         )
     }

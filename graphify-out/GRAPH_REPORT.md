@@ -1,17 +1,17 @@
 # Graph Report - .  (2026-05-22)
 
 ## Corpus Check
-- 207 files ， ~214,837 words
+- 207 files ， ~215,187 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 3361 nodes ， 3156 edges ， 207 communities detected
+- 3370 nodes ， 3165 edges ， 207 communities detected
 - Extraction: 100% EXTRACTED ， 0% INFERRED ， 0% AMBIGUOUS
 - Token cost: 0 input ， 0 output
 
 ## God Nodes (most connected - your core abstractions)
 1. `ConfigRepository` - 157 edges
-2. `ConfigRepositoryTest` - 139 edges
+2. `ConfigRepositoryTest` - 143 edges
 3. `SingBoxService` - 81 edges
 4. `SettingsViewModel` - 75 edges
 5. `SettingsRepository` - 65 edges
@@ -136,27 +136,27 @@ Nodes (1): NodeDao
 
 ### Community 27 - "Community 27"
 Cohesion: 0.07
-Nodes (1): ProfileDao
+Nodes (5): DiagnosticsNodeLineQueryRunner, IpSbGeoIpResponse, NodeExitPortrait, NodeLineQueryData, NodeLineTarget
 
 ### Community 28 - "Community 28"
 Cohesion: 0.07
-Nodes (5): DiagnosticsNodeLineQueryRunner, IpSbGeoIpResponse, NodeExitPortrait, NodeLineQueryData, NodeLineTarget
+Nodes (1): ProfileDao
 
 ### Community 29 - "Community 29"
-Cohesion: 0.08
-Nodes (3): HotReloadResult, SingBoxIpcHub, StateSnapshot
+Cohesion: 0.07
+Nodes (1): VpnTunManager
 
 ### Community 30 - "Community 30"
 Cohesion: 0.08
-Nodes (25): CacheFileConfig, ClashApiConfig, DnsConfig, DnsFakeIpConfig, DnsRule, DnsServer, DomainResolveConfig, EchConfig (+17 more)
+Nodes (3): HotReloadResult, SingBoxIpcHub, StateSnapshot
 
 ### Community 31 - "Community 31"
 Cohesion: 0.08
-Nodes (1): RuleSetRepository
+Nodes (25): CacheFileConfig, ClashApiConfig, DnsConfig, DnsFakeIpConfig, DnsRule, DnsServer, DomainResolveConfig, EchConfig (+17 more)
 
 ### Community 32 - "Community 32"
 Cohesion: 0.08
-Nodes (1): VpnTunManager
+Nodes (1): RuleSetRepository
 
 ### Community 33 - "Community 33"
 Cohesion: 0.08
@@ -635,24 +635,24 @@ Cohesion: 0.4
 Nodes (1): RouteGroupSelectorTest
 
 ### Community 152 - "Community 152"
-Cohesion: 0.5
-Nodes (1): ProfileEntity
+Cohesion: 0.4
+Nodes (1): KernelHttpClientTest
 
 ### Community 153 - "Community 153"
 Cohesion: 0.5
-Nodes (3): GithubFile, GithubTreeItem, GithubTreeResponse
+Nodes (1): ProfileEntity
 
 ### Community 154 - "Community 154"
 Cohesion: 0.5
-Nodes (0): 
+Nodes (3): GithubFile, GithubTreeItem, GithubTreeResponse
 
 ### Community 155 - "Community 155"
 Cohesion: 0.5
-Nodes (2): VpnTunAddressPlan, VpnTunAddressPlanner
+Nodes (0): 
 
 ### Community 156 - "Community 156"
 Cohesion: 0.5
-Nodes (0): 
+Nodes (2): VpnTunAddressPlan, VpnTunAddressPlanner
 
 ### Community 157 - "Community 157"
 Cohesion: 0.5
@@ -664,51 +664,51 @@ Nodes (0):
 
 ### Community 159 - "Community 159"
 Cohesion: 0.5
-Nodes (1): NodeDisplaySettings
+Nodes (0): 
 
 ### Community 160 - "Community 160"
 Cohesion: 0.5
-Nodes (1): SafeLatencyTesterTest
+Nodes (1): TcpPing
 
 ### Community 161 - "Community 161"
 Cohesion: 0.5
-Nodes (1): VpnServiceManagerTest
+Nodes (1): NodeDisplaySettings
 
 ### Community 162 - "Community 162"
 Cohesion: 0.5
-Nodes (1): KernelHttpClientTest
+Nodes (1): SafeLatencyTesterTest
 
 ### Community 163 - "Community 163"
-Cohesion: 0.67
-Nodes (2): FilterMode, NodeFilter
+Cohesion: 0.5
+Nodes (1): VpnServiceManagerTest
 
 ### Community 164 - "Community 164"
 Cohesion: 0.67
-Nodes (1): PingDisplayText
+Nodes (2): FilterMode, NodeFilter
 
 ### Community 165 - "Community 165"
 Cohesion: 0.67
-Nodes (1): LatencyProbePolicy
+Nodes (1): PingDisplayText
 
 ### Community 166 - "Community 166"
 Cohesion: 0.67
-Nodes (1): InboundBuilder
+Nodes (1): LatencyProbePolicy
 
 ### Community 167 - "Community 167"
 Cohesion: 0.67
-Nodes (1): ShortcutActivity
+Nodes (1): InboundBuilder
 
 ### Community 168 - "Community 168"
 Cohesion: 0.67
-Nodes (0): 
+Nodes (1): ShortcutActivity
 
 ### Community 169 - "Community 169"
 Cohesion: 0.67
-Nodes (1): AppNotificationManager
+Nodes (0): 
 
 ### Community 170 - "Community 170"
 Cohesion: 0.67
-Nodes (0): 
+Nodes (1): AppNotificationManager
 
 ### Community 171 - "Community 171"
 Cohesion: 0.67
@@ -744,11 +744,11 @@ Nodes (0):
 
 ### Community 179 - "Community 179"
 Cohesion: 0.67
-Nodes (1): ProxyAwareOkHttpClient
+Nodes (0): 
 
 ### Community 180 - "Community 180"
 Cohesion: 0.67
-Nodes (1): TcpPing
+Nodes (1): ProxyAwareOkHttpClient
 
 ### Community 181 - "Community 181"
 Cohesion: 0.67

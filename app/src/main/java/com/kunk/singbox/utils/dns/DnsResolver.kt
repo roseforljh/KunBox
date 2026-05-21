@@ -41,6 +41,9 @@ class DnsResolver(
         const val DOH_GOOGLE = "https://8.8.8.8/dns-query"
         const val DOH_ALIDNS = "https://223.5.5.5/dns-query"
 
+        internal const val DNS_TYPE_A = 1
+        internal const val DNS_TYPE_AAAA = 28
+
         private val IPV4_REGEX = Regex("^\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}$")
         private val IPV6_REGEX = Regex("^[0-9a-fA-F:]+$")
 
@@ -71,15 +74,23 @@ class DnsResolver(
         }
 
         try {
-            executeDoHRequest(domain, dohServer)
+            val resultA = executeDoHRequest(domain, dohServer, queryType = DNS_TYPE_A)
+            if (resultA.isSuccess) return@withContext resultA
+            val resultAAAA = executeDoHRequest(domain, dohServer, queryType = DNS_TYPE_AAAA)
+            if (resultAAAA.isSuccess) return@withContext resultAAAA
+            resultA
         } catch (e: Exception) {
             Log.w(TAG, "DoH resolve failed for $domain: ${e.message}")
             DnsResolveResult(null, "doh", e.message)
         }
     }
 
-    private fun executeDoHRequest(domain: String, dohServer: String): DnsResolveResult {
-        val query = buildDnsQuery(domain)
+    private fun executeDoHRequest(
+        domain: String,
+        dohServer: String,
+        queryType: Int = DNS_TYPE_A
+    ): DnsResolveResult {
+        val query = buildDnsQuery(domain, queryType)
 
         val request = Request.Builder()
             .url(dohServer)
@@ -108,7 +119,7 @@ class DnsResolver(
 
     /**
      */
-    suspend fun resolveViaSystem(domain: String): DnsResolveResult = withContext(Dispatchers.IO) {
+    internal suspend fun resolveViaSystem(domain: String): DnsResolveResult = withContext(Dispatchers.IO) {
         if (isIpAddress(domain)) {
             return@withContext DnsResolveResult(domain, "direct")
         }
@@ -133,9 +144,10 @@ class DnsResolver(
     @Suppress("CognitiveComplexMethod")
     private suspend fun resolveViaDoHAsync(
         domain: String,
-        dohServer: String
+        dohServer: String,
+        queryType: Int = DNS_TYPE_A
     ): DnsResolveResult = suspendCancellableCoroutine { cont ->
-        val query = buildDnsQuery(domain)
+        val query = buildDnsQuery(domain, queryType)
 
         val request = Request.Builder()
             .url(dohServer)
@@ -199,14 +211,13 @@ class DnsResolver(
             return@withContext DnsResolveResult(domain, "direct")
         }
 
-        // DoH first to avoid DNS pollution from system DNS
         if (dohServer != null) {
-            val dohResult = resolveViaDoHAsync(domain, dohServer)
-            if (dohResult.isSuccess) {
-                return@withContext dohResult
-            }
+            val dohResultA = resolveViaDoHAsync(domain, dohServer, DNS_TYPE_A)
+            if (dohResultA.isSuccess) return@withContext dohResultA
+            val dohResultAAAA = resolveViaDoHAsync(domain, dohServer, DNS_TYPE_AAAA)
+            if (dohResultAAAA.isSuccess) return@withContext dohResultAAAA
             Log.w(TAG, "DoH failed for $domain")
-            return@withContext dohResult
+            return@withContext dohResultA
         }
 
         resolveViaSystem(domain)
@@ -248,7 +259,7 @@ class DnsResolver(
 
     /**
      */
-    private fun buildDnsQuery(domain: String): ByteArray {
+    private fun buildDnsQuery(domain: String, queryType: Int = DNS_TYPE_A): ByteArray {
         val buffer = ByteBuffer.allocate(512)
 
         // Transaction ID (random)
@@ -271,8 +282,8 @@ class DnsResolver(
         }
         buffer.put(0) // End of name
 
-        // Type: A (1)
-        buffer.putShort(1)
+        // Type: A (1) or AAAA (28)
+        buffer.putShort(queryType.toShort())
         // Class: IN (1)
         buffer.putShort(1)
 

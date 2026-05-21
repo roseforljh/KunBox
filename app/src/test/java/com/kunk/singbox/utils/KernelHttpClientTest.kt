@@ -8,11 +8,16 @@ class KernelHttpClientTest {
 
     @Test
     fun shouldNotFallbackToOkHttpWhenKernelFetchWasAvailable() {
-        assertFalse(KernelHttpClient.shouldFallbackToOkHttp(kernelFetchAvailable = true))
+        assertFalse(KernelHttpClient.shouldFallbackToOkHttp(kernelFetchAvailable = true, vpnActive = false))
     }
 
     @Test
-    fun shouldFallbackToOkHttpWhenKernelFetchWasNotAvailable() {
-        assertTrue(KernelHttpClient.shouldFallbackToOkHttp(kernelFetchAvailable = false))
+    fun shouldFallbackToOkHttpWhenKernelFetchWasNotAvailableAndVpnInactive() {
+        assertTrue(KernelHttpClient.shouldFallbackToOkHttp(kernelFetchAvailable = false, vpnActive = false))
+    }
+
+    @Test
+    fun shouldNotFallbackToOkHttpWhenVpnActive() {
+        assertFalse(KernelHttpClient.shouldFallbackToOkHttp(kernelFetchAvailable = false, vpnActive = true))
     }
 }

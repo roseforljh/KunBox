@@ -62,7 +62,7 @@ class VpnTunManager(
                 .mapNotNull { parseCidrRoute(it) }
 
             val baseRoutes = if (routeMode == VpnRouteMode.CUSTOM && customRoutes.isNotEmpty()) {
-                customRoutes
+                customRoutes + resolveDnsServerRoutes(tunPlan)
             } else {
                 tunPlan.globalRoutes
             }
@@ -82,6 +82,13 @@ class VpnTunManager(
                 IpVersionMode.IPV4_ONLY -> listOf("198.18.0.0" to 15)
                 IpVersionMode.IPV6_ONLY -> listOf("fc00::" to 18)
                 IpVersionMode.DUAL_STACK, IpVersionMode.PREFER_IPV6 -> listOf("198.18.0.0" to 15, "fc00::" to 18)
+            }
+        }
+
+        private fun resolveDnsServerRoutes(tunPlan: VpnTunAddressPlan): List<Pair<String, Int>> {
+            return tunPlan.defaultDnsServers.map { dns ->
+                val prefix = if (dns.contains(":")) 128 else 32
+                dns to prefix
             }
         }
 

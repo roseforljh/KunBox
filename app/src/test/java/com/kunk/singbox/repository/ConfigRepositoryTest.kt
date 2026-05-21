@@ -1735,12 +1735,14 @@ class ConfigRepositoryTest {
     fun testHijackDnsRulesCatchTunDnsPortBeforeProtocolSniffing() {
         val rules = ConfigRepository.buildHijackDnsRulesForTest()
 
-        assertEquals(2, rules.size)
+        assertEquals(3, rules.size)
         assertEquals(listOf("tun-in"), rules[0].inbound)
         assertEquals(listOf(53), rules[0].port)
         assertEquals("hijack-dns", rules[0].action)
         assertEquals(listOf("dns"), rules[1].protocol)
         assertEquals("hijack-dns", rules[1].action)
+        assertEquals(listOf(853), rules[2].port)
+        assertEquals("reject", rules[2].action)
     }
 
     @Test
@@ -2000,5 +2002,55 @@ class ConfigRepositoryTest {
         tempFile.writeText(content)
         tempFile.deleteOnExit()
         return tempFile
+    }
+
+    @Test
+    fun testSanitizeInjectedDnsServerForcesDetourOnUdpWithoutDetour() {
+        val server = com.kunk.singbox.model.DnsServer(
+            tag = "ad-block", type = "udp", server = "8.8.8.8"
+        )
+        val result = ConfigRepository.sanitizeInjectedDnsServerForTest(
+            server = server,
+            routingMode = RoutingMode.GLOBAL_PROXY,
+            proxyDetourTag = "node-hk"
+        )
+        assertEquals("node-hk", result.detour)
+    }
+
+    @Test
+    fun testSanitizeInjectedDnsServerPreservesExistingDetour() {
+        val server = com.kunk.singbox.model.DnsServer(
+            tag = "custom", type = "https", server = "dns.google", detour = "my-proxy"
+        )
+        val result = ConfigRepository.sanitizeInjectedDnsServerForTest(
+            server = server,
+            routingMode = RoutingMode.GLOBAL_PROXY,
+            proxyDetourTag = "node-hk"
+        )
+        assertEquals("my-proxy", result.detour)
+    }
+
+    @Test
+    fun testSanitizeInjectedDnsServerSkipsFakeip() {
+        val server = com.kunk.singbox.model.DnsServer(tag = "fakeip-dns", type = "fakeip")
+        val result = ConfigRepository.sanitizeInjectedDnsServerForTest(
+            server = server,
+            routingMode = RoutingMode.GLOBAL_PROXY,
+            proxyDetourTag = "node-hk"
+        )
+        assertNull(result.detour)
+    }
+
+    @Test
+    fun testSanitizeInjectedDnsServerSkipsInGlobalDirectMode() {
+        val server = com.kunk.singbox.model.DnsServer(
+            tag = "leak", type = "udp", server = "1.1.1.1"
+        )
+        val result = ConfigRepository.sanitizeInjectedDnsServerForTest(
+            server = server,
+            routingMode = RoutingMode.GLOBAL_DIRECT,
+            proxyDetourTag = "node-hk"
+        )
+        assertNull(result.detour)
     }
 }

@@ -60,8 +60,11 @@ object KernelHttpClient {
         }
     }
 
-    internal fun shouldFallbackToOkHttp(kernelFetchAvailable: Boolean): Boolean {
-        return !kernelFetchAvailable
+    internal fun shouldFallbackToOkHttp(
+        kernelFetchAvailable: Boolean,
+        vpnActive: Boolean = VpnStateStore.getActive()
+    ): Boolean {
+        return !kernelFetchAvailable && !vpnActive
     }
 
     /**

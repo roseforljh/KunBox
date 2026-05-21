@@ -251,7 +251,8 @@ class DiagnosticsViewModelNodeLineTest {
     private fun createConfig(
         routeRules: List<RouteRule> = listOf(
             RouteRule(inbound = listOf("tun-in"), port = listOf(53), action = "hijack-dns"),
-            RouteRule(protocolRaw = listOf("dns"), action = "hijack-dns")
+            RouteRule(protocolRaw = listOf("dns"), action = "hijack-dns"),
+            RouteRule(port = listOf(853), action = "reject")
         ),
         dnsServers: List<DnsServer> = listOf(DnsServer(tag = "local", type = "https", server = "dns.alidns.com")),
         finalServer: String = "local",

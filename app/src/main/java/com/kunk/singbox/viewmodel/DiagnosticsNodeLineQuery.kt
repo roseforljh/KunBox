@@ -14,7 +14,7 @@ import com.kunk.singbox.model.SingBoxConfig
 import com.kunk.singbox.repository.ConfigRepository
 import com.kunk.singbox.repository.SettingsRepository
 import com.kunk.singbox.utils.NetworkClient
-import java.net.InetAddress
+import com.kunk.singbox.utils.dns.DnsResolver
 import kotlinx.coroutines.flow.first
 import okhttp3.Request
 
@@ -24,6 +24,8 @@ internal class DiagnosticsNodeLineQueryRunner(
     private val settingsRepository: SettingsRepository
 ) {
     private val gson = Gson()
+
+    private val dnsResolver = DnsResolver()
 
     suspend fun buildReport(): String {
         val activeLabel = SingBoxRemote.activeLabel.value.trim()
@@ -76,13 +78,13 @@ internal class DiagnosticsNodeLineQueryRunner(
         }
     }
 
-    private fun resolveServerAddresses(server: String?): List<String> {
+    private suspend fun resolveServerAddresses(server: String?): List<String> {
         if (server.isNullOrBlank()) return emptyList()
-        return runCatching {
-            InetAddress.getAllByName(server)
-                .mapNotNull { it.hostAddress }
-                .distinct()
-        }.getOrDefault(emptyList())
+        if (DnsResolver.isIpAddress(server)) return listOf(server)
+        val result = dnsResolver.resolveViaDoH(server, DnsResolver.DOH_ALIDNS)
+        if (result.isSuccess && result.ip != null) return listOf(result.ip)
+        val fallback = dnsResolver.resolveViaDoH(server, DnsResolver.DOH_CLOUDFLARE)
+        return if (fallback.isSuccess && fallback.ip != null) listOf(fallback.ip) else emptyList()
     }
 
     private suspend fun queryNodeDelay(node: NodeUi, timeoutMs: Int, coreActive: Boolean): Int? {
@@ -184,6 +186,9 @@ private fun buildDnsLeakReasons(runConfig: SingBoxConfig): List<String> {
     if (!routeRules.any { it.isEffectiveDnsHijackRule() }) {
         reasons.add("运行配置缺少覆盖 tun-in:53 或 protocol=dns 的 DNS 劫持规则。")
     }
+    if (!routeRules.any { it.isPort853BlockRule() }) {
+        reasons.add("运行配置缺少 port 853 拦截规则，Android Private DNS (DoT) 可绕过 DNS 劫持。")
+    }
 
     val dns = runConfig.dns
     val servers = dns?.servers.orEmpty()
@@ -212,9 +217,14 @@ private fun RouteRule.isEffectiveDnsHijackRule(): Boolean {
     return coversTunPort53 || coversDnsProtocol
 }
 
+private fun RouteRule.isPort853BlockRule(): Boolean {
+    return port.orEmpty().contains(853) && action == "reject"
+}
+
 private fun DnsServer.unsafeDnsReason(serversByTag: Map<String, DnsServer>, outbounds: List<Outbound>): String? {
     val label = tag ?: "(untagged)"
     val normalizedType = type?.lowercase().orEmpty()
+    if (normalizedType == "fakeip") return null
     val target = server ?: address ?: "local"
     return when {
         normalizedType == "local" || normalizedType == "dhcp" -> {

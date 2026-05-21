@@ -738,7 +738,8 @@ class ConfigRepository(private val context: Context) {
         private fun buildHijackDnsRulesStatic(): List<RouteRule> {
             return listOf(
                 RouteRule(inbound = listOf("tun-in"), port = listOf(53), action = "hijack-dns"),
-                RouteRule(protocolRaw = listOf("dns"), action = "hijack-dns")
+                RouteRule(protocolRaw = listOf("dns"), action = "hijack-dns"),
+                RouteRule(port = listOf(853), action = "reject")
             )
         }
 
@@ -1358,6 +1359,18 @@ class ConfigRepository(private val context: Context) {
                     DefaultRule.BLOCK -> if (fakeDnsEnabled) stableRemoteServerTag else proxyServerTag
                 }
             }
+        }
+
+        internal fun sanitizeInjectedDnsServerForTest(
+            server: DnsServer,
+            routingMode: RoutingMode,
+            proxyDetourTag: String
+        ): DnsServer {
+            if (routingMode == RoutingMode.GLOBAL_DIRECT) return server
+            if (!server.detour.isNullOrBlank()) return server
+            val t = server.type?.lowercase().orEmpty()
+            if (t == "fakeip" || t == "local" || t == "dhcp") return server
+            return server.copy(detour = proxyDetourTag)
         }
 
         internal const val DEFAULT_ROUTE_DOMAIN_RESOLVER_TAG = "dns-bootstrap"
@@ -4784,9 +4797,11 @@ class ConfigRepository(private val context: Context) {
         dnsServers.add(localServer)
         val remoteDnsAddr = normalizeRemoteDns(settings.remoteDns)
         val remoteResolver = buildDnsResolverForAddress(remoteDnsAddr)
+        val remoteDetour = if (settings.routingMode != RoutingMode.GLOBAL_DIRECT) proxyDetourTag else null
         val remoteServer = buildDnsServer(
             address = remoteDnsAddr,
             tag = "remote",
+            detour = remoteDetour,
             domainStrategy = resolveDnsStrategy(settings.remoteDnsStrategy, settings.ipVersionMode),
             domainResolver = remoteResolver
         )
@@ -5093,11 +5108,15 @@ class ConfigRepository(private val context: Context) {
             proxyServerTag = proxyServerTag
         )
 
+        fun sanitizeDnsServer(server: DnsServer): DnsServer {
+            return sanitizeInjectedDnsServerForTest(server, settings.routingMode, proxyDetourTag)
+        }
+
         // 追加订阅原始配置中的 DNS servers 和 rules
         if (originalDns != null) {
             originalDns.servers?.forEach { server ->
                 if (server.tag != null && dnsServers.none { it.tag == server.tag }) {
-                    dnsServers.add(server)
+                    dnsServers.add(sanitizeDnsServer(server))
                 }
             }
             originalDns.rules?.forEach { rule ->
@@ -5111,7 +5130,7 @@ class ConfigRepository(private val context: Context) {
                 val overrideConfig = gson.fromJson(dnsOverride, DnsConfig::class.java)
                 overrideConfig?.servers?.forEach { server ->
                     if (server.tag != null && dnsServers.none { it.tag == server.tag }) {
-                        dnsServers.add(server)
+                        dnsServers.add(sanitizeDnsServer(server))
                     }
                 }
                 overrideConfig?.rules?.forEach { rule ->
