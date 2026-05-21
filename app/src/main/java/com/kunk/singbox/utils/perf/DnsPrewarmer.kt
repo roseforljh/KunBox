@@ -20,7 +20,6 @@ object DnsPrewarmer {
     private const val CACHE_TTL_MS = 5 * 60 * 1000L
     private val cacheTimestamps = ConcurrentHashMap<String, Long>()
 
-    // 妤犵偠娉涜ぐ鍌炴⒔閹邦剙鐓?
     private const val MAX_CONCURRENCY = 8
 
     private const val RESOLVE_TIMEOUT_MS = 1500L

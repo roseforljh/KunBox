@@ -7,13 +7,13 @@ import android.util.Log
 import io.nekohasekai.libbox.Libbox
 
 /**
- * 鐗堟湰淇℃伅宸ュ叿绫?
+ *
  */
 object VersionInfo {
     private const val TAG = "VersionInfo"
 
     /**
-     * 鑾峰彇搴旂敤鐗堟湰鍚嶇О
+     *
      */
     fun getAppVersionName(context: Context): String {
         return try {

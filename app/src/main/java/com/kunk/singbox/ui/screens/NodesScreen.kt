@@ -423,7 +423,6 @@ fun NodesScreen(
                 )
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    // 缁涙盯鈧瀵滈柦?
                     IconButton(onClick = { showFilterDialog = true }) {
                         val hasFilter = nodeFilter.filterMode != FilterMode.NONE
                         Icon(

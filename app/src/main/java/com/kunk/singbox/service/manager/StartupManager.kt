@@ -167,7 +167,6 @@ class StartupManager(
     }
 
     /**
-     * 妤犵偞鍎奸、鎴﹀礆濠靛棭娼楅柛鏍ㄧ墱缁劑寮?
      */
     private data class ParallelInitResult(
         val network: Network?,

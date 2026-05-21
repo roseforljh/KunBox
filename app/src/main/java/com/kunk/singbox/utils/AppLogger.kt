@@ -3,15 +3,15 @@ package com.kunk.singbox.utils
 import android.util.Log
 
 /**
- * 搴旂敤鏃ュ織宸ュ叿绫?
  *
- * - Release 鏋勫缓榛樿鍏抽棴 DEBUG/VERBOSE 绾у埆鏃ュ織
- * - 鏀寔鍔ㄦ€佽皟鏁存棩蹇楃骇鍒?
+ *
+ *
+ *
  */
 object AppLogger {
 
     /**
-     * 鏃ュ織绾у埆
+     *
      */
     enum class Level(val priority: Int) {
         VERBOSE(Log.VERBOSE),
@@ -38,7 +38,7 @@ object AppLogger {
     }
 
     /**
-     * VERBOSE 绾у埆鏃ュ織
+     *
      */
     inline fun v(tag: String, message: () -> String) {
         if (isLoggable(Level.VERBOSE)) {
@@ -47,7 +47,7 @@ object AppLogger {
     }
 
     /**
-     * DEBUG 绾у埆鏃ュ織
+     *
      */
     inline fun d(tag: String, message: () -> String) {
         if (isLoggable(Level.DEBUG)) {
@@ -56,7 +56,7 @@ object AppLogger {
     }
 
     /**
-     * INFO 绾у埆鏃ュ織
+     *
      */
     inline fun i(tag: String, message: () -> String) {
         if (isLoggable(Level.INFO)) {
@@ -65,7 +65,7 @@ object AppLogger {
     }
 
     /**
-     * WARN 绾у埆鏃ュ織
+     *
      */
     inline fun w(tag: String, message: () -> String) {
         if (isLoggable(Level.WARN)) {
@@ -82,7 +82,7 @@ object AppLogger {
     }
 
     /**
-     * ERROR 绾у埆鏃ュ織
+     *
      */
     inline fun e(tag: String, message: () -> String) {
         if (isLoggable(Level.ERROR)) {

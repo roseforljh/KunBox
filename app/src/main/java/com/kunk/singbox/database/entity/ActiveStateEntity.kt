@@ -4,7 +4,7 @@ import androidx.room.Entity
 import androidx.room.PrimaryKey
 
 /**
- * 娲昏穬鐘舵€佸疄浣?
+ *
  *
  */
 @Entity(tableName = "active_state")

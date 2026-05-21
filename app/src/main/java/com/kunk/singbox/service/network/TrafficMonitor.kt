@@ -16,10 +16,10 @@ class TrafficMonitor(
         private const val TAG = "TrafficMonitor"
         private const val SAMPLE_INTERVAL_MS = 3000L
 
-        private const val STALL_CHECK_INTERVAL_MS = 60_000L // 娴?15 缁夋帗褰佹妯哄煂 60 缁?
-        private const val STALL_MIN_BYTES_DELTA = 5120L // 娴?1024 閹绘劙鐝崚?5120
-        private const val STALL_MIN_SAMPLES = 5 // 娴?3 閹绘劙鐝崚?5
-        private const val PROXY_IDLE_THRESHOLD_MS = 120_000L // 娴?60 缁夋帗褰佹妯哄煂 120 缁?
+        private const val STALL_CHECK_INTERVAL_MS = 60_000L
+        private const val STALL_MIN_BYTES_DELTA = 5120L
+        private const val STALL_MIN_SAMPLES = 5
+        private const val PROXY_IDLE_THRESHOLD_MS = 120_000L
     }
 
     data class TrafficSnapshot(

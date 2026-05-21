@@ -30,7 +30,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 
 /**
- * VPN 杩炴帴绠＄悊鍣?
+ *
  *
  */
 class VpnConnectionManager(
@@ -63,9 +63,9 @@ class VpnConnectionManager(
     }
 
     /**
-     * 鍒囨崲杩炴帴鐘舵€?
      *
-     * @return 鏄惁闇€瑕?VPN 鏉冮檺
+     *
+     *
      */
     suspend fun toggleConnection(): Boolean {
         return when {
@@ -112,7 +112,7 @@ class VpnConnectionManager(
     }
 
     /**
-     * 鍋滄 VPN
+     *
      */
     fun stopVpn() {
         startMonitorJob?.cancel()
@@ -135,7 +135,7 @@ class VpnConnectionManager(
     }
 
     /**
-     * 鍚姩 VPN 鏍稿績
+     *
      */
     private suspend fun startCore() {
         val settings = runCatching {

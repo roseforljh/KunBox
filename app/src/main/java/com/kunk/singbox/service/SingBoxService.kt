@@ -127,7 +127,6 @@ class SingBoxService : VpnService() {
         ForeignVpnMonitor(this)
     }
 
-    // 节点切换管理器
     private val nodeSwitchManager: NodeSwitchManager by lazy {
         NodeSwitchManager(this, serviceScope)
     }
@@ -581,7 +580,6 @@ class SingBoxService : VpnService() {
         })
         Log.i(TAG, "ForeignVpnMonitor initialized")
 
-        // 10. 初始化节点切换管理器
         nodeSwitchManager.init(object : NodeSwitchManager.Callbacks {
             override val isRunning: Boolean
                 get() = SingBoxService.isRunning
@@ -740,7 +738,6 @@ class SingBoxService : VpnService() {
             commandManager.startClients().onFailure { e ->
                 Log.e(TAG, "Failed to start Command Clients", e)
             }
-            // 更新 serviceSelectorManager 的 commandClient (修复热切换不生效的问题)
             serviceSelectorManager.updateCommandClient(commandManager.getCommandClient())
         }
 
@@ -914,7 +911,7 @@ class SingBoxService : VpnService() {
 
     /**
      * 初始化 SelectorManager - 记录 PROXY selector 的 outbound 列表
-     * 用于后续热切换时判断是否在同一 selector group 内
+     *
      */
     private fun initSelectorManager(configContent: String) {
         try {
@@ -1075,7 +1072,7 @@ class SingBoxService : VpnService() {
     }
 
     /**
-     * 暴露给 ConfigRepository 调用，尝试热切换节点
+     *
      * @return true if hot switch triggered successfully, false if restart is needed
      *
      * 核心原理:
@@ -1093,7 +1090,6 @@ class SingBoxService : VpnService() {
             coreManager.wakeService()
             L.step("HotSwitch", 1, 2, "Called wakeService()")
 
-            // Step 2: 使用 SelectorManager 切换节点 (渐进式降级)
             L.step("HotSwitch", 2, 2, "Calling SelectorManager.switchNode...")
 
             when (val result = serviceSelectorManager.switchNode(nodeTag)) {
@@ -1240,7 +1236,6 @@ class SingBoxService : VpnService() {
     private var stallRefreshAttempts: Int = 0
     private val maxStallRefreshAttempts: Int = 3 // 连续3次stall刷新后仍无流量则重启服务
 
-// NetworkManager 实例 - 统一管理网络状态和底层网络切换
     private var networkManager: NetworkManager? = null
 
     @Volatile private var lastRuleSetCheckMs: Long = 0L
@@ -2509,7 +2504,7 @@ class SingBoxService : VpnService() {
     }
 
 /**
-     * 监听应用前后台切换 (委托给 ScreenStateManager)
+     *
      */
     override fun onTrimMemory(level: Int) {
         super.onTrimMemory(level)
@@ -2595,12 +2590,7 @@ class SingBoxService : VpnService() {
                     }
                 }
                 if (isRunning) {
-                    // 2025-fix: 优先尝试热切换节点，避免重启 VPN 导致连接断开
                     // 只有当需要更改核心配置（如路由规则、DNS 等）时才重启
-                    // 目前所有切换都视为可能包含核心变更，但我们可以尝试检测
-                    // 暂时保持重启逻辑作为兜底，但在此之前尝试热切换
-                    // 注意：如果只是切换节点，并不需要重启 VPN，直接 selectOutbound 即可
-                    // 但我们需要一种机制来通知 Service 是在切换节点还是完全重载
                     stopVpn(stopService = false)
                 } else {
                     startVpn(configPath)
@@ -2621,7 +2611,6 @@ class SingBoxService : VpnService() {
             }
             ACTION_SWITCH_NODE -> {
                 Log.i(TAG, "Received ACTION_SWITCH_NODE -> switching node")
-                // 从 Intent 中获取目标节点 ID，如果未提供则切换下一个
                 val targetNodeId = intent.getStringExtra("node_id")
                 val outboundTag = intent.getStringExtra("outbound_tag")
                 runCatching {
@@ -2861,7 +2850,7 @@ class SingBoxService : VpnService() {
     }
 
     /**
-     * 同步版本的热重载，供 IPC 调用
+     *
      * 直接调用 Go 层 StartOrReloadService，阻塞等待结果
      *
      * 这里使用 runBlocking 是因为 AIDL 接口不支持挂起函数，
@@ -2905,7 +2894,7 @@ class SingBoxService : VpnService() {
     }
 
     /**
-     * 启动 VPN (重构版 - 委托给 StartupManager)
+     *
      * 原方法 ~430 行，现在简化为 ~90 行
      */
     private fun startVpn(configPath: String) {

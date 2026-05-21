@@ -127,7 +127,7 @@ data class NodeUi(
      */
     val protocolDisplay: String
         get() = when (protocol.lowercase()) {
-            "http" -> "HTTPS" // HTTP ·侇偉顕ч悗鐑芥煀瀹ュ洨鏋傚ù?TLS ·忓繗椴稿Σ?HTTPS
+            "http" -> "HTTPS"
             "socks" -> "SOCKS5"
             "shadowsocks" -> "SS"
             "vmess" -> "VMess"

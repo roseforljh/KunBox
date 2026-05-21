@@ -19,7 +19,6 @@ object KernelHttpClient {
 
     private const val DEFAULT_TIMEOUT_MS = 30000
 
-    // 濮掓稒顭堥缁樼閿濆洦鍊炵紒鏃戝灠瑜?
     private const val DEFAULT_PROXY_PORT = 2080
 
     @Volatile
@@ -61,6 +60,10 @@ object KernelHttpClient {
         }
     }
 
+    internal fun shouldFallbackToOkHttp(kernelFetchAvailable: Boolean): Boolean {
+        return !kernelFetchAvailable
+    }
+
     /**
      */
     fun getProxyPort(): Int = cachedProxyPort
@@ -76,12 +79,17 @@ object KernelHttpClient {
         timeoutMs: Int = DEFAULT_TIMEOUT_MS
     ): HttpResult = withContext(Dispatchers.IO) {
 
-        if (isKernelFetchAvailable()) {
+        val kernelFetchAvailable = isKernelFetchAvailable()
+        if (kernelFetchAvailable) {
             val kernelResult = fetchViaKernel(url)
             if (kernelResult.success) {
                 return@withContext kernelResult
             }
-            Log.w(TAG, "Kernel fetch failed, falling back to OkHttp: ${kernelResult.error}")
+            Log.w(TAG, "Kernel fetch failed: ${kernelResult.error}")
+        }
+
+        if (!shouldFallbackToOkHttp(kernelFetchAvailable)) {
+            return@withContext HttpResult.error("Kernel fetch failed while VPN is active")
         }
 
         Log.d(TAG, "fetch: $url (using OkHttp)")
@@ -100,12 +108,17 @@ object KernelHttpClient {
         timeoutMs: Int = DEFAULT_TIMEOUT_MS
     ): HttpResult = withContext(Dispatchers.IO) {
 
-        if (isKernelFetchAvailable()) {
+        val kernelFetchAvailable = isKernelFetchAvailable()
+        if (kernelFetchAvailable) {
             val kernelResult = fetchViaKernel(url, headers)
             if (kernelResult.success) {
                 return@withContext kernelResult
             }
-            Log.w(TAG, "Kernel fetch with headers failed, falling back to OkHttp: ${kernelResult.error}")
+            Log.w(TAG, "Kernel fetch with headers failed: ${kernelResult.error}")
+        }
+
+        if (!shouldFallbackToOkHttp(kernelFetchAvailable)) {
+            return@withContext HttpResult.error("Kernel fetch with headers failed while VPN is active")
         }
 
         Log.d(TAG, "fetchWithHeaders: $url (using OkHttp)")
@@ -123,12 +136,17 @@ object KernelHttpClient {
         timeoutMs: Int = DEFAULT_TIMEOUT_MS
     ): HttpResult = withContext(Dispatchers.IO) {
 
-        if (preferKernel && isKernelFetchAvailable()) {
+        val kernelFetchAvailable = preferKernel && isKernelFetchAvailable()
+        if (kernelFetchAvailable) {
             val kernelResult = fetchViaKernel(url)
             if (kernelResult.success) {
                 return@withContext kernelResult
             }
-            Log.w(TAG, "smartFetch kernel failed, falling back to OkHttp: ${kernelResult.error}")
+            Log.w(TAG, "smartFetch kernel failed: ${kernelResult.error}")
+        }
+
+        if (!shouldFallbackToOkHttp(kernelFetchAvailable)) {
+            return@withContext HttpResult.error("Kernel fetch failed while VPN is active")
         }
 
         fetchWithOkHttp(url, timeoutMs)

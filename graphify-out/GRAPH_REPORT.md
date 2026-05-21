@@ -1,17 +1,17 @@
 # Graph Report - .  (2026-05-22)
 
 ## Corpus Check
-- 207 files ï¿½ï¿½ ~214,042 words
+- 207 files ¡¤ ~214,837 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 3345 nodes ï¿½ï¿½ 3140 edges ï¿½ï¿½ 207 communities detected
-- Extraction: 100% EXTRACTED ï¿½ï¿½ 0% INFERRED ï¿½ï¿½ 0% AMBIGUOUS
-- Token cost: 0 input ï¿½ï¿½ 0 output
+- 3361 nodes ¡¤ 3156 edges ¡¤ 207 communities detected
+- Extraction: 100% EXTRACTED ¡¤ 0% INFERRED ¡¤ 0% AMBIGUOUS
+- Token cost: 0 input ¡¤ 0 output
 
 ## God Nodes (most connected - your core abstractions)
-1. `ConfigRepository` - 155 edges
-2. `ConfigRepositoryTest` - 136 edges
+1. `ConfigRepository` - 157 edges
+2. `ConfigRepositoryTest` - 139 edges
 3. `SingBoxService` - 81 edges
 4. `SettingsViewModel` - 75 edges
 5. `SettingsRepository` - 65 edges
@@ -76,7 +76,7 @@ Nodes (7): AlreadyConnected, DisconnectedStopState, Failed, HotReloadResult, Rec
 
 ### Community 12 - "Community 12"
 Cohesion: 0.04
-Nodes (0):
+Nodes (0): 
 
 ### Community 13 - "Community 13"
 Cohesion: 0.04
@@ -156,55 +156,55 @@ Nodes (1): RuleSetRepository
 
 ### Community 32 - "Community 32"
 Cohesion: 0.08
-Nodes (20): AppRules, ConnectionSettings, CustomRules, Dashboard, Diagnostics, DnsSettings, DomainRules, Logs (+12 more)
+Nodes (1): VpnTunManager
 
 ### Community 33 - "Community 33"
 Cohesion: 0.08
-Nodes (3): BackgroundPowerManager, Callbacks, PowerMode
+Nodes (20): AppRules, ConnectionSettings, CustomRules, Dashboard, Diagnostics, DnsSettings, DomainRules, Logs (+12 more)
 
 ### Community 34 - "Community 34"
 Cohesion: 0.08
-Nodes (1): NodeStateManager
+Nodes (3): BackgroundPowerManager, Callbacks, PowerMode
 
 ### Community 35 - "Community 35"
 Cohesion: 0.08
-Nodes (1): VpnTileService
+Nodes (1): NodeStateManager
 
 ### Community 36 - "Community 36"
 Cohesion: 0.08
-Nodes (4): Callbacks, HealthCheckRecoveryDecision, NetworkSwitchManager, NetworkType
+Nodes (1): VpnTileService
 
 ### Community 37 - "Community 37"
 Cohesion: 0.08
-Nodes (2): DiagnosticsViewModel, MatchResult
+Nodes (4): Callbacks, HealthCheckRecoveryDecision, NetworkSwitchManager, NetworkType
 
 ### Community 38 - "Community 38"
-Cohesion: 0.09
-Nodes (5): Failed, NeedRestart, SelectorManager, Success, SwitchResult
+Cohesion: 0.08
+Nodes (2): DiagnosticsViewModel, MatchResult
 
 ### Community 39 - "Community 39"
 Cohesion: 0.09
-Nodes (1): LogRepository
+Nodes (5): Failed, NeedRestart, SelectorManager, Success, SwitchResult
 
 ### Community 40 - "Community 40"
 Cohesion: 0.09
-Nodes (2): ConnectManager, NetworkState
+Nodes (1): LogRepository
 
 ### Community 41 - "Community 41"
 Cohesion: 0.09
-Nodes (7): AppUpdateChecker, Error, GitHubRelease, ReleaseAsset, UpdateAvailable, UpdateCheckResult, UpToDate
+Nodes (2): ConnectManager, NetworkState
 
 ### Community 42 - "Community 42"
 Cohesion: 0.09
-Nodes (4): LatencyResult, PreciseLatencyTester, Standard, TimingEventListener
+Nodes (7): AppUpdateChecker, Error, GitHubRelease, ReleaseAsset, UpdateAvailable, UpdateCheckResult, UpToDate
 
 ### Community 43 - "Community 43"
 Cohesion: 0.09
-Nodes (1): OutboundFixerTest
+Nodes (4): LatencyResult, PreciseLatencyTester, Standard, TimingEventListener
 
 ### Community 44 - "Community 44"
 Cohesion: 0.09
-Nodes (1): VpnTunManager
+Nodes (1): OutboundFixerTest
 
 ### Community 45 - "Community 45"
 Cohesion: 0.1
@@ -372,7 +372,7 @@ Nodes (1): ProfileImportType
 
 ### Community 86 - "Community 86"
 Cohesion: 0.17
-Nodes (0):
+Nodes (0): 
 
 ### Community 87 - "Community 87"
 Cohesion: 0.17
@@ -380,31 +380,31 @@ Nodes (1): RuleSetViewModel
 
 ### Community 88 - "Community 88"
 Cohesion: 0.17
-Nodes (1): DnsResolverTest
+Nodes (1): VpnTunAddressPlanTest
 
 ### Community 89 - "Community 89"
-Cohesion: 0.18
-Nodes (1): SafeLatencyTester
+Cohesion: 0.17
+Nodes (1): DnsResolverTest
 
 ### Community 90 - "Community 90"
 Cohesion: 0.18
-Nodes (1): AppDatabase
+Nodes (1): SafeLatencyTester
 
 ### Community 91 - "Community 91"
 Cohesion: 0.18
-Nodes (10): AppGroup, AppInfo, AppRule, CustomRule, InstalledApp, OutboundTag, RuleSet, RuleSetOutboundMode (+2 more)
+Nodes (1): AppDatabase
 
 ### Community 92 - "Community 92"
 Cohesion: 0.18
-Nodes (1): FakeRepository
+Nodes (10): AppGroup, AppInfo, AppRule, CustomRule, InstalledApp, OutboundTag, RuleSet, RuleSetOutboundMode (+2 more)
 
 ### Community 93 - "Community 93"
 Cohesion: 0.18
-Nodes (0):
+Nodes (1): FakeRepository
 
 ### Community 94 - "Community 94"
 Cohesion: 0.18
-Nodes (1): VpnTunAddressPlanTest
+Nodes (0): 
 
 ### Community 95 - "Community 95"
 Cohesion: 0.2
@@ -420,7 +420,7 @@ Nodes (2): AppLifecycleObserver, KillProcessReceiver
 
 ### Community 98 - "Community 98"
 Cohesion: 0.2
-Nodes (0):
+Nodes (0): 
 
 ### Community 99 - "Community 99"
 Cohesion: 0.22
@@ -476,7 +476,7 @@ Nodes (1): SquareViewFinderView
 
 ### Community 112 - "Community 112"
 Cohesion: 0.29
-Nodes (0):
+Nodes (0): 
 
 ### Community 113 - "Community 113"
 Cohesion: 0.29
@@ -528,7 +528,7 @@ Nodes (1): RuleSetAutoUpdateWorker
 
 ### Community 125 - "Community 125"
 Cohesion: 0.33
-Nodes (0):
+Nodes (0): 
 
 ### Community 126 - "Community 126"
 Cohesion: 0.33
@@ -556,7 +556,7 @@ Nodes (1): StartupManagerTest
 
 ### Community 132 - "Community 132"
 Cohesion: 0.4
-Nodes (0):
+Nodes (0): 
 
 ### Community 133 - "Community 133"
 Cohesion: 0.4
@@ -576,11 +576,11 @@ Nodes (3): ExistingProfile, NewProfile, SelectProfileTarget
 
 ### Community 137 - "Community 137"
 Cohesion: 0.4
-Nodes (0):
+Nodes (0): 
 
 ### Community 138 - "Community 138"
 Cohesion: 0.4
-Nodes (0):
+Nodes (0): 
 
 ### Community 139 - "Community 139"
 Cohesion: 0.4
@@ -644,7 +644,7 @@ Nodes (3): GithubFile, GithubTreeItem, GithubTreeResponse
 
 ### Community 154 - "Community 154"
 Cohesion: 0.5
-Nodes (0):
+Nodes (0): 
 
 ### Community 155 - "Community 155"
 Cohesion: 0.5
@@ -652,15 +652,15 @@ Nodes (2): VpnTunAddressPlan, VpnTunAddressPlanner
 
 ### Community 156 - "Community 156"
 Cohesion: 0.5
-Nodes (0):
+Nodes (0): 
 
 ### Community 157 - "Community 157"
 Cohesion: 0.5
-Nodes (0):
+Nodes (0): 
 
 ### Community 158 - "Community 158"
 Cohesion: 0.5
-Nodes (0):
+Nodes (0): 
 
 ### Community 159 - "Community 159"
 Cohesion: 0.5
@@ -700,7 +700,7 @@ Nodes (1): ShortcutActivity
 
 ### Community 168 - "Community 168"
 Cohesion: 0.67
-Nodes (0):
+Nodes (0): 
 
 ### Community 169 - "Community 169"
 Cohesion: 0.67
@@ -708,39 +708,39 @@ Nodes (1): AppNotificationManager
 
 ### Community 170 - "Community 170"
 Cohesion: 0.67
-Nodes (0):
+Nodes (0): 
 
 ### Community 171 - "Community 171"
 Cohesion: 0.67
-Nodes (0):
+Nodes (0): 
 
 ### Community 172 - "Community 172"
 Cohesion: 0.67
-Nodes (0):
+Nodes (0): 
 
 ### Community 173 - "Community 173"
 Cohesion: 0.67
-Nodes (0):
+Nodes (0): 
 
 ### Community 174 - "Community 174"
 Cohesion: 0.67
-Nodes (0):
+Nodes (0): 
 
 ### Community 175 - "Community 175"
 Cohesion: 0.67
-Nodes (0):
+Nodes (0): 
 
 ### Community 176 - "Community 176"
 Cohesion: 0.67
-Nodes (0):
+Nodes (0): 
 
 ### Community 177 - "Community 177"
 Cohesion: 0.67
-Nodes (0):
+Nodes (0): 
 
 ### Community 178 - "Community 178"
 Cohesion: 0.67
-Nodes (0):
+Nodes (0): 
 
 ### Community 179 - "Community 179"
 Cohesion: 0.67
@@ -784,79 +784,79 @@ Nodes (1): PingResultCode
 
 ### Community 189 - "Community 189"
 Cohesion: 1.0
-Nodes (0):
+Nodes (0): 
 
 ### Community 190 - "Community 190"
 Cohesion: 1.0
-Nodes (0):
+Nodes (0): 
 
 ### Community 191 - "Community 191"
 Cohesion: 1.0
-Nodes (0):
+Nodes (0): 
 
 ### Community 192 - "Community 192"
 Cohesion: 1.0
-Nodes (0):
+Nodes (0): 
 
 ### Community 193 - "Community 193"
 Cohesion: 1.0
-Nodes (0):
+Nodes (0): 
 
 ### Community 194 - "Community 194"
 Cohesion: 1.0
-Nodes (0):
+Nodes (0): 
 
 ### Community 195 - "Community 195"
 Cohesion: 1.0
-Nodes (0):
+Nodes (0): 
 
 ### Community 196 - "Community 196"
 Cohesion: 1.0
-Nodes (0):
+Nodes (0): 
 
 ### Community 197 - "Community 197"
 Cohesion: 1.0
-Nodes (0):
+Nodes (0): 
 
 ### Community 198 - "Community 198"
 Cohesion: 1.0
-Nodes (0):
+Nodes (0): 
 
 ### Community 199 - "Community 199"
 Cohesion: 1.0
-Nodes (0):
+Nodes (0): 
 
 ### Community 200 - "Community 200"
 Cohesion: 1.0
-Nodes (0):
+Nodes (0): 
 
 ### Community 201 - "Community 201"
 Cohesion: 1.0
-Nodes (0):
+Nodes (0): 
 
 ### Community 202 - "Community 202"
 Cohesion: 1.0
-Nodes (0):
+Nodes (0): 
 
 ### Community 203 - "Community 203"
 Cohesion: 1.0
-Nodes (0):
+Nodes (0): 
 
 ### Community 204 - "Community 204"
 Cohesion: 1.0
-Nodes (0):
+Nodes (0): 
 
 ### Community 205 - "Community 205"
 Cohesion: 1.0
-Nodes (0):
+Nodes (0): 
 
 ### Community 206 - "Community 206"
 Cohesion: 1.0
-Nodes (0):
+Nodes (0): 
 
 ## Knowledge Gaps
 - **264 isolated node(s):** `RecoveryMode`, `RecoveryLevel`, `SmartRecoveryResult`, `ProbeTarget`, `ProbeResult` (+259 more)
-  These have ï¿½ï¿½1 connection - possible missing edges or undocumented components.
+  These have ¡Ü1 connection - possible missing edges or undocumented components.
 - **Thin community `Community 183`** (2 nodes): `ActiveStateEntity.kt`, `ActiveStateEntity`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
 - **Thin community `Community 184`** (2 nodes): `NodeLatencyEntity.kt`, `NodeLatencyEntity`
@@ -910,7 +910,7 @@ Nodes (0):
 _Questions this graph is uniquely positioned to answer:_
 
 - **Why does `ConfigRepository` connect `Community 0` to `Community 2`?**
-  _High betweenness centrality (0.005) - this node is a cross-community bridge._
+  _High betweenness centrality (0.006) - this node is a cross-community bridge._
 - **Why does `SingBoxService` connect `Community 5` to `Community 3`?**
   _High betweenness centrality (0.002) - this node is a cross-community bridge._
 - **What connects `RecoveryMode`, `RecoveryLevel`, `SmartRecoveryResult` to the rest of the system?**

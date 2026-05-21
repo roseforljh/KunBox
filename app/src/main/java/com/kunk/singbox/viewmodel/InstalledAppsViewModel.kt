@@ -9,7 +9,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 
 /**
- * 宸插畨瑁呭簲鐢ㄧ殑 ViewModel
+ *
  */
 class InstalledAppsViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -32,7 +32,7 @@ class InstalledAppsViewModel(application: Application) : AndroidViewModel(applic
     }
 
     /**
-     * 寮哄埗閲嶆柊鍔犺浇搴旂敤鍒楄〃
+     *
      */
     fun reloadApps() {
         viewModelScope.launch {

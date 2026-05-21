@@ -206,7 +206,7 @@ class Base64Parser(private val nodeParser: (String) -> Outbound?) : Subscription
 
         val sortedPrefixes = linkPrefixes.sortedByDescending { it.length }
 
-        val linkPositions = mutableListOf<Pair<Int, String>>() // (·达絽绉堕悿? ·告挸绉剁槐?
+        val linkPositions = mutableListOf<Pair<Int, String>>()
         val usedPositions = mutableSetOf<Int>()
 
         for (prefix in sortedPrefixes) {

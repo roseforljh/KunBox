@@ -38,8 +38,8 @@ interface NodeLatencyDao {
     suspend fun deleteAll()
 
     /**
-     * 鎵归噺鏇存柊寤惰繜
-     * 浣跨敤 INSERT OR REPLACE 绛栫暐
+     *
+     *
      */
     @Query("INSERT OR REPLACE INTO node_latencies (nodeId, latencyMs, testedAt) VALUES (:nodeId, :latencyMs, :testedAt)")
     suspend fun upsert(nodeId: String, latencyMs: Long, testedAt: Long = System.currentTimeMillis())

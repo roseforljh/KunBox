@@ -2,6 +2,7 @@ package com.kunk.singbox.service.tun
 
 import com.kunk.singbox.model.AppSettings
 import com.kunk.singbox.model.IpVersionMode
+import com.kunk.singbox.model.VpnRouteMode
 import org.junit.Assert.assertEquals
 
 class VpnTunAddressPlanTest {
@@ -34,67 +35,76 @@ class VpnTunAddressPlanTest {
     }
 
     @org.junit.Test
-    fun vpnDnsResolverUsesTunDnsServerAddressFromLibboxWhenPresent() {
+    fun customRouteModeIncludesFakeIpRoutesWhenFakeDnsEnabled() {
         val settings = AppSettings(
-            localDns = "https://dns.alidns.com/dns-query",
-            remoteDns = "https://1.1.1.1/dns-query"
-        )
-
-        val dnsServers = VpnTunManager.resolveVpnDnsServersForTest(
-            settings = settings,
-            dnsServerAddress = "1.1.1.1"
-        )
-
-        assertEquals(listOf("1.1.1.1"), dnsServers)
-    }
-
-    @org.junit.Test
-    fun vpnDnsResolverIgnoresDohUrlsAndDoesNotFallbackToHardcodedServers() {
-        val settings = AppSettings(
-            localDns = "https://dns.alidns.com/dns-query",
-            remoteDns = "https://1.1.1.1/dns-query"
-        )
-
-        val dnsServers = VpnTunManager.resolveVpnDnsServersForTest(
-            settings = settings,
-            dnsServerAddress = null,
-            tunPlan = VpnTunAddressPlanner.build(IpVersionMode.DUAL_STACK)
-        )
-
-        assertEquals(listOf("172.19.0.1", "fd00::1"), dnsServers)
-    }
-
-    @org.junit.Test
-    fun vpnDnsResolverKeepsExplicitNumericDnsServers() {
-        val settings = AppSettings(
-            localDns = "223.5.5.5",
-            remoteDns = "1.1.1.1"
-        )
-
-        val dnsServers = VpnTunManager.resolveVpnDnsServersForTest(
-            settings = settings,
-            dnsServerAddress = null,
-            tunPlan = VpnTunAddressPlanner.build(IpVersionMode.DUAL_STACK)
-        )
-
-        assertEquals(listOf("1.1.1.1", "223.5.5.5"), dnsServers)
-    }
-
-    @org.junit.Test
-    fun vpnDnsResolverFallsBackToTunAddressesWhenNoNumericDnsAvailable() {
-        val settings = AppSettings(
-            localDns = "https://dns.alidns.com/dns-query",
-            remoteDns = "https://1.1.1.1/dns-query",
+            vpnRouteMode = VpnRouteMode.CUSTOM,
+            vpnRouteIncludeCidrs = "8.8.8.8/32",
+            fakeDnsEnabled = true,
             ipVersionMode = IpVersionMode.DUAL_STACK
         )
 
+        val routes = VpnTunManager.resolveVpnRoutesForTest(
+            settings = settings,
+            tunPlan = VpnTunAddressPlanner.build(IpVersionMode.DUAL_STACK)
+        )
+
+        assertEquals(
+            listOf("8.8.8.8" to 32, "198.18.0.0" to 15, "fc00::" to 18),
+            routes
+        )
+    }
+
+    @org.junit.Test
+    fun vpnDnsResolverRejectsTunLocalAddressFromLibbox() {
+        val settings = AppSettings(
+            localDns = "https://dns.alidns.com/dns-query",
+            remoteDns = "https://1.1.1.1/dns-query"
+        )
+
+        val dnsServers = VpnTunManager.resolveVpnDnsServersForTest(
+            settings = settings,
+            dnsServerAddress = "172.19.0.1"
+        )
+
+        assertEquals(listOf("223.5.5.5", "119.29.29.29", "1.1.1.1", "2606:4700:4700::1111"), dnsServers)
+    }
+
+    @org.junit.Test
+    fun vpnDnsResolverUsesNonTunAddressFromLibbox() {
+        val settings = AppSettings(ipVersionMode = IpVersionMode.DUAL_STACK)
+
+        val dnsServers = VpnTunManager.resolveVpnDnsServersForTest(
+            settings = settings,
+            dnsServerAddress = "8.8.8.8"
+        )
+
+        assertEquals(listOf("8.8.8.8"), dnsServers)
+    }
+
+    @org.junit.Test
+    fun vpnDnsResolverFallsBackToDefaultDnsServersWhenNoLibboxAddress() {
+        val settings = AppSettings(ipVersionMode = IpVersionMode.DUAL_STACK)
+
         val dnsServers = VpnTunManager.resolveVpnDnsServersForTest(
             settings = settings,
             dnsServerAddress = null,
             tunPlan = VpnTunAddressPlanner.build(IpVersionMode.DUAL_STACK)
         )
 
-        assertEquals(listOf("172.19.0.1", "fd00::1"), dnsServers)
+        assertEquals(listOf("223.5.5.5", "119.29.29.29", "1.1.1.1", "2606:4700:4700::1111"), dnsServers)
+    }
+
+    @org.junit.Test
+    fun vpnDnsResolverUsesIpv4OnlyDefaultDnsWhenIpv4Only() {
+        val settings = AppSettings(ipVersionMode = IpVersionMode.IPV4_ONLY)
+
+        val dnsServers = VpnTunManager.resolveVpnDnsServersForTest(
+            settings = settings,
+            dnsServerAddress = null,
+            tunPlan = VpnTunAddressPlanner.build(IpVersionMode.IPV4_ONLY)
+        )
+
+        assertEquals(listOf("223.5.5.5", "119.29.29.29", "1.1.1.1"), dnsServers)
     }
 
     @org.junit.Test

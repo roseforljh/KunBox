@@ -87,7 +87,6 @@ class NetworkSwitchManager(
     }
 
     /**
-     * 濠㈣泛瀚幃濠勭磾閹寸姷鎹曢柡鍥х摠閺?
      */
     fun handleNetworkUpdate(network: Network) {
         val now = SystemClock.elapsedRealtime()

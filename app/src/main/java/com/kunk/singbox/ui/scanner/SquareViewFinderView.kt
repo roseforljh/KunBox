@@ -42,7 +42,7 @@ class SquareViewFinderView @JvmOverloads constructor(
     private val cornerLength = 50f
 
     private var laserY = 0f
-    private var laserDirection = 1 // 1: ·告碍鍨崇粭? -1: ·告碍鍨崇粭?
+    private var laserDirection = 1
     private var squareFrameRect: Rect? = null
 
     override fun onDraw(canvas: Canvas) {

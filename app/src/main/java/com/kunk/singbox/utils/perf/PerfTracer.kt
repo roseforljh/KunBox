@@ -30,8 +30,8 @@ object PerfTracer {
     }
 
     /**
-     * 鐎殿喒鍋撳┑顔碱儓閹风兘鐓?
-     * @param name 閺夆晛鈧喖鍤嬮柛姘Ф琚?
+     *
+     *
      */
     fun begin(name: String, parent: String? = null) {
         activeTraces[name] = TraceInfo(
@@ -42,7 +42,7 @@ object PerfTracer {
     }
 
     /**
-     * @param name 閺夆晛鈧喖鍤嬮柛姘Ф琚?
+     *
      */
     fun end(name: String): Long {
         val trace = activeTraces.remove(name) ?: return -1
@@ -64,7 +64,7 @@ object PerfTracer {
     }
 
     /**
-     * @param name 閺夆晛鈧喖鍤嬮柛姘Ф琚?
+     *
      */
     inline fun <T> trace(name: String, block: () -> T): T {
         begin(name)
@@ -76,7 +76,7 @@ object PerfTracer {
     }
 
     /**
-     * @param name 閺夆晛鈧喖鍤嬮柛姘Ф琚?
+     *
      */
     suspend inline fun <T> traceSuspend(name: String, block: () -> T): T {
         begin(name)

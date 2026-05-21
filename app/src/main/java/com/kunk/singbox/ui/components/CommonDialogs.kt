@@ -1009,7 +1009,6 @@ fun AboutDialog(onDismiss: () -> Unit) {
     LaunchedEffect(Unit) {
         singBoxVersion = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
             try {
-                // 缁绢収鍠曠换?libbox 鐎瑰憡褰冮崹鍨叏鐎ｎ亜顕?
                 com.kunk.singbox.core.SingBoxCore.ensureLibboxSetup(context)
                 val version = io.nekohasekai.libbox.Libbox.version()
 
@@ -1288,7 +1287,6 @@ fun NodeFilterDialog(
                     Text(stringResource(R.string.common_cancel))
                 }
 
-                // 缁绢収鍠栭悾楣冨箰婢舵劖灏?
                 Button(
                     onClick = {
 

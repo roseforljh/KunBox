@@ -42,7 +42,6 @@ class TrafficStatsViewModel(application: Application) : AndroidViewModel(applica
     fun refresh() {
         _uiState.value = _uiState.value.copy(isLoading = true)
         viewModelScope.launch {
-            // 从磁盘重新加载数据（跨进程同步）
             trafficRepository.reloadFromDisk()
             loadTrafficData()
         }

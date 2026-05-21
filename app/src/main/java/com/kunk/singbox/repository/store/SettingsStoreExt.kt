@@ -1,4 +1,6 @@
-﻿package com.kunk.singbox.repository.store
+@file:Suppress("TooManyFunctions")
+
+package com.kunk.singbox.repository.store
 
 import com.kunk.singbox.model.*
 
@@ -178,8 +180,6 @@ fun SettingsStore.setLatencyTestConcurrency(value: Int) {
 fun SettingsStore.setGhProxyMirror(value: GhProxyMirror) {
     updateSettings { it.copy(ghProxyMirror = value) }
 }
-
-// ==================== 濡ゅ倹顭囨鍥╂崉椤栨粍鏆?====================
 
 fun SettingsStore.setCustomRules(value: List<CustomRule>) {
     updateSettings { it.copy(customRules = value) }

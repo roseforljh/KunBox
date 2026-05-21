@@ -16,7 +16,7 @@ data class SettingsEntity(
     val version: Int = CURRENT_VERSION,
 
     /**
-     * 閹兼潙绻愰崹顏堝礌閺嶎偅鐣?AppSettings JSON
+     *
      */
     val data: String,
 

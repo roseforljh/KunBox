@@ -93,7 +93,6 @@ class DataExportRepository(private val context: Context) {
                 activeNodeId = activeNodeId
             )
 
-            // 5. 閹兼潙绻愰崹顏堝礌閺嶏箒绀?JSON
             val jsonString = gson.toJson(exportData)
 
             Result.success(jsonString)
@@ -133,7 +132,6 @@ class DataExportRepository(private val context: Context) {
             validateImportPayloadSize(jsonData)
             val exportData = gson.fromJson(jsonData, ExportData::class.java)
 
-            // 濡ょ姴鐭侀惁澶愭偋閸喐鎷?
             if (exportData.version > CURRENT_VERSION) {
                 return@withContext Result.failure(
                     Exception("Data version too high (v${exportData.version}), please update app and try again")
@@ -368,7 +366,6 @@ class DataExportRepository(private val context: Context) {
         settingsRepository.setAllowLan(settings.allowLan)
         settingsRepository.setAppendHttpProxy(settings.appendHttpProxy)
 
-        // 濡ゅ倹顭囨鍥╂崉椤栨粍鏆犻悷娆忓閸?
         settingsRepository.setCustomRules(settings.customRules)
         settingsRepository.setRuleSets(settings.ruleSets, notify = false)
         settingsRepository.setAppRules(settings.appRules)

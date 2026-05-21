@@ -141,7 +141,6 @@ object LibboxCompat {
     /**
      */
     fun resetAllConnections(system: Boolean = true): Boolean {
-        // 浼樺厛浣跨敤 BoxWrapperManager
         if (BoxWrapperManager.isAvailable()) {
             return BoxWrapperManager.resetAllConnections(system)
         }

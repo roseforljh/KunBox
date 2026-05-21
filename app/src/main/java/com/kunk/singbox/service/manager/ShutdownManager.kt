@@ -21,7 +21,7 @@ import io.nekohasekai.libbox.InterfaceUpdateListener
 import kotlinx.coroutines.*
 
 /**
- * - 鐎殿喖鍊归鐐哄礂閹惰姤锛?
+ *
  */
 class ShutdownManager(
     private val context: Context,
@@ -184,7 +184,7 @@ class ShutdownManager(
             commandManager.stopAndWaitPortRelease(
                 proxyPort = proxyPort,
                 waitTimeoutMs = FAST_PORT_RELEASE_WAIT_MS,
-                forceKillOnTimeout = stopService, // ·庣懓鑻崣蹇涘磻濠婂嫷鍓鹃柡·硾瀹搁亶宕氶懜鍨祷閺夆晜·撻埢鑲╂兜椤旇崵绠界紒鏃戝灠瑜版盯鏌屾繝·╂澒
+                forceKillOnTimeout = stopService,
                 enforceReleaseOnTimeout = false
             ).onFailure { e ->
                 Log.w(TAG, "Error closing command server/client", e)

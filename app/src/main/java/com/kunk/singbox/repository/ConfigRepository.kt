@@ -700,6 +700,25 @@ class ConfigRepository(private val context: Context) {
             }
         }
 
+        internal fun buildRunRouteRulesForTest(
+            settings: AppSettings,
+            selectorTag: String,
+            outbounds: List<Outbound>,
+            profiles: List<ProfileEntity>,
+            validRuleSets: List<RuleSetConfig>,
+            nodeTagResolver: (String?) -> String? = { null }
+        ): List<RouteRule> {
+            val profileUis = profiles.map { it.toUiModel() }
+            return buildRunRouteRules(
+                settings = settings,
+                selectorTag = selectorTag,
+                outbounds = outbounds,
+                profiles = profileUis,
+                nodeTagResolver = nodeTagResolver,
+                validRuleSets = validRuleSets
+            )
+        }
+
         internal fun resolveDnsStrategyForTest(strategy: DnsStrategy, mode: IpVersionMode): String {
             return mode.resolveDnsStrategy(strategy)
         }
@@ -721,6 +740,120 @@ class ConfigRepository(private val context: Context) {
                 RouteRule(inbound = listOf("tun-in"), port = listOf(53), action = "hijack-dns"),
                 RouteRule(protocolRaw = listOf("dns"), action = "hijack-dns")
             )
+        }
+
+        @Suppress("LongParameterList")
+        private fun buildRunRouteRules(
+            settings: AppSettings,
+            selectorTag: String,
+            outbounds: List<Outbound>,
+            profiles: List<ProfileUi>,
+            nodeTagResolver: (String?) -> String?,
+            validRuleSets: List<RuleSetConfig>
+        ): List<RouteRule> {
+            val customRuleSetRules = buildCustomRuleSetRulesStatic(
+                settings = settings,
+                defaultProxyTag = selectorTag,
+                outbounds = outbounds,
+                profiles = profiles,
+                nodeTagResolver = nodeTagResolver,
+                validRuleSets = validRuleSets
+            )
+            val quicRule = buildQuicBlockRuleStatic(settings)
+            val multicastRejectRules = buildMulticastRejectRulesStatic(settings)
+            val bypassLanRules = buildBypassLanRulesStatic(settings)
+            val icmpEchoRules = buildIcmpEchoRulesStatic(settings)
+            val defaultRuleCatchAll = buildDefaultRulesStatic(settings, selectorTag)
+            val hijackDnsRule = buildHijackDnsRulesStatic()
+            val sniffRule = listOf(RouteRule(inbound = listOf("tun-in", "mixed-in"), action = "sniff"))
+
+            return when (settings.routingMode) {
+                RoutingMode.GLOBAL_PROXY ->
+                    hijackDnsRule + sniffRule + quicRule + multicastRejectRules + icmpEchoRules + customRuleSetRules
+                RoutingMode.GLOBAL_DIRECT ->
+                    hijackDnsRule + sniffRule + quicRule + multicastRejectRules + icmpEchoRules +
+                        listOf(RouteRule(outbound = "direct"))
+                RoutingMode.RULE -> {
+                    hijackDnsRule + sniffRule + quicRule + multicastRejectRules + bypassLanRules + icmpEchoRules +
+                        customRuleSetRules + defaultRuleCatchAll
+                }
+            }
+        }
+
+        private fun buildQuicBlockRuleStatic(settings: AppSettings): List<RouteRule> {
+            return if (settings.blockQuic) {
+                listOf(RouteRule(protocolRaw = listOf("quic"), action = "reject", outbound = "direct"))
+            } else {
+                emptyList()
+            }
+        }
+
+        private fun buildIcmpEchoRulesStatic(settings: AppSettings): List<RouteRule> {
+            if (!settings.icmpEchoRoutingEnabled) return emptyList()
+
+            return when (settings.routingMode) {
+                RoutingMode.GLOBAL_DIRECT -> listOf(RouteRule(networkRaw = listOf("icmp"), outbound = "direct"))
+                RoutingMode.GLOBAL_PROXY -> listOf(RouteRule(networkRaw = listOf("icmp"), outbound = "direct"))
+                RoutingMode.RULE -> when (settings.defaultRule) {
+                    DefaultRule.DIRECT -> listOf(RouteRule(networkRaw = listOf("icmp"), outbound = "direct"))
+                    DefaultRule.BLOCK -> listOf(RouteRule(networkRaw = listOf("icmp"), action = "reject"))
+                    DefaultRule.PROXY -> listOf(RouteRule(networkRaw = listOf("icmp"), outbound = "direct"))
+                }
+            }
+        }
+
+        private fun buildDefaultRulesStatic(settings: AppSettings, selectorTag: String): List<RouteRule> {
+            return when (settings.defaultRule) {
+                DefaultRule.DIRECT -> listOf(RouteRule(outbound = "direct"))
+                DefaultRule.BLOCK -> listOf(RouteRule(action = "reject"))
+                DefaultRule.PROXY -> listOf(RouteRule(outbound = selectorTag))
+            }
+        }
+
+        @Suppress("LongParameterList")
+        private fun buildCustomRuleSetRulesStatic(
+            settings: AppSettings,
+            defaultProxyTag: String,
+            outbounds: List<Outbound>,
+            profiles: List<ProfileUi>,
+            nodeTagResolver: (String?) -> String?,
+            validRuleSets: List<RuleSetConfig>
+        ): List<RouteRule> {
+            val rules = mutableListOf<RouteRule>()
+            val validTags = validRuleSets.mapNotNull { it.tag }.toSet()
+            val sortedRuleSets = sortRuleSetsForDnsAndRoutePriority(
+                settings.ruleSets.filter { it.enabled && it.tag in validTags }
+            )
+
+            sortedRuleSets.forEach { ruleSet ->
+                val semantic = resolveOutboundSemantic(
+                    mode = resolveRuleSetOutboundMode(ruleSet.outboundMode),
+                    value = ruleSet.outboundValue,
+                    context = OutboundSemanticContext(
+                        selectorTag = defaultProxyTag,
+                        outbounds = outbounds,
+                        profiles = profiles,
+                        nodeTagResolver = nodeTagResolver
+                    )
+                )
+                val baseRule = toRouteRule(semantic, defaultProxyTag)
+                val inboundTags = ruleSet.inbounds?.takeIf { it.isNotEmpty() }?.map {
+                    when (it) {
+                        "tun" -> "tun-in"
+                        "mixed" -> "mixed-in"
+                        else -> it
+                    }
+                }
+
+                rules.add(
+                    baseRule.copy(
+                        ruleSet = listOf(ruleSet.tag),
+                        inbound = inboundTags
+                    )
+                )
+            }
+
+            return rules
         }
 
         private fun buildBypassLanRulesStatic(settings: AppSettings): List<RouteRule> {
@@ -1062,10 +1195,7 @@ class ConfigRepository(private val context: Context) {
             if (!fakeDnsEnabled) {
                 return listOf(dnsRouteTo(proxyServerTag, rule))
             }
-            return listOf(
-                dnsRouteTo("fakeip-dns", rule.copy(queryType = IP_DNS_QUERY_TYPES)),
-                dnsRouteTo(proxyServerTag, rule.copy(queryType = null))
-            )
+            return listOf(dnsRouteTo(proxyServerTag, rule.copy(queryType = IP_DNS_QUERY_TYPES)))
         }
 
         internal fun buildDnsRouteToNonDirectForTest(
@@ -1168,10 +1298,7 @@ class ConfigRepository(private val context: Context) {
             if (!fakeDnsEnabled) {
                 return listOf(dnsRouteTo(serverTag, rule))
             }
-            return listOf(
-                dnsRouteTo("fakeip-dns", rule.copy(queryType = IP_DNS_QUERY_TYPES)),
-                dnsRouteTo(serverTag, rule.copy(queryType = null))
-            )
+            return listOf(dnsRouteTo(serverTag, rule.copy(queryType = IP_DNS_QUERY_TYPES)))
         }
 
         private fun sortRuleSetsForDnsAndRoutePriority(ruleSets: List<RuleSet>): List<RuleSet> {
@@ -1223,7 +1350,7 @@ class ConfigRepository(private val context: Context) {
             directServerTag: String = "local"
         ): String {
             return when (routingMode) {
-                RoutingMode.GLOBAL_PROXY -> proxyServerTag
+                RoutingMode.GLOBAL_PROXY -> stableRemoteServerTag
                 RoutingMode.GLOBAL_DIRECT -> directServerTag
                 RoutingMode.RULE -> when (defaultRule) {
                     DefaultRule.PROXY -> proxyServerTag
@@ -1237,11 +1364,18 @@ class ConfigRepository(private val context: Context) {
 
         internal fun normalizeLocalDns(value: String?): String {
             val trimmed = value?.trim().orEmpty()
-            return if (trimmed.isBlank() || trimmed.equals(AppSettings.LEGACY_LOCAL_DNS, ignoreCase = true)) {
-                AppSettings.DEFAULT_LOCAL_DNS
-            } else {
-                trimmed
+            return when {
+                trimmed.isBlank() -> AppSettings.DEFAULT_LOCAL_DNS
+                trimmed.equals(AppSettings.LEGACY_LOCAL_DNS, ignoreCase = true) -> AppSettings.DEFAULT_LOCAL_DNS
+                isBareDnsDomain(trimmed) -> AppSettings.DEFAULT_LOCAL_DNS
+                else -> trimmed
             }
+        }
+
+        private fun isBareDnsDomain(value: String): Boolean {
+            if (value.contains("://") || value.contains("/")) return false
+            if (isIpAddressValue(value)) return false
+            return value.contains('.')
         }
 
         internal fun normalizeRemoteDns(value: String?): String {
@@ -1339,6 +1473,7 @@ class ConfigRepository(private val context: Context) {
                     tag = tag,
                     type = "udp",
                     server = trimmed,
+                    serverPort = 53,
                     domainResolver = domainResolver,
                     domainStrategy = domainStrategy,
                     detour = detour
@@ -1347,7 +1482,7 @@ class ConfigRepository(private val context: Context) {
 
             val scheme = uri.scheme?.lowercase()
             val host = uri.host?.removePrefix("[")?.removeSuffix("]") ?: trimmed
-            val port = if (uri.port > 0) uri.port else null
+            val port = if (uri.port > 0) uri.port else if (scheme == null || scheme == "udp") 53 else null
             val path = uri.path?.takeIf { it.isNotBlank() && it != "/" }
 
             val type = dnsServerTypeFromScheme(scheme)
@@ -2046,6 +2181,7 @@ class ConfigRepository(private val context: Context) {
     private suspend fun prepareOfflineProbeOutbound(outbound: Outbound): Outbound {
         val host = outbound.server?.trim().orEmpty()
         if (host.isBlank() || isIpAddress(host)) return outbound
+        if (VpnStateStore.getActive()) return outbound
         return withContext(Dispatchers.IO) {
             val addresses = runCatching { InetAddress.getAllByName(host) }.getOrNull() ?: return@withContext outbound
             val hasV4 = addresses.any { it is Inet4Address }
@@ -2059,10 +2195,12 @@ class ConfigRepository(private val context: Context) {
         }
     }
 
+    @Suppress("ReturnCount")
     private fun isLikelyIpv6OnlyDomain(server: String?): Boolean {
         val host = server?.trim().orEmpty()
         if (host.isBlank()) return false
         if (isIpAddress(host)) return false
+        if (VpnStateStore.getActive()) return false
         return runCatching {
             val addresses = InetAddress.getAllByName(host)
             val hasV6 = addresses.any { it is Inet6Address }
@@ -4305,6 +4443,7 @@ class ConfigRepository(private val context: Context) {
         settings: AppSettings,
         defaultProxyTag: String,
         outbounds: List<Outbound>,
+        profiles: List<ProfileUi>,
         nodeTagResolver: (String?) -> String?
     ): List<RouteRule> {
         fun splitValues(raw: String): List<String> {
@@ -4331,7 +4470,7 @@ class ConfigRepository(private val context: Context) {
                     context = OutboundSemanticContext(
                         selectorTag = defaultProxyTag,
                         outbounds = outbounds,
-                        profiles = _profiles.value,
+                        profiles = profiles,
                         nodeTagResolver = nodeTagResolver
                     )
                 )
@@ -4351,10 +4490,12 @@ class ConfigRepository(private val context: Context) {
         return rules
     }
 
+    @Suppress("LongParameterList")
     private fun buildCustomRuleSetRules(
         settings: AppSettings,
         defaultProxyTag: String,
         outbounds: List<Outbound>,
+        profiles: List<ProfileUi>,
         nodeTagResolver: (String?) -> String?,
         validRuleSets: List<RuleSetConfig>
     ): List<RouteRule> {
@@ -4372,7 +4513,7 @@ class ConfigRepository(private val context: Context) {
                 context = OutboundSemanticContext(
                     selectorTag = defaultProxyTag,
                     outbounds = outbounds,
-                    profiles = _profiles.value,
+                    profiles = profiles,
                     nodeTagResolver = nodeTagResolver
                 )
             )
@@ -4402,6 +4543,7 @@ class ConfigRepository(private val context: Context) {
         settings: AppSettings,
         defaultProxyTag: String,
         outbounds: List<Outbound>,
+        profiles: List<ProfileUi>,
         nodeTagResolver: (String?) -> String?
     ): List<RouteRule> {
         val rules = mutableListOf<RouteRule>()
@@ -4421,7 +4563,7 @@ class ConfigRepository(private val context: Context) {
                 context = OutboundSemanticContext(
                     selectorTag = defaultProxyTag,
                     outbounds = outbounds,
-                    profiles = _profiles.value,
+                    profiles = profiles,
                     nodeTagResolver = nodeTagResolver
                 )
             )
@@ -4449,7 +4591,7 @@ class ConfigRepository(private val context: Context) {
                 context = OutboundSemanticContext(
                     selectorTag = defaultProxyTag,
                     outbounds = outbounds,
-                    profiles = _profiles.value,
+                    profiles = profiles,
                     nodeTagResolver = nodeTagResolver
                 )
             )
@@ -4517,7 +4659,7 @@ class ConfigRepository(private val context: Context) {
         directServerTag: String = "local"
     ): String {
         return when (routingMode) {
-            RoutingMode.GLOBAL_PROXY -> proxyServerTag
+            RoutingMode.GLOBAL_PROXY -> stableRemoteServerTag
             RoutingMode.GLOBAL_DIRECT -> directServerTag
             RoutingMode.RULE -> when (defaultRule) {
                 DefaultRule.PROXY -> proxyServerTag
@@ -4543,6 +4685,7 @@ class ConfigRepository(private val context: Context) {
         val dnsServers = mutableListOf<DnsServer>()
         val dnsRules = mutableListOf<DnsRule>()
 
+        val profiles = _profiles.value
         val proxyDetourTag = resolveCurrentProxyDnsDetourTag(outboundsContext.selectorTag, outboundsContext.outbounds)
         val proxyServerTag = buildDynamicDnsServerTag(proxyDetourTag)
         val proxyFinalServerTag = proxyServerTag
@@ -4594,7 +4737,7 @@ class ConfigRepository(private val context: Context) {
                 }
         }
         val hasEchOutbound = outboundsContext.outbounds.any { it.tls?.ech?.enabled == true }
-        if (settings.blockQuic && !hasEchOutbound) {
+        if (settings.blockQuic && hasEchOutbound) {
             dnsRules.add(dnsReject(DnsRule(queryType = listOf("HTTPS", "SVCB"))))
         }
         val echQueryServerTag = "dns-bootstrap"
@@ -4630,7 +4773,7 @@ class ConfigRepository(private val context: Context) {
             )
         )
 
-        val localDnsAddr = settings.localDns.takeIf { it.isNotBlank() } ?: "https://dns.alidns.com/dns-query"
+        val localDnsAddr = normalizeLocalDns(settings.localDns)
         val localResolver = buildDnsResolverForAddress(localDnsAddr)
         val localServer = buildDnsServer(
             address = localDnsAddr,
@@ -4712,7 +4855,7 @@ class ConfigRepository(private val context: Context) {
                     context = OutboundSemanticContext(
                         selectorTag = outboundsContext.selectorTag,
                         outbounds = outboundsContext.outbounds,
-                        profiles = _profiles.value,
+                        profiles = profiles,
                         nodeTagResolver = outboundsContext.nodeTagResolver
                     )
                 )
@@ -4788,7 +4931,7 @@ class ConfigRepository(private val context: Context) {
                     context = OutboundSemanticContext(
                         selectorTag = outboundsContext.selectorTag,
                         outbounds = outboundsContext.outbounds,
-                        profiles = _profiles.value,
+                        profiles = profiles,
                         nodeTagResolver = outboundsContext.nodeTagResolver
                     )
                 )
@@ -4833,7 +4976,7 @@ class ConfigRepository(private val context: Context) {
                 context = OutboundSemanticContext(
                     selectorTag = outboundsContext.selectorTag,
                     outbounds = outboundsContext.outbounds,
-                    profiles = _profiles.value,
+                    profiles = profiles,
                     nodeTagResolver = outboundsContext.nodeTagResolver
                 )
             )
@@ -4846,7 +4989,7 @@ class ConfigRepository(private val context: Context) {
                 context = OutboundSemanticContext(
                     selectorTag = outboundsContext.selectorTag,
                     outbounds = outboundsContext.outbounds,
-                    profiles = _profiles.value,
+                    profiles = profiles,
                     nodeTagResolver = outboundsContext.nodeTagResolver
                 )
             )
@@ -5339,6 +5482,37 @@ class ConfigRepository(private val context: Context) {
         }
     }
 
+    @Suppress("CyclomaticComplexMethod", "CognitiveComplexMethod", "LongParameterList")
+    private fun selectRunRouteRules(
+        settings: AppSettings,
+        baseRules: List<RouteRule>,
+        bypassLanRules: List<RouteRule>,
+        customDomainRules: List<RouteRule>,
+        appRoutingRules: List<RouteRule>,
+        customRuleSetRules: List<RouteRule>,
+        defaultRuleCatchAll: List<RouteRule>
+    ): List<RouteRule> {
+        return when (settings.routingMode) {
+            RoutingMode.GLOBAL_PROXY -> baseRules + customRuleSetRules
+            RoutingMode.GLOBAL_DIRECT -> baseRules + listOf(RouteRule(outbound = "direct"))
+            RoutingMode.RULE -> baseRules + bypassLanRules + customDomainRules + appRoutingRules +
+                customRuleSetRules + defaultRuleCatchAll
+        }
+    }
+
+    private fun normalizeRunRouteRules(allRules: List<RouteRule>): List<RouteRule> {
+        return allRules.map { rule ->
+            if (rule.outbound == "block") {
+                // sing-box 1.13.0+: "block" outbound removed, use "reject" action
+                rule.copy(outbound = null, action = "reject")
+            } else if (!rule.outbound.isNullOrBlank() && rule.action.isNullOrBlank()) {
+                rule.copy(action = "route")
+            } else {
+                rule
+            }
+        }
+    }
+
     @Suppress("CyclomaticComplexMethod", "CognitiveComplexMethod")
     private fun buildRunRoute(
         settings: AppSettings,
@@ -5349,44 +5523,53 @@ class ConfigRepository(private val context: Context) {
     ): RouteConfig {
         val hasAppRouting = settings.appRules.any { it.enabled } || settings.appGroups.any { it.enabled }
 
-        val appRoutingRules = buildAppRoutingRules(settings, selectorTag, outbounds, nodeTagResolver)
-        val customRuleSetRules =
-            buildCustomRuleSetRules(settings, selectorTag, outbounds, nodeTagResolver, validRuleSets)
+        val profileUis = _profiles.value
+        val appRoutingRules = buildAppRoutingRules(
+            settings = settings,
+            defaultProxyTag = selectorTag,
+            outbounds = outbounds,
+            profiles = profileUis,
+            nodeTagResolver = nodeTagResolver
+        )
+        val customRuleSetRules = buildCustomRuleSetRules(
+            settings = settings,
+            defaultProxyTag = selectorTag,
+            outbounds = outbounds,
+            profiles = profileUis,
+            nodeTagResolver = nodeTagResolver,
+            validRuleSets = validRuleSets
+        )
 
         val quicRule = buildQuicBlockRule(settings)
         val multicastRejectRules = buildMulticastRejectRules(settings)
         val bypassLanRules = buildBypassLanRules(settings)
         val icmpEchoRules = buildIcmpEchoRules(settings)
-        val customDomainRules = buildCustomDomainRules(settings, selectorTag, outbounds, nodeTagResolver)
+        val customDomainRules = buildCustomDomainRules(
+            settings = settings,
+            defaultProxyTag = selectorTag,
+            outbounds = outbounds,
+            profiles = profileUis,
+            nodeTagResolver = nodeTagResolver
+        )
         val defaultRuleCatchAll = buildDefaultRules(settings, selectorTag)
         val hijackDnsRule = buildHijackDnsRulesStatic()
         val sniffRule = listOf(RouteRule(inbound = listOf("tun-in", "mixed-in"), action = "sniff"))
 
-        val allRules = when (settings.routingMode) {
-            RoutingMode.GLOBAL_PROXY -> hijackDnsRule + sniffRule + quicRule + multicastRejectRules + icmpEchoRules
-            RoutingMode.GLOBAL_DIRECT ->
-                hijackDnsRule + sniffRule + quicRule + multicastRejectRules + icmpEchoRules +
-                    listOf(RouteRule(outbound = "direct"))
-            RoutingMode.RULE -> {
-                hijackDnsRule + sniffRule + quicRule + multicastRejectRules + bypassLanRules + icmpEchoRules +
-                    customDomainRules + appRoutingRules + customRuleSetRules + defaultRuleCatchAll
-            }
-        }
+        val baseRules = hijackDnsRule + sniffRule + quicRule + multicastRejectRules + icmpEchoRules
+        val allRules = selectRunRouteRules(
+            settings = settings,
+            baseRules = baseRules,
+            bypassLanRules = bypassLanRules,
+            customDomainRules = customDomainRules,
+            appRoutingRules = appRoutingRules,
+            customRuleSetRules = customRuleSetRules,
+            defaultRuleCatchAll = defaultRuleCatchAll
+        )
 
         val bootstrapStrategy = resolveDnsStrategy(settings.serverAddressStrategy, settings.ipVersionMode)
-        val proxyDetourTag = resolveCurrentProxyDnsDetourTag(selectorTag, outbounds)
         val defaultResolverTag = "dns-bootstrap"
 
-        val normalizedRules = allRules.map { rule ->
-            if (rule.outbound == "block") {
-                // sing-box 1.13.0+: "block" outbound removed, use "reject" action
-                rule.copy(outbound = null, action = "reject")
-            } else if (!rule.outbound.isNullOrBlank() && rule.action.isNullOrBlank()) {
-                rule.copy(action = "route")
-            } else {
-                rule
-            }
-        }
+        val normalizedRules = normalizeRunRouteRules(allRules)
 
         return RouteConfig(
             ruleSet = validRuleSets,

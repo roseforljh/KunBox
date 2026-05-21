@@ -118,8 +118,9 @@ object AppUpdateChecker {
             .build()
 
         val settings = SettingsRepository.getInstance(context).settings.first()
+        val proxyClientAvailable = getProxyClient(settings) != null
         val proxyResult = tryProxyRequest(request, settings)
-        if (proxyResult != null) return proxyResult
+        if (proxyResult != null || proxyClientAvailable) return proxyResult
 
         return tryDirectRequest(request)
     }
@@ -132,7 +133,7 @@ object AppUpdateChecker {
             if (result == null) response.close()
             result
         } catch (e: Exception) {
-            Log.w(TAG, "Proxy request failed: ${e.message}, falling back to direct")
+            Log.w(TAG, "Proxy request failed: ${e.message}")
             null
         }
     }
@@ -193,7 +194,7 @@ object AppUpdateChecker {
                 if (newPart < currentPart) return false
             }
 
-            return false // ·绘鐗婂﹢浼存儎缁嬫寧鍊?
+            return false
         } catch (e: Exception) {
             Log.e(TAG, "Failed to compare versions: $newVersion vs $currentVersion", e)
             return false

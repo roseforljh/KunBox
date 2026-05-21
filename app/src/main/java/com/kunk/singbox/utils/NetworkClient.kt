@@ -17,7 +17,7 @@ object NetworkClient {
     private const val CONNECT_TIMEOUT = 15L
     private const val READ_TIMEOUT = 20L
     private const val WRITE_TIMEOUT = 20L
-    private const val CALL_TIMEOUT = 60L // ·轰胶绻濈紞瀣嫬閸愵亝鏆忛悺鎺戞噺濡?
+    private const val CALL_TIMEOUT = 60L
 
     private val connectionPool = ConnectionPool(10, 5, TimeUnit.MINUTES)
 
@@ -55,7 +55,7 @@ object NetworkClient {
             .callTimeout(CALL_TIMEOUT, TimeUnit.SECONDS)
             .connectionPool(connectionPool)
             .dispatcher(dispatcher)
-            .protocols(listOf(Protocol.HTTP_2, Protocol.HTTP_1_1)) // ·村吋锚閸?HTTP/2
+            .protocols(listOf(Protocol.HTTP_2, Protocol.HTTP_1_1))
             .addInterceptor(statsInterceptor)
             // Rely on OkHttp built-in retry logic to avoid retry amplification.
             .retryOnConnectionFailure(true)
@@ -127,7 +127,7 @@ object NetworkClient {
             .readTimeout(readTimeoutSeconds, TimeUnit.SECONDS)
             .writeTimeout(writeTimeoutSeconds, TimeUnit.SECONDS)
             .connectionPool(ConnectionPool(5, 2, TimeUnit.MINUTES))
-            .protocols(listOf(Protocol.HTTP_1_1)) // ·寸媴绲块幃濠偽熼垾宕囩·达綀娉曢弫?HTTP/1.1
+            .protocols(listOf(Protocol.HTTP_1_1))
             .retryOnConnectionFailure(false)
             .followRedirects(true)
             .followSslRedirects(true)
@@ -180,7 +180,7 @@ object NetworkClient {
     }
 
     /**
-     * 閺夆晝鍋炵敮鏉懶ч悩闈浶﹂柟顑跨劍閺嗙喖骞戦鎹愵潶
+     *
      */
     data class PoolStatus(
         val idleConnections: Int,
@@ -204,6 +204,7 @@ object NetworkClient {
     /**
      *
      */
+    @Suppress("ReturnCount")
     fun executeWithFallback(
         request: okhttp3.Request,
         proxyPort: Int,
@@ -223,9 +224,11 @@ object NetworkClient {
                     return response
                 }
                 response.close()
-                Log.w(TAG, "Proxy request failed with ${response.code}, falling back to direct")
+                Log.w(TAG, "Proxy request failed with ${response.code}")
+                return null
             } catch (e: Exception) {
-                Log.w(TAG, "Proxy request failed: ${e.message}, falling back to direct")
+                Log.w(TAG, "Proxy request failed: ${e.message}")
+                return null
             }
         }
 

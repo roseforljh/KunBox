@@ -18,14 +18,14 @@ object DeepLinkHandler {
     val pendingSubscriptionImport: StateFlow<SubscriptionImportData?> = _pendingSubscriptionImport.asStateFlow()
 
     /**
-     * 璁剧疆寰呭鐞嗙殑璁㈤槄瀵煎叆鏁版嵁
+     *
      */
     fun setPendingSubscriptionImport(name: String, url: String, interval: Int) {
         _pendingSubscriptionImport.value = SubscriptionImportData(name, url, interval)
     }
 
     /**
-     * 娓呴櫎寰呭鐞嗙殑璁㈤槄瀵煎叆鏁版嵁
+     *
      */
     fun clearPendingSubscriptionImport() {
         _pendingSubscriptionImport.value = null

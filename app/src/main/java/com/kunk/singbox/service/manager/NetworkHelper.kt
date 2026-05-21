@@ -16,7 +16,6 @@ import com.kunk.singbox.repository.SettingsRepository
 import com.kunk.singbox.utils.DefaultNetworkListener
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.first
-import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.NetworkInterface
 import java.net.Socket
@@ -25,7 +24,7 @@ import java.net.Socket
  */
 class NetworkHelper(
     private val context: Context,
-    private val serviceScope: CoroutineScope
+    @Suppress("UnusedPrivateProperty") private val serviceScope: CoroutineScope
 ) {
     companion object {
         private const val TAG = "NetworkHelper"
@@ -157,7 +156,6 @@ class NetworkHelper(
             }
         }
 
-        // 4. 閺夌儐鍠涢妤呭蓟閵夛箑顥?
         val start = SystemClock.elapsedRealtime()
         var best: Network? = null
         while (SystemClock.elapsedRealtime() - start < timeoutMs) {
@@ -178,35 +176,9 @@ class NetworkHelper(
     }
 
     /**
-     * DNS 濡澘瀚崕?
      */
     fun warmupDnsCache() {
-        serviceScope.launch(Dispatchers.IO) {
-            try {
-                val startTime = System.currentTimeMillis()
-                val domains = listOf(
-                    "www.google.com",
-                    "github.com",
-                    "api.github.com",
-                    "www.youtube.com",
-                    "twitter.com",
-                    "facebook.com"
-                )
-
-                withTimeoutOrNull(1500L) {
-                    domains.map { domain ->
-                        async {
-                            runCatching { InetAddress.getByName(domain) }
-                        }
-                    }.awaitAll()
-                }
-
-                val elapsed = System.currentTimeMillis() - startTime
-                Log.i(TAG, "DNS warmup completed in ${elapsed}ms")
-            } catch (e: Exception) {
-                Log.w(TAG, "DNS warmup failed", e)
-            }
-        }
+        Log.d(TAG, "DNS warmup skipped")
     }
 
     /**

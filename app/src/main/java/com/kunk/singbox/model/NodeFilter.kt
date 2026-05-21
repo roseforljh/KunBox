@@ -2,11 +2,10 @@ package com.kunk.singbox.model
 
 import com.google.gson.annotations.SerializedName
 
-// 鏉╁洦鎶ゅΟ鈥崇础閺嬫矮濡?
 enum class FilterMode {
     @SerializedName("NONE") NONE,
     @SerializedName("INCLUDE") INCLUDE,
-    @SerializedName("EXCLUDE") EXCLUDE // 閹烘帡娅庨崠鍛儓閸忔娊鏁€涙娈戦懞鍌滃仯
+    @SerializedName("EXCLUDE") EXCLUDE
 }
 
 data class NodeFilter(

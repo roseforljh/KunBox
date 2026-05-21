@@ -95,7 +95,6 @@ class CoreManager(
     }
 
     /**
-     * 濡澘瀚崹搴ㄦ煀?TUN Builder
      */
     fun preallocateTunBuilder(): Result<Unit> {
         return runCatching {

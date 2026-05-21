@@ -6,7 +6,7 @@ object LatencyCache {
     private const val MMKV_ID = "latency_cache"
     private const val KEY_PREFIX = "lat_"
     private const val KEY_TIMESTAMP_PREFIX = "lat_ts_"
-    private const val CACHE_VALIDITY_MS = 24 * 60 * 60 * 1000L // 24 ·忓繐绻戝?
+    private const val CACHE_VALIDITY_MS = 24 * 60 * 60 * 1000L
 
     private val mmkv: MMKV by lazy {
         MMKV.mmkvWithID(MMKV_ID, MMKV.SINGLE_PROCESS_MODE)

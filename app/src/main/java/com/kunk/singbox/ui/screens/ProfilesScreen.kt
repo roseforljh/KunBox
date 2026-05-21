@@ -528,7 +528,15 @@ fun ProfilesScreen(
             title = stringResource(R.string.profiles_edit_profile),
             onDismiss = { editingProfile = null },
             onConfirm = { name, url, autoUpdateInterval, dnsPreResolve, dnsServer, dnsOverride ->
-                viewModel.updateProfileMetadata(profile.id, name, url, autoUpdateInterval, dnsPreResolve, dnsServer, dnsOverride)
+                viewModel.updateProfileMetadata(
+                    profile.id,
+                    name,
+                    url,
+                    autoUpdateInterval,
+                    dnsPreResolve,
+                    dnsServer,
+                    dnsOverride
+                )
                 editingProfile = null
             }
         )
@@ -1239,7 +1247,14 @@ private fun SubscriptionInputDialog(
     initialDnsOverride: String? = null,
     title: String = stringResource(R.string.profiles_add_subscription),
     onDismiss: () -> Unit,
-    onConfirm: (name: String, url: String, autoUpdateInterval: Int, dnsPreResolve: Boolean, dnsServer: String?, dnsOverride: String?) -> Unit
+    onConfirm: (
+        name: String,
+        url: String,
+        autoUpdateInterval: Int,
+        dnsPreResolve: Boolean,
+        dnsServer: String?,
+        dnsOverride: String?
+    ) -> Unit
 ) {
     var name by remember { mutableStateOf(initialName) }
     var url by remember { mutableStateOf(initialUrl) }

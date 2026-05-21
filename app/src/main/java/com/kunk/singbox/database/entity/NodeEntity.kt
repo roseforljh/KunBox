@@ -7,9 +7,9 @@ import androidx.room.PrimaryKey
 import com.kunk.singbox.model.NodeUi
 
 /**
- * Node 閺佺増宓佹惔鎾崇杽娴?
  *
- * [涔辩爜娉ㄩ噴宸叉竻鐞哴
+ *
+ *
  */
 @Entity(
     tableName = "nodes",
@@ -37,12 +37,12 @@ data class NodeEntity(
     val latencyMs: Long?,
     val isFavorite: Boolean = false,
     val sourceProfileId: String,
-    val tags: String = "", // JSON 鎼村繐鍨崠鏍畱 List<String>
+    val tags: String = "",
     val trafficUsed: Long = 0,
     val sortOrder: Int = 0
 ) {
     /**
-     * [涔辩爜娉ㄩ噴宸叉竻鐞哴
+     *
      */
     fun toUiModel(): NodeUi = NodeUi(
         id = id,

@@ -37,49 +37,56 @@ class VpnTunManager(
             dnsServerAddress: String? = null,
             tunPlan: VpnTunAddressPlan = VpnTunAddressPlanner.build(settings?.ipVersionMode ?: IpVersionMode.DUAL_STACK)
         ): List<String> {
-            val dnsServers = mutableListOf<String>()
-            val explicitDnsServerAddress = dnsServerAddress?.trim().orEmpty()
-            if (explicitDnsServerAddress.isNotEmpty() && isNumericAddressStatic(explicitDnsServerAddress)) {
-                dnsServers.add(explicitDnsServerAddress)
-                return dnsServers.distinct()
+            val explicitDns = dnsServerAddress?.trim().orEmpty()
+            if (explicitDns.isNotEmpty() && !isTunLocalAddress(explicitDns, tunPlan)) {
+                return listOf(explicitDns)
             }
-            if (settings != null) {
-                if (isNumericAddressStatic(settings.remoteDns)) dnsServers.add(settings.remoteDns)
-                if (isNumericAddressStatic(settings.localDns)) dnsServers.add(settings.localDns)
+            return tunPlan.defaultDnsServers
+        }
+
+        private fun isTunLocalAddress(address: String, tunPlan: VpnTunAddressPlan): Boolean {
+            return tunPlan.addresses.any { it.first == address }
+        }
+
+        internal fun resolveVpnRoutesForTest(
+            settings: AppSettings?,
+            tunPlan: VpnTunAddressPlan = VpnTunAddressPlanner.build(settings?.ipVersionMode ?: IpVersionMode.DUAL_STACK)
+        ): List<Pair<String, Int>> {
+            return resolveVpnRoutes(settings, tunPlan)
+        }
+
+        private fun resolveVpnRoutes(settings: AppSettings?, tunPlan: VpnTunAddressPlan): List<Pair<String, Int>> {
+            val routeMode = settings?.vpnRouteMode ?: VpnRouteMode.GLOBAL
+            val customRoutes = settings?.vpnRouteIncludeCidrs.orEmpty()
+                .split("\n", "\r", ",", ";", " ", "\t")
+                .mapNotNull { parseCidrRoute(it) }
+
+            val baseRoutes = if (routeMode == VpnRouteMode.CUSTOM && customRoutes.isNotEmpty()) {
+                customRoutes
+            } else {
+                tunPlan.globalRoutes
             }
-            if (dnsServers.isEmpty()) {
-                dnsServers.addAll(tunPlan.addresses.map { it.first })
+            return baseRoutes + resolveFakeIpRoutes(settings)
+        }
+
+        private fun parseCidrRoute(cidr: String): Pair<String, Int>? {
+            val parts = cidr.trim().split("/")
+            val ip = parts.getOrNull(0)?.trim().orEmpty()
+            val prefix = parts.getOrNull(1)?.trim()?.toIntOrNull()
+            return if (parts.size == 2 && ip.isNotEmpty() && prefix != null) ip to prefix else null
+        }
+
+        private fun resolveFakeIpRoutes(settings: AppSettings?): List<Pair<String, Int>> {
+            if (settings?.fakeDnsEnabled != true) return emptyList()
+            return when (settings.ipVersionMode) {
+                IpVersionMode.IPV4_ONLY -> listOf("198.18.0.0" to 15)
+                IpVersionMode.IPV6_ONLY -> listOf("fc00::" to 18)
+                IpVersionMode.DUAL_STACK, IpVersionMode.PREFER_IPV6 -> listOf("198.18.0.0" to 15, "fc00::" to 18)
             }
-            return dnsServers.distinct()
         }
 
         internal fun shouldAppendHttpProxy(settings: AppSettings?): Boolean {
             return settings?.appendHttpProxy == true && settings.proxyPort > 0 && !settings.tunEnabled
-        }
-
-        private fun isNumericAddressStatic(address: String): Boolean {
-            if (address.isBlank()) return false
-
-            val hasUrlFormat = address.contains("://") || address.contains("/")
-            val hasNonIpv6Colon = address.contains(":") && !isIpv6LiteralStatic(address)
-            if (hasUrlFormat || hasNonIpv6Colon) {
-                return false
-            }
-
-            return try {
-                val addr = InetAddress.getByName(address)
-                addr.hostAddress == address
-            } catch (_: Exception) {
-                false
-            }
-        }
-
-        private fun isIpv6LiteralStatic(address: String): Boolean {
-            if (address.startsWith("[") || address.startsWith("::")) return true
-            val colonCount = address.count { it == ':' }
-            val dotCount = address.count { it == '.' }
-
-            return colonCount >= 2 && dotCount == 0
         }
     }
 
@@ -94,7 +101,6 @@ class VpnTunManager(
     private val mtuLogDebounceMs: Long = 10_000L
 
     /**
-     * 濡澘瀚崹搴ㄦ煀?TUN Builder
      */
     fun preallocateBuilder() {
         if (preallocatedBuilder != null) return
@@ -246,38 +252,14 @@ class VpnTunManager(
         settings: AppSettings?,
         tunPlan: VpnTunAddressPlan
     ) {
-        val routeMode = settings?.vpnRouteMode ?: VpnRouteMode.GLOBAL
-        val cidrText = settings?.vpnRouteIncludeCidrs.orEmpty()
-        val cidrs = cidrText
-            .split("\n", "\r", ",", ";", " ", "\t")
-            .map { it.trim() }
-            .filter { it.isNotEmpty() }
-
-        val usedCustomRoutes = if (routeMode == VpnRouteMode.CUSTOM) {
-            var okCount = 0
-            cidrs.forEach { cidr ->
-                if (addCidrRoute(builder, cidr)) okCount++
-            }
-            okCount > 0
-        } else {
-            false
-        }
-
-        if (!usedCustomRoutes) {
-            tunPlan.globalRoutes.forEach { (route, prefix) ->
-                builder.addRoute(route, prefix)
-            }
+        resolveVpnRoutes(settings, tunPlan).forEach { (route, prefix) ->
+            addRoute(builder, route, prefix)
         }
     }
 
-    private fun addCidrRoute(builder: VpnService.Builder, cidr: String): Boolean {
-        val parts = cidr.split("/")
-        if (parts.size != 2) return false
-        val ip = parts[0].trim()
-        val prefix = parts[1].trim().toIntOrNull() ?: return false
+    private fun addRoute(builder: VpnService.Builder, route: String, prefix: Int): Boolean {
         return try {
-            val addr = InetAddress.getByName(ip)
-            builder.addRoute(addr, prefix)
+            builder.addRoute(InetAddress.getByName(route), prefix)
             true
         } catch (_: Exception) {
             false

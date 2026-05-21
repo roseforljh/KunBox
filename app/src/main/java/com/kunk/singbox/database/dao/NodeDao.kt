@@ -10,13 +10,11 @@ import com.kunk.singbox.database.entity.NodeEntity
 import kotlinx.coroutines.flow.Flow
 
 /**
- * Node 鏁版嵁璁块棶瀵硅薄
+ *
  *
  */
 @Dao
 interface NodeDao {
-
-    // ==================== 鏌ヨ ====================
 
     @Query("SELECT * FROM nodes ORDER BY sortOrder ASC")
     fun getAllFlow(): Flow<List<NodeEntity>>
@@ -60,8 +58,6 @@ interface NodeDao {
     @Query("SELECT MAX(sortOrder) FROM nodes WHERE sourceProfileId = :profileId")
     suspend fun getMaxSortOrder(profileId: String): Int?
 
-    // ==================== 鎻掑叆/鏇存柊 ====================
-
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(node: NodeEntity)
 
@@ -80,8 +76,6 @@ interface NodeDao {
     @Query("UPDATE nodes SET trafficUsed = :trafficUsed WHERE id = :id")
     suspend fun setTrafficUsed(id: String, trafficUsed: Long)
 
-    // ==================== 鍒犻櫎 ====================
-
     @Delete
     suspend fun delete(node: NodeEntity)
 
@@ -93,8 +87,6 @@ interface NodeDao {
 
     @Query("DELETE FROM nodes")
     suspend fun deleteAll()
-
-    // ==================== 鎵归噺寤惰繜鏇存柊 ====================
 
     @Query("UPDATE nodes SET latencyMs = :latencyMs WHERE id = :id")
     suspend fun updateLatency(id: String, latencyMs: Long?)

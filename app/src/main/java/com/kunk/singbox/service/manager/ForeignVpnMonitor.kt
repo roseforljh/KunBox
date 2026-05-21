@@ -9,7 +9,7 @@ import android.os.Build
 import android.util.Log
 
 /**
- * 澶栭儴 VPN 鐩戞帶鍣?
+ *
  */
 class ForeignVpnMonitor(
     private val context: Context
@@ -61,7 +61,7 @@ class ForeignVpnMonitor(
     }
 
     /**
-     * 鍚姩澶栭儴 VPN 鐩戞帶
+     *
      */
     fun start() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return
@@ -104,7 +104,7 @@ class ForeignVpnMonitor(
     }
 
     /**
-     * 鍋滄澶栭儴 VPN 鐩戞帶
+     *
      */
     fun stop() {
         val cm = connectivityManager ?: return

@@ -20,6 +20,9 @@ class RuleSetRepository(private val context: Context) {
 
     companion object {
         private const val TAG = "RuleSetRepository"
+        private const val RAW_GITHUB_HOST = "raw.githubusercontent.com/"
+        private const val RAW_GITHUB_PREFIX = "https://raw.githubusercontent.com/"
+        private const val JSDELIVR_CDN_PREFIX = "https://cdn.jsdelivr.net/gh/"
 
         @Volatile
         private var instance: RuleSetRepository? = null
@@ -27,6 +30,119 @@ class RuleSetRepository(private val context: Context) {
         fun getInstance(context: Context): RuleSetRepository {
             return instance ?: synchronized(this) {
                 instance ?: RuleSetRepository(context.applicationContext).also { instance = it }
+            }
+        }
+
+        @Suppress("CyclomaticComplexMethod", "NestedBlockDepth", "LongMethod", "CognitiveComplexMethod")
+        internal fun normalizeRuleSetUrl(url: String, mirrorUrl: String): String {
+            var rawUrl = normalizeRawRuleSetUrl(url.trim())
+            rawUrl = unwrapProxyRuleSetUrl(rawUrl)
+            rawUrl = normalizeRawRuleSetUrl(rawUrl)
+
+            var updatedUrl = rawUrl
+
+            if (mirrorUrl.contains("cdn.jsdelivr.net")) {
+                if (rawUrl.startsWith(RAW_GITHUB_PREFIX)) {
+                    val path = rawUrl.removePrefix(RAW_GITHUB_PREFIX)
+                    val parts = path.split("/", limit = 4)
+                    if (parts.size >= 4) {
+                        val user = parts[0]
+                        val repo = parts[1]
+                        val branch = parts[2]
+                        val filePath = parts[3]
+                        updatedUrl = "$JSDELIVR_CDN_PREFIX$user/$repo@$branch/$filePath"
+                    }
+                }
+            } else if (mirrorUrl != RAW_GITHUB_PREFIX) {
+                if (rawUrl.startsWith(RAW_GITHUB_PREFIX)) {
+                    updatedUrl = rawUrl.replace(RAW_GITHUB_PREFIX, mirrorUrl)
+                }
+            }
+
+            return updatedUrl
+        }
+
+        internal fun normalizeRuleSetForSave(ruleSet: RuleSet, mirrorUrl: String): RuleSet {
+            if (ruleSet.type != RuleSetType.REMOTE) return ruleSet
+            return ruleSet.copy(url = normalizeRuleSetUrl(ruleSet.url, mirrorUrl))
+        }
+
+        private fun normalizeRawRuleSetUrl(url: String): String {
+            if (url.startsWith(JSDELIVR_CDN_PREFIX)) {
+                return normalizeCdnRuleSetUrl(url)
+            }
+
+            if (url.contains(RAW_GITHUB_HOST)) {
+                return normalizeRawGithubRuleSetUrl(url)
+            }
+
+            if (isGithubPathOnlyRuleSetUrl(url)) {
+                return RAW_GITHUB_PREFIX + url.removePrefix("/")
+            }
+
+            return url
+        }
+
+        private fun normalizeCdnRuleSetUrl(url: String): String {
+            val path = url.removePrefix(JSDELIVR_CDN_PREFIX)
+            val parts = path.split("@", limit = 2)
+            return if (parts.size == 2) {
+                "$RAW_GITHUB_PREFIX${parts[0]}/${parts[1]}"
+            } else {
+                url
+            }
+        }
+
+        private fun normalizeRawGithubRuleSetUrl(url: String): String {
+            val path = url.substringAfter(RAW_GITHUB_HOST)
+            if (path.startsWith("http://") || path.startsWith("https://")) {
+                val cleanPath = path
+                    .removePrefix("https://")
+                    .removePrefix("http://")
+                return RAW_GITHUB_PREFIX + cleanPath
+            }
+            if (path.contains(RAW_GITHUB_HOST)) {
+                return RAW_GITHUB_PREFIX + path.substringAfter(RAW_GITHUB_HOST)
+            }
+            return RAW_GITHUB_PREFIX + path
+        }
+
+        private fun isGithubPathOnlyRuleSetUrl(url: String): Boolean {
+            return !url.startsWith("http://") &&
+                !url.startsWith("https://") &&
+                url.count { it == '/' } >= 3
+        }
+
+        @Suppress("ReturnCount")
+        private fun unwrapProxyRuleSetUrl(url: String): String {
+            val proxy = ruleSetProxyPrefixes().firstOrNull { url.startsWith(it) } ?: return url
+            val afterProxy = url.removePrefix(proxy)
+            if (afterProxy.startsWith("http://") || afterProxy.startsWith("https://")) {
+                return unwrapProtocolRuleSetUrl(afterProxy)
+            }
+            return afterProxy
+        }
+
+        private fun ruleSetProxyPrefixes(): List<String> {
+            return listOf(
+                "https://ghp.ci/",
+                "https://mirror.ghproxy.com/",
+                "https://ghproxy.com/",
+                "https://ghproxy.net/",
+                "https://ghfast.top/",
+                "https://gh-proxy.com/"
+            )
+        }
+
+        private fun unwrapProtocolRuleSetUrl(url: String): String {
+            val withoutProtocol = url
+                .removePrefix("https://")
+                .removePrefix("http://")
+            val firstSlash = withoutProtocol.indexOf('/')
+            return if (firstSlash > 0) {
+                "/" + withoutProtocol.substring(firstSlash)
+            } else {
+                "/$withoutProtocol"
             }
         }
     }
@@ -196,95 +312,6 @@ class RuleSetRepository(private val context: Context) {
         return false
     }
 
-    @Suppress("CyclomaticComplexMethod", "NestedBlockDepth", "LongMethod", "CognitiveComplexMethod")
-    private fun normalizeRuleSetUrl(url: String, mirrorUrl: String): String {
-        val rawPrefix = "https://raw.githubusercontent.com/"
-        val cdnPrefix = "https://cdn.jsdelivr.net/gh/"
-
-        var rawUrl = url
-
-        // Handle CDN format first
-        if (rawUrl.startsWith(cdnPrefix)) {
-            val path = rawUrl.removePrefix(cdnPrefix)
-            val parts = path.split("@", limit = 2)
-            if (parts.size == 2) {
-                val userRepo = parts[0]
-                val branchPath = parts[1]
-                rawUrl = "$rawPrefix$userRepo/$branchPath"
-            }
-        }
-
-        // Handle proxy/mirror URLs that wrap the original URL (e.g., https://ghp.ci/https://raw...)
-        val proxyPrefixes = listOf(
-            "https://ghp.ci/",
-            "https://mirror.ghproxy.com/",
-            "https://ghproxy.com/",
-            "https://ghproxy.net/",
-            "https://ghfast.top/",
-            "https://gh-proxy.com/"
-        )
-
-        for (proxy in proxyPrefixes) {
-            if (rawUrl.startsWith(proxy)) {
-                val afterProxy = rawUrl.removePrefix(proxy)
-                if (afterProxy.startsWith("http://") || afterProxy.startsWith("https://")) {
-                    // Extract path after the protocol
-                    val withoutProtocol = afterProxy
-                        .removePrefix("https://")
-                        .removePrefix("http://")
-                    val firstSlash = withoutProtocol.indexOf('/')
-                    if (firstSlash > 0) {
-                        rawUrl = "/" + withoutProtocol.substring(firstSlash)
-                    } else {
-                        rawUrl = "/" + withoutProtocol
-                    }
-                } else if (afterProxy.startsWith("/")) {
-                    rawUrl = afterProxy
-                } else {
-                    rawUrl = afterProxy
-                }
-                break
-            }
-        }
-
-        // If still contains raw.githubusercontent.com but not as proper prefix, extract clean path
-        if (rawUrl.contains("raw.githubusercontent.com")) {
-            val path = rawUrl.substringAfter("raw.githubusercontent.com/")
-            if (path.startsWith("http://") || path.startsWith("https://")) {
-                val cleanPath = path
-                    .removePrefix("https://")
-                    .removePrefix("http://")
-                rawUrl = rawPrefix + cleanPath
-            } else if (path.contains("raw.githubusercontent.com/")) {
-                rawUrl = rawPrefix + path.substringAfter("raw.githubusercontent.com/")
-            } else {
-                rawUrl = rawPrefix + path
-            }
-        }
-
-        var updatedUrl = rawUrl
-
-        if (mirrorUrl.contains("cdn.jsdelivr.net")) {
-            if (rawUrl.startsWith(rawPrefix)) {
-                val path = rawUrl.removePrefix(rawPrefix)
-                val parts = path.split("/", limit = 4)
-                if (parts.size >= 4) {
-                    val user = parts[0]
-                    val repo = parts[1]
-                    val branch = parts[2]
-                    val filePath = parts[3]
-                    updatedUrl = "$cdnPrefix$user/$repo@$branch/$filePath"
-                }
-            }
-        } else if (mirrorUrl != rawPrefix) {
-            if (rawUrl.startsWith(rawPrefix)) {
-                updatedUrl = rawUrl.replace(rawPrefix, mirrorUrl)
-            }
-        }
-
-        return updatedUrl
-    }
-
     private suspend fun downloadFileWithFallback(
         url: String,
         targetFile: File,
@@ -292,15 +319,17 @@ class RuleSetRepository(private val context: Context) {
     ): Boolean {
         val proxyClient = getProxyClient(settings)
         if (proxyClient != null) {
-            try {
+            return try {
                 val success = downloadFile(proxyClient, url, targetFile)
                 if (success) {
                     Log.d(TAG, "Proxy download succeeded: ${targetFile.name}")
-                    return true
+                } else {
+                    Log.w(TAG, "Proxy download failed")
                 }
-                Log.w(TAG, "Proxy download failed, falling back to direct")
+                success
             } catch (e: Exception) {
-                Log.w(TAG, "Proxy download error: ${e.message}, falling back to direct")
+                Log.w(TAG, "Proxy download error: ${e.message}")
+                false
             }
         }
 

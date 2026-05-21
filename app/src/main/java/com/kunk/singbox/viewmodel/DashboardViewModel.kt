@@ -105,7 +105,6 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
             }
         }
 
-        // 2025-fix: 如果VPN正在运行，切换配置后需要触发热切换/重启以加载新配置
         // 否则VPN仍然使用旧配置，导致用户看到"选中"了新配置的节点但实际没联网
         if (SingBoxRemote.isRunning.value || SingBoxRemote.isStarting.value) {
             viewModelScope.launch {
@@ -400,7 +399,6 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
             }
         }
 
-        // 解决通知栏切换节点后首页显示旧节点的问题
         viewModelScope.launch {
             SingBoxRemote.activeLabel
                 .filter { it.isNotBlank() }
@@ -1168,7 +1166,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
 
     /**
      * 获取活跃节点的名称
-     * 使用改进的 getNodeById 方法确保即使配置切换或节点列表未完全加载时也能正确显示
+     *
      */
     fun getActiveNodeName(): String? {
         val activeId = activeNodeId.value ?: return null

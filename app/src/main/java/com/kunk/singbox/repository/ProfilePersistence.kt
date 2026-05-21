@@ -23,7 +23,7 @@ import kotlinx.coroutines.launch
 import java.io.File
 
 /**
- * 閰嶇疆鎸佷箙鍖栫鐞嗗櫒
+ *
  *
  */
 class ProfilePersistence(private val context: Context) {
@@ -68,7 +68,7 @@ class ProfilePersistence(private val context: Context) {
     )
 
     /**
-     * 浠?Room 鏁版嵁搴撳姞杞介厤缃?
+     *
      */
     fun loadSync(): LoadResult {
         val startTime = System.currentTimeMillis()
@@ -156,7 +156,7 @@ class ProfilePersistence(private val context: Context) {
     }
 
     /**
-     * 淇濆瓨閰嶇疆 (甯﹂槻鎶?
+     *
      */
     fun save(
         profiles: List<ProfileUi>,
@@ -172,7 +172,7 @@ class ProfilePersistence(private val context: Context) {
     }
 
     /**
-     * 绔嬪嵆淇濆瓨閰嶇疆 (璺宠繃闃叉姈)
+     *
      */
     fun saveImmediate(
         profiles: List<ProfileUi>,
@@ -250,7 +250,7 @@ class ProfilePersistence(private val context: Context) {
     }
 
     /**
-     * 鍒犻櫎閰嶇疆
+     *
      */
     suspend fun deleteProfile(profileId: String) {
         try {

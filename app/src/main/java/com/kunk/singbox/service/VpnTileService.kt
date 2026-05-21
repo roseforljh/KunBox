@@ -166,7 +166,6 @@ class VpnTileService : TileService() {
             tile.label = getString(R.string.connection_connecting)
             tile.updateTile()
 
-            // 鐎殿喖鍊归鐐哄箥瑜戦、鎴濐嚕閳ь剟宕ラ鐐╁亾閺勫繒甯?
             executeStartVpn()
         }
     }

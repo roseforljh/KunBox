@@ -84,7 +84,7 @@ class DnsResolveStore private constructor() {
 
     /**
      *
-     * @param profileId 閰嶇疆 ID
+     *
      * @param domain 鍩熷悕
      */
     fun get(

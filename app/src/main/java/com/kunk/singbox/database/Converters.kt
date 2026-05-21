@@ -5,7 +5,7 @@ import com.kunk.singbox.model.ProfileType
 import com.kunk.singbox.model.UpdateStatus
 
 /**
- * Room 绫诲瀷杞崲鍣?
+ *
  *
  */
 class Converters {

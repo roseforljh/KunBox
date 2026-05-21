@@ -134,7 +134,6 @@ fun DashboardScreen(
             if (prepareIntent != null) {
                 vpnPermissionLauncher.launch(prepareIntent)
             } else {
-                // 鐎圭寮跺﹢渚€寮堕崘顔筋€?
                 viewModel.onVpnPermissionResult(true)
             }
         }

@@ -271,16 +271,19 @@ class RuleSetViewModel(application: Application) : AndroidViewModel(application)
     ): okhttp3.Response? {
         val proxyClient = getProxyClient(settings)
         if (proxyClient != null) {
-            try {
+            return try {
                 val response = proxyClient.newCall(request).execute()
                 if (response.isSuccessful) {
                     Log.d(TAG, "Proxy request succeeded")
-                    return response
+                    response
+                } else {
+                    response.close()
+                    Log.w(TAG, "Proxy request failed with ${response.code}")
+                    null
                 }
-                response.close()
-                Log.w(TAG, "Proxy request failed with ${response.code}, falling back to direct")
             } catch (e: Exception) {
-                Log.w(TAG, "Proxy request failed: ${e.message}, falling back to direct")
+                Log.w(TAG, "Proxy request failed: ${e.message}")
+                null
             }
         }
 

@@ -6,7 +6,7 @@ import com.tencent.mmkv.MMKV
 /**
  *
  * MMKV 浼樺娍:
- * - 鎬ц兘姣?SharedPreferences 蹇?100x
+ *
  */
 @Suppress("TooManyFunctions")
 object VpnStateStore {

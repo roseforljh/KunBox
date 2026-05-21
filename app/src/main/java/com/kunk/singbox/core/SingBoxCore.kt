@@ -377,7 +377,7 @@ class SingBoxCore private constructor(private val context: Context) {
                 try {
                     File(testDbPath).delete()
                     File("$testDbPath-shm").delete()
-                    File("$testDbPath-wal").delete() // SQLite WAL ·哄啨鍎辩换鏃堝棘閸ワ附顐?
+                    File("$testDbPath-wal").delete()
                 } catch (e: Exception) { Log.w(TAG, "Failed to delete temp db files", e) }
             }
         } catch (e: Exception) {

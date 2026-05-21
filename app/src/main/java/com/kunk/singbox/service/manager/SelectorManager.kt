@@ -7,7 +7,7 @@ import kotlinx.coroutines.flow.StateFlow
 
 /**
  *
- * 2. BoxWrapperManager (濠㈣泛娲ㄩ弫?
+ *
  */
 class SelectorManager {
     companion object {

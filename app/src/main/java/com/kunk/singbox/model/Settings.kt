@@ -85,7 +85,6 @@ data class AppSettings(
 
     @SerializedName("ghProxyMirror") val ghProxyMirror: GhProxyMirror = GhProxyMirror.SAGERNET_ORIGIN,
 
-    // 濡ゅ倹顭囨鍥╂崉椤栨粍鏆?
     @SerializedName("customRules") val customRules: List<CustomRule> = emptyList(),
     @SerializedName("ruleSets") val ruleSets: List<RuleSet> = emptyList(),
     @SerializedName("appRules") val appRules: List<AppRule> = emptyList(),
@@ -94,7 +93,7 @@ data class AppSettings(
     @SerializedName("ruleSetAutoUpdateEnabled") val ruleSetAutoUpdateEnabled: Boolean = false,
     @SerializedName("ruleSetAutoUpdateInterval") val ruleSetAutoUpdateInterval: Int = 60, // ·告帒妫濋幐?
 
-    @SerializedName("subscriptionUpdateTimeout") val subscriptionUpdateTimeout: Int = 30, // ·佸甯槐·囶渶濡鍚?0·?
+    @SerializedName("subscriptionUpdateTimeout") val subscriptionUpdateTimeout: Int = 30,
 
     @SerializedName("nodeFilter") val nodeFilter: NodeFilter = NodeFilter(),
     @SerializedName("nodeSortType") val nodeSortType: NodeSortType = NodeSortType.DEFAULT,

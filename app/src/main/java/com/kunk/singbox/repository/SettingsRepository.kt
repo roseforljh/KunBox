@@ -1,4 +1,4 @@
-﻿package com.kunk.singbox.repository
+package com.kunk.singbox.repository
 
 import android.content.Context
 import android.util.Log
@@ -296,8 +296,6 @@ class SettingsRepository(private val context: Context) {
         settingsStore.updateSettingsAndWait { it.copy(appendHttpProxy = value) }
         notifyRestartRequired()
     }
-
-    // ==================== 濡ゅ倹顭囨鍥╂崉椤栨粍鏆?====================
 
     suspend fun setCustomRules(value: List<CustomRule>) {
         settingsStore.updateSettingsAndWait { it.copy(customRules = value) }

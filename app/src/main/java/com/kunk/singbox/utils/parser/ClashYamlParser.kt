@@ -213,7 +213,6 @@ class ClashYamlParser : SubscriptionParser {
                     headers["User-Agent"] = getUserAgent(fingerprint)
                 }
 
-                // 濠㈣泛瀚幃?max-early-data
                 val maxEarlyData = asInt(wsOpts?.get("max-early-data")) ?: 2048
                 val earlyDataHeaderName = asString(wsOpts?.get("early-data-header-name")) ?: "Sec-WebSocket-Protocol"
                 val isHttpUpgrade = asBool(wsOpts?.get("v2ray-http-upgrade")) == true
@@ -340,7 +339,6 @@ class ClashYamlParser : SubscriptionParser {
                     headers["User-Agent"] = getUserAgent(fingerprint)
                 }
 
-                // 濠㈣泛瀚幃?max-early-data
                 val maxEarlyData = asInt(wsOpts?.get("max-early-data")) ?: 2048
                 val earlyDataHeaderName = asString(wsOpts?.get("early-data-header-name")) ?: "Sec-WebSocket-Protocol"
                 val isHttpUpgrade = asBool(wsOpts?.get("v2ray-http-upgrade")) == true
@@ -621,7 +619,6 @@ class ClashYamlParser : SubscriptionParser {
                     headers["User-Agent"] = getUserAgent(fingerprint)
                 }
 
-                // 濠㈣泛瀚幃?max-early-data
                 val maxEarlyData = asInt(wsOpts?.get("max-early-data")) ?: 2048
                 val earlyDataHeaderName = asString(wsOpts?.get("early-data-header-name")) ?: "Sec-WebSocket-Protocol"
                 val isHttpUpgrade = asBool(wsOpts?.get("v2ray-http-upgrade")) == true

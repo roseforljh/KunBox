@@ -205,16 +205,14 @@ class DnsResolver(
             if (dohResult.isSuccess) {
                 return@withContext dohResult
             }
-            Log.w(TAG, "DoH failed for $domain, falling back to system DNS")
+            Log.w(TAG, "DoH failed for $domain")
+            return@withContext dohResult
         }
 
-        // Fallback to system DNS only when DoH fails
         resolveViaSystem(domain)
     }
 
     /**
-     *
-     * @param concurrency 妤犵偠娉涜ぐ鍌炲极?
      */
     suspend fun resolveBatch(
         domains: List<String>,

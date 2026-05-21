@@ -103,7 +103,6 @@ object L {
     ) {
         val fullTag = "${category.prefix}/$tag"
 
-        // Logcat 閺夊牊鎸搁崵?
         if (logcatEnabled) {
             when (level) {
                 Log.VERBOSE -> Log.v(fullTag, message, throwable)

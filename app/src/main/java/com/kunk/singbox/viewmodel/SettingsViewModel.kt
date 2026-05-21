@@ -370,7 +370,6 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         viewModelScope.launch { repository.setAppendHttpProxy(value) }
     }
 
-    // 濡ゅ倹顭囨鍥╂崉椤栨粍鏆?
     fun addCustomRule(rule: CustomRule) {
         viewModelScope.launch {
             val currentRules = settings.value.customRules.toMutableList()
@@ -400,100 +399,10 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 
     fun addRuleSet(ruleSet: RuleSet, onResult: (Boolean, String) -> Unit = { _, _ -> }) {
         viewModelScope.launch {
-            @Suppress("CyclomaticComplexMethod", "LongMethod", "CognitiveComplexMethod")
-            fun normalizeRuleSetUrl(url: String, mirrorUrl: String): String {
-                val rawPrefix = "https://raw.githubusercontent.com/"
-                val cdnPrefix = "https://cdn.jsdelivr.net/gh/"
-
-                var rawUrl = url
-
-                // Handle CDN format first
-                if (rawUrl.startsWith(cdnPrefix)) {
-                    val path = rawUrl.removePrefix(cdnPrefix)
-                    val parts = path.split("@", limit = 2)
-                    if (parts.size == 2) {
-                        val userRepo = parts[0]
-                        val branchPath = parts[1]
-                        rawUrl = "$rawPrefix$userRepo/$branchPath"
-                    }
-                }
-
-                // Handle proxy/mirror URLs that wrap the original URL
-                val proxyPrefixes = listOf(
-                    "https://ghp.ci/",
-                    "https://mirror.ghproxy.com/",
-                    "https://ghproxy.com/",
-                    "https://ghproxy.net/",
-                    "https://ghfast.top/",
-                    "https://gh-proxy.com/"
-                )
-
-                for (proxy in proxyPrefixes) {
-                    if (rawUrl.startsWith(proxy)) {
-                        val afterProxy = rawUrl.removePrefix(proxy)
-                        if (afterProxy.startsWith("http://") || afterProxy.startsWith("https://")) {
-                            val withoutProtocol = afterProxy
-                                .removePrefix("https://")
-                                .removePrefix("http://")
-                            val firstSlash = withoutProtocol.indexOf('/')
-                            if (firstSlash > 0) {
-                                rawUrl = "/" + withoutProtocol.substring(firstSlash)
-                            } else {
-                                rawUrl = "/" + withoutProtocol
-                            }
-                        } else if (afterProxy.startsWith("/")) {
-                            rawUrl = afterProxy
-                        } else {
-                            rawUrl = afterProxy
-                        }
-                        break
-                    }
-                }
-
-                // If still contains raw.githubusercontent.com but not as proper prefix, extract clean path
-                if (rawUrl.contains("raw.githubusercontent.com")) {
-                    val path = rawUrl.substringAfter("raw.githubusercontent.com/")
-                    if (path.startsWith("http://") || path.startsWith("https://")) {
-                        val cleanPath = path
-                            .removePrefix("https://")
-                            .removePrefix("http://")
-                        rawUrl = rawPrefix + cleanPath
-                    } else if (path.contains("raw.githubusercontent.com/")) {
-                        rawUrl = rawPrefix + path.substringAfter("raw.githubusercontent.com/")
-                    } else {
-                        rawUrl = rawPrefix + path
-                    }
-                }
-
-                var updatedUrl = rawUrl
-
-                if (mirrorUrl.contains("cdn.jsdelivr.net")) {
-                    if (rawUrl.startsWith(rawPrefix)) {
-                        val path = rawUrl.removePrefix(rawPrefix)
-                        val parts = path.split("/", limit = 4)
-                        if (parts.size >= 4) {
-                            val user = parts[0]
-                            val repo = parts[1]
-                            val branch = parts[2]
-                            val filePath = parts[3]
-                            updatedUrl = "$cdnPrefix$user/$repo@$branch/$filePath"
-                        }
-                    }
-                } else if (mirrorUrl != rawPrefix) {
-                    if (rawUrl.startsWith(rawPrefix)) {
-                        updatedUrl = rawUrl.replace(rawPrefix, mirrorUrl)
-                    }
-                }
-
-                return updatedUrl
-            }
-
-            val normalizedRuleSet = if (ruleSet.type == RuleSetType.REMOTE) {
-                val mirrorUrl = settings.value.ghProxyMirror.url
-                ruleSet.copy(url = normalizeRuleSetUrl(ruleSet.url, mirrorUrl))
-            } else {
-                ruleSet
-            }
+            val normalizedRuleSet = RuleSetRepository.normalizeRuleSetForSave(
+                ruleSet = ruleSet,
+                mirrorUrl = settings.value.ghProxyMirror.url
+            )
 
             val currentSets = repository.getRuleSets().toMutableList()
             val exists = currentSets.any { it.tag == normalizedRuleSet.tag }
@@ -529,98 +438,11 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             val currentSets = repository.getRuleSets().toMutableList()
             val addedRuleSets = mutableListOf<RuleSet>()
 
-            @Suppress("CyclomaticComplexMethod", "LongMethod", "CognitiveComplexMethod")
-            fun normalizeRuleSetUrl(url: String, mirrorUrl: String): String {
-                val rawPrefix = "https://raw.githubusercontent.com/"
-                val cdnPrefix = "https://cdn.jsdelivr.net/gh/"
-
-                var rawUrl = url
-
-                // Handle CDN format first
-                if (rawUrl.startsWith(cdnPrefix)) {
-                    val path = rawUrl.removePrefix(cdnPrefix)
-                    val parts = path.split("@", limit = 2)
-                    if (parts.size == 2) {
-                        val userRepo = parts[0]
-                        val branchPath = parts[1]
-                        rawUrl = "$rawPrefix$userRepo/$branchPath"
-                    }
-                }
-
-                // Handle proxy/mirror URLs that wrap the original URL
-                val proxyPrefixes = listOf(
-                    "https://ghp.ci/",
-                    "https://mirror.ghproxy.com/",
-                    "https://ghproxy.com/",
-                    "https://ghproxy.net/",
-                    "https://ghfast.top/",
-                    "https://gh-proxy.com/"
-                )
-
-                for (proxy in proxyPrefixes) {
-                    if (rawUrl.startsWith(proxy)) {
-                        val afterProxy = rawUrl.removePrefix(proxy)
-                        if (afterProxy.startsWith("http://") || afterProxy.startsWith("https://")) {
-                            val withoutProtocol = afterProxy
-                                .removePrefix("https://")
-                                .removePrefix("http://")
-                            val firstSlash = withoutProtocol.indexOf('/')
-                            if (firstSlash > 0) {
-                                rawUrl = "/" + withoutProtocol.substring(firstSlash)
-                            } else {
-                                rawUrl = "/" + withoutProtocol
-                            }
-                        } else if (afterProxy.startsWith("/")) {
-                            rawUrl = afterProxy
-                        } else {
-                            rawUrl = afterProxy
-                        }
-                        break
-                    }
-                }
-
-                // If still contains raw.githubusercontent.com but not as proper prefix, extract clean path
-                if (rawUrl.contains("raw.githubusercontent.com")) {
-                    val path = rawUrl.substringAfter("raw.githubusercontent.com/")
-                    if (path.startsWith("http://") || path.startsWith("https://")) {
-                        val cleanPath = path
-                            .removePrefix("https://")
-                            .removePrefix("http://")
-                        rawUrl = rawPrefix + cleanPath
-                    } else if (path.contains("raw.githubusercontent.com/")) {
-                        rawUrl = rawPrefix + path.substringAfter("raw.githubusercontent.com/")
-                    } else {
-                        rawUrl = rawPrefix + path
-                    }
-                }
-
-                var updatedUrl = rawUrl
-
-                if (mirrorUrl.contains("cdn.jsdelivr.net")) {
-                    if (rawUrl.startsWith(rawPrefix)) {
-                        val path = rawUrl.removePrefix(rawPrefix)
-                        val parts = path.split("/", limit = 4)
-                        if (parts.size >= 4) {
-                            val user = parts[0]
-                            val repo = parts[1]
-                            val branch = parts[2]
-                            val filePath = parts[3]
-                            updatedUrl = "$cdnPrefix$user/$repo@$branch/$filePath"
-                        }
-                    }
-                } else if (mirrorUrl != rawPrefix) {
-                    if (rawUrl.startsWith(rawPrefix)) {
-                        updatedUrl = rawUrl.replace(rawPrefix, mirrorUrl)
-                    }
-                }
-
-                return updatedUrl
-            }
-
             fun normalizeRuleSet(ruleSet: RuleSet): RuleSet {
-                if (ruleSet.type != RuleSetType.REMOTE) return ruleSet
-                val mirrorUrl = settings.value.ghProxyMirror.url
-                return ruleSet.copy(url = normalizeRuleSetUrl(ruleSet.url, mirrorUrl))
+                return RuleSetRepository.normalizeRuleSetForSave(
+                    ruleSet = ruleSet,
+                    mirrorUrl = settings.value.ghProxyMirror.url
+                )
             }
 
             ruleSets.forEach { ruleSet ->
@@ -656,21 +478,29 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 
     fun updateRuleSet(ruleSet: RuleSet) {
         viewModelScope.launch {
+            val normalizedRuleSet = RuleSetRepository.normalizeRuleSetForSave(
+                ruleSet = ruleSet,
+                mirrorUrl = settings.value.ghProxyMirror.url
+            )
             val currentSets = settings.value.ruleSets.toMutableList()
-            val index = currentSets.indexOfFirst { it.id == ruleSet.id }
+            val index = currentSets.indexOfFirst { it.id == normalizedRuleSet.id }
             if (index != -1) {
                 val previous = currentSets[index]
-                currentSets[index] = ruleSet
+                currentSets[index] = normalizedRuleSet
                 repository.setRuleSets(currentSets)
 
-                if (!previous.enabled && ruleSet.enabled && ruleSet.type == RuleSetType.REMOTE) {
-                    if (!_downloadingRuleSets.value.contains(ruleSet.tag)) {
-                        _downloadingRuleSets.value += ruleSet.tag
+                if (!previous.enabled && normalizedRuleSet.enabled && normalizedRuleSet.type == RuleSetType.REMOTE) {
+                    if (!_downloadingRuleSets.value.contains(normalizedRuleSet.tag)) {
+                        _downloadingRuleSets.value += normalizedRuleSet.tag
                         launch {
                             try {
-                                ruleSetRepository.prefetchRuleSet(ruleSet, forceUpdate = false, allowNetwork = true)
+                                ruleSetRepository.prefetchRuleSet(
+                                    normalizedRuleSet,
+                                    forceUpdate = false,
+                                    allowNetwork = true
+                                )
                             } finally {
-                                _downloadingRuleSets.value -= ruleSet.tag
+                                _downloadingRuleSets.value -= normalizedRuleSet.tag
                             }
                         }
                     }

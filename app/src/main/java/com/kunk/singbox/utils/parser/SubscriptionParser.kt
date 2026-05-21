@@ -4,10 +4,7 @@ import android.util.Log
 import com.kunk.singbox.model.Outbound
 import com.kunk.singbox.model.SingBoxConfig
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.withContext
-import java.net.InetAddress
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -37,8 +34,6 @@ object DnsResolveCache {
 
     private const val CACHE_TTL_MS = 30 * 60 * 1000L
 
-    private const val RETRY_INTERVAL_MS = 5 * 60 * 1000L
-
     /**
      */
     fun getResolvedIp(domain: String): String? {
@@ -56,54 +51,11 @@ object DnsResolveCache {
     /**
      */
     suspend fun preResolve(domains: List<String>): Int = withContext(Dispatchers.IO) {
-        val currentTime = System.currentTimeMillis()
-
-        failedDomains.entries.removeIf { currentTime - it.value >= RETRY_INTERVAL_MS }
-
-        val toResolve = domains.filter { domain ->
-
-            val entry = cache[domain]
-            if (entry != null && currentTime - entry.timestamp < CACHE_TTL_MS) {
-                return@filter false
-            }
-
-            val failedTime = failedDomains[domain]
-            if (failedTime != null && currentTime - failedTime < RETRY_INTERVAL_MS) {
-                return@filter false
-            }
-
-            if (isIpAddress(domain)) return@filter false
-            true
-        }.distinct()
-
-        if (toResolve.isEmpty()) return@withContext 0
-
-        Log.d(TAG, "Pre-resolving ${toResolve.size} domains...")
-
-        val results = toResolve.map { domain ->
-            async {
-                try {
-                    val addresses = InetAddress.getAllByName(domain)
-                    val ip = addresses.firstOrNull()?.hostAddress
-                    if (ip != null) {
-                        cache[domain] = CacheEntry(ip, currentTime)
-                        Log.d(TAG, "Resolved $domain -> $ip")
-                        1
-                    } else {
-                        failedDomains[domain] = currentTime
-                        0
-                    }
-                } catch (e: Exception) {
-                    failedDomains[domain] = currentTime
-                    Log.w(TAG, "Failed to resolve $domain: ${e.message}")
-                    0
-                }
-            }
-        }.awaitAll()
-
-        val successCount = results.sum()
-        Log.d(TAG, "Pre-resolved $successCount/${toResolve.size} domains")
-        successCount
+        domains
+            .filterNot { isIpAddress(it) }
+            .distinct()
+            .forEach { failedDomains[it] = System.currentTimeMillis() }
+        0
     }
 
     /**
