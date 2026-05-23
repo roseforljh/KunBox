@@ -1,5 +1,23 @@
 # Changelog
 
+## [2.16.0](https://github.com/roseforljh/KunBox/compare/v2.15.0...v2.16.0) (2026-05-23)
+
+
+### Features
+
+* 添加应用代理黑名单模式 ([9c4b526](https://github.com/roseforljh/KunBox/commit/9c4b526858c46dbaabe1d464608d9dbb09e8b768))
+
+
+### Bug Fixes
+
+* VPN启动成功后清除pendingNodeName避免通知残留 ([c977e59](https://github.com/roseforljh/KunBox/commit/c977e595188ae1bb4478b9c91541e5b4d3a58eb6))
+* 修复分应用模式卸载应用后计数不一致及记忆丢失问题 ([d8b83ed](https://github.com/roseforljh/KunBox/commit/d8b83ed1aad6b8c1d7dbadb11720f657300b3de3))
+* 修复同配置切换节点通知栏不更新 ([a195054](https://github.com/roseforljh/KunBox/commit/a195054347ce78a6a83c7cadd4c62572f21ea79e))
+* 修复配置切换后热切通知仍显示旧节点 ([3e93b10](https://github.com/roseforljh/KunBox/commit/3e93b109b067068bb5055db3a38c3883863dcb60))
+* 修复配置切换后通知栏显示旧节点 ([41375e7](https://github.com/roseforljh/KunBox/commit/41375e7780fdffee10046b7997b8b3c2a9ea367c))
+* 修复配置切换后通知栏节点滞留 ([a7edb78](https://github.com/roseforljh/KunBox/commit/a7edb78eb52bcc46d52658db482c847c9533121e))
+* 修复配置切换节点记忆失效 ([af8d3b4](https://github.com/roseforljh/KunBox/commit/af8d3b4c768bf5a2fa9bee6dac057a29f1c4ca64))
+
 ## [2.15.0](https://github.com/roseforljh/KunBox/compare/v2.14.0...v2.15.0) (2026-05-21)
 
 
