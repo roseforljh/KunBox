@@ -108,8 +108,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         // 否则VPN仍然使用旧配置，导致用户看到"选中"了新配置的节点但实际没联网
         if (SingBoxRemote.isRunning.value || SingBoxRemote.isStarting.value) {
             viewModelScope.launch {
-                delay(100)
-                // 获取新配置的当前选中节点
+                configRepository.setActiveProfileAndWait(profileId)
                 val currentNodeId = configRepository.activeNodeId.value
                 if (currentNodeId != null) {
                     Log.i(TAG, "Profile switched while VPN running, triggering node switch for: $currentNodeId")

@@ -79,7 +79,7 @@ class ProfilesViewModel(application: Application) : AndroidViewModel(application
             }
 
             viewModelScope.launch {
-                delay(100)
+                configRepository.setActiveProfileAndWait(profileId)
                 val currentNodeId = configRepository.activeNodeId.value
                 if (currentNodeId != null) {
                     Log.i("ProfilesViewModel", "Profile switched while VPN running, triggering node switch for: $currentNodeId")

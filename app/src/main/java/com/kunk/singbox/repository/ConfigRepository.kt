@@ -1872,6 +1872,36 @@ class ConfigRepository(private val context: Context) {
         return profileLastSelectedNode[profileId]
     }
 
+    private fun applyActiveProfileNodes(
+        profileId: String,
+        nodes: List<NodeUi>,
+        targetNodeId: String? = null
+    ) {
+        _nodes.value = nodes
+        val currentActiveId = _activeNodeId.value
+        _activeNodeId.value = when {
+            targetNodeId != null && nodes.any { it.id == targetNodeId } -> targetNodeId
+            currentActiveId != null && nodes.any { it.id == currentActiveId } -> currentActiveId
+            else -> {
+                val rememberedNodeId = getProfileLastSelectedNode(profileId)
+                when {
+                    rememberedNodeId != null && nodes.any { it.id == rememberedNodeId } -> rememberedNodeId
+                    nodes.isNotEmpty() -> nodes.first().id
+                    else -> null
+                }
+            }
+        }
+    }
+
+    private suspend fun loadProfileNodesWithLatency(profileId: String): List<NodeUi>? {
+        val cfg = withContext(Dispatchers.IO) { loadConfig(profileId) } ?: return null
+        val nodes = extractNodesFromConfig(cfg, profileId)
+        return nodes.map { node ->
+            val latency = savedNodeLatencies[node.id]
+            if (latency != null) node.copy(latencyMs = latency) else node
+        }.also { profileNodes[profileId] = it }
+    }
+
     private fun loadConfig(profileId: String): SingBoxConfig? {
         configCache[profileId]?.let {
             configCacheAccessTimes[profileId] = System.currentTimeMillis()
@@ -2422,12 +2452,7 @@ class ConfigRepository(private val context: Context) {
                 profileNodes[activeProfileId] = nodesWithLatency
                 cacheConfig(activeProfileId, config)
                 if (activeProfileId == _activeProfileId.value) {
-                    _nodes.value = nodesWithLatency
-                    _activeNodeId.value = when {
-                        !activeNodeId.isNullOrBlank() && nodesWithLatency.any { it.id == activeNodeId } -> activeNodeId
-                        nodesWithLatency.isNotEmpty() -> nodesWithLatency.first().id
-                        else -> null
-                    }
+                    applyActiveProfileNodes(activeProfileId, nodesWithLatency, activeNodeId)
                 }
                 if (allNodesUiActiveCount.get() > 0) {
                     updateAllNodesAndGroups()
@@ -3409,7 +3434,16 @@ class ConfigRepository(private val context: Context) {
         )
     }
 
-    fun setActiveProfile(profileId: String, targetNodeId: String? = null) {
+    suspend fun setActiveProfileAndWait(profileId: String, targetNodeId: String? = null) {
+        val nodes = setActiveProfile(profileId, targetNodeId)
+            ?: loadProfileNodesWithLatency(profileId)
+        if (nodes != null && _activeProfileId.value == profileId) {
+            applyActiveProfileNodes(profileId, nodes, targetNodeId)
+            saveProfilesImmediate()
+        }
+    }
+
+    fun setActiveProfile(profileId: String, targetNodeId: String? = null): List<NodeUi>? {
         val currentProfileId = _activeProfileId.value
         val currentNodeId = _activeNodeId.value
         if (currentProfileId != null && currentNodeId != null && currentProfileId != profileId) {
@@ -3420,22 +3454,7 @@ class ConfigRepository(private val context: Context) {
         val cached = profileNodes[profileId]
 
         fun updateState(nodes: List<NodeUi>) {
-            _nodes.value = nodes
-
-            val currentActiveId = _activeNodeId.value
-
-            if (targetNodeId != null && nodes.any { it.id == targetNodeId }) {
-                _activeNodeId.value = targetNodeId
-            } else if (currentActiveId != null && nodes.any { it.id == currentActiveId }) {
-                // keep current
-            } else {
-                val rememberedNodeId = getProfileLastSelectedNode(profileId)
-                if (rememberedNodeId != null && nodes.any { it.id == rememberedNodeId }) {
-                    _activeNodeId.value = rememberedNodeId
-                } else if (nodes.isNotEmpty()) {
-                    _activeNodeId.value = nodes.first().id
-                }
-            }
+            applyActiveProfileNodes(profileId, nodes, targetNodeId)
         }
 
         if (cached != null) {
@@ -3459,6 +3478,7 @@ class ConfigRepository(private val context: Context) {
             }
         }
         saveProfilesImmediate()
+        return cached
     }
 
     sealed class NodeSwitchResult {
@@ -3665,9 +3685,14 @@ class ConfigRepository(private val context: Context) {
         val candidates = _nodes.value
         val matched = candidates.firstOrNull { it.name == proxyName } ?: return false
         if (matched.sourceProfileId != activeProfileId) return false
-        if (_activeNodeId.value == matched.id) return true
+        if (_activeNodeId.value == matched.id) {
+            saveProfileNodeMemory(activeProfileId, matched.id)
+            return true
+        }
 
         _activeNodeId.value = matched.id
+        saveProfileNodeMemory(activeProfileId, matched.id)
+        saveProfilesImmediate()
         Log.i(TAG, "Synced active node from service selection: $proxyName -> ${matched.id}")
         return true
     }
