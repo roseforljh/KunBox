@@ -8,14 +8,15 @@ internal fun removePackageFromList(value: String, packageName: String): String {
 
 internal fun sanitizePackageList(
     value: String,
-    isPackageInstalled: (String) -> Boolean
+    installedPackages: Set<String>
 ): String {
+    if (installedPackages.isEmpty()) return value.toPackageNames().joinToString("\n")
     return value.toPackageNames()
-        .filter { isPackageInstalled(it) }
+        .filter { it in installedPackages }
         .joinToString("\n")
 }
 
-internal fun shouldSyncRemovedPackage(isReplacing: Boolean, packageName: String?): Boolean {
+internal fun shouldReloadInstalledAppsForPackageChange(isReplacing: Boolean, packageName: String?): Boolean {
     return !isReplacing && !packageName.isNullOrBlank()
 }
 

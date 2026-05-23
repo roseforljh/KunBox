@@ -4174,7 +4174,6 @@ class ConfigRepository(private val context: Context) {
             val allNodesSnapshot = _allNodes.value.takeIf { it.isNotEmpty() } ?: loadAllNodesSnapshot()
             val activeNode = _nodes.value.find { it.id == activeNodeId }
                 ?: allNodesSnapshot.find { it.id == activeNodeId }
-            settingsRepository.sanitizePerAppPackageLists()
             val sanitizedSettings = settingsRepository.settings.first()
             val log = buildRunLogConfig()
             val experimental = buildRunExperimentalConfig(sanitizedSettings)

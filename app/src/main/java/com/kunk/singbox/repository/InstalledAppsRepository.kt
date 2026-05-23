@@ -101,6 +101,11 @@ class InstalledAppsRepository private constructor(private val context: Context) 
         loadApps()
     }
 
+    suspend fun refreshApps() {
+        _loadingState.value = LoadingState.Idle
+        loadApps()
+    }
+
     fun needsLoading(): Boolean {
         return _loadingState.value is LoadingState.Idle
     }

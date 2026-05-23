@@ -21,16 +21,26 @@ class PerAppPackageSyncTest {
     fun sanitizePackageList_keepsOnlyInstalledPackageNames() {
         val result = sanitizePackageList(
             value = "com.installed\ncom.removed",
-            isPackageInstalled = { it == "com.installed" }
+            installedPackages = setOf("com.installed")
         )
 
         assertEquals("com.installed", result)
     }
 
     @Test
+    fun sanitizePackageList_doesNotDropPackagesWhenInstalledAppSnapshotIsEmpty() {
+        val result = sanitizePackageList(
+            value = "com.selected",
+            installedPackages = emptySet()
+        )
+
+        assertEquals("com.selected", result)
+    }
+
+    @Test
     fun packageRemovedEvent_skipsReplacingUpdates() {
-        assertFalse(shouldSyncRemovedPackage(isReplacing = true, packageName = "com.example"))
-        assertTrue(shouldSyncRemovedPackage(isReplacing = false, packageName = "com.example"))
-        assertFalse(shouldSyncRemovedPackage(isReplacing = false, packageName = ""))
+        assertFalse(shouldReloadInstalledAppsForPackageChange(isReplacing = true, packageName = "com.example"))
+        assertTrue(shouldReloadInstalledAppsForPackageChange(isReplacing = false, packageName = "com.example"))
+        assertFalse(shouldReloadInstalledAppsForPackageChange(isReplacing = false, packageName = ""))
     }
 }

@@ -1,11 +1,11 @@
 # Graph Report - .  (2026-05-24)
 
 ## Corpus Check
-- 215 files ， ~216,502 words
+- 215 files ， ~216,629 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 3420 nodes ， 3207 edges ， 215 communities detected
+- 3422 nodes ， 3209 edges ， 215 communities detected
 - Extraction: 100% EXTRACTED ， 0% INFERRED ， 0% AMBIGUOUS
 - Token cost: 0 input ， 0 output
 
@@ -548,43 +548,43 @@ Nodes (1): PingDisplayTextTest
 
 ### Community 130 - "Community 130"
 Cohesion: 0.33
-Nodes (1): InboundBuilderTest
+Nodes (1): PerAppPackageSyncTest
 
 ### Community 131 - "Community 131"
 Cohesion: 0.33
-Nodes (1): BackgroundPowerManagerTest
+Nodes (1): InboundBuilderTest
 
 ### Community 132 - "Community 132"
 Cohesion: 0.33
-Nodes (1): StartupManagerTest
+Nodes (1): BackgroundPowerManagerTest
 
 ### Community 133 - "Community 133"
-Cohesion: 0.4
-Nodes (0): 
+Cohesion: 0.33
+Nodes (1): StartupManagerTest
 
 ### Community 134 - "Community 134"
 Cohesion: 0.4
-Nodes (1): LibboxNativeSupport
+Nodes (0): 
 
 ### Community 135 - "Community 135"
 Cohesion: 0.4
-Nodes (1): LocalResolverImpl
+Nodes (1): LibboxNativeSupport
 
 ### Community 136 - "Community 136"
 Cohesion: 0.4
-Nodes (0): 
+Nodes (1): LocalResolverImpl
 
 ### Community 137 - "Community 137"
 Cohesion: 0.4
-Nodes (3): AddNodeTarget, ExistingProfile, NewProfile
+Nodes (0): 
 
 ### Community 138 - "Community 138"
 Cohesion: 0.4
-Nodes (3): ExistingProfile, NewProfile, SelectProfileTarget
+Nodes (3): AddNodeTarget, ExistingProfile, NewProfile
 
 ### Community 139 - "Community 139"
 Cohesion: 0.4
-Nodes (0): 
+Nodes (3): ExistingProfile, NewProfile, SelectProfileTarget
 
 ### Community 140 - "Community 140"
 Cohesion: 0.4
@@ -592,47 +592,47 @@ Nodes (0):
 
 ### Community 141 - "Community 141"
 Cohesion: 0.4
-Nodes (2): DeepLinkHandler, SubscriptionImportData
+Nodes (0): 
 
 ### Community 142 - "Community 142"
 Cohesion: 0.4
-Nodes (1): StringBuilderPool
+Nodes (2): DeepLinkHandler, SubscriptionImportData
 
 ### Community 143 - "Community 143"
 Cohesion: 0.4
-Nodes (1): InstalledAppsViewModel
+Nodes (1): StringBuilderPool
 
 ### Community 144 - "Community 144"
 Cohesion: 0.4
-Nodes (1): AppShortcutsResourceTest
+Nodes (1): InstalledAppsViewModel
 
 ### Community 145 - "Community 145"
 Cohesion: 0.4
-Nodes (1): BoxWrapperManagerRecoveryPolicyTest
+Nodes (1): AppShortcutsResourceTest
 
 ### Community 146 - "Community 146"
 Cohesion: 0.4
-Nodes (1): SingBoxIpcHubStateTest
+Nodes (1): BoxWrapperManagerRecoveryPolicyTest
 
 ### Community 147 - "Community 147"
 Cohesion: 0.4
-Nodes (1): VpnStateStoreTest
+Nodes (1): SingBoxIpcHubStateTest
 
 ### Community 148 - "Community 148"
 Cohesion: 0.4
-Nodes (1): ModelSerializationTest
+Nodes (1): VpnStateStoreTest
 
 ### Community 149 - "Community 149"
 Cohesion: 0.4
-Nodes (1): LatencyProbePolicyTest
+Nodes (1): ModelSerializationTest
 
 ### Community 150 - "Community 150"
 Cohesion: 0.4
-Nodes (1): LogRepositoryTest
+Nodes (1): LatencyProbePolicyTest
 
 ### Community 151 - "Community 151"
 Cohesion: 0.4
-Nodes (1): PerAppPackageSyncTest
+Nodes (1): LogRepositoryTest
 
 ### Community 152 - "Community 152"
 Cohesion: 0.4
@@ -703,36 +703,36 @@ Cohesion: 0.5
 Nodes (1): NodeSwitchDisplayNameTest
 
 ### Community 169 - "Community 169"
-Cohesion: 0.67
-Nodes (2): FilterMode, NodeFilter
+Cohesion: 0.5
+Nodes (1): AppSelectionSyncTest
 
 ### Community 170 - "Community 170"
 Cohesion: 0.67
-Nodes (1): PingDisplayText
+Nodes (2): FilterMode, NodeFilter
 
 ### Community 171 - "Community 171"
 Cohesion: 0.67
-Nodes (1): LatencyProbePolicy
+Nodes (1): PingDisplayText
 
 ### Community 172 - "Community 172"
 Cohesion: 0.67
-Nodes (1): InboundBuilder
+Nodes (1): LatencyProbePolicy
 
 ### Community 173 - "Community 173"
 Cohesion: 0.67
-Nodes (1): ShortcutActivity
+Nodes (1): InboundBuilder
 
 ### Community 174 - "Community 174"
 Cohesion: 0.67
-Nodes (0): 
+Nodes (1): ShortcutActivity
 
 ### Community 175 - "Community 175"
 Cohesion: 0.67
-Nodes (1): AppNotificationManager
+Nodes (0): 
 
 ### Community 176 - "Community 176"
 Cohesion: 0.67
-Nodes (0): 
+Nodes (1): AppNotificationManager
 
 ### Community 177 - "Community 177"
 Cohesion: 0.67
@@ -768,19 +768,19 @@ Nodes (0):
 
 ### Community 185 - "Community 185"
 Cohesion: 0.67
-Nodes (1): ProxyAwareOkHttpClient
+Nodes (0): 
 
 ### Community 186 - "Community 186"
 Cohesion: 0.67
-Nodes (1): RuleSetUpdateWorker
+Nodes (1): ProxyAwareOkHttpClient
 
 ### Community 187 - "Community 187"
 Cohesion: 0.67
-Nodes (1): NodeSwitchManagerNotificationTest
+Nodes (1): RuleSetUpdateWorker
 
 ### Community 188 - "Community 188"
 Cohesion: 0.67
-Nodes (1): AppSelectionSyncTest
+Nodes (1): NodeSwitchManagerNotificationTest
 
 ### Community 189 - "Community 189"
 Cohesion: 0.67

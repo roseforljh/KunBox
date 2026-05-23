@@ -9,7 +9,7 @@
       "source_file": "app\\build.gradle.kts",
       "source_location": "L1",
       "id": "build_gradle",
-      "community": 133
+      "community": 134
     },
     {
       "label": "settings.gradle.kts",
@@ -25,7 +25,7 @@
       "source_file": "app\\build.gradle.kts",
       "source_location": "L26",
       "id": "build_gradle_detectlibboxabis",
-      "community": 133
+      "community": 134
     },
     {
       "label": "findNdkDir()",
@@ -33,7 +33,7 @@
       "source_file": "app\\build.gradle.kts",
       "source_location": "L83",
       "id": "build_gradle_findndkdir",
-      "community": 133
+      "community": 134
     },
     {
       "label": "findLlvmStripExe()",
@@ -41,7 +41,7 @@
       "source_file": "app\\build.gradle.kts",
       "source_location": "L116",
       "id": "build_gradle_findllvmstripexe",
-      "community": 133
+      "community": 134
     },
     {
       "label": "replaceLibboxSoFromSfaSource()",
@@ -49,7 +49,7 @@
       "source_file": "app\\build.gradle.kts",
       "source_location": "L152",
       "id": "build_gradle_replacelibboxsofromsfasource",
-      "community": 133
+      "community": 134
     },
     {
       "label": "ConfigRepositoryEntryRegressionTest.kt",
@@ -897,7 +897,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\core\\LibboxNativeSupport.kt",
       "source_location": "L1",
       "id": "libboxnativesupport",
-      "community": 134
+      "community": 135
     },
     {
       "label": "LibboxNativeSupport",
@@ -905,7 +905,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\core\\LibboxNativeSupport.kt",
       "source_location": "L7",
       "id": "libboxnativesupport_libboxnativesupport",
-      "community": 134
+      "community": 135
     },
     {
       "label": ".hasSymbol()",
@@ -913,7 +913,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\core\\LibboxNativeSupport.kt",
       "source_location": "L12",
       "id": "libboxnativesupport_libboxnativesupport_hassymbol",
-      "community": 134
+      "community": 135
     },
     {
       "label": ".loadLibBytes()",
@@ -921,7 +921,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\core\\LibboxNativeSupport.kt",
       "source_location": "L21",
       "id": "libboxnativesupport_libboxnativesupport_loadlibbytes",
-      "community": 134
+      "community": 135
     },
     {
       "label": ".containsAscii()",
@@ -929,7 +929,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\core\\LibboxNativeSupport.kt",
       "source_location": "L32",
       "id": "libboxnativesupport_libboxnativesupport_containsascii",
-      "community": 134
+      "community": 135
     },
     {
       "label": "LocalResolverImpl.kt",
@@ -937,7 +937,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\core\\LocalResolverImpl.kt",
       "source_location": "L1",
       "id": "localresolverimpl",
-      "community": 135
+      "community": 136
     },
     {
       "label": "LocalResolverImpl",
@@ -945,7 +945,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\core\\LocalResolverImpl.kt",
       "source_location": "L6",
       "id": "localresolverimpl_localresolverimpl",
-      "community": 135
+      "community": 136
     },
     {
       "label": ".raw()",
@@ -953,7 +953,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\core\\LocalResolverImpl.kt",
       "source_location": "L7",
       "id": "localresolverimpl_localresolverimpl_raw",
-      "community": 135
+      "community": 136
     },
     {
       "label": ".lookup()",
@@ -961,7 +961,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\core\\LocalResolverImpl.kt",
       "source_location": "L11",
       "id": "localresolverimpl_localresolverimpl_lookup",
-      "community": 135
+      "community": 136
     },
     {
       "label": ".exchange()",
@@ -969,7 +969,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\core\\LocalResolverImpl.kt",
       "source_location": "L15",
       "id": "localresolverimpl_localresolverimpl_exchange",
-      "community": 135
+      "community": 136
     },
     {
       "label": "ProbeManager.kt",
@@ -4233,7 +4233,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\model\\NodeFilter.kt",
       "source_location": "L1",
       "id": "nodefilter",
-      "community": 169
+      "community": 170
     },
     {
       "label": "FilterMode",
@@ -4241,7 +4241,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\model\\NodeFilter.kt",
       "source_location": "L5",
       "id": "nodefilter_filtermode",
-      "community": 169
+      "community": 170
     },
     {
       "label": "NodeFilter",
@@ -4249,7 +4249,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\model\\NodeFilter.kt",
       "source_location": "L11",
       "id": "nodefilter_nodefilter",
-      "community": 169
+      "community": 170
     },
     {
       "label": "NodeSortType.kt",
@@ -4273,7 +4273,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\model\\PingDisplayText.kt",
       "source_location": "L1",
       "id": "pingdisplaytext",
-      "community": 170
+      "community": 171
     },
     {
       "label": "PingDisplayText",
@@ -4281,7 +4281,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\model\\PingDisplayText.kt",
       "source_location": "L3",
       "id": "pingdisplaytext_pingdisplaytext",
-      "community": 170
+      "community": 171
     },
     {
       "label": ".resolve()",
@@ -4289,7 +4289,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\model\\PingDisplayText.kt",
       "source_location": "L4",
       "id": "pingdisplaytext_pingdisplaytext_resolve",
-      "community": 170
+      "community": 171
     },
     {
       "label": "PingResultCode.kt",
@@ -6815,7 +6815,7 @@
       "label": ".buildOutboundForRuntime()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\ConfigRepository.kt",
-      "source_location": "L4247",
+      "source_location": "L4246",
       "id": "configrepository_configrepository_buildoutboundforruntime",
       "community": 0
     },
@@ -6823,7 +6823,7 @@
       "label": ".loadConfigWithLegacyEchRepair()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\ConfigRepository.kt",
-      "source_location": "L4250",
+      "source_location": "L4249",
       "id": "configrepository_configrepository_loadconfigwithlegacyechrepair",
       "community": 0
     },
@@ -6831,7 +6831,7 @@
       "label": ".stripInternalMetadata()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\ConfigRepository.kt",
-      "source_location": "L4275",
+      "source_location": "L4274",
       "id": "configrepository_configrepository_stripinternalmetadata",
       "community": 0
     },
@@ -6839,7 +6839,7 @@
       "label": ".preResolveDomainsForProfile()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\ConfigRepository.kt",
-      "source_location": "L4288",
+      "source_location": "L4287",
       "id": "configrepository_configrepository_preresolvedomainsforprofile",
       "community": 0
     },
@@ -6847,7 +6847,7 @@
       "label": ".applyDnsResolveToOutbound()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\ConfigRepository.kt",
-      "source_location": "L4316",
+      "source_location": "L4315",
       "id": "configrepository_configrepository_applydnsresolvetooutbound",
       "community": 0
     },
@@ -6855,7 +6855,7 @@
       "label": ".isValidRuleSetFile()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\ConfigRepository.kt",
-      "source_location": "L4329",
+      "source_location": "L4328",
       "id": "configrepository_configrepository_isvalidrulesetfile",
       "community": 0
     },
@@ -6863,7 +6863,7 @@
       "label": ".readRuleSetSample()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\ConfigRepository.kt",
-      "source_location": "L4353",
+      "source_location": "L4352",
       "id": "configrepository_configrepository_readrulesetsample",
       "community": 0
     },
@@ -6871,7 +6871,7 @@
       "label": ".isLikelyTextRuleSet()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\ConfigRepository.kt",
-      "source_location": "L4361",
+      "source_location": "L4360",
       "id": "configrepository_configrepository_islikelytextruleset",
       "community": 0
     },
@@ -6879,7 +6879,7 @@
       "label": ".readRuleSetInspectionText()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\ConfigRepository.kt",
-      "source_location": "L4370",
+      "source_location": "L4369",
       "id": "configrepository_configrepository_readrulesetinspectiontext",
       "community": 0
     },
@@ -6887,7 +6887,7 @@
       "label": ".validateBinaryRuleSet()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\ConfigRepository.kt",
-      "source_location": "L4378",
+      "source_location": "L4377",
       "id": "configrepository_configrepository_validatebinaryruleset",
       "community": 0
     },
@@ -6895,7 +6895,7 @@
       "label": ".validateTextRuleSet()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\ConfigRepository.kt",
-      "source_location": "L4386",
+      "source_location": "L4385",
       "id": "configrepository_configrepository_validatetextruleset",
       "community": 0
     },
@@ -6903,7 +6903,7 @@
       "label": ".shouldAcceptRuleSetTextByFallback()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\ConfigRepository.kt",
-      "source_location": "L4408",
+      "source_location": "L4407",
       "id": "configrepository_configrepository_shouldacceptrulesettextbyfallback",
       "community": 0
     },
@@ -6911,7 +6911,7 @@
       "label": ".isValidRuleSetJson()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\ConfigRepository.kt",
-      "source_location": "L4422",
+      "source_location": "L4421",
       "id": "configrepository_configrepository_isvalidrulesetjson",
       "community": 0
     },
@@ -6919,7 +6919,7 @@
       "label": ".isValidRuleSetStructuredText()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\ConfigRepository.kt",
-      "source_location": "L4441",
+      "source_location": "L4440",
       "id": "configrepository_configrepository_isvalidrulesetstructuredtext",
       "community": 0
     },
@@ -6927,7 +6927,7 @@
       "label": ".buildCustomRuleSets()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\ConfigRepository.kt",
-      "source_location": "L4454",
+      "source_location": "L4453",
       "id": "configrepository_configrepository_buildcustomrulesets",
       "community": 0
     },
@@ -6935,7 +6935,7 @@
       "label": ".getAppliedRemoteRuleSets()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\ConfigRepository.kt",
-      "source_location": "L4493",
+      "source_location": "L4492",
       "id": "configrepository_configrepository_getappliedremoterulesets",
       "community": 0
     },
@@ -6943,7 +6943,7 @@
       "label": ".buildCustomDomainRules()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\ConfigRepository.kt",
-      "source_location": "L4500",
+      "source_location": "L4499",
       "id": "configrepository_configrepository_buildcustomdomainrules",
       "community": 0
     },
@@ -6951,7 +6951,7 @@
       "label": ".buildCustomRuleSetRules()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\ConfigRepository.kt",
-      "source_location": "L4551",
+      "source_location": "L4550",
       "id": "configrepository_configrepository_buildcustomrulesetrules",
       "community": 0
     },
@@ -6959,7 +6959,7 @@
       "label": ".buildAppRoutingRules()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\ConfigRepository.kt",
-      "source_location": "L4599",
+      "source_location": "L4598",
       "id": "configrepository_configrepository_buildapproutingrules",
       "community": 0
     },
@@ -6967,7 +6967,7 @@
       "label": ".buildRunLogConfig()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\ConfigRepository.kt",
-      "source_location": "L4679",
+      "source_location": "L4678",
       "id": "configrepository_configrepository_buildrunlogconfig",
       "community": 0
     },
@@ -6975,7 +6975,7 @@
       "label": ".buildRunExperimentalConfig()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\ConfigRepository.kt",
-      "source_location": "L4686",
+      "source_location": "L4685",
       "id": "configrepository_configrepository_buildrunexperimentalconfig",
       "community": 0
     },
@@ -6983,7 +6983,7 @@
       "label": ".buildRunInbounds()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\ConfigRepository.kt",
-      "source_location": "L4705",
+      "source_location": "L4704",
       "id": "configrepository_configrepository_buildruninbounds",
       "community": 0
     },
@@ -6991,7 +6991,7 @@
       "label": ".resolveRunDnsFinalServer()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\ConfigRepository.kt",
-      "source_location": "L4711",
+      "source_location": "L4710",
       "id": "configrepository_configrepository_resolverundnsfinalserver",
       "community": 0
     },
@@ -6999,7 +6999,7 @@
       "label": ".buildRunDns()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\ConfigRepository.kt",
-      "source_location": "L4730",
+      "source_location": "L4729",
       "id": "configrepository_configrepository_buildrundns",
       "community": 0
     },
@@ -7007,7 +7007,7 @@
       "label": "RunOutboundsContext",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\ConfigRepository.kt",
-      "source_location": "L5202",
+      "source_location": "L5201",
       "id": "configrepository_runoutboundscontext",
       "community": 2
     },
@@ -7015,7 +7015,7 @@
       "label": ".resolveCurrentProxyDnsDetourTag()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\ConfigRepository.kt",
-      "source_location": "L5209",
+      "source_location": "L5208",
       "id": "configrepository_configrepository_resolvecurrentproxydnsdetourtag",
       "community": 0
     },
@@ -7023,7 +7023,7 @@
       "label": ".buildRunOutbounds()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\ConfigRepository.kt",
-      "source_location": "L5221",
+      "source_location": "L5220",
       "id": "configrepository_configrepository_buildrunoutbounds",
       "community": 0
     },
@@ -7031,7 +7031,7 @@
       "label": ".applySelectorSafeOutbounds()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\ConfigRepository.kt",
-      "source_location": "L5499",
+      "source_location": "L5498",
       "id": "configrepository_configrepository_applyselectorsafeoutbounds",
       "community": 0
     },
@@ -7039,7 +7039,7 @@
       "label": ".buildQuicBlockRule()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\ConfigRepository.kt",
-      "source_location": "L5503",
+      "source_location": "L5502",
       "id": "configrepository_configrepository_buildquicblockrule",
       "community": 0
     },
@@ -7047,7 +7047,7 @@
       "label": ".buildBypassLanRules()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\ConfigRepository.kt",
-      "source_location": "L5513",
+      "source_location": "L5512",
       "id": "configrepository_configrepository_buildbypasslanrules",
       "community": 0
     },
@@ -7055,7 +7055,7 @@
       "label": ".buildMulticastRejectRules()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\ConfigRepository.kt",
-      "source_location": "L5517",
+      "source_location": "L5516",
       "id": "configrepository_configrepository_buildmulticastrejectrules",
       "community": 0
     },
@@ -7063,7 +7063,7 @@
       "label": ".buildIcmpEchoRules()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\ConfigRepository.kt",
-      "source_location": "L5521",
+      "source_location": "L5520",
       "id": "configrepository_configrepository_buildicmpechorules",
       "community": 0
     },
@@ -7071,7 +7071,7 @@
       "label": ".buildDefaultRules()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\ConfigRepository.kt",
-      "source_location": "L5541",
+      "source_location": "L5540",
       "id": "configrepository_configrepository_builddefaultrules",
       "community": 0
     },
@@ -7079,7 +7079,7 @@
       "label": ".selectRunRouteRules()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\ConfigRepository.kt",
-      "source_location": "L5549",
+      "source_location": "L5548",
       "id": "configrepository_configrepository_selectrunrouterules",
       "community": 0
     },
@@ -7087,7 +7087,7 @@
       "label": ".normalizeRunRouteRules()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\ConfigRepository.kt",
-      "source_location": "L5567",
+      "source_location": "L5566",
       "id": "configrepository_configrepository_normalizerunrouterules",
       "community": 0
     },
@@ -7095,7 +7095,7 @@
       "label": ".buildRunRoute()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\ConfigRepository.kt",
-      "source_location": "L5580",
+      "source_location": "L5579",
       "id": "configrepository_configrepository_buildrunroute",
       "community": 0
     },
@@ -7103,7 +7103,7 @@
       "label": ".getActiveConfig()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\ConfigRepository.kt",
-      "source_location": "L5651",
+      "source_location": "L5650",
       "id": "configrepository_configrepository_getactiveconfig",
       "community": 0
     },
@@ -7111,7 +7111,7 @@
       "label": ".getConfig()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\ConfigRepository.kt",
-      "source_location": "L5656",
+      "source_location": "L5655",
       "id": "configrepository_configrepository_getconfig",
       "community": 0
     },
@@ -7119,7 +7119,7 @@
       "label": ".resolveDnsStrategy()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\ConfigRepository.kt",
-      "source_location": "L5660",
+      "source_location": "L5659",
       "id": "configrepository_configrepository_resolvednsstrategy",
       "community": 0
     },
@@ -7127,7 +7127,7 @@
       "label": ".getOutboundByNodeId()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\ConfigRepository.kt",
-      "source_location": "L5664",
+      "source_location": "L5663",
       "id": "configrepository_configrepository_getoutboundbynodeid",
       "community": 0
     },
@@ -7135,7 +7135,7 @@
       "label": ".getNodeById()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\ConfigRepository.kt",
-      "source_location": "L5670",
+      "source_location": "L5669",
       "id": "configrepository_configrepository_getnodebyid",
       "community": 0
     },
@@ -7143,7 +7143,7 @@
       "label": ".getNodeByName()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\ConfigRepository.kt",
-      "source_location": "L5680",
+      "source_location": "L5679",
       "id": "configrepository_configrepository_getnodebyname",
       "community": 0
     },
@@ -7151,7 +7151,7 @@
       "label": ".createNode()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\ConfigRepository.kt",
-      "source_location": "L5691",
+      "source_location": "L5690",
       "id": "configrepository_configrepository_createnode",
       "community": 0
     },
@@ -7159,7 +7159,7 @@
       "label": ".removeOutboundFromConfig()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\ConfigRepository.kt",
-      "source_location": "L5797",
+      "source_location": "L5796",
       "id": "configrepository_configrepository_removeoutboundfromconfig",
       "community": 0
     },
@@ -7167,7 +7167,7 @@
       "label": ".deleteNode()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\ConfigRepository.kt",
-      "source_location": "L5819",
+      "source_location": "L5818",
       "id": "configrepository_configrepository_deletenode",
       "community": 0
     },
@@ -7175,7 +7175,7 @@
       "label": ".addSingleNode()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\ConfigRepository.kt",
-      "source_location": "L5853",
+      "source_location": "L5852",
       "id": "configrepository_configrepository_addsinglenode",
       "community": 0
     },
@@ -7183,7 +7183,7 @@
       "label": ".renameNode()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\ConfigRepository.kt",
-      "source_location": "L5960",
+      "source_location": "L5959",
       "id": "configrepository_configrepository_renamenode",
       "community": 0
     },
@@ -7191,7 +7191,7 @@
       "label": ".updateNode()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\ConfigRepository.kt",
-      "source_location": "L5999",
+      "source_location": "L5998",
       "id": "configrepository_configrepository_updatenode",
       "community": 0
     },
@@ -7199,7 +7199,7 @@
       "label": ".exportNode()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\ConfigRepository.kt",
-      "source_location": "L6040",
+      "source_location": "L6039",
       "id": "configrepository_configrepository_exportnode",
       "community": 0
     },
@@ -7207,7 +7207,7 @@
       "label": ".deduplicateTags()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\ConfigRepository.kt",
-      "source_location": "L6059",
+      "source_location": "L6058",
       "id": "configrepository_configrepository_deduplicatetags",
       "community": 0
     },
@@ -7215,7 +7215,7 @@
       "label": ".findAvailablePort()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\ConfigRepository.kt",
-      "source_location": "L6088",
+      "source_location": "L6087",
       "id": "configrepository_configrepository_findavailableport",
       "community": 0
     },
@@ -7223,7 +7223,7 @@
       "label": ".cleanup()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\ConfigRepository.kt",
-      "source_location": "L6100",
+      "source_location": "L6099",
       "id": "configrepository_configrepository_cleanup",
       "community": 0
     },
@@ -7231,7 +7231,7 @@
       "label": ".isIpAddress()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\ConfigRepository.kt",
-      "source_location": "L6112",
+      "source_location": "L6111",
       "id": "configrepository_configrepository_isipaddress",
       "community": 0
     },
@@ -7641,7 +7641,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\LatencyProbePolicy.kt",
       "source_location": "L1",
       "id": "latencyprobepolicy",
-      "community": 171
+      "community": 172
     },
     {
       "label": "LatencyProbePolicy",
@@ -7649,7 +7649,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\LatencyProbePolicy.kt",
       "source_location": "L5",
       "id": "latencyprobepolicy_latencyprobepolicy",
-      "community": 171
+      "community": 172
     },
     {
       "label": ".shouldUseTcpFallback()",
@@ -7657,7 +7657,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\LatencyProbePolicy.kt",
       "source_location": "L6",
       "id": "latencyprobepolicy_latencyprobepolicy_shouldusetcpfallback",
-      "community": 171
+      "community": 172
     },
     {
       "label": "LatencyTester.kt",
@@ -8145,7 +8145,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\PerAppPackageSync.kt",
       "source_location": "L1",
       "id": "perapppackagesync",
-      "community": 136
+      "community": 137
     },
     {
       "label": "removePackageFromList()",
@@ -8153,7 +8153,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\PerAppPackageSync.kt",
       "source_location": "L3",
       "id": "perapppackagesync_removepackagefromlist",
-      "community": 136
+      "community": 137
     },
     {
       "label": "sanitizePackageList()",
@@ -8161,23 +8161,23 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\PerAppPackageSync.kt",
       "source_location": "L9",
       "id": "perapppackagesync_sanitizepackagelist",
-      "community": 136
+      "community": 137
     },
     {
-      "label": "shouldSyncRemovedPackage()",
+      "label": "shouldReloadInstalledAppsForPackageChange()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\PerAppPackageSync.kt",
-      "source_location": "L18",
-      "id": "perapppackagesync_shouldsyncremovedpackage",
-      "community": 136
+      "source_location": "L19",
+      "id": "perapppackagesync_shouldreloadinstalledappsforpackagechange",
+      "community": 137
     },
     {
       "label": "toPackageNames()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\PerAppPackageSync.kt",
-      "source_location": "L22",
+      "source_location": "L23",
       "id": "perapppackagesync_topackagenames",
-      "community": 136
+      "community": 137
     },
     {
       "label": "ProfilePersistence.kt",
@@ -8511,7 +8511,7 @@
       "label": "SettingsRepository",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L37",
+      "source_location": "L38",
       "id": "settingsrepository_settingsrepository",
       "community": 6
     },
@@ -8519,7 +8519,7 @@
       "label": ".getDefaultRuleSets()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L41",
+      "source_location": "L42",
       "id": "settingsrepository_settingsrepository_getdefaultrulesets",
       "community": 6
     },
@@ -8527,7 +8527,7 @@
       "label": ".reloadFromStorage()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L89",
+      "source_location": "L90",
       "id": "settingsrepository_settingsrepository_reloadfromstorage",
       "community": 6
     },
@@ -8535,7 +8535,7 @@
       "label": ".setAutoConnect()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L93",
+      "source_location": "L94",
       "id": "settingsrepository_settingsrepository_setautoconnect",
       "community": 6
     },
@@ -8543,7 +8543,7 @@
       "label": ".setExcludeFromRecent()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L97",
+      "source_location": "L98",
       "id": "settingsrepository_settingsrepository_setexcludefromrecent",
       "community": 6
     },
@@ -8551,7 +8551,7 @@
       "label": ".setAppTheme()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L101",
+      "source_location": "L102",
       "id": "settingsrepository_settingsrepository_setapptheme",
       "community": 6
     },
@@ -8559,7 +8559,7 @@
       "label": ".setAppLanguage()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L105",
+      "source_location": "L106",
       "id": "settingsrepository_settingsrepository_setapplanguage",
       "community": 6
     },
@@ -8567,7 +8567,7 @@
       "label": ".setShowNotificationSpeed()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L109",
+      "source_location": "L110",
       "id": "settingsrepository_settingsrepository_setshownotificationspeed",
       "community": 6
     },
@@ -8575,7 +8575,7 @@
       "label": ".setTunEnabled()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L113",
+      "source_location": "L114",
       "id": "settingsrepository_settingsrepository_settunenabled",
       "community": 6
     },
@@ -8583,7 +8583,7 @@
       "label": ".setTunStack()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L118",
+      "source_location": "L119",
       "id": "settingsrepository_settingsrepository_settunstack",
       "community": 6
     },
@@ -8591,7 +8591,7 @@
       "label": ".setIpVersionMode()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L123",
+      "source_location": "L124",
       "id": "settingsrepository_settingsrepository_setipversionmode",
       "community": 6
     },
@@ -8599,7 +8599,7 @@
       "label": ".setTunMtu()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L128",
+      "source_location": "L129",
       "id": "settingsrepository_settingsrepository_settunmtu",
       "community": 6
     },
@@ -8607,7 +8607,7 @@
       "label": ".setTunMtuAuto()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L133",
+      "source_location": "L134",
       "id": "settingsrepository_settingsrepository_settunmtuauto",
       "community": 6
     },
@@ -8615,7 +8615,7 @@
       "label": ".setTunInterfaceName()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L138",
+      "source_location": "L139",
       "id": "settingsrepository_settingsrepository_settuninterfacename",
       "community": 6
     },
@@ -8623,7 +8623,7 @@
       "label": ".setAutoRoute()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L143",
+      "source_location": "L144",
       "id": "settingsrepository_settingsrepository_setautoroute",
       "community": 6
     },
@@ -8631,7 +8631,7 @@
       "label": ".setStrictRoute()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L148",
+      "source_location": "L149",
       "id": "settingsrepository_settingsrepository_setstrictroute",
       "community": 6
     },
@@ -8639,7 +8639,7 @@
       "label": ".setEndpointIndependentNat()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L153",
+      "source_location": "L154",
       "id": "settingsrepository_settingsrepository_setendpointindependentnat",
       "community": 6
     },
@@ -8647,7 +8647,7 @@
       "label": ".setVpnRouteMode()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L158",
+      "source_location": "L159",
       "id": "settingsrepository_settingsrepository_setvpnroutemode",
       "community": 6
     },
@@ -8655,7 +8655,7 @@
       "label": ".setVpnRouteIncludeCidrs()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L163",
+      "source_location": "L164",
       "id": "settingsrepository_settingsrepository_setvpnrouteincludecidrs",
       "community": 6
     },
@@ -8663,7 +8663,7 @@
       "label": ".setVpnAppMode()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L168",
+      "source_location": "L169",
       "id": "settingsrepository_settingsrepository_setvpnappmode",
       "community": 6
     },
@@ -8671,7 +8671,7 @@
       "label": ".setVpnAllowlist()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L173",
+      "source_location": "L174",
       "id": "settingsrepository_settingsrepository_setvpnallowlist",
       "community": 6
     },
@@ -8679,7 +8679,7 @@
       "label": ".setVpnBlocklist()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L178",
+      "source_location": "L179",
       "id": "settingsrepository_settingsrepository_setvpnblocklist",
       "community": 6
     },
@@ -8687,7 +8687,7 @@
       "label": ".removePerAppPackage()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L183",
+      "source_location": "L184",
       "id": "settingsrepository_settingsrepository_removeperapppackage",
       "community": 6
     },
@@ -8695,23 +8695,23 @@
       "label": ".sanitizePerAppPackageLists()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L195",
+      "source_location": "L196",
       "id": "settingsrepository_settingsrepository_sanitizeperapppackagelists",
       "community": 6
     },
     {
-      "label": ".isPackageInstalled()",
+      "label": ".getInstalledPackages()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L206",
-      "id": "settingsrepository_settingsrepository_ispackageinstalled",
+      "source_location": "L208",
+      "id": "settingsrepository_settingsrepository_getinstalledpackages",
       "community": 6
     },
     {
       "label": ".setLocalDns()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L210",
+      "source_location": "L216",
       "id": "settingsrepository_settingsrepository_setlocaldns",
       "community": 6
     },
@@ -8719,7 +8719,7 @@
       "label": ".setRemoteDns()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L215",
+      "source_location": "L221",
       "id": "settingsrepository_settingsrepository_setremotedns",
       "community": 6
     },
@@ -8727,7 +8727,7 @@
       "label": ".setFakeDnsEnabled()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L220",
+      "source_location": "L226",
       "id": "settingsrepository_settingsrepository_setfakednsenabled",
       "community": 6
     },
@@ -8735,7 +8735,7 @@
       "label": ".setFakeIpRange()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L225",
+      "source_location": "L231",
       "id": "settingsrepository_settingsrepository_setfakeiprange",
       "community": 6
     },
@@ -8743,7 +8743,7 @@
       "label": ".setDnsStrategy()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L230",
+      "source_location": "L236",
       "id": "settingsrepository_settingsrepository_setdnsstrategy",
       "community": 6
     },
@@ -8751,7 +8751,7 @@
       "label": ".setRemoteDnsStrategy()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L235",
+      "source_location": "L241",
       "id": "settingsrepository_settingsrepository_setremotednsstrategy",
       "community": 6
     },
@@ -8759,7 +8759,7 @@
       "label": ".setDirectDnsStrategy()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L240",
+      "source_location": "L246",
       "id": "settingsrepository_settingsrepository_setdirectdnsstrategy",
       "community": 6
     },
@@ -8767,7 +8767,7 @@
       "label": ".setServerAddressStrategy()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L245",
+      "source_location": "L251",
       "id": "settingsrepository_settingsrepository_setserveraddressstrategy",
       "community": 6
     },
@@ -8775,7 +8775,7 @@
       "label": ".setDnsCacheEnabled()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L250",
+      "source_location": "L256",
       "id": "settingsrepository_settingsrepository_setdnscacheenabled",
       "community": 6
     },
@@ -8783,7 +8783,7 @@
       "label": ".setRoutingMode()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L255",
+      "source_location": "L261",
       "id": "settingsrepository_settingsrepository_setroutingmode",
       "community": 6
     },
@@ -8791,7 +8791,7 @@
       "label": ".setDefaultRule()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L262",
+      "source_location": "L268",
       "id": "settingsrepository_settingsrepository_setdefaultrule",
       "community": 6
     },
@@ -8799,7 +8799,7 @@
       "label": ".setBlockQuic()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L267",
+      "source_location": "L273",
       "id": "settingsrepository_settingsrepository_setblockquic",
       "community": 6
     },
@@ -8807,7 +8807,7 @@
       "label": ".setDebugLoggingEnabled()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L272",
+      "source_location": "L278",
       "id": "settingsrepository_settingsrepository_setdebugloggingenabled",
       "community": 6
     },
@@ -8815,7 +8815,7 @@
       "label": ".setLatencyTestMethod()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L277",
+      "source_location": "L283",
       "id": "settingsrepository_settingsrepository_setlatencytestmethod",
       "community": 6
     },
@@ -8823,7 +8823,7 @@
       "label": ".setLatencyTestUrl()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L281",
+      "source_location": "L287",
       "id": "settingsrepository_settingsrepository_setlatencytesturl",
       "community": 6
     },
@@ -8831,7 +8831,7 @@
       "label": ".setLatencyTestTimeout()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L285",
+      "source_location": "L291",
       "id": "settingsrepository_settingsrepository_setlatencytesttimeout",
       "community": 6
     },
@@ -8839,7 +8839,7 @@
       "label": ".setLatencyTestConcurrency()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L289",
+      "source_location": "L295",
       "id": "settingsrepository_settingsrepository_setlatencytestconcurrency",
       "community": 6
     },
@@ -8847,7 +8847,7 @@
       "label": ".setBypassLan()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L293",
+      "source_location": "L299",
       "id": "settingsrepository_settingsrepository_setbypasslan",
       "community": 6
     },
@@ -8855,7 +8855,7 @@
       "label": ".setIcmpEchoRoutingEnabled()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L298",
+      "source_location": "L304",
       "id": "settingsrepository_settingsrepository_seticmpechoroutingenabled",
       "community": 6
     },
@@ -8863,7 +8863,7 @@
       "label": ".setWakeResetConnections()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L303",
+      "source_location": "L309",
       "id": "settingsrepository_settingsrepository_setwakeresetconnections",
       "community": 6
     },
@@ -8871,7 +8871,7 @@
       "label": ".setGhProxyMirror()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L307",
+      "source_location": "L313",
       "id": "settingsrepository_settingsrepository_setghproxymirror",
       "community": 6
     },
@@ -8879,7 +8879,7 @@
       "label": ".setProxyPort()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L312",
+      "source_location": "L318",
       "id": "settingsrepository_settingsrepository_setproxyport",
       "community": 6
     },
@@ -8887,7 +8887,7 @@
       "label": ".setAllowLan()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L317",
+      "source_location": "L323",
       "id": "settingsrepository_settingsrepository_setallowlan",
       "community": 6
     },
@@ -8895,7 +8895,7 @@
       "label": ".setAppendHttpProxy()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L322",
+      "source_location": "L328",
       "id": "settingsrepository_settingsrepository_setappendhttpproxy",
       "community": 6
     },
@@ -8903,7 +8903,7 @@
       "label": ".setCustomRules()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L327",
+      "source_location": "L333",
       "id": "settingsrepository_settingsrepository_setcustomrules",
       "community": 6
     },
@@ -8911,7 +8911,7 @@
       "label": ".setRuleSets()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L332",
+      "source_location": "L338",
       "id": "settingsrepository_settingsrepository_setrulesets",
       "community": 6
     },
@@ -8919,7 +8919,7 @@
       "label": ".getRuleSets()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L339",
+      "source_location": "L345",
       "id": "settingsrepository_settingsrepository_getrulesets",
       "community": 6
     },
@@ -8927,7 +8927,7 @@
       "label": ".setAppRules()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L343",
+      "source_location": "L349",
       "id": "settingsrepository_settingsrepository_setapprules",
       "community": 6
     },
@@ -8935,7 +8935,7 @@
       "label": ".setAppGroups()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L348",
+      "source_location": "L354",
       "id": "settingsrepository_settingsrepository_setappgroups",
       "community": 6
     },
@@ -8943,7 +8943,7 @@
       "label": ".setRuleSetAutoUpdateEnabled()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L353",
+      "source_location": "L359",
       "id": "settingsrepository_settingsrepository_setrulesetautoupdateenabled",
       "community": 6
     },
@@ -8951,7 +8951,7 @@
       "label": ".setRuleSetAutoUpdateInterval()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L357",
+      "source_location": "L363",
       "id": "settingsrepository_settingsrepository_setrulesetautoupdateinterval",
       "community": 6
     },
@@ -8959,7 +8959,7 @@
       "label": ".setSubscriptionUpdateTimeout()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L361",
+      "source_location": "L367",
       "id": "settingsrepository_settingsrepository_setsubscriptionupdatetimeout",
       "community": 6
     },
@@ -8967,7 +8967,7 @@
       "label": ".setAutoCheckUpdate()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L365",
+      "source_location": "L371",
       "id": "settingsrepository_settingsrepository_setautocheckupdate",
       "community": 6
     },
@@ -8975,7 +8975,7 @@
       "label": ".setBackgroundPowerSavingDelay()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L369",
+      "source_location": "L375",
       "id": "settingsrepository_settingsrepository_setbackgroundpowersavingdelay",
       "community": 6
     },
@@ -8983,7 +8983,7 @@
       "label": ".setNodeFilter()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L373",
+      "source_location": "L379",
       "id": "settingsrepository_settingsrepository_setnodefilter",
       "community": 6
     },
@@ -8991,7 +8991,7 @@
       "label": ".getNodeFilter()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L377",
+      "source_location": "L383",
       "id": "settingsrepository_settingsrepository_getnodefilter",
       "community": 6
     },
@@ -8999,7 +8999,7 @@
       "label": ".getNodeFilterFlow()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L381",
+      "source_location": "L387",
       "id": "settingsrepository_settingsrepository_getnodefilterflow",
       "community": 6
     },
@@ -9007,7 +9007,7 @@
       "label": ".setNodeSortType()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L385",
+      "source_location": "L391",
       "id": "settingsrepository_settingsrepository_setnodesorttype",
       "community": 6
     },
@@ -9015,7 +9015,7 @@
       "label": ".getNodeSortType()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L389",
+      "source_location": "L395",
       "id": "settingsrepository_settingsrepository_getnodesorttype",
       "community": 6
     },
@@ -9023,7 +9023,7 @@
       "label": ".setCustomNodeOrder()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L393",
+      "source_location": "L399",
       "id": "settingsrepository_settingsrepository_setcustomnodeorder",
       "community": 6
     },
@@ -9031,7 +9031,7 @@
       "label": ".getCustomNodeOrder()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L397",
+      "source_location": "L403",
       "id": "settingsrepository_settingsrepository_getcustomnodeorder",
       "community": 6
     },
@@ -9039,7 +9039,7 @@
       "label": ".checkAndMigrateRuleSets()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L401",
+      "source_location": "L407",
       "id": "settingsrepository_settingsrepository_checkandmigraterulesets",
       "community": 6
     },
@@ -9047,7 +9047,7 @@
       "label": ".notifyRestartRequired()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L524",
+      "source_location": "L530",
       "id": "settingsrepository_settingsrepository_notifyrestartrequired",
       "community": 6
     },
@@ -9055,7 +9055,7 @@
       "label": "getInstance()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L535",
+      "source_location": "L541",
       "id": "settingsrepository_getinstance",
       "community": 6
     },
@@ -9313,7 +9313,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\config\\InboundBuilder.kt",
       "source_location": "L1",
       "id": "inboundbuilder",
-      "community": 172
+      "community": 173
     },
     {
       "label": "InboundBuilder",
@@ -9321,7 +9321,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\config\\InboundBuilder.kt",
       "source_location": "L11",
       "id": "inboundbuilder_inboundbuilder",
-      "community": 172
+      "community": 173
     },
     {
       "label": ".build()",
@@ -9329,7 +9329,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\config\\InboundBuilder.kt",
       "source_location": "L15",
       "id": "inboundbuilder_inboundbuilder_build",
-      "community": 172
+      "community": 173
     },
     {
       "label": "NodeLinkExporter.kt",
@@ -16785,7 +16785,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\ui\\ShortcutActivity.kt",
       "source_location": "L1",
       "id": "shortcutactivity",
-      "community": 173
+      "community": 174
     },
     {
       "label": "ShortcutActivity",
@@ -16793,7 +16793,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\ui\\ShortcutActivity.kt",
       "source_location": "L8",
       "id": "shortcutactivity_shortcutactivity",
-      "community": 173
+      "community": 174
     },
     {
       "label": ".onCreate()",
@@ -16801,7 +16801,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\ui\\ShortcutActivity.kt",
       "source_location": "L10",
       "id": "shortcutactivity_shortcutactivity_oncreate",
-      "community": 173
+      "community": 174
     },
     {
       "label": "AddNodeDialog.kt",
@@ -16809,7 +16809,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\ui\\components\\AddNodeDialog.kt",
       "source_location": "L1",
       "id": "addnodedialog",
-      "community": 137
+      "community": 138
     },
     {
       "label": "AddNodeTarget",
@@ -16817,7 +16817,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\ui\\components\\AddNodeDialog.kt",
       "source_location": "L36",
       "id": "addnodedialog_addnodetarget",
-      "community": 137
+      "community": 138
     },
     {
       "label": "ExistingProfile",
@@ -16825,7 +16825,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\ui\\components\\AddNodeDialog.kt",
       "source_location": "L37",
       "id": "addnodedialog_existingprofile",
-      "community": 137
+      "community": 138
     },
     {
       "label": "NewProfile",
@@ -16833,7 +16833,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\ui\\components\\AddNodeDialog.kt",
       "source_location": "L38",
       "id": "addnodedialog_newprofile",
-      "community": 137
+      "community": 138
     },
     {
       "label": "AddNodeDialog()",
@@ -16841,7 +16841,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\ui\\components\\AddNodeDialog.kt",
       "source_location": "L41",
       "id": "addnodedialog_addnodedialog",
-      "community": 137
+      "community": 138
     },
     {
       "label": "AppListLoadingDialog.kt",
@@ -16849,7 +16849,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\ui\\components\\AppListLoadingDialog.kt",
       "source_location": "L1",
       "id": "applistloadingdialog",
-      "community": 174
+      "community": 175
     },
     {
       "label": "AppListLoadingDialog()",
@@ -16857,7 +16857,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\ui\\components\\AppListLoadingDialog.kt",
       "source_location": "L32",
       "id": "applistloadingdialog_applistloadingdialog",
-      "community": 174
+      "community": 175
     },
     {
       "label": "SimpleLoadingDialog()",
@@ -16865,7 +16865,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\ui\\components\\AppListLoadingDialog.kt",
       "source_location": "L94",
       "id": "applistloadingdialog_simpleloadingdialog",
-      "community": 174
+      "community": 175
     },
     {
       "label": "AppNavBar.kt",
@@ -16889,7 +16889,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\ui\\components\\AppNotificationManager.kt",
       "source_location": "L1",
       "id": "appnotificationmanager",
-      "community": 175
+      "community": 176
     },
     {
       "label": "AppNotificationManager",
@@ -16897,7 +16897,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\ui\\components\\AppNotificationManager.kt",
       "source_location": "L9",
       "id": "appnotificationmanager_appnotificationmanager",
-      "community": 175
+      "community": 176
     },
     {
       "label": ".showMessage()",
@@ -16905,7 +16905,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\ui\\components\\AppNotificationManager.kt",
       "source_location": "L10",
       "id": "appnotificationmanager_appnotificationmanager_showmessage",
-      "community": 175
+      "community": 176
     },
     {
       "label": "BigToggle.kt",
@@ -16929,7 +16929,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\ui\\components\\ClickableDropdownField.kt",
       "source_location": "L1",
       "id": "clickabledropdownfield",
-      "community": 176
+      "community": 177
     },
     {
       "label": "ClickableDropdownField()",
@@ -16937,7 +16937,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\ui\\components\\ClickableDropdownField.kt",
       "source_location": "L33",
       "id": "clickabledropdownfield_clickabledropdownfield",
-      "community": 176
+      "community": 177
     },
     {
       "label": "StyledTextField()",
@@ -16945,7 +16945,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\ui\\components\\ClickableDropdownField.kt",
       "source_location": "L89",
       "id": "clickabledropdownfield_styledtextfield",
-      "community": 176
+      "community": 177
     },
     {
       "label": "CommonDialogs.kt",
@@ -16983,7 +16983,7 @@
       "label": "AppMultiSelectDialog()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\ui\\components\\CommonDialogs.kt",
-      "source_location": "L275",
+      "source_location": "L276",
       "id": "commondialogs_appmultiselectdialog",
       "community": 94
     },
@@ -16991,7 +16991,7 @@
       "label": "SingleSelectDialog()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\ui\\components\\CommonDialogs.kt",
-      "source_location": "L674",
+      "source_location": "L676",
       "id": "commondialogs_singleselectdialog",
       "community": 94
     },
@@ -16999,7 +16999,7 @@
       "label": "ProfileNodeSelectDialog()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\ui\\components\\CommonDialogs.kt",
-      "source_location": "L767",
+      "source_location": "L769",
       "id": "commondialogs_profilenodeselectdialog",
       "community": 94
     },
@@ -17007,7 +17007,7 @@
       "label": "AboutDialog()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\ui\\components\\CommonDialogs.kt",
-      "source_location": "L1013",
+      "source_location": "L1015",
       "id": "commondialogs_aboutdialog",
       "community": 94
     },
@@ -17015,7 +17015,7 @@
       "label": "NodeFilterDialog()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\ui\\components\\CommonDialogs.kt",
-      "source_location": "L1115",
+      "source_location": "L1117",
       "id": "commondialogs_nodefilterdialog",
       "community": 94
     },
@@ -17023,7 +17023,7 @@
       "label": "NodeSelectorDialog()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\ui\\components\\CommonDialogs.kt",
-      "source_location": "L1339",
+      "source_location": "L1341",
       "id": "commondialogs_nodeselectordialog",
       "community": 94
     },
@@ -17031,7 +17031,7 @@
       "label": "NodeSelectorItem()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\ui\\components\\CommonDialogs.kt",
-      "source_location": "L1415",
+      "source_location": "L1417",
       "id": "commondialogs_nodeselectoritem",
       "community": 94
     },
@@ -17121,7 +17121,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\ui\\components\\InfoCard.kt",
       "source_location": "L1",
       "id": "infocard",
-      "community": 177
+      "community": 178
     },
     {
       "label": "InfoCard()",
@@ -17129,7 +17129,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\ui\\components\\InfoCard.kt",
       "source_location": "L31",
       "id": "infocard_infocard",
-      "community": 177
+      "community": 178
     },
     {
       "label": "InfoItem()",
@@ -17137,7 +17137,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\ui\\components\\InfoCard.kt",
       "source_location": "L72",
       "id": "infocard_infoitem",
-      "community": 177
+      "community": 178
     },
     {
       "label": "NodeCard.kt",
@@ -17177,7 +17177,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\ui\\components\\SelectProfileDialog.kt",
       "source_location": "L1",
       "id": "selectprofiledialog",
-      "community": 138
+      "community": 139
     },
     {
       "label": "SelectProfileTarget",
@@ -17185,7 +17185,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\ui\\components\\SelectProfileDialog.kt",
       "source_location": "L36",
       "id": "selectprofiledialog_selectprofiletarget",
-      "community": 138
+      "community": 139
     },
     {
       "label": "ExistingProfile",
@@ -17193,7 +17193,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\ui\\components\\SelectProfileDialog.kt",
       "source_location": "L37",
       "id": "selectprofiledialog_existingprofile",
-      "community": 138
+      "community": 139
     },
     {
       "label": "NewProfile",
@@ -17201,7 +17201,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\ui\\components\\SelectProfileDialog.kt",
       "source_location": "L38",
       "id": "selectprofiledialog_newprofile",
-      "community": 138
+      "community": 139
     },
     {
       "label": "SelectProfileDialog()",
@@ -17209,7 +17209,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\ui\\components\\SelectProfileDialog.kt",
       "source_location": "L41",
       "id": "selectprofiledialog_selectprofiledialog",
-      "community": 138
+      "community": 139
     },
     {
       "label": "SettingItem.kt",
@@ -17217,7 +17217,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\ui\\components\\SettingItem.kt",
       "source_location": "L1",
       "id": "settingitem",
-      "community": 178
+      "community": 179
     },
     {
       "label": "SettingItem()",
@@ -17225,7 +17225,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\ui\\components\\SettingItem.kt",
       "source_location": "L36",
       "id": "settingitem_settingitem",
-      "community": 178
+      "community": 179
     },
     {
       "label": "SettingSwitchItem()",
@@ -17233,7 +17233,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\ui\\components\\SettingItem.kt",
       "source_location": "L140",
       "id": "settingitem_settingswitchitem",
-      "community": 178
+      "community": 179
     },
     {
       "label": "StandardCard.kt",
@@ -17257,7 +17257,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\ui\\components\\StatusChip.kt",
       "source_location": "L1",
       "id": "statuschip",
-      "community": 179
+      "community": 180
     },
     {
       "label": "StatusChip()",
@@ -17265,7 +17265,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\ui\\components\\StatusChip.kt",
       "source_location": "L24",
       "id": "statuschip_statuschip",
-      "community": 179
+      "community": 180
     },
     {
       "label": "ModeChip()",
@@ -17273,7 +17273,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\ui\\components\\StatusChip.kt",
       "source_location": "L63",
       "id": "statuschip_modechip",
-      "community": 179
+      "community": 180
     },
     {
       "label": "AppNavigation.kt",
@@ -17785,7 +17785,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\ui\\screens\\AppRulesScreen.kt",
       "source_location": "L1",
       "id": "apprulesscreen",
-      "community": 180
+      "community": 181
     },
     {
       "label": "AppRulesScreen()",
@@ -17793,7 +17793,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\ui\\screens\\AppRulesScreen.kt",
       "source_location": "L35",
       "id": "apprulesscreen_apprulesscreen",
-      "community": 180
+      "community": 181
     },
     {
       "label": "OutboundChip()",
@@ -17801,7 +17801,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\ui\\screens\\AppRulesScreen.kt",
       "source_location": "L216",
       "id": "apprulesscreen_outboundchip",
-      "community": 180
+      "community": 181
     },
     {
       "label": "ConnectionSettingsScreen.kt",
@@ -17857,7 +17857,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\ui\\screens\\DashboardScreen.kt",
       "source_location": "L1",
       "id": "dashboardscreen",
-      "community": 181
+      "community": 182
     },
     {
       "label": "DashboardScreen()",
@@ -17865,7 +17865,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\ui\\screens\\DashboardScreen.kt",
       "source_location": "L78",
       "id": "dashboardscreen_dashboardscreen",
-      "community": 181
+      "community": 182
     },
     {
       "label": "QuickActionButton()",
@@ -17873,7 +17873,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\ui\\screens\\DashboardScreen.kt",
       "source_location": "L526",
       "id": "dashboardscreen_quickactionbutton",
-      "community": 181
+      "community": 182
     },
     {
       "label": "DiagnosticsScreen.kt",
@@ -17913,7 +17913,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\ui\\screens\\DomainRulesScreen.kt",
       "source_location": "L1",
       "id": "domainrulesscreen",
-      "community": 139
+      "community": 140
     },
     {
       "label": "resolveOutboundText()",
@@ -17921,7 +17921,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\ui\\screens\\DomainRulesScreen.kt",
       "source_location": "L69",
       "id": "domainrulesscreen_resolveoutboundtext",
-      "community": 139
+      "community": 140
     },
     {
       "label": "DomainRuleItem()",
@@ -17929,7 +17929,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\ui\\screens\\DomainRulesScreen.kt",
       "source_location": "L97",
       "id": "domainrulesscreen_domainruleitem",
-      "community": 139
+      "community": 140
     },
     {
       "label": "DomainRulesScreen()",
@@ -17937,7 +17937,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\ui\\screens\\DomainRulesScreen.kt",
       "source_location": "L138",
       "id": "domainrulesscreen_domainrulesscreen",
-      "community": 139
+      "community": 140
     },
     {
       "label": "DomainRuleEditorDialog()",
@@ -17945,7 +17945,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\ui\\screens\\DomainRulesScreen.kt",
       "source_location": "L261",
       "id": "domainrulesscreen_domainruleeditordialog",
-      "community": 139
+      "community": 140
     },
     {
       "label": "LogsScreen.kt",
@@ -18025,7 +18025,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\ui\\screens\\NodesScreen.kt",
       "source_location": "L1",
       "id": "nodesscreen",
-      "community": 182
+      "community": 183
     },
     {
       "label": "NodesScreen()",
@@ -18033,7 +18033,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\ui\\screens\\NodesScreen.kt",
       "source_location": "L104",
       "id": "nodesscreen_nodesscreen",
-      "community": 182
+      "community": 183
     },
     {
       "label": "NodeSearchBar()",
@@ -18041,7 +18041,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\ui\\screens\\NodesScreen.kt",
       "source_location": "L564",
       "id": "nodesscreen_nodesearchbar",
-      "community": 182
+      "community": 183
     },
     {
       "label": "ProfileEditorScreen.kt",
@@ -18177,7 +18177,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\ui\\screens\\RuleSetHubScreen.kt",
       "source_location": "L1",
       "id": "rulesethubscreen",
-      "community": 183
+      "community": 184
     },
     {
       "label": "RuleSetHubScreen()",
@@ -18185,7 +18185,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\ui\\screens\\RuleSetHubScreen.kt",
       "source_location": "L35",
       "id": "rulesethubscreen_rulesethubscreen",
-      "community": 183
+      "community": 184
     },
     {
       "label": "HubRuleSetItem()",
@@ -18193,7 +18193,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\ui\\screens\\RuleSetHubScreen.kt",
       "source_location": "L196",
       "id": "rulesethubscreen_hubrulesetitem",
-      "community": 183
+      "community": 184
     },
     {
       "label": "RuleSetsScreen.kt",
@@ -18201,7 +18201,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\ui\\screens\\RuleSetsScreen.kt",
       "source_location": "L1",
       "id": "rulesetsscreen",
-      "community": 140
+      "community": 141
     },
     {
       "label": "RuleSetsScreen()",
@@ -18209,7 +18209,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\ui\\screens\\RuleSetsScreen.kt",
       "source_location": "L67",
       "id": "rulesetsscreen_rulesetsscreen",
-      "community": 140
+      "community": 141
     },
     {
       "label": "RuleSetItem()",
@@ -18217,7 +18217,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\ui\\screens\\RuleSetsScreen.kt",
       "source_location": "L685",
       "id": "rulesetsscreen_rulesetitem",
-      "community": 140
+      "community": 141
     },
     {
       "label": "RuleSetEditorDialog()",
@@ -18225,7 +18225,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\ui\\screens\\RuleSetsScreen.kt",
       "source_location": "L909",
       "id": "rulesetsscreen_ruleseteditordialog",
-      "community": 140
+      "community": 141
     },
     {
       "label": "DefaultRuleSetProgressDialog()",
@@ -18233,7 +18233,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\ui\\screens\\RuleSetsScreen.kt",
       "source_location": "L1059",
       "id": "rulesetsscreen_defaultrulesetprogressdialog",
-      "community": 140
+      "community": 141
     },
     {
       "label": "SettingsScreen.kt",
@@ -18241,7 +18241,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\ui\\screens\\SettingsScreen.kt",
       "source_location": "L1",
       "id": "settingsscreen",
-      "community": 184
+      "community": 185
     },
     {
       "label": "SettingsScreen()",
@@ -18249,7 +18249,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\ui\\screens\\SettingsScreen.kt",
       "source_location": "L75",
       "id": "settingsscreen_settingsscreen",
-      "community": 184
+      "community": 185
     },
     {
       "label": "SettingsGroupTitle()",
@@ -18257,7 +18257,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\ui\\screens\\SettingsScreen.kt",
       "source_location": "L388",
       "id": "settingsscreen_settingsgrouptitle",
-      "community": 184
+      "community": 185
     },
     {
       "label": "SplashScreen.kt",
@@ -18383,7 +18383,7 @@
       "label": "TunSettingsScreen()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\ui\\screens\\TunSettingsScreen.kt",
-      "source_location": "L46",
+      "source_location": "L49",
       "id": "tunsettingsscreen_tunsettingsscreen",
       "community": 210
     },
@@ -18737,7 +18737,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\utils\\DeepLinkHandler.kt",
       "source_location": "L1",
       "id": "deeplinkhandler",
-      "community": 141
+      "community": 142
     },
     {
       "label": "DeepLinkHandler",
@@ -18745,7 +18745,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\utils\\DeepLinkHandler.kt",
       "source_location": "L9",
       "id": "deeplinkhandler_deeplinkhandler",
-      "community": 141
+      "community": 142
     },
     {
       "label": "SubscriptionImportData",
@@ -18753,7 +18753,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\utils\\DeepLinkHandler.kt",
       "source_location": "L11",
       "id": "deeplinkhandler_subscriptionimportdata",
-      "community": 141
+      "community": 142
     },
     {
       "label": ".setPendingSubscriptionImport()",
@@ -18761,7 +18761,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\utils\\DeepLinkHandler.kt",
       "source_location": "L23",
       "id": "deeplinkhandler_deeplinkhandler_setpendingsubscriptionimport",
-      "community": 141
+      "community": 142
     },
     {
       "label": ".clearPendingSubscriptionImport()",
@@ -18769,7 +18769,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\utils\\DeepLinkHandler.kt",
       "source_location": "L30",
       "id": "deeplinkhandler_deeplinkhandler_clearpendingsubscriptionimport",
-      "community": 141
+      "community": 142
     },
     {
       "label": "DefaultNetworkListener.kt",
@@ -19425,7 +19425,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\utils\\ProxyAwareOkHttpClient.kt",
       "source_location": "L1",
       "id": "proxyawareokhttpclient",
-      "community": 185
+      "community": 186
     },
     {
       "label": "ProxyAwareOkHttpClient",
@@ -19433,7 +19433,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\utils\\ProxyAwareOkHttpClient.kt",
       "source_location": "L21",
       "id": "proxyawareokhttpclient_proxyawareokhttpclient",
-      "community": 185
+      "community": 186
     },
     {
       "label": ".get()",
@@ -19441,7 +19441,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\utils\\ProxyAwareOkHttpClient.kt",
       "source_location": "L31",
       "id": "proxyawareokhttpclient_proxyawareokhttpclient_get",
-      "community": 185
+      "community": 186
     },
     {
       "label": "SecurityUtils.kt",
@@ -19505,7 +19505,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\utils\\StringBuilderPool.kt",
       "source_location": "L1",
       "id": "stringbuilderpool",
-      "community": 142
+      "community": 143
     },
     {
       "label": "StringBuilderPool",
@@ -19513,7 +19513,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\utils\\StringBuilderPool.kt",
       "source_location": "L7",
       "id": "stringbuilderpool_stringbuilderpool",
-      "community": 142
+      "community": 143
     },
     {
       "label": ".acquire()",
@@ -19521,7 +19521,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\utils\\StringBuilderPool.kt",
       "source_location": "L13",
       "id": "stringbuilderpool_stringbuilderpool_acquire",
-      "community": 142
+      "community": 143
     },
     {
       "label": ".release()",
@@ -19529,7 +19529,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\utils\\StringBuilderPool.kt",
       "source_location": "L18",
       "id": "stringbuilderpool_stringbuilderpool_release",
-      "community": 142
+      "community": 143
     },
     {
       "label": ".use()",
@@ -19537,7 +19537,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\utils\\StringBuilderPool.kt",
       "source_location": "L25",
       "id": "stringbuilderpool_stringbuilderpool_use",
-      "community": 142
+      "community": 143
     },
     {
       "label": "StructuredLogger.kt",
@@ -21857,7 +21857,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\viewmodel\\InstalledAppsViewModel.kt",
       "source_location": "L1",
       "id": "installedappsviewmodel",
-      "community": 143
+      "community": 144
     },
     {
       "label": "InstalledAppsViewModel",
@@ -21865,7 +21865,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\viewmodel\\InstalledAppsViewModel.kt",
       "source_location": "L14",
       "id": "installedappsviewmodel_installedappsviewmodel",
-      "community": 143
+      "community": 144
     },
     {
       "label": ".loadAppsIfNeeded()",
@@ -21873,7 +21873,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\viewmodel\\InstalledAppsViewModel.kt",
       "source_location": "L26",
       "id": "installedappsviewmodel_installedappsviewmodel_loadappsifneeded",
-      "community": 143
+      "community": 144
     },
     {
       "label": ".reloadApps()",
@@ -21881,7 +21881,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\viewmodel\\InstalledAppsViewModel.kt",
       "source_location": "L37",
       "id": "installedappsviewmodel_installedappsviewmodel_reloadapps",
-      "community": 143
+      "community": 144
     },
     {
       "label": ".isLoaded()",
@@ -21889,7 +21889,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\viewmodel\\InstalledAppsViewModel.kt",
       "source_location": "L43",
       "id": "installedappsviewmodel_installedappsviewmodel_isloaded",
-      "community": 143
+      "community": 144
     },
     {
       "label": "LogViewModel.kt",
@@ -23289,7 +23289,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\worker\\RuleSetUpdateWorker.kt",
       "source_location": "L1",
       "id": "rulesetupdateworker",
-      "community": 186
+      "community": 187
     },
     {
       "label": "RuleSetUpdateWorker",
@@ -23297,7 +23297,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\worker\\RuleSetUpdateWorker.kt",
       "source_location": "L9",
       "id": "rulesetupdateworker_rulesetupdateworker",
-      "community": 186
+      "community": 187
     },
     {
       "label": ".doWork()",
@@ -23305,7 +23305,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\worker\\RuleSetUpdateWorker.kt",
       "source_location": "L19",
       "id": "rulesetupdateworker_rulesetupdateworker_dowork",
-      "community": 186
+      "community": 187
     },
     {
       "label": "AppShortcutsResourceTest.kt",
@@ -23313,7 +23313,7 @@
       "source_file": "app\\src\\test\\java\\com\\kunk\\singbox\\AppShortcutsResourceTest.kt",
       "source_location": "L1",
       "id": "appshortcutsresourcetest",
-      "community": 144
+      "community": 145
     },
     {
       "label": "AppShortcutsResourceTest",
@@ -23321,7 +23321,7 @@
       "source_file": "app\\src\\test\\java\\com\\kunk\\singbox\\AppShortcutsResourceTest.kt",
       "source_location": "L8",
       "id": "appshortcutsresourcetest_appshortcutsresourcetest",
-      "community": 144
+      "community": 145
     },
     {
       "label": ".shortcutsXmlRoutesToggleToShortcutActivityAndSwitchNodeToMainActivity()",
@@ -23329,7 +23329,7 @@
       "source_file": "app\\src\\test\\java\\com\\kunk\\singbox\\AppShortcutsResourceTest.kt",
       "source_location": "L10",
       "id": "appshortcutsresourcetest_appshortcutsresourcetest_shortcutsxmlroutestoggletoshortcutactivityandswitchnodetomainactivity",
-      "community": 144
+      "community": 145
     },
     {
       "label": ".mainActivityDoesNotHandleToggleShortcutAction()",
@@ -23337,7 +23337,7 @@
       "source_file": "app\\src\\test\\java\\com\\kunk\\singbox\\AppShortcutsResourceTest.kt",
       "source_location": "L22",
       "id": "appshortcutsresourcetest_appshortcutsresourcetest_mainactivitydoesnothandletoggleshortcutaction",
-      "community": 144
+      "community": 145
     },
     {
       "label": ".blockedDnsRulesUsePredefinedNoErrorInsteadOfReject()",
@@ -23345,7 +23345,7 @@
       "source_file": "app\\src\\test\\java\\com\\kunk\\singbox\\AppShortcutsResourceTest.kt",
       "source_location": "L29",
       "id": "appshortcutsresourcetest_appshortcutsresourcetest_blockeddnsrulesusepredefinednoerrorinsteadofreject",
-      "community": 144
+      "community": 145
     },
     {
       "label": "BoxWrapperManagerRecoveryPolicyTest.kt",
@@ -23353,7 +23353,7 @@
       "source_file": "app\\src\\test\\java\\com\\kunk\\singbox\\core\\BoxWrapperManagerRecoveryPolicyTest.kt",
       "source_location": "L1",
       "id": "boxwrappermanagerrecoverypolicytest",
-      "community": 145
+      "community": 146
     },
     {
       "label": "BoxWrapperManagerRecoveryPolicyTest",
@@ -23361,7 +23361,7 @@
       "source_file": "app\\src\\test\\java\\com\\kunk\\singbox\\core\\BoxWrapperManagerRecoveryPolicyTest.kt",
       "source_location": "L7",
       "id": "boxwrappermanagerrecoverypolicytest_boxwrappermanagerrecoverypolicytest",
-      "community": 145
+      "community": 146
     },
     {
       "label": ".networkTypeChangedSkipsInitialProbe()",
@@ -23369,7 +23369,7 @@
       "source_file": "app\\src\\test\\java\\com\\kunk\\singbox\\core\\BoxWrapperManagerRecoveryPolicyTest.kt",
       "source_location": "L9",
       "id": "boxwrappermanagerrecoverypolicytest_boxwrappermanagerrecoverypolicytest_networktypechangedskipsinitialprobe",
-      "community": 145
+      "community": 146
     },
     {
       "label": ".networkTypeChangedDoesNotTrustSelectiveProbeSuccess()",
@@ -23377,7 +23377,7 @@
       "source_file": "app\\src\\test\\java\\com\\kunk\\singbox\\core\\BoxWrapperManagerRecoveryPolicyTest.kt",
       "source_location": "L15",
       "id": "boxwrappermanagerrecoverypolicytest_boxwrappermanagerrecoverypolicytest_networktypechangeddoesnottrustselectiveprobesuccess",
-      "community": 145
+      "community": 146
     },
     {
       "label": ".nonNetworkTypeChangedReasonsKeepExistingProbeBehavior()",
@@ -23385,7 +23385,7 @@
       "source_file": "app\\src\\test\\java\\com\\kunk\\singbox\\core\\BoxWrapperManagerRecoveryPolicyTest.kt",
       "source_location": "L21",
       "id": "boxwrappermanagerrecoverypolicytest_boxwrappermanagerrecoverypolicytest_nonnetworktypechangedreasonskeepexistingprobebehavior",
-      "community": 145
+      "community": 146
     },
     {
       "label": "SafeLatencyTesterTest.kt",
@@ -23425,7 +23425,7 @@
       "source_file": "app\\src\\test\\java\\com\\kunk\\singbox\\ipc\\SingBoxIpcHubStateTest.kt",
       "source_location": "L1",
       "id": "singboxipchubstatetest",
-      "community": 146
+      "community": 147
     },
     {
       "label": "SingBoxIpcHubStateTest",
@@ -23433,7 +23433,7 @@
       "source_file": "app\\src\\test\\java\\com\\kunk\\singbox\\ipc\\SingBoxIpcHubStateTest.kt",
       "source_location": "L8",
       "id": "singboxipchubstatetest_singboxipchubstatetest",
-      "community": 146
+      "community": 147
     },
     {
       "label": ".`binder death preserves terminal error only for manually stopped state`()",
@@ -23441,7 +23441,7 @@
       "source_file": "app\\src\\test\\java\\com\\kunk\\singbox\\ipc\\SingBoxIpcHubStateTest.kt",
       "source_location": "L10",
       "id": "singboxipchubstatetest_singboxipchubstatetest_binder_death_preserves_terminal_error_only_for_manually_stopped_state",
-      "community": 146
+      "community": 147
     },
     {
       "label": ".`resolve realtime delay keeps positive match only`()",
@@ -23449,7 +23449,7 @@
       "source_file": "app\\src\\test\\java\\com\\kunk\\singbox\\ipc\\SingBoxIpcHubStateTest.kt",
       "source_location": "L32",
       "id": "singboxipchubstatetest_singboxipchubstatetest_resolve_realtime_delay_keeps_positive_match_only",
-      "community": 146
+      "community": 147
     },
     {
       "label": ".`resolve realtime delay ignores cached results from other tags`()",
@@ -23457,7 +23457,7 @@
       "source_file": "app\\src\\test\\java\\com\\kunk\\singbox\\ipc\\SingBoxIpcHubStateTest.kt",
       "source_location": "L45",
       "id": "singboxipchubstatetest_singboxipchubstatetest_resolve_realtime_delay_ignores_cached_results_from_other_tags",
-      "community": 146
+      "community": 147
     },
     {
       "label": "SingBoxRemoteStateTest.kt",
@@ -23585,7 +23585,7 @@
       "source_file": "app\\src\\test\\java\\com\\kunk\\singbox\\ipc\\VpnStateStoreTest.kt",
       "source_location": "L1",
       "id": "vpnstatestoretest",
-      "community": 147
+      "community": 148
     },
     {
       "label": "VpnStateStoreTest",
@@ -23593,7 +23593,7 @@
       "source_file": "app\\src\\test\\java\\com\\kunk\\singbox\\ipc\\VpnStateStoreTest.kt",
       "source_location": "L6",
       "id": "vpnstatestoretest_vpnstatestoretest",
-      "community": 147
+      "community": 148
     },
     {
       "label": ".testCoreModeEnumValues()",
@@ -23601,7 +23601,7 @@
       "source_file": "app\\src\\test\\java\\com\\kunk\\singbox\\ipc\\VpnStateStoreTest.kt",
       "source_location": "L8",
       "id": "vpnstatestoretest_vpnstatestoretest_testcoremodeenumvalues",
-      "community": 147
+      "community": 148
     },
     {
       "label": ".testCoreModeValueOf()",
@@ -23609,7 +23609,7 @@
       "source_file": "app\\src\\test\\java\\com\\kunk\\singbox\\ipc\\VpnStateStoreTest.kt",
       "source_location": "L16",
       "id": "vpnstatestoretest_vpnstatestoretest_testcoremodevalueof",
-      "community": 147
+      "community": 148
     },
     {
       "label": ".testCoreModeOrdinal()",
@@ -23617,7 +23617,7 @@
       "source_file": "app\\src\\test\\java\\com\\kunk\\singbox\\ipc\\VpnStateStoreTest.kt",
       "source_location": "L23",
       "id": "vpnstatestoretest_vpnstatestoretest_testcoremodeordinal",
-      "community": 147
+      "community": 148
     },
     {
       "label": "VpnServiceManagerTest.kt",
@@ -23705,7 +23705,7 @@
       "source_file": "app\\src\\test\\java\\com\\kunk\\singbox\\model\\ModelSerializationTest.kt",
       "source_location": "L1",
       "id": "modelserializationtest",
-      "community": 148
+      "community": 149
     },
     {
       "label": "ModelSerializationTest",
@@ -23713,7 +23713,7 @@
       "source_file": "app\\src\\test\\java\\com\\kunk\\singbox\\model\\ModelSerializationTest.kt",
       "source_location": "L9",
       "id": "modelserializationtest_modelserializationtest",
-      "community": 148
+      "community": 149
     },
     {
       "label": ".testNodeUiSerialization()",
@@ -23721,7 +23721,7 @@
       "source_file": "app\\src\\test\\java\\com\\kunk\\singbox\\model\\ModelSerializationTest.kt",
       "source_location": "L12",
       "id": "modelserializationtest_modelserializationtest_testnodeuiserialization",
-      "community": 148
+      "community": 149
     },
     {
       "label": ".testSingBoxConfigSerialization()",
@@ -23729,7 +23729,7 @@
       "source_file": "app\\src\\test\\java\\com\\kunk\\singbox\\model\\ModelSerializationTest.kt",
       "source_location": "L31",
       "id": "modelserializationtest_modelserializationtest_testsingboxconfigserialization",
-      "community": 148
+      "community": 149
     },
     {
       "label": ".dnsPredefinedRuleSerializesRcode()",
@@ -23737,7 +23737,7 @@
       "source_file": "app\\src\\test\\java\\com\\kunk\\singbox\\model\\ModelSerializationTest.kt",
       "source_location": "L48",
       "id": "modelserializationtest_modelserializationtest_dnspredefinedruleserializesrcode",
-      "community": 148
+      "community": 149
     },
     {
       "label": "PingDisplayTextTest.kt",
@@ -24945,7 +24945,7 @@
       "source_file": "app\\src\\test\\java\\com\\kunk\\singbox\\repository\\LatencyProbePolicyTest.kt",
       "source_location": "L1",
       "id": "latencyprobepolicytest",
-      "community": 149
+      "community": 150
     },
     {
       "label": "LatencyProbePolicyTest",
@@ -24953,7 +24953,7 @@
       "source_file": "app\\src\\test\\java\\com\\kunk\\singbox\\repository\\LatencyProbePolicyTest.kt",
       "source_location": "L9",
       "id": "latencyprobepolicytest_latencyprobepolicytest",
-      "community": 149
+      "community": 150
     },
     {
       "label": ".shouldUseTcpFallback_returnsTrueForXhttpPacketUp()",
@@ -24961,7 +24961,7 @@
       "source_file": "app\\src\\test\\java\\com\\kunk\\singbox\\repository\\LatencyProbePolicyTest.kt",
       "source_location": "L11",
       "id": "latencyprobepolicytest_latencyprobepolicytest_shouldusetcpfallback_returnstrueforxhttppacketup",
-      "community": 149
+      "community": 150
     },
     {
       "label": ".shouldUseTcpFallback_returnsFalseForXhttpNonPacketUp()",
@@ -24969,7 +24969,7 @@
       "source_file": "app\\src\\test\\java\\com\\kunk\\singbox\\repository\\LatencyProbePolicyTest.kt",
       "source_location": "L22",
       "id": "latencyprobepolicytest_latencyprobepolicytest_shouldusetcpfallback_returnsfalseforxhttpnonpacketup",
-      "community": 149
+      "community": 150
     },
     {
       "label": ".shouldUseTcpFallback_returnsFalseForNonXhttp()",
@@ -24977,7 +24977,7 @@
       "source_file": "app\\src\\test\\java\\com\\kunk\\singbox\\repository\\LatencyProbePolicyTest.kt",
       "source_location": "L33",
       "id": "latencyprobepolicytest_latencyprobepolicytest_shouldusetcpfallback_returnsfalsefornonxhttp",
-      "community": 149
+      "community": 150
     },
     {
       "label": "LogRepositoryTest.kt",
@@ -24985,7 +24985,7 @@
       "source_file": "app\\src\\test\\java\\com\\kunk\\singbox\\repository\\LogRepositoryTest.kt",
       "source_location": "L1",
       "id": "logrepositorytest",
-      "community": 150
+      "community": 151
     },
     {
       "label": "LogRepositoryTest",
@@ -24993,7 +24993,7 @@
       "source_file": "app\\src\\test\\java\\com\\kunk\\singbox\\repository\\LogRepositoryTest.kt",
       "source_location": "L8",
       "id": "logrepositorytest_logrepositorytest",
-      "community": 150
+      "community": 151
     },
     {
       "label": ".tearDown()",
@@ -25001,7 +25001,7 @@
       "source_file": "app\\src\\test\\java\\com\\kunk\\singbox\\repository\\LogRepositoryTest.kt",
       "source_location": "L12",
       "id": "logrepositorytest_logrepositorytest_teardown",
-      "community": 150
+      "community": 151
     },
     {
       "label": ".addLogIgnoresMessagesWhenDisabled()",
@@ -25009,7 +25009,7 @@
       "source_file": "app\\src\\test\\java\\com\\kunk\\singbox\\repository\\LogRepositoryTest.kt",
       "source_location": "L18",
       "id": "logrepositorytest_logrepositorytest_addlogignoresmessageswhendisabled",
-      "community": 150
+      "community": 151
     },
     {
       "label": ".addLogRecordsMessagesWhenEnabled()",
@@ -25017,7 +25017,7 @@
       "source_file": "app\\src\\test\\java\\com\\kunk\\singbox\\repository\\LogRepositoryTest.kt",
       "source_location": "L28",
       "id": "logrepositorytest_logrepositorytest_addlogrecordsmessageswhenenabled",
-      "community": 150
+      "community": 151
     },
     {
       "label": "PerAppPackageSyncTest.kt",
@@ -25025,7 +25025,7 @@
       "source_file": "app\\src\\test\\java\\com\\kunk\\singbox\\repository\\PerAppPackageSyncTest.kt",
       "source_location": "L1",
       "id": "perapppackagesynctest",
-      "community": 151
+      "community": 130
     },
     {
       "label": "PerAppPackageSyncTest",
@@ -25033,7 +25033,7 @@
       "source_file": "app\\src\\test\\java\\com\\kunk\\singbox\\repository\\PerAppPackageSyncTest.kt",
       "source_location": "L8",
       "id": "perapppackagesynctest_perapppackagesynctest",
-      "community": 151
+      "community": 130
     },
     {
       "label": ".removePackageFromList_removesOnlyExactPackageName()",
@@ -25041,7 +25041,7 @@
       "source_file": "app\\src\\test\\java\\com\\kunk\\singbox\\repository\\PerAppPackageSyncTest.kt",
       "source_location": "L10",
       "id": "perapppackagesynctest_perapppackagesynctest_removepackagefromlist_removesonlyexactpackagename",
-      "community": 151
+      "community": 130
     },
     {
       "label": ".sanitizePackageList_keepsOnlyInstalledPackageNames()",
@@ -25049,15 +25049,23 @@
       "source_file": "app\\src\\test\\java\\com\\kunk\\singbox\\repository\\PerAppPackageSyncTest.kt",
       "source_location": "L20",
       "id": "perapppackagesynctest_perapppackagesynctest_sanitizepackagelist_keepsonlyinstalledpackagenames",
-      "community": 151
+      "community": 130
+    },
+    {
+      "label": ".sanitizePackageList_doesNotDropPackagesWhenInstalledAppSnapshotIsEmpty()",
+      "file_type": "code",
+      "source_file": "app\\src\\test\\java\\com\\kunk\\singbox\\repository\\PerAppPackageSyncTest.kt",
+      "source_location": "L30",
+      "id": "perapppackagesynctest_perapppackagesynctest_sanitizepackagelist_doesnotdroppackageswheninstalledappsnapshotisempty",
+      "community": 130
     },
     {
       "label": ".packageRemovedEvent_skipsReplacingUpdates()",
       "file_type": "code",
       "source_file": "app\\src\\test\\java\\com\\kunk\\singbox\\repository\\PerAppPackageSyncTest.kt",
-      "source_location": "L30",
+      "source_location": "L40",
       "id": "perapppackagesynctest_perapppackagesynctest_packageremovedevent_skipsreplacingupdates",
-      "community": 151
+      "community": 130
     },
     {
       "label": "InboundBuilderTest.kt",
@@ -25065,7 +25073,7 @@
       "source_file": "app\\src\\test\\java\\com\\kunk\\singbox\\repository\\config\\InboundBuilderTest.kt",
       "source_location": "L1",
       "id": "inboundbuildertest",
-      "community": 130
+      "community": 131
     },
     {
       "label": "InboundBuilderTest",
@@ -25073,7 +25081,7 @@
       "source_file": "app\\src\\test\\java\\com\\kunk\\singbox\\repository\\config\\InboundBuilderTest.kt",
       "source_location": "L12",
       "id": "inboundbuildertest_inboundbuildertest",
-      "community": 130
+      "community": 131
     },
     {
       "label": ".buildOmitsLegacySniffFieldsWhileKeepingExpectedInbounds()",
@@ -25081,7 +25089,7 @@
       "source_file": "app\\src\\test\\java\\com\\kunk\\singbox\\repository\\config\\InboundBuilderTest.kt",
       "source_location": "L14",
       "id": "inboundbuildertest_inboundbuildertest_buildomitslegacysnifffieldswhilekeepingexpectedinbounds",
-      "community": 130
+      "community": 131
     },
     {
       "label": ".buildTunInboundAddressesFollowIpVersionMode()",
@@ -25089,7 +25097,7 @@
       "source_file": "app\\src\\test\\java\\com\\kunk\\singbox\\repository\\config\\InboundBuilderTest.kt",
       "source_location": "L30",
       "id": "inboundbuildertest_inboundbuildertest_buildtuninboundaddressesfollowipversionmode",
-      "community": 130
+      "community": 131
     },
     {
       "label": ".buildFallbackMixedInboundAlsoOmitsLegacySniffFields()",
@@ -25097,7 +25105,7 @@
       "source_file": "app\\src\\test\\java\\com\\kunk\\singbox\\repository\\config\\InboundBuilderTest.kt",
       "source_location": "L77",
       "id": "inboundbuildertest_inboundbuildertest_buildfallbackmixedinboundalsoomitslegacysnifffields",
-      "community": 130
+      "community": 131
     },
     {
       "label": ".buildTunInboundRespectsAutoRouteAndStrictRouteSettings()",
@@ -25105,7 +25113,7 @@
       "source_file": "app\\src\\test\\java\\com\\kunk\\singbox\\repository\\config\\InboundBuilderTest.kt",
       "source_location": "L93",
       "id": "inboundbuildertest_inboundbuildertest_buildtuninboundrespectsautorouteandstrictroutesettings",
-      "community": 130
+      "community": 131
     },
     {
       "label": "NodeLinkExporterTest.kt",
@@ -25849,7 +25857,7 @@
       "source_file": "app\\src\\test\\java\\com\\kunk\\singbox\\service\\manager\\BackgroundPowerManagerTest.kt",
       "source_location": "L1",
       "id": "backgroundpowermanagertest",
-      "community": 131
+      "community": 132
     },
     {
       "label": "BackgroundPowerManagerTest",
@@ -25857,7 +25865,7 @@
       "source_file": "app\\src\\test\\java\\com\\kunk\\singbox\\service\\manager\\BackgroundPowerManagerTest.kt",
       "source_location": "L7",
       "id": "backgroundpowermanagertest_backgroundpowermanagertest",
-      "community": 131
+      "community": 132
     },
     {
       "label": ".returnRecoveryStateSkipReasonIsNullWhenRecoveryAllowed()",
@@ -25865,7 +25873,7 @@
       "source_file": "app\\src\\test\\java\\com\\kunk\\singbox\\service\\manager\\BackgroundPowerManagerTest.kt",
       "source_location": "L9",
       "id": "backgroundpowermanagertest_backgroundpowermanagertest_returnrecoverystateskipreasonisnullwhenrecoveryallowed",
-      "community": 131
+      "community": 132
     },
     {
       "label": ".returnRecoveryStateSkipReasonBlocksManualStop()",
@@ -25873,7 +25881,7 @@
       "source_file": "app\\src\\test\\java\\com\\kunk\\singbox\\service\\manager\\BackgroundPowerManagerTest.kt",
       "source_location": "L21",
       "id": "backgroundpowermanagertest_backgroundpowermanagertest_returnrecoverystateskipreasonblocksmanualstop",
-      "community": 131
+      "community": 132
     },
     {
       "label": ".returnRecoveryStateSkipReasonBlocksStopInProgress()",
@@ -25881,7 +25889,7 @@
       "source_file": "app\\src\\test\\java\\com\\kunk\\singbox\\service\\manager\\BackgroundPowerManagerTest.kt",
       "source_location": "L36",
       "id": "backgroundpowermanagertest_backgroundpowermanagertest_returnrecoverystateskipreasonblocksstopinprogress",
-      "community": 131
+      "community": 132
     },
     {
       "label": ".returnRecoveryStateSkipReasonBlocksStoppedService()",
@@ -25889,7 +25897,7 @@
       "source_file": "app\\src\\test\\java\\com\\kunk\\singbox\\service\\manager\\BackgroundPowerManagerTest.kt",
       "source_location": "L51",
       "id": "backgroundpowermanagertest_backgroundpowermanagertest_returnrecoverystateskipreasonblocksstoppedservice",
-      "community": 131
+      "community": 132
     },
     {
       "label": "NetworkSwitchManagerTest.kt",
@@ -25969,7 +25977,7 @@
       "source_file": "app\\src\\test\\java\\com\\kunk\\singbox\\service\\manager\\NodeSwitchManagerNotificationTest.kt",
       "source_location": "L1",
       "id": "nodeswitchmanagernotificationtest",
-      "community": 187
+      "community": 188
     },
     {
       "label": "NodeSwitchManagerNotificationTest",
@@ -25977,7 +25985,7 @@
       "source_file": "app\\src\\test\\java\\com\\kunk\\singbox\\service\\manager\\NodeSwitchManagerNotificationTest.kt",
       "source_location": "L6",
       "id": "nodeswitchmanagernotificationtest_nodeswitchmanagernotificationtest",
-      "community": 187
+      "community": 188
     },
     {
       "label": ".notificationUpdateAfterExplicitHotSwitch_isForced()",
@@ -25985,7 +25993,7 @@
       "source_file": "app\\src\\test\\java\\com\\kunk\\singbox\\service\\manager\\NodeSwitchManagerNotificationTest.kt",
       "source_location": "L8",
       "id": "nodeswitchmanagernotificationtest_nodeswitchmanagernotificationtest_notificationupdateafterexplicithotswitch_isforced",
-      "community": 187
+      "community": 188
     },
     {
       "label": "PlatformInterfaceImplTest.kt",
@@ -26105,7 +26113,7 @@
       "source_file": "app\\src\\test\\java\\com\\kunk\\singbox\\service\\manager\\StartupManagerTest.kt",
       "source_location": "L1",
       "id": "startupmanagertest",
-      "community": 132
+      "community": 133
     },
     {
       "label": "StartupManagerTest",
@@ -26113,7 +26121,7 @@
       "source_file": "app\\src\\test\\java\\com\\kunk\\singbox\\service\\manager\\StartupManagerTest.kt",
       "source_location": "L9",
       "id": "startupmanagertest_startupmanagertest",
-      "community": 132
+      "community": 133
     },
     {
       "label": ".resolveRuntimeLogLevelOnlyEnablesVerboseLogsInDebugMode()",
@@ -26121,7 +26129,7 @@
       "source_file": "app\\src\\test\\java\\com\\kunk\\singbox\\service\\manager\\StartupManagerTest.kt",
       "source_location": "L11",
       "id": "startupmanagertest_startupmanagertest_resolveruntimeloglevelonlyenablesverboselogsindebugmode",
-      "community": 132
+      "community": 133
     },
     {
       "label": ".applyPrewarmedDomainIpsReplacesMatchingOutboundServers()",
@@ -26129,7 +26137,7 @@
       "source_file": "app\\src\\test\\java\\com\\kunk\\singbox\\service\\manager\\StartupManagerTest.kt",
       "source_location": "L17",
       "id": "startupmanagertest_startupmanagertest_applyprewarmeddomainipsreplacesmatchingoutboundservers",
-      "community": 132
+      "community": 133
     },
     {
       "label": ".applyPrewarmedDomainIpsSkipsIpLiteralsAndMissingEntries()",
@@ -26137,7 +26145,7 @@
       "source_file": "app\\src\\test\\java\\com\\kunk\\singbox\\service\\manager\\StartupManagerTest.kt",
       "source_location": "L41",
       "id": "startupmanagertest_startupmanagertest_applyprewarmeddomainipsskipsipliteralsandmissingentries",
-      "community": 132
+      "community": 133
     },
     {
       "label": ".applyPrewarmedDomainIpsSkipsTlsOutboundsWithoutExplicitRemoteIdentity()",
@@ -26145,7 +26153,7 @@
       "source_file": "app\\src\\test\\java\\com\\kunk\\singbox\\service\\manager\\StartupManagerTest.kt",
       "source_location": "L59",
       "id": "startupmanagertest_startupmanagertest_applyprewarmeddomainipsskipstlsoutboundswithoutexplicitremoteidentity",
-      "community": 132
+      "community": 133
     },
     {
       "label": "UrlTestTagMatcherTest.kt",
@@ -26329,7 +26337,7 @@
       "source_file": "app\\src\\test\\java\\com\\kunk\\singbox\\ui\\components\\AppSelectionSyncTest.kt",
       "source_location": "L1",
       "id": "appselectionsynctest",
-      "community": 188
+      "community": 169
     },
     {
       "label": "AppSelectionSyncTest",
@@ -26337,15 +26345,23 @@
       "source_file": "app\\src\\test\\java\\com\\kunk\\singbox\\ui\\components\\AppSelectionSyncTest.kt",
       "source_location": "L6",
       "id": "appselectionsynctest_appselectionsynctest",
-      "community": 188
+      "community": 169
     },
     {
-      "label": ".selectedPackages_keepsOnlyInstalledVisiblePackagesOnConfirm()",
+      "label": ".confirmKeepsUninstalledPackagesFromOriginalSelection()",
       "file_type": "code",
       "source_file": "app\\src\\test\\java\\com\\kunk\\singbox\\ui\\components\\AppSelectionSyncTest.kt",
       "source_location": "L8",
-      "id": "appselectionsynctest_appselectionsynctest_selectedpackages_keepsonlyinstalledvisiblepackagesonconfirm",
-      "community": 188
+      "id": "appselectionsynctest_appselectionsynctest_confirmkeepsuninstalledpackagesfromoriginalselection",
+      "community": 169
+    },
+    {
+      "label": ".confirmRemovesUncheckedVisiblePackages()",
+      "file_type": "code",
+      "source_file": "app\\src\\test\\java\\com\\kunk\\singbox\\ui\\components\\AppSelectionSyncTest.kt",
+      "source_location": "L19",
+      "id": "appselectionsynctest_appselectionsynctest_confirmremovesuncheckedvisiblepackages",
+      "community": 169
     },
     {
       "label": "ClashConfigParserTest.kt",
@@ -35877,7 +35893,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\ConfigRepository.kt",
-      "source_location": "L5202",
+      "source_location": "L5201",
       "weight": 1.0,
       "_src": "configrepository",
       "_tgt": "configrepository_runoutboundscontext",
@@ -37185,7 +37201,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\ConfigRepository.kt",
-      "source_location": "L4247",
+      "source_location": "L4246",
       "weight": 1.0,
       "_src": "configrepository_configrepository",
       "_tgt": "configrepository_configrepository_buildoutboundforruntime",
@@ -37197,7 +37213,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\ConfigRepository.kt",
-      "source_location": "L4250",
+      "source_location": "L4249",
       "weight": 1.0,
       "_src": "configrepository_configrepository",
       "_tgt": "configrepository_configrepository_loadconfigwithlegacyechrepair",
@@ -37209,7 +37225,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\ConfigRepository.kt",
-      "source_location": "L4282",
+      "source_location": "L4281",
       "weight": 1.0,
       "_src": "configrepository_configrepository",
       "_tgt": "configrepository_configrepository_stripinternalmetadata",
@@ -37221,7 +37237,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\ConfigRepository.kt",
-      "source_location": "L4288",
+      "source_location": "L4287",
       "weight": 1.0,
       "_src": "configrepository_configrepository",
       "_tgt": "configrepository_configrepository_preresolvedomainsforprofile",
@@ -37233,7 +37249,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\ConfigRepository.kt",
-      "source_location": "L4316",
+      "source_location": "L4315",
       "weight": 1.0,
       "_src": "configrepository_configrepository",
       "_tgt": "configrepository_configrepository_applydnsresolvetooutbound",
@@ -37245,7 +37261,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\ConfigRepository.kt",
-      "source_location": "L4329",
+      "source_location": "L4328",
       "weight": 1.0,
       "_src": "configrepository_configrepository",
       "_tgt": "configrepository_configrepository_isvalidrulesetfile",
@@ -37257,7 +37273,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\ConfigRepository.kt",
-      "source_location": "L4353",
+      "source_location": "L4352",
       "weight": 1.0,
       "_src": "configrepository_configrepository",
       "_tgt": "configrepository_configrepository_readrulesetsample",
@@ -37269,7 +37285,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\ConfigRepository.kt",
-      "source_location": "L4361",
+      "source_location": "L4360",
       "weight": 1.0,
       "_src": "configrepository_configrepository",
       "_tgt": "configrepository_configrepository_islikelytextruleset",
@@ -37281,7 +37297,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\ConfigRepository.kt",
-      "source_location": "L4370",
+      "source_location": "L4369",
       "weight": 1.0,
       "_src": "configrepository_configrepository",
       "_tgt": "configrepository_configrepository_readrulesetinspectiontext",
@@ -37293,7 +37309,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\ConfigRepository.kt",
-      "source_location": "L4378",
+      "source_location": "L4377",
       "weight": 1.0,
       "_src": "configrepository_configrepository",
       "_tgt": "configrepository_configrepository_validatebinaryruleset",
@@ -37305,7 +37321,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\ConfigRepository.kt",
-      "source_location": "L4386",
+      "source_location": "L4385",
       "weight": 1.0,
       "_src": "configrepository_configrepository",
       "_tgt": "configrepository_configrepository_validatetextruleset",
@@ -37317,7 +37333,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\ConfigRepository.kt",
-      "source_location": "L4408",
+      "source_location": "L4407",
       "weight": 1.0,
       "_src": "configrepository_configrepository",
       "_tgt": "configrepository_configrepository_shouldacceptrulesettextbyfallback",
@@ -37329,7 +37345,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\ConfigRepository.kt",
-      "source_location": "L4422",
+      "source_location": "L4421",
       "weight": 1.0,
       "_src": "configrepository_configrepository",
       "_tgt": "configrepository_configrepository_isvalidrulesetjson",
@@ -37341,7 +37357,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\ConfigRepository.kt",
-      "source_location": "L4441",
+      "source_location": "L4440",
       "weight": 1.0,
       "_src": "configrepository_configrepository",
       "_tgt": "configrepository_configrepository_isvalidrulesetstructuredtext",
@@ -37353,7 +37369,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\ConfigRepository.kt",
-      "source_location": "L4454",
+      "source_location": "L4453",
       "weight": 1.0,
       "_src": "configrepository_configrepository",
       "_tgt": "configrepository_configrepository_buildcustomrulesets",
@@ -37365,7 +37381,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\ConfigRepository.kt",
-      "source_location": "L4493",
+      "source_location": "L4492",
       "weight": 1.0,
       "_src": "configrepository_configrepository",
       "_tgt": "configrepository_configrepository_getappliedremoterulesets",
@@ -37377,7 +37393,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\ConfigRepository.kt",
-      "source_location": "L4500",
+      "source_location": "L4499",
       "weight": 1.0,
       "_src": "configrepository_configrepository",
       "_tgt": "configrepository_configrepository_buildcustomdomainrules",
@@ -37389,7 +37405,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\ConfigRepository.kt",
-      "source_location": "L4551",
+      "source_location": "L4550",
       "weight": 1.0,
       "_src": "configrepository_configrepository",
       "_tgt": "configrepository_configrepository_buildcustomrulesetrules",
@@ -37401,7 +37417,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\ConfigRepository.kt",
-      "source_location": "L4599",
+      "source_location": "L4598",
       "weight": 1.0,
       "_src": "configrepository_configrepository",
       "_tgt": "configrepository_configrepository_buildapproutingrules",
@@ -37413,7 +37429,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\ConfigRepository.kt",
-      "source_location": "L4679",
+      "source_location": "L4678",
       "weight": 1.0,
       "_src": "configrepository_configrepository",
       "_tgt": "configrepository_configrepository_buildrunlogconfig",
@@ -37425,7 +37441,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\ConfigRepository.kt",
-      "source_location": "L4686",
+      "source_location": "L4685",
       "weight": 1.0,
       "_src": "configrepository_configrepository",
       "_tgt": "configrepository_configrepository_buildrunexperimentalconfig",
@@ -37437,7 +37453,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\ConfigRepository.kt",
-      "source_location": "L4705",
+      "source_location": "L4704",
       "weight": 1.0,
       "_src": "configrepository_configrepository",
       "_tgt": "configrepository_configrepository_buildruninbounds",
@@ -37449,7 +37465,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\ConfigRepository.kt",
-      "source_location": "L4711",
+      "source_location": "L4710",
       "weight": 1.0,
       "_src": "configrepository_configrepository",
       "_tgt": "configrepository_configrepository_resolverundnsfinalserver",
@@ -37461,7 +37477,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\ConfigRepository.kt",
-      "source_location": "L4730",
+      "source_location": "L4729",
       "weight": 1.0,
       "_src": "configrepository_configrepository",
       "_tgt": "configrepository_configrepository_buildrundns",
@@ -37473,7 +37489,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\ConfigRepository.kt",
-      "source_location": "L5209",
+      "source_location": "L5208",
       "weight": 1.0,
       "_src": "configrepository_configrepository",
       "_tgt": "configrepository_configrepository_resolvecurrentproxydnsdetourtag",
@@ -37485,7 +37501,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\ConfigRepository.kt",
-      "source_location": "L5221",
+      "source_location": "L5220",
       "weight": 1.0,
       "_src": "configrepository_configrepository",
       "_tgt": "configrepository_configrepository_buildrunoutbounds",
@@ -37497,7 +37513,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\ConfigRepository.kt",
-      "source_location": "L5499",
+      "source_location": "L5498",
       "weight": 1.0,
       "_src": "configrepository_configrepository",
       "_tgt": "configrepository_configrepository_applyselectorsafeoutbounds",
@@ -37509,7 +37525,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\ConfigRepository.kt",
-      "source_location": "L5503",
+      "source_location": "L5502",
       "weight": 1.0,
       "_src": "configrepository_configrepository",
       "_tgt": "configrepository_configrepository_buildquicblockrule",
@@ -37521,7 +37537,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\ConfigRepository.kt",
-      "source_location": "L5513",
+      "source_location": "L5512",
       "weight": 1.0,
       "_src": "configrepository_configrepository",
       "_tgt": "configrepository_configrepository_buildbypasslanrules",
@@ -37533,7 +37549,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\ConfigRepository.kt",
-      "source_location": "L5517",
+      "source_location": "L5516",
       "weight": 1.0,
       "_src": "configrepository_configrepository",
       "_tgt": "configrepository_configrepository_buildmulticastrejectrules",
@@ -37545,7 +37561,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\ConfigRepository.kt",
-      "source_location": "L5521",
+      "source_location": "L5520",
       "weight": 1.0,
       "_src": "configrepository_configrepository",
       "_tgt": "configrepository_configrepository_buildicmpechorules",
@@ -37557,7 +37573,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\ConfigRepository.kt",
-      "source_location": "L5541",
+      "source_location": "L5540",
       "weight": 1.0,
       "_src": "configrepository_configrepository",
       "_tgt": "configrepository_configrepository_builddefaultrules",
@@ -37569,7 +37585,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\ConfigRepository.kt",
-      "source_location": "L5549",
+      "source_location": "L5548",
       "weight": 1.0,
       "_src": "configrepository_configrepository",
       "_tgt": "configrepository_configrepository_selectrunrouterules",
@@ -37581,7 +37597,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\ConfigRepository.kt",
-      "source_location": "L5567",
+      "source_location": "L5566",
       "weight": 1.0,
       "_src": "configrepository_configrepository",
       "_tgt": "configrepository_configrepository_normalizerunrouterules",
@@ -37593,7 +37609,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\ConfigRepository.kt",
-      "source_location": "L5580",
+      "source_location": "L5579",
       "weight": 1.0,
       "_src": "configrepository_configrepository",
       "_tgt": "configrepository_configrepository_buildrunroute",
@@ -37605,7 +37621,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\ConfigRepository.kt",
-      "source_location": "L5651",
+      "source_location": "L5650",
       "weight": 1.0,
       "_src": "configrepository_configrepository",
       "_tgt": "configrepository_configrepository_getactiveconfig",
@@ -37617,7 +37633,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\ConfigRepository.kt",
-      "source_location": "L5656",
+      "source_location": "L5655",
       "weight": 1.0,
       "_src": "configrepository_configrepository",
       "_tgt": "configrepository_configrepository_getconfig",
@@ -37629,7 +37645,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\ConfigRepository.kt",
-      "source_location": "L5660",
+      "source_location": "L5659",
       "weight": 1.0,
       "_src": "configrepository_configrepository",
       "_tgt": "configrepository_configrepository_resolvednsstrategy",
@@ -37641,7 +37657,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\ConfigRepository.kt",
-      "source_location": "L5664",
+      "source_location": "L5663",
       "weight": 1.0,
       "_src": "configrepository_configrepository",
       "_tgt": "configrepository_configrepository_getoutboundbynodeid",
@@ -37653,7 +37669,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\ConfigRepository.kt",
-      "source_location": "L5670",
+      "source_location": "L5669",
       "weight": 1.0,
       "_src": "configrepository_configrepository",
       "_tgt": "configrepository_configrepository_getnodebyid",
@@ -37665,7 +37681,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\ConfigRepository.kt",
-      "source_location": "L5680",
+      "source_location": "L5679",
       "weight": 1.0,
       "_src": "configrepository_configrepository",
       "_tgt": "configrepository_configrepository_getnodebyname",
@@ -37677,7 +37693,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\ConfigRepository.kt",
-      "source_location": "L5691",
+      "source_location": "L5690",
       "weight": 1.0,
       "_src": "configrepository_configrepository",
       "_tgt": "configrepository_configrepository_createnode",
@@ -37689,7 +37705,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\ConfigRepository.kt",
-      "source_location": "L5797",
+      "source_location": "L5796",
       "weight": 1.0,
       "_src": "configrepository_configrepository",
       "_tgt": "configrepository_configrepository_removeoutboundfromconfig",
@@ -37701,7 +37717,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\ConfigRepository.kt",
-      "source_location": "L5819",
+      "source_location": "L5818",
       "weight": 1.0,
       "_src": "configrepository_configrepository",
       "_tgt": "configrepository_configrepository_deletenode",
@@ -37713,7 +37729,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\ConfigRepository.kt",
-      "source_location": "L5853",
+      "source_location": "L5852",
       "weight": 1.0,
       "_src": "configrepository_configrepository",
       "_tgt": "configrepository_configrepository_addsinglenode",
@@ -37725,7 +37741,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\ConfigRepository.kt",
-      "source_location": "L5960",
+      "source_location": "L5959",
       "weight": 1.0,
       "_src": "configrepository_configrepository",
       "_tgt": "configrepository_configrepository_renamenode",
@@ -37737,7 +37753,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\ConfigRepository.kt",
-      "source_location": "L5999",
+      "source_location": "L5998",
       "weight": 1.0,
       "_src": "configrepository_configrepository",
       "_tgt": "configrepository_configrepository_updatenode",
@@ -37749,7 +37765,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\ConfigRepository.kt",
-      "source_location": "L6040",
+      "source_location": "L6039",
       "weight": 1.0,
       "_src": "configrepository_configrepository",
       "_tgt": "configrepository_configrepository_exportnode",
@@ -37761,7 +37777,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\ConfigRepository.kt",
-      "source_location": "L6059",
+      "source_location": "L6058",
       "weight": 1.0,
       "_src": "configrepository_configrepository",
       "_tgt": "configrepository_configrepository_deduplicatetags",
@@ -37773,7 +37789,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\ConfigRepository.kt",
-      "source_location": "L6088",
+      "source_location": "L6087",
       "weight": 1.0,
       "_src": "configrepository_configrepository",
       "_tgt": "configrepository_configrepository_findavailableport",
@@ -37785,7 +37801,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\ConfigRepository.kt",
-      "source_location": "L6100",
+      "source_location": "L6099",
       "weight": 1.0,
       "_src": "configrepository_configrepository",
       "_tgt": "configrepository_configrepository_cleanup",
@@ -37797,7 +37813,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\ConfigRepository.kt",
-      "source_location": "L6112",
+      "source_location": "L6111",
       "weight": 1.0,
       "_src": "configrepository_configrepository",
       "_tgt": "configrepository_configrepository_isipaddress",
@@ -39081,19 +39097,19 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\PerAppPackageSync.kt",
-      "source_location": "L18",
+      "source_location": "L19",
       "weight": 1.0,
       "_src": "perapppackagesync",
-      "_tgt": "perapppackagesync_shouldsyncremovedpackage",
+      "_tgt": "perapppackagesync_shouldreloadinstalledappsforpackagechange",
       "source": "perapppackagesync",
-      "target": "perapppackagesync_shouldsyncremovedpackage",
+      "target": "perapppackagesync_shouldreloadinstalledappsforpackagechange",
       "confidence_score": 1.0
     },
     {
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\PerAppPackageSync.kt",
-      "source_location": "L22",
+      "source_location": "L23",
       "weight": 1.0,
       "_src": "perapppackagesync",
       "_tgt": "perapppackagesync_topackagenames",
@@ -39561,7 +39577,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L37",
+      "source_location": "L38",
       "weight": 1.0,
       "_src": "settingsrepository",
       "_tgt": "settingsrepository_settingsrepository",
@@ -39573,7 +39589,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L535",
+      "source_location": "L541",
       "weight": 1.0,
       "_src": "settingsrepository",
       "_tgt": "settingsrepository_getinstance",
@@ -39585,7 +39601,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L41",
+      "source_location": "L42",
       "weight": 1.0,
       "_src": "settingsrepository_settingsrepository",
       "_tgt": "settingsrepository_settingsrepository_getdefaultrulesets",
@@ -39597,7 +39613,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L89",
+      "source_location": "L90",
       "weight": 1.0,
       "_src": "settingsrepository_settingsrepository",
       "_tgt": "settingsrepository_settingsrepository_reloadfromstorage",
@@ -39609,7 +39625,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L93",
+      "source_location": "L94",
       "weight": 1.0,
       "_src": "settingsrepository_settingsrepository",
       "_tgt": "settingsrepository_settingsrepository_setautoconnect",
@@ -39621,7 +39637,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L97",
+      "source_location": "L98",
       "weight": 1.0,
       "_src": "settingsrepository_settingsrepository",
       "_tgt": "settingsrepository_settingsrepository_setexcludefromrecent",
@@ -39633,7 +39649,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L101",
+      "source_location": "L102",
       "weight": 1.0,
       "_src": "settingsrepository_settingsrepository",
       "_tgt": "settingsrepository_settingsrepository_setapptheme",
@@ -39645,7 +39661,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L105",
+      "source_location": "L106",
       "weight": 1.0,
       "_src": "settingsrepository_settingsrepository",
       "_tgt": "settingsrepository_settingsrepository_setapplanguage",
@@ -39657,7 +39673,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L109",
+      "source_location": "L110",
       "weight": 1.0,
       "_src": "settingsrepository_settingsrepository",
       "_tgt": "settingsrepository_settingsrepository_setshownotificationspeed",
@@ -39669,7 +39685,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L113",
+      "source_location": "L114",
       "weight": 1.0,
       "_src": "settingsrepository_settingsrepository",
       "_tgt": "settingsrepository_settingsrepository_settunenabled",
@@ -39681,7 +39697,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L118",
+      "source_location": "L119",
       "weight": 1.0,
       "_src": "settingsrepository_settingsrepository",
       "_tgt": "settingsrepository_settingsrepository_settunstack",
@@ -39693,7 +39709,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L123",
+      "source_location": "L124",
       "weight": 1.0,
       "_src": "settingsrepository_settingsrepository",
       "_tgt": "settingsrepository_settingsrepository_setipversionmode",
@@ -39705,7 +39721,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L128",
+      "source_location": "L129",
       "weight": 1.0,
       "_src": "settingsrepository_settingsrepository",
       "_tgt": "settingsrepository_settingsrepository_settunmtu",
@@ -39717,7 +39733,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L133",
+      "source_location": "L134",
       "weight": 1.0,
       "_src": "settingsrepository_settingsrepository",
       "_tgt": "settingsrepository_settingsrepository_settunmtuauto",
@@ -39729,7 +39745,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L138",
+      "source_location": "L139",
       "weight": 1.0,
       "_src": "settingsrepository_settingsrepository",
       "_tgt": "settingsrepository_settingsrepository_settuninterfacename",
@@ -39741,7 +39757,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L143",
+      "source_location": "L144",
       "weight": 1.0,
       "_src": "settingsrepository_settingsrepository",
       "_tgt": "settingsrepository_settingsrepository_setautoroute",
@@ -39753,7 +39769,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L148",
+      "source_location": "L149",
       "weight": 1.0,
       "_src": "settingsrepository_settingsrepository",
       "_tgt": "settingsrepository_settingsrepository_setstrictroute",
@@ -39765,7 +39781,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L153",
+      "source_location": "L154",
       "weight": 1.0,
       "_src": "settingsrepository_settingsrepository",
       "_tgt": "settingsrepository_settingsrepository_setendpointindependentnat",
@@ -39777,7 +39793,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L158",
+      "source_location": "L159",
       "weight": 1.0,
       "_src": "settingsrepository_settingsrepository",
       "_tgt": "settingsrepository_settingsrepository_setvpnroutemode",
@@ -39789,7 +39805,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L163",
+      "source_location": "L164",
       "weight": 1.0,
       "_src": "settingsrepository_settingsrepository",
       "_tgt": "settingsrepository_settingsrepository_setvpnrouteincludecidrs",
@@ -39801,7 +39817,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L168",
+      "source_location": "L169",
       "weight": 1.0,
       "_src": "settingsrepository_settingsrepository",
       "_tgt": "settingsrepository_settingsrepository_setvpnappmode",
@@ -39813,7 +39829,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L173",
+      "source_location": "L174",
       "weight": 1.0,
       "_src": "settingsrepository_settingsrepository",
       "_tgt": "settingsrepository_settingsrepository_setvpnallowlist",
@@ -39825,7 +39841,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L178",
+      "source_location": "L179",
       "weight": 1.0,
       "_src": "settingsrepository_settingsrepository",
       "_tgt": "settingsrepository_settingsrepository_setvpnblocklist",
@@ -39837,7 +39853,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L183",
+      "source_location": "L184",
       "weight": 1.0,
       "_src": "settingsrepository_settingsrepository",
       "_tgt": "settingsrepository_settingsrepository_removeperapppackage",
@@ -39849,7 +39865,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L195",
+      "source_location": "L196",
       "weight": 1.0,
       "_src": "settingsrepository_settingsrepository",
       "_tgt": "settingsrepository_settingsrepository_sanitizeperapppackagelists",
@@ -39861,19 +39877,19 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L206",
+      "source_location": "L208",
       "weight": 1.0,
       "_src": "settingsrepository_settingsrepository",
-      "_tgt": "settingsrepository_settingsrepository_ispackageinstalled",
+      "_tgt": "settingsrepository_settingsrepository_getinstalledpackages",
       "source": "settingsrepository_settingsrepository",
-      "target": "settingsrepository_settingsrepository_ispackageinstalled",
+      "target": "settingsrepository_settingsrepository_getinstalledpackages",
       "confidence_score": 1.0
     },
     {
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L210",
+      "source_location": "L216",
       "weight": 1.0,
       "_src": "settingsrepository_settingsrepository",
       "_tgt": "settingsrepository_settingsrepository_setlocaldns",
@@ -39885,7 +39901,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L215",
+      "source_location": "L221",
       "weight": 1.0,
       "_src": "settingsrepository_settingsrepository",
       "_tgt": "settingsrepository_settingsrepository_setremotedns",
@@ -39897,7 +39913,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L220",
+      "source_location": "L226",
       "weight": 1.0,
       "_src": "settingsrepository_settingsrepository",
       "_tgt": "settingsrepository_settingsrepository_setfakednsenabled",
@@ -39909,7 +39925,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L225",
+      "source_location": "L231",
       "weight": 1.0,
       "_src": "settingsrepository_settingsrepository",
       "_tgt": "settingsrepository_settingsrepository_setfakeiprange",
@@ -39921,7 +39937,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L230",
+      "source_location": "L236",
       "weight": 1.0,
       "_src": "settingsrepository_settingsrepository",
       "_tgt": "settingsrepository_settingsrepository_setdnsstrategy",
@@ -39933,7 +39949,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L235",
+      "source_location": "L241",
       "weight": 1.0,
       "_src": "settingsrepository_settingsrepository",
       "_tgt": "settingsrepository_settingsrepository_setremotednsstrategy",
@@ -39945,7 +39961,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L240",
+      "source_location": "L246",
       "weight": 1.0,
       "_src": "settingsrepository_settingsrepository",
       "_tgt": "settingsrepository_settingsrepository_setdirectdnsstrategy",
@@ -39957,7 +39973,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L245",
+      "source_location": "L251",
       "weight": 1.0,
       "_src": "settingsrepository_settingsrepository",
       "_tgt": "settingsrepository_settingsrepository_setserveraddressstrategy",
@@ -39969,7 +39985,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L250",
+      "source_location": "L256",
       "weight": 1.0,
       "_src": "settingsrepository_settingsrepository",
       "_tgt": "settingsrepository_settingsrepository_setdnscacheenabled",
@@ -39981,7 +39997,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L255",
+      "source_location": "L261",
       "weight": 1.0,
       "_src": "settingsrepository_settingsrepository",
       "_tgt": "settingsrepository_settingsrepository_setroutingmode",
@@ -39993,7 +40009,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L262",
+      "source_location": "L268",
       "weight": 1.0,
       "_src": "settingsrepository_settingsrepository",
       "_tgt": "settingsrepository_settingsrepository_setdefaultrule",
@@ -40005,7 +40021,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L267",
+      "source_location": "L273",
       "weight": 1.0,
       "_src": "settingsrepository_settingsrepository",
       "_tgt": "settingsrepository_settingsrepository_setblockquic",
@@ -40017,7 +40033,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L272",
+      "source_location": "L278",
       "weight": 1.0,
       "_src": "settingsrepository_settingsrepository",
       "_tgt": "settingsrepository_settingsrepository_setdebugloggingenabled",
@@ -40029,7 +40045,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L277",
+      "source_location": "L283",
       "weight": 1.0,
       "_src": "settingsrepository_settingsrepository",
       "_tgt": "settingsrepository_settingsrepository_setlatencytestmethod",
@@ -40041,7 +40057,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L281",
+      "source_location": "L287",
       "weight": 1.0,
       "_src": "settingsrepository_settingsrepository",
       "_tgt": "settingsrepository_settingsrepository_setlatencytesturl",
@@ -40053,7 +40069,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L285",
+      "source_location": "L291",
       "weight": 1.0,
       "_src": "settingsrepository_settingsrepository",
       "_tgt": "settingsrepository_settingsrepository_setlatencytesttimeout",
@@ -40065,7 +40081,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L289",
+      "source_location": "L295",
       "weight": 1.0,
       "_src": "settingsrepository_settingsrepository",
       "_tgt": "settingsrepository_settingsrepository_setlatencytestconcurrency",
@@ -40077,7 +40093,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L293",
+      "source_location": "L299",
       "weight": 1.0,
       "_src": "settingsrepository_settingsrepository",
       "_tgt": "settingsrepository_settingsrepository_setbypasslan",
@@ -40089,7 +40105,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L298",
+      "source_location": "L304",
       "weight": 1.0,
       "_src": "settingsrepository_settingsrepository",
       "_tgt": "settingsrepository_settingsrepository_seticmpechoroutingenabled",
@@ -40101,7 +40117,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L303",
+      "source_location": "L309",
       "weight": 1.0,
       "_src": "settingsrepository_settingsrepository",
       "_tgt": "settingsrepository_settingsrepository_setwakeresetconnections",
@@ -40113,7 +40129,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L307",
+      "source_location": "L313",
       "weight": 1.0,
       "_src": "settingsrepository_settingsrepository",
       "_tgt": "settingsrepository_settingsrepository_setghproxymirror",
@@ -40125,7 +40141,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L312",
+      "source_location": "L318",
       "weight": 1.0,
       "_src": "settingsrepository_settingsrepository",
       "_tgt": "settingsrepository_settingsrepository_setproxyport",
@@ -40137,7 +40153,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L317",
+      "source_location": "L323",
       "weight": 1.0,
       "_src": "settingsrepository_settingsrepository",
       "_tgt": "settingsrepository_settingsrepository_setallowlan",
@@ -40149,7 +40165,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L322",
+      "source_location": "L328",
       "weight": 1.0,
       "_src": "settingsrepository_settingsrepository",
       "_tgt": "settingsrepository_settingsrepository_setappendhttpproxy",
@@ -40161,7 +40177,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L327",
+      "source_location": "L333",
       "weight": 1.0,
       "_src": "settingsrepository_settingsrepository",
       "_tgt": "settingsrepository_settingsrepository_setcustomrules",
@@ -40173,7 +40189,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L332",
+      "source_location": "L338",
       "weight": 1.0,
       "_src": "settingsrepository_settingsrepository",
       "_tgt": "settingsrepository_settingsrepository_setrulesets",
@@ -40185,7 +40201,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L339",
+      "source_location": "L345",
       "weight": 1.0,
       "_src": "settingsrepository_settingsrepository",
       "_tgt": "settingsrepository_settingsrepository_getrulesets",
@@ -40197,7 +40213,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L343",
+      "source_location": "L349",
       "weight": 1.0,
       "_src": "settingsrepository_settingsrepository",
       "_tgt": "settingsrepository_settingsrepository_setapprules",
@@ -40209,7 +40225,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L348",
+      "source_location": "L354",
       "weight": 1.0,
       "_src": "settingsrepository_settingsrepository",
       "_tgt": "settingsrepository_settingsrepository_setappgroups",
@@ -40221,7 +40237,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L353",
+      "source_location": "L359",
       "weight": 1.0,
       "_src": "settingsrepository_settingsrepository",
       "_tgt": "settingsrepository_settingsrepository_setrulesetautoupdateenabled",
@@ -40233,7 +40249,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L357",
+      "source_location": "L363",
       "weight": 1.0,
       "_src": "settingsrepository_settingsrepository",
       "_tgt": "settingsrepository_settingsrepository_setrulesetautoupdateinterval",
@@ -40245,7 +40261,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L361",
+      "source_location": "L367",
       "weight": 1.0,
       "_src": "settingsrepository_settingsrepository",
       "_tgt": "settingsrepository_settingsrepository_setsubscriptionupdatetimeout",
@@ -40257,7 +40273,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L365",
+      "source_location": "L371",
       "weight": 1.0,
       "_src": "settingsrepository_settingsrepository",
       "_tgt": "settingsrepository_settingsrepository_setautocheckupdate",
@@ -40269,7 +40285,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L369",
+      "source_location": "L375",
       "weight": 1.0,
       "_src": "settingsrepository_settingsrepository",
       "_tgt": "settingsrepository_settingsrepository_setbackgroundpowersavingdelay",
@@ -40281,7 +40297,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L373",
+      "source_location": "L379",
       "weight": 1.0,
       "_src": "settingsrepository_settingsrepository",
       "_tgt": "settingsrepository_settingsrepository_setnodefilter",
@@ -40293,7 +40309,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L377",
+      "source_location": "L383",
       "weight": 1.0,
       "_src": "settingsrepository_settingsrepository",
       "_tgt": "settingsrepository_settingsrepository_getnodefilter",
@@ -40305,7 +40321,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L381",
+      "source_location": "L387",
       "weight": 1.0,
       "_src": "settingsrepository_settingsrepository",
       "_tgt": "settingsrepository_settingsrepository_getnodefilterflow",
@@ -40317,7 +40333,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L385",
+      "source_location": "L391",
       "weight": 1.0,
       "_src": "settingsrepository_settingsrepository",
       "_tgt": "settingsrepository_settingsrepository_setnodesorttype",
@@ -40329,7 +40345,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L389",
+      "source_location": "L395",
       "weight": 1.0,
       "_src": "settingsrepository_settingsrepository",
       "_tgt": "settingsrepository_settingsrepository_getnodesorttype",
@@ -40341,7 +40357,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L393",
+      "source_location": "L399",
       "weight": 1.0,
       "_src": "settingsrepository_settingsrepository",
       "_tgt": "settingsrepository_settingsrepository_setcustomnodeorder",
@@ -40353,7 +40369,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L397",
+      "source_location": "L403",
       "weight": 1.0,
       "_src": "settingsrepository_settingsrepository",
       "_tgt": "settingsrepository_settingsrepository_getcustomnodeorder",
@@ -40365,7 +40381,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L401",
+      "source_location": "L407",
       "weight": 1.0,
       "_src": "settingsrepository_settingsrepository",
       "_tgt": "settingsrepository_settingsrepository_checkandmigraterulesets",
@@ -40377,7 +40393,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\SettingsRepository.kt",
-      "source_location": "L524",
+      "source_location": "L530",
       "weight": 1.0,
       "_src": "settingsrepository_settingsrepository",
       "_tgt": "settingsrepository_settingsrepository_notifyrestartrequired",
@@ -51621,7 +51637,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\ui\\components\\CommonDialogs.kt",
-      "source_location": "L275",
+      "source_location": "L276",
       "weight": 1.0,
       "_src": "commondialogs",
       "_tgt": "commondialogs_appmultiselectdialog",
@@ -51633,7 +51649,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\ui\\components\\CommonDialogs.kt",
-      "source_location": "L674",
+      "source_location": "L676",
       "weight": 1.0,
       "_src": "commondialogs",
       "_tgt": "commondialogs_singleselectdialog",
@@ -51645,7 +51661,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\ui\\components\\CommonDialogs.kt",
-      "source_location": "L767",
+      "source_location": "L769",
       "weight": 1.0,
       "_src": "commondialogs",
       "_tgt": "commondialogs_profilenodeselectdialog",
@@ -51657,7 +51673,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\ui\\components\\CommonDialogs.kt",
-      "source_location": "L1013",
+      "source_location": "L1015",
       "weight": 1.0,
       "_src": "commondialogs",
       "_tgt": "commondialogs_aboutdialog",
@@ -51669,7 +51685,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\ui\\components\\CommonDialogs.kt",
-      "source_location": "L1115",
+      "source_location": "L1117",
       "weight": 1.0,
       "_src": "commondialogs",
       "_tgt": "commondialogs_nodefilterdialog",
@@ -51681,7 +51697,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\ui\\components\\CommonDialogs.kt",
-      "source_location": "L1339",
+      "source_location": "L1341",
       "weight": 1.0,
       "_src": "commondialogs",
       "_tgt": "commondialogs_nodeselectordialog",
@@ -51693,7 +51709,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\ui\\components\\CommonDialogs.kt",
-      "source_location": "L1415",
+      "source_location": "L1417",
       "weight": 1.0,
       "_src": "commondialogs",
       "_tgt": "commondialogs_nodeselectoritem",
@@ -53313,7 +53329,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\ui\\screens\\TunSettingsScreen.kt",
-      "source_location": "L46",
+      "source_location": "L49",
       "weight": 1.0,
       "_src": "tunsettingsscreen",
       "_tgt": "tunsettingsscreen_tunsettingsscreen",
@@ -62676,6 +62692,18 @@
       "source_location": "L30",
       "weight": 1.0,
       "_src": "perapppackagesynctest_perapppackagesynctest",
+      "_tgt": "perapppackagesynctest_perapppackagesynctest_sanitizepackagelist_doesnotdroppackageswheninstalledappsnapshotisempty",
+      "source": "perapppackagesynctest_perapppackagesynctest",
+      "target": "perapppackagesynctest_perapppackagesynctest_sanitizepackagelist_doesnotdroppackageswheninstalledappsnapshotisempty",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "app\\src\\test\\java\\com\\kunk\\singbox\\repository\\PerAppPackageSyncTest.kt",
+      "source_location": "L40",
+      "weight": 1.0,
+      "_src": "perapppackagesynctest_perapppackagesynctest",
       "_tgt": "perapppackagesynctest_perapppackagesynctest_packageremovedevent_skipsreplacingupdates",
       "source": "perapppackagesynctest_perapppackagesynctest",
       "target": "perapppackagesynctest_perapppackagesynctest_packageremovedevent_skipsreplacingupdates",
@@ -64404,9 +64432,21 @@
       "source_location": "L8",
       "weight": 1.0,
       "_src": "appselectionsynctest_appselectionsynctest",
-      "_tgt": "appselectionsynctest_appselectionsynctest_selectedpackages_keepsonlyinstalledvisiblepackagesonconfirm",
+      "_tgt": "appselectionsynctest_appselectionsynctest_confirmkeepsuninstalledpackagesfromoriginalselection",
       "source": "appselectionsynctest_appselectionsynctest",
-      "target": "appselectionsynctest_appselectionsynctest_selectedpackages_keepsonlyinstalledvisiblepackagesonconfirm",
+      "target": "appselectionsynctest_appselectionsynctest_confirmkeepsuninstalledpackagesfromoriginalselection",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "app\\src\\test\\java\\com\\kunk\\singbox\\ui\\components\\AppSelectionSyncTest.kt",
+      "source_location": "L19",
+      "weight": 1.0,
+      "_src": "appselectionsynctest_appselectionsynctest",
+      "_tgt": "appselectionsynctest_appselectionsynctest_confirmremovesuncheckedvisiblepackages",
+      "source": "appselectionsynctest_appselectionsynctest",
+      "target": "appselectionsynctest_appselectionsynctest_confirmremovesuncheckedvisiblepackages",
       "confidence_score": 1.0
     },
     {

@@ -22,12 +22,14 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
@@ -41,6 +43,7 @@ import com.kunk.singbox.ui.components.SettingItem
 import com.kunk.singbox.ui.components.SettingSwitchItem
 import com.kunk.singbox.ui.components.SingleSelectDialog
 import com.kunk.singbox.ui.components.StandardCard
+import com.kunk.singbox.repository.InstalledAppsRepository
 import com.kunk.singbox.viewmodel.SettingsViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -52,6 +55,16 @@ fun TunSettingsScreen(
 ) {
     val scrollState = rememberScrollState()
     val settings by settingsViewModel.settings.collectAsState()
+
+    val context = LocalContext.current
+    val installedAppsRepo = remember { InstalledAppsRepository.getInstance(context) }
+    val installedApps by installedAppsRepo.installedApps.collectAsState()
+
+    LaunchedEffect(Unit) { installedAppsRepo.refreshApps() }
+
+    val installedPackageNames = remember(installedApps) {
+        installedApps.map { it.packageName }.toSet()
+    }
 
     // Dialog States
     var showStackDialog by remember { mutableStateOf(false) }
@@ -295,11 +308,11 @@ fun TunSettingsScreen(
             val allowCount = settings.vpnAllowlist
                 .split("\n", "\r", ",", ";", " ", "\t")
                 .map { it.trim() }
-                .count { it.isNotEmpty() }
+                .count { it.isNotEmpty() && (installedPackageNames.isEmpty() || it in installedPackageNames) }
             val blockCount = settings.vpnBlocklist
                 .split("\n", "\r", ",", ";", " ", "\t")
                 .map { it.trim() }
-                .count { it.isNotEmpty() }
+                .count { it.isNotEmpty() && (installedPackageNames.isEmpty() || it in installedPackageNames) }
 
             StandardCard {
                 SettingItem(

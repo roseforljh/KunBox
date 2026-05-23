@@ -180,33 +180,6 @@ class SettingsRepository(private val context: Context) {
         notifyRestartRequired()
     }
 
-    suspend fun removePerAppPackage(packageName: String) {
-        settingsStore.updateSettingsAndWait {
-            it.copy(
-                vpnAllowlist = removePackageFromList(it.vpnAllowlist, packageName),
-                vpnBlocklist = removePackageFromList(it.vpnBlocklist, packageName)
-            )
-        }
-        notifyRestartRequired()
-    }
-
-    private var perAppSanitized = false
-
-    suspend fun sanitizePerAppPackageLists() {
-        if (perAppSanitized) return
-        perAppSanitized = true
-        settingsStore.updateSettingsAndWait {
-            it.copy(
-                vpnAllowlist = sanitizePackageList(it.vpnAllowlist, ::isPackageInstalled),
-                vpnBlocklist = sanitizePackageList(it.vpnBlocklist, ::isPackageInstalled)
-            )
-        }
-    }
-
-    private fun isPackageInstalled(packageName: String): Boolean {
-        return runCatching { context.packageManager.getApplicationInfo(packageName, 0) }.isSuccess
-    }
-
     suspend fun setLocalDns(value: String) {
         settingsStore.updateSettingsAndWait { it.copy(localDns = value) }
         notifyRestartRequired()

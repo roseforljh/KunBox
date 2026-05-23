@@ -265,11 +265,12 @@ fun InputDialog(
 
 internal fun resolveVisibleSelectedPackages(
     selectedPackages: Set<String>,
-    visiblePackages: Set<String>
+    visiblePackages: Set<String>,
+    originalSelectedPackages: Set<String> = emptySet()
 ): List<String> {
-    return selectedPackages
-        .filter { it in visiblePackages }
-        .sorted()
+    val invisibleKept = originalSelectedPackages.filter { it !in visiblePackages }
+    val visibleKept = selectedPackages.filter { it in visiblePackages }
+    return (invisibleKept + visibleKept).sorted()
 }
 
 @Composable
@@ -298,7 +299,7 @@ fun AppMultiSelectDialog(
     val loadingState by repository.loadingState.collectAsState()
 
     LaunchedEffect(Unit) {
-        repository.loadApps()
+        repository.refreshApps()
     }
 
     val allApps = remember(installedApps) {
@@ -656,7 +657,8 @@ fun AppMultiSelectDialog(
                         onConfirm(
                             resolveVisibleSelectedPackages(
                                 selectedPackages = tempSelected,
-                                visiblePackages = allApps.map { it.packageName }.toSet()
+                                visiblePackages = allApps.map { it.packageName }.toSet(),
+                                originalSelectedPackages = selectedPackages
                             )
                         )
                     },
