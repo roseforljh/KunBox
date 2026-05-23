@@ -1,11 +1,11 @@
 # Graph Report - .  (2026-05-23)
 
 ## Corpus Check
-- 210 files ， ~215,676 words
+- 210 files ， ~215,712 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 3384 nodes ， 3176 edges ， 210 communities detected
+- 3385 nodes ， 3177 edges ， 210 communities detected
 - Extraction: 100% EXTRACTED ， 0% INFERRED ， 0% AMBIGUOUS
 - Token cost: 0 input ， 0 output
 
@@ -500,55 +500,55 @@ Nodes (1): SettingsStoreTest
 
 ### Community 118 - "Community 118"
 Cohesion: 0.29
-Nodes (1): DnsResolveStoreTest
+Nodes (1): NotificationNodeLabelTest
 
 ### Community 119 - "Community 119"
-Cohesion: 0.33
-Nodes (1): MainActivity
+Cohesion: 0.29
+Nodes (1): DnsResolveStoreTest
 
 ### Community 120 - "Community 120"
 Cohesion: 0.33
-Nodes (1): SingBoxApplication
+Nodes (1): MainActivity
 
 ### Community 121 - "Community 121"
 Cohesion: 0.33
-Nodes (1): Converters
+Nodes (1): SingBoxApplication
 
 ### Community 122 - "Community 122"
 Cohesion: 0.33
-Nodes (1): NodeEntity
+Nodes (1): Converters
 
 ### Community 123 - "Community 123"
 Cohesion: 0.33
-Nodes (1): NodeExtractor
+Nodes (1): NodeEntity
 
 ### Community 124 - "Community 124"
 Cohesion: 0.33
-Nodes (1): RuleSetAutoUpdateWorker
+Nodes (1): NodeExtractor
 
 ### Community 125 - "Community 125"
 Cohesion: 0.33
-Nodes (0): 
+Nodes (1): RuleSetAutoUpdateWorker
 
 ### Community 126 - "Community 126"
 Cohesion: 0.33
-Nodes (1): VersionInfo
+Nodes (0): 
 
 ### Community 127 - "Community 127"
 Cohesion: 0.33
-Nodes (1): IpVersionModeRulesTest
+Nodes (1): VersionInfo
 
 ### Community 128 - "Community 128"
 Cohesion: 0.33
-Nodes (1): PingDisplayTextTest
+Nodes (1): IpVersionModeRulesTest
 
 ### Community 129 - "Community 129"
 Cohesion: 0.33
-Nodes (1): InboundBuilderTest
+Nodes (1): PingDisplayTextTest
 
 ### Community 130 - "Community 130"
 Cohesion: 0.33
-Nodes (1): NotificationNodeLabelTest
+Nodes (1): InboundBuilderTest
 
 ### Community 131 - "Community 131"
 Cohesion: 0.33

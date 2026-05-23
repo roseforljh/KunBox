@@ -49,4 +49,16 @@ class NotificationNodeLabelTest {
 
         assertEquals("配置2节点", label)
     }
+
+    @Test
+    fun resolveNodeLabel_prefersRuntimeAfterHotSwitchOverStalePendingNode() {
+        val label = resolveNotificationNodeLabel(
+            runtimeNodeName = "配置2节点2",
+            selectedNodeName = "配置2节点2",
+            storedActiveLabel = "配置2节点2",
+            pendingNodeName = "配置2节点1"
+        )
+
+        assertEquals("配置2节点2", label)
+    }
 }

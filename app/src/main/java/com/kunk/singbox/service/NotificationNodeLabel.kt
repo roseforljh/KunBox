@@ -6,8 +6,11 @@ internal fun resolveNotificationNodeLabel(
     storedActiveLabel: String?,
     pendingNodeName: String? = null
 ): String? {
-    return pendingNodeName?.takeIf { it.isNotBlank() }
-        ?: selectedNodeName
-        ?: runtimeNodeName
-        ?: storedActiveLabel?.takeIf { it.isNotBlank() }
+    return when {
+        !runtimeNodeName.isNullOrBlank() && runtimeNodeName == selectedNodeName -> runtimeNodeName
+        !pendingNodeName.isNullOrBlank() -> pendingNodeName
+        !selectedNodeName.isNullOrBlank() -> selectedNodeName
+        !runtimeNodeName.isNullOrBlank() -> runtimeNodeName
+        else -> storedActiveLabel?.takeIf { it.isNotBlank() }
+    }
 }

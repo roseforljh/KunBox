@@ -193,7 +193,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\MainActivity.kt",
       "source_location": "L1",
       "id": "mainactivity",
-      "community": 119
+      "community": 120
     },
     {
       "label": "MainActivity",
@@ -201,7 +201,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\MainActivity.kt",
       "source_location": "L67",
       "id": "mainactivity_mainactivity",
-      "community": 119
+      "community": 120
     },
     {
       "label": ".onNewIntent()",
@@ -209,7 +209,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\MainActivity.kt",
       "source_location": "L69",
       "id": "mainactivity_mainactivity_onnewintent",
-      "community": 119
+      "community": 120
     },
     {
       "label": ".attachBaseContext()",
@@ -217,7 +217,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\MainActivity.kt",
       "source_location": "L74",
       "id": "mainactivity_mainactivity_attachbasecontext",
-      "community": 119
+      "community": 120
     },
     {
       "label": ".onCreate()",
@@ -225,7 +225,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\MainActivity.kt",
       "source_location": "L92",
       "id": "mainactivity_mainactivity_oncreate",
-      "community": 119
+      "community": 120
     },
     {
       "label": "SingBoxApp()",
@@ -233,7 +233,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\MainActivity.kt",
       "source_location": "L108",
       "id": "mainactivity_singboxapp",
-      "community": 119
+      "community": 120
     },
     {
       "label": "SingBoxApplication.kt",
@@ -241,7 +241,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\SingBoxApplication.kt",
       "source_location": "L1",
       "id": "singboxapplication",
-      "community": 120
+      "community": 121
     },
     {
       "label": "SingBoxApplication",
@@ -249,7 +249,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\SingBoxApplication.kt",
       "source_location": "L23",
       "id": "singboxapplication_singboxapplication",
-      "community": 120
+      "community": 121
     },
     {
       "label": ".onCreate()",
@@ -257,7 +257,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\SingBoxApplication.kt",
       "source_location": "L32",
       "id": "singboxapplication_singboxapplication_oncreate",
-      "community": 120
+      "community": 121
     },
     {
       "label": ".isWorkManagerInitialized()",
@@ -265,7 +265,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\SingBoxApplication.kt",
       "source_location": "L79",
       "id": "singboxapplication_singboxapplication_isworkmanagerinitialized",
-      "community": 120
+      "community": 121
     },
     {
       "label": ".isMainProcess()",
@@ -273,7 +273,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\SingBoxApplication.kt",
       "source_location": "L88",
       "id": "singboxapplication_singboxapplication_ismainprocess",
-      "community": 120
+      "community": 121
     },
     {
       "label": ".cleanupOrphanedTempFiles()",
@@ -281,7 +281,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\SingBoxApplication.kt",
       "source_location": "L97",
       "id": "singboxapplication_singboxapplication_cleanuporphanedtempfiles",
-      "community": 120
+      "community": 121
     },
     {
       "label": "BoxWrapperManager.kt",
@@ -1889,7 +1889,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\database\\Converters.kt",
       "source_location": "L1",
       "id": "converters",
-      "community": 121
+      "community": 122
     },
     {
       "label": "Converters",
@@ -1897,7 +1897,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\database\\Converters.kt",
       "source_location": "L11",
       "id": "converters_converters",
-      "community": 121
+      "community": 122
     },
     {
       "label": ".fromProfileType()",
@@ -1905,7 +1905,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\database\\Converters.kt",
       "source_location": "L13",
       "id": "converters_converters_fromprofiletype",
-      "community": 121
+      "community": 122
     },
     {
       "label": ".toProfileType()",
@@ -1913,7 +1913,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\database\\Converters.kt",
       "source_location": "L16",
       "id": "converters_converters_toprofiletype",
-      "community": 121
+      "community": 122
     },
     {
       "label": ".fromUpdateStatus()",
@@ -1921,7 +1921,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\database\\Converters.kt",
       "source_location": "L20",
       "id": "converters_converters_fromupdatestatus",
-      "community": 121
+      "community": 122
     },
     {
       "label": ".toUpdateStatus()",
@@ -1929,7 +1929,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\database\\Converters.kt",
       "source_location": "L23",
       "id": "converters_converters_toupdatestatus",
-      "community": 121
+      "community": 122
     },
     {
       "label": "ActiveStateDao.kt",
@@ -2649,7 +2649,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\database\\entity\\NodeEntity.kt",
       "source_location": "L1",
       "id": "nodeentity",
-      "community": 122
+      "community": 123
     },
     {
       "label": "NodeEntity",
@@ -2657,7 +2657,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\database\\entity\\NodeEntity.kt",
       "source_location": "L14",
       "id": "nodeentity_nodeentity",
-      "community": 122
+      "community": 123
     },
     {
       "label": ".toUiModel()",
@@ -2665,7 +2665,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\database\\entity\\NodeEntity.kt",
       "source_location": "L47",
       "id": "nodeentity_nodeentity_touimodel",
-      "community": 122
+      "community": 123
     },
     {
       "label": "fromUiModel()",
@@ -2673,7 +2673,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\database\\entity\\NodeEntity.kt",
       "source_location": "L62",
       "id": "nodeentity_fromuimodel",
-      "community": 122
+      "community": 123
     },
     {
       "label": "parseTagsJson()",
@@ -2681,7 +2681,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\database\\entity\\NodeEntity.kt",
       "source_location": "L75",
       "id": "nodeentity_parsetagsjson",
-      "community": 122
+      "community": 123
     },
     {
       "label": "tagsToJson()",
@@ -2689,7 +2689,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\database\\entity\\NodeEntity.kt",
       "source_location": "L87",
       "id": "nodeentity_tagstojson",
-      "community": 122
+      "community": 123
     },
     {
       "label": "NodeLatencyEntity.kt",
@@ -7849,7 +7849,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\NodeExtractor.kt",
       "source_location": "L1",
       "id": "nodeextractor",
-      "community": 123
+      "community": 124
     },
     {
       "label": "NodeExtractor",
@@ -7857,7 +7857,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\NodeExtractor.kt",
       "source_location": "L18",
       "id": "nodeextractor_nodeextractor",
-      "community": 123
+      "community": 124
     },
     {
       "label": ".extract()",
@@ -7865,7 +7865,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\NodeExtractor.kt",
       "source_location": "L30",
       "id": "nodeextractor_nodeextractor_extract",
-      "community": 123
+      "community": 124
     },
     {
       "label": ".createNodeUi()",
@@ -7873,7 +7873,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\NodeExtractor.kt",
       "source_location": "L71",
       "id": "nodeextractor_nodeextractor_createnodeui",
-      "community": 123
+      "community": 124
     },
     {
       "label": ".stableNodeId()",
@@ -7881,7 +7881,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\NodeExtractor.kt",
       "source_location": "L105",
       "id": "nodeextractor_nodeextractor_stablenodeid",
-      "community": 123
+      "community": 124
     },
     {
       "label": ".clearCache()",
@@ -7889,7 +7889,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\repository\\NodeExtractor.kt",
       "source_location": "L112",
       "id": "nodeextractor_nodeextractor_clearcache",
-      "community": 123
+      "community": 124
     },
     {
       "label": "NodeStateManager.kt",
@@ -10577,7 +10577,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\service\\RuleSetAutoUpdateWorker.kt",
       "source_location": "L1",
       "id": "rulesetautoupdateworker",
-      "community": 124
+      "community": 125
     },
     {
       "label": "RuleSetAutoUpdateWorker",
@@ -10585,7 +10585,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\service\\RuleSetAutoUpdateWorker.kt",
       "source_location": "L16",
       "id": "rulesetautoupdateworker_rulesetautoupdateworker",
-      "community": 124
+      "community": 125
     },
     {
       "label": "schedule()",
@@ -10593,7 +10593,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\service\\RuleSetAutoUpdateWorker.kt",
       "source_location": "L28",
       "id": "rulesetautoupdateworker_schedule",
-      "community": 124
+      "community": 125
     },
     {
       "label": "cancel()",
@@ -10601,7 +10601,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\service\\RuleSetAutoUpdateWorker.kt",
       "source_location": "L62",
       "id": "rulesetautoupdateworker_cancel",
-      "community": 124
+      "community": 125
     },
     {
       "label": "rescheduleAll()",
@@ -10609,7 +10609,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\service\\RuleSetAutoUpdateWorker.kt",
       "source_location": "L69",
       "id": "rulesetautoupdateworker_rescheduleall",
-      "community": 124
+      "community": 125
     },
     {
       "label": ".doWork()",
@@ -10617,7 +10617,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\service\\RuleSetAutoUpdateWorker.kt",
       "source_location": "L85",
       "id": "rulesetautoupdateworker_rulesetautoupdateworker_dowork",
-      "community": 124
+      "community": 125
     },
     {
       "label": "SingBoxService.kt",
@@ -16913,7 +16913,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\ui\\components\\ExportImportDialogs.kt",
       "source_location": "L1",
       "id": "exportimportdialogs",
-      "community": 125
+      "community": 126
     },
     {
       "label": "ExportProgressDialog()",
@@ -16921,7 +16921,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\ui\\components\\ExportImportDialogs.kt",
       "source_location": "L29",
       "id": "exportimportdialogs_exportprogressdialog",
-      "community": 125
+      "community": 126
     },
     {
       "label": "ImportPreviewDialog()",
@@ -16929,7 +16929,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\ui\\components\\ExportImportDialogs.kt",
       "source_location": "L125",
       "id": "exportimportdialogs_importpreviewdialog",
-      "community": 125
+      "community": 126
     },
     {
       "label": "SummaryRow()",
@@ -16937,7 +16937,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\ui\\components\\ExportImportDialogs.kt",
       "source_location": "L234",
       "id": "exportimportdialogs_summaryrow",
-      "community": 125
+      "community": 126
     },
     {
       "label": "ImportProgressDialog()",
@@ -16945,7 +16945,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\ui\\components\\ExportImportDialogs.kt",
       "source_location": "L257",
       "id": "exportimportdialogs_importprogressdialog",
-      "community": 125
+      "community": 126
     },
     {
       "label": "ValidatingDialog()",
@@ -16953,7 +16953,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\ui\\components\\ExportImportDialogs.kt",
       "source_location": "L445",
       "id": "exportimportdialogs_validatingdialog",
-      "community": 125
+      "community": 126
     },
     {
       "label": "InfoCard.kt",
@@ -19545,7 +19545,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\utils\\VersionInfo.kt",
       "source_location": "L1",
       "id": "versioninfo",
-      "community": 126
+      "community": 127
     },
     {
       "label": "VersionInfo",
@@ -19553,7 +19553,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\utils\\VersionInfo.kt",
       "source_location": "L12",
       "id": "versioninfo_versioninfo",
-      "community": 126
+      "community": 127
     },
     {
       "label": ".getAppVersionName()",
@@ -19561,7 +19561,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\utils\\VersionInfo.kt",
       "source_location": "L18",
       "id": "versioninfo_versioninfo_getappversionname",
-      "community": 126
+      "community": 127
     },
     {
       "label": ".getAppVersionCode()",
@@ -19569,7 +19569,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\utils\\VersionInfo.kt",
       "source_location": "L38",
       "id": "versioninfo_versioninfo_getappversioncode",
-      "community": 126
+      "community": 127
     },
     {
       "label": ".getSingBoxVersion()",
@@ -19577,7 +19577,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\utils\\VersionInfo.kt",
       "source_location": "L63",
       "id": "versioninfo_versioninfo_getsingboxversion",
-      "community": 126
+      "community": 127
     },
     {
       "label": ".getFormattedVersionInfo()",
@@ -19585,7 +19585,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\utils\\VersionInfo.kt",
       "source_location": "L80",
       "id": "versioninfo_versioninfo_getformattedversioninfo",
-      "community": 126
+      "community": 127
     },
     {
       "label": "DnsResolver.kt",
@@ -23497,7 +23497,7 @@
       "source_file": "app\\src\\test\\java\\com\\kunk\\singbox\\model\\IpVersionModeRulesTest.kt",
       "source_location": "L1",
       "id": "ipversionmoderulestest",
-      "community": 127
+      "community": 128
     },
     {
       "label": "IpVersionModeRulesTest",
@@ -23505,7 +23505,7 @@
       "source_file": "app\\src\\test\\java\\com\\kunk\\singbox\\model\\IpVersionModeRulesTest.kt",
       "source_location": "L8",
       "id": "ipversionmoderulestest_ipversionmoderulestest",
-      "community": 127
+      "community": 128
     },
     {
       "label": ".includesAddressFamiliesForEachMode()",
@@ -23513,7 +23513,7 @@
       "source_file": "app\\src\\test\\java\\com\\kunk\\singbox\\model\\IpVersionModeRulesTest.kt",
       "source_location": "L10",
       "id": "ipversionmoderulestest_ipversionmoderulestest_includesaddressfamiliesforeachmode",
-      "community": 127
+      "community": 128
     },
     {
       "label": ".tunAddressesFollowMode()",
@@ -23521,7 +23521,7 @@
       "source_file": "app\\src\\test\\java\\com\\kunk\\singbox\\model\\IpVersionModeRulesTest.kt",
       "source_location": "L25",
       "id": "ipversionmoderulestest_ipversionmoderulestest_tunaddressesfollowmode",
-      "community": 127
+      "community": 128
     },
     {
       "label": ".autoDnsStrategyFollowsMode()",
@@ -23529,7 +23529,7 @@
       "source_file": "app\\src\\test\\java\\com\\kunk\\singbox\\model\\IpVersionModeRulesTest.kt",
       "source_location": "L35",
       "id": "ipversionmoderulestest_ipversionmoderulestest_autodnsstrategyfollowsmode",
-      "community": 127
+      "community": 128
     },
     {
       "label": ".explicitDnsStrategyIsClampedWhenAddressFamilyIsDisabled()",
@@ -23537,7 +23537,7 @@
       "source_file": "app\\src\\test\\java\\com\\kunk\\singbox\\model\\IpVersionModeRulesTest.kt",
       "source_location": "L43",
       "id": "ipversionmoderulestest_ipversionmoderulestest_explicitdnsstrategyisclampedwhenaddressfamilyisdisabled",
-      "community": 127
+      "community": 128
     },
     {
       "label": "ModelSerializationTest.kt",
@@ -23585,7 +23585,7 @@
       "source_file": "app\\src\\test\\java\\com\\kunk\\singbox\\model\\PingDisplayTextTest.kt",
       "source_location": "L1",
       "id": "pingdisplaytexttest",
-      "community": 128
+      "community": 129
     },
     {
       "label": "PingDisplayTextTest",
@@ -23593,7 +23593,7 @@
       "source_file": "app\\src\\test\\java\\com\\kunk\\singbox\\model\\PingDisplayTextTest.kt",
       "source_location": "L6",
       "id": "pingdisplaytexttest_pingdisplaytexttest",
-      "community": 128
+      "community": 129
     },
     {
       "label": ".resolve_returnsDash_whenDisconnected()",
@@ -23601,7 +23601,7 @@
       "source_file": "app\\src\\test\\java\\com\\kunk\\singbox\\model\\PingDisplayTextTest.kt",
       "source_location": "L10",
       "id": "pingdisplaytexttest_pingdisplaytexttest_resolve_returnsdash_whendisconnected",
-      "community": 128
+      "community": 129
     },
     {
       "label": ".resolve_returnsMs_whenPositivePing()",
@@ -23609,7 +23609,7 @@
       "source_file": "app\\src\\test\\java\\com\\kunk\\singbox\\model\\PingDisplayTextTest.kt",
       "source_location": "L23",
       "id": "pingdisplaytexttest_pingdisplaytexttest_resolve_returnsms_whenpositiveping",
-      "community": 128
+      "community": 129
     },
     {
       "label": ".resolve_returnsTimeout_whenFailedTimeoutCode()",
@@ -23617,7 +23617,7 @@
       "source_file": "app\\src\\test\\java\\com\\kunk\\singbox\\model\\PingDisplayTextTest.kt",
       "source_location": "L36",
       "id": "pingdisplaytexttest_pingdisplaytexttest_resolve_returnstimeout_whenfailedtimeoutcode",
-      "community": 128
+      "community": 129
     },
     {
       "label": ".resolve_returnsUnavailable_whenUnavailableCode()",
@@ -23625,7 +23625,7 @@
       "source_file": "app\\src\\test\\java\\com\\kunk\\singbox\\model\\PingDisplayTextTest.kt",
       "source_location": "L49",
       "id": "pingdisplaytexttest_pingdisplaytexttest_resolve_returnsunavailable_whenunavailablecode",
-      "community": 128
+      "community": 129
     },
     {
       "label": "ConfigRepositoryTest.kt",
@@ -24865,7 +24865,7 @@
       "source_file": "app\\src\\test\\java\\com\\kunk\\singbox\\repository\\config\\InboundBuilderTest.kt",
       "source_location": "L1",
       "id": "inboundbuildertest",
-      "community": 129
+      "community": 130
     },
     {
       "label": "InboundBuilderTest",
@@ -24873,7 +24873,7 @@
       "source_file": "app\\src\\test\\java\\com\\kunk\\singbox\\repository\\config\\InboundBuilderTest.kt",
       "source_location": "L12",
       "id": "inboundbuildertest_inboundbuildertest",
-      "community": 129
+      "community": 130
     },
     {
       "label": ".buildOmitsLegacySniffFieldsWhileKeepingExpectedInbounds()",
@@ -24881,7 +24881,7 @@
       "source_file": "app\\src\\test\\java\\com\\kunk\\singbox\\repository\\config\\InboundBuilderTest.kt",
       "source_location": "L14",
       "id": "inboundbuildertest_inboundbuildertest_buildomitslegacysnifffieldswhilekeepingexpectedinbounds",
-      "community": 129
+      "community": 130
     },
     {
       "label": ".buildTunInboundAddressesFollowIpVersionMode()",
@@ -24889,7 +24889,7 @@
       "source_file": "app\\src\\test\\java\\com\\kunk\\singbox\\repository\\config\\InboundBuilderTest.kt",
       "source_location": "L30",
       "id": "inboundbuildertest_inboundbuildertest_buildtuninboundaddressesfollowipversionmode",
-      "community": 129
+      "community": 130
     },
     {
       "label": ".buildFallbackMixedInboundAlsoOmitsLegacySniffFields()",
@@ -24897,7 +24897,7 @@
       "source_file": "app\\src\\test\\java\\com\\kunk\\singbox\\repository\\config\\InboundBuilderTest.kt",
       "source_location": "L77",
       "id": "inboundbuildertest_inboundbuildertest_buildfallbackmixedinboundalsoomitslegacysnifffields",
-      "community": 129
+      "community": 130
     },
     {
       "label": ".buildTunInboundRespectsAutoRouteAndStrictRouteSettings()",
@@ -24905,7 +24905,7 @@
       "source_file": "app\\src\\test\\java\\com\\kunk\\singbox\\repository\\config\\InboundBuilderTest.kt",
       "source_location": "L93",
       "id": "inboundbuildertest_inboundbuildertest_buildtuninboundrespectsautorouteandstrictroutesettings",
-      "community": 129
+      "community": 130
     },
     {
       "label": "NodeLinkExporterTest.kt",
@@ -25297,7 +25297,7 @@
       "source_file": "app\\src\\test\\java\\com\\kunk\\singbox\\service\\NotificationNodeLabelTest.kt",
       "source_location": "L1",
       "id": "notificationnodelabeltest",
-      "community": 130
+      "community": 118
     },
     {
       "label": "NotificationNodeLabelTest",
@@ -25305,7 +25305,7 @@
       "source_file": "app\\src\\test\\java\\com\\kunk\\singbox\\service\\NotificationNodeLabelTest.kt",
       "source_location": "L6",
       "id": "notificationnodelabeltest_notificationnodelabeltest",
-      "community": 130
+      "community": 118
     },
     {
       "label": ".resolveNodeLabel_prefersSelectedNodeOverStaleRuntimeLabel()",
@@ -25313,7 +25313,7 @@
       "source_file": "app\\src\\test\\java\\com\\kunk\\singbox\\service\\NotificationNodeLabelTest.kt",
       "source_location": "L8",
       "id": "notificationnodelabeltest_notificationnodelabeltest_resolvenodelabel_prefersselectednodeoverstaleruntimelabel",
-      "community": 130
+      "community": 118
     },
     {
       "label": ".resolveNodeLabel_usesRuntimeLabelWhenSelectedNodeMissing()",
@@ -25321,7 +25321,7 @@
       "source_file": "app\\src\\test\\java\\com\\kunk\\singbox\\service\\NotificationNodeLabelTest.kt",
       "source_location": "L19",
       "id": "notificationnodelabeltest_notificationnodelabeltest_resolvenodelabel_usesruntimelabelwhenselectednodemissing",
-      "community": 130
+      "community": 118
     },
     {
       "label": ".resolveNodeLabel_usesStoredLabelWhenRuntimeAndSelectedMissing()",
@@ -25329,7 +25329,7 @@
       "source_file": "app\\src\\test\\java\\com\\kunk\\singbox\\service\\NotificationNodeLabelTest.kt",
       "source_location": "L30",
       "id": "notificationnodelabeltest_notificationnodelabeltest_resolvenodelabel_usesstoredlabelwhenruntimeandselectedmissing",
-      "community": 130
+      "community": 118
     },
     {
       "label": ".resolveNodeLabel_prefersPendingNodeAfterProfileSwitch()",
@@ -25337,7 +25337,15 @@
       "source_file": "app\\src\\test\\java\\com\\kunk\\singbox\\service\\NotificationNodeLabelTest.kt",
       "source_location": "L41",
       "id": "notificationnodelabeltest_notificationnodelabeltest_resolvenodelabel_preferspendingnodeafterprofileswitch",
-      "community": 130
+      "community": 118
+    },
+    {
+      "label": ".resolveNodeLabel_prefersRuntimeAfterHotSwitchOverStalePendingNode()",
+      "file_type": "code",
+      "source_file": "app\\src\\test\\java\\com\\kunk\\singbox\\service\\NotificationNodeLabelTest.kt",
+      "source_location": "L53",
+      "id": "notificationnodelabeltest_notificationnodelabeltest_resolvenodelabel_prefersruntimeafterhotswitchoverstalependingnode",
+      "community": 118
     },
     {
       "label": "RecoveryLogicTest.kt",
@@ -26337,7 +26345,7 @@
       "source_file": "app\\src\\test\\java\\com\\kunk\\singbox\\utils\\dns\\DnsResolveStoreTest.kt",
       "source_location": "L1",
       "id": "dnsresolvestoretest",
-      "community": 118
+      "community": 119
     },
     {
       "label": "DnsResolveStoreTest",
@@ -26345,7 +26353,7 @@
       "source_file": "app\\src\\test\\java\\com\\kunk\\singbox\\utils\\dns\\DnsResolveStoreTest.kt",
       "source_location": "L9",
       "id": "dnsresolvestoretest_dnsresolvestoretest",
-      "community": 118
+      "community": 119
     },
     {
       "label": ".testResolvedEntry_notExpired()",
@@ -26353,7 +26361,7 @@
       "source_file": "app\\src\\test\\java\\com\\kunk\\singbox\\utils\\dns\\DnsResolveStoreTest.kt",
       "source_location": "L13",
       "id": "dnsresolvestoretest_dnsresolvestoretest_testresolvedentry_notexpired",
-      "community": 118
+      "community": 119
     },
     {
       "label": ".testResolvedEntry_expired()",
@@ -26361,7 +26369,7 @@
       "source_file": "app\\src\\test\\java\\com\\kunk\\singbox\\utils\\dns\\DnsResolveStoreTest.kt",
       "source_location": "L25",
       "id": "dnsresolvestoretest_dnsresolvestoretest_testresolvedentry_expired",
-      "community": 118
+      "community": 119
     },
     {
       "label": ".testResolvedEntry_almostExpired()",
@@ -26369,7 +26377,7 @@
       "source_file": "app\\src\\test\\java\\com\\kunk\\singbox\\utils\\dns\\DnsResolveStoreTest.kt",
       "source_location": "L37",
       "id": "dnsresolvestoretest_dnsresolvestoretest_testresolvedentry_almostexpired",
-      "community": 118
+      "community": 119
     },
     {
       "label": ".testResolvedEntry_defaultTtl()",
@@ -26377,7 +26385,7 @@
       "source_file": "app\\src\\test\\java\\com\\kunk\\singbox\\utils\\dns\\DnsResolveStoreTest.kt",
       "source_location": "L49",
       "id": "dnsresolvestoretest_dnsresolvestoretest_testresolvedentry_defaultttl",
-      "community": 118
+      "community": 119
     },
     {
       "label": ".testDefaultTtl()",
@@ -26385,7 +26393,7 @@
       "source_file": "app\\src\\test\\java\\com\\kunk\\singbox\\utils\\dns\\DnsResolveStoreTest.kt",
       "source_location": "L61",
       "id": "dnsresolvestoretest_dnsresolvestoretest_testdefaultttl",
-      "community": 118
+      "community": 119
     },
     {
       "label": "NodeLinkParserTest.kt",
@@ -62775,6 +62783,18 @@
       "_tgt": "notificationnodelabeltest_notificationnodelabeltest_resolvenodelabel_preferspendingnodeafterprofileswitch",
       "source": "notificationnodelabeltest_notificationnodelabeltest",
       "target": "notificationnodelabeltest_notificationnodelabeltest_resolvenodelabel_preferspendingnodeafterprofileswitch",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "app\\src\\test\\java\\com\\kunk\\singbox\\service\\NotificationNodeLabelTest.kt",
+      "source_location": "L53",
+      "weight": 1.0,
+      "_src": "notificationnodelabeltest_notificationnodelabeltest",
+      "_tgt": "notificationnodelabeltest_notificationnodelabeltest_resolvenodelabel_prefersruntimeafterhotswitchoverstalependingnode",
+      "source": "notificationnodelabeltest_notificationnodelabeltest",
+      "target": "notificationnodelabeltest_notificationnodelabeltest_resolvenodelabel_prefersruntimeafterhotswitchoverstalependingnode",
       "confidence_score": 1.0
     },
     {
