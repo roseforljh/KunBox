@@ -137,6 +137,15 @@
         </provider>
 
         <receiver
+            android:name=".receiver.PackageRemovedReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.PACKAGE_REMOVED" />
+                <data android:scheme="package" />
+            </intent-filter>
+        </receiver>
+
+        <receiver
             android:name=".lifecycle.AppLifecycleObserver$KillProcessReceiver"
             android:exported="false" />
     </application>

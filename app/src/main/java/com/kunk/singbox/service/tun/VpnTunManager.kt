@@ -92,6 +92,43 @@ class VpnTunManager(
             }
         }
 
+        internal data class PerAppVpnPlan(
+            val allowedPackages: List<String>,
+            val disallowedPackages: List<String>
+        )
+
+        internal fun resolvePerAppVpnPlanForTest(settings: AppSettings?, selfPackage: String): PerAppVpnPlan {
+            return resolvePerAppVpnPlan(settings, selfPackage)
+        }
+
+        private fun resolvePerAppVpnPlan(settings: AppSettings?, selfPackage: String): PerAppVpnPlan {
+            val appMode = settings?.vpnAppMode ?: VpnAppMode.ALL
+            val allowPkgs = parsePackageList(settings?.vpnAllowlist.orEmpty()).filterNot { it == selfPackage }
+            val blockPkgs = parsePackageList(settings?.vpnBlocklist.orEmpty()).filterNot { it == selfPackage }
+            return when (appMode) {
+                VpnAppMode.ALL -> PerAppVpnPlan(
+                    allowedPackages = emptyList(),
+                    disallowedPackages = listOf(selfPackage)
+                )
+                VpnAppMode.ALLOWLIST -> PerAppVpnPlan(
+                    allowedPackages = allowPkgs,
+                    disallowedPackages = emptyList()
+                )
+                VpnAppMode.BLOCKLIST -> PerAppVpnPlan(
+                    allowedPackages = emptyList(),
+                    disallowedPackages = listOf(selfPackage) + blockPkgs
+                )
+            }
+        }
+
+        private fun parsePackageList(raw: String): List<String> {
+            return raw
+                .split("\n", "\r", ",", ";", " ", "\t")
+                .map { it.trim() }
+                .filter { it.isNotEmpty() }
+                .distinct()
+        }
+
         internal fun shouldAppendHttpProxy(settings: AppSettings?): Boolean {
             return settings?.appendHttpProxy == true && settings.proxyPort > 0 && !settings.tunEnabled
         }
@@ -291,36 +328,30 @@ class VpnTunManager(
     }
 
     private fun configurePerAppVpn(builder: VpnService.Builder, settings: AppSettings?) {
-        val appMode = settings?.vpnAppMode ?: VpnAppMode.ALL
-        val allowPkgs = parsePackageList(settings?.vpnAllowlist.orEmpty())
-        val blockPkgs = parsePackageList(settings?.vpnBlocklist.orEmpty())
-        val selfPackage = context.packageName
+        val plan = resolvePerAppVpnPlan(settings, context.packageName)
 
         try {
-            when (appMode) {
-                VpnAppMode.ALL -> {
-                    builder.addDisallowedApplication(selfPackage)
+            var addedAllowedCount = 0
+            plan.allowedPackages.forEach { pkg ->
+                try {
+                    builder.addAllowedApplication(pkg)
+                    addedAllowedCount++
+                } catch (e: PackageManager.NameNotFoundException) {
+                    Log.w(TAG, "Allowed app not found: $pkg")
                 }
-                VpnAppMode.ALLOWLIST -> {
-                    if (allowPkgs.isEmpty()) {
-                        Log.w(TAG, "Allowlist is empty, falling back to ALL mode")
-                        builder.addDisallowedApplication(selfPackage)
-                    } else {
-                        var addedCount = 0
-                        allowPkgs.forEach { pkg ->
-                            if (pkg == selfPackage) return@forEach
-                            try {
-                                builder.addAllowedApplication(pkg)
-                                addedCount++
-                            } catch (e: PackageManager.NameNotFoundException) {
-                                Log.w(TAG, "Allowed app not found: $pkg")
-                            }
-                        }
-                        if (addedCount == 0) {
-                            Log.w(TAG, "No valid apps in allowlist, falling back to ALL mode")
-                            builder.addDisallowedApplication(selfPackage)
-                        }
-                    }
+            }
+
+            if (settings?.vpnAppMode == VpnAppMode.ALLOWLIST && addedAllowedCount == 0) {
+                Log.w(TAG, "No valid apps in allowlist, falling back to ALL mode")
+                builder.addDisallowedApplication(context.packageName)
+                return
+            }
+
+            plan.disallowedPackages.forEach { pkg ->
+                try {
+                    builder.addDisallowedApplication(pkg)
+                } catch (e: PackageManager.NameNotFoundException) {
+                    Log.w(TAG, "Disallowed app not found: $pkg")
                 }
             }
         } catch (e: Exception) {
@@ -430,13 +461,5 @@ class VpnTunManager(
     fun cleanup() {
         preallocatedBuilder = null
         isConnecting.set(false)
-    }
-
-    private fun parsePackageList(raw: String): List<String> {
-        return raw
-            .split("\n", "\r", ",", ";", " ", "\t")
-            .map { it.trim() }
-            .filter { it.isNotEmpty() }
-            .distinct()
     }
 }

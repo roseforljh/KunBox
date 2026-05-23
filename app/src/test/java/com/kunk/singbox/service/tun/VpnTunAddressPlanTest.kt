@@ -116,6 +116,19 @@ class VpnTunAddressPlanTest {
     }
 
     @org.junit.Test
+    fun perAppPlanUsesDisallowedApplicationsInBlocklistMode() {
+        val settings = AppSettings(
+            vpnAppMode = com.kunk.singbox.model.VpnAppMode.BLOCKLIST,
+            vpnBlocklist = "com.blocked\ncom.other"
+        )
+
+        val plan = VpnTunManager.resolvePerAppVpnPlanForTest(settings, "com.kunk.singbox")
+
+        assertEquals(emptyList<String>(), plan.allowedPackages)
+        assertEquals(listOf("com.kunk.singbox", "com.blocked", "com.other"), plan.disallowedPackages)
+    }
+
+    @org.junit.Test
     fun httpProxyIsNotAppendedWhenTunModeIsEnabled() {
         val settings = AppSettings(
             tunEnabled = true,

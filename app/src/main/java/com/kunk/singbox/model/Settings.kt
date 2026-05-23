@@ -164,7 +164,8 @@ enum class VpnRouteMode(@StringRes val displayNameRes: Int) {
 
 enum class VpnAppMode(@StringRes val displayNameRes: Int) {
     @SerializedName("ALL") ALL(R.string.vpn_app_mode_all),
-    @SerializedName("ALLOWLIST") ALLOWLIST(R.string.vpn_app_mode_allowlist);
+    @SerializedName("ALLOWLIST") ALLOWLIST(R.string.vpn_app_mode_allowlist),
+    @SerializedName("BLOCKLIST") BLOCKLIST(R.string.vpn_app_mode_blocklist);
 
     companion object {
         fun fromDisplayName(name: String): VpnAppMode {

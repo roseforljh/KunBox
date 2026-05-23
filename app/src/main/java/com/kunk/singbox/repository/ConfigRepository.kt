@@ -4174,19 +4174,26 @@ class ConfigRepository(private val context: Context) {
             val allNodesSnapshot = _allNodes.value.takeIf { it.isNotEmpty() } ?: loadAllNodesSnapshot()
             val activeNode = _nodes.value.find { it.id == activeNodeId }
                 ?: allNodesSnapshot.find { it.id == activeNodeId }
-            val settings = settingsRepository.settings.first()
+            settingsRepository.sanitizePerAppPackageLists()
+            val sanitizedSettings = settingsRepository.settings.first()
             val log = buildRunLogConfig()
-            val experimental = buildRunExperimentalConfig(settings)
-            val inbounds = buildRunInbounds(settings)
-            val customRuleSets = buildCustomRuleSets(settings)
+            val experimental = buildRunExperimentalConfig(sanitizedSettings)
+            val inbounds = buildRunInbounds(sanitizedSettings)
+            val customRuleSets = buildCustomRuleSets(sanitizedSettings)
 
             val outboundsContext = buildRunOutbounds(
-                config, activeNode, settings, allNodesSnapshot,
+                config, activeNode, sanitizedSettings, allNodesSnapshot,
                 activeProfile?.dnsPreResolve ?: false, activeId
             )
-            val dns = buildRunDns(settings, customRuleSets, outboundsContext, activeProfile?.dnsOverride, config.dns)
+            val dns = buildRunDns(
+                sanitizedSettings,
+                customRuleSets,
+                outboundsContext,
+                activeProfile?.dnsOverride,
+                config.dns
+            )
             val route = buildRunRoute(
-                settings,
+                sanitizedSettings,
                 outboundsContext.selectorTag,
                 outboundsContext.outbounds,
                 outboundsContext.nodeTagResolver,

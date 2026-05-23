@@ -263,6 +263,15 @@ fun InputDialog(
     }
 }
 
+internal fun resolveVisibleSelectedPackages(
+    selectedPackages: Set<String>,
+    visiblePackages: Set<String>
+): List<String> {
+    return selectedPackages
+        .filter { it in visiblePackages }
+        .sorted()
+}
+
 @Composable
 fun AppMultiSelectDialog(
     title: String,
@@ -643,7 +652,14 @@ fun AppMultiSelectDialog(
                 }
 
                 Button(
-                    onClick = { onConfirm(tempSelected.toList().sorted()) },
+                    onClick = {
+                        onConfirm(
+                            resolveVisibleSelectedPackages(
+                                selectedPackages = tempSelected,
+                                visiblePackages = allApps.map { it.packageName }.toSet()
+                            )
+                        )
+                    },
                     modifier = Modifier.weight(1f).height(50.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary, contentColor = MaterialTheme.colorScheme.onPrimary),
                     shape = RoundedCornerShape(25.dp)
