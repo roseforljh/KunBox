@@ -1891,6 +1891,10 @@ class ConfigRepository(private val context: Context) {
                 }
             }
         }
+        val selectedName = _activeNodeId.value?.let { activeId ->
+            nodes.find { it.id == activeId }?.name
+        }
+        VpnStateStore.setSelectedNodeLabel(selectedName)
     }
 
     private suspend fun loadProfileNodesWithLatency(profileId: String): List<NodeUi>? {
@@ -3489,10 +3493,16 @@ class ConfigRepository(private val context: Context) {
 
     fun setActiveNodeIdOnly(nodeId: String) {
         _activeNodeId.value = nodeId
+        _nodes.value.find { it.id == nodeId }?.name?.let { VpnStateStore.setSelectedNodeLabel(it) }
         _activeProfileId.value?.let { profileId ->
             saveProfileNodeMemory(profileId, nodeId)
         }
         saveProfilesImmediate()
+    }
+
+    private fun nodeDisplayName(nodeId: String, fallbackNodes: List<NodeUi>): String? {
+        return _nodes.value.find { it.id == nodeId }?.name
+            ?: fallbackNodes.find { it.id == nodeId }?.name
     }
 
     suspend fun setActiveNode(nodeId: String): Boolean {
@@ -3535,6 +3545,7 @@ class ConfigRepository(private val context: Context) {
             }
 
             _activeNodeId.value = nodeId
+            nodeDisplayName(nodeId, allNodesSnapshot)?.let { VpnStateStore.setSelectedNodeLabel(it) }
             saveProfilesImmediate()
 
             val remoteRunning = SingBoxRemote.isRunning.value || SingBoxRemote.isStarting.value

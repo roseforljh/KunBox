@@ -1033,10 +1033,8 @@ class SingBoxService : VpnService() {
             val repo = ConfigRepository.getInstance(applicationContext)
             val activeNodeId = repo.activeNodeId.value
             val nodeName = resolveNotificationNodeLabel(
-                runtimeNodeName = realTimeNodeName,
                 selectedNodeName = repo.nodes.value.find { it.id == activeNodeId }?.name,
-                storedActiveLabel = VpnStateStore.getActiveLabel(),
-                pendingNodeName = pendingNodeName
+                selectedNodeStoreLabel = VpnStateStore.getSelectedNodeLabel()
             )
             nodeName.orEmpty()
         }.getOrDefault("")
@@ -2617,12 +2615,12 @@ class SingBoxService : VpnService() {
                         val nodeId = repo.activeNodeId.value
                         repo.nodes.value.find { it.id == nodeId }?.name
                     }.getOrNull()
+                    realTimeNodeName = null
                     if (!activeLabel.isNullOrBlank()) {
                         VpnStateStore.setActiveLabel(activeLabel)
-                        realTimeNodeName = null
-                        requestNotificationUpdate(force = true)
-                        requestRemoteStateUpdate(force = true)
                     }
+                    requestNotificationUpdate(force = true)
+                    requestRemoteStateUpdate(force = true)
                     // 只有当需要更改核心配置（如路由规则、DNS 等）时才重启
                     stopVpn(stopService = false)
                 } else {
@@ -2646,9 +2644,11 @@ class SingBoxService : VpnService() {
                 Log.i(TAG, "Received ACTION_SWITCH_NODE -> switching node")
                 val targetNodeId = intent.getStringExtra("node_id")
                 val outboundTag = intent.getStringExtra("outbound_tag")
+                val targetNodeName = intent.getStringExtra(EXTRA_PENDING_NODE_NAME)
                 runCatching {
                     LogRepository.getInstance().addLog(
-                        "INFO SingBoxService: ACTION_SWITCH_NODE nodeId=${targetNodeId.orEmpty()} outboundTag=${outboundTag.orEmpty()}"
+                        "INFO SingBoxService: ACTION_SWITCH_NODE nodeId=${targetNodeId.orEmpty()} " +
+                            "outboundTag=${outboundTag.orEmpty()} targetNodeName=${targetNodeName.orEmpty()}"
                     )
                 }
                 // Remember latest config path for fallback restart if hot switch doesn't apply.
@@ -2665,6 +2665,7 @@ class SingBoxService : VpnService() {
                     nodeSwitchManager.performHotSwitch(
                         nodeId = targetNodeId,
                         outboundTag = outboundTag,
+                        targetNodeName = targetNodeName,
                         serviceClass = SingBoxService::class.java,
                         actionStart = ACTION_START,
                         extraConfigPath = EXTRA_CONFIG_PATH
@@ -3114,10 +3115,8 @@ class SingBoxService : VpnService() {
         val configRepository = ConfigRepository.getInstance(this)
         val activeNodeId = configRepository.activeNodeId.value
         val nodeName = resolveNotificationNodeLabel(
-            runtimeNodeName = realTimeNodeName,
             selectedNodeName = configRepository.nodes.value.find { it.id == activeNodeId }?.name,
-            storedActiveLabel = VpnStateStore.getActiveLabel(),
-            pendingNodeName = pendingNodeName
+            selectedNodeStoreLabel = VpnStateStore.getSelectedNodeLabel()
         )
 
         return VpnNotificationManager.NotificationState(

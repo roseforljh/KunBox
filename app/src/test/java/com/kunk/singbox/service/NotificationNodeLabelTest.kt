@@ -1,6 +1,7 @@
 package com.kunk.singbox.service
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Test
 
 class NotificationNodeLabelTest {
@@ -8,69 +9,64 @@ class NotificationNodeLabelTest {
     @Test
     fun resolveNodeLabel_prefersSelectedNodeOverStaleRuntimeLabel() {
         val label = resolveNotificationNodeLabel(
-            runtimeNodeName = "节点2",
-            selectedNodeName = "节点1",
-            storedActiveLabel = "节点2"
+            selectedNodeName = "节点1"
         )
 
         assertEquals("节点1", label)
     }
 
     @Test
-    fun resolveNodeLabel_usesRuntimeLabelWhenSelectedNodeMissing() {
+    fun resolveNodeLabel_ignoresRuntimeLabelWhenSelectedNodeMissing() {
         val label = resolveNotificationNodeLabel(
-            runtimeNodeName = "节点2",
-            selectedNodeName = null,
-            storedActiveLabel = "节点1"
+            selectedNodeName = null
         )
 
-        assertEquals("节点2", label)
+        assertNull(label)
     }
 
     @Test
-    fun resolveNodeLabel_usesStoredLabelWhenRuntimeAndSelectedMissing() {
+    fun resolveNodeLabel_ignoresStoredLabelWhenSelectedNodeMissing() {
         val label = resolveNotificationNodeLabel(
-            runtimeNodeName = null,
-            selectedNodeName = null,
-            storedActiveLabel = "节点2"
+            selectedNodeName = null
         )
 
-        assertEquals("节点2", label)
+        assertNull(label)
     }
 
     @Test
-    fun resolveNodeLabel_prefersPendingNodeAfterProfileSwitch() {
+    fun resolveNodeLabel_prefersSelectedNodeOverStalePendingNode() {
         val label = resolveNotificationNodeLabel(
-            runtimeNodeName = "配置1节点",
-            selectedNodeName = null,
-            storedActiveLabel = "配置1节点",
-            pendingNodeName = "配置2节点"
+            selectedNodeName = "节点3"
         )
 
-        assertEquals("配置2节点", label)
+        assertEquals("节点3", label)
     }
 
     @Test
     fun resolveNodeLabel_prefersRuntimeAfterHotSwitchOverStalePendingNode() {
         val label = resolveNotificationNodeLabel(
-            runtimeNodeName = "配置2节点2",
-            selectedNodeName = "配置2节点2",
-            storedActiveLabel = "配置2节点2",
-            pendingNodeName = "配置2节点1"
+            selectedNodeName = "配置2节点2"
         )
 
         assertEquals("配置2节点2", label)
     }
 
     @Test
-    fun resolveNodeLabel_usesRuntimeWhenSelectedNullAndPendingStale() {
+    fun resolveNodeLabel_ignoresRuntimeWhenSelectedNullAndPendingStale() {
         val label = resolveNotificationNodeLabel(
-            runtimeNodeName = "配置2节点2",
-            selectedNodeName = null,
-            storedActiveLabel = "配置2节点2",
-            pendingNodeName = null
+            selectedNodeName = null
         )
 
-        assertEquals("配置2节点2", label)
+        assertNull(label)
+    }
+
+    @Test
+    fun resolveNodeLabel_usesCrossProcessSelectedNodeWhenRepositoryNodeIsStale() {
+        val label = resolveNotificationNodeLabel(
+            selectedNodeName = "上个配置节点",
+            selectedNodeStoreLabel = "新配置节点"
+        )
+
+        assertEquals("新配置节点", label)
     }
 }

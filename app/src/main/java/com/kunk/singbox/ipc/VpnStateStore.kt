@@ -16,6 +16,7 @@ object VpnStateStore {
     private const val KEY_VPN_ACTIVE = "vpn_active"
     private const val KEY_VPN_PENDING = "vpn_pending"
     private const val KEY_VPN_ACTIVE_LABEL = "vpn_active_label"
+    private const val KEY_SELECTED_NODE_LABEL = "selected_node_label"
     private const val KEY_VPN_LAST_ERROR = "vpn_last_error"
     private const val KEY_VPN_MANUALLY_STOPPED = "vpn_manually_stopped"
     private const val KEY_CORE_MODE = "core_mode"
@@ -60,6 +61,12 @@ object VpnStateStore {
 
     fun setActiveLabel(label: String?) {
         mmkv.encode(KEY_VPN_ACTIVE_LABEL, label ?: "")
+    }
+
+    fun getSelectedNodeLabel(): String = mmkv.decodeString(KEY_SELECTED_NODE_LABEL, "") ?: ""
+
+    fun setSelectedNodeLabel(label: String?) {
+        mmkv.encode(KEY_SELECTED_NODE_LABEL, label ?: "")
     }
 
     fun getLastError(): String = mmkv.decodeString(KEY_VPN_LAST_ERROR, "") ?: ""

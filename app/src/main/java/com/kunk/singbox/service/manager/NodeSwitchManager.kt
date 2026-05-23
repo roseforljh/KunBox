@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.util.Log
 import com.kunk.singbox.ipc.VpnStateStore
+import com.kunk.singbox.model.NodeUi
 import com.kunk.singbox.repository.ConfigRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
@@ -11,6 +12,14 @@ import kotlinx.coroutines.launch
 /**
  */
 internal const val FORCE_NOTIFICATION_AFTER_EXPLICIT_HOT_SWITCH: Boolean = true
+
+internal fun resolveExplicitHotSwitchDisplayName(
+    node: NodeUi?,
+    targetNodeName: String? = null
+): String? {
+    return node?.name?.takeIf { it.isNotBlank() }
+        ?: targetNodeName?.takeIf { it.isNotBlank() }
+}
 
 class NodeSwitchManager(
     private val context: Context,
@@ -48,6 +57,7 @@ class NodeSwitchManager(
     fun performHotSwitch(
         nodeId: String,
         outboundTag: String?,
+        targetNodeName: String? = null,
         serviceClass: Class<*>,
         actionStart: String,
         extraConfigPath: String
@@ -63,23 +73,32 @@ class NodeSwitchManager(
                 return@launch
             }
 
+            val displayName = resolveExplicitHotSwitchDisplayName(
+                node = node,
+                targetNodeName = targetNodeName
+            )
+            if (displayName != null) {
+                VpnStateStore.setActiveLabel(displayName)
+            }
+
             val success = callbacks?.hotSwitchNode(nodeTag) == true
 
             if (success) {
                 Log.i(TAG, "Hot switch successful for $nodeTag")
-                val displayName = node?.name ?: nodeTag
-
-                VpnStateStore.setActiveLabel(displayName)
-                callbacks?.setRealTimeNodeName(displayName)
-                runCatching { configRepository.syncActiveNodeFromProxySelection(displayName) }
+                if (displayName != null) {
+                    callbacks?.setRealTimeNodeName(displayName)
+                    runCatching { configRepository.syncActiveNodeFromProxySelection(displayName) }
+                }
                 callbacks?.requestNotificationUpdate(force = FORCE_NOTIFICATION_AFTER_EXPLICIT_HOT_SWITCH)
                 callbacks?.notifyRemoteStateUpdate(force = true)
             } else {
                 Log.w(TAG, "Hot switch failed for $nodeTag, falling back to restart")
+                callbacks?.setRealTimeNodeName(null)
                 val configPath = callbacks?.getConfigPath() ?: return@launch
                 val restartIntent = Intent(context, serviceClass).apply {
                     action = actionStart
                     putExtra(extraConfigPath, configPath)
+                    displayName?.let { putExtra("pending_node_name", it) }
                 }
                 callbacks?.startServiceIntent(restartIntent)
             }
@@ -142,10 +161,13 @@ class NodeSwitchManager(
                     Log.i(TAG, "switchNextNode: hot switch successful")
                 } else {
                     Log.w(TAG, "switchNextNode: hot switch failed, falling back to restart")
+                    VpnStateStore.setActiveLabel(nextNode.name)
+                    callbacks?.setRealTimeNodeName(null)
                     val configPath = callbacks?.getConfigPath() ?: return@launch
                     val restartIntent = Intent(context, serviceClass).apply {
                         action = actionStart
                         putExtra(extraConfigPath, configPath)
+                        putExtra("pending_node_name", nextNode.name)
                     }
                     callbacks?.startServiceIntent(restartIntent)
                 }
