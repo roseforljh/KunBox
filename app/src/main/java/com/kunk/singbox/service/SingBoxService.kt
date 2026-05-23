@@ -239,6 +239,7 @@ class SingBoxService : VpnService() {
         const val ACTION_FULL_RESTART = ServiceStateHolder.ACTION_FULL_RESTART
         const val ACTION_NETWORK_BUMP = "com.kunk.singbox.action.NETWORK_BUMP"
         const val EXTRA_CONFIG_PATH = ServiceStateHolder.EXTRA_CONFIG_PATH
+        const val EXTRA_PENDING_NODE_NAME = "pending_node_name"
         const val EXTRA_CONFIG_CONTENT = ServiceStateHolder.EXTRA_CONFIG_CONTENT
         const val EXTRA_CLEAN_CACHE = ServiceStateHolder.EXTRA_CLEAN_CACHE
         const val EXTRA_SETTING_KEY = ServiceStateHolder.EXTRA_SETTING_KEY
@@ -586,7 +587,12 @@ class SingBoxService : VpnService() {
             override suspend fun hotSwitchNode(nodeTag: String): Boolean = this@SingBoxService.hotSwitchNode(nodeTag)
             override fun getConfigPath(): String = pendingHotSwitchFallbackConfigPath
                 ?: File(filesDir, "running_config.json").absolutePath
-            override fun setRealTimeNodeName(name: String?) { realTimeNodeName = name }
+            override fun setRealTimeNodeName(name: String?) {
+                realTimeNodeName = name
+                if (!name.isNullOrBlank() && name == pendingNodeName) {
+                    pendingNodeName = null
+                }
+            }
             override fun requestNotificationUpdate(force: Boolean) {
                 this@SingBoxService.requestNotificationUpdate(force)
             }
@@ -877,7 +883,12 @@ class SingBoxService : VpnService() {
         // 设置状态
         override fun setVpnInterface(fd: ParcelFileDescriptor?) { vpnInterface = fd }
         override fun setIsRunning(running: Boolean) { isRunning = running }
-        override fun setRealTimeNodeName(name: String?) { realTimeNodeName = name }
+        override fun setRealTimeNodeName(name: String?) {
+            realTimeNodeName = name
+            if (!name.isNullOrBlank() && name == pendingNodeName) {
+                pendingNodeName = null
+            }
+        }
         override fun setVpnLinkValidated(validated: Boolean) { vpnLinkValidated = validated }
         override fun setNoPhysicalNetworkWarningLogged(logged: Boolean) {
             noPhysicalNetworkWarningLogged = logged
@@ -1021,11 +1032,13 @@ class SingBoxService : VpnService() {
         val activeLabel = runCatching {
             val repo = ConfigRepository.getInstance(applicationContext)
             val activeNodeId = repo.activeNodeId.value
-            // fix: 与 buildNotificationState 保持一致的优先级
-            realTimeNodeName
-                ?: repo.nodes.value.find { it.id == activeNodeId }?.name
-                ?: VpnStateStore.getActiveLabel().takeIf { it.isNotBlank() }
-                ?: ""
+            val nodeName = resolveNotificationNodeLabel(
+                runtimeNodeName = realTimeNodeName,
+                selectedNodeName = repo.nodes.value.find { it.id == activeNodeId }?.name,
+                storedActiveLabel = VpnStateStore.getActiveLabel(),
+                pendingNodeName = pendingNodeName
+            )
+            nodeName.orEmpty()
         }.getOrDefault("")
 
         SingBoxIpcHub.update(
@@ -1134,6 +1147,7 @@ class SingBoxService : VpnService() {
     @Volatile private var cleanupJob: Job? = null
     @Volatile private var autoFailoverJob: Job? = null
     @Volatile private var pendingStartConfigPath: String? = null
+    @Volatile private var pendingNodeName: String? = null
     @Volatile private var pendingCleanCache: Boolean = false
 
     @Volatile private var startVpnJob: Job? = null
@@ -2531,6 +2545,14 @@ class SingBoxService : VpnService() {
                 coreManager.preallocateTunBuilder()
 
                 val configPath = intent.getStringExtra(EXTRA_CONFIG_PATH)
+                val pendingNode = intent.getStringExtra(EXTRA_PENDING_NODE_NAME)
+                if (!pendingNode.isNullOrBlank()) {
+                    pendingNodeName = pendingNode
+                    realTimeNodeName = null
+                    VpnStateStore.setActiveLabel(pendingNode)
+                    requestNotificationUpdate(force = true)
+                    requestRemoteStateUpdate(force = true)
+                }
                 val cleanCache = intent.getBooleanExtra(EXTRA_CLEAN_CACHE, false)
 
                 // P0 Optimization: If config path is missing (Shortcut/Headless), generate it inside Service
@@ -2590,6 +2612,17 @@ class SingBoxService : VpnService() {
                     }
                 }
                 if (isRunning) {
+                    val activeLabel = pendingNodeName ?: runCatching {
+                        val repo = ConfigRepository.getInstance(applicationContext)
+                        val nodeId = repo.activeNodeId.value
+                        repo.nodes.value.find { it.id == nodeId }?.name
+                    }.getOrNull()
+                    if (!activeLabel.isNullOrBlank()) {
+                        VpnStateStore.setActiveLabel(activeLabel)
+                        realTimeNodeName = null
+                        requestNotificationUpdate(force = true)
+                        requestRemoteStateUpdate(force = true)
+                    }
                     // 只有当需要更改核心配置（如路由规则、DNS 等）时才重启
                     stopVpn(stopService = false)
                 } else {
@@ -3079,11 +3112,12 @@ class SingBoxService : VpnService() {
     private fun buildNotificationState(): VpnNotificationManager.NotificationState {
         val configRepository = ConfigRepository.getInstance(this)
         val activeNodeId = configRepository.activeNodeId.value
-        // fix: realTimeNodeName > ConfigRepository当前选中 > VpnStateStore持久化缓存
-        // VpnStateStore.activeLabel 是上次运行时的值，磁贴启动时可能已过期
-        val nodeName = realTimeNodeName
-            ?: configRepository.nodes.value.find { it.id == activeNodeId }?.name
-            ?: VpnStateStore.getActiveLabel().takeIf { it.isNotBlank() }
+        val nodeName = resolveNotificationNodeLabel(
+            runtimeNodeName = realTimeNodeName,
+            selectedNodeName = configRepository.nodes.value.find { it.id == activeNodeId }?.name,
+            storedActiveLabel = VpnStateStore.getActiveLabel(),
+            pendingNodeName = pendingNodeName
+        )
 
         return VpnNotificationManager.NotificationState(
             isRunning = isRunning,

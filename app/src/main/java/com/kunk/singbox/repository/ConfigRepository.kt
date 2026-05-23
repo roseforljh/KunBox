@@ -3613,6 +3613,7 @@ class ConfigRepository(private val context: Context) {
                             }
                             putExtra("node_id", nodeId)
                             putExtra("outbound_tag", generationResult.activeNodeTag)
+                            node?.name?.let { putExtra(SingBoxService.EXTRA_PENDING_NODE_NAME, it) }
                             putExtra(ProxyOnlyService.EXTRA_CONFIG_PATH, generationResult.path)
                         }
                     } else {
@@ -3631,6 +3632,7 @@ class ConfigRepository(private val context: Context) {
                             }
                             putExtra("node_id", nodeId)
                             putExtra("outbound_tag", generationResult.activeNodeTag)
+                            node?.name?.let { putExtra(SingBoxService.EXTRA_PENDING_NODE_NAME, it) }
                             putExtra(SingBoxService.EXTRA_CONFIG_PATH, generationResult.path)
                         }
                     }
