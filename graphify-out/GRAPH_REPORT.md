@@ -1,11 +1,11 @@
 # Graph Report - .  (2026-05-23)
 
 ## Corpus Check
-- 210 files ， ~215,712 words
+- 210 files ， ~215,739 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 3385 nodes ， 3177 edges ， 210 communities detected
+- 3386 nodes ， 3178 edges ， 210 communities detected
 - Extraction: 100% EXTRACTED ， 0% INFERRED ， 0% AMBIGUOUS
 - Token cost: 0 input ， 0 output
 
@@ -459,48 +459,48 @@ Cohesion: 0.25
 Nodes (2): TrafficStatsUiState, TrafficStatsViewModel
 
 ### Community 108 - "Community 108"
-Cohesion: 0.29
-Nodes (1): LatencyTester
+Cohesion: 0.25
+Nodes (1): NotificationNodeLabelTest
 
 ### Community 109 - "Community 109"
 Cohesion: 0.29
-Nodes (1): SubscriptionAutoUpdateWorker
+Nodes (1): LatencyTester
 
 ### Community 110 - "Community 110"
 Cohesion: 0.29
-Nodes (1): VpnKeepaliveWorker
+Nodes (1): SubscriptionAutoUpdateWorker
 
 ### Community 111 - "Community 111"
 Cohesion: 0.29
-Nodes (1): SquareViewFinderView
+Nodes (1): VpnKeepaliveWorker
 
 ### Community 112 - "Community 112"
 Cohesion: 0.29
-Nodes (0): 
+Nodes (1): SquareViewFinderView
 
 ### Community 113 - "Community 113"
 Cohesion: 0.29
-Nodes (1): BatteryOptimizationHelper
+Nodes (0): 
 
 ### Community 114 - "Community 114"
 Cohesion: 0.29
-Nodes (1): LocaleHelper
+Nodes (1): BatteryOptimizationHelper
 
 ### Community 115 - "Community 115"
 Cohesion: 0.29
-Nodes (1): SecurityUtils
+Nodes (1): LocaleHelper
 
 ### Community 116 - "Community 116"
 Cohesion: 0.29
-Nodes (1): LogViewModel
+Nodes (1): SecurityUtils
 
 ### Community 117 - "Community 117"
 Cohesion: 0.29
-Nodes (1): SettingsStoreTest
+Nodes (1): LogViewModel
 
 ### Community 118 - "Community 118"
 Cohesion: 0.29
-Nodes (1): NotificationNodeLabelTest
+Nodes (1): SettingsStoreTest
 
 ### Community 119 - "Community 119"
 Cohesion: 0.29

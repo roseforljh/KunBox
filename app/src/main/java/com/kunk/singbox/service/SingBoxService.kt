@@ -3000,6 +3000,7 @@ class SingBoxService : VpnService() {
 
             when (result) {
                 is com.kunk.singbox.service.manager.StartupManager.StartResult.Success -> {
+                    pendingNodeName = null
                     updateServiceState(ServiceState.RUNNING)
 
                     // 注册 libbox 服务

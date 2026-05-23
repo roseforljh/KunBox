@@ -61,4 +61,16 @@ class NotificationNodeLabelTest {
 
         assertEquals("配置2节点2", label)
     }
+
+    @Test
+    fun resolveNodeLabel_usesRuntimeWhenSelectedNullAndPendingStale() {
+        val label = resolveNotificationNodeLabel(
+            runtimeNodeName = "配置2节点2",
+            selectedNodeName = null,
+            storedActiveLabel = "配置2节点2",
+            pendingNodeName = null
+        )
+
+        assertEquals("配置2节点2", label)
+    }
 }
