@@ -17,7 +17,7 @@
       "source_file": "settings.gradle.kts",
       "source_location": "L1",
       "id": "settings_gradle",
-      "community": 206
+      "community": 207
     },
     {
       "label": "detectLibboxAbis()",
@@ -2633,7 +2633,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\database\\entity\\ActiveStateEntity.kt",
       "source_location": "L1",
       "id": "activestateentity",
-      "community": 184
+      "community": 185
     },
     {
       "label": "ActiveStateEntity",
@@ -2641,7 +2641,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\database\\entity\\ActiveStateEntity.kt",
       "source_location": "L10",
       "id": "activestateentity_activestateentity",
-      "community": 184
+      "community": 185
     },
     {
       "label": "NodeEntity.kt",
@@ -2697,7 +2697,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\database\\entity\\NodeLatencyEntity.kt",
       "source_location": "L1",
       "id": "nodelatencyentity",
-      "community": 185
+      "community": 186
     },
     {
       "label": "NodeLatencyEntity",
@@ -2705,7 +2705,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\database\\entity\\NodeLatencyEntity.kt",
       "source_location": "L7",
       "id": "nodelatencyentity_nodelatencyentity",
-      "community": 185
+      "community": 186
     },
     {
       "label": "ProfileEntity.kt",
@@ -2745,7 +2745,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\database\\entity\\SettingsEntity.kt",
       "source_location": "L1",
       "id": "settingsentity",
-      "community": 186
+      "community": 187
     },
     {
       "label": "SettingsEntity",
@@ -2753,7 +2753,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\database\\entity\\SettingsEntity.kt",
       "source_location": "L9",
       "id": "settingsentity_settingsentity",
-      "community": 186
+      "community": 187
     },
     {
       "label": "SingBoxIpcHub.kt",
@@ -4169,7 +4169,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\model\\HubRuleSet.kt",
       "source_location": "L1",
       "id": "hubruleset",
-      "community": 187
+      "community": 188
     },
     {
       "label": "HubRuleSet",
@@ -4177,7 +4177,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\model\\HubRuleSet.kt",
       "source_location": "L5",
       "id": "hubruleset_hubruleset",
-      "community": 187
+      "community": 188
     },
     {
       "label": "IpVersionModeRules.kt",
@@ -4241,7 +4241,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\model\\NodeSortType.kt",
       "source_location": "L1",
       "id": "nodesorttype",
-      "community": 188
+      "community": 189
     },
     {
       "label": "NodeSortType",
@@ -4249,7 +4249,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\model\\NodeSortType.kt",
       "source_location": "L3",
       "id": "nodesorttype_nodesorttype",
-      "community": 188
+      "community": 189
     },
     {
       "label": "PingDisplayText.kt",
@@ -4281,7 +4281,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\model\\PingResultCode.kt",
       "source_location": "L1",
       "id": "pingresultcode",
-      "community": 189
+      "community": 190
     },
     {
       "label": "PingResultCode",
@@ -4289,7 +4289,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\model\\PingResultCode.kt",
       "source_location": "L3",
       "id": "pingresultcode_pingresultcode",
-      "community": 189
+      "community": 190
     },
     {
       "label": "RoutingModels.kt",
@@ -10233,7 +10233,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\service\\NotificationNodeLabel.kt",
       "source_location": "L1",
       "id": "notificationnodelabel",
-      "community": 190
+      "community": 191
     },
     {
       "label": "resolveNotificationNodeLabel()",
@@ -10241,7 +10241,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\service\\NotificationNodeLabel.kt",
       "source_location": "L3",
       "id": "notificationnodelabel_resolvenotificationnodelabel",
-      "community": 190
+      "community": 191
     },
     {
       "label": "ProxyOnlyService.kt",
@@ -13799,7 +13799,7 @@
       "label": "NodeSwitchManager",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\service\\manager\\NodeSwitchManager.kt",
-      "source_location": "L13",
+      "source_location": "L15",
       "id": "nodeswitchmanager_nodeswitchmanager",
       "community": 78
     },
@@ -13807,7 +13807,7 @@
       "label": "Callbacks",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\service\\manager\\NodeSwitchManager.kt",
-      "source_location": "L28",
+      "source_location": "L30",
       "id": "nodeswitchmanager_callbacks",
       "community": 78
     },
@@ -13815,7 +13815,7 @@
       "label": ".hotSwitchNode()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\service\\manager\\NodeSwitchManager.kt",
-      "source_location": "L30",
+      "source_location": "L32",
       "id": "nodeswitchmanager_callbacks_hotswitchnode",
       "community": 78
     },
@@ -13823,7 +13823,7 @@
       "label": ".getConfigPath()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\service\\manager\\NodeSwitchManager.kt",
-      "source_location": "L31",
+      "source_location": "L33",
       "id": "nodeswitchmanager_callbacks_getconfigpath",
       "community": 78
     },
@@ -13831,7 +13831,7 @@
       "label": ".setRealTimeNodeName()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\service\\manager\\NodeSwitchManager.kt",
-      "source_location": "L32",
+      "source_location": "L34",
       "id": "nodeswitchmanager_callbacks_setrealtimenodename",
       "community": 78
     },
@@ -13839,7 +13839,7 @@
       "label": ".requestNotificationUpdate()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\service\\manager\\NodeSwitchManager.kt",
-      "source_location": "L33",
+      "source_location": "L35",
       "id": "nodeswitchmanager_callbacks_requestnotificationupdate",
       "community": 78
     },
@@ -13847,7 +13847,7 @@
       "label": ".notifyRemoteStateUpdate()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\service\\manager\\NodeSwitchManager.kt",
-      "source_location": "L34",
+      "source_location": "L36",
       "id": "nodeswitchmanager_callbacks_notifyremotestateupdate",
       "community": 78
     },
@@ -13855,7 +13855,7 @@
       "label": ".startServiceIntent()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\service\\manager\\NodeSwitchManager.kt",
-      "source_location": "L35",
+      "source_location": "L37",
       "id": "nodeswitchmanager_callbacks_startserviceintent",
       "community": 78
     },
@@ -13863,7 +13863,7 @@
       "label": ".init()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\service\\manager\\NodeSwitchManager.kt",
-      "source_location": "L40",
+      "source_location": "L42",
       "id": "nodeswitchmanager_nodeswitchmanager_init",
       "community": 78
     },
@@ -13871,7 +13871,7 @@
       "label": ".performHotSwitch()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\service\\manager\\NodeSwitchManager.kt",
-      "source_location": "L46",
+      "source_location": "L48",
       "id": "nodeswitchmanager_nodeswitchmanager_performhotswitch",
       "community": 78
     },
@@ -13879,7 +13879,7 @@
       "label": ".switchNextNode()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\service\\manager\\NodeSwitchManager.kt",
-      "source_location": "L89",
+      "source_location": "L91",
       "id": "nodeswitchmanager_nodeswitchmanager_switchnextnode",
       "community": 78
     },
@@ -13887,7 +13887,7 @@
       "label": ".cleanup()",
       "file_type": "code",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\service\\manager\\NodeSwitchManager.kt",
-      "source_location": "L156",
+      "source_location": "L158",
       "id": "nodeswitchmanager_nodeswitchmanager_cleanup",
       "community": 78
     },
@@ -16697,7 +16697,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\ui\\components\\AppNavBar.kt",
       "source_location": "L1",
       "id": "appnavbar",
-      "community": 191
+      "community": 192
     },
     {
       "label": "AppNavBar()",
@@ -16705,7 +16705,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\ui\\components\\AppNavBar.kt",
       "source_location": "L35",
       "id": "appnavbar_appnavbar",
-      "community": 191
+      "community": 192
     },
     {
       "label": "AppNotificationManager.kt",
@@ -16737,7 +16737,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\ui\\components\\BigToggle.kt",
       "source_location": "L1",
       "id": "bigtoggle",
-      "community": 192
+      "community": 193
     },
     {
       "label": "BigToggle()",
@@ -16745,7 +16745,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\ui\\components\\BigToggle.kt",
       "source_location": "L42",
       "id": "bigtoggle_bigtoggle",
-      "community": 192
+      "community": 193
     },
     {
       "label": "ClickableDropdownField.kt",
@@ -16961,7 +16961,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\ui\\components\\NodeCard.kt",
       "source_location": "L1",
       "id": "nodecard",
-      "community": 193
+      "community": 194
     },
     {
       "label": "NodeCard()",
@@ -16969,7 +16969,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\ui\\components\\NodeCard.kt",
       "source_location": "L23",
       "id": "nodecard_nodecard",
-      "community": 193
+      "community": 194
     },
     {
       "label": "ProfileCard.kt",
@@ -16977,7 +16977,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\ui\\components\\ProfileCard.kt",
       "source_location": "L1",
       "id": "profilecard",
-      "community": 194
+      "community": 195
     },
     {
       "label": "ProfileCard()",
@@ -16985,7 +16985,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\ui\\components\\ProfileCard.kt",
       "source_location": "L54",
       "id": "profilecard_profilecard",
-      "community": 194
+      "community": 195
     },
     {
       "label": "SelectProfileDialog.kt",
@@ -17057,7 +17057,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\ui\\components\\StandardCard.kt",
       "source_location": "L1",
       "id": "standardcard",
-      "community": 195
+      "community": 196
     },
     {
       "label": "StandardCard()",
@@ -17065,7 +17065,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\ui\\components\\StandardCard.kt",
       "source_location": "L14",
       "id": "standardcard_standardcard",
-      "community": 195
+      "community": 196
     },
     {
       "label": "StatusChip.kt",
@@ -17465,7 +17465,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\ui\\screens\\AppGroupsScreen.kt",
       "source_location": "L1",
       "id": "appgroupsscreen",
-      "community": 196
+      "community": 197
     },
     {
       "label": "AppGroupsScreen()",
@@ -17473,7 +17473,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\ui\\screens\\AppGroupsScreen.kt",
       "source_location": "L29",
       "id": "appgroupsscreen_appgroupsscreen",
-      "community": 196
+      "community": 197
     },
     {
       "label": "AppRoutingComponents.kt",
@@ -17625,7 +17625,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\ui\\screens\\ConnectionSettingsScreen.kt",
       "source_location": "L1",
       "id": "connectionsettingsscreen",
-      "community": 197
+      "community": 198
     },
     {
       "label": "ConnectionSettingsScreen()",
@@ -17633,7 +17633,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\ui\\screens\\ConnectionSettingsScreen.kt",
       "source_location": "L42",
       "id": "connectionsettingsscreen_connectionsettingsscreen",
-      "community": 197
+      "community": 198
     },
     {
       "label": "CustomRulesScreen.kt",
@@ -17697,7 +17697,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\ui\\screens\\DiagnosticsScreen.kt",
       "source_location": "L1",
       "id": "diagnosticsscreen",
-      "community": 198
+      "community": 199
     },
     {
       "label": "DiagnosticsScreen()",
@@ -17705,7 +17705,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\ui\\screens\\DiagnosticsScreen.kt",
       "source_location": "L45",
       "id": "diagnosticsscreen_diagnosticsscreen",
-      "community": 198
+      "community": 199
     },
     {
       "label": "DnsSettingsScreen.kt",
@@ -17713,7 +17713,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\ui\\screens\\DnsSettingsScreen.kt",
       "source_location": "L1",
       "id": "dnssettingsscreen",
-      "community": 199
+      "community": 200
     },
     {
       "label": "DnsSettingsScreen()",
@@ -17721,7 +17721,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\ui\\screens\\DnsSettingsScreen.kt",
       "source_location": "L42",
       "id": "dnssettingsscreen_dnssettingsscreen",
-      "community": 199
+      "community": 200
     },
     {
       "label": "DomainRulesScreen.kt",
@@ -17769,7 +17769,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\ui\\screens\\LogsScreen.kt",
       "source_location": "L1",
       "id": "logsscreen",
-      "community": 200
+      "community": 201
     },
     {
       "label": "LogsScreen()",
@@ -17777,7 +17777,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\ui\\screens\\LogsScreen.kt",
       "source_location": "L51",
       "id": "logsscreen_logsscreen",
-      "community": 200
+      "community": 201
     },
     {
       "label": "NodeDetailScreen.kt",
@@ -17865,7 +17865,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\ui\\screens\\ProfileEditorScreen.kt",
       "source_location": "L1",
       "id": "profileeditorscreen",
-      "community": 201
+      "community": 202
     },
     {
       "label": "ProfileEditorScreen()",
@@ -17873,7 +17873,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\ui\\screens\\ProfileEditorScreen.kt",
       "source_location": "L36",
       "id": "profileeditorscreen_profileeditorscreen",
-      "community": 201
+      "community": 202
     },
     {
       "label": "ProfilesScreen.kt",
@@ -17977,7 +17977,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\ui\\screens\\RoutingSettingsScreen.kt",
       "source_location": "L1",
       "id": "routingsettingsscreen",
-      "community": 202
+      "community": 203
     },
     {
       "label": "RoutingSettingsScreen()",
@@ -17985,7 +17985,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\ui\\screens\\RoutingSettingsScreen.kt",
       "source_location": "L53",
       "id": "routingsettingsscreen_routingsettingsscreen",
-      "community": 202
+      "community": 203
     },
     {
       "label": "RuleSetHubScreen.kt",
@@ -18081,7 +18081,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\ui\\screens\\SplashScreen.kt",
       "source_location": "L1",
       "id": "splashscreen",
-      "community": 203
+      "community": 204
     },
     {
       "label": "SplashScreen()",
@@ -18089,7 +18089,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\ui\\screens\\SplashScreen.kt",
       "source_location": "L34",
       "id": "splashscreen_splashscreen",
-      "community": 203
+      "community": 204
     },
     {
       "label": "TrafficStatsScreen.kt",
@@ -18193,7 +18193,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\ui\\screens\\TunSettingsScreen.kt",
       "source_location": "L1",
       "id": "tunsettingsscreen",
-      "community": 204
+      "community": 205
     },
     {
       "label": "TunSettingsScreen()",
@@ -18201,7 +18201,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\ui\\screens\\TunSettingsScreen.kt",
       "source_location": "L46",
       "id": "tunsettingsscreen_tunsettingsscreen",
-      "community": 204
+      "community": 205
     },
     {
       "label": "Color.kt",
@@ -18209,7 +18209,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\ui\\theme\\Color.kt",
       "source_location": "L1",
       "id": "color",
-      "community": 207
+      "community": 208
     },
     {
       "label": "Theme.kt",
@@ -18217,7 +18217,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\ui\\theme\\Theme.kt",
       "source_location": "L1",
       "id": "theme",
-      "community": 205
+      "community": 206
     },
     {
       "label": "SingBoxTheme()",
@@ -18225,7 +18225,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\ui\\theme\\Theme.kt",
       "source_location": "L50",
       "id": "theme_singboxtheme",
-      "community": 205
+      "community": 206
     },
     {
       "label": "Type.kt",
@@ -18233,7 +18233,7 @@
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\ui\\theme\\Type.kt",
       "source_location": "L1",
       "id": "type",
-      "community": 208
+      "community": 209
     },
     {
       "label": "AppLogger.kt",
@@ -25684,6 +25684,30 @@
       "community": 151
     },
     {
+      "label": "NodeSwitchManagerNotificationTest.kt",
+      "file_type": "code",
+      "source_file": "app\\src\\test\\java\\com\\kunk\\singbox\\service\\manager\\NodeSwitchManagerNotificationTest.kt",
+      "source_location": "L1",
+      "id": "nodeswitchmanagernotificationtest",
+      "community": 183
+    },
+    {
+      "label": "NodeSwitchManagerNotificationTest",
+      "file_type": "code",
+      "source_file": "app\\src\\test\\java\\com\\kunk\\singbox\\service\\manager\\NodeSwitchManagerNotificationTest.kt",
+      "source_location": "L6",
+      "id": "nodeswitchmanagernotificationtest_nodeswitchmanagernotificationtest",
+      "community": 183
+    },
+    {
+      "label": ".notificationUpdateAfterExplicitHotSwitch_isForced()",
+      "file_type": "code",
+      "source_file": "app\\src\\test\\java\\com\\kunk\\singbox\\service\\manager\\NodeSwitchManagerNotificationTest.kt",
+      "source_location": "L8",
+      "id": "nodeswitchmanagernotificationtest_nodeswitchmanagernotificationtest_notificationupdateafterexplicithotswitch_isforced",
+      "community": 183
+    },
+    {
       "label": "PlatformInterfaceImplTest.kt",
       "file_type": "code",
       "source_file": "app\\src\\test\\java\\com\\kunk\\singbox\\service\\manager\\PlatformInterfaceImplTest.kt",
@@ -26169,7 +26193,7 @@
       "source_file": "app\\src\\test\\java\\com\\kunk\\singbox\\utils\\VMessClashTest.kt",
       "source_location": "L1",
       "id": "vmessclashtest",
-      "community": 183
+      "community": 184
     },
     {
       "label": "VMessClashTest",
@@ -26177,7 +26201,7 @@
       "source_file": "app\\src\\test\\java\\com\\kunk\\singbox\\utils\\VMessClashTest.kt",
       "source_location": "L8",
       "id": "vmessclashtest_vmessclashtest",
-      "community": 183
+      "community": 184
     },
     {
       "label": ".testParseVMessWithTlsNoNetwork()",
@@ -26185,7 +26209,7 @@
       "source_file": "app\\src\\test\\java\\com\\kunk\\singbox\\utils\\VMessClashTest.kt",
       "source_location": "L11",
       "id": "vmessclashtest_vmessclashtest_testparsevmesswithtlsnonetwork",
-      "community": 183
+      "community": 184
     },
     {
       "label": "DnsResolverTest.kt",
@@ -46905,7 +46929,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\service\\manager\\NodeSwitchManager.kt",
-      "source_location": "L13",
+      "source_location": "L15",
       "weight": 1.0,
       "_src": "nodeswitchmanager",
       "_tgt": "nodeswitchmanager_nodeswitchmanager",
@@ -46917,7 +46941,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\service\\manager\\NodeSwitchManager.kt",
-      "source_location": "L28",
+      "source_location": "L30",
       "weight": 1.0,
       "_src": "nodeswitchmanager",
       "_tgt": "nodeswitchmanager_callbacks",
@@ -46929,7 +46953,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\service\\manager\\NodeSwitchManager.kt",
-      "source_location": "L40",
+      "source_location": "L42",
       "weight": 1.0,
       "_src": "nodeswitchmanager_nodeswitchmanager",
       "_tgt": "nodeswitchmanager_nodeswitchmanager_init",
@@ -46941,7 +46965,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\service\\manager\\NodeSwitchManager.kt",
-      "source_location": "L46",
+      "source_location": "L48",
       "weight": 1.0,
       "_src": "nodeswitchmanager_nodeswitchmanager",
       "_tgt": "nodeswitchmanager_nodeswitchmanager_performhotswitch",
@@ -46953,7 +46977,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\service\\manager\\NodeSwitchManager.kt",
-      "source_location": "L89",
+      "source_location": "L91",
       "weight": 1.0,
       "_src": "nodeswitchmanager_nodeswitchmanager",
       "_tgt": "nodeswitchmanager_nodeswitchmanager_switchnextnode",
@@ -46965,7 +46989,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\service\\manager\\NodeSwitchManager.kt",
-      "source_location": "L156",
+      "source_location": "L158",
       "weight": 1.0,
       "_src": "nodeswitchmanager_nodeswitchmanager",
       "_tgt": "nodeswitchmanager_nodeswitchmanager_cleanup",
@@ -46977,7 +47001,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\service\\manager\\NodeSwitchManager.kt",
-      "source_location": "L30",
+      "source_location": "L32",
       "weight": 1.0,
       "_src": "nodeswitchmanager_callbacks",
       "_tgt": "nodeswitchmanager_callbacks_hotswitchnode",
@@ -46989,7 +47013,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\service\\manager\\NodeSwitchManager.kt",
-      "source_location": "L31",
+      "source_location": "L33",
       "weight": 1.0,
       "_src": "nodeswitchmanager_callbacks",
       "_tgt": "nodeswitchmanager_callbacks_getconfigpath",
@@ -47001,7 +47025,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\service\\manager\\NodeSwitchManager.kt",
-      "source_location": "L32",
+      "source_location": "L34",
       "weight": 1.0,
       "_src": "nodeswitchmanager_callbacks",
       "_tgt": "nodeswitchmanager_callbacks_setrealtimenodename",
@@ -47013,7 +47037,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\service\\manager\\NodeSwitchManager.kt",
-      "source_location": "L33",
+      "source_location": "L35",
       "weight": 1.0,
       "_src": "nodeswitchmanager_callbacks",
       "_tgt": "nodeswitchmanager_callbacks_requestnotificationupdate",
@@ -47025,7 +47049,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\service\\manager\\NodeSwitchManager.kt",
-      "source_location": "L34",
+      "source_location": "L36",
       "weight": 1.0,
       "_src": "nodeswitchmanager_callbacks",
       "_tgt": "nodeswitchmanager_callbacks_notifyremotestateupdate",
@@ -47037,7 +47061,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app\\src\\main\\java\\com\\kunk\\singbox\\service\\manager\\NodeSwitchManager.kt",
-      "source_location": "L35",
+      "source_location": "L37",
       "weight": 1.0,
       "_src": "nodeswitchmanager_callbacks",
       "_tgt": "nodeswitchmanager_callbacks_startserviceintent",
@@ -63207,6 +63231,30 @@
       "_tgt": "networkswitchmanagertest_networkswitchmanagertest_socketconnectivityfallbackkeepsnonforcedrecovery",
       "source": "networkswitchmanagertest_networkswitchmanagertest",
       "target": "networkswitchmanagertest_networkswitchmanagertest_socketconnectivityfallbackkeepsnonforcedrecovery",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "app\\src\\test\\java\\com\\kunk\\singbox\\service\\manager\\NodeSwitchManagerNotificationTest.kt",
+      "source_location": "L6",
+      "weight": 1.0,
+      "_src": "nodeswitchmanagernotificationtest",
+      "_tgt": "nodeswitchmanagernotificationtest_nodeswitchmanagernotificationtest",
+      "source": "nodeswitchmanagernotificationtest",
+      "target": "nodeswitchmanagernotificationtest_nodeswitchmanagernotificationtest",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "app\\src\\test\\java\\com\\kunk\\singbox\\service\\manager\\NodeSwitchManagerNotificationTest.kt",
+      "source_location": "L8",
+      "weight": 1.0,
+      "_src": "nodeswitchmanagernotificationtest_nodeswitchmanagernotificationtest",
+      "_tgt": "nodeswitchmanagernotificationtest_nodeswitchmanagernotificationtest_notificationupdateafterexplicithotswitch_isforced",
+      "source": "nodeswitchmanagernotificationtest_nodeswitchmanagernotificationtest",
+      "target": "nodeswitchmanagernotificationtest_nodeswitchmanagernotificationtest_notificationupdateafterexplicithotswitch_isforced",
       "confidence_score": 1.0
     },
     {

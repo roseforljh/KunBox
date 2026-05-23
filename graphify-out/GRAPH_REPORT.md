@@ -1,11 +1,11 @@
 # Graph Report - .  (2026-05-23)
 
 ## Corpus Check
-- 209 files ， ~215,548 words
+- 210 files ， ~215,600 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 3378 nodes ， 3171 edges ， 209 communities detected
+- 3381 nodes ， 3173 edges ， 210 communities detected
 - Extraction: 100% EXTRACTED ， 0% INFERRED ， 0% AMBIGUOUS
 - Token cost: 0 input ， 0 output
 
@@ -760,35 +760,35 @@ Nodes (1): RuleSetUpdateWorker
 
 ### Community 183 - "Community 183"
 Cohesion: 0.67
-Nodes (1): VMessClashTest
+Nodes (1): NodeSwitchManagerNotificationTest
 
 ### Community 184 - "Community 184"
-Cohesion: 1.0
-Nodes (1): ActiveStateEntity
+Cohesion: 0.67
+Nodes (1): VMessClashTest
 
 ### Community 185 - "Community 185"
 Cohesion: 1.0
-Nodes (1): NodeLatencyEntity
+Nodes (1): ActiveStateEntity
 
 ### Community 186 - "Community 186"
 Cohesion: 1.0
-Nodes (1): SettingsEntity
+Nodes (1): NodeLatencyEntity
 
 ### Community 187 - "Community 187"
 Cohesion: 1.0
-Nodes (1): HubRuleSet
+Nodes (1): SettingsEntity
 
 ### Community 188 - "Community 188"
 Cohesion: 1.0
-Nodes (1): NodeSortType
+Nodes (1): HubRuleSet
 
 ### Community 189 - "Community 189"
 Cohesion: 1.0
-Nodes (1): PingResultCode
+Nodes (1): NodeSortType
 
 ### Community 190 - "Community 190"
 Cohesion: 1.0
-Nodes (0): 
+Nodes (1): PingResultCode
 
 ### Community 191 - "Community 191"
 Cohesion: 1.0
@@ -862,58 +862,62 @@ Nodes (0):
 Cohesion: 1.0
 Nodes (0): 
 
+### Community 209 - "Community 209"
+Cohesion: 1.0
+Nodes (0): 
+
 ## Knowledge Gaps
 - **264 isolated node(s):** `RecoveryMode`, `RecoveryLevel`, `SmartRecoveryResult`, `ProbeTarget`, `ProbeResult` (+259 more)
   These have ＋1 connection - possible missing edges or undocumented components.
-- **Thin community `Community 184`** (2 nodes): `ActiveStateEntity.kt`, `ActiveStateEntity`
+- **Thin community `Community 185`** (2 nodes): `ActiveStateEntity.kt`, `ActiveStateEntity`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 185`** (2 nodes): `NodeLatencyEntity.kt`, `NodeLatencyEntity`
+- **Thin community `Community 186`** (2 nodes): `NodeLatencyEntity.kt`, `NodeLatencyEntity`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 186`** (2 nodes): `SettingsEntity.kt`, `SettingsEntity`
+- **Thin community `Community 187`** (2 nodes): `SettingsEntity.kt`, `SettingsEntity`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 187`** (2 nodes): `HubRuleSet.kt`, `HubRuleSet`
+- **Thin community `Community 188`** (2 nodes): `HubRuleSet.kt`, `HubRuleSet`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 188`** (2 nodes): `NodeSortType.kt`, `NodeSortType`
+- **Thin community `Community 189`** (2 nodes): `NodeSortType.kt`, `NodeSortType`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 189`** (2 nodes): `PingResultCode.kt`, `PingResultCode`
+- **Thin community `Community 190`** (2 nodes): `PingResultCode.kt`, `PingResultCode`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 190`** (2 nodes): `NotificationNodeLabel.kt`, `resolveNotificationNodeLabel()`
+- **Thin community `Community 191`** (2 nodes): `NotificationNodeLabel.kt`, `resolveNotificationNodeLabel()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 191`** (2 nodes): `AppNavBar.kt`, `AppNavBar()`
+- **Thin community `Community 192`** (2 nodes): `AppNavBar.kt`, `AppNavBar()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 192`** (2 nodes): `BigToggle.kt`, `BigToggle()`
+- **Thin community `Community 193`** (2 nodes): `BigToggle.kt`, `BigToggle()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 193`** (2 nodes): `NodeCard.kt`, `NodeCard()`
+- **Thin community `Community 194`** (2 nodes): `NodeCard.kt`, `NodeCard()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 194`** (2 nodes): `ProfileCard.kt`, `ProfileCard()`
+- **Thin community `Community 195`** (2 nodes): `ProfileCard.kt`, `ProfileCard()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 195`** (2 nodes): `StandardCard.kt`, `StandardCard()`
+- **Thin community `Community 196`** (2 nodes): `StandardCard.kt`, `StandardCard()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 196`** (2 nodes): `AppGroupsScreen.kt`, `AppGroupsScreen()`
+- **Thin community `Community 197`** (2 nodes): `AppGroupsScreen.kt`, `AppGroupsScreen()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 197`** (2 nodes): `ConnectionSettingsScreen.kt`, `ConnectionSettingsScreen()`
+- **Thin community `Community 198`** (2 nodes): `ConnectionSettingsScreen.kt`, `ConnectionSettingsScreen()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 198`** (2 nodes): `DiagnosticsScreen.kt`, `DiagnosticsScreen()`
+- **Thin community `Community 199`** (2 nodes): `DiagnosticsScreen.kt`, `DiagnosticsScreen()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 199`** (2 nodes): `DnsSettingsScreen.kt`, `DnsSettingsScreen()`
+- **Thin community `Community 200`** (2 nodes): `DnsSettingsScreen.kt`, `DnsSettingsScreen()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 200`** (2 nodes): `LogsScreen.kt`, `LogsScreen()`
+- **Thin community `Community 201`** (2 nodes): `LogsScreen.kt`, `LogsScreen()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 201`** (2 nodes): `ProfileEditorScreen.kt`, `ProfileEditorScreen()`
+- **Thin community `Community 202`** (2 nodes): `ProfileEditorScreen.kt`, `ProfileEditorScreen()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 202`** (2 nodes): `RoutingSettingsScreen.kt`, `RoutingSettingsScreen()`
+- **Thin community `Community 203`** (2 nodes): `RoutingSettingsScreen.kt`, `RoutingSettingsScreen()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 203`** (2 nodes): `SplashScreen.kt`, `SplashScreen()`
+- **Thin community `Community 204`** (2 nodes): `SplashScreen.kt`, `SplashScreen()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 204`** (2 nodes): `TunSettingsScreen.kt`, `TunSettingsScreen()`
+- **Thin community `Community 205`** (2 nodes): `TunSettingsScreen.kt`, `TunSettingsScreen()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 205`** (2 nodes): `Theme.kt`, `SingBoxTheme()`
+- **Thin community `Community 206`** (2 nodes): `Theme.kt`, `SingBoxTheme()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 206`** (1 nodes): `settings.gradle.kts`
+- **Thin community `Community 207`** (1 nodes): `settings.gradle.kts`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 207`** (1 nodes): `Color.kt`
+- **Thin community `Community 208`** (1 nodes): `Color.kt`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 208`** (1 nodes): `Type.kt`
+- **Thin community `Community 209`** (1 nodes): `Type.kt`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
 
 ## Suggested Questions

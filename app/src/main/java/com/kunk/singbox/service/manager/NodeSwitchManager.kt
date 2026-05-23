@@ -10,6 +10,8 @@ import kotlinx.coroutines.launch
 
 /**
  */
+internal const val FORCE_NOTIFICATION_AFTER_EXPLICIT_HOT_SWITCH: Boolean = true
+
 class NodeSwitchManager(
     private val context: Context,
     private val serviceScope: CoroutineScope
@@ -70,7 +72,7 @@ class NodeSwitchManager(
                 VpnStateStore.setActiveLabel(displayName)
                 callbacks?.setRealTimeNodeName(displayName)
                 runCatching { configRepository.syncActiveNodeFromProxySelection(displayName) }
-                callbacks?.requestNotificationUpdate(force = false)
+                callbacks?.requestNotificationUpdate(force = FORCE_NOTIFICATION_AFTER_EXPLICIT_HOT_SWITCH)
                 callbacks?.notifyRemoteStateUpdate(force = true)
             } else {
                 Log.w(TAG, "Hot switch failed for $nodeTag, falling back to restart")
