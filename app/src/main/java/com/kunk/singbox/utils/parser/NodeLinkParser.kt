@@ -1126,48 +1126,74 @@ class NodeLinkParser(private val gson: Gson) {
      *       https://[username:password@]host:port[#name]
      */
     private fun parseHttpLink(link: String, useTls: Boolean): Outbound? {
-        try {
+        return try {
             val uri = java.net.URI(sanitizeUri(link))
-            val name = java.net.URLDecoder.decode(
-                uri.fragment ?: if (useTls) "HTTPS Proxy" else "HTTP Proxy",
-                "UTF-8"
-            )
-            val server = uri.host ?: return null
-            val port = if (uri.port > 0) uri.port else if (useTls) 443 else 8080
+            val server = uri.host
+            if (!looksLikeHttpProxyUri(uri) || server.isNullOrBlank()) {
+                null
+            } else {
+                val name = java.net.URLDecoder.decode(
+                    uri.fragment ?: if (useTls) "HTTPS Proxy" else "HTTP Proxy",
+                    "UTF-8"
+                )
+                val (username, password) = parseHttpCredentials(uri)
+                val port = if (uri.port > 0) uri.port else if (useTls) 443 else 8080
 
-            var username: String? = null
-            var password: String? = null
-            if (uri.userInfo != null) {
-                val parts = uri.userInfo.split(":", limit = 2)
-                username = java.net.URLDecoder.decode(parts.getOrNull(0) ?: "", "UTF-8")
-                    .takeIf { it.isNotBlank() }
-                password = java.net.URLDecoder.decode(parts.getOrNull(1) ?: "", "UTF-8")
-                    .takeIf { it.isNotBlank() }
+                Outbound(
+                    type = "http",
+                    tag = name,
+                    server = server,
+                    serverPort = port,
+                    username = username,
+                    password = password,
+                    tls = buildHttpTlsConfig(useTls, server)
+                )
             }
-
-            return Outbound(
-                type = "http",
-                tag = name,
-                server = server,
-                serverPort = port,
-                username = username,
-                password = password,
-                tls = if (useTls) {
-                    TlsConfig(
-                        enabled = true,
-                        serverName = defaultTlsServerName(
-                            explicitServerName = null,
-                            server = server
-                        )
-                    )
-                } else {
-                    null
-                }
-            )
         } catch (e: Exception) {
             Log.e("NodeLinkParser", "Failed to parse HTTP/HTTPS link", e)
+            null
         }
-        return null
+    }
+
+    private fun parseHttpCredentials(uri: java.net.URI): Pair<String?, String?> {
+        val userInfo = uri.userInfo ?: return null to null
+        val parts = userInfo.split(":", limit = 2)
+        val username = java.net.URLDecoder.decode(parts.getOrNull(0) ?: "", "UTF-8")
+            .takeIf { it.isNotBlank() }
+        val password = java.net.URLDecoder.decode(parts.getOrNull(1) ?: "", "UTF-8")
+            .takeIf { it.isNotBlank() }
+        return username to password
+    }
+
+    private fun buildHttpTlsConfig(useTls: Boolean, server: String): TlsConfig? {
+        if (!useTls) return null
+        return TlsConfig(
+            enabled = true,
+            serverName = defaultTlsServerName(
+                explicitServerName = null,
+                server = server
+            )
+        )
+    }
+
+    private fun looksLikeHttpProxyUri(uri: java.net.URI): Boolean {
+        val hasUserInfo = !uri.userInfo.isNullOrBlank()
+        val hasExplicitPort = uri.port > 0
+        val hasName = !uri.fragment.isNullOrBlank()
+        if (!hasUserInfo && !hasExplicitPort && !hasName) {
+            return false
+        }
+
+        val path = uri.rawPath.orEmpty()
+        val hasNonRootPath = path.isNotBlank() && path != "/"
+        val hasQuery = !uri.rawQuery.isNullOrBlank()
+        val hasContentPath = hasNonRootPath || hasQuery
+        val lacksExplicitProxyIdentity = !hasUserInfo && !hasName
+        if (hasContentPath && lacksExplicitProxyIdentity) {
+            return false
+        }
+
+        return true
     }
 
     /**

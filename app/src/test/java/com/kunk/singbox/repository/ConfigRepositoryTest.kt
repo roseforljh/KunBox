@@ -236,6 +236,33 @@ class ConfigRepositoryTest {
     }
 
     @Test
+    fun testLooksLikeSubscriptionUrlForImportAcceptsSubscriptionApiUrl() {
+        assertTrue(
+            ConfigRepository.looksLikeSubscriptionUrlForImport(
+                "https://sub.example.com/api/v1/client/subscribe?token=abc123"
+            )
+        )
+    }
+
+    @Test
+    fun testLooksLikeSubscriptionUrlForImportAcceptsPortedSubscriptionApiUrl() {
+        assertTrue(
+            ConfigRepository.looksLikeSubscriptionUrlForImport(
+                "https://sub.example.com:8443/api/v1/client/subscribe?token=abc123"
+            )
+        )
+    }
+
+    @Test
+    fun testLooksLikeSubscriptionUrlForImportRejectsHttpProxyLink() {
+        assertFalse(
+            ConfigRepository.looksLikeSubscriptionUrlForImport(
+                "http://proxy.example.com:3128#NoAuthProxy"
+            )
+        )
+    }
+
+    @Test
     fun testPrioritizeUserAgentsWithPreferredValue() {
         val prioritized = ConfigRepository.prioritizeUserAgents("sing-box/1.13.1")
 

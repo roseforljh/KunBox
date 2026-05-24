@@ -368,6 +368,25 @@ class ConfigRepository(private val context: Context) {
             return runCatching { URI(url).host?.lowercase() }.getOrNull()
         }
 
+        internal fun looksLikeSubscriptionUrlForImport(content: String): Boolean {
+            val trimmed = content.trim()
+            if (!trimmed.startsWith("http://", ignoreCase = true) &&
+                !trimmed.startsWith("https://", ignoreCase = true)
+            ) {
+                return false
+            }
+
+            return runCatching {
+                val uri = URI(trimmed)
+                val path = uri.rawPath.orEmpty()
+                val query = uri.rawQuery.orEmpty()
+                val hasUserInfo = !uri.userInfo.isNullOrBlank()
+                val hasName = !uri.fragment.isNullOrBlank()
+                val hasProxyOnlyPort = uri.port > 0 && path.isBlank() && query.isBlank()
+                !hasUserInfo && !hasName && !hasProxyOnlyPort
+            }.getOrDefault(false)
+        }
+
         internal fun prioritizeUserAgents(preferredUserAgent: String?): List<String> {
             if (preferredUserAgent.isNullOrBlank()) return USER_AGENTS
             return buildList {
@@ -3110,6 +3129,14 @@ class ConfigRepository(private val context: Context) {
             onProgress(context.getString(R.string.common_loading))
 
             val normalized = normalizeImportedContent(content)
+            if (looksLikeSubscriptionUrlForImport(normalized)) {
+                return@withContext importFromSubscription(
+                    name = name,
+                    url = normalized,
+                    onProgress = onProgress
+                )
+            }
+
             val config = subscriptionManager.parse(normalized)
                 ?: return@withContext Result.failure(Exception(context.getString(R.string.profiles_parse_failed)))
 

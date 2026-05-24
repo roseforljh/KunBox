@@ -858,6 +858,22 @@ class NodeLinkParserTest {
         assertNull(outbound?.password)
     }
 
+    @Test
+    fun testDoesNotParseSubscriptionUrlAsHttpsProxy() {
+        val link = "https://sub.example.com/api/v1/client/subscribe?token=abc123"
+        val outbound = parser.parse(link)
+
+        assertNull(outbound)
+    }
+
+    @Test
+    fun testDoesNotParsePortedSubscriptionUrlAsHttpsProxy() {
+        val link = "https://sub.example.com:8443/api/v1/client/subscribe?token=abc123"
+        val outbound = parser.parse(link)
+
+        assertNull(outbound)
+    }
+
     // ==================== SOCKS5 ====================
 
     @Test
