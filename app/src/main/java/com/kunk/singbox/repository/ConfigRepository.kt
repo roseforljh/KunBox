@@ -2971,6 +2971,7 @@ class ConfigRepository(private val context: Context) {
         autoUpdateInterval: Int = 0,
         dnsPreResolve: Boolean = false,
         dnsServer: String? = null,
+        dnsOverride: String? = null,
         onProgress: (String) -> Unit = {}
     ): Result<ProfileUi> = withContext(Dispatchers.IO) {
         var profileId: String? = null
@@ -3013,7 +3014,8 @@ class ConfigRepository(private val context: Context) {
                 totalTraffic = userInfo?.total ?: 0,
                 usedTraffic = (userInfo?.upload ?: 0) + (userInfo?.download ?: 0),
                 dnsPreResolve = dnsPreResolve,
-                dnsServer = dnsServer
+                dnsServer = dnsServer,
+                dnsOverride = dnsOverride
             )
             cacheConfig(profileId, deduplicatedConfig)
             profileNodes[profileId] = nodes

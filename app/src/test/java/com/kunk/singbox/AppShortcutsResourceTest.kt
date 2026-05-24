@@ -35,4 +35,29 @@ class AppShortcutsResourceTest {
         assertTrue(content.contains("rcode = \"NOERROR\""))
         assertFalse(content.contains("fun dnsReject(rule: DnsRule): DnsRule = rule.copy(action = \"reject\""))
     }
+
+    @Test
+    fun subscriptionImportPreservesDnsOverrideChain() {
+        val profilesScreen = File("src/main/java/com/kunk/singbox/ui/screens/ProfilesScreen.kt").readText()
+        val profilesViewModel = File("src/main/java/com/kunk/singbox/viewmodel/ProfilesViewModel.kt").readText()
+        val configRepository = File("src/main/java/com/kunk/singbox/repository/ConfigRepository.kt").readText()
+
+        assertTrue(
+            profilesScreen.contains(
+                "viewModel.importSubscription(name, url, autoUpdateInterval, dnsPreResolve, dnsServer, dnsOverride)"
+            )
+        )
+        assertTrue(
+            Regex(
+                """fun importSubscription\([\s\S]*dnsOverride: String\? = null[\s\S]*""" +
+                    """configRepository\.importFromSubscription\([\s\S]*dnsOverride = dnsOverride"""
+            ).containsMatchIn(profilesViewModel)
+        )
+        assertTrue(
+            Regex(
+                """suspend fun importFromSubscription\([\s\S]*dnsOverride: String\? = null[\s\S]*""" +
+                    """ProfileUi\([\s\S]*dnsOverride = dnsOverride"""
+            ).containsMatchIn(configRepository)
+        )
+    }
 }

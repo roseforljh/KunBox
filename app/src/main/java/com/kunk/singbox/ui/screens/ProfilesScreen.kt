@@ -443,7 +443,7 @@ fun ProfilesScreen(
         SubscriptionInputDialog(
             onDismiss = { showSubscriptionInput = false },
             onConfirm = { name, url, autoUpdateInterval, dnsPreResolve, dnsServer, dnsOverride ->
-                viewModel.importSubscription(name, url, autoUpdateInterval, dnsPreResolve, dnsServer)
+                viewModel.importSubscription(name, url, autoUpdateInterval, dnsPreResolve, dnsServer, dnsOverride)
                 showSubscriptionInput = false
             }
         )

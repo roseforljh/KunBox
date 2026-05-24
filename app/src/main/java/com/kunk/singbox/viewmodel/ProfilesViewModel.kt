@@ -192,7 +192,8 @@ class ProfilesViewModel(application: Application) : AndroidViewModel(application
         url: String,
         autoUpdateInterval: Int = 0,
         dnsPreResolve: Boolean = false,
-        dnsServer: String? = null
+        dnsServer: String? = null,
+        dnsOverride: String? = null
     ): Boolean {
 
         if (_importState.value is ImportState.Loading) {
@@ -208,6 +209,7 @@ class ProfilesViewModel(application: Application) : AndroidViewModel(application
                 autoUpdateInterval = autoUpdateInterval,
                 dnsPreResolve = dnsPreResolve,
                 dnsServer = dnsServer,
+                dnsOverride = dnsOverride,
                 onProgress = { progress ->
                     _importState.value = ImportState.Loading(progress)
                 }
