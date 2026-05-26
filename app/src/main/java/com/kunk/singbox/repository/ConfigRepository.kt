@@ -1392,6 +1392,51 @@ class ConfigRepository(private val context: Context) {
             return server.copy(detour = proxyDetourTag)
         }
 
+        internal fun applyDnsOverrideForTest(
+            baseConfig: DnsConfig,
+            overrideConfig: DnsConfig,
+            sanitizeServer: (DnsServer) -> DnsServer = { it }
+        ): DnsConfig {
+            return applyDnsOverride(baseConfig, overrideConfig, sanitizeServer)
+        }
+
+        private fun applyDnsOverride(
+            baseConfig: DnsConfig,
+            overrideConfig: DnsConfig,
+            sanitizeServer: (DnsServer) -> DnsServer
+        ): DnsConfig {
+            val servers = baseConfig.servers.orEmpty().toMutableList()
+            overrideConfig.servers.orEmpty().forEach { server ->
+                val tag = server.tag
+                if (!tag.isNullOrBlank()) {
+                    val sanitizedServer = sanitizeServer(server)
+                    val existingIndex = servers.indexOfFirst { it.tag == tag }
+                    if (existingIndex >= 0) {
+                        servers[existingIndex] = sanitizedServer
+                    } else {
+                        servers.add(sanitizedServer)
+                    }
+                }
+            }
+
+            val rules = baseConfig.rules.orEmpty().toMutableList()
+            val overrideRules = overrideConfig.rules.orEmpty()
+            if (overrideRules.isNotEmpty()) {
+                rules.addAll(0, overrideRules)
+            }
+
+            return baseConfig.copy(
+                servers = servers,
+                rules = rules,
+                finalServer = overrideConfig.finalServer?.takeIf { it.isNotBlank() } ?: baseConfig.finalServer,
+                strategy = overrideConfig.strategy?.takeIf { it.isNotBlank() } ?: baseConfig.strategy,
+                disableCache = overrideConfig.disableCache ?: baseConfig.disableCache,
+                disableExpire = overrideConfig.disableExpire ?: baseConfig.disableExpire,
+                independentCache = overrideConfig.independentCache ?: baseConfig.independentCache,
+                fakeip = overrideConfig.fakeip ?: baseConfig.fakeip
+            )
+        }
+
         internal const val DEFAULT_ROUTE_DOMAIN_RESOLVER_TAG = "dns-bootstrap"
 
         internal fun normalizeLocalDns(value: String?): String {
@@ -5197,34 +5242,31 @@ class ConfigRepository(private val context: Context) {
             }
         }
 
-        // 追加用户自定义 DNS 覆写（来自 Profile 级别配置）
-        if (!dnsOverride.isNullOrBlank()) {
-            try {
-                val overrideConfig = gson.fromJson(dnsOverride, DnsConfig::class.java)
-                overrideConfig?.servers?.forEach { server ->
-                    if (server.tag != null && dnsServers.none { it.tag == server.tag }) {
-                        dnsServers.add(sanitizeDnsServer(server))
-                    }
-                }
-                overrideConfig?.rules?.forEach { rule ->
-                    dnsRules.add(rule)
-                }
-            } catch (e: Exception) {
-                Log.w(TAG, "Failed to parse dnsOverride JSON, skipping", e)
-            }
-        }
-
-        return DnsConfig(
+        val baseDnsConfig = DnsConfig(
             servers = dnsServers,
             rules = dnsRules,
             finalServer = finalServer,
             strategy = resolveDnsStrategy(settings.dnsStrategy, settings.ipVersionMode),
             disableCache = !settings.dnsCacheEnabled,
-            // Keep cache shared by default to improve hit rate and reduce repeated resolutions.
-            // sing-box doc notes independent_cache slightly degrades performance.
             independentCache = false,
             fakeip = fakeIpConfig
         )
+
+        return if (!dnsOverride.isNullOrBlank()) {
+            try {
+                val overrideConfig = gson.fromJson(dnsOverride, DnsConfig::class.java)
+                if (overrideConfig != null) {
+                    applyDnsOverride(baseDnsConfig, overrideConfig, ::sanitizeDnsServer)
+                } else {
+                    baseDnsConfig
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to parse dnsOverride JSON, skipping", e)
+                baseDnsConfig
+            }
+        } else {
+            baseDnsConfig
+        }
     }
 
     private data class RunOutboundsContext(

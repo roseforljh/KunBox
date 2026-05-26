@@ -1,25 +1,25 @@
-# Graph Report - .  (2026-05-24)
+# Graph Report - .  (2026-05-26)
 
 ## Corpus Check
-- 215 files ¡¤ ~216,629 words
+- 216 files Â· ~217,320 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 3422 nodes ¡¤ 3209 edges ¡¤ 215 communities detected
-- Extraction: 100% EXTRACTED ¡¤ 0% INFERRED ¡¤ 0% AMBIGUOUS
-- Token cost: 0 input ¡¤ 0 output
+- 3439 nodes Â· 3225 edges Â· 216 communities detected
+- Extraction: 100% EXTRACTED Â· 0% INFERRED Â· 0% AMBIGUOUS
+- Token cost: 0 input Â· 0 output
 
 ## God Nodes (most connected - your core abstractions)
 1. `ConfigRepository` - 161 edges
-2. `ConfigRepositoryTest` - 143 edges
+2. `ConfigRepositoryTest` - 148 edges
 3. `SingBoxService` - 81 edges
 4. `SettingsViewModel` - 75 edges
-5. `SettingsRepository` - 68 edges
-6. `NodeLinkParserTest` - 64 edges
+5. `NodeLinkParserTest` - 66 edges
+6. `SettingsRepository` - 65 edges
 7. `VpnStateStore` - 45 edges
 8. `BoxWrapperManager` - 44 edges
 9. `SingBoxRemote` - 42 edges
-10. `CommandManager` - 35 edges
+10. `NodeLinkParser` - 38 edges
 
 ## Surprising Connections (you probably didn't know these)
 - None detected - all connections are within the same source files.
@@ -76,7 +76,7 @@ Nodes (7): AlreadyConnected, DisconnectedStopState, Failed, HotReloadResult, Rec
 
 ### Community 12 - "Community 12"
 Cohesion: 0.04
-Nodes (0): 
+Nodes (0):
 
 ### Community 13 - "Community 13"
 Cohesion: 0.04
@@ -92,11 +92,11 @@ Nodes (2): CoreMode, VpnStateStore
 
 ### Community 16 - "Community 16"
 Cohesion: 0.05
-Nodes (2): Callbacks, CommandManager
+Nodes (5): NodeLinkParser, TuicCredentials, TuicTlsOptions, TuicTransportOptions, WebSocketPathConfig
 
 ### Community 17 - "Community 17"
 Cohesion: 0.05
-Nodes (5): NodeLinkParser, TuicCredentials, TuicTlsOptions, TuicTransportOptions, WebSocketPathConfig
+Nodes (2): Callbacks, CommandManager
 
 ### Community 18 - "Community 18"
 Cohesion: 0.05
@@ -340,31 +340,31 @@ Nodes (2): ClashConfigParser, ClashConfigParserTest
 
 ### Community 78 - "Community 78"
 Cohesion: 0.15
-Nodes (1): SettingsStore
+Nodes (6): Error, Idle, InstalledAppsRepository, Loaded, Loading, LoadingState
 
 ### Community 79 - "Community 79"
 Cohesion: 0.15
-Nodes (1): QrScannerActivity
+Nodes (1): SettingsStore
 
 ### Community 80 - "Community 80"
 Cohesion: 0.15
-Nodes (4): PerfTracer, Phases, TraceInfo, TraceStats
+Nodes (1): QrScannerActivity
 
 ### Community 81 - "Community 81"
 Cohesion: 0.15
-Nodes (1): NodeAutoFailoverPolicyTest
+Nodes (4): PerfTracer, Phases, TraceInfo, TraceStats
 
 ### Community 82 - "Community 82"
 Cohesion: 0.15
-Nodes (1): VpnTunAddressPlanTest
+Nodes (1): NodeAutoFailoverPolicyTest
 
 ### Community 83 - "Community 83"
-Cohesion: 0.17
-Nodes (1): NodeLatencyDao
+Cohesion: 0.15
+Nodes (1): VpnTunAddressPlanTest
 
 ### Community 84 - "Community 84"
 Cohesion: 0.17
-Nodes (6): Error, Idle, InstalledAppsRepository, Loaded, Loading, LoadingState
+Nodes (1): NodeLatencyDao
 
 ### Community 85 - "Community 85"
 Cohesion: 0.17
@@ -376,7 +376,7 @@ Nodes (1): ProfileImportType
 
 ### Community 87 - "Community 87"
 Cohesion: 0.17
-Nodes (0): 
+Nodes (0):
 
 ### Community 88 - "Community 88"
 Cohesion: 0.17
@@ -404,11 +404,11 @@ Nodes (1): FakeRepository
 
 ### Community 94 - "Community 94"
 Cohesion: 0.18
-Nodes (0): 
+Nodes (0):
 
 ### Community 95 - "Community 95"
 Cohesion: 0.18
-Nodes (0): 
+Nodes (0):
 
 ### Community 96 - "Community 96"
 Cohesion: 0.2
@@ -480,7 +480,7 @@ Nodes (1): SquareViewFinderView
 
 ### Community 113 - "Community 113"
 Cohesion: 0.29
-Nodes (0): 
+Nodes (0):
 
 ### Community 114 - "Community 114"
 Cohesion: 0.29
@@ -500,115 +500,115 @@ Nodes (1): LogViewModel
 
 ### Community 118 - "Community 118"
 Cohesion: 0.29
-Nodes (1): SettingsStoreTest
+Nodes (1): AppShortcutsResourceTest
 
 ### Community 119 - "Community 119"
 Cohesion: 0.29
-Nodes (1): DnsResolveStoreTest
+Nodes (1): SettingsStoreTest
 
 ### Community 120 - "Community 120"
-Cohesion: 0.33
-Nodes (1): MainActivity
+Cohesion: 0.29
+Nodes (1): DnsResolveStoreTest
 
 ### Community 121 - "Community 121"
 Cohesion: 0.33
-Nodes (1): SingBoxApplication
+Nodes (1): MainActivity
 
 ### Community 122 - "Community 122"
 Cohesion: 0.33
-Nodes (1): Converters
+Nodes (1): SingBoxApplication
 
 ### Community 123 - "Community 123"
 Cohesion: 0.33
-Nodes (1): NodeEntity
+Nodes (1): Converters
 
 ### Community 124 - "Community 124"
 Cohesion: 0.33
-Nodes (1): NodeExtractor
+Nodes (1): NodeEntity
 
 ### Community 125 - "Community 125"
 Cohesion: 0.33
-Nodes (1): RuleSetAutoUpdateWorker
+Nodes (1): NodeExtractor
 
 ### Community 126 - "Community 126"
 Cohesion: 0.33
-Nodes (0): 
+Nodes (1): RuleSetAutoUpdateWorker
 
 ### Community 127 - "Community 127"
 Cohesion: 0.33
-Nodes (1): VersionInfo
+Nodes (0):
 
 ### Community 128 - "Community 128"
 Cohesion: 0.33
-Nodes (1): IpVersionModeRulesTest
+Nodes (1): VersionInfo
 
 ### Community 129 - "Community 129"
 Cohesion: 0.33
-Nodes (1): PingDisplayTextTest
+Nodes (1): IpVersionModeRulesTest
 
 ### Community 130 - "Community 130"
 Cohesion: 0.33
-Nodes (1): PerAppPackageSyncTest
+Nodes (1): PingDisplayTextTest
 
 ### Community 131 - "Community 131"
 Cohesion: 0.33
-Nodes (1): InboundBuilderTest
+Nodes (1): PerAppPackageSyncTest
 
 ### Community 132 - "Community 132"
 Cohesion: 0.33
-Nodes (1): BackgroundPowerManagerTest
+Nodes (1): InboundBuilderTest
 
 ### Community 133 - "Community 133"
 Cohesion: 0.33
-Nodes (1): StartupManagerTest
+Nodes (1): BackgroundPowerManagerTest
 
 ### Community 134 - "Community 134"
-Cohesion: 0.4
-Nodes (0): 
+Cohesion: 0.33
+Nodes (1): StartupManagerTest
 
 ### Community 135 - "Community 135"
 Cohesion: 0.4
-Nodes (1): LibboxNativeSupport
+Nodes (0):
 
 ### Community 136 - "Community 136"
 Cohesion: 0.4
-Nodes (1): LocalResolverImpl
+Nodes (1): LibboxNativeSupport
 
 ### Community 137 - "Community 137"
 Cohesion: 0.4
-Nodes (0): 
+Nodes (1): LocalResolverImpl
 
 ### Community 138 - "Community 138"
 Cohesion: 0.4
-Nodes (3): AddNodeTarget, ExistingProfile, NewProfile
+Nodes (0):
 
 ### Community 139 - "Community 139"
 Cohesion: 0.4
-Nodes (3): ExistingProfile, NewProfile, SelectProfileTarget
+Nodes (3): AddNodeTarget, ExistingProfile, NewProfile
 
 ### Community 140 - "Community 140"
 Cohesion: 0.4
-Nodes (0): 
+Nodes (3): ExistingProfile, NewProfile, SelectProfileTarget
 
 ### Community 141 - "Community 141"
 Cohesion: 0.4
-Nodes (0): 
+Nodes (0):
 
 ### Community 142 - "Community 142"
 Cohesion: 0.4
-Nodes (2): DeepLinkHandler, SubscriptionImportData
+Nodes (0):
 
 ### Community 143 - "Community 143"
 Cohesion: 0.4
-Nodes (1): StringBuilderPool
+Nodes (2): DeepLinkHandler, SubscriptionImportData
 
 ### Community 144 - "Community 144"
 Cohesion: 0.4
-Nodes (1): InstalledAppsViewModel
+Nodes (1): StringBuilderPool
 
 ### Community 145 - "Community 145"
 Cohesion: 0.4
-Nodes (1): AppShortcutsResourceTest
+Nodes (1): InstalledAppsViewModel
 
 ### Community 146 - "Community 146"
 Cohesion: 0.4
@@ -660,7 +660,7 @@ Nodes (3): GithubFile, GithubTreeItem, GithubTreeResponse
 
 ### Community 158 - "Community 158"
 Cohesion: 0.5
-Nodes (0): 
+Nodes (0):
 
 ### Community 159 - "Community 159"
 Cohesion: 0.5
@@ -672,15 +672,15 @@ Nodes (2): VpnTunAddressPlan, VpnTunAddressPlanner
 
 ### Community 161 - "Community 161"
 Cohesion: 0.5
-Nodes (0): 
+Nodes (0):
 
 ### Community 162 - "Community 162"
 Cohesion: 0.5
-Nodes (0): 
+Nodes (0):
 
 ### Community 163 - "Community 163"
 Cohesion: 0.5
-Nodes (0): 
+Nodes (0):
 
 ### Community 164 - "Community 164"
 Cohesion: 0.5
@@ -707,237 +707,241 @@ Cohesion: 0.5
 Nodes (1): AppSelectionSyncTest
 
 ### Community 170 - "Community 170"
-Cohesion: 0.67
-Nodes (2): FilterMode, NodeFilter
+Cohesion: 0.5
+Nodes (1): SubscriptionManagerTest
 
 ### Community 171 - "Community 171"
 Cohesion: 0.67
-Nodes (1): PingDisplayText
+Nodes (2): FilterMode, NodeFilter
 
 ### Community 172 - "Community 172"
 Cohesion: 0.67
-Nodes (1): LatencyProbePolicy
+Nodes (1): PingDisplayText
 
 ### Community 173 - "Community 173"
 Cohesion: 0.67
-Nodes (1): InboundBuilder
+Nodes (1): LatencyProbePolicy
 
 ### Community 174 - "Community 174"
 Cohesion: 0.67
-Nodes (1): ShortcutActivity
+Nodes (1): InboundBuilder
 
 ### Community 175 - "Community 175"
 Cohesion: 0.67
-Nodes (0): 
+Nodes (1): ShortcutActivity
 
 ### Community 176 - "Community 176"
 Cohesion: 0.67
-Nodes (1): AppNotificationManager
+Nodes (0):
 
 ### Community 177 - "Community 177"
 Cohesion: 0.67
-Nodes (0): 
+Nodes (1): AppNotificationManager
 
 ### Community 178 - "Community 178"
 Cohesion: 0.67
-Nodes (0): 
+Nodes (0):
 
 ### Community 179 - "Community 179"
 Cohesion: 0.67
-Nodes (0): 
+Nodes (0):
 
 ### Community 180 - "Community 180"
 Cohesion: 0.67
-Nodes (0): 
+Nodes (0):
 
 ### Community 181 - "Community 181"
 Cohesion: 0.67
-Nodes (0): 
+Nodes (0):
 
 ### Community 182 - "Community 182"
 Cohesion: 0.67
-Nodes (0): 
+Nodes (0):
 
 ### Community 183 - "Community 183"
 Cohesion: 0.67
-Nodes (0): 
+Nodes (0):
 
 ### Community 184 - "Community 184"
 Cohesion: 0.67
-Nodes (0): 
+Nodes (0):
 
 ### Community 185 - "Community 185"
 Cohesion: 0.67
-Nodes (0): 
+Nodes (0):
 
 ### Community 186 - "Community 186"
 Cohesion: 0.67
-Nodes (1): ProxyAwareOkHttpClient
+Nodes (0):
 
 ### Community 187 - "Community 187"
 Cohesion: 0.67
-Nodes (1): RuleSetUpdateWorker
+Nodes (1): ProxyAwareOkHttpClient
 
 ### Community 188 - "Community 188"
 Cohesion: 0.67
-Nodes (1): NodeSwitchManagerNotificationTest
+Nodes (1): RuleSetUpdateWorker
 
 ### Community 189 - "Community 189"
 Cohesion: 0.67
-Nodes (1): VMessClashTest
+Nodes (1): NodeSwitchManagerNotificationTest
 
 ### Community 190 - "Community 190"
-Cohesion: 1.0
-Nodes (1): ActiveStateEntity
+Cohesion: 0.67
+Nodes (1): VMessClashTest
 
 ### Community 191 - "Community 191"
 Cohesion: 1.0
-Nodes (1): NodeLatencyEntity
+Nodes (1): ActiveStateEntity
 
 ### Community 192 - "Community 192"
 Cohesion: 1.0
-Nodes (1): SettingsEntity
+Nodes (1): NodeLatencyEntity
 
 ### Community 193 - "Community 193"
 Cohesion: 1.0
-Nodes (1): HubRuleSet
+Nodes (1): SettingsEntity
 
 ### Community 194 - "Community 194"
 Cohesion: 1.0
-Nodes (1): NodeSortType
+Nodes (1): HubRuleSet
 
 ### Community 195 - "Community 195"
 Cohesion: 1.0
-Nodes (1): PingResultCode
+Nodes (1): NodeSortType
 
 ### Community 196 - "Community 196"
 Cohesion: 1.0
-Nodes (0): 
+Nodes (1): PingResultCode
 
 ### Community 197 - "Community 197"
 Cohesion: 1.0
-Nodes (0): 
+Nodes (0):
 
 ### Community 198 - "Community 198"
 Cohesion: 1.0
-Nodes (0): 
+Nodes (0):
 
 ### Community 199 - "Community 199"
 Cohesion: 1.0
-Nodes (0): 
+Nodes (0):
 
 ### Community 200 - "Community 200"
 Cohesion: 1.0
-Nodes (0): 
+Nodes (0):
 
 ### Community 201 - "Community 201"
 Cohesion: 1.0
-Nodes (0): 
+Nodes (0):
 
 ### Community 202 - "Community 202"
 Cohesion: 1.0
-Nodes (0): 
+Nodes (0):
 
 ### Community 203 - "Community 203"
 Cohesion: 1.0
-Nodes (0): 
+Nodes (0):
 
 ### Community 204 - "Community 204"
 Cohesion: 1.0
-Nodes (0): 
+Nodes (0):
 
 ### Community 205 - "Community 205"
 Cohesion: 1.0
-Nodes (0): 
+Nodes (0):
 
 ### Community 206 - "Community 206"
 Cohesion: 1.0
-Nodes (0): 
+Nodes (0):
 
 ### Community 207 - "Community 207"
 Cohesion: 1.0
-Nodes (0): 
+Nodes (0):
 
 ### Community 208 - "Community 208"
 Cohesion: 1.0
-Nodes (0): 
+Nodes (0):
 
 ### Community 209 - "Community 209"
 Cohesion: 1.0
-Nodes (0): 
+Nodes (0):
 
 ### Community 210 - "Community 210"
 Cohesion: 1.0
-Nodes (0): 
+Nodes (0):
 
 ### Community 211 - "Community 211"
 Cohesion: 1.0
-Nodes (0): 
+Nodes (0):
 
 ### Community 212 - "Community 212"
 Cohesion: 1.0
-Nodes (0): 
+Nodes (0):
 
 ### Community 213 - "Community 213"
 Cohesion: 1.0
-Nodes (0): 
+Nodes (0):
 
 ### Community 214 - "Community 214"
 Cohesion: 1.0
-Nodes (0): 
+Nodes (0):
+
+### Community 215 - "Community 215"
+Cohesion: 1.0
+Nodes (0):
 
 ## Knowledge Gaps
 - **265 isolated node(s):** `RecoveryMode`, `RecoveryLevel`, `SmartRecoveryResult`, `ProbeTarget`, `ProbeResult` (+260 more)
-  These have ¡Ü1 connection - possible missing edges or undocumented components.
-- **Thin community `Community 190`** (2 nodes): `ActiveStateEntity.kt`, `ActiveStateEntity`
+  These have â‰¤1 connection - possible missing edges or undocumented components.
+- **Thin community `Community 191`** (2 nodes): `ActiveStateEntity.kt`, `ActiveStateEntity`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 191`** (2 nodes): `NodeLatencyEntity.kt`, `NodeLatencyEntity`
+- **Thin community `Community 192`** (2 nodes): `NodeLatencyEntity.kt`, `NodeLatencyEntity`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 192`** (2 nodes): `SettingsEntity.kt`, `SettingsEntity`
+- **Thin community `Community 193`** (2 nodes): `SettingsEntity.kt`, `SettingsEntity`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 193`** (2 nodes): `HubRuleSet.kt`, `HubRuleSet`
+- **Thin community `Community 194`** (2 nodes): `HubRuleSet.kt`, `HubRuleSet`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 194`** (2 nodes): `NodeSortType.kt`, `NodeSortType`
+- **Thin community `Community 195`** (2 nodes): `NodeSortType.kt`, `NodeSortType`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 195`** (2 nodes): `PingResultCode.kt`, `PingResultCode`
+- **Thin community `Community 196`** (2 nodes): `PingResultCode.kt`, `PingResultCode`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 196`** (2 nodes): `NotificationNodeLabel.kt`, `resolveNotificationNodeLabel()`
+- **Thin community `Community 197`** (2 nodes): `NotificationNodeLabel.kt`, `resolveNotificationNodeLabel()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 197`** (2 nodes): `AppNavBar.kt`, `AppNavBar()`
+- **Thin community `Community 198`** (2 nodes): `AppNavBar.kt`, `AppNavBar()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 198`** (2 nodes): `BigToggle.kt`, `BigToggle()`
+- **Thin community `Community 199`** (2 nodes): `BigToggle.kt`, `BigToggle()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 199`** (2 nodes): `NodeCard.kt`, `NodeCard()`
+- **Thin community `Community 200`** (2 nodes): `NodeCard.kt`, `NodeCard()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 200`** (2 nodes): `ProfileCard.kt`, `ProfileCard()`
+- **Thin community `Community 201`** (2 nodes): `ProfileCard.kt`, `ProfileCard()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 201`** (2 nodes): `StandardCard.kt`, `StandardCard()`
+- **Thin community `Community 202`** (2 nodes): `StandardCard.kt`, `StandardCard()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 202`** (2 nodes): `AppGroupsScreen.kt`, `AppGroupsScreen()`
+- **Thin community `Community 203`** (2 nodes): `AppGroupsScreen.kt`, `AppGroupsScreen()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 203`** (2 nodes): `ConnectionSettingsScreen.kt`, `ConnectionSettingsScreen()`
+- **Thin community `Community 204`** (2 nodes): `ConnectionSettingsScreen.kt`, `ConnectionSettingsScreen()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 204`** (2 nodes): `DiagnosticsScreen.kt`, `DiagnosticsScreen()`
+- **Thin community `Community 205`** (2 nodes): `DiagnosticsScreen.kt`, `DiagnosticsScreen()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 205`** (2 nodes): `DnsSettingsScreen.kt`, `DnsSettingsScreen()`
+- **Thin community `Community 206`** (2 nodes): `DnsSettingsScreen.kt`, `DnsSettingsScreen()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 206`** (2 nodes): `LogsScreen.kt`, `LogsScreen()`
+- **Thin community `Community 207`** (2 nodes): `LogsScreen.kt`, `LogsScreen()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 207`** (2 nodes): `ProfileEditorScreen.kt`, `ProfileEditorScreen()`
+- **Thin community `Community 208`** (2 nodes): `ProfileEditorScreen.kt`, `ProfileEditorScreen()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 208`** (2 nodes): `RoutingSettingsScreen.kt`, `RoutingSettingsScreen()`
+- **Thin community `Community 209`** (2 nodes): `RoutingSettingsScreen.kt`, `RoutingSettingsScreen()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 209`** (2 nodes): `SplashScreen.kt`, `SplashScreen()`
+- **Thin community `Community 210`** (2 nodes): `SplashScreen.kt`, `SplashScreen()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 210`** (2 nodes): `TunSettingsScreen.kt`, `TunSettingsScreen()`
+- **Thin community `Community 211`** (2 nodes): `TunSettingsScreen.kt`, `TunSettingsScreen()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 211`** (2 nodes): `Theme.kt`, `SingBoxTheme()`
+- **Thin community `Community 212`** (2 nodes): `Theme.kt`, `SingBoxTheme()`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 212`** (1 nodes): `settings.gradle.kts`
+- **Thin community `Community 213`** (1 nodes): `settings.gradle.kts`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 213`** (1 nodes): `Color.kt`
+- **Thin community `Community 214`** (1 nodes): `Color.kt`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 214`** (1 nodes): `Type.kt`
+- **Thin community `Community 215`** (1 nodes): `Type.kt`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
 
 ## Suggested Questions

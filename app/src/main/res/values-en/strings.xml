@@ -570,7 +570,7 @@
     <string name="app_list_search_hint">Search app or package name</string>
     <string name="app_list_show_system">Show system apps</string>
     <string name="app_list_show_no_launcher">Show apps without launcher</string>
-    <string name="app_list_quick_select">Quick select common proxy apps</string>
+    <string name="app_list_quick_select">Common</string>
 
     <!-- QR Scanner -->
     <string name="qr_scanner_no_qr_found">No QR code found</string>

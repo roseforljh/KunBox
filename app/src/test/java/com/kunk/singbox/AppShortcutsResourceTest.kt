@@ -1,6 +1,7 @@
 package com.kunk.singbox
 
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
@@ -59,5 +60,16 @@ class AppShortcutsResourceTest {
                     """ProfileUi\([\s\S]*dnsOverride = dnsOverride"""
             ).containsMatchIn(configRepository)
         )
+    }
+
+    @Test
+    fun englishAppListQuickSelectLabelStaysCompact() {
+        val content = File("src/main/res/values-en/strings.xml").readText()
+        val label = Regex("""<string name="app_list_quick_select">([^<]+)</string>""")
+            .find(content)
+            ?.groupValues
+            ?.get(1)
+
+        assertEquals("Common", label)
     }
 }

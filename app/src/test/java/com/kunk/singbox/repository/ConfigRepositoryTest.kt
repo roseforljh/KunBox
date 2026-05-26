@@ -4,6 +4,10 @@ import com.google.gson.Gson
 import com.kunk.singbox.model.AppGroup
 import com.kunk.singbox.model.AppSettings
 import com.kunk.singbox.model.CustomRule
+import com.kunk.singbox.model.DnsConfig
+import com.kunk.singbox.model.DnsFakeIpConfig
+import com.kunk.singbox.model.DnsRule
+import com.kunk.singbox.model.DnsServer
 import com.kunk.singbox.model.DnsStrategy
 import com.kunk.singbox.model.DomainResolveConfig
 import com.kunk.singbox.model.EchConfig
@@ -627,6 +631,81 @@ class ConfigRepositoryTest {
         assertEquals(listOf("dns.google", "dns.alidns.com"), rules[0].domain)
         assertEquals(listOf("dns.google", "dns.alidns.com"), rules[1].domain)
         assertEquals(listOf("dns.google", "dns.alidns.com"), rules[2].domain)
+    }
+
+    @Test
+    fun testDnsOverrideReplacesServersPrependsRulesAndOverridesTopLevelFields() {
+        val base = DnsConfig(
+            servers = listOf(
+                DnsServer(tag = "remote", type = "https", server = "dns.google"),
+                DnsServer(tag = "local", type = "local")
+            ),
+            rules = listOf(DnsRule(domain = listOf("example.com"), server = "remote")),
+            finalServer = "remote",
+            strategy = "ipv4_only",
+            disableCache = false,
+            disableExpire = false,
+            independentCache = false
+        )
+        val override = DnsConfig(
+            servers = listOf(
+                DnsServer(tag = "remote", type = "https", server = "cloudflare-dns.com"),
+                DnsServer(tag = "custom", type = "tls", server = "dns.example.com")
+            ),
+            rules = listOf(DnsRule(domain = listOf("example.com"), server = "local")),
+            finalServer = "local",
+            strategy = "prefer_ipv6",
+            disableCache = true,
+            disableExpire = true,
+            independentCache = true,
+            fakeip = DnsFakeIpConfig(enabled = true, inet4Range = "198.18.0.0/15")
+        )
+
+        val actual = ConfigRepository.applyDnsOverrideForTest(base, override) {
+            it.copy(detour = "selected-node")
+        }
+        val remoteServer = actual.servers?.firstOrNull { it.tag == "remote" }
+        val customServer = actual.servers?.firstOrNull { it.tag == "custom" }
+
+        assertEquals(3, actual.servers?.size)
+        assertEquals("cloudflare-dns.com", remoteServer?.server)
+        assertEquals("selected-node", remoteServer?.detour)
+        assertEquals("dns.example.com", customServer?.server)
+        assertEquals("selected-node", customServer?.detour)
+        assertEquals("local", actual.rules?.firstOrNull()?.server)
+        assertEquals("remote", actual.rules?.getOrNull(1)?.server)
+        assertEquals("local", actual.finalServer)
+        assertEquals("prefer_ipv6", actual.strategy)
+        assertEquals(true, actual.disableCache)
+        assertEquals(true, actual.disableExpire)
+        assertEquals(true, actual.independentCache)
+        assertEquals("198.18.0.0/15", actual.fakeip?.inet4Range)
+    }
+
+    @Test
+    fun testDnsOverrideKeepsBlankTopLevelFieldsAndAllowsFalseBooleans() {
+        val base = DnsConfig(
+            finalServer = "remote",
+            strategy = "prefer_ipv4",
+            disableCache = true,
+            disableExpire = true,
+            independentCache = true
+        )
+        val override = DnsConfig(
+            finalServer = "   ",
+            strategy = "",
+            disableCache = false,
+            disableExpire = false,
+            independentCache = false
+        )
+
+        val actual = ConfigRepository.applyDnsOverrideForTest(base, override)
+
+        assertEquals("remote", actual.finalServer)
+        assertEquals("prefer_ipv4", actual.strategy)
+        assertEquals(false, actual.disableCache)
+        assertEquals(false, actual.disableExpire)
+        assertEquals(false, actual.independentCache)
     }
 
     @Test

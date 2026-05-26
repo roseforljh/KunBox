@@ -101,16 +101,14 @@ class SubscriptionManager(private val parsers: List<SubscriptionParser>) {
         /**
          */
         private fun getDeduplicationKey(outbound: Outbound): String? {
-            val server = outbound.server ?: return null
-            val port = outbound.serverPort ?: return null
+            if (outbound.server == null || outbound.serverPort == null) return null
             val type = outbound.type
 
             if (type == "selector" || type == "urltest" || type == "direct" || type == "block" || type == "dns") {
                 return null
             }
 
-            val credential = outbound.password ?: outbound.uuid ?: ""
-            return "$type://$credential@$server:$port"
+            return outbound.toString()
         }
 
         /**
