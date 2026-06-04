@@ -1,5 +1,14 @@
 # Changelog
 
+## [2.16.1](https://github.com/roseforljh/KunBox/compare/v2.16.0...v2.16.1) (2026-05-26)
+
+
+### Bug Fixes
+
+* preserve DNS override on subscription import ([48aa19c](https://github.com/roseforljh/KunBox/commit/48aa19c477eb6bf32ccdacbf9ec522e67a1d3a12))
+* 修复订阅导入节点误去重 ([3fac3cb](https://github.com/roseforljh/KunBox/commit/3fac3cb7e21b08362aaa9fa67650ea84559a35f0))
+* 修复订阅链接误识别为HTTPS节点 ([926e30c](https://github.com/roseforljh/KunBox/commit/926e30cb0e4be09b9162ae462191b41d5bf01336))
+
 ## [2.16.0](https://github.com/roseforljh/KunBox/compare/v2.15.0...v2.16.0) (2026-05-23)
 
 
