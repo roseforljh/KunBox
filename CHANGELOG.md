@@ -1,5 +1,14 @@
 # Changelog
 
+## [2.16.2](https://github.com/roseforljh/KunBox/compare/v2.16.1...v2.16.2) (2026-06-04)
+
+
+### Bug Fixes
+
+* unify latency test path ([ca29b4c](https://github.com/roseforljh/KunBox/commit/ca29b4cc9622c3fe66d025bdce21f354ab380cff))
+* 修复 ECH DNS 规则优先级 ([add8a32](https://github.com/roseforljh/KunBox/commit/add8a32bf63504a8578d6afd455e0ea08f675791))
+* 修复DNS覆写节点域名解析 ([636d08e](https://github.com/roseforljh/KunBox/commit/636d08e2d60d0f1bd6d3cc94db14d4c1e1822b32))
+
 ## [2.16.1](https://github.com/roseforljh/KunBox/compare/v2.16.0...v2.16.1) (2026-05-26)
 
 
