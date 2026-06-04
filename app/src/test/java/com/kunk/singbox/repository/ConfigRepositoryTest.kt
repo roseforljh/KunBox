@@ -727,6 +727,35 @@ class ConfigRepositoryTest {
     }
 
     @Test
+    fun testDnsOverrideDomainRuleAppliesToOutboundDomainResolver() {
+        val outbounds = listOf(
+            Outbound(
+                type = "vless",
+                tag = "airport-node",
+                server = "fly-nnca.bestvmr.com",
+                serverPort = 443,
+                domainResolver = DomainResolveConfig(server = "dns-bootstrap")
+            ),
+            Outbound(
+                type = "vless",
+                tag = "other-node",
+                server = "other.example.com",
+                serverPort = 443,
+                domainResolver = DomainResolveConfig(server = "dns-bootstrap")
+            )
+        )
+        val override = DnsConfig(
+            servers = listOf(DnsServer(tag = "airport-dns", type = "https", server = "dns.example.com")),
+            rules = listOf(DnsRule(domainSuffix = listOf("bestvmr.com"), server = "airport-dns"))
+        )
+
+        val actual = ConfigRepository.applyDnsOverrideDomainResolversForTest(outbounds, override)
+
+        assertEquals("airport-dns", actual[0].domainResolver?.server)
+        assertEquals("dns-bootstrap", actual[1].domainResolver?.server)
+    }
+
+    @Test
     fun testNormalizeLocalDnsReplacesLegacyLocalValue() {
         val normalized = ConfigRepository.normalizeLocalDns(AppSettings.LEGACY_LOCAL_DNS)
 

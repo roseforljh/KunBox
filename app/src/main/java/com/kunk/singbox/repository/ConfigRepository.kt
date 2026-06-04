@@ -1471,6 +1471,82 @@ class ConfigRepository(private val context: Context) {
             return rule.copy(action = "route")
         }
 
+        internal fun applyDnsOverrideDomainResolversForTest(
+            outbounds: List<Outbound>,
+            overrideConfig: DnsConfig
+        ): List<Outbound> {
+            return applyDnsOverrideDomainResolvers(outbounds, overrideConfig)
+        }
+
+        private fun applyDnsOverrideDomainResolvers(
+            outbounds: List<Outbound>,
+            overrideConfig: DnsConfig
+        ): List<Outbound> {
+            val rules = overrideConfig.rules.orEmpty().map { normalizeDnsOverrideRule(it) }
+            if (rules.isEmpty()) return outbounds
+
+            return outbounds.map { outbound ->
+                val server = outbound.server?.trim().orEmpty()
+                if (server.isBlank() || isIpAddressValue(server)) {
+                    return@map outbound
+                }
+                val resolver = rules.firstNotNullOfOrNull { rule ->
+                    buildDomainResolverForMatchedDnsOverrideRule(server, rule)
+                } ?: return@map outbound
+                outbound.copy(domainResolver = resolver)
+            }
+        }
+
+        private fun buildDomainResolverForMatchedDnsOverrideRule(
+            domain: String,
+            rule: DnsRule
+        ): DomainResolveConfig? {
+            val server = rule.server?.trim()?.takeIf { it.isNotBlank() }
+            val matches = server != null &&
+                rule.action == "route" &&
+                dnsRuleAppliesToAddressQuery(rule) &&
+                dnsRuleMatchesDomain(domain, rule)
+            return if (matches) {
+                DomainResolveConfig(
+                    server = server,
+                    strategy = rule.strategy,
+                    disableCache = rule.disableCache,
+                    rewriteTtl = rule.rewriteTtl,
+                    clientSubnet = rule.clientSubnet
+                )
+            } else {
+                null
+            }
+        }
+
+        private fun dnsRuleAppliesToAddressQuery(rule: DnsRule): Boolean {
+            val queryTypes = rule.queryType.orEmpty()
+                .map { it.trim().uppercase() }
+                .filter { it.isNotBlank() }
+            return queryTypes.isEmpty() || queryTypes.any { it == "A" || it == "AAAA" }
+        }
+
+        private fun dnsRuleMatchesDomain(domain: String, rule: DnsRule): Boolean {
+            val normalizedDomain = domain.trim().trimEnd('.').lowercase()
+            val exactMatch = rule.domain.orEmpty().any { normalizeDnsRuleDomain(it) == normalizedDomain }
+            val suffixMatch = rule.domainSuffix.orEmpty().any { suffix ->
+                val normalizedSuffix = normalizeDnsRuleDomain(suffix).removePrefix(".")
+                normalizedDomain == normalizedSuffix || normalizedDomain.endsWith(".$normalizedSuffix")
+            }
+            val keywordMatch = rule.domainKeyword.orEmpty().any { keyword ->
+                keyword.trim().lowercase().takeIf { it.isNotBlank() }?.let { normalizedDomain.contains(it) } == true
+            }
+            val regexMatch = rule.domainRegex.orEmpty().any { pattern ->
+                runCatching { Regex(pattern).containsMatchIn(domain) }.getOrDefault(false)
+            }
+
+            return normalizedDomain.isNotBlank() && (exactMatch || suffixMatch || keywordMatch || regexMatch)
+        }
+
+        private fun normalizeDnsRuleDomain(value: String): String {
+            return value.trim().trimEnd('.').lowercase()
+        }
+
         internal const val DEFAULT_ROUTE_DOMAIN_RESOLVER_TAG = "dns-bootstrap"
 
         internal fun normalizeLocalDns(value: String?): String {
@@ -2162,6 +2238,16 @@ class ConfigRepository(private val context: Context) {
             runId = runId,
             stage = stage
         )
+    }
+
+    private fun parseDnsOverride(dnsOverride: String?): DnsConfig? {
+        if (dnsOverride.isNullOrBlank()) return null
+        return try {
+            gson.fromJson(dnsOverride, DnsConfig::class.java)
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to parse dnsOverride JSON, skipping", e)
+            null
+        }
     }
 
     private suspend fun preResolveDomainsForProfileBestEffort(
@@ -4288,15 +4374,23 @@ class ConfigRepository(private val context: Context) {
             val inbounds = buildRunInbounds(sanitizedSettings)
             val customRuleSets = buildCustomRuleSets(sanitizedSettings)
 
-            val outboundsContext = buildRunOutbounds(
+            val dnsOverrideConfig = parseDnsOverride(activeProfile?.dnsOverride)
+            val rawOutboundsContext = buildRunOutbounds(
                 config, activeNode, sanitizedSettings, allNodesSnapshot,
                 activeProfile?.dnsPreResolve ?: false, activeId
             )
+            val outboundsContext = if (dnsOverrideConfig != null) {
+                rawOutboundsContext.copy(
+                    outbounds = applyDnsOverrideDomainResolvers(rawOutboundsContext.outbounds, dnsOverrideConfig)
+                )
+            } else {
+                rawOutboundsContext
+            }
             val dns = buildRunDns(
                 sanitizedSettings,
                 customRuleSets,
                 outboundsContext,
-                activeProfile?.dnsOverride,
+                dnsOverrideConfig,
                 config.dns
             )
             val route = buildRunRoute(
@@ -4844,7 +4938,7 @@ class ConfigRepository(private val context: Context) {
         settings: AppSettings,
         validRuleSets: List<RuleSetConfig>,
         outboundsContext: RunOutboundsContext,
-        dnsOverride: String? = null,
+        dnsOverride: DnsConfig? = null,
         originalDns: DnsConfig? = null
     ): DnsConfig {
         val dnsServers = mutableListOf<DnsServer>()
@@ -5288,18 +5382,8 @@ class ConfigRepository(private val context: Context) {
             fakeip = fakeIpConfig
         )
 
-        return if (!dnsOverride.isNullOrBlank()) {
-            try {
-                val overrideConfig = gson.fromJson(dnsOverride, DnsConfig::class.java)
-                if (overrideConfig != null) {
-                    applyDnsOverride(baseDnsConfig, overrideConfig, ::sanitizeDnsServer)
-                } else {
-                    baseDnsConfig
-                }
-            } catch (e: Exception) {
-                Log.w(TAG, "Failed to parse dnsOverride JSON, skipping", e)
-                baseDnsConfig
-            }
+        return if (dnsOverride != null) {
+            applyDnsOverride(baseDnsConfig, dnsOverride, ::sanitizeDnsServer)
         } else {
             baseDnsConfig
         }
