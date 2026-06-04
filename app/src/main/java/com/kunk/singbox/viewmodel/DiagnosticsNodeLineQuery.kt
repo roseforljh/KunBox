@@ -50,9 +50,7 @@ internal class DiagnosticsNodeLineQueryRunner(
             outbound = outbound,
             resolvedServerIps = resolveServerAddresses(outbound?.server),
             delay = queryNodeDelay(
-                node = nodeResolution.node,
-                timeoutMs = settings.latencyTestTimeout,
-                coreActive = coreActive
+                node = nodeResolution.node
             ),
             exitPortrait = queryExitPortrait(coreActive = coreActive, proxyPort = settings.proxyPort),
             coreActive = coreActive,
@@ -87,14 +85,9 @@ internal class DiagnosticsNodeLineQueryRunner(
         return if (fallback.isSuccess && fallback.ip != null) listOf(fallback.ip) else emptyList()
     }
 
-    private suspend fun queryNodeDelay(node: NodeUi, timeoutMs: Int, coreActive: Boolean): Int? {
-        if (!coreActive) return null
-        SingBoxRemote.ensureBound(application)
-        return SingBoxRemote.urlTestNodeDelay(
-            groupTag = "PROXY",
-            nodeTag = node.name,
-            timeoutMs = timeoutMs
-        )?.takeIf { it > 0 }
+    private suspend fun queryNodeDelay(node: NodeUi): Int? {
+        val latency = configRepository.testNodeLatency(node.id)
+        return latency.takeIf { it > 0L && it <= Int.MAX_VALUE }?.toInt()
     }
 
     private fun queryExitPortrait(coreActive: Boolean, proxyPort: Int): NodeExitPortrait? {

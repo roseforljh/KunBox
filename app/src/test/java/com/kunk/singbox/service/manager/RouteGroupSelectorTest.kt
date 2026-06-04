@@ -12,7 +12,6 @@ class RouteGroupSelectorTest {
             groupTag = "P:cf",
             candidates = listOf("US|官方优选|218ms"),
             fallbackTag = "PROXY",
-            testGroupTag = "P:cf#AUTO",
             autoGroupTag = "P:cf#AUTO"
         )
 

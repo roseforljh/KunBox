@@ -20,8 +20,6 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
 import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.atomic.AtomicBoolean
-import java.util.concurrent.atomic.AtomicReference
 
 class RouteGroupSelector(
     private val context: Context,
@@ -40,7 +38,6 @@ class RouteGroupSelector(
             val groupTag: String,
             val candidates: List<String>,
             val fallbackTag: String?,
-            val testGroupTag: String,
             val autoGroupTag: String?
         )
 
@@ -97,34 +94,11 @@ class RouteGroupSelector(
                             groupTag = selector.tag,
                             candidates = candidates,
                             fallbackTag = fallbackTag,
-                            testGroupTag = autoGroupTag ?: selector.tag,
                             autoGroupTag = autoGroupTag
                         )
                     }
                 }
                 .toList()
-        }
-
-        internal fun selectBestCandidate(
-            candidates: Collection<String>,
-            urlTestResults: Map<String, Int>
-        ): Pair<String, Long>? {
-            val normalizedCandidates = candidates
-                .map { it.trim() }
-                .filter { it.isNotBlank() }
-                .distinct()
-
-            if (normalizedCandidates.isEmpty()) {
-                return null
-            }
-
-            return normalizedCandidates.asSequence()
-                .mapNotNull { candidate ->
-                    UrlTestTagMatcher.resolveDelayDetail(urlTestResults, candidate)
-                        ?.takeIf { it.delay > 0 }
-                        ?.let { candidate to it.delay.toLong() }
-                }
-                .minByOrNull { (_, delay) -> delay }
         }
 
         internal fun resolveCandidateTag(
@@ -192,11 +166,6 @@ class RouteGroupSelector(
             return isNetworkImmediateReselectTrigger(trigger)
         }
 
-        internal data class FirstValidSelectionDecision(
-            val targetTag: String?,
-            val consumeFirstValidResult: Boolean
-        )
-
         internal fun shouldSwitchToTag(
             currentSelectedTag: String?,
             targetTag: String
@@ -224,26 +193,6 @@ class RouteGroupSelector(
                 return autoResolved
             }
             return resolveCandidateTag(groupSelectedTag, candidates)
-        }
-
-        internal fun resolveFirstValidSelectionDecision(
-            candidates: Collection<String>,
-            urlTestResults: Map<String, Int>,
-            currentSelectedTag: String?,
-            firstValidSwitchApplied: Boolean
-        ): FirstValidSelectionDecision {
-            if (firstValidSwitchApplied) {
-                return FirstValidSelectionDecision(targetTag = null, consumeFirstValidResult = false)
-            }
-
-            val bestTag = selectBestCandidate(candidates, urlTestResults)?.first
-                ?: return FirstValidSelectionDecision(targetTag = null, consumeFirstValidResult = false)
-
-            return if (shouldSwitchToTag(currentSelectedTag, bestTag)) {
-                FirstValidSelectionDecision(targetTag = bestTag, consumeFirstValidResult = true)
-            } else {
-                FirstValidSelectionDecision(targetTag = null, consumeFirstValidResult = true)
-            }
         }
     }
 
@@ -275,11 +224,6 @@ class RouteGroupSelector(
         val isStopping: Boolean
         fun getCommandClient(): CommandClient?
         fun getSelectedOutbound(groupTag: String): String?
-        suspend fun urlTestGroup(
-            groupTag: String,
-            expectedTags: Set<String>,
-            onProgress: ((Map<String, Int>) -> Unit)? = null
-        ): Map<String, Int>
         fun onRouteGroupFallback(groupTag: String, actualSelectedTag: String?)
         fun onRouteGroupImmediateSwitch(
             groupTag: String,
@@ -519,7 +463,7 @@ class RouteGroupSelector(
             TAG,
             "Testing route group '${target.groupTag}', " +
                 "current='${initialSelected ?: initialGroupSelected ?: "(none)"}', " +
-                "testGroup='${target.testGroupTag}', candidates=${target.candidates.size}"
+                "candidates=${target.candidates.size}"
         )
     }
 
@@ -534,11 +478,8 @@ class RouteGroupSelector(
         val initialSelected = currentCandidateSelection(target, initialGroupSelected, initialAutoSelected)
         logTargetGroupStart(target, initialSelected, initialGroupSelected)
         val best = findBestCandidate(
-            client = client,
             target = target,
-            selectionContext = selectionContext,
-            trigger = trigger,
-            initialSelected = initialSelected
+            selectionContext = selectionContext
         )
         if (best == null) {
             handleFallbackSelection(
@@ -653,104 +594,17 @@ class RouteGroupSelector(
         )
     }
 
-    private fun createStartupProgressHandler(
-        client: CommandClient,
-        target: RouteGroupTarget,
-        selectedTagRef: AtomicReference<String?>,
-        firstValidSwitchApplied: AtomicBoolean
-    ): (Map<String, Int>) -> Unit = progressHandler@{ progressResults: Map<String, Int> ->
-        val currentSelected = selectedTagRef.get()
-        val decision = resolveFirstValidSelectionDecision(
-            candidates = target.candidates,
-            urlTestResults = progressResults,
-            currentSelectedTag = currentSelected,
-            firstValidSwitchApplied = firstValidSwitchApplied.get()
-        )
-        if (!decision.consumeFirstValidResult) {
-            return@progressHandler
-        }
-        if (!firstValidSwitchApplied.compareAndSet(false, true)) {
-            return@progressHandler
-        }
-
-        val targetTag = decision.targetTag
-        if (targetTag == null) {
-            selectedTagRef.set(
-                currentCandidateSelection(
-                    target = target,
-                    groupSelectedTag = callbacks?.getSelectedOutbound(target.groupTag),
-                    autoGroupSelectedTag = target.autoGroupTag?.let { callbacks?.getSelectedOutbound(it) }
-                ) ?: currentSelected
-            )
-            return@progressHandler
-        }
-
-        val switched = switchToBestCandidate(
-            client = client,
-            target = target,
-            currentSelected = currentSelected,
-            bestTag = targetTag
-        )
-        if (switched) {
-            fallbackActiveGroups.remove(target.groupTag)
-        }
-        selectedTagRef.set(
-            currentCandidateSelection(
-                target = target,
-                groupSelectedTag = callbacks?.getSelectedOutbound(target.groupTag),
-                autoGroupSelectedTag = target.autoGroupTag?.let { callbacks?.getSelectedOutbound(it) }
-            ) ?: targetTag
-        )
-    }
-
     private suspend fun findBestCandidate(
-        client: CommandClient,
         target: RouteGroupTarget,
-        selectionContext: SelectionContext,
-        trigger: String,
-        initialSelected: String?
+        selectionContext: SelectionContext
     ): Pair<String, Long>? {
-        val firstValidSwitchApplied = AtomicBoolean(false)
-        val selectedTagRef = AtomicReference(initialSelected)
-        val progressHandler = if (trigger.equals("startup", ignoreCase = true)) {
-            createStartupProgressHandler(
-                client = client,
-                target = target,
-                selectedTagRef = selectedTagRef,
-                firstValidSwitchApplied = firstValidSwitchApplied
-            )
-        } else {
-            null
-        }
-
-        val urlTestResults = runCatching {
-            callbacks?.urlTestGroup(
-                groupTag = target.testGroupTag,
-                expectedTags = target.candidates.toSet(),
-                onProgress = progressHandler
-            ).orEmpty()
-        }.onFailure { e ->
-            Log.w(TAG, "URL test failed for group '${target.testGroupTag}': ${e.message}", e)
-        }.getOrDefault(emptyMap())
-
-        val autoSelectedCandidate = target.autoGroupTag
-            ?.let { callbacks?.getSelectedOutbound(it) }
-            ?.let { resolveCandidateTag(it, target.candidates) }
-            ?.let { selectedTag ->
-                UrlTestTagMatcher.resolveDelayDetail(urlTestResults, selectedTag)
-                    ?.takeIf { it.delay > 0 }
-                    ?.let { selectedTag to it.delay.toLong() }
-            }
-
-        return selectBestCandidate(target.candidates, urlTestResults)
-            ?: autoSelectedCandidate
-            ?: fallbackBestCandidate(
-                candidates = target.candidates,
-                byTag = selectionContext.byTag,
-                outbounds = selectionContext.outbounds,
-                core = selectionContext.core,
-                semaphore = selectionContext.semaphore
-            )
+        return fallbackBestCandidate(
+            candidates = target.candidates,
+            byTag = selectionContext.byTag,
+            outbounds = selectionContext.outbounds,
+            core = selectionContext.core,
+            semaphore = selectionContext.semaphore
+        )
     }
 
     private fun switchToBestCandidate(

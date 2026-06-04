@@ -28,6 +28,7 @@ import com.kunk.singbox.repository.TrafficRepository
 import com.kunk.singbox.core.BoxWrapperManager
 import com.kunk.singbox.core.ProbeManager
 import com.kunk.singbox.core.SelectorManager
+import com.kunk.singbox.core.SingBoxCore
 import com.kunk.singbox.service.network.NetworkManager
 import com.kunk.singbox.service.network.TrafficMonitor
 import com.kunk.singbox.service.notification.VpnNotificationManager
@@ -54,6 +55,8 @@ import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
@@ -248,8 +251,15 @@ class SingBoxService : VpnService() {
         private const val AUTO_FAILOVER_MEANINGFUL_TRAFFIC_BPS = 1024L
         private const val AUTO_FAILOVER_STARTUP_GRACE_MS = 30_000L
         private const val AUTO_FAILOVER_NETWORK_GRACE_MS = 4_000L
-        private const val AUTO_FAILOVER_PROBE_TIMEOUT_MS = 5_000L
         private const val AUTO_FAILOVER_PROBE_RETRY_DELAY_MS = 2_500L
+        private val LATENCY_SKIPPED_OUTBOUND_TYPES = setOf(
+            "direct",
+            "block",
+            "dns",
+            "selector",
+            "urltest",
+            "url-test"
+        )
 
         var instance: SingBoxService?
             get() = ServiceStateHolder.instance
@@ -528,19 +538,6 @@ class SingBoxService : VpnService() {
                 get() = coreManager.isStopping
             override fun getCommandClient() = commandManager.getCommandClient()
             override fun getSelectedOutbound(groupTag: String) = commandManager.getSelectedOutbound(groupTag)
-            override suspend fun urlTestGroup(
-                groupTag: String,
-                expectedTags: Set<String>,
-                onProgress: ((Map<String, Int>) -> Unit)?
-            ): Map<String, Int> {
-                return commandManager.urlTestGroup(
-                    groupTag = groupTag,
-                    timeoutMs = 10000L,
-                    expectedTags = expectedTags,
-                    onProgress = onProgress
-                )
-            }
-
             override fun onRouteGroupFallback(groupTag: String, actualSelectedTag: String?) {
                 val targetTag = actualSelectedTag?.takeIf { it.isNotBlank() } ?: "当前全局节点"
                 val message =
@@ -947,37 +944,28 @@ class SingBoxService : VpnService() {
     }
 
     /**
-     * 触发 URL 测试并返回结果
-     * 使用 CommandClient.urlTest(groupTag) API
+     * 使用统一离线临时服务测速路径并返回结果
      *
      * @param groupTag 要测试的 group 标签 (如 "PROXY")
      * @param timeoutMs 等待结果的超时时间
      * @return 节点延迟映射 (tag -> delay ms)，失败返回空 Map
      */
+    @Suppress("UNUSED_PARAMETER")
     suspend fun urlTestGroup(groupTag: String, timeoutMs: Long = 10000L): Map<String, Int> {
-        return commandManager.urlTestGroup(groupTag, timeoutMs)
+        return testGroupCandidatesLatency(groupTag)
     }
 
+    @Suppress("UNUSED_PARAMETER")
     suspend fun urlTestGroup(
         groupTag: String,
         timeoutMs: Long,
         expectedTags: Set<String>,
         onProgress: ((Map<String, Int>) -> Unit)? = null
     ): Map<String, Int> {
-        return commandManager.urlTestGroup(groupTag, timeoutMs, expectedTags, onProgress)
-    }
-
-    /**
-     * 获取缓存的 URL 测试延迟
-     * @param tag 节点标签
-     * @return 延迟值 (ms)，未测试返回 null
-     */
-    fun getCachedUrlTestDelay(tag: String): Int? {
-        return commandManager.getCachedUrlTestDelay(tag)
-    }
-
-    fun getCachedUrlTestDelayDebug(tag: String): String {
-        return commandManager.getCachedUrlTestDelayDebug(tag)
+        val results = testGroupCandidatesLatency(groupTag)
+            .filterKeys { expectedTags.isEmpty() || it in expectedTags }
+        onProgress?.invoke(results)
+        return results
     }
 
     private fun closeRecentConnectionsBestEffort(reason: String) {
@@ -1424,10 +1412,7 @@ class SingBoxService : VpnService() {
     private suspend fun runAutoFailoverProbeRound(
         currentTag: String
     ): NodeAutoFailoverPolicy.ProbeEvaluation {
-        val results = commandManager.urlTestGroup(
-            groupTag = "PROXY",
-            timeoutMs = AUTO_FAILOVER_PROBE_TIMEOUT_MS
-        )
+        val results = testGroupCandidatesLatency("PROXY")
         val quarantined = loadActiveAutoFailoverQuarantine(System.currentTimeMillis())
         val evaluation = NodeAutoFailoverPolicy.evaluateProbe(
             currentTag = currentTag,
@@ -1440,6 +1425,50 @@ class SingBoxService : VpnService() {
                 "alt=${evaluation.alternativeTag ?: "(none)"} delays=${results.size}"
         )
         return evaluation
+    }
+
+    private suspend fun testGroupCandidatesLatency(groupTag: String): Map<String, Int> = coroutineScope {
+        val config = loadLastRunningConfig() ?: return@coroutineScope emptyMap()
+        val outbounds = config.outbounds.orEmpty()
+        val byTag = outbounds.associateBy { it.tag }
+        val groupCandidates = byTag[groupTag]
+            ?.outbounds
+            .orEmpty()
+            .mapNotNull { byTag[it] }
+            .ifEmpty {
+                outbounds.filter { outbound -> outbound.type !in LATENCY_SKIPPED_OUTBOUND_TYPES }
+            }
+        if (groupCandidates.isEmpty()) return@coroutineScope emptyMap()
+
+        val settings = SettingsRepository.getInstance(this@SingBoxService).settings.first()
+        val semaphore = Semaphore(settings.latencyTestConcurrency.coerceIn(1, 20))
+        val core = SingBoxCore.getInstance(this@SingBoxService)
+        val results = ConcurrentHashMap<String, Int>()
+
+        groupCandidates.map { outbound ->
+            async(Dispatchers.IO) {
+                semaphore.withPermit {
+                    val latency = runCatching {
+                        core.testOutboundLatency(outbound, outbounds)
+                    }.getOrDefault(-1L)
+                    if (latency > 0L && latency <= Int.MAX_VALUE) {
+                        results[outbound.tag] = latency.toInt()
+                    }
+                }
+            }
+        }.awaitAll()
+
+        results.toMap()
+    }
+
+    private fun loadLastRunningConfig(): SingBoxConfig? {
+        val configPath = lastConfigPath ?: File(filesDir, "running_config.json").absolutePath
+        return runCatching {
+            val configContent = File(configPath).readText()
+            gson.fromJson(configContent, SingBoxConfig::class.java)
+        }.onFailure { e ->
+            Log.w(TAG, "[AutoFailover] failed to load running config for latency test: ${e.message}")
+        }.getOrNull()
     }
 
     private suspend fun performAutoFailoverSwitch(

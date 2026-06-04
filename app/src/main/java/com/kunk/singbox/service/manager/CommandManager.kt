@@ -12,13 +12,9 @@ import com.kunk.singbox.repository.TrafficRepository
 import com.kunk.singbox.service.notification.VpnNotificationManager
 import io.nekohasekai.libbox.*
 import kotlinx.coroutines.*
-import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import java.net.InetSocketAddress
 import java.net.ServerSocket
 import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.atomic.AtomicReference
 
 /**
  *
@@ -60,11 +56,6 @@ class CommandManager(
         private set
     var recentConnectionIds: List<String> = emptyList()
         private set
-
-    private val urlTestResults = ConcurrentHashMap<String, Int>() // tag -> delay (ms)
-    private val urlTestMutex = Mutex()
-    @Volatile private var pendingUrlTestGroupTag: String? = null
-    @Volatile private var urlTestCompletionCallback: ((Map<String, Int>) -> Unit)? = null
 
     private var lastUplinkTotal: Long = 0
     private var lastDownlinkTotal: Long = 0
@@ -363,189 +354,6 @@ class CommandManager(
         }
     }
 
-    /**
-     *
-     *
-     */
-    suspend fun urlTestGroup(groupTag: String, timeoutMs: Long = 10000L): Map<String, Int> {
-        return urlTestGroup(groupTag, timeoutMs, emptySet(), null)
-    }
-
-    suspend fun urlTestGroup(
-        groupTag: String,
-        timeoutMs: Long,
-        expectedTags: Set<String> = emptySet(),
-        onProgress: ((Map<String, Int>) -> Unit)? = null
-    ): Map<String, Int> {
-
-        val client = commandClientGroup ?: commandClient ?: return emptyMap()
-
-        return urlTestMutex.withLock {
-            val resultUpdates = Channel<Map<String, Int>>(Channel.CONFLATED)
-            try {
-                pendingUrlTestGroupTag = groupTag
-                val latestGroupResults = AtomicReference<Map<String, Int>>(emptyMap())
-                urlTestCompletionCallback = { results ->
-                    latestGroupResults.set(results)
-                    onProgress?.invoke(results)
-                    resultUpdates.trySend(results)
-                }
-
-                Log.i(TAG, "Triggering URL test for group: $groupTag")
-                client.urlTest(groupTag)
-
-                waitForStableUrlTestResults(
-                    resultUpdates = resultUpdates,
-                    latestGroupResults = latestGroupResults,
-                    timeoutMs = timeoutMs,
-                    expectedTags = expectedTags
-                )
-
-                val results = latestGroupResults.get().ifEmpty { urlTestResults.toMap() }
-                if (results.isEmpty()) {
-                    Log.w(TAG, "URL test timeout or no results for group: $groupTag")
-                }
-                results
-            } catch (e: Exception) {
-                Log.e(TAG, "URL test failed for group $groupTag: ${e.message}")
-                emptyMap()
-            } finally {
-                pendingUrlTestGroupTag = null
-                urlTestCompletionCallback = null
-                resultUpdates.close()
-            }
-        }
-    }
-
-    private suspend fun waitForStableUrlTestResults(
-        resultUpdates: Channel<Map<String, Int>>,
-        latestGroupResults: AtomicReference<Map<String, Int>>,
-        timeoutMs: Long,
-        expectedTags: Set<String>
-    ) {
-        val stableWindowMs = 120L
-        val startTime = SystemClock.elapsedRealtime()
-        val existingResults = latestGroupResults.get()
-        var latestResults = if (existingResults.isNotEmpty()) {
-            existingResults
-        } else {
-            withTimeoutOrNull(timeoutMs) {
-                resultUpdates.receiveCatching().getOrNull()
-            } ?: emptyMap()
-        }
-
-        if (latestResults.isEmpty()) return
-
-        if (expectedTags.isNotEmpty() && expectedTags.all { latestResults.containsKey(it) }) {
-            latestGroupResults.set(latestResults)
-            Log.i(TAG, "URL test completed early with ${latestResults.size} results")
-            return
-        }
-
-        while (true) {
-            val remainingMs = timeoutMs - (SystemClock.elapsedRealtime() - startTime)
-            if (remainingMs <= 0L) break
-
-            val nextResults = withTimeoutOrNull(minOf(stableWindowMs, remainingMs)) {
-                resultUpdates.receiveCatching().getOrNull()
-            } ?: break
-
-            latestResults = nextResults
-            if (expectedTags.isNotEmpty() && expectedTags.all { latestResults.containsKey(it) }) {
-                break
-            }
-        }
-
-        latestGroupResults.set(latestResults)
-        Log.i(TAG, "URL test completed with ${latestResults.size} results")
-    }
-
-    fun getCachedUrlTestDelay(tag: String): Int? {
-        val snapshot = snapshotUrlTestKeys()
-        val aliasSources = buildDelayAliasSourceMap()
-        val aliasTags = buildDelayAliasTags(tag, aliasSources)
-        val rawAliasSummary = aliasSources.entries.joinToString(", ") { (source, value) ->
-            "$source='${value.orEmpty()}'"
-        }
-        Log.d(
-            TAG,
-            "getCachedUrlTestDelay queryTag='$tag', normalized='${UrlTestTagMatcher.normalizeTag(tag)}', " +
-                "aliasSources={$rawAliasSummary}, aliases=${aliasTags.joinToString(prefix = "[", postfix = "]")}, " +
-                "keysCount=${snapshot.size}, keys=${snapshot.joinToString(prefix = "[", postfix = "]")}"
-        )
-
-        val matched = UrlTestTagMatcher.resolveDelayDetail(
-            results = urlTestResults,
-            queryTag = tag,
-            aliasTags = aliasTags
-        )
-
-        if (matched != null) {
-            Log.d(
-                TAG,
-                "getCachedUrlTestDelay ${matched.matchType} hit: tag='$tag', " +
-                    "matchedKey='${matched.matchedKey}', delay=${matched.delay}"
-            )
-            return matched.delay
-        }
-        Log.d(TAG, "getCachedUrlTestDelay miss: tag='$tag'")
-        return null
-    }
-
-    fun getCachedUrlTestDelayDebug(tag: String): String {
-        val snapshot = snapshotUrlTestKeys()
-        val aliasSources = buildDelayAliasSourceMap()
-        val aliasTags = buildDelayAliasTags(tag, aliasSources)
-        val matched = UrlTestTagMatcher.resolveDelayDetail(
-            results = urlTestResults,
-            queryTag = tag,
-            aliasTags = aliasTags
-        )
-
-        val rawAliasSummary = aliasSources.entries.joinToString(", ") { (source, value) ->
-            "$source='${value.orEmpty()}'"
-        }
-        val keySummary = snapshot.joinToString(prefix = "[", postfix = "]")
-
-        return if (matched != null) {
-            "HIT type=${matched.matchType}, query='$tag', matchedKey='${matched.matchedKey}', " +
-                "delay=${matched.delay}, aliases=${aliasTags.joinToString(prefix = "[", postfix = "]")}, " +
-                "aliasSources={$rawAliasSummary}, keysCount=${snapshot.size}, keys=$keySummary"
-        } else {
-            "MISS query='$tag', normalized='${UrlTestTagMatcher.normalizeTag(tag)}', " +
-                "aliases=${aliasTags.joinToString(prefix = "[", postfix = "]")}, " +
-                "aliasSources={$rawAliasSummary}, keysCount=${snapshot.size}, keys=$keySummary"
-        }
-    }
-
-    private fun snapshotUrlTestKeys(limit: Int = 20): List<String> {
-        return urlTestResults.keys
-            .sorted()
-            .take(limit)
-    }
-
-    private fun buildDelayAliasSourceMap(): Map<String, String?> {
-        return linkedMapOf(
-            "groupSelectedOutbounds[PROXY]" to groupSelectedOutbounds["PROXY"],
-            "realTimeNodeName" to realTimeNodeName,
-            "activeConnectionNode" to activeConnectionNode,
-            "activeConnectionLabel" to activeConnectionLabel,
-            "vpnStateStore.activeLabel" to VpnStateStore.getActiveLabel()
-        )
-    }
-
-    private fun buildDelayAliasTags(
-        queryTag: String,
-        aliasSources: Map<String, String?> = buildDelayAliasSourceMap()
-    ): List<String> {
-        return buildList {
-            aliasSources.values.forEach { add(it) }
-        }
-            .map { it?.trim().orEmpty() }
-            .filter { it.isNotBlank() && !it.equals(queryTag, ignoreCase = true) }
-            .distinct()
-    }
-
     private fun createClientHandler(): CommandClientHandler = object : CommandClientHandler {
         override fun connected() {}
 
@@ -687,18 +495,15 @@ class CommandManager(
     private fun processGroups(groups: OutboundGroupIterator) {
         val configRepo = ConfigRepository.getInstance(context)
         var changed = false
-        val pendingGroup = pendingUrlTestGroupTag
-        val testResults = mutableMapOf<String, Int>()
 
-        Log.d(TAG, "writeGroups called, pendingGroup=$pendingGroup")
+        Log.d(TAG, "writeGroups called")
 
         while (groups.hasNext()) {
             val group = groups.next()
-            val groupChanged = processGroup(group, pendingGroup, testResults, configRepo)
+            val groupChanged = processGroup(group, configRepo)
             if (groupChanged) changed = true
         }
 
-        notifyUrlTestCompletion(pendingGroup, testResults)
         if (changed) {
             callbacks?.requestNotificationUpdate(false)
         }
@@ -706,8 +511,6 @@ class CommandManager(
 
     private fun processGroup(
         group: OutboundGroup,
-        pendingGroup: String?,
-        testResults: MutableMap<String, Int>,
         configRepo: ConfigRepository
     ): Boolean {
         val tag = group.tag
@@ -721,37 +524,9 @@ class CommandManager(
             if (prev != selected) changed = true
         }
 
-        collectGroupTestResults(group, tag, pendingGroup, testResults)
         changed = updateProxyGroupSelection(tag, selected, configRepo) || changed
 
         return changed
-    }
-
-    private fun collectGroupTestResults(
-        group: OutboundGroup,
-        tag: String?,
-        pendingGroup: String?,
-        testResults: MutableMap<String, Int>
-    ) {
-        val items = group.items ?: return
-        var itemCount = 0
-        var delayCount = 0
-
-        while (items.hasNext()) {
-            val item = items.next()
-            val itemTag = item?.tag
-            val delay = item?.urlTestDelay ?: 0
-            itemCount++
-            if (!itemTag.isNullOrBlank() && delay > 0) {
-                delayCount++
-                // Always persist delay results for getCachedUrlTestDelay()
-                urlTestResults[itemTag] = delay
-                if (pendingGroup != null && tag.equals(pendingGroup, ignoreCase = true)) {
-                    testResults[itemTag] = delay
-                }
-            }
-        }
-        Log.d(TAG, "Group $tag: $itemCount items, $delayCount with delay")
     }
 
     private fun updateProxyGroupSelection(
@@ -769,14 +544,6 @@ class CommandManager(
             configRepo.syncActiveNodeFromProxySelection(selected)
         }
         return true
-    }
-
-    private fun notifyUrlTestCompletion(pendingGroup: String?, testResults: Map<String, Int>) {
-        if (pendingGroup == null) return
-        Log.i(TAG, "URL test results for $pendingGroup: ${testResults.size} items")
-        if (testResults.isNotEmpty()) {
-            urlTestCompletionCallback?.invoke(testResults)
-        }
     }
 
     @Suppress("LongMethod", "CyclomaticComplexMethod", "CognitiveComplexMethod", "NestedBlockDepth")
@@ -864,9 +631,6 @@ class CommandManager(
     fun cleanup() {
         stop()
         groupSelectedOutbounds.clear()
-        urlTestResults.clear()
-        pendingUrlTestGroupTag = null
-        urlTestCompletionCallback = null
         realTimeNodeName = null
         activeConnectionNode = null
         activeConnectionLabel = null

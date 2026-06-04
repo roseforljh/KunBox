@@ -6,6 +6,7 @@ import android.os.RemoteCallbackList
 import android.os.SystemClock
 import android.util.Log
 import com.kunk.singbox.aidl.ISingBoxServiceCallback
+import com.kunk.singbox.repository.ConfigRepository
 import com.kunk.singbox.repository.LogRepository
 import com.kunk.singbox.service.ServiceState
 import com.kunk.singbox.service.manager.BackgroundPowerManager
@@ -294,26 +295,19 @@ object SingBoxIpcHub {
         const val UNKNOWN_ERROR = 3
     }
 
+    @Suppress("UNUSED_PARAMETER")
     fun requestUrlTestNodeDelay(requestId: Long, groupTag: String, nodeTag: String, timeoutMs: Int) {
-        val service = ServiceStateHolder.instance
-        if (service == null) {
+        val context = serviceRef?.get()
+        if (context == null) {
             requestUrlTestNodeDelayResult(requestId, -1)
             return
         }
-        val safeTimeout = timeoutMs.coerceIn(1000, 30000).toLong()
         pendingUrlTestJobs.remove(requestId)?.cancel()
         val job = ipcScope.launch {
             val delay = runCatching {
-                val progressResults = mutableListOf<Map<String, Int>>()
-                service.urlTestGroup(
-                    groupTag = groupTag,
-                    timeoutMs = safeTimeout,
-                    expectedTags = setOf(nodeTag),
-                    onProgress = { results ->
-                        progressResults.add(results)
-                    }
-                )
-                resolveRealtimeUrlTestNodeDelay(nodeTag, progressResults)
+                val repo = ConfigRepository.getInstance(context)
+                val node = repo.getNodeByName(nodeTag) ?: return@runCatching -1
+                repo.testNodeLatency(node.id).takeIf { it > 0L && it <= Int.MAX_VALUE }?.toInt() ?: -1
             }.getOrElse {
                 Log.w(TAG, "requestUrlTestNodeDelay failed: requestId=$requestId", it)
                 -1

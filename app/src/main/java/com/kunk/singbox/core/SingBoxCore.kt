@@ -24,7 +24,6 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
-import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.net.NetworkInterface
@@ -130,8 +129,7 @@ class SingBoxCore private constructor(private val context: Context) {
 
     /**
      */
-    @Suppress("CognitiveComplexMethod")
-    private suspend fun testOutboundLatencyWithLibbox(
+    private suspend fun testOutboundLatencyWithOfflineTemporaryService(
         outbound: Outbound,
         settings: com.kunk.singbox.model.AppSettings? = null,
         dependencyOutbounds: List<Outbound> = emptyList()
@@ -142,18 +140,6 @@ class SingBoxCore private constructor(private val context: Context) {
         val url = adjustUrlForMode(finalSettings.latencyTestUrl, finalSettings.latencyTestMethod)
         val timeoutMs = finalSettings.latencyTestTimeout
 
-        // Remove mutex to allow concurrent testing
-        val nativeRtt = testWithLibboxStaticUrlTest(outbound, url, timeoutMs, finalSettings.latencyTestMethod)
-
-        if (nativeRtt >= 0) {
-            return@withContext nativeRtt
-        }
-
-        if (VpnStateStore.getActive()) {
-            Log.d(TAG, "VPN is running, skipping local HTTP proxy fallback to avoid command.sock conflict")
-            return@withContext -1L
-        }
-
         return@withContext try {
             val fallbackUrl = try {
                 if (finalSettings.latencyTestMethod == com.kunk.singbox.model.LatencyTestMethod.TCP) {
@@ -162,9 +148,14 @@ class SingBoxCore private constructor(private val context: Context) {
                     adjustUrlForMode("https://www.gstatic.com/generate_204", finalSettings.latencyTestMethod)
                 }
             } catch (_: Exception) { url }
-            testWithLocalHttpProxy(outbound, url, fallbackUrl, timeoutMs, dependencyOutbounds)
+            val rtt = testWithTemporaryServiceUrlTest(outbound, url, fallbackUrl, timeoutMs, dependencyOutbounds)
+            if (rtt >= 0) {
+                rtt
+            } else {
+                testWithLocalHttpProxy(outbound, url, fallbackUrl, timeoutMs, dependencyOutbounds)
+            }
         } catch (e: Exception) {
-            Log.w(TAG, "Native HTTP proxy test failed: ${e.message}")
+            Log.w(TAG, "Temporary HTTP proxy latency test failed: ${e.message}")
             -1L
         }
     }
@@ -249,22 +240,19 @@ class SingBoxCore private constructor(private val context: Context) {
         )
 
         val connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
-        val vpnRunning = com.kunk.singbox.service.SingBoxService.instance != null || VpnStateStore.getActive()
         var previousNetwork: Network? = null
 
-        if (!vpnRunning) {
-            try {
-                val activeNetwork = connectivityManager.activeNetwork
-                if (activeNetwork != null) {
-                    previousNetwork = connectivityManager.boundNetworkForProcess
-                    val bound = connectivityManager.bindProcessToNetwork(activeNetwork)
-                    Log.d(TAG, "bindProcessToNetwork: bound=$bound, network=$activeNetwork")
-                } else {
-                    Log.w(TAG, "No active network available for binding")
-                }
-            } catch (e: Exception) {
-                Log.w(TAG, "bindProcessToNetwork failed: ${e.message}")
+        try {
+            val testNetwork = resolveLatencyTestNetwork(connectivityManager)
+            if (testNetwork != null) {
+                previousNetwork = connectivityManager.boundNetworkForProcess
+                val bound = connectivityManager.bindProcessToNetwork(testNetwork)
+                Log.d(TAG, "bindProcessToNetwork for latency test: bound=$bound, network=$testNetwork")
+            } else {
+                Log.w(TAG, "No active network available for latency test binding")
             }
+        } catch (e: Exception) {
+            Log.w(TAG, "bindProcessToNetwork failed: ${e.message}")
         }
 
         return try {
@@ -384,50 +372,34 @@ class SingBoxCore private constructor(private val context: Context) {
             Log.e(TAG, "Local HTTP proxy setup failed", e)
             -1L
         } finally {
-
-            if (!vpnRunning) {
-                try {
-                    connectivityManager.bindProcessToNetwork(previousNetwork)
-                    Log.d(TAG, "Restored process network binding")
-                } catch (e: Exception) { Log.w(TAG, "Failed to restore network binding", e) }
-            }
+            try {
+                connectivityManager.bindProcessToNetwork(previousNetwork)
+                Log.d(TAG, "Restored process network binding")
+            } catch (e: Exception) { Log.w(TAG, "Failed to restore network binding", e) }
         }
     }
 
-    /**
-     *
-     *
-     *
-     */
-    @Suppress("UNUSED_PARAMETER")
-    private suspend fun testWithLibboxStaticUrlTest(
-        outbound: Outbound,
-        targetUrl: String,
-        timeoutMs: Int,
-        method: LatencyTestMethod
-    ): Long = withContext(Dispatchers.IO) {
+    private fun resolveLatencyTestNetwork(connectivityManager: ConnectivityManager): Network? {
+        val activeNetwork = connectivityManager.activeNetwork
+        val activeCaps = activeNetwork?.let { connectivityManager.getNetworkCapabilities(it) }
+        if (activeNetwork != null && activeCaps?.hasTransport(NetworkCapabilities.TRANSPORT_VPN) != true) {
+            return activeNetwork
+        }
 
-        Log.d(TAG, "Native URLTest not available in current core, returning -1")
-        return@withContext -1L
+        return connectivityManager.allNetworks.firstOrNull { network ->
+            val caps = connectivityManager.getNetworkCapabilities(network) ?: return@firstOrNull false
+            !caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN) &&
+                caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+        } ?: activeNetwork
     }
 
-    private suspend fun testWithTemporaryServiceUrlTestOnRunning(
+    private suspend fun testWithTemporaryServiceUrlTest(
         outbound: Outbound,
         targetUrl: String,
         fallbackUrl: String? = null,
         timeoutMs: Int,
-        method: LatencyTestMethod,
         dependencyOutbounds: List<Outbound> = emptyList()
     ): Long = withContext(Dispatchers.IO) {
-
-        if (VpnStateStore.getActive() && libboxAvailable) {
-            val rtt = testWithLibboxStaticUrlTest(outbound, targetUrl, timeoutMs, method)
-            if (rtt >= 0) return@withContext rtt
-
-            Log.d(TAG, "VPN is running, skipping temporary service fallback to avoid command.sock conflict")
-            return@withContext -1L
-        }
-
         testWithLocalHttpProxyInternal(outbound, targetUrl, fallbackUrl, timeoutMs, dependencyOutbounds)
     }
 
@@ -461,20 +433,6 @@ class SingBoxCore private constructor(private val context: Context) {
         onResult: (tag: String, latency: Long) -> Unit
     ) {
         if (batchOutbounds.isEmpty()) return
-
-        if (VpnStateStore.getActive() && BoxWrapperManager.isAvailable()) {
-            Log.i(TAG, "VPN is running, using native batch URL test instead of temporary service")
-            val results = BoxWrapperManager.urlTestBatch(
-                outboundTags = batchOutbounds.map { it.tag },
-                url = targetUrl,
-                timeoutMs = timeoutMs,
-                concurrency = concurrency.coerceIn(1, 20)
-            )
-            batchOutbounds.forEach { outbound ->
-                onResult(outbound.tag, results[outbound.tag]?.toLong() ?: -1L)
-            }
-            return
-        }
 
         val ports: List<Int>
         try {
@@ -742,8 +700,6 @@ class SingBoxCore private constructor(private val context: Context) {
         allOutbounds: List<Outbound> = emptyList()
     ): Long = withContext(Dispatchers.IO) {
         val settings = SettingsRepository.getInstance(context).settings.first()
-        val timeoutMs = settings.latencyTestTimeout
-        val serviceRunning = com.kunk.singbox.service.SingBoxService.instance != null || VpnStateStore.getActive()
 
         val dependencyOutbounds = if (allOutbounds.isNotEmpty()) {
             resolveDependencyOutbounds(outbound, allOutbounds)
@@ -751,53 +707,7 @@ class SingBoxCore private constructor(private val context: Context) {
             emptyList()
         }
 
-        if (serviceRunning) {
-            val isNativeUrlTestSupported = BoxWrapperManager.isAvailable()
-            if (libboxAvailable && isNativeUrlTestSupported) {
-                val url = adjustUrlForMode(settings.latencyTestUrl, settings.latencyTestMethod)
-                var safeLatency = -1L
-                SafeLatencyTester.getInstance().testOutboundsLatencySafe(
-                    outbounds = listOf(outbound),
-                    targetUrl = url,
-                    timeoutMs = timeoutMs
-                ) { tag, latency ->
-                    if (tag == outbound.tag) {
-                        safeLatency = latency
-                    }
-                }
-                if (safeLatency > 0) {
-                    return@withContext safeLatency
-                }
-                Log.w(TAG, "Safe single-node latency test failed for ${outbound.tag}, use native single test once")
-                return@withContext testOutboundLatencyWithLibbox(outbound, settings, dependencyOutbounds)
-            }
-
-            Log.w(
-                TAG,
-                "VPN is active but native URL test is unavailable in current process, " +
-                    "skipping temporary test-in"
-            )
-            return@withContext -1L
-        }
-
-        val url = adjustUrlForMode(settings.latencyTestUrl, settings.latencyTestMethod)
-
-        val fallbackUrl = try {
-            if (settings.latencyTestMethod == com.kunk.singbox.model.LatencyTestMethod.TCP) {
-                adjustUrlForMode("http://www.gstatic.com/generate_204", settings.latencyTestMethod)
-            } else {
-                adjustUrlForMode("https://www.gstatic.com/generate_204", settings.latencyTestMethod)
-            }
-        } catch (_: Exception) { url }
-
-        val rtt =
-            testWithTemporaryServiceUrlTestOnRunning(outbound, url, fallbackUrl, timeoutMs, settings.latencyTestMethod, dependencyOutbounds)
-        if (rtt >= 0) {
-            return@withContext rtt
-        }
-
-        val fallback = testWithLocalHttpProxy(outbound, url, fallbackUrl, timeoutMs, dependencyOutbounds)
-        return@withContext fallback
+        testOutboundLatencyWithOfflineTemporaryService(outbound, settings, dependencyOutbounds)
     }
 
     /**
@@ -807,25 +717,15 @@ class SingBoxCore private constructor(private val context: Context) {
         onResult: (tag: String, latency: Long) -> Unit
     ) = withContext(Dispatchers.IO) {
         val settings = SettingsRepository.getInstance(context).settings.first()
-
-        val isNativeUrlTestSupported = BoxWrapperManager.isAvailable()
-
-        if (libboxAvailable && VpnStateStore.getActive() && isNativeUrlTestSupported) {
-            val url = adjustUrlForMode(settings.latencyTestUrl, settings.latencyTestMethod)
-            val timeoutMs = settings.latencyTestTimeout
-
-            SafeLatencyTester.getInstance().testOutboundsLatencySafe(
-                outbounds = outbounds,
-                targetUrl = url,
-                timeoutMs = timeoutMs,
-                onResult = onResult
-            )
-            return@withContext
-        }
-
         val url = adjustUrlForMode(settings.latencyTestUrl, settings.latencyTestMethod)
         val timeoutMs = settings.latencyTestTimeout
-        testOutboundsLatencyOfflineWithTemporaryService(outbounds, url, timeoutMs, settings.latencyTestMethod, onResult)
+        testOutboundsLatencyOfflineWithTemporaryService(
+            outbounds,
+            url,
+            timeoutMs,
+            settings.latencyTestMethod,
+            onResult
+        )
     }
 
     private fun allocateLocalPort(): Int {

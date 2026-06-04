@@ -2381,17 +2381,6 @@ class ConfigRepository(private val context: Context) {
         return TcpPing.connect(host = host, port = port, timeout = timeout)
     }
 
-    private suspend fun testNodeLatencyViaRunningService(nodeTag: String): Long {
-        val timeoutMs = settingsRepository.settings.first().latencyTestTimeout
-        SingBoxRemote.ensureBound(context)
-        val delay = SingBoxRemote.urlTestNodeDelay(
-            groupTag = "PROXY",
-            nodeTag = nodeTag,
-            timeoutMs = timeoutMs
-        )
-        return normalizeLatencyValue(delay?.toLong() ?: -1L)
-    }
-
     private fun normalizeLatencyValue(latency: Long): Long {
         return when {
             latency > 0L -> latency
@@ -2412,7 +2401,6 @@ class ConfigRepository(private val context: Context) {
     private suspend fun prepareOfflineProbeOutbound(outbound: Outbound): Outbound {
         val host = outbound.server?.trim().orEmpty()
         if (host.isBlank() || isIpAddress(host)) return outbound
-        if (VpnStateStore.getActive()) return outbound
         return withContext(Dispatchers.IO) {
             val addresses = runCatching { InetAddress.getAllByName(host) }.getOrNull() ?: return@withContext outbound
             val hasV4 = addresses.any { it is Inet4Address }
@@ -2431,7 +2419,6 @@ class ConfigRepository(private val context: Context) {
         val host = server?.trim().orEmpty()
         if (host.isBlank()) return false
         if (isIpAddress(host)) return false
-        if (VpnStateStore.getActive()) return false
         return runCatching {
             val addresses = InetAddress.getAllByName(host)
             val hasV6 = addresses.any { it is Inet6Address }
@@ -2478,29 +2465,6 @@ class ConfigRepository(private val context: Context) {
     ) {
         coroutineScope {
             if (infos.isEmpty()) return@coroutineScope
-
-            if (VpnStateStore.getActive()) {
-                if (SingBoxService.instance == null) {
-                    val semaphore = Semaphore(concurrency)
-                    infos.map { info ->
-                        async {
-                            semaphore.withPermit {
-                                val latency = testNodeLatencyViaRunningService(info.outbound.tag)
-                                applyLatencyResult(info, latency, onNodeComplete)
-                            }
-                        }
-                    }.awaitAll()
-                    return@coroutineScope
-                }
-
-                val tagToInfo = infos.associateBy { it.outbound.tag }
-                val outbounds = infos.map { it.outbound }
-                singBoxCore.testOutboundsLatency(outbounds) { tag, latency ->
-                    val info = tagToInfo[tag] ?: return@testOutboundsLatency
-                    applyLatencyResult(info, latency, onNodeComplete)
-                }
-                return@coroutineScope
-            }
 
             val preparedInfoPairs = infos.map { info ->
                 info to prepareOfflineProbeOutbound(info.outbound)
@@ -4037,16 +4001,8 @@ class ConfigRepository(private val context: Context) {
                             return@withContext -1L
                         }
                         val allOutbounds = config.outbounds.mapNotNull { buildOutboundForRuntime(it) }
-                        val probeOutbound = if (VpnStateStore.getActive()) {
-                            fixedOutbound
-                        } else {
-                            prepareOfflineProbeOutbound(fixedOutbound)
-                        }
-                        val latency = if (VpnStateStore.getActive()) {
-                            testNodeLatencyViaRunningService(fixedOutbound.tag)
-                        } else {
-                            singBoxCore.testOutboundLatency(probeOutbound, allOutbounds)
-                        }
+                        val probeOutbound = prepareOfflineProbeOutbound(fixedOutbound)
+                        val latency = singBoxCore.testOutboundLatency(probeOutbound, allOutbounds)
                         val finalLatency = if (latency > 0) {
                             latency
                         } else {
