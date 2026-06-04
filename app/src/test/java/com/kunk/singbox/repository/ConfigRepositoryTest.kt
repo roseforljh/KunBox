@@ -709,6 +709,24 @@ class ConfigRepositoryTest {
     }
 
     @Test
+    fun testDnsOverrideServerRuleDefaultsToRouteAction() {
+        val base = DnsConfig(
+            servers = listOf(DnsServer(tag = "remote", type = "https", server = "dns.google")),
+            rules = listOf(DnsRule(domain = listOf("fallback.example.com"), action = "route", server = "remote"))
+        )
+        val override = DnsConfig(
+            servers = listOf(DnsServer(tag = "airport-dns", type = "https", server = "dns.example.com")),
+            rules = listOf(DnsRule(domainSuffix = listOf("bestvmr.com"), server = "airport-dns"))
+        )
+
+        val actual = ConfigRepository.applyDnsOverrideForTest(base, override)
+
+        assertEquals("route", actual.rules?.firstOrNull()?.action)
+        assertEquals("airport-dns", actual.rules?.firstOrNull()?.server)
+        assertEquals(listOf("bestvmr.com"), actual.rules?.firstOrNull()?.domainSuffix)
+    }
+
+    @Test
     fun testNormalizeLocalDnsReplacesLegacyLocalValue() {
         val normalized = ConfigRepository.normalizeLocalDns(AppSettings.LEGACY_LOCAL_DNS)
 
@@ -1673,6 +1691,30 @@ class ConfigRepositoryTest {
         assertEquals(listOf("cloudflare-ech.com"), rules.first().domain)
         assertEquals(listOf("HTTPS", "SVCB"), rules.first().queryType)
         assertEquals(ConfigRepository.buildDynamicDnsServerTag("cf-node-a"), rules.first().server)
+    }
+
+    @Test
+    fun testBuildEchAwareHttpsSvcbRulesRoutesEchBeforeRejectWhenBlockQuicEnabled() {
+        val rules = ConfigRepository.buildEchAwareHttpsSvcbDnsRulesForTest(
+            blockQuic = true,
+            outbounds = listOf(
+                Outbound(
+                    type = "vless",
+                    tag = "cf-node",
+                    tls = TlsConfig(ech = EchConfig(enabled = true, queryServerName = "cloudflare-ech.com"))
+                )
+            ),
+            echQueryServerTag = "dns-bootstrap"
+        )
+
+        assertEquals(2, rules.size)
+        assertEquals("route", rules[0].action)
+        assertEquals(listOf("cloudflare-ech.com"), rules[0].domain)
+        assertEquals(listOf("HTTPS", "SVCB"), rules[0].queryType)
+        assertEquals("dns-bootstrap", rules[0].server)
+        assertEquals("predefined", rules[1].action)
+        assertEquals("NOERROR", rules[1].rcode)
+        assertEquals(listOf("HTTPS", "SVCB"), rules[1].queryType)
     }
 
     @Test

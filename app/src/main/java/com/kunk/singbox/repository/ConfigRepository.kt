@@ -1256,6 +1256,14 @@ class ConfigRepository(private val context: Context) {
             return buildEchDnsRules(outbounds, serverTag)
         }
 
+        internal fun buildEchAwareHttpsSvcbDnsRulesForTest(
+            blockQuic: Boolean,
+            outbounds: List<Outbound>,
+            echQueryServerTag: String
+        ): List<DnsRule> {
+            return buildEchAwareHttpsSvcbDnsRules(blockQuic, outbounds, echQueryServerTag)
+        }
+
         private fun buildTunFakeIpDnsRulesStatic(fakeDnsEnabled: Boolean): List<DnsRule> {
             if (!fakeDnsEnabled) return emptyList()
             return listOf(
@@ -1266,6 +1274,25 @@ class ConfigRepository(private val context: Context) {
                     server = "fakeip-dns"
                 )
             )
+        }
+
+        private fun buildEchAwareHttpsSvcbDnsRules(
+            blockQuic: Boolean,
+            outbounds: List<Outbound>,
+            echQueryServerTag: String
+        ): List<DnsRule> {
+            val rules = buildEchDnsRules(outbounds, echQueryServerTag).toMutableList()
+            val hasEchOutbound = outbounds.any { it.tls?.ech?.enabled == true }
+            if (blockQuic && hasEchOutbound) {
+                rules.add(
+                    DnsRule(
+                        queryType = listOf("HTTPS", "SVCB"),
+                        action = "predefined",
+                        rcode = "NOERROR"
+                    )
+                )
+            }
+            return rules
         }
 
         private fun buildEchDnsRules(outbounds: List<Outbound>, serverTag: String): List<DnsRule> {
@@ -1420,7 +1447,7 @@ class ConfigRepository(private val context: Context) {
             }
 
             val rules = baseConfig.rules.orEmpty().toMutableList()
-            val overrideRules = overrideConfig.rules.orEmpty()
+            val overrideRules = overrideConfig.rules.orEmpty().map { normalizeDnsOverrideRule(it) }
             if (overrideRules.isNotEmpty()) {
                 rules.addAll(0, overrideRules)
             }
@@ -1435,6 +1462,13 @@ class ConfigRepository(private val context: Context) {
                 independentCache = overrideConfig.independentCache ?: baseConfig.independentCache,
                 fakeip = overrideConfig.fakeip ?: baseConfig.fakeip
             )
+        }
+
+        private fun normalizeDnsOverrideRule(rule: DnsRule): DnsRule {
+            if (!rule.action.isNullOrBlank() || rule.server.isNullOrBlank()) {
+                return rule
+            }
+            return rule.copy(action = "route")
         }
 
         internal const val DEFAULT_ROUTE_DOMAIN_RESOLVER_TAG = "dns-bootstrap"
@@ -4867,12 +4901,14 @@ class ConfigRepository(private val context: Context) {
                     null -> RuleSetOutboundMode.PROXY
                 }
         }
-        val hasEchOutbound = outboundsContext.outbounds.any { it.tls?.ech?.enabled == true }
-        if (settings.blockQuic && hasEchOutbound) {
-            dnsRules.add(dnsReject(DnsRule(queryType = listOf("HTTPS", "SVCB"))))
-        }
         val echQueryServerTag = "dns-bootstrap"
-        dnsRules.addAll(buildEchDnsRules(outboundsContext.outbounds, echQueryServerTag))
+        dnsRules.addAll(
+            buildEchAwareHttpsSvcbDnsRules(
+                blockQuic = settings.blockQuic,
+                outbounds = outboundsContext.outbounds,
+                echQueryServerTag = echQueryServerTag
+            )
+        )
         val bootstrapStrategy = resolveDnsStrategy(settings.serverAddressStrategy, settings.ipVersionMode)
         val bootstrapV4Tag = "dns-bootstrap-v4"
         val bootstrapV6Tag = "dns-bootstrap-v6"
