@@ -1252,6 +1252,17 @@ class ConfigRepository(private val context: Context) {
             return buildTunFakeIpDnsRulesStatic(fakeDnsEnabled)
         }
 
+        internal fun buildOutboundDomainResolverDnsRulesForTest(outbounds: List<Outbound>): List<DnsRule> {
+            return buildOutboundDomainResolverDnsRules(outbounds)
+        }
+
+        internal fun applyDefaultOutboundDomainResolverForTest(
+            outbounds: List<Outbound>,
+            defaultResolverTag: String
+        ): List<Outbound> {
+            return applyDefaultOutboundDomainResolver(outbounds, defaultResolverTag)
+        }
+
         internal fun buildEchDnsRulesForTest(outbounds: List<Outbound>, serverTag: String): List<DnsRule> {
             return buildEchDnsRules(outbounds, serverTag)
         }
@@ -1274,6 +1285,50 @@ class ConfigRepository(private val context: Context) {
                     server = "fakeip-dns"
                 )
             )
+        }
+
+        private fun buildOutboundDomainResolverDnsRules(outbounds: List<Outbound>): List<DnsRule> {
+            val domainToServer = linkedMapOf<String, String>()
+            outbounds.forEach { outbound ->
+                val domain = outbound.server
+                    ?.trim()
+                    ?.takeIf { it.isNotBlank() && !isIpAddressValue(it) }
+                    ?.let { normalizeDnsRuleDomain(it) }
+                    ?: return@forEach
+                val resolverServer = outbound.domainResolver
+                    ?.server
+                    ?.trim()
+                    ?.takeIf { it.isNotBlank() && it != "fakeip-dns" }
+                    ?: return@forEach
+                domainToServer.putIfAbsent(domain, resolverServer)
+            }
+            return domainToServer.map { (domain, resolverServer) ->
+                DnsRule(
+                    domain = listOf(domain),
+                    queryType = IP_DNS_QUERY_TYPES,
+                    action = "route",
+                    server = resolverServer
+                )
+            }
+        }
+
+        private fun applyDefaultOutboundDomainResolver(
+            outbounds: List<Outbound>,
+            defaultResolverTag: String
+        ): List<Outbound> {
+            return outbounds.map { outbound ->
+                val server = outbound.server?.trim().orEmpty()
+                if (server.isBlank() || isIpAddressValue(server)) return@map outbound
+
+                val existing = outbound.domainResolver
+                if (!existing?.server.isNullOrBlank() && existing?.server != DEFAULT_ROUTE_DOMAIN_RESOLVER_TAG) {
+                    return@map outbound
+                }
+
+                outbound.copy(
+                    domainResolver = (existing ?: DomainResolveConfig()).copy(server = defaultResolverTag)
+                )
+            }
         }
 
         private fun buildEchAwareHttpsSvcbDnsRules(
@@ -1478,6 +1533,26 @@ class ConfigRepository(private val context: Context) {
             return applyDnsOverrideDomainResolvers(outbounds, overrideConfig)
         }
 
+        internal fun shouldApplyDnsPreResolveToDomainForTest(
+            domain: String,
+            dnsOverride: DnsConfig?
+        ): Boolean {
+            return shouldApplyDnsPreResolveToDomain(domain, dnsOverride)
+        }
+
+        private fun shouldApplyDnsPreResolveToDomain(
+            domain: String,
+            dnsOverride: DnsConfig?
+        ): Boolean {
+            val normalizedDomain = domain.trim()
+            if (normalizedDomain.isBlank() || isIpAddressValue(normalizedDomain) || dnsOverride == null) {
+                return true
+            }
+            return dnsOverride.rules.orEmpty()
+                .map { normalizeDnsOverrideRule(it) }
+                .none { rule -> buildDomainResolverForMatchedDnsOverrideRule(normalizedDomain, rule) != null }
+        }
+
         private fun applyDnsOverrideDomainResolvers(
             outbounds: List<Outbound>,
             overrideConfig: DnsConfig
@@ -1503,7 +1578,7 @@ class ConfigRepository(private val context: Context) {
         ): DomainResolveConfig? {
             val server = rule.server?.trim()?.takeIf { it.isNotBlank() }
             val matches = server != null &&
-                rule.action == "route" &&
+                rule.action.equals("route", ignoreCase = true) &&
                 dnsRuleAppliesToAddressQuery(rule) &&
                 dnsRuleMatchesDomain(domain, rule)
             return if (matches) {
@@ -4333,15 +4408,16 @@ class ConfigRepository(private val context: Context) {
             val dnsOverrideConfig = parseDnsOverride(activeProfile?.dnsOverride)
             val rawOutboundsContext = buildRunOutbounds(
                 config, activeNode, sanitizedSettings, allNodesSnapshot,
-                activeProfile?.dnsPreResolve ?: false, activeId
+                activeProfile?.dnsPreResolve ?: false, activeId, dnsOverrideConfig
             )
-            val outboundsContext = if (dnsOverrideConfig != null) {
-                rawOutboundsContext.copy(
-                    outbounds = applyDnsOverrideDomainResolvers(rawOutboundsContext.outbounds, dnsOverrideConfig)
-                )
-            } else {
-                rawOutboundsContext
-            }
+            val defaultResolverOutbounds = applyDefaultOutboundDomainResolver(rawOutboundsContext.outbounds, "local")
+            val outboundsContext = rawOutboundsContext.copy(
+                outbounds = if (dnsOverrideConfig != null) {
+                    applyDnsOverrideDomainResolvers(defaultResolverOutbounds, dnsOverrideConfig)
+                } else {
+                    defaultResolverOutbounds
+                }
+            )
             val dns = buildRunDns(
                 sanitizedSettings,
                 customRuleSets,
@@ -5277,6 +5353,8 @@ class ConfigRepository(private val context: Context) {
             remoteResolver = remoteResolver
         )
 
+        dnsRules.addAll(buildOutboundDomainResolverDnsRules(outboundsContext.outbounds))
+
         if (settings.fakeDnsEnabled) {
             val fakeIpExcludeDomains = buildList {
                 parseDomainList(settings.fakeIpExcludeDomains).forEach { add(it) }
@@ -5371,7 +5449,8 @@ class ConfigRepository(private val context: Context) {
         settings: AppSettings,
         allNodes: List<NodeUi>,
         dnsPreResolve: Boolean = false,
-        profileId: String? = null
+        profileId: String? = null,
+        dnsOverrideConfig: DnsConfig? = null
     ): RunOutboundsContext {
         val rawOutbounds = baseConfig.outbounds
         if (rawOutbounds.isNullOrEmpty()) {
@@ -5381,7 +5460,12 @@ class ConfigRepository(private val context: Context) {
         val fixedOutbounds = rawOutbounds?.mapNotNull { outbound ->
             var processed = buildOutboundForRuntime(outbound) ?: return@mapNotNull null
             if (dnsPreResolve && profileId != null) {
-                processed = applyDnsResolveToOutbound(profileId, processed)
+                val server = processed.server?.trim().orEmpty()
+                if (shouldApplyDnsPreResolveToDomain(server, dnsOverrideConfig)) {
+                    processed = applyDnsResolveToOutbound(profileId, processed)
+                } else {
+                    Log.d(TAG, "Skip DNS pre-resolve for DNS override matched node domain: $server")
+                }
             }
             if (singBoxCore.validateOutbound(stripInternalMetadata(processed))) {
                 processed

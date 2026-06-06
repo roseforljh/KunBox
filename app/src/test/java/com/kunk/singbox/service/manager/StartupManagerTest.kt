@@ -1,5 +1,6 @@
 package com.kunk.singbox.service.manager
 
+import com.kunk.singbox.model.DomainResolveConfig
 import com.kunk.singbox.model.Outbound
 import com.kunk.singbox.model.SingBoxConfig
 import com.kunk.singbox.model.TlsConfig
@@ -76,5 +77,28 @@ class StartupManagerTest {
         )
 
         assertEquals("hy2.example.com", patched.outbounds?.firstOrNull()?.server)
+    }
+
+    @Test
+    fun applyPrewarmedDomainIpsSkipsOutboundsWithDomainResolver() {
+        val config = SingBoxConfig(
+            outbounds = listOf(
+                Outbound(
+                    type = "vless",
+                    tag = "airport-node",
+                    server = "fly-nnca.bestvmr.com",
+                    serverPort = 443,
+                    tls = TlsConfig(enabled = true, serverName = "fly-nnca.bestvmr.com"),
+                    domainResolver = DomainResolveConfig(server = "airport-dns")
+                )
+            )
+        )
+
+        val patched = StartupManager.applyPrewarmedDomainIps(
+            config,
+            mapOf("fly-nnca.bestvmr.com" to "1.2.3.4")
+        )
+
+        assertEquals("fly-nnca.bestvmr.com", patched.outbounds?.firstOrNull()?.server)
     }
 }

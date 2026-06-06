@@ -47,11 +47,12 @@ class StartupManager(
             var changed = false
             val newOutbounds = config.outbounds?.map { outbound ->
                 val server = outbound.server?.trim()
-                if (
-                    server.isNullOrBlank() ||
-                    DnsResolver.isIpAddress(server) ||
-                    !canReplaceServerWithPrewarmedIp(outbound)
-                ) {
+                val hasExplicitDomainResolver = !outbound.domainResolver?.server.isNullOrBlank()
+                val canUsePrewarmedIp = !server.isNullOrBlank() &&
+                    !DnsResolver.isIpAddress(server) &&
+                    !hasExplicitDomainResolver &&
+                    canReplaceServerWithPrewarmedIp(outbound)
+                if (!canUsePrewarmedIp) {
                     outbound
                 } else {
                     val resolvedIp = prewarmedDomainIps[server]
