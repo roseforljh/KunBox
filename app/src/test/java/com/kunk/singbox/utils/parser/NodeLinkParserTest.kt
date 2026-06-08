@@ -446,6 +446,21 @@ class NodeLinkParserTest {
     }
 
     @Test
+    fun testParseVLessHttpUpgradeInfersTls() {
+        val link = "vless://uuid@edge.example.com:443?type=httpupgrade&host=cdn.example.com&path=%2Fup#HttpUpgrade"
+
+        val outbound = parser.parse(link)
+
+        assertNotNull(outbound)
+        assertEquals("vless", outbound?.type)
+        assertEquals("httpupgrade", outbound?.transport?.type)
+        assertEquals("/up", outbound?.transport?.path)
+        assertEquals("cdn.example.com", outbound?.transport?.headers?.get("Host"))
+        assertEquals(true, outbound?.tls?.enabled)
+        assertEquals("cdn.example.com", outbound?.tls?.serverName)
+    }
+
+    @Test
     fun testRealVLessXhttpRealityNodePreservesXudpPacketEncodingForRuntime() {
         val link = "vless://2edd765b-a895-46ab-a01c-c4719947546b@35.194.192.123:13324" +
             "?type=xhttp&encryption=mlkem768x25519plus.native.0rtt.sample&flow=xtls-rprx-vision" +
@@ -551,6 +566,23 @@ class NodeLinkParserTest {
         assertEquals(64L, outbound?.transport?.scMaxBufferedPosts)
         assertEquals(true, outbound?.transport?.noGRPCHeader)
         assertEquals(true, outbound?.transport?.noSSEHeader)
+    }
+
+    @Test
+    fun testParseTrojanHttpUpgrade() {
+        val link =
+            "trojan://password@trojan.example.com:443?type=httpupgrade&host=cdn.example.com&path=%2Fup" +
+                "&sni=sni.example.com#TrojanHttpUpgrade"
+
+        val outbound = parser.parse(link)
+
+        assertNotNull(outbound)
+        assertEquals("trojan", outbound?.type)
+        assertEquals("httpupgrade", outbound?.transport?.type)
+        assertEquals("/up", outbound?.transport?.path)
+        assertEquals("cdn.example.com", outbound?.transport?.headers?.get("Host"))
+        assertEquals(true, outbound?.tls?.enabled)
+        assertEquals("sni.example.com", outbound?.tls?.serverName)
     }
 
     // ==================== Hysteria2 ====================

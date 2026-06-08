@@ -53,7 +53,7 @@ data class AppSettings(
 
     @SerializedName("remoteDns") val remoteDns: String = DEFAULT_REMOTE_DNS,
     @SerializedName("fakeDnsEnabled") val fakeDnsEnabled: Boolean = false,
-    @SerializedName("fakeIpRange") val fakeIpRange: String = "198.18.0.0/15",
+    @SerializedName("fakeIpRange") val fakeIpRange: String = DEFAULT_FAKE_IP_RANGE,
     @SerializedName("fakeIpExcludeDomains") val fakeIpExcludeDomains: String = "",
     @SerializedName("fakeDnsExcludedDomains") val fakeDnsExcludedDomains: String = "",
     @SerializedName("dnsStrategy") val dnsStrategy: DnsStrategy = DnsStrategy.PREFER_IPV4,
@@ -91,7 +91,7 @@ data class AppSettings(
     @SerializedName("appGroups") val appGroups: List<AppGroup> = emptyList(),
 
     @SerializedName("ruleSetAutoUpdateEnabled") val ruleSetAutoUpdateEnabled: Boolean = false,
-    @SerializedName("ruleSetAutoUpdateInterval") val ruleSetAutoUpdateInterval: Int = 60, // ·告帒妫濋幐?
+    @SerializedName("ruleSetAutoUpdateInterval") val ruleSetAutoUpdateInterval: Int = 60, // 分钟
 
     @SerializedName("subscriptionUpdateTimeout") val subscriptionUpdateTimeout: Int = 30,
 
@@ -106,6 +106,7 @@ data class AppSettings(
     companion object {
         const val DEFAULT_LOCAL_DNS = "https://dns.alidns.com/dns-query"
         const val DEFAULT_REMOTE_DNS = "https://1.1.1.1/dns-query"
+        const val DEFAULT_FAKE_IP_RANGE = "198.18.0.0/15,fc00::/18"
         const val LEGACY_LOCAL_DNS = "local"
         const val DEFAULT_FAKE_DNS_EXCLUDED_DOMAINS = "accounts.google.com\noauth.googleusercontent.com\n" +
             "appleid.apple.com\nidmsa.apple.com\nlogin.microsoftonline.com\nlogin.live.com\n" +

@@ -207,7 +207,7 @@ class DataExportRepository(private val context: Context) {
 
             if (options.importSettings) {
                 try {
-                    importSettings(exportData.settings)
+                    importSettings(exportData.settings, importRules = options.importRules)
                     settingsImported = true
                 } catch (e: Exception) {
                     Log.e(TAG, "Failed to import settings", e)
@@ -243,7 +243,7 @@ class DataExportRepository(private val context: Context) {
             }
 
             if (errors.isNotEmpty()) {
-                val rollbackResult = restoreSnapshot(snapshot)
+                val rollbackResult = restoreSnapshot(snapshot, options)
                 if (rollbackResult.isFailure) {
                     val rollbackMessage = rollbackResult.exceptionOrNull()?.message ?: "unknown rollback error"
                     return@withContext Result.success(
@@ -320,7 +320,7 @@ class DataExportRepository(private val context: Context) {
 
     /**
      */
-    private suspend fun importSettings(settings: AppSettings) {
+    private suspend fun importSettings(settings: AppSettings, importRules: Boolean = true) {
 
         settingsRepository.setAutoConnect(settings.autoConnect)
         settingsRepository.setExcludeFromRecent(settings.excludeFromRecent)
@@ -366,13 +366,17 @@ class DataExportRepository(private val context: Context) {
         settingsRepository.setAllowLan(settings.allowLan)
         settingsRepository.setAppendHttpProxy(settings.appendHttpProxy)
 
-        settingsRepository.setCustomRules(settings.customRules)
-        settingsRepository.setRuleSets(settings.ruleSets, notify = false)
-        settingsRepository.setAppRules(settings.appRules)
-        settingsRepository.setAppGroups(settings.appGroups)
+        if (importRules) {
+            settingsRepository.setCustomRules(settings.customRules)
+            settingsRepository.setRuleSets(settings.ruleSets, notify = false)
+            settingsRepository.setAppRules(settings.appRules)
+            settingsRepository.setAppGroups(settings.appGroups)
+        }
 
-        settingsRepository.setRuleSetAutoUpdateEnabled(settings.ruleSetAutoUpdateEnabled)
-        settingsRepository.setRuleSetAutoUpdateInterval(settings.ruleSetAutoUpdateInterval)
+        if (importRules) {
+            settingsRepository.setRuleSetAutoUpdateEnabled(settings.ruleSetAutoUpdateEnabled)
+            settingsRepository.setRuleSetAutoUpdateInterval(settings.ruleSetAutoUpdateInterval)
+        }
 
         settingsRepository.setNodeFilter(settings.nodeFilter)
         settingsRepository.setNodeSortType(settings.nodeSortType)
@@ -394,6 +398,7 @@ class DataExportRepository(private val context: Context) {
         }
 
         val configFile = File(configDir, "${profile.id}.json")
+        val oldConfigText = configFile.takeIf { it.exists() }?.readText()
         try {
             configFile.writeText(gson.toJson(config))
 
@@ -405,7 +410,13 @@ class DataExportRepository(private val context: Context) {
 
             configRepository.importProfileDirectly(newProfile, config)
         } catch (e: Exception) {
-            if (configFile.exists() && !configFile.delete()) {
+            if (oldConfigText != null) {
+                runCatching {
+                    configFile.writeText(oldConfigText)
+                }.onFailure { restoreError ->
+                    Log.e(TAG, "Failed to restore overwritten config: ${configFile.absolutePath}", restoreError)
+                }
+            } else if (configFile.exists() && !configFile.delete()) {
                 Log.w(TAG, "Failed to delete orphaned imported config: ${configFile.absolutePath}")
             }
             throw e
@@ -483,48 +494,57 @@ class DataExportRepository(private val context: Context) {
         }
 
         val snapshotJson = exportAllData().getOrNull() ?: return null
-        return gson.fromJson(snapshotJson, ExportData::class.java)
+        val snapshot = gson.fromJson(snapshotJson, ExportData::class.java)
+        if (options.importProfiles && snapshot.profiles.size != configRepository.profiles.value.size) {
+            Log.e(TAG, "Rollback snapshot is incomplete, aborting import")
+            return null
+        }
+        return snapshot
     }
 
-    private suspend fun restoreSnapshot(snapshot: ExportData): Result<Unit> {
+    private suspend fun restoreSnapshot(snapshot: ExportData, options: ImportOptions): Result<Unit> {
         val rollbackErrors = mutableListOf<String>()
 
-        runCatching {
-            importSettings(snapshot.settings)
-        }.onFailure { error ->
-            rollbackErrors += "settings rollback failed: ${error.message}"
-        }
-
-        snapshot.profiles.forEach { profileData ->
+        if (options.importSettings) {
             runCatching {
-                importProfile(profileData, overwrite = true)
+                importSettings(snapshot.settings)
             }.onFailure { error ->
-                rollbackErrors += "profile rollback failed: ${profileData.profile.name}: ${error.message}"
+                rollbackErrors += "settings rollback failed: ${error.message}"
             }
         }
 
-        if (rollbackErrors.isEmpty()) {
-            val snapshotIds = snapshot.profiles.map { it.profile.id }.toSet()
-            val currentProfiles = configRepository.profiles.value
-            currentProfiles
-                .filter { it.id !in snapshotIds }
-                .forEach { profile ->
-                    runCatching {
-                        configRepository.deleteProfile(profile.id)
-                    }.onFailure { error ->
-                        rollbackErrors += "profile cleanup failed: ${profile.name}: ${error.message}"
-                    }
+        if (options.importProfiles) {
+            snapshot.profiles.forEach { profileData ->
+                runCatching {
+                    importProfile(profileData, overwrite = true)
+                }.onFailure { error ->
+                    rollbackErrors += "profile rollback failed: ${profileData.profile.name}: ${error.message}"
                 }
-        }
+            }
 
-        snapshot.activeProfileId?.let { activeProfileId ->
-            runCatching {
-                val profiles = configRepository.profiles.value
-                if (profiles.any { it.id == activeProfileId }) {
-                    configRepository.setActiveProfile(activeProfileId, snapshot.activeNodeId)
+            if (rollbackErrors.isEmpty()) {
+                val snapshotIds = snapshot.profiles.map { it.profile.id }.toSet()
+                val currentProfiles = configRepository.profiles.value
+                currentProfiles
+                    .filter { it.id !in snapshotIds }
+                    .forEach { profile ->
+                        runCatching {
+                            configRepository.deleteProfile(profile.id)
+                        }.onFailure { error ->
+                            rollbackErrors += "profile cleanup failed: ${profile.name}: ${error.message}"
+                        }
+                    }
+            }
+
+            snapshot.activeProfileId?.let { activeProfileId ->
+                runCatching {
+                    val profiles = configRepository.profiles.value
+                    if (profiles.any { it.id == activeProfileId }) {
+                        configRepository.setActiveProfile(activeProfileId, snapshot.activeNodeId)
+                    }
+                }.onFailure { error ->
+                    rollbackErrors += "active profile rollback failed: ${error.message}"
                 }
-            }.onFailure { error ->
-                rollbackErrors += "active profile rollback failed: ${error.message}"
             }
         }
 

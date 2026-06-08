@@ -33,7 +33,7 @@ object AppLogger {
     var enabled: Boolean = true
 
     @PublishedApi
-    internal fun isLoggable(level: Level): Boolean {
+    internal fun shouldLog(level: Level): Boolean {
         return enabled && level.priority >= minLevel.priority
     }
 
@@ -41,7 +41,7 @@ object AppLogger {
      *
      */
     inline fun v(tag: String, message: () -> String) {
-        if (isLoggable(Level.VERBOSE)) {
+        if (shouldLog(Level.VERBOSE)) {
             Log.v(tag, message())
         }
     }
@@ -50,7 +50,7 @@ object AppLogger {
      *
      */
     inline fun d(tag: String, message: () -> String) {
-        if (isLoggable(Level.DEBUG)) {
+        if (shouldLog(Level.DEBUG)) {
             Log.d(tag, message())
         }
     }
@@ -59,7 +59,7 @@ object AppLogger {
      *
      */
     inline fun i(tag: String, message: () -> String) {
-        if (isLoggable(Level.INFO)) {
+        if (shouldLog(Level.INFO)) {
             Log.i(tag, message())
         }
     }
@@ -68,7 +68,7 @@ object AppLogger {
      *
      */
     inline fun w(tag: String, message: () -> String) {
-        if (isLoggable(Level.WARN)) {
+        if (shouldLog(Level.WARN)) {
             Log.w(tag, message())
         }
     }
@@ -76,7 +76,7 @@ object AppLogger {
     /**
      */
     inline fun w(tag: String, throwable: Throwable?, message: () -> String) {
-        if (isLoggable(Level.WARN)) {
+        if (shouldLog(Level.WARN)) {
             Log.w(tag, message(), throwable)
         }
     }
@@ -85,7 +85,7 @@ object AppLogger {
      *
      */
     inline fun e(tag: String, message: () -> String) {
-        if (isLoggable(Level.ERROR)) {
+        if (shouldLog(Level.ERROR)) {
             Log.e(tag, message())
         }
     }
@@ -93,7 +93,7 @@ object AppLogger {
     /**
      */
     inline fun e(tag: String, throwable: Throwable?, message: () -> String) {
-        if (isLoggable(Level.ERROR)) {
+        if (shouldLog(Level.ERROR)) {
             Log.e(tag, message(), throwable)
         }
     }
@@ -101,30 +101,30 @@ object AppLogger {
     /**
      */
     fun v(tag: String, message: String) {
-        if (isLoggable(Level.VERBOSE)) Log.v(tag, message)
+        if (shouldLog(Level.VERBOSE)) Log.v(tag, message)
     }
 
     fun d(tag: String, message: String) {
-        if (isLoggable(Level.DEBUG)) Log.d(tag, message)
+        if (shouldLog(Level.DEBUG)) Log.d(tag, message)
     }
 
     fun i(tag: String, message: String) {
-        if (isLoggable(Level.INFO)) Log.i(tag, message)
+        if (shouldLog(Level.INFO)) Log.i(tag, message)
     }
 
     fun w(tag: String, message: String) {
-        if (isLoggable(Level.WARN)) Log.w(tag, message)
+        if (shouldLog(Level.WARN)) Log.w(tag, message)
     }
 
     fun w(tag: String, message: String, throwable: Throwable?) {
-        if (isLoggable(Level.WARN)) Log.w(tag, message, throwable)
+        if (shouldLog(Level.WARN)) Log.w(tag, message, throwable)
     }
 
     fun e(tag: String, message: String) {
-        if (isLoggable(Level.ERROR)) Log.e(tag, message)
+        if (shouldLog(Level.ERROR)) Log.e(tag, message)
     }
 
     fun e(tag: String, message: String, throwable: Throwable?) {
-        if (isLoggable(Level.ERROR)) Log.e(tag, message, throwable)
+        if (shouldLog(Level.ERROR)) Log.e(tag, message, throwable)
     }
 }

@@ -24,6 +24,7 @@ class VpnKeepaliveWorker(
         private const val WORK_NAME = "vpn_keepalive"
 
         private const val CHECK_INTERVAL_MINUTES = 15L
+        private const val RUNNING_CONFIG_FILE = "running_config.json"
 
         /**
          *
@@ -124,7 +125,7 @@ class VpnKeepaliveWorker(
                         action = SingBoxService.ACTION_START
                         putExtra(
                             SingBoxService.EXTRA_CONFIG_PATH,
-                            applicationContext.filesDir.resolve("config.json").absolutePath
+                            applicationContext.filesDir.resolve(RUNNING_CONFIG_FILE).absolutePath
                         )
                     }
                 }
@@ -133,7 +134,7 @@ class VpnKeepaliveWorker(
                         action = ProxyOnlyService.ACTION_START
                         putExtra(
                             ProxyOnlyService.EXTRA_CONFIG_PATH,
-                            applicationContext.filesDir.resolve("config.json").absolutePath
+                            applicationContext.filesDir.resolve(RUNNING_CONFIG_FILE).absolutePath
                         )
                     }
                 }

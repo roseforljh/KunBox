@@ -147,7 +147,16 @@ object NodeLinkExporter {
         val encodedUserInfo = Base64.encodeToString(userInfo.toByteArray(), Base64.NO_WRAP)
         val serverPart = "$server:$port"
         val name = encodeUrlComponent(outbound.tag)
-        return "ss://$encodedUserInfo@$serverPart#$name"
+        val params = mutableListOf<String>()
+        outbound.plugin?.takeIf { it.isNotBlank() }?.let { plugin ->
+            val pluginValue = outbound.pluginOpts
+                ?.takeIf { it.isNotBlank() }
+                ?.let { "$plugin;$it" }
+                ?: plugin
+            params.add("plugin=${encodeUrlComponent(pluginValue)}")
+        }
+        val queryPart = buildOptionalQuery(params)
+        return "ss://$encodedUserInfo@$serverPart$queryPart#$name"
     }
 
     private fun generateTrojanLink(outbound: Outbound): String {

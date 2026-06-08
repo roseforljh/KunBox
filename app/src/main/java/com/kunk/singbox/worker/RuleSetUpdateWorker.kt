@@ -21,7 +21,7 @@ class RuleSetUpdateWorker(
         return try {
             val repository = RuleSetRepository.getInstance(applicationContext)
             // Force update to check for new versions
-            val success = repository.ensureRuleSetsReady(forceUpdate = true, allowNetwork = false) { progress ->
+            val success = repository.ensureRuleSetsReady(forceUpdate = true, allowNetwork = true) { progress ->
             }
 
             if (success) {

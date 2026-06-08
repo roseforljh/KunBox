@@ -53,6 +53,7 @@
     <string name="common_all">All</string>
     <string name="common_yes">Yes</string>
     <string name="common_no">No</string>
+    <string name="common_auto">Auto</string>
     <string name="common_menu">Menu</string>
     <string name="common_more_options">More Options</string>
     <string name="common_view">View</string>
@@ -184,6 +185,8 @@
     <string name="tun_settings_stack">Stack</string>
     <string name="tun_settings_ip_version_mode">IP Version Mode</string>
     <string name="tun_settings_mtu">MTU</string>
+    <string name="tun_settings_mtu_auto">Auto MTU</string>
+    <string name="tun_settings_mtu_auto_subtitle">Wi-Fi/Ethernet 1480, cellular 1400; tuned for QUIC proxy protocols, can be disabled for manual MTU</string>
     <string name="tun_settings_interface_name">Interface Name</string>
     <string name="tun_settings_auto_route">Auto Route</string>
     <string name="tun_settings_auto_route_subtitle">Automatically configure system routing table</string>
@@ -216,6 +219,12 @@
     <!-- Profiles -->
     <string name="profiles_title">Profile Management</string>
     <string name="profiles_search">Search Profiles</string>
+    <string name="profiles_deep_link_import_title">Confirm Subscription Import</string>
+    <string name="profiles_deep_link_import_message">Import this subscription:
+%1$s
+
+%2$s</string>
+    <string name="profiles_import_content_too_large">Import content is too large, please reduce it and try again</string>
     <string name="profiles_search_hint">Enter keyword...</string>
     <string name="profiles_add_subscription">Add Subscription</string>
     <string name="profiles_edit_profile">Edit Profile</string>
@@ -285,6 +294,13 @@
     <string name="nodes_unsupported_format">Unsupported link format</string>
     <string name="nodes_add_failed">Add failed</string>
     <string name="nodes_group_auto_generated">Groups are auto-generated from profiles, to delete please go to \'Profile Management\' and delete the corresponding profile</string>
+    <string name="nodes_stat_total">%d nodes</string>
+    <string name="nodes_stat_available">%d available</string>
+    <string name="nodes_stat_avg_latency">%dms</string>
+    <string name="node_create_title">Create Node</string>
+    <string name="node_created">Node created</string>
+    <string name="nodes_manual_create">Create Manually</string>
+    <string name="nodes_select_protocol">Select Protocol</string>
 
     <!-- Node Sort -->
     <string name="nodes_sort_default">Default</string>
@@ -409,6 +425,9 @@
     <string name="rulesets_select_profile">Select Profile</string>
     <string name="rulesets_select_node">Select Node</string>
     <string name="rulesets_select_inbound">Select Inbound</string>
+    <string name="rulesets_select_target">Select Target</string>
+    <string name="rulesets_tap_to_select">Tap to select...</string>
+    <string name="rulesets_rule_set_tag">Rule Set Tag</string>
     <string name="rulesets_type">Type</string>
     <string name="rulesets_format">Format</string>
     <string name="rulesets_url">URL</string>
@@ -581,6 +600,8 @@
     <!-- Profile Card -->
     <string name="profile_card_no_expiry">No Expiry</string>
     <string name="profile_card_never_updated">Never Updated</string>
+    <string name="profile_card_traffic_unlimited">Unlimited</string>
+    <string name="profile_card_traffic_remaining">Remaining: %s</string>
     <string name="profile_card_updated_at">Updated:</string>
 
     <!-- Service Notifications -->
@@ -700,6 +721,18 @@
     <!-- Infinite Date -->
     <string name="date_infinite">No Expiry</string>
 
+    <!-- Enum: BackgroundPowerSavingDelay -->
+    <string name="power_saving_delay_5min">5 minutes</string>
+    <string name="power_saving_delay_15min">15 minutes</string>
+    <string name="power_saving_delay_30min">30 minutes</string>
+    <string name="power_saving_delay_1hour">1 hour</string>
+    <string name="power_saving_delay_2hours">2 hours</string>
+    <string name="power_saving_delay_never">Never</string>
+
+    <!-- Connection Settings - Power Saving -->
+    <string name="connection_settings_power_saving">Background Power Saving Delay</string>
+    <string name="connection_settings_power_saving_subtitle">Pause non-core processes after the app stays in background for this long</string>
+
     <!-- Node Switch Messages -->
     <string name="node_switch_success">Switched to %s</string>
     <string name="node_switch_not_running">Switched to %s (service not running)</string>
@@ -710,6 +743,11 @@
     <!-- Subscription Update Messages -->
     <string name="subscription_update_success_with_changes">Update successful (%1$s, %2$d nodes)</string>
     <string name="subscription_update_success_no_changes">Update complete, no changes (%d nodes)</string>
+    <string name="subscription_update_success_background_dns">%1$s, DNS pre-resolve moved to background</string>
+    <string name="subscription_update_stage_requesting">Requesting</string>
+    <string name="subscription_update_stage_parsing">Parsing</string>
+    <string name="subscription_update_stage_saving">Saving</string>
+    <string name="subscription_update_stage_dns_background">Background DNS pre-resolve</string>
     <string name="ruleset_update_network_error">Update failed, please check your network</string>
 
     <!-- App Groups -->

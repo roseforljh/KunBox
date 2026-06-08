@@ -36,7 +36,7 @@
 # Services - Android 系统通过 AndroidManifest 注册的服务
 -keep class com.kunk.singbox.service.SingBoxService { *; }
 -keep class com.kunk.singbox.service.ProxyOnlyService { *; }
--keep class com.kunk.singbox.service.SingBoxIpcService { *; }
+-keep class com.kunk.singbox.ipc.SingBoxIpcService { *; }
 -keep class com.kunk.singbox.service.VpnTileService { *; }
 
 # BroadcastReceivers - 动态注册的 Receiver
@@ -44,7 +44,11 @@
 
 # WorkManager Workers - 后台任务调度
 -keep class com.kunk.singbox.service.*Worker { *; }
+-keep class com.kunk.singbox.worker.*Worker { *; }
 -keepclassmembers class com.kunk.singbox.service.*Worker {
+    public <init>(android.content.Context, androidx.work.WorkerParameters);
+}
+-keepclassmembers class com.kunk.singbox.worker.*Worker {
     public <init>(android.content.Context, androidx.work.WorkerParameters);
 }
 

@@ -495,6 +495,8 @@ object OutboundFixer {
                 password = fixed.password,
                 plugin = fixed.plugin,
                 pluginOpts = fixed.pluginOpts,
+                tls = fixed.tls,
+                transport = fixed.transport,
                 udpOverTcp = fixed.udpOverTcp,
                 multiplex = fixed.multiplex,
                 detour = fixed.detour,

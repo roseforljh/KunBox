@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import com.kunk.singbox.repository.InstalledAppsRepository
+import com.kunk.singbox.repository.SettingsRepository
 import com.kunk.singbox.repository.shouldReloadInstalledAppsForPackageChange
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -19,8 +20,17 @@ class PackageRemovedReceiver : BroadcastReceiver() {
         val isReplacing = intent.getBooleanExtra(Intent.EXTRA_REPLACING, false)
         if (!shouldReloadInstalledAppsForPackageChange(isReplacing, packageName)) return
 
+        val pendingResult = goAsync()
         CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
-            InstalledAppsRepository.getInstance(context.applicationContext).reloadApps()
+            try {
+                val appContext = context.applicationContext
+                InstalledAppsRepository.getInstance(appContext).reloadApps()
+                if (intent.action == Intent.ACTION_PACKAGE_REMOVED) {
+                    SettingsRepository.getInstance(appContext).removePackageFromPerAppSettings(packageName)
+                }
+            } finally {
+                pendingResult.finish()
+            }
         }
     }
 

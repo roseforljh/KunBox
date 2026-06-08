@@ -180,6 +180,13 @@ class SettingsRepository(private val context: Context) {
         notifyRestartRequired()
     }
 
+    suspend fun removePackageFromPerAppSettings(packageName: String) {
+        settingsStore.updateSettingsAndWait { settings ->
+            removePackageFromPerAppSettings(settings, packageName)
+        }
+        notifyRestartRequired()
+    }
+
     suspend fun setLocalDns(value: String) {
         settingsStore.updateSettingsAndWait { it.copy(localDns = value) }
         notifyRestartRequired()
@@ -195,8 +202,9 @@ class SettingsRepository(private val context: Context) {
         notifyRestartRequired()
     }
 
-    suspend fun setFakeIpRange(value: String) {
-        settingsStore.updateSettingsAndWait { it.copy(fakeIpRange = value) }
+    suspend fun setFakeIpRange(value: String?) {
+        val normalized = value?.takeIf { it.isNotBlank() } ?: AppSettings.DEFAULT_FAKE_IP_RANGE
+        settingsStore.updateSettingsAndWait { it.copy(fakeIpRange = normalized) }
         notifyRestartRequired()
     }
 
@@ -328,7 +336,8 @@ class SettingsRepository(private val context: Context) {
     }
 
     suspend fun setRuleSetAutoUpdateInterval(value: Int) {
-        settingsStore.updateSettingsAndWait { it.copy(ruleSetAutoUpdateInterval = value) }
+        val normalized = com.kunk.singbox.service.RuleSetAutoUpdateWorker.Companion.normalizeIntervalMinutes(value)
+        settingsStore.updateSettingsAndWait { it.copy(ruleSetAutoUpdateInterval = normalized) }
     }
 
     suspend fun setSubscriptionUpdateTimeout(value: Int) {

@@ -11,6 +11,14 @@ plugins {
 
 val libboxInputAar = file("libs/libbox.aar")
 val libboxStrippedAar = layout.buildDirectory.file("stripped-libs/libbox-stripped.aar")
+val composeBomVersion = "2024.11.00"
+
+fun gitOutput(vararg args: String): String? = runCatching {
+    providers.exec {
+        commandLine("git", *args)
+        isIgnoreExitValue = true
+    }.standardOutput.asText.get().trim().takeIf { it.isNotBlank() }
+}.getOrNull()
 
 val enableSfaLibboxReplacement = providers.gradleProperty("enableSfaLibboxReplacement")
     .orNull
@@ -252,21 +260,17 @@ configure<ApplicationExtension> {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         
         // Dynamic versioning
-        val gitCommitCountOutput = providers.exec {
-            commandLine("git", "rev-list", "--count", "HEAD")
-        }.standardOutput.asText.get().trim()
-        val gitCommitCount = gitCommitCountOutput.toIntOrNull() ?: 1
+        val envVersionCode = System.getenv("VERSION_CODE")?.toIntOrNull()
+        val gitCommitCount = gitOutput("rev-list", "--count", "HEAD")?.toIntOrNull()
         
         // Offset to ensure versionCode > previous hardcoded value (5946)
-        val gitVersionCode = 6000 + gitCommitCount
+        val gitVersionCode = gitCommitCount?.let { 6000 + it } ?: 6001
 
-        val gitVersionName = System.getenv("VERSION_NAME") ?: run {
-             providers.exec {
-                 commandLine("git", "describe", "--tags", "--always")
-             }.standardOutput.asText.get().trim()
-        }
+        val gitVersionName = System.getenv("VERSION_NAME")
+            ?: gitOutput("describe", "--tags", "--always")
+            ?: "0.0.0-dev"
 
-        versionCode = gitVersionCode
+        versionCode = envVersionCode ?: gitVersionCode
         versionName = gitVersionName
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -407,7 +411,7 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
     implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("androidx.activity:activity-compose:1.9.3")
-    implementation(platform("androidx.compose:compose-bom:2024.11.00"))
+    implementation(platform("androidx.compose:compose-bom:$composeBomVersion"))
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-graphics")
     implementation("androidx.compose.ui:ui-tooling-preview")
@@ -436,7 +440,7 @@ dependencies {
     androidTestImplementation("androidx.test.ext:junit:1.1.5")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.5.1")
     androidTestImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
-    androidTestImplementation(platform("androidx.compose:compose-bom:2023.08.00"))
+    androidTestImplementation(platform("androidx.compose:compose-bom:$composeBomVersion"))
     androidTestImplementation("androidx.compose.ui:ui-test-junit4")
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")

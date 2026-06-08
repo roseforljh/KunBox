@@ -188,7 +188,13 @@ class DnsResolver(
                         return
                     }
 
-                    val ip = parseDnsResponse(body)
+                    val ip = try {
+                        parseDnsResponse(body)
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Failed to parse DoH response for $domain: ${e.message}")
+                        cont.resume(DnsResolveResult(null, "doh", e.message))
+                        return
+                    }
                     if (ip != null) {
                         Log.d(TAG, "DoH resolved $domain -> $ip")
                         cont.resume(DnsResolveResult(ip, "doh"))

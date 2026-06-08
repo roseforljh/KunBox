@@ -25,6 +25,8 @@ class SettingsStore private constructor(context: Context) {
     companion object {
         private const val TAG = "SettingsStore"
         private const val AUTO_ROUTE_MIGRATION_VERSION = 6
+        private const val FAKE_IP_RANGE_MIGRATION_VERSION = 7
+        private const val LEGACY_DEFAULT_FAKE_IP_RANGE = "198.18.0.0/15"
 
         @Volatile
         private var INSTANCE: SettingsStore? = null
@@ -94,7 +96,34 @@ class SettingsStore private constructor(context: Context) {
                 Log.i(TAG, "Migrating legacy tun settings to enable autoRoute when strictRoute is enabled")
             }
 
+            result = migrateFakeIpRange(version, result)
+
             return result
+        }
+
+        private fun migrateFakeIpRange(version: Int, settings: AppSettings): AppSettings {
+            val fakeIpRange = settings.fakeIpRange.orEmpty().trim()
+            if (fakeIpRange.isEmpty()) {
+                Log.i(TAG, "Recovering empty fakeIpRange to '${AppSettings.DEFAULT_FAKE_IP_RANGE}'")
+                return settings.copy(fakeIpRange = AppSettings.DEFAULT_FAKE_IP_RANGE)
+            }
+            if (
+                version >= FAKE_IP_RANGE_MIGRATION_VERSION ||
+                fakeIpRange != LEGACY_DEFAULT_FAKE_IP_RANGE
+            ) {
+                return settings
+            }
+
+            Log.i(TAG, "Migrating legacy fakeIpRange to '${AppSettings.DEFAULT_FAKE_IP_RANGE}'")
+            return settings.copy(fakeIpRange = AppSettings.DEFAULT_FAKE_IP_RANGE)
+        }
+
+        internal fun shouldPersistMigratedSettings(
+            version: Int,
+            loaded: AppSettings,
+            migrated: AppSettings
+        ): Boolean {
+            return version != SettingsEntity.CURRENT_VERSION || migrated != loaded
         }
     }
 
@@ -126,8 +155,7 @@ class SettingsStore private constructor(context: Context) {
                 if (loaded != null) {
                     val migrated = migrateSettings(entity.version, loaded)
                     _settings.value = migrated
-                    // Persist migration if we upgraded settings.
-                    if (entity.version != SettingsEntity.CURRENT_VERSION) {
+                    if (shouldPersistMigratedSettings(entity.version, loaded, migrated)) {
                         scope.launch {
                             saveSettingsInternal(migrated)
                         }

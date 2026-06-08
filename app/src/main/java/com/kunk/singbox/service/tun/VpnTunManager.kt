@@ -78,11 +78,27 @@ class VpnTunManager(
 
         private fun resolveFakeIpRoutes(settings: AppSettings?): List<Pair<String, Int>> {
             if (settings?.fakeDnsEnabled != true) return emptyList()
+            val fakeIpRoutes = resolveConfiguredFakeIpRoutes(settings.fakeIpRange)
             return when (settings.ipVersionMode) {
-                IpVersionMode.IPV4_ONLY -> listOf("198.18.0.0" to 15)
-                IpVersionMode.IPV6_ONLY -> listOf("fc00::" to 18)
-                IpVersionMode.DUAL_STACK, IpVersionMode.PREFER_IPV6 -> listOf("198.18.0.0" to 15, "fc00::" to 18)
+                IpVersionMode.IPV4_ONLY -> listOf(fakeIpRoutes.ipv4)
+                IpVersionMode.IPV6_ONLY -> listOf(fakeIpRoutes.ipv6)
+                IpVersionMode.DUAL_STACK, IpVersionMode.PREFER_IPV6 -> listOf(fakeIpRoutes.ipv4, fakeIpRoutes.ipv6)
             }
+        }
+
+        private data class FakeIpRoutePlan(
+            val ipv4: Pair<String, Int>,
+            val ipv6: Pair<String, Int>
+        )
+
+        private fun resolveConfiguredFakeIpRoutes(fakeIpRange: String?): FakeIpRoutePlan {
+            val routes = fakeIpRange.orEmpty()
+                .split(",")
+                .mapNotNull { parseCidrRoute(it) }
+            return FakeIpRoutePlan(
+                ipv4 = routes.firstOrNull { !it.first.contains(":") } ?: ("198.18.0.0" to 15),
+                ipv6 = routes.firstOrNull { it.first.contains(":") } ?: ("fc00::" to 18)
+            )
         }
 
         private fun resolveDnsServerRoutes(tunPlan: VpnTunAddressPlan): List<Pair<String, Int>> {

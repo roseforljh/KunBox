@@ -21,6 +21,7 @@ import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -38,6 +39,7 @@ sealed class AddNodeTarget {
     data class NewProfile(val profileName: String) : AddNodeTarget()
 }
 
+@Suppress("CognitiveComplexMethod", "LongMethod")
 @Composable
 fun AddNodeDialog(
     profiles: List<ProfileUi>,
@@ -48,6 +50,12 @@ fun AddNodeDialog(
     var isCreatingNew by remember { mutableStateOf(false) }
     var newProfileName by remember { mutableStateOf("") }
     var selectedProfileId by remember { mutableStateOf(profiles.firstOrNull()?.id) }
+
+    LaunchedEffect(profiles) {
+        if (profiles.isNotEmpty() && profiles.none { it.id == selectedProfileId }) {
+            selectedProfileId = profiles.first().id
+        }
+    }
 
     val isValid = nodeLink.isNotBlank() && (
         (isCreatingNew && newProfileName.isNotBlank()) ||

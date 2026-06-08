@@ -1,5 +1,6 @@
 package com.kunk.singbox.service.tun
 
+import com.google.gson.Gson
 import com.kunk.singbox.model.AppSettings
 import com.kunk.singbox.model.IpVersionMode
 import com.kunk.singbox.model.VpnRouteMode
@@ -55,6 +56,53 @@ class VpnTunAddressPlanTest {
                 "119.29.29.29" to 32,
                 "1.1.1.1" to 32,
                 "2606:4700:4700::1111" to 128,
+                "198.18.0.0" to 15,
+                "fc00::" to 18
+            ),
+            routes
+        )
+    }
+
+    @org.junit.Test
+    fun fakeIpRoutesUseConfiguredIpv4AndIpv6RangesWhenFakeDnsEnabled() {
+        val settings = AppSettings(
+            fakeDnsEnabled = true,
+            fakeIpRange = "198.19.0.0/16,fd00:abcd::/48",
+            ipVersionMode = IpVersionMode.DUAL_STACK
+        )
+
+        val routes = VpnTunManager.resolveVpnRoutesForTest(
+            settings = settings,
+            tunPlan = VpnTunAddressPlanner.build(IpVersionMode.DUAL_STACK)
+        )
+
+        assertEquals(
+            listOf(
+                "0.0.0.0" to 0,
+                "::" to 0,
+                "198.19.0.0" to 16,
+                "fd00:abcd::" to 48
+            ),
+            routes
+        )
+    }
+
+    @org.junit.Test
+    fun fakeIpRoutesRecoverDefaultRangesWhenConfiguredRangeIsNull() {
+        val settings = Gson().fromJson(
+            """{"fakeDnsEnabled":true,"ipVersionMode":"DUAL_STACK","fakeIpRange":null}""",
+            AppSettings::class.java
+        )
+
+        val routes = VpnTunManager.resolveVpnRoutesForTest(
+            settings = settings,
+            tunPlan = VpnTunAddressPlanner.build(IpVersionMode.DUAL_STACK)
+        )
+
+        assertEquals(
+            listOf(
+                "0.0.0.0" to 0,
+                "::" to 0,
                 "198.18.0.0" to 15,
                 "fc00::" to 18
             ),

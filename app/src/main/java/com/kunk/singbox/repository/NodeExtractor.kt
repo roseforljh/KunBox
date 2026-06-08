@@ -37,7 +37,7 @@ object NodeExtractor {
         val outbounds = config.outbounds ?: return@withContext emptyList()
 
         val groupOutbounds = outbounds.filter {
-            it.type == "selector" || it.type == "urltest"
+            it.type == "selector" || it.type == "urltest" || it.type == "url-test"
         }
 
         val nodeToGroup = mutableMapOf<String, String>()

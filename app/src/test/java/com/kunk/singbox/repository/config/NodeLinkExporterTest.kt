@@ -5,7 +5,9 @@ import com.kunk.singbox.model.Outbound
 import com.kunk.singbox.model.TlsConfig
 import com.kunk.singbox.model.TransportConfig
 import com.kunk.singbox.model.UdpOverTcpConfig
+import com.kunk.singbox.utils.parser.NodeLinkParser
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -87,5 +89,27 @@ class NodeLinkExporterTest {
         assertTrue(link!!.contains("encryption=mlkem768x25519plus.native.0rtt.sample"))
         assertTrue(link.contains("type=xhttp"))
         assertTrue(link.contains("flow=xtls-rprx-vision"))
+    }
+
+    @Test
+    fun exportShadowsocksShouldPreservePluginParams() {
+        val outbound = Outbound(
+            type = "shadowsocks",
+            tag = "Plugin Node",
+            server = "1.2.3.4",
+            serverPort = 8388,
+            method = "aes-256-gcm",
+            password = "password",
+            plugin = "v2ray-plugin",
+            pluginOpts = "mode=websocket;host=cdn.example.com"
+        )
+
+        val link = NodeLinkExporter.export(outbound, gson)
+        val parsed = link?.let { NodeLinkParser(gson).parse(it) }
+
+        assertNotNull(link)
+        assertTrue(link!!.contains("plugin="))
+        assertEquals("v2ray-plugin", parsed?.plugin)
+        assertEquals("mode=websocket;host=cdn.example.com", parsed?.pluginOpts)
     }
 }

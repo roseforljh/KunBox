@@ -1229,6 +1229,14 @@ class ConfigRepositoryTest {
     }
 
     @Test
+    fun testBuildFakeIpDnsServerForTestRecoversNullRange() {
+        val server = ConfigRepository.buildFakeIpDnsServerForTest(null)
+
+        assertEquals("198.18.0.0/15", server.inet4Range)
+        assertEquals("fc00::/18", server.inet6Range)
+    }
+
+    @Test
     fun testDnsServerTagForRouteTagUsesDynamicServerWhenFakeDnsDisabled() {
         val serverTag = ConfigRepository.dnsServerTagForSemanticForTest(
             semantic = ConfigRepository.OutboundSemantic.RouteTag("P:HK"),

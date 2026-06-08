@@ -174,7 +174,7 @@ class RouteGroupSelector(
         }
 
         internal fun selectorTagForCandidateRpc(target: RouteGroupTarget): String {
-            return target.groupTag
+            return target.autoGroupTag?.takeIf { it.isNotBlank() } ?: target.groupTag
         }
 
         internal fun selectorTagForFallbackRpc(target: RouteGroupTarget): String {
@@ -586,10 +586,12 @@ class RouteGroupSelector(
             return
         }
         val reason = extractImmediateReselectReason(trigger) ?: return
+        val previous = previousSelectedTag?.trim() ?: return
+        val new = newSelectedTag?.trim() ?: return
         callbacks?.onRouteGroupImmediateSwitch(
             groupTag = groupTag,
-            previousSelectedTag = previousSelectedTag!!.trim(),
-            newSelectedTag = newSelectedTag!!.trim(),
+            previousSelectedTag = previous,
+            newSelectedTag = new,
             reason = reason
         )
     }
@@ -636,7 +638,7 @@ class RouteGroupSelector(
             client = client,
             selectorTag = selectorTagForCandidateRpc(target),
             currentSelected = currentSelected,
-            bestTag = autoGroupTag ?: bestTag
+            bestTag = bestTag
         )
     }
 

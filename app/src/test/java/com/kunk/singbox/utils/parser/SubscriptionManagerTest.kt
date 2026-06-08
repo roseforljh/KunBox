@@ -4,6 +4,7 @@ import com.kunk.singbox.model.Outbound
 import com.kunk.singbox.model.TlsConfig
 import com.kunk.singbox.model.TransportConfig
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Test
 
 class SubscriptionManagerTest {
@@ -43,5 +44,43 @@ class SubscriptionManagerTest {
         val result = SubscriptionManager.deduplicateOutbounds(listOf(node, node))
 
         assertEquals(listOf(node), result)
+    }
+
+    @Test
+    fun singBoxParserPreservesDnsFromFullJsonConfig() {
+        val json = """
+            {
+              "dns": {
+                "servers": [
+                  {
+                    "tag": "remote",
+                    "type": "https",
+                    "server": "1.1.1.1"
+                  }
+                ],
+                "rules": [
+                  {
+                    "domain_suffix": ["example.com"],
+                    "server": "remote"
+                  }
+                ],
+                "final": "remote"
+              },
+              "outbounds": [
+                {
+                  "type": "direct",
+                  "tag": "direct"
+                }
+              ]
+            }
+        """.trimIndent()
+
+        val config = SingBoxParser(com.google.gson.Gson()).parse(json)
+
+        assertNotNull(config)
+        assertEquals("remote", config?.dns?.servers?.firstOrNull()?.tag)
+        assertEquals("remote", config?.dns?.rules?.firstOrNull()?.server)
+        assertEquals("remote", config?.dns?.finalServer)
+        assertEquals("direct", config?.outbounds?.firstOrNull()?.tag)
     }
 }

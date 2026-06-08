@@ -8,10 +8,12 @@ import com.kunk.singbox.repository.NodeTrafficStats
 import com.kunk.singbox.repository.TrafficPeriod
 import com.kunk.singbox.repository.TrafficRepository
 import com.kunk.singbox.repository.TrafficSummary
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 data class TrafficStatsUiState(
     val isLoading: Boolean = true,
@@ -42,7 +44,9 @@ class TrafficStatsViewModel(application: Application) : AndroidViewModel(applica
     fun refresh() {
         _uiState.value = _uiState.value.copy(isLoading = true)
         viewModelScope.launch {
-            trafficRepository.reloadFromDisk()
+            withContext(Dispatchers.IO) {
+                trafficRepository.reloadFromDisk()
+            }
             loadTrafficData()
         }
     }
@@ -84,7 +88,9 @@ class TrafficStatsViewModel(application: Application) : AndroidViewModel(applica
 
     fun clearAllStats() {
         viewModelScope.launch {
-            trafficRepository.clearAllStats()
+            withContext(Dispatchers.IO) {
+                trafficRepository.clearAllStats()
+            }
             loadTrafficData()
         }
     }

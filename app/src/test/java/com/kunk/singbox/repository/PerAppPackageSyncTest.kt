@@ -1,5 +1,9 @@
 package com.kunk.singbox.repository
 
+import com.kunk.singbox.model.AppGroup
+import com.kunk.singbox.model.AppInfo
+import com.kunk.singbox.model.AppRule
+import com.kunk.singbox.model.AppSettings
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -42,5 +46,33 @@ class PerAppPackageSyncTest {
         assertFalse(shouldReloadInstalledAppsForPackageChange(isReplacing = true, packageName = "com.example"))
         assertTrue(shouldReloadInstalledAppsForPackageChange(isReplacing = false, packageName = "com.example"))
         assertFalse(shouldReloadInstalledAppsForPackageChange(isReplacing = false, packageName = ""))
+    }
+
+    @Test
+    fun removePackageFromPerAppSettings_cleansListsRulesAndGroups() {
+        val settings = AppSettings(
+            vpnAllowlist = "com.keep\ncom.removed",
+            vpnBlocklist = "com.removed\ncom.blocked",
+            appRules = listOf(
+                AppRule(packageName = "com.removed", appName = "Removed"),
+                AppRule(packageName = "com.keep", appName = "Keep")
+            ),
+            appGroups = listOf(
+                AppGroup(
+                    name = "group",
+                    apps = listOf(
+                        AppInfo(packageName = "com.removed", appName = "Removed"),
+                        AppInfo(packageName = "com.keep", appName = "Keep")
+                    )
+                )
+            )
+        )
+
+        val result = removePackageFromPerAppSettings(settings, "com.removed")
+
+        assertEquals("com.keep", result.vpnAllowlist)
+        assertEquals("com.blocked", result.vpnBlocklist)
+        assertEquals(listOf("com.keep"), result.appRules.map { it.packageName })
+        assertEquals(listOf("com.keep"), result.appGroups.first().apps.map { it.packageName })
     }
 }

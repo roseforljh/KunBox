@@ -398,34 +398,13 @@ class NodeLinkParser(private val gson: Gson) {
             .replace("\n", "")
             .replace("\r", "")
             .replace(" ", "")
+        val padded = padBase64(cleaned)
 
-        try {
-            val urlSafeDecoder = java.util.Base64.getUrlDecoder()
-
-            val padded = when (cleaned.length % 4) {
-                2 -> cleaned + "=="
-                3 -> cleaned + "="
-                else -> cleaned
-            }
-            val decoded = urlSafeDecoder.decode(padded)
-            if (decoded.isNotEmpty()) {
-                return String(decoded, Charsets.UTF_8)
-            }
-        } catch (_: Exception) {
+        decodeWithJvmBase64(padded, urlSafe = true)?.let { decoded ->
+            if (decoded.isNotEmpty()) return String(decoded, Charsets.UTF_8)
         }
-
-        try {
-            val standardDecoder = java.util.Base64.getDecoder()
-            val padded = when (cleaned.length % 4) {
-                2 -> cleaned + "=="
-                3 -> cleaned + "="
-                else -> cleaned
-            }
-            val decoded = standardDecoder.decode(padded)
-            if (decoded.isNotEmpty()) {
-                return String(decoded, Charsets.UTF_8)
-            }
-        } catch (_: Exception) {
+        decodeWithJvmBase64(padded, urlSafe = false)?.let { decoded ->
+            if (decoded.isNotEmpty()) return String(decoded, Charsets.UTF_8)
         }
 
         val candidates = arrayOf(
@@ -436,7 +415,7 @@ class NodeLinkParser(private val gson: Gson) {
         )
         for (flags in candidates) {
             try {
-                val decoded = android.util.Base64.decode(cleaned, flags)
+                val decoded = android.util.Base64.decode(padded, flags)
                 // Basic validation: string should not contain excessive control chars
                 if (decoded.isNotEmpty()) {
                     return String(decoded, Charsets.UTF_8)
@@ -446,6 +425,29 @@ class NodeLinkParser(private val gson: Gson) {
             }
         }
         return null
+    }
+
+    private fun padBase64(content: String): String {
+        return when (content.length % 4) {
+            2 -> content + "=="
+            3 -> content + "="
+            else -> content
+        }
+    }
+
+    private fun decodeWithJvmBase64(content: String, urlSafe: Boolean): ByteArray? {
+        return try {
+            val base64Class = Class.forName("java.util.Base64")
+            val methodName = if (urlSafe) "getUrlDecoder" else "getDecoder"
+            val decoder = base64Class.getMethod(methodName).invoke(null)
+            decoder.javaClass.getMethod("decode", String::class.java).invoke(decoder, content) as? ByteArray
+        } catch (_: ReflectiveOperationException) {
+            null
+        } catch (_: IllegalArgumentException) {
+            null
+        } catch (_: ClassCastException) {
+            null
+        }
     }
 
     private fun parseHostPort(hostPort: String): Pair<String, Int> {
@@ -485,7 +487,7 @@ class NodeLinkParser(private val gson: Gson) {
             val port = (json["port"] as? String)?.toIntOrNull() ?: (json["port"] as? Double)?.toInt() ?: 443
             val id = json["id"] as? String ?: ""
             val aid = (json["aid"] as? String)?.toIntOrNull() ?: (json["aid"] as? Double)?.toInt() ?: 0
-            val net = json["net"] as? String ?: "tcp"
+            val net = (json["net"] as? String ?: "tcp").lowercase()
             val type = json["type"] as? String ?: "none"
             val host = json["host"] as? String ?: ""
             val path = json["path"] as? String ?: ""
@@ -525,6 +527,11 @@ class NodeLinkParser(private val gson: Gson) {
                     type = "http",
                     host = parseHostList(host),
                     path = path
+                )
+                "httpupgrade" -> TransportConfig(
+                    type = "httpupgrade",
+                    path = if (path.isBlank()) "/" else path,
+                    headers = if (host.isNotBlank()) mapOf("Host" to host) else null
                 )
                 "xhttp", "splithttp" -> TransportConfig(
                     type = "xhttp",
@@ -589,9 +596,9 @@ class NodeLinkParser(private val gson: Gson) {
 
             val hostParam = firstParam(params, "host")
             val explicitSni = firstParam(params, "sni")?.takeIf { it.isNotBlank() }
-            val transportType = firstParam(params, "type") ?: "tcp"
+            val transportType = firstParam(params, "type")?.lowercase() ?: "tcp"
             val securityRaw = (firstParam(params, "security") ?: "none").lowercase()
-            val tlsLikeTransport = transportType in setOf("ws", "grpc", "xhttp", "splithttp")
+            val tlsLikeTransport = transportType in setOf("ws", "grpc", "xhttp", "splithttp", "httpupgrade")
             val shouldInferTls = explicitSni != null || (port == 443 && hostParam != null && tlsLikeTransport)
             // 很多机场生成的 VLESS 分享链接会省略 security=tls。
             // 出现 sni，或 443 端口上的常见 HTTP 类传输带 Host 时，按 TLS 处理。
@@ -655,6 +662,11 @@ class NodeLinkParser(private val gson: Gson) {
                 "grpc" -> TransportConfig(
                     type = "grpc",
                     serviceName = firstParam(params, "serviceName", "sn") ?: ""
+                )
+                "httpupgrade" -> TransportConfig(
+                    type = "httpupgrade",
+                    path = firstParam(params, "path") ?: "/",
+                    headers = hostParam?.let { mapOf("Host" to it) }
                 )
                 "xhttp", "splithttp" -> TransportConfig(
                     type = "xhttp",
@@ -757,6 +769,12 @@ class NodeLinkParser(private val gson: Gson) {
                 type = "http",
                 path = firstParam(params, "path"),
                 host = parseHostList(hostParam)
+            )
+
+            "httpupgrade" -> TransportConfig(
+                type = "httpupgrade",
+                path = firstParam(params, "path") ?: "/",
+                headers = hostParam?.let { mapOf("Host" to it) }
             )
 
             "xhttp", "splithttp" -> TransportConfig(

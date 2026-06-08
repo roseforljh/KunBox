@@ -72,6 +72,33 @@ class OutboundFixerTest {
     }
 
     @Test
+    fun testBuildForRuntimePreservesShadowsocksTransportAndTls() {
+        val outbound = Outbound(
+            type = "shadowsocks",
+            tag = "ss-v2ray-plugin",
+            server = "ss.example.com",
+            serverPort = 8388,
+            method = "2022-blake3-aes-128-gcm",
+            password = "secret",
+            transport = TransportConfig(
+                type = "ws",
+                path = "/ws",
+                headers = mapOf("Host" to "edge.example.com")
+            ),
+            tls = TlsConfig(enabled = true, serverName = "edge.example.com")
+        )
+
+        val runtime = OutboundFixer.buildForRuntimeWithDialConfigForTest(outbound)
+
+        assertEquals("shadowsocks", runtime?.type)
+        assertEquals("ws", runtime?.transport?.type)
+        assertEquals("/ws", runtime?.transport?.path)
+        assertEquals("edge.example.com", runtime?.transport?.headers?.get("Host"))
+        assertEquals(true, runtime?.tls?.enabled)
+        assertEquals("edge.example.com", runtime?.tls?.serverName)
+    }
+
+    @Test
     fun testBuildRuntimeHysteria2AddsBootstrapDomainResolverForHostnames() {
         val outbound = Outbound(
             type = "hysteria2",

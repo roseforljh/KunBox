@@ -9,6 +9,7 @@ import android.net.Network
 import android.net.VpnService
 import android.os.SystemClock
 import android.util.Log
+import androidx.core.app.NotificationCompat
 import com.google.gson.Gson
 import com.kunk.singbox.R
 import com.kunk.singbox.model.AppSettings
@@ -200,11 +201,6 @@ class StartupManager(
             callbacks.onStarting()
 
             stepStart = SystemClock.elapsedRealtime()
-            coreManager.acquireLocks()
-            callbacks.registerScreenStateReceiver()
-            log("[STEP] acquireLocks+registerReceiver: ${SystemClock.elapsedRealtime() - stepStart}ms")
-
-            stepStart = SystemClock.elapsedRealtime()
             val hasExistingVpn = callbacks.detectExistingVpns()
             log("[STEP] detectExistingVpns: ${SystemClock.elapsedRealtime() - stepStart}ms, found=$hasExistingVpn")
 
@@ -219,6 +215,11 @@ class StartupManager(
                 handlePermissionRequired(prepareIntent, callbacks)
                 return@withContext StartResult.NeedPermission
             }
+
+            stepStart = SystemClock.elapsedRealtime()
+            coreManager.acquireLocks()
+            callbacks.registerScreenStateReceiver()
+            log("[STEP] acquireLocks+registerReceiver: ${SystemClock.elapsedRealtime() - stepStart}ms")
 
             callbacks.startForeignVpnMonitor()
 
@@ -573,7 +574,7 @@ class StartupManager(
                     prepareIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
                     PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
                 )
-                val notification = Notification.Builder(context, VpnNotificationManager.CHANNEL_ID)
+                val notification = NotificationCompat.Builder(context, VpnNotificationManager.CHANNEL_ID)
                     .setContentTitle("VPN Permission Required")
                     .setContentText("Tap to grant VPN permission")
                     .setSmallIcon(R.drawable.ic_notification)

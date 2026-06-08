@@ -21,14 +21,24 @@ class RuleSetAutoUpdateWorker(
     companion object {
         private const val TAG = "RuleSetAutoUpdate"
         private const val WORK_NAME = "ruleset_global_auto_update"
+        private const val MIN_INTERVAL_MINUTES = 15
+
+        fun normalizeIntervalMinutes(intervalMinutes: Int): Int {
+            return when {
+                intervalMinutes <= 0 -> 0
+                intervalMinutes < MIN_INTERVAL_MINUTES -> MIN_INTERVAL_MINUTES
+                else -> intervalMinutes
+            }
+        }
 
         /**
          * @param context Context
          */
         fun schedule(context: Context, intervalMinutes: Int) {
             val workManager = WorkManager.getInstance(context)
+            val normalizedInterval = normalizeIntervalMinutes(intervalMinutes)
 
-            if (intervalMinutes <= 0) {
+            if (normalizedInterval <= 0) {
 
                 workManager.cancelUniqueWork(WORK_NAME)
                 return
@@ -39,7 +49,7 @@ class RuleSetAutoUpdateWorker(
                 .build()
 
             val workRequest = PeriodicWorkRequestBuilder<RuleSetAutoUpdateWorker>(
-                intervalMinutes.toLong(),
+                normalizedInterval.toLong(),
                 TimeUnit.MINUTES
             )
                 .setConstraints(constraints)
@@ -132,7 +142,11 @@ class RuleSetAutoUpdateWorker(
         } catch (e: Exception) {
             Log.e(TAG, "Auto-update failed", e)
 
-            Result.retry()
+            if (runAttemptCount < 3) {
+                Result.retry()
+            } else {
+                Result.failure()
+            }
         }
     }
 }

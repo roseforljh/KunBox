@@ -113,6 +113,7 @@ class SingBoxParser(private val gson: Gson) : SubscriptionParser {
 
     /**
      */
+    @Suppress("NestedBlockDepth")
     private fun parseAsConfigObject(content: String): SingBoxConfig? {
         return try {
             val jsonObject = JsonParser.parseString(content).asJsonObject
@@ -123,7 +124,12 @@ class SingBoxParser(private val gson: Gson) : SubscriptionParser {
                 val rawElements = outboundsElement.asJsonArray
                 val outbounds: List<Outbound> = gson.fromJson(rawElements, OUTBOUND_LIST_TYPE)
                 if (outbounds.isNotEmpty()) {
-                    return SingBoxConfig(outbounds = normalizeOutbounds(outbounds, rawElements))
+                    val normalizedOutbounds = normalizeOutbounds(outbounds, rawElements)
+                    return if (jsonObject.has("outbounds")) {
+                        gson.fromJson(jsonObject, SingBoxConfig::class.java).copy(outbounds = normalizedOutbounds)
+                    } else {
+                        SingBoxConfig(outbounds = normalizedOutbounds)
+                    }
                 }
             }
             null

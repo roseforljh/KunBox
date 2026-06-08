@@ -1,0 +1,25 @@
+package com.kunk.singbox.service
+
+import org.junit.Assert.assertEquals
+import org.junit.Test
+
+class SubscriptionAutoUpdateWorkerTest {
+
+    @Test
+    fun normalizeIntervalMinutesKeepsDisabledValue() {
+        assertEquals(0, SubscriptionAutoUpdateWorker.normalizeIntervalMinutes(0))
+        assertEquals(0, SubscriptionAutoUpdateWorker.normalizeIntervalMinutes(-1))
+    }
+
+    @Test
+    fun normalizeIntervalMinutesRaisesPositiveValuesBelowWorkManagerMinimum() {
+        assertEquals(15, SubscriptionAutoUpdateWorker.normalizeIntervalMinutes(1))
+        assertEquals(15, SubscriptionAutoUpdateWorker.normalizeIntervalMinutes(14))
+    }
+
+    @Test
+    fun normalizeIntervalMinutesKeepsLegalValues() {
+        assertEquals(15, SubscriptionAutoUpdateWorker.normalizeIntervalMinutes(15))
+        assertEquals(60, SubscriptionAutoUpdateWorker.normalizeIntervalMinutes(60))
+    }
+}

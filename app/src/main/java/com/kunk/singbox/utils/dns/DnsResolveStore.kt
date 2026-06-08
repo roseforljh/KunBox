@@ -55,7 +55,7 @@ class DnsResolveStore private constructor() {
     }
 
     /**
-     * 鐢熸垚瀛樺偍 key
+     * 生成存储 key
      */
     private fun makeKey(profileId: String, domainName: String): String {
         return profileId + "_" + domainName
@@ -85,7 +85,7 @@ class DnsResolveStore private constructor() {
     /**
      *
      *
-     * @param domain 鍩熷悕
+     * @param domain 域名
      */
     fun get(
         profileId: String,

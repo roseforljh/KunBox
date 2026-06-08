@@ -84,7 +84,7 @@ class ShutdownManager(
 
     /**
      */
-    @Suppress("LongParameterList", "LongMethod", "CognitiveComplexMethod")
+    @Suppress("LongParameterList", "LongMethod", "CognitiveComplexMethod", "CyclomaticComplexMethod")
     fun stopVpn(
         options: ShutdownOptions,
         coreManager: CoreManager,
@@ -105,8 +105,10 @@ class ShutdownManager(
         callbacks.cancelRouteGroupAutoSelectJob()
         callbacks.cancelAutoFailoverJob()
 
-        VpnKeepaliveWorker.cancel(context)
-        Log.i(TAG, "VPN keepalive worker cancelled")
+        if (stopService) {
+            VpnKeepaliveWorker.cancel(context)
+            Log.i(TAG, "VPN keepalive worker cancelled")
+        }
 
         notificationManager.resetState()
 

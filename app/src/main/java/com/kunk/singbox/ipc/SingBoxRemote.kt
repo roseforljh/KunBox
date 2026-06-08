@@ -77,6 +77,9 @@ object SingBoxRemote {
     private var bound = false
 
     @Volatile
+    private var bindingInProgress = false
+
+    @Volatile
     private var callbackRegistered = false
 
     @Volatile
@@ -400,6 +403,7 @@ object SingBoxRemote {
         binder = null
         service = null
         bound = false
+        bindingInProgress = false
         callbackRegistered = false
         clearPendingUrlTestRequests()
     }
@@ -416,6 +420,7 @@ object SingBoxRemote {
             val s = ISingBoxService.Stub.asInterface(binder)
             service = s
             bound = true
+            bindingInProgress = false
 
             if (s != null && !callbackRegistered) {
                 runCatching {
@@ -434,6 +439,7 @@ object SingBoxRemote {
             unregisterCallback()
             service = null
             bound = false
+            bindingInProgress = false
             clearPendingUrlTestRequests()
 
             val ctx = contextRef?.get()
@@ -514,7 +520,7 @@ object SingBoxRemote {
             clearPendingReconnect()
 
             val reconnectTask = Runnable {
-                if (connectionActive && !bound && contextRef?.get() != null) {
+                if (canAttemptReconnect()) {
                     Log.i(TAG, "Reconnect backoff attempt #$reconnectAttempts")
                     doBindService(ctx)
                 }
@@ -529,13 +535,20 @@ object SingBoxRemote {
         clearPendingReconnect()
 
         val reconnectTask = Runnable {
-            if (connectionActive && !bound && contextRef?.get() != null) {
+            if (canAttemptReconnect()) {
                 Log.i(TAG, "Reconnect attempt #$reconnectAttempts")
                 doBindService(ctx)
             }
         }
         pendingReconnect = reconnectTask
         mainHandler.postDelayed(reconnectTask, delay)
+    }
+
+    private fun canAttemptReconnect(): Boolean {
+        if (!connectionActive) return false
+        if (bound) return false
+        if (bindingInProgress) return false
+        return contextRef?.get() != null
     }
 
     private fun doBindService(context: Context) {
@@ -545,14 +558,18 @@ object SingBoxRemote {
         }.onSuccess { boundSuccessfully ->
             if (!boundSuccessfully) {
                 Log.w(TAG, "bindService returned false, scheduling reconnect")
+                bindingInProgress = false
                 bound = false
                 service = null
                 binder = null
                 failPendingRecovery("bindService returned false")
                 scheduleReconnect()
+            } else {
+                bindingInProgress = true
             }
         }.onFailure {
             Log.e(TAG, "Failed to bind service", it)
+            bindingInProgress = false
             bound = false
             service = null
             binder = null
@@ -585,6 +602,7 @@ object SingBoxRemote {
         binder = null
         service = null
         bound = false
+        bindingInProgress = false
     }
 
     fun ensureBound(context: Context) {
@@ -599,6 +617,8 @@ object SingBoxRemote {
 
         if (!connectionActive) {
             connect(context)
+        } else if (bindingInProgress) {
+            Log.d(TAG, "ensureBound: binding already in progress")
         } else if (!bound || service == null) {
             disconnect(context)
             connect(context)

@@ -1,5 +1,8 @@
 ﻿package com.kunk.singbox.service
 
+import android.annotation.SuppressLint
+import android.app.NotificationManager
+import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.ComponentName
 import android.content.Context
@@ -13,9 +16,9 @@ import android.os.Build
 import android.os.IBinder
 import android.os.SystemClock
 import android.util.Log
-import android.app.NotificationManager
 import android.service.quicksettings.Tile
 import android.service.quicksettings.TileService
+import androidx.core.content.ContextCompat
 import com.kunk.singbox.aidl.ISingBoxService
 import com.kunk.singbox.aidl.ISingBoxServiceCallback
 import com.kunk.singbox.R
@@ -81,6 +84,8 @@ class VpnTileService : TileService() {
         private const val KEY_VPN_PENDING = "vpn_pending"
         const val ACTION_REFRESH_TILE = "com.kunk.singbox.REFRESH_TILE"
         private const val STOP_NOTIFICATION_CLEANUP_DELAY_MS = 250L
+        private const val REQUEST_CODE_VPN_PERMISSION = 3001
+        private const val REQUEST_CODE_VPN_PERMISSION_RETRY = 3002
         /**
          */
         fun persistVpnState(context: Context, isActive: Boolean) {
@@ -104,12 +109,7 @@ class VpnTileService : TileService() {
         super.onStartListening()
         updateTile()
         val filter = IntentFilter(ACTION_REFRESH_TILE)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            registerReceiver(tileRefreshReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
-        } else {
-            @Suppress("DEPRECATION")
-            registerReceiver(tileRefreshReceiver, filter)
-        }
+        ContextCompat.registerReceiver(this, tileRefreshReceiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
         bindService()
     }
 
@@ -140,7 +140,7 @@ class VpnTileService : TileService() {
 
         val prepareIntent = VpnService.prepare(this)
         if (prepareIntent != null) {
-            startActivityAndCollapse(prepareIntent)
+            startActivityAndCollapseCompat(prepareIntent, REQUEST_CODE_VPN_PERMISSION)
             return
         }
 
@@ -168,6 +168,23 @@ class VpnTileService : TileService() {
 
             executeStartVpn()
         }
+    }
+
+    @SuppressLint("StartActivityAndCollapseDeprecated")
+    private fun startActivityAndCollapseCompat(intent: Intent, requestCode: Int) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            val pendingIntent = PendingIntent.getActivity(
+                this,
+                requestCode,
+                intent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            startActivityAndCollapse(pendingIntent)
+            return
+        }
+
+        @Suppress("DEPRECATION")
+        startActivityAndCollapse(intent)
     }
 
     @Suppress("LongMethod", "CyclomaticComplexMethod", "CognitiveComplexMethod")
@@ -304,7 +321,7 @@ class VpnTileService : TileService() {
 
     /**
      */
-    @Suppress("CognitiveComplexMethod")
+    @Suppress("CognitiveComplexMethod", "LongMethod")
     private fun executeStartVpn() {
 
         val currentSequenceId = SystemClock.elapsedRealtimeNanos()
@@ -323,7 +340,9 @@ class VpnTileService : TileService() {
                         withContext(Dispatchers.Main) {
                             revertToInactive()
                             prepareIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                            runCatching { startActivityAndCollapse(prepareIntent) }
+                            runCatching {
+                                startActivityAndCollapseCompat(prepareIntent, REQUEST_CODE_VPN_PERMISSION_RETRY)
+                            }
                         }
                         return@launch
                     }

@@ -1128,8 +1128,8 @@ class ConfigRepository(private val context: Context) {
             val inet6Range: String
         )
 
-        private fun resolveFakeIpRanges(fakeIpRange: String): FakeIpRanges {
-            val ranges = fakeIpRange
+        private fun resolveFakeIpRanges(fakeIpRange: String?): FakeIpRanges {
+            val ranges = fakeIpRange.orEmpty()
                 .split(",")
                 .map { it.trim() }
                 .filter { it.isNotEmpty() }
@@ -1139,7 +1139,7 @@ class ConfigRepository(private val context: Context) {
             return FakeIpRanges(inet4Range = inet4Range, inet6Range = inet6Range)
         }
 
-        private fun buildFakeIpDnsServer(fakeIpRange: String): DnsServer {
+        private fun buildFakeIpDnsServer(fakeIpRange: String?): DnsServer {
             val ranges = resolveFakeIpRanges(fakeIpRange)
             return DnsServer(
                 tag = "fakeip-dns",
@@ -1149,11 +1149,11 @@ class ConfigRepository(private val context: Context) {
             )
         }
 
-        internal fun buildFakeIpDnsServerForTest(fakeIpRange: String): DnsServer {
+        internal fun buildFakeIpDnsServerForTest(fakeIpRange: String?): DnsServer {
             return buildFakeIpDnsServer(fakeIpRange)
         }
 
-        private fun buildFakeIpConfig(fakeIpRange: String): DnsFakeIpConfig {
+        private fun buildFakeIpConfig(fakeIpRange: String?): DnsFakeIpConfig {
             val ranges = resolveFakeIpRanges(fakeIpRange)
             return DnsFakeIpConfig(
                 enabled = true,
@@ -2272,9 +2272,35 @@ class ConfigRepository(private val context: Context) {
 
     private fun writeConfigFileOrThrow(profileId: String, config: SingBoxConfig) {
         val configFile = File(configDir, "$profileId.json")
+        val tmpFile = File(configDir, "$profileId.json.tmp")
+        val backupFile = File(configDir, "$profileId.json.bak")
+        var backupCreated = false
         try {
-            configFile.writeText(gson.toJson(config))
+            configDir.mkdirs()
+            tmpFile.writeText(gson.toJson(config))
+            if (configFile.exists()) {
+                configFile.copyTo(backupFile, overwrite = true)
+                backupCreated = true
+            }
+            if (!tmpFile.renameTo(configFile)) {
+                tmpFile.copyTo(configFile, overwrite = true)
+                tmpFile.delete()
+            }
+            if (backupCreated && backupFile.exists() && !backupFile.delete()) {
+                Log.w(TAG, "Failed to delete config backup: ${backupFile.absolutePath}")
+            }
         } catch (e: Exception) {
+            runCatching {
+                if (backupCreated && backupFile.exists()) {
+                    backupFile.copyTo(configFile, overwrite = true)
+                    backupFile.delete()
+                }
+                if (tmpFile.exists()) {
+                    tmpFile.delete()
+                }
+            }.onFailure { restoreError ->
+                Log.e(TAG, "Failed to restore config backup for profile: $profileId", restoreError)
+            }
             Log.e(TAG, "Failed to write config file for profile: $profileId", e)
             throw IllegalStateException("Failed to write config for profile $profileId", e)
         }
@@ -3179,6 +3205,8 @@ class ConfigRepository(private val context: Context) {
         onProgress: (String) -> Unit = {}
     ): Result<ProfileUi> = withContext(Dispatchers.IO) {
         var profileId: String? = null
+        val normalizedAutoUpdateInterval =
+            com.kunk.singbox.service.SubscriptionAutoUpdateWorker.normalizeIntervalMinutes(autoUpdateInterval)
         try {
             onProgress("Fetching subscription content...")
             val fetchResult = try {
@@ -3212,7 +3240,7 @@ class ConfigRepository(private val context: Context) {
                 url = url,
                 lastUpdated = System.currentTimeMillis(),
                 enabled = true,
-                autoUpdateInterval = autoUpdateInterval,
+                autoUpdateInterval = normalizedAutoUpdateInterval,
                 updateStatus = UpdateStatus.Idle,
                 expireDate = userInfo?.expire ?: 0,
                 totalTraffic = userInfo?.total ?: 0,
@@ -3229,8 +3257,12 @@ class ConfigRepository(private val context: Context) {
             if (_activeProfileId.value == null) {
                 setActiveProfile(profileId)
             }
-            if (autoUpdateInterval > 0) {
-                com.kunk.singbox.service.SubscriptionAutoUpdateWorker.schedule(context, profileId, autoUpdateInterval)
+            if (normalizedAutoUpdateInterval > 0) {
+                com.kunk.singbox.service.SubscriptionAutoUpdateWorker.schedule(
+                    context,
+                    profileId,
+                    normalizedAutoUpdateInterval
+                )
             }
             if (dnsPreResolve) {
                 onProgress("Pre-resolving domains for imported profile...")
@@ -3946,6 +3978,7 @@ class ConfigRepository(private val context: Context) {
 
         _profiles.update { list -> list.filter { it.id != profileId } }
         removeCachedConfig(profileId)
+        dnsResolveStore.removeAllForProfile(profileId)
         profileNodes.remove(profileId)
         updateAllNodesAndGroups()
         val configFile = File(configDir, "$profileId.json")
@@ -4015,13 +4048,15 @@ class ConfigRepository(private val context: Context) {
         dnsServer: String? = null,
         dnsOverride: String? = null
     ) {
+        val normalizedAutoUpdateInterval =
+            com.kunk.singbox.service.SubscriptionAutoUpdateWorker.normalizeIntervalMinutes(autoUpdateInterval)
         _profiles.update { list ->
             list.map {
                 if (it.id == profileId) {
                     it.copy(
                         name = newName,
                         url = newUrl,
-                        autoUpdateInterval = autoUpdateInterval,
+                        autoUpdateInterval = normalizedAutoUpdateInterval,
                         dnsPreResolve = dnsPreResolve,
                         dnsServer = dnsServer,
                         dnsOverride = dnsOverride
@@ -4032,7 +4067,7 @@ class ConfigRepository(private val context: Context) {
             }
         }
         saveProfiles()
-        com.kunk.singbox.service.SubscriptionAutoUpdateWorker.schedule(context, profileId, autoUpdateInterval)
+        com.kunk.singbox.service.SubscriptionAutoUpdateWorker.schedule(context, profileId, normalizedAutoUpdateInterval)
     }
 
     suspend fun testNodeLatency(nodeId: String): Long {
@@ -4282,6 +4317,7 @@ class ConfigRepository(private val context: Context) {
         profile: ProfileUi,
         updateRunId: Long
     ): SubscriptionUpdateResult = withContext(Dispatchers.IO) {
+        var previousConfigText: String? = null
         try {
             val oldNodes = profileNodes[profile.id] ?: emptyList()
             val oldNodeNames = oldNodes.map { it.name }.toSet()
@@ -4306,6 +4342,9 @@ class ConfigRepository(private val context: Context) {
             val addedNodes = newNodeNames - oldNodeNames
             val removedNodes = oldNodeNames - newNodeNames
             setProfileUpdateStage(profile.id, updateRunId, SubscriptionUpdateStage.Saving)
+            previousConfigText = File(configDir, "${profile.id}.json")
+                .takeIf { it.exists() }
+                ?.readText()
             writeConfigFileOrThrow(profile.id, deduplicatedConfig)
 
             cacheConfig(profile.id, deduplicatedConfig)
@@ -4352,6 +4391,17 @@ class ConfigRepository(private val context: Context) {
 
             updateResult
         } catch (e: Exception) {
+            previousConfigText?.let { oldText ->
+                runCatching {
+                    val oldConfig = gson.fromJson(oldText, SingBoxConfig::class.java)
+                    File(configDir, "${profile.id}.json").writeText(oldText)
+                    cacheConfig(profile.id, oldConfig)
+                    profileNodes[profile.id] = extractNodesFromConfigSync(oldConfig, profile.id)
+                    updateAllNodesAndGroups()
+                }.onFailure { restoreError ->
+                    Log.e(TAG, "Failed to restore previous config after subscription update failure", restoreError)
+                }
+            }
             SubscriptionUpdateResult.Failed(profile.name, e.message ?: "Subscription update failed")
         }
     }

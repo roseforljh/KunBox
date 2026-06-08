@@ -21,6 +21,15 @@ class SubscriptionAutoUpdateWorker(
     companion object {
         private const val TAG = "SubscriptionAutoUpdate"
         private const val WORK_NAME_PREFIX = "subscription_auto_update_"
+        private const val MIN_INTERVAL_MINUTES = 15
+
+        fun normalizeIntervalMinutes(intervalMinutes: Int): Int {
+            return when {
+                intervalMinutes <= 0 -> 0
+                intervalMinutes < MIN_INTERVAL_MINUTES -> MIN_INTERVAL_MINUTES
+                else -> intervalMinutes
+            }
+        }
 
         /**
          * @param context Context
@@ -28,8 +37,9 @@ class SubscriptionAutoUpdateWorker(
         fun schedule(context: Context, profileId: String, intervalMinutes: Int) {
             val workManager = WorkManager.getInstance(context)
             val workName = "$WORK_NAME_PREFIX$profileId"
+            val normalizedInterval = normalizeIntervalMinutes(intervalMinutes)
 
-            if (intervalMinutes <= 0) {
+            if (normalizedInterval <= 0) {
 
                 workManager.cancelUniqueWork(workName)
                 return
@@ -44,7 +54,7 @@ class SubscriptionAutoUpdateWorker(
                 .build()
 
             val workRequest = PeriodicWorkRequestBuilder<SubscriptionAutoUpdateWorker>(
-                intervalMinutes.toLong(),
+                normalizedInterval.toLong(),
                 TimeUnit.MINUTES
             )
                 .addTag(TAG)
@@ -147,7 +157,11 @@ class SubscriptionAutoUpdateWorker(
         } catch (e: Exception) {
             Log.e(TAG, "Auto-update failed for profile: $profileId", e)
 
-            Result.retry()
+            if (runAttemptCount < 3) {
+                Result.retry()
+            } else {
+                Result.failure()
+            }
         }
     }
 }

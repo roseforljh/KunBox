@@ -298,7 +298,6 @@ class NodesViewModel(application: Application) : AndroidViewModel(application) {
                     }
                     _testProgress.value = Pair(completedCount, totalCount)
                 }
-                setSortType(originalSortType)
                 val context = getApplication<Application>()
                 val summary = if (ipv6OnlyCount > 0) {
                     context.getString(R.string.nodes_test_complete_stats_v6, successCount, timeoutCount, ipv6OnlyCount)
@@ -309,6 +308,7 @@ class NodesViewModel(application: Application) : AndroidViewModel(application) {
             } catch (e: Exception) {
                 Log.e(TAG, "Failed during batch latency test", e)
             } finally {
+                setSortType(originalSortType)
                 _isTesting.value = false
                 _testingNodeIds.value = emptySet()
                 _testProgress.value = null

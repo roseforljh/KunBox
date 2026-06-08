@@ -636,7 +636,7 @@ fun ProfilesScreen(
 
                     var translationY = if (visible) 0f else 40f
                     if (canDisplace) {
-                        val startIdx = draggingItemIndex!!
+                        val startIdx = draggingItemIndex ?: index
                         val dragProgress = draggingItemOffset / itemHeightPx
                         val rawEndProgress = when {
                             dragProgress > 0f -> kotlin.math.ceil(dragProgress)

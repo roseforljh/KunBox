@@ -3178,21 +3178,21 @@ class SingBoxService : VpnService() {
         screenStateManager.unregisterActivityLifecycleCallbacks(application)
         cancelPendingRecoveryWork()
 
-        // Ensure critical state is saved synchronously before we potentially halt
-        if (!isManuallyStopped) {
-            // If we are being destroyed but not manually stopped (e.g. app update or system kill),
-            // ensure we don't accidentally mark it as manually stopped, but we DO mark VPN as inactive.
-            VpnTileService.persistVpnState(applicationContext, false)
-            VpnTileService.persistVpnPending(applicationContext, "")
-            VpnStateStore.setMode(VpnStateStore.CoreMode.NONE)
-            Log.i(TAG, "onDestroy: Persisted vpn_active=false, vpn_pending='', mode=NONE")
-        }
-
         val shouldStop = runCatching {
             synchronized(this@SingBoxService) {
                 isRunning || isStopping || coreManager.isServiceRunning() || vpnInterface != null
             }
         }.getOrDefault(false)
+
+        // Ensure critical state is saved synchronously before we potentially halt
+        if (!isManuallyStopped && shouldStop) {
+            // If we are being destroyed but not manually stopped (e.g. app update or system kill),
+            // keep the persisted intent recoverable for VpnKeepaliveWorker.
+            VpnTileService.persistVpnState(applicationContext, true)
+            VpnTileService.persistVpnPending(applicationContext, "")
+            VpnStateStore.setMode(VpnStateStore.CoreMode.VPN)
+            Log.i(TAG, "onDestroy: Preserved recoverable VPN state")
+        }
 
         if (shouldStop) {
             // Note: stopVpn launches a cleanup job on cleanupScope.

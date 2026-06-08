@@ -1,11 +1,13 @@
 package com.kunk.singbox.repository.store
 
+import com.google.gson.Gson
 import com.kunk.singbox.model.AppSettings
 import com.kunk.singbox.model.AppGroup
 import com.kunk.singbox.model.AppInfo
 import com.kunk.singbox.model.AppRule
 import com.kunk.singbox.model.RuleSetOutboundMode
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -77,5 +79,54 @@ class SettingsStoreTest {
 
         assertTrue(migrated.autoRoute)
         assertTrue(migrated.strictRoute)
+    }
+
+    @Test
+    fun testDefaultFakeIpRangeIncludesIpv4AndIpv6Ranges() {
+        assertEquals("198.18.0.0/15,fc00::/18", AppSettings().fakeIpRange)
+    }
+
+    @Test
+    fun testMigrateSettingsAddsIpv6RangeToLegacyDefaultFakeIpRange() {
+        val migrated = SettingsStore.migrateSettings(
+            version = 6,
+            settings = AppSettings(fakeIpRange = "198.18.0.0/15")
+        )
+
+        assertEquals("198.18.0.0/15,fc00::/18", migrated.fakeIpRange)
+    }
+
+    @Test
+    fun testMigrateSettingsRecoversNullFakeIpRange() {
+        val settings = Gson().fromJson("""{"fakeIpRange":null}""", AppSettings::class.java)
+
+        val migrated = SettingsStore.migrateSettings(version = 6, settings = settings)
+
+        assertEquals(AppSettings.DEFAULT_FAKE_IP_RANGE, migrated.fakeIpRange)
+    }
+
+    @Test
+    fun testMigrateSettingsRecoversNullFakeIpRangeAtCurrentVersion() {
+        val settings = Gson().fromJson("""{"fakeIpRange":null}""", AppSettings::class.java)
+
+        val migrated = SettingsStore.migrateSettings(version = 7, settings = settings)
+
+        assertEquals(AppSettings.DEFAULT_FAKE_IP_RANGE, migrated.fakeIpRange)
+    }
+
+    @Test
+    fun testShouldPersistCurrentVersionWhenMigrationChangesSettings() {
+        val loaded = Gson().fromJson("""{"fakeIpRange":null}""", AppSettings::class.java)
+        val migrated = SettingsStore.migrateSettings(version = 7, settings = loaded)
+
+        assertTrue(SettingsStore.shouldPersistMigratedSettings(version = 7, loaded = loaded, migrated = migrated))
+    }
+
+    @Test
+    fun testShouldNotPersistCurrentVersionWhenMigrationDoesNotChangeSettings() {
+        val loaded = AppSettings()
+        val migrated = SettingsStore.migrateSettings(version = 7, settings = loaded)
+
+        assertFalse(SettingsStore.shouldPersistMigratedSettings(version = 7, loaded = loaded, migrated = migrated))
     }
 }
