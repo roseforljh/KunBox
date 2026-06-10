@@ -39,12 +39,6 @@ interface ProfileDao {
     @Query("SELECT COUNT(*) FROM profiles")
     suspend fun count(): Int
 
-    @Query("SELECT COUNT(*) FROM profiles")
-    fun countSync(): Int
-
-    @Query("SELECT * FROM profiles ORDER BY sortOrder ASC")
-    fun getAllSync(): List<ProfileEntity>
-
     @Query("SELECT MAX(sortOrder) FROM profiles")
     suspend fun getMaxSortOrder(): Int?
 
@@ -52,13 +46,7 @@ interface ProfileDao {
     suspend fun insert(profile: ProfileEntity)
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
-    fun insertSync(profile: ProfileEntity)
-
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertAll(profiles: List<ProfileEntity>)
-
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    fun insertAllSync(profiles: List<ProfileEntity>)
 
     @Update
     suspend fun update(profile: ProfileEntity)

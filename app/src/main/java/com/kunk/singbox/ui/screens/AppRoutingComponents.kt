@@ -17,6 +17,7 @@ import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.ui.res.stringResource
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -36,6 +37,27 @@ import com.kunk.singbox.ui.components.StandardCard
 import com.kunk.singbox.ui.components.StyledTextField
 import com.kunk.singbox.ui.theme.Neutral500
 import com.kunk.singbox.ui.theme.Neutral700
+
+private const val APP_INFO_SEPARATOR = "\t"
+
+private fun AppInfo.toSavedValue(): String {
+    return "$packageName$APP_INFO_SEPARATOR$appName"
+}
+
+private fun String.toAppInfo(): AppInfo {
+    val parts = split(APP_INFO_SEPARATOR, limit = 2)
+    val packageName = parts.firstOrNull().orEmpty()
+    val appName = parts.getOrNull(1).takeUnless { it.isNullOrBlank() } ?: packageName
+    return AppInfo(packageName = packageName, appName = appName)
+}
+
+private fun Set<AppInfo>.toSavedValues(): List<String> {
+    return map { it.toSavedValue() }.sorted()
+}
+
+private fun List<String>.toAppInfoSet(): Set<AppInfo> {
+    return map { it.toAppInfo() }.toSet()
+}
 
 @Composable
 fun AppRuleItem(
@@ -109,15 +131,27 @@ fun AppRuleEditorDialog(
     onDismiss: () -> Unit,
     onConfirm: (AppRule) -> Unit
 ) {
-    var selectedApp by remember { mutableStateOf<InstalledApp?>(initialRule?.let { InstalledApp(it.packageName, it.appName) }) }
-    var outboundMode by remember { mutableStateOf(initialRule?.outboundMode ?: RuleSetOutboundMode.PROXY) }
-    var outboundValue by remember { mutableStateOf(initialRule?.outboundValue) }
+    var selectedAppPackageName by rememberSaveable(initialRule?.packageName) {
+        mutableStateOf(initialRule?.packageName)
+    }
+    var selectedAppName by rememberSaveable(initialRule?.appName) {
+        mutableStateOf(initialRule?.appName)
+    }
+    var outboundMode by rememberSaveable(initialRule?.outboundMode) {
+        mutableStateOf(initialRule?.outboundMode ?: RuleSetOutboundMode.PROXY)
+    }
+    var outboundValue by rememberSaveable(initialRule?.outboundValue) {
+        mutableStateOf(initialRule?.outboundValue)
+    }
     var showAppPicker by remember { mutableStateOf(false) }
     var showOutboundModeDialog by remember { mutableStateOf(false) }
     var showTargetSelectionDialog by remember { mutableStateOf(false) }
     var showNodeSelectionDialog by remember { mutableStateOf(false) }
     var targetSelectionTitle by remember { mutableStateOf("") }
     var targetOptions by remember { mutableStateOf<List<Pair<String, String>>>(emptyList()) }
+    val selectedApp = selectedAppPackageName?.let { packageName ->
+        InstalledApp(packageName = packageName, appName = selectedAppName ?: packageName)
+    }
     val context = LocalContext.current
 
     val selectionNodes = nodesForSelection ?: nodes
@@ -136,7 +170,16 @@ fun AppRuleEditorDialog(
     fun toNodeRef(node: NodeUi): String = "${node.sourceProfileId}::${node.name}"
 
     if (showAppPicker) {
-        AppPickerDialog(apps = installedApps, existingPackages = existingPackages, onSelect = { selectedApp = it; showAppPicker = false }, onDismiss = { showAppPicker = false })
+        AppPickerDialog(
+            apps = installedApps,
+            existingPackages = existingPackages,
+            onSelect = {
+                selectedAppPackageName = it.packageName
+                selectedAppName = it.appName
+                showAppPicker = false
+            },
+            onDismiss = { showAppPicker = false }
+        )
     }
 
     if (showOutboundModeDialog) {
@@ -563,7 +606,13 @@ fun MultiAppSelectorDialog(
     onConfirm: (Set<AppInfo>) -> Unit,
     onDismiss: () -> Unit
 ) {
-    var tempSelected by remember { mutableStateOf(selectedApps) }
+    val selectedEntries = remember(selectedApps) { selectedApps.toSavedValues() }
+    var tempSelectedEntries by rememberSaveable(selectedEntries) {
+        mutableStateOf(selectedEntries)
+    }
+    val tempSelected = remember(tempSelectedEntries) {
+        tempSelectedEntries.toAppInfoSet()
+    }
     var searchQuery by remember { mutableStateOf("") }
     var showSystemApps by remember { mutableStateOf(false) }
 
@@ -650,10 +699,11 @@ fun MultiAppSelectorDialog(
                             app = app,
                             isSelected = isSelected,
                             onClick = {
-                                tempSelected = if (isSelected) {
-                                    tempSelected.filter { it.packageName != app.packageName }.toSet()
+                                val savedAppInfo = appInfo.toSavedValue()
+                                tempSelectedEntries = if (isSelected) {
+                                    tempSelectedEntries.filterNot { it.toAppInfo().packageName == app.packageName }
                                 } else {
-                                    tempSelected + appInfo
+                                    tempSelectedEntries + savedAppInfo
                                 }
                             }
                         )
@@ -663,7 +713,7 @@ fun MultiAppSelectorDialog(
         },
         confirmButton = {
             Button(
-                onClick = { onConfirm(tempSelected) },
+                onClick = { onConfirm(tempSelectedEntries.toAppInfoSet()) },
                 colors = ButtonDefaults.buttonColors(
                     containerColor = MaterialTheme.colorScheme.primary,
                     contentColor = MaterialTheme.colorScheme.onPrimary
@@ -690,10 +740,21 @@ fun AppGroupEditorDialog(
     onDismiss: () -> Unit,
     onConfirm: (AppGroup) -> Unit
 ) {
-    var groupName by remember { mutableStateOf(initialGroup?.name ?: "") }
-    var outboundMode by remember { mutableStateOf(initialGroup?.outboundMode ?: RuleSetOutboundMode.PROXY) }
-    var outboundValue by remember { mutableStateOf(initialGroup?.outboundValue) }
-    var selectedApps by remember { mutableStateOf(initialGroup?.apps?.toSet() ?: emptySet()) }
+    var groupName by rememberSaveable(initialGroup?.name) {
+        mutableStateOf(initialGroup?.name ?: "")
+    }
+    var outboundMode by rememberSaveable(initialGroup?.outboundMode) {
+        mutableStateOf(initialGroup?.outboundMode ?: RuleSetOutboundMode.DIRECT)
+    }
+    var outboundValue by rememberSaveable(initialGroup?.outboundValue) {
+        mutableStateOf(initialGroup?.outboundValue)
+    }
+    var selectedAppEntries by rememberSaveable(initialGroup?.id) {
+        mutableStateOf(initialGroup?.apps?.map { it.toSavedValue() }.orEmpty())
+    }
+    val selectedApps = remember(selectedAppEntries) {
+        selectedAppEntries.map { it.toAppInfo() }
+    }
 
     var showAppSelector by remember { mutableStateOf(false) }
     var showOutboundModeDialog by remember { mutableStateOf(false) }
@@ -722,9 +783,9 @@ fun AppGroupEditorDialog(
     if (showAppSelector) {
         MultiAppSelectorDialog(
             installedApps = installedApps,
-            selectedApps = selectedApps,
+            selectedApps = selectedApps.toSet(),
             onConfirm = { apps ->
-                selectedApps = apps
+                selectedAppEntries = apps.toSavedValues()
                 showAppSelector = false
             },
             onDismiss = { showAppSelector = false }
@@ -733,7 +794,7 @@ fun AppGroupEditorDialog(
 
     if (showOutboundModeDialog) {
 
-        val appRoutingModes = RuleSetOutboundMode.entries.filter { it != RuleSetOutboundMode.DIRECT }
+        val appRoutingModes = RuleSetOutboundMode.entries
         val options = appRoutingModes.map { stringResource(it.displayNameRes) }
         val currentIndex = appRoutingModes.indexOf(outboundMode).coerceAtLeast(0)
         SingleSelectDialog(
@@ -886,8 +947,15 @@ fun AppGroupEditorDialog(
                         }
                     } else {
                         LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            items(selectedApps.toList()) { app ->
-                                SelectedAppChip(app = app, onRemove = { selectedApps = selectedApps - app })
+                            items(selectedApps) { app ->
+                                SelectedAppChip(
+                                    app = app,
+                                    onRemove = {
+                                        selectedAppEntries = selectedAppEntries.filterNot {
+                                            it.toAppInfo().packageName == app.packageName
+                                        }
+                                    }
+                                )
                             }
                         }
                     }

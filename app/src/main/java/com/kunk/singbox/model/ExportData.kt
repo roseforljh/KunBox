@@ -48,14 +48,6 @@ sealed class ImportResult {
 
     /**
      */
-    data class PartialSuccess(
-        val profilesImported: Int,
-        val profilesFailed: Int,
-        val errors: List<String>
-    ) : ImportResult()
-
-    /**
-     */
     data class Failed(val error: String) : ImportResult()
 }
 

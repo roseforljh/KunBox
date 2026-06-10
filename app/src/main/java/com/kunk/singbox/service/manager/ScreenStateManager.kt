@@ -23,6 +23,14 @@ class ScreenStateManager(
         private const val TAG = "ScreenStateManager"
         private const val DOZE_EXIT_RECOVERY_DEBOUNCE_MS = 5_000L
         private const val ACTIVITY_RESUME_RECOVERY_MIN_AWAY_MS = 3_000L
+
+        internal fun nextStartedActivityCount(current: Int, started: Boolean): Int {
+            return if (started) current + 1 else (current - 1).coerceAtLeast(0)
+        }
+
+        internal fun isForegroundFromStartedActivityCount(count: Int): Boolean {
+            return count > 0
+        }
     }
 
     interface Callbacks {
@@ -45,6 +53,7 @@ class ScreenStateManager(
     @Volatile private var lastDozeExitRecoveryAtMs: Long = 0L
     @Volatile private var screenOffAtMs: Long = 0L
     @Volatile private var appBackgroundAtMs: Long = 0L
+    @Volatile private var startedActivityCount: Int = 0
 
     @Volatile var isScreenOn: Boolean = true
         private set
@@ -153,11 +162,13 @@ class ScreenStateManager(
             val app = application ?: return
 
             activityLifecycleCallbacks = object : Application.ActivityLifecycleCallbacks {
-                override fun onActivityResumed(activity: android.app.Activity) {
+                override fun onActivityStarted(activity: android.app.Activity) {
+                    startedActivityCount = nextStartedActivityCount(startedActivityCount, started = true)
+
                     if (!isAppInForeground) {
-                        Log.i(TAG, "App returned to FOREGROUND (${activity.localClassName})")
                         val wasInBackground = !isAppInForeground
-                        isAppInForeground = true
+                        isAppInForeground = isForegroundFromStartedActivityCount(startedActivityCount)
+                        Log.i(TAG, "App returned to FOREGROUND (${activity.localClassName})")
 
                         val backgroundDuration = if (appBackgroundAtMs > 0) {
                             SystemClock.elapsedRealtime() - appBackgroundAtMs
@@ -173,10 +184,11 @@ class ScreenStateManager(
                     }
                 }
 
+                override fun onActivityResumed(activity: android.app.Activity) {}
                 override fun onActivityPaused(activity: android.app.Activity) {}
-                override fun onActivityStarted(activity: android.app.Activity) {}
                 override fun onActivityStopped(activity: android.app.Activity) {
-                    if (isAppInForeground) {
+                    startedActivityCount = nextStartedActivityCount(startedActivityCount, started = false)
+                    if (isAppInForeground && !isForegroundFromStartedActivityCount(startedActivityCount)) {
                         isAppInForeground = false
                         appBackgroundAtMs = SystemClock.elapsedRealtime()
                         Log.d(TAG, "App moved to BACKGROUND at $appBackgroundAtMs")
@@ -212,6 +224,7 @@ class ScreenStateManager(
      */
     fun onAppBackground() {
         Log.i(TAG, "App moved to BACKGROUND")
+        startedActivityCount = 0
         isAppInForeground = false
     }
 

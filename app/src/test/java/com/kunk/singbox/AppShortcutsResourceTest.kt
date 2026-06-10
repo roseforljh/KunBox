@@ -28,6 +28,32 @@ class AppShortcutsResourceTest {
     }
 
     @Test
+    fun mainActivityProcessesShortcutAndDeepLinkNewIntents() {
+        val content = File("src/main/java/com/kunk/singbox/MainActivity.kt").readText()
+
+        assertTrue(content.contains("private object MainIntentEvents"))
+        assertTrue(content.contains("MainIntentEvents.emit(intent)"))
+        assertTrue(content.contains("LaunchedEffect(intentEvent?.id)"))
+        assertTrue(content.contains("DeepLinkHandler.setPendingSubscriptionImport(name, url, interval)"))
+        assertTrue(content.contains("pendingNavigation = \"profiles\""))
+    }
+
+    @Test
+    fun profileEditorRouteCarriesProfileIdAndSavesContent() {
+        val navigation = File("src/main/java/com/kunk/singbox/ui/navigation/AppNavigation.kt").readText()
+        val profilesScreen = File("src/main/java/com/kunk/singbox/ui/screens/ProfilesScreen.kt").readText()
+        val editorScreen = File("src/main/java/com/kunk/singbox/ui/screens/ProfileEditorScreen.kt").readText()
+        val repository = File("src/main/java/com/kunk/singbox/repository/ConfigRepository.kt").readText()
+
+        assertTrue(navigation.contains("object ProfileEditor : Screen(\"profile_editor/{profileId}\")"))
+        assertTrue(navigation.contains("fun createRoute(profileId: String)"))
+        assertTrue(profilesScreen.contains("navController.navigate(Screen.ProfileEditor.createRoute(profile.id))"))
+        assertTrue(editorScreen.contains("readProfileConfigContent(profileId)"))
+        assertTrue(editorScreen.contains("updateProfileConfigContent(profileId, content)"))
+        assertTrue(repository.contains("suspend fun updateProfileConfigContent(profileId: String, content: String)"))
+    }
+
+    @Test
     fun blockedDnsRulesUsePredefinedNoErrorInsteadOfReject() {
         val content = File("src/main/java/com/kunk/singbox/repository/ConfigRepository.kt").readText()
 

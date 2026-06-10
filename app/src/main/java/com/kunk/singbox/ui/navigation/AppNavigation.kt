@@ -1,5 +1,6 @@
 package com.kunk.singbox.ui.navigation
 
+import android.net.Uri
 import androidx.compose.animation.AnimatedContentTransitionScope
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
@@ -32,6 +33,7 @@ import com.kunk.singbox.ui.screens.AppRoutingScreen
 import com.kunk.singbox.ui.screens.RuleSetHubScreen
 import com.kunk.singbox.ui.screens.DomainRulesScreen
 import com.kunk.singbox.ui.screens.TrafficStatsScreen
+import com.kunk.singbox.viewmodel.DashboardViewModel
 
 sealed class Screen(val route: String) {
     object Dashboard : Screen("dashboard")
@@ -40,7 +42,9 @@ sealed class Screen(val route: String) {
     object Settings : Screen("settings")
 
     // Details & Wizards
-    object ProfileEditor : Screen("profile_editor")
+    object ProfileEditor : Screen("profile_editor/{profileId}") {
+        fun createRoute(profileId: String) = "profile_editor/${Uri.encode(profileId)}"
+    }
     object NodeDetail : Screen("node_detail/{nodeId}") {
         fun createRoute(nodeId: String) = "node_detail/$nodeId"
     }
@@ -86,7 +90,7 @@ fun getTabForRoute(route: String?): String {
         route.startsWith("node_create") -> Screen.Nodes.route
 
         route == Screen.Profiles.route -> Screen.Profiles.route
-        route == Screen.ProfileEditor.route -> Screen.Profiles.route
+        route.startsWith("profile_editor") -> Screen.Profiles.route
 
         route == Screen.Settings.route -> Screen.Settings.route
         route == Screen.RoutingSettings.route -> Screen.Settings.route
@@ -106,8 +110,12 @@ fun getTabForRoute(route: String?): String {
     }
 }
 
+@Suppress("LongMethod", "CognitiveComplexMethod")
 @Composable
-fun AppNavigation(navController: NavHostController) {
+fun AppNavigation(
+    navController: NavHostController,
+    dashboardViewModel: DashboardViewModel
+) {
     val slideSpec = tween<IntOffset>(
         durationMillis = NAV_ANIMATION_DURATION,
         easing = FastOutSlowInEasing
@@ -191,7 +199,7 @@ fun AppNavigation(navController: NavHostController) {
             exitTransition = tabExitTransition,
             popEnterTransition = tabPopEnterTransition,
             popExitTransition = tabExitTransition
-        ) { DashboardScreen(navController) }
+        ) { DashboardScreen(navController, viewModel = dashboardViewModel) }
         composable(
             route = Screen.Nodes.route,
             enterTransition = tabEnterTransition,
@@ -217,11 +225,17 @@ fun AppNavigation(navController: NavHostController) {
         // Sub Screens
         composable(
             route = Screen.ProfileEditor.route,
+            arguments = listOf(
+                androidx.navigation.navArgument("profileId") { type = androidx.navigation.NavType.StringType }
+            ),
             enterTransition = enterTransition,
             exitTransition = exitTransition,
             popEnterTransition = popEnterTransition,
             popExitTransition = popExitTransition
-        ) { ProfileEditorScreen(navController) }
+        ) { backStackEntry ->
+            val profileId = backStackEntry.arguments?.getString("profileId") ?: ""
+            ProfileEditorScreen(navController, profileId)
+        }
 
         composable(
             route = Screen.NodeDetail.route,

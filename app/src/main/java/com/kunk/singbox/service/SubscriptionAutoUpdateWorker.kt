@@ -129,6 +129,7 @@ class SubscriptionAutoUpdateWorker(
             }
 
             if (!profile.enabled) {
+                cancel(applicationContext, profileId)
                 return@withContext Result.success()
             }
 

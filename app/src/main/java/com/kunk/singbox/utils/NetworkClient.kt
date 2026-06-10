@@ -114,7 +114,7 @@ object NetworkClient {
         connectTimeoutSeconds: Long,
         readTimeoutSeconds: Long,
         writeTimeoutSeconds: Long = readTimeoutSeconds,
-        callTimeoutSeconds: Long? = null
+        callTimeoutSeconds: Long? = CALL_TIMEOUT
     ): OkHttpClient {
         val proxy = java.net.Proxy(
             java.net.Proxy.Type.HTTP,

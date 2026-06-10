@@ -3,8 +3,11 @@ package com.kunk.singbox.manager
 import com.kunk.singbox.service.ProxyOnlyService
 import com.kunk.singbox.service.SingBoxService
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Assert.assertNull
 import org.junit.Test
+import java.io.File
 
 class VpnServiceManagerTest {
 
@@ -33,5 +36,14 @@ class VpnServiceManagerTest {
         assertEquals(ProxyOnlyService.ACTION_START, command.action)
         assertNull(command.configPath)
         assertEquals(false, command.cleanCache)
+    }
+
+    @Test
+    fun tunModeReadsSettingsRepositoryInsteadOfLegacyPreferences() {
+        val source = File("src/main/java/com/kunk/singbox/manager/VpnServiceManager.kt").readText()
+
+        assertTrue(source.contains("SettingsRepository"))
+        assertFalse(source.contains("com.kunk.singbox_preferences"))
+        assertFalse(source.contains("tun_enabled"))
     }
 }

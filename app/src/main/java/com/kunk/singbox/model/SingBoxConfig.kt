@@ -1,7 +1,16 @@
 package com.kunk.singbox.model
 
 import androidx.annotation.Keep
+import com.google.gson.JsonArray
+import com.google.gson.JsonDeserializationContext
+import com.google.gson.JsonDeserializer
+import com.google.gson.JsonElement
+import com.google.gson.JsonPrimitive
+import com.google.gson.JsonSerializationContext
+import com.google.gson.JsonSerializer
+import com.google.gson.annotations.JsonAdapter
 import com.google.gson.annotations.SerializedName
+import java.lang.reflect.Type
 
 @Keep
 data class SingBoxConfig(
@@ -82,14 +91,23 @@ data class DnsRule(
     @SerializedName("no_drop") val noDrop: Boolean? = null,
     @SerializedName("rcode") val rcode: String? = null,
 
+    @JsonAdapter(StringArrayJsonAdapter::class)
     @SerializedName("domain") val domain: List<String>? = null,
+    @JsonAdapter(StringArrayJsonAdapter::class)
     @SerializedName("domain_suffix") val domainSuffix: List<String>? = null,
+    @JsonAdapter(StringArrayJsonAdapter::class)
     @SerializedName("domain_keyword") val domainKeyword: List<String>? = null,
+    @JsonAdapter(StringArrayJsonAdapter::class)
     @SerializedName("domain_regex") val domainRegex: List<String>? = null,
+    @JsonAdapter(StringArrayJsonAdapter::class)
     @SerializedName("geosite") val geosite: List<String>? = null,
+    @JsonAdapter(StringArrayJsonAdapter::class)
     @SerializedName("rule_set") val ruleSet: List<String>? = null,
+    @JsonAdapter(StringArrayJsonAdapter::class)
     @SerializedName("query_type") val queryType: List<String>? = null,
+    @JsonAdapter(StringArrayJsonAdapter::class)
     @SerializedName("inbound") val inbound: List<String>? = null,
+    @JsonAdapter(StringArrayJsonAdapter::class)
     @SerializedName("package_name") val packageName: List<String>? = null,
     @SerializedName("user_id") val userId: List<Int>? = null,
     @SerializedName("server") val server: String? = null,
@@ -325,6 +343,7 @@ data class TransportConfig(
     @SerializedName("path") val path: String? = null,
     @SerializedName("headers") val headers: Map<String, String>? = null,
     @SerializedName("service_name") val serviceName: String? = null,
+    @JsonAdapter(StringListJsonAdapter::class)
     @SerializedName("host") val host: List<String>? = null,
     @SerializedName("early_data_header_name") val earlyDataHeaderName: String? = null,
     @SerializedName("max_early_data") val maxEarlyData: Int? = null,
@@ -336,6 +355,67 @@ data class TransportConfig(
     @SerializedName("no_grpc_header") val noGRPCHeader: Boolean? = null,
     @SerializedName("no_sse_header") val noSSEHeader: Boolean? = null
 )
+
+class StringListJsonAdapter : JsonSerializer<List<String>>, JsonDeserializer<List<String>> {
+    override fun serialize(
+        src: List<String>?,
+        typeOfSrc: Type,
+        context: JsonSerializationContext
+    ): JsonElement {
+        val values = src.orEmpty().filter { it.isNotBlank() }
+        if (values.size == 1) return JsonPrimitive(values.first())
+
+        val array = JsonArray()
+        values.forEach { array.add(it) }
+        return array
+    }
+
+    override fun deserialize(
+        json: JsonElement?,
+        typeOfT: Type,
+        context: JsonDeserializationContext
+    ): List<String>? {
+        if (json == null || json.isJsonNull) return null
+        return when {
+            json.isJsonPrimitive -> listOf(json.asString).filter { it.isNotBlank() }.takeIf { it.isNotEmpty() }
+            json.isJsonArray -> json.asJsonArray
+                .mapNotNull { element -> element.takeIf { it.isJsonPrimitive }?.asString }
+                .filter { it.isNotBlank() }
+                .takeIf { it.isNotEmpty() }
+            else -> null
+        }
+    }
+}
+
+class StringArrayJsonAdapter : JsonSerializer<List<String>>, JsonDeserializer<List<String>> {
+    override fun serialize(
+        src: List<String>?,
+        typeOfSrc: Type,
+        context: JsonSerializationContext
+    ): JsonElement {
+        val array = JsonArray()
+        src.orEmpty()
+            .filter { it.isNotBlank() }
+            .forEach { array.add(it) }
+        return array
+    }
+
+    override fun deserialize(
+        json: JsonElement?,
+        typeOfT: Type,
+        context: JsonDeserializationContext
+    ): List<String>? {
+        if (json == null || json.isJsonNull) return null
+        return when {
+            json.isJsonPrimitive -> listOf(json.asString).filter { it.isNotBlank() }.takeIf { it.isNotEmpty() }
+            json.isJsonArray -> json.asJsonArray
+                .mapNotNull { element -> element.takeIf { it.isJsonPrimitive }?.asString }
+                .filter { it.isNotBlank() }
+                .takeIf { it.isNotEmpty() }
+            else -> null
+        }
+    }
+}
 
 @Keep
 data class MultiplexConfig(

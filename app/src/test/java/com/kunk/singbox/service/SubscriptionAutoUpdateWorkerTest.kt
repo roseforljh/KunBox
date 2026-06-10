@@ -1,7 +1,9 @@
 package com.kunk.singbox.service
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.File
 
 class SubscriptionAutoUpdateWorkerTest {
 
@@ -21,5 +23,13 @@ class SubscriptionAutoUpdateWorkerTest {
     fun normalizeIntervalMinutesKeepsLegalValues() {
         assertEquals(15, SubscriptionAutoUpdateWorker.normalizeIntervalMinutes(15))
         assertEquals(60, SubscriptionAutoUpdateWorker.normalizeIntervalMinutes(60))
+    }
+
+    @Test
+    fun disabledSubscriptionCancelsExistingPeriodicWork() {
+        val source = File("src/main/java/com/kunk/singbox/service/SubscriptionAutoUpdateWorker.kt").readText()
+
+        assertTrue(source.contains("if (!profile.enabled)"))
+        assertTrue(source.contains("cancel(applicationContext, profileId)"))
     }
 }

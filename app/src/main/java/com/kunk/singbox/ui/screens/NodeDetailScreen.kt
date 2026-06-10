@@ -70,10 +70,14 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.Saver
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -81,6 +85,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.navigation.NavController
+import com.google.gson.Gson
 import com.kunk.singbox.model.EchConfig
 import com.kunk.singbox.model.MultiplexConfig
 import com.kunk.singbox.model.ObfsConfig
@@ -99,6 +104,87 @@ import com.kunk.singbox.ui.components.SelectProfileTarget
 import com.kunk.singbox.ui.components.SettingItem
 import com.kunk.singbox.ui.components.SettingSwitchItem
 import com.kunk.singbox.ui.components.StandardCard
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+
+internal fun resolveTransportHostTextForEditor(transport: TransportConfig): String {
+    return transport.host
+        ?.filter { it.isNotBlank() }
+        ?.joinToString(", ")
+        ?: transport.headers?.get("Host")
+        ?: transport.headers?.get("host")
+        ?: ""
+}
+
+internal fun resolveWebSocketHostTextForEditor(transport: TransportConfig): String {
+    return transport.headers?.get("Host")
+        ?: transport.headers?.get("host")
+        ?: transport.host?.firstOrNull { it.isNotBlank() }
+        ?: ""
+}
+
+internal fun updateTransportTypeForEditor(transport: TransportConfig, newType: String): TransportConfig {
+    val updated = transport.copy(type = newType)
+    return when (newType) {
+        "ws" -> {
+            val host = updated.headers?.get("Host")
+                ?: updated.headers?.get("host")
+                ?: updated.host?.firstOrNull()
+            val headers = updated.headers.withoutHostHeader().orEmpty().toMutableMap()
+            if (!host.isNullOrBlank()) headers["Host"] = host
+            updated.copy(host = null, headers = headers.takeIf { it.isNotEmpty() })
+        }
+        "httpupgrade" -> updated.copy(
+            host = updated.host?.takeIf { it.isNotEmpty() }
+                ?: updated.headers?.get("Host")?.let { listOf(it) }
+                ?: updated.headers?.get("host")?.let { listOf(it) },
+            headers = updated.headers.withoutHostHeader(),
+            maxEarlyData = null,
+            earlyDataHeaderName = null
+        )
+        else -> updated
+    }
+}
+
+internal fun updatePathBasedTransportHostForEditor(
+    transport: TransportConfig,
+    value: String
+): TransportConfig {
+    val hosts = value.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+    return transport.copy(
+        host = hosts.takeIf { it.isNotEmpty() },
+        headers = transport.headers.withoutHostHeader()
+    )
+}
+
+internal fun updateWebSocketTransportHostForEditor(
+    transport: TransportConfig,
+    value: String
+): TransportConfig {
+    val headers = transport.headers.withoutHostHeader().orEmpty().toMutableMap()
+    val trimmedValue = value.trim()
+    if (trimmedValue.isNotEmpty()) headers["Host"] = trimmedValue
+    return transport.copy(host = null, headers = headers.takeIf { it.isNotEmpty() })
+}
+
+private fun Map<String, String>?.withoutHostHeader(): Map<String, String>? {
+    return this
+        ?.filterKeys { !it.equals("Host", ignoreCase = true) }
+        ?.takeIf { it.isNotEmpty() }
+}
+
+private val outboundEditorGson = Gson()
+
+private val outboundEditorStateSaver = Saver<MutableState<Outbound?>, String>(
+    save = { state -> state.value?.let { outboundEditorGson.toJson(it) }.orEmpty() },
+    restore = { json ->
+        mutableStateOf(
+            json.takeIf { it.isNotBlank() }
+                ?.let { outboundEditorGson.fromJson(it, Outbound::class.java) }
+        )
+    }
+)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -109,6 +195,7 @@ fun NodeDetailScreen(
 ) {
     val context = LocalContext.current
     val configRepository = remember { ConfigRepository.getInstance(context) }
+    val scope = rememberCoroutineScope()
 
     val isCreateMode = nodeId.isEmpty() && createProtocol.isNotEmpty()
 
@@ -125,12 +212,14 @@ fun NodeDetailScreen(
     val node = if (!isCreateMode) nodes.find { it.id == nodeId } else null
     val profiles by configRepository.profiles.collectAsState(initial = emptyList())
 
-    var editingOutbound by remember { mutableStateOf<Outbound?>(null) }
+    var editingOutbound by rememberSaveable(nodeId, createProtocol, saver = outboundEditorStateSaver) {
+        mutableStateOf<Outbound?>(null)
+    }
     var showSelectProfileDialog by remember { mutableStateOf(false) }
     var showDetourNodeDialog by remember { mutableStateOf(false) }
     var pendingDetourRef by remember { mutableStateOf<String?>(null) }
 
-    LaunchedEffect(nodeId, createProtocol) {
+    LaunchedEffect(nodeId, createProtocol, nodes, allNodes) {
         if (editingOutbound == null) {
             if (isCreateMode) {
                 editingOutbound = createEmptyOutbound(createProtocol)
@@ -161,19 +250,34 @@ fun NodeDetailScreen(
         SelectProfileDialog(
             profiles = profiles,
             onConfirm = { target ->
-                editingOutbound?.let { outbound ->
-                    when (target) {
-                        is SelectProfileTarget.ExistingProfile -> {
-                            configRepository.createNode(outbound, targetProfileId = target.profileId)
-                        }
-                        is SelectProfileTarget.NewProfile -> {
-                            configRepository.createNode(outbound, newProfileName = target.profileName)
+                val outbound = editingOutbound
+                if (outbound != null) {
+                    showSelectProfileDialog = false
+                    scope.launch {
+                        runCatching {
+                            withContext(Dispatchers.IO) {
+                                when (target) {
+                                    is SelectProfileTarget.ExistingProfile -> {
+                                        configRepository.createNode(outbound, targetProfileId = target.profileId)
+                                    }
+                                    is SelectProfileTarget.NewProfile -> {
+                                        configRepository.createNode(outbound, newProfileName = target.profileName)
+                                    }
+                                }
+                            }
+                        }.onSuccess {
+                            AppNotificationManager.showMessage(context, createdMsg)
+                            navController.popBackStack()
+                        }.onFailure {
+                            AppNotificationManager.showMessage(
+                                context,
+                                context.getString(R.string.profiles_import_failed, it.message ?: "")
+                            )
                         }
                     }
-                    AppNotificationManager.showMessage(context, createdMsg)
-                    navController.popBackStack()
+                } else {
+                    showSelectProfileDialog = false
                 }
-                showSelectProfileDialog = false
             },
             onDismiss = { showSelectProfileDialog = false }
         )
@@ -204,9 +308,21 @@ fun NodeDetailScreen(
                             if (isCreateMode) {
                                 showSelectProfileDialog = true
                             } else {
-                                configRepository.updateNode(nodeId, currentOutbound)
-                                AppNotificationManager.showMessage(context, savedMsg)
-                                navController.popBackStack()
+                                scope.launch {
+                                    runCatching {
+                                        withContext(Dispatchers.IO) {
+                                            configRepository.updateNode(nodeId, currentOutbound)
+                                        }
+                                    }.onSuccess {
+                                        AppNotificationManager.showMessage(context, savedMsg)
+                                        navController.popBackStack()
+                                    }.onFailure {
+                                        AppNotificationManager.showMessage(
+                                            context,
+                                            context.getString(R.string.profiles_import_failed, it.message ?: "")
+                                        )
+                                    }
+                                }
                             }
                         }
                     }) {
@@ -789,7 +905,7 @@ fun NodeDetailScreen(
                             icon = Icons.Rounded.SwapHoriz,
                             onValueChange = { newType ->
                                 editingOutbound = outbound.copy(
-                                    transport = transport.copy(type = newType)
+                                    transport = updateTransportTypeForEditor(transport, newType)
                                 )
                             }
                         )
@@ -798,12 +914,12 @@ fun NodeDetailScreen(
                             Spacer(modifier = Modifier.height(8.dp))
                             EditableTextItem(
                                 title = stringResource(R.string.node_detail_ws_host),
-                                value = transport.headers?.get("Host") ?: "",
+                                value = resolveWebSocketHostTextForEditor(transport),
                                 icon = Icons.Rounded.Language,
                                 onValueChange = {
-                                    val newHeaders = (transport.headers ?: emptyMap()).toMutableMap()
-                                    if (it.isBlank()) newHeaders.remove("Host") else newHeaders["Host"] = it
-                                    editingOutbound = outbound.copy(transport = transport.copy(headers = newHeaders))
+                                    editingOutbound = outbound.copy(
+                                        transport = updateWebSocketTransportHostForEditor(transport, it)
+                                    )
                                 }
                             )
                             EditableTextItem(
@@ -851,12 +967,11 @@ fun NodeDetailScreen(
                             )
                             EditableTextItem(
                                 title = stringResource(R.string.node_detail_host),
-                                value = transport.host?.joinToString(", ") ?: "",
+                                value = resolveTransportHostTextForEditor(transport),
                                 icon = Icons.Rounded.Language,
                                 onValueChange = {
-                                    val hosts = it.split(",").map { h -> h.trim() }.filter { h -> h.isNotEmpty() }
                                     editingOutbound = outbound.copy(
-                                        transport = transport.copy(host = hosts)
+                                        transport = updatePathBasedTransportHostForEditor(transport, it)
                                     )
                                 }
                             )

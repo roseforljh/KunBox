@@ -1,14 +1,17 @@
 ﻿package com.kunk.singbox.utils
 
+import android.Manifest
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.util.Log
 import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
 import com.google.gson.Gson
 import com.google.gson.annotations.SerializedName
 import com.kunk.singbox.R
@@ -74,8 +77,9 @@ object AppUpdateChecker {
 
                 val lastNotifiedVersion = getLastNotifiedVersion(context)
                 if (forceNotify || lastNotifiedVersion != latestVersion) {
-                    showUpdateNotification(context, release)
-                    setLastNotifiedVersion(context, latestVersion)
+                    if (showUpdateNotification(context, release)) {
+                        setLastNotifiedVersion(context, latestVersion)
+                    }
                 } else {
                     Log.d(TAG, "Already notified for version $latestVersion, skipping")
                 }
@@ -118,20 +122,17 @@ object AppUpdateChecker {
             .build()
 
         val settings = SettingsRepository.getInstance(context).settings.first()
-        val proxyClientAvailable = getProxyClient(settings) != null
         val proxyResult = tryProxyRequest(request, settings)
-        if (proxyResult != null || proxyClientAvailable) return proxyResult
 
-        return tryDirectRequest(request)
+        return proxyResult ?: tryDirectRequest(request)
     }
 
     private fun tryProxyRequest(request: Request, settings: com.kunk.singbox.model.AppSettings): GitHubRelease? {
         val proxyClient = getProxyClient(settings) ?: return null
         return try {
-            val response = proxyClient.newCall(request).execute()
-            val result = parseReleaseResponse(response, "Proxy")
-            if (result == null) response.close()
-            result
+            proxyClient.newCall(request).execute().use { response ->
+                parseReleaseResponse(response, "Proxy")
+            }
         } catch (e: Exception) {
             Log.w(TAG, "Proxy request failed: ${e.message}")
             null
@@ -140,8 +141,9 @@ object AppUpdateChecker {
 
     private fun tryDirectRequest(request: Request): GitHubRelease? {
         return try {
-            val response = getDirectClient().newCall(request).execute()
-            parseReleaseResponse(response, "Direct")
+            getDirectClient().newCall(request).execute().use { response ->
+                parseReleaseResponse(response, "Direct")
+            }
         } catch (e: Exception) {
             Log.e(TAG, "Direct request also failed", e)
             null
@@ -162,7 +164,8 @@ object AppUpdateChecker {
         return NetworkClient.createClientWithTimeout(
             connectTimeoutSeconds = 15,
             readTimeoutSeconds = 20,
-            writeTimeoutSeconds = 20
+            writeTimeoutSeconds = 20,
+            callTimeoutSeconds = 30
         )
     }
 
@@ -174,7 +177,8 @@ object AppUpdateChecker {
             proxyPort = settings.proxyPort,
             connectTimeoutSeconds = 15,
             readTimeoutSeconds = 20,
-            writeTimeoutSeconds = 20
+            writeTimeoutSeconds = 20,
+            callTimeoutSeconds = 30
         )
     }
 
@@ -214,7 +218,12 @@ object AppUpdateChecker {
 
     /**
      */
-    private fun showUpdateNotification(context: Context, release: GitHubRelease) {
+    private fun showUpdateNotification(context: Context, release: GitHubRelease): Boolean {
+        if (!canPostNotifications(context)) {
+            Log.w(TAG, "Notification permission not granted, update notification skipped")
+            return false
+        }
+
         createNotificationChannel(context)
 
         val version = release.tagName.removePrefix("v")
@@ -258,6 +267,15 @@ object AppUpdateChecker {
         notificationManager.notify(NOTIFICATION_ID, notification)
 
         Log.i(TAG, "Update notification shown for version $version")
+        return true
+    }
+
+    private fun canPostNotifications(context: Context): Boolean {
+        return Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+            ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.POST_NOTIFICATIONS
+            ) == PackageManager.PERMISSION_GRANTED
     }
 
     /**

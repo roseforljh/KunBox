@@ -15,8 +15,10 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 
 /**
  *
@@ -125,6 +127,22 @@ class SettingsStore private constructor(context: Context) {
         ): Boolean {
             return version != SettingsEntity.CURRENT_VERSION || migrated != loaded
         }
+
+        internal fun resolveSettingsAfterPersistenceForTest(
+            previous: AppSettings,
+            updated: AppSettings,
+            persisted: Boolean
+        ): AppSettings {
+            return resolveSettingsAfterPersistence(previous, updated, persisted)
+        }
+
+        private fun resolveSettingsAfterPersistence(
+            previous: AppSettings,
+            updated: AppSettings,
+            persisted: Boolean
+        ): AppSettings {
+            return if (persisted) updated else previous
+        }
     }
 
     private val database = AppDatabase.getInstance(context)
@@ -141,24 +159,24 @@ class SettingsStore private constructor(context: Context) {
     val settings: StateFlow<AppSettings> = _settings.asStateFlow()
 
     init {
-        loadSettings()
+        runBlocking(Dispatchers.IO) {
+            loadSettings()
+        }
     }
 
     @Suppress("NestedBlockDepth")
-    private fun loadSettings() {
+    private suspend fun loadSettings() {
         try {
             val startTime = System.currentTimeMillis()
 
-            val entity = settingsDao.getSettingsSync()
+            val entity = settingsDao.getSettings()
             if (entity != null) {
                 val loaded = gson.fromJson(entity.data, AppSettings::class.java)
                 if (loaded != null) {
                     val migrated = migrateSettings(entity.version, loaded)
                     _settings.value = migrated
                     if (shouldPersistMigratedSettings(entity.version, loaded, migrated)) {
-                        scope.launch {
-                            saveSettingsInternal(migrated)
-                        }
+                        saveSettingsInternal(migrated)
                     }
                     val elapsed = System.currentTimeMillis() - startTime
                     Log.i(TAG, "Settings loaded from Room in ${elapsed}ms")
@@ -175,46 +193,37 @@ class SettingsStore private constructor(context: Context) {
     /**
      */
     fun updateSettings(update: (AppSettings) -> AppSettings) {
-        val newSettings = update(_settings.value)
-        _settings.value = newSettings
-
         scope.launch {
-            saveSettingsInternal(newSettings)
+            updateSettingsLocked(update)
         }
     }
 
     /**
      */
-    suspend fun updateSettingsAndWait(update: (AppSettings) -> AppSettings) {
-        val newSettings = update(_settings.value)
-        _settings.value = newSettings
-        saveSettingsInternal(newSettings)
+    suspend fun updateSettingsAndWait(update: (AppSettings) -> AppSettings): Boolean {
+        return updateSettingsLocked(update)
+    }
+
+    private suspend fun updateSettingsLocked(update: (AppSettings) -> AppSettings): Boolean {
+        return writeMutex.withLock {
+            val previousSettings = _settings.value
+            val newSettings = update(previousSettings)
+            _settings.value = newSettings
+            val persisted = saveSettingsLocked(newSettings)
+            _settings.value = resolveSettingsAfterPersistence(previousSettings, newSettings, persisted)
+            persisted
+        }
     }
 
     private suspend fun saveSettingsInternal(settings: AppSettings) {
         writeMutex.withLock {
-            try {
-                val startTime = System.currentTimeMillis()
-                val json = gson.toJson(settings)
-                val entity = SettingsEntity(
-                    id = 1,
-                    version = SettingsEntity.CURRENT_VERSION,
-                    data = json,
-                    updatedAt = System.currentTimeMillis()
-                )
-                settingsDao.saveSettings(entity)
-                val elapsed = System.currentTimeMillis() - startTime
-                Log.d(TAG, "Settings saved to Room in ${elapsed}ms")
-            } catch (e: Exception) {
-                Log.e(TAG, "Failed to save settings", e)
-            }
+            saveSettingsLocked(settings)
         }
     }
 
-    /**
-     */
-    private fun saveSettingsSync(settings: AppSettings) {
+    private suspend fun saveSettingsLocked(settings: AppSettings): Boolean {
         try {
+            val startTime = System.currentTimeMillis()
             val json = gson.toJson(settings)
             val entity = SettingsEntity(
                 id = 1,
@@ -222,9 +231,13 @@ class SettingsStore private constructor(context: Context) {
                 data = json,
                 updatedAt = System.currentTimeMillis()
             )
-            settingsDao.saveSettingsSync(entity)
+            settingsDao.saveSettings(entity)
+            val elapsed = System.currentTimeMillis() - startTime
+            Log.d(TAG, "Settings saved to Room in ${elapsed}ms")
+            return true
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to save settings sync", e)
+            Log.e(TAG, "Failed to save settings", e)
+            return false
         }
     }
 
@@ -234,11 +247,15 @@ class SettingsStore private constructor(context: Context) {
 
     /**
      */
-    fun reload() {
-        loadSettings()
+    suspend fun reload() {
+        withContext(Dispatchers.IO) {
+            loadSettings()
+        }
     }
 
-    fun hasSettings(): Boolean = settingsDao.hasSettingsSync()
+    suspend fun hasSettings(): Boolean = withContext(Dispatchers.IO) {
+        settingsDao.hasSettings()
+    }
 
     /**
      */

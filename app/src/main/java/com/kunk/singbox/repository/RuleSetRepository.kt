@@ -2,17 +2,24 @@ package com.kunk.singbox.repository
 
 import android.content.Context
 import android.util.Log
+import com.google.gson.stream.JsonReader
 import com.kunk.singbox.ipc.VpnStateStore
 import com.kunk.singbox.model.AppSettings
 import com.kunk.singbox.model.RuleSet
 import com.kunk.singbox.model.RuleSetType
+import com.kunk.singbox.utils.NetworkClient
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import okhttp3.Request
-import com.kunk.singbox.utils.NetworkClient
 import okhttp3.OkHttpClient
 import java.io.File
+import java.io.InputStreamReader
+import java.io.StringReader
+import java.nio.file.AtomicMoveNotSupportedException
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
+import java.security.MessageDigest
 
 /**
  */
@@ -23,6 +30,15 @@ class RuleSetRepository(private val context: Context) {
         private const val RAW_GITHUB_HOST = "raw.githubusercontent.com/"
         private const val RAW_GITHUB_PREFIX = "https://raw.githubusercontent.com/"
         private const val JSDELIVR_CDN_PREFIX = "https://cdn.jsdelivr.net/gh/"
+        private const val RULE_SET_MIN_SIZE_BYTES = 10L
+        private const val RULE_SET_BINARY_MAGIC = "SRS"
+        private const val RULE_SET_VALIDATION_SAMPLE_BYTES = 1024
+
+        private val REGEX_RULE_SET_ERROR_TEXT = Regex(
+            "^(error|forbidden|not found|404|403|401|429|500|access denied|" +
+                "invalid request|too many requests|rate limit|rate limited)\\b",
+            RegexOption.IGNORE_CASE
+        )
 
         @Volatile
         private var instance: RuleSetRepository? = null
@@ -65,6 +81,137 @@ class RuleSetRepository(private val context: Context) {
         internal fun normalizeRuleSetForSave(ruleSet: RuleSet, mirrorUrl: String): RuleSet {
             if (ruleSet.type != RuleSetType.REMOTE) return ruleSet
             return ruleSet.copy(url = normalizeRuleSetUrl(ruleSet.url, mirrorUrl))
+        }
+
+        internal fun ruleSetCacheFileName(tag: String): String {
+            val trimmed = tag.trim()
+            val safeTag = trimmed.isNotEmpty() &&
+                trimmed != "." &&
+                trimmed != ".." &&
+                trimmed.all { it.isLetterOrDigit() || it in setOf('-', '_', '.', '!', '#', '@') }
+
+            if (safeTag) return "$trimmed.srs"
+
+            val prefix = trimmed
+                .map { if (it.isLetterOrDigit() || it in setOf('-', '_', '.', '!', '#', '@')) it else '_' }
+                .joinToString("")
+                .trim('.', '_')
+                .take(48)
+                .ifBlank { "ruleset" }
+            val digest = MessageDigest.getInstance("SHA-256")
+                .digest(trimmed.toByteArray(Charsets.UTF_8))
+                .joinToString("") { "%02x".format(it) }
+                .take(16)
+            return "$prefix-$digest.srs"
+        }
+
+        internal fun isDownloadedRuleSetValidForTest(
+            header: String,
+            fileLength: Long,
+            format: String
+        ): Boolean {
+            return isDownloadedRuleSetContentValid(header, fileLength, format)
+        }
+
+        internal fun createDownloadTempFileForTest(targetFile: File): File {
+            return createDownloadTempFile(targetFile)
+        }
+
+        internal fun shouldDownloadRemoteRuleSetForTest(
+            fileExists: Boolean,
+            allowNetwork: Boolean,
+            forceUpdate: Boolean,
+            isExpired: Boolean
+        ): Boolean {
+            return shouldDownloadRemoteRuleSet(fileExists, allowNetwork, forceUpdate, isExpired)
+        }
+
+        internal fun isRemoteRuleSetReadyAfterDownloadFailureForTest(
+            fileExists: Boolean,
+            forceUpdate: Boolean
+        ): Boolean {
+            return isRemoteRuleSetReadyAfterDownloadFailure(fileExists, forceUpdate)
+        }
+
+        private fun shouldDownloadRemoteRuleSet(
+            fileExists: Boolean,
+            allowNetwork: Boolean,
+            forceUpdate: Boolean,
+            isExpired: Boolean
+        ): Boolean {
+            return allowNetwork && (!fileExists || forceUpdate || isExpired)
+        }
+
+        private fun isRemoteRuleSetReadyAfterDownloadFailure(fileExists: Boolean, forceUpdate: Boolean): Boolean {
+            return fileExists && !forceUpdate
+        }
+
+        private fun createDownloadTempFile(targetFile: File): File {
+            targetFile.parentFile?.mkdirs()
+            val prefix = "${targetFile.name.take(64)}.".takeIf { it.length >= 3 } ?: "tmp."
+            return File.createTempFile(prefix, ".tmp", targetFile.parentFile)
+        }
+
+        private fun isDownloadedRuleSetContentValid(
+            content: String,
+            fileLength: Long,
+            format: String
+        ): Boolean {
+            val trimmed = content.trim()
+            val isSource = isSourceFormat(format)
+            return when {
+                fileLength < RULE_SET_MIN_SIZE_BYTES -> false
+                looksLikeHtml(trimmed) -> false
+                isLikelyErrorText(trimmed) -> false
+                isSource -> isSourceRuleSetJsonValid(trimmed)
+                trimmed.startsWith(RULE_SET_BINARY_MAGIC) -> true
+                isLikelyText(trimmed) -> false
+                else -> false
+            }
+        }
+
+        private fun isSourceFormat(format: String): Boolean {
+            return format.equals("source", ignoreCase = true)
+        }
+
+        private fun looksLikeHtml(trimmed: String): Boolean {
+            return trimmed.startsWith("<!DOCTYPE html", ignoreCase = true) ||
+                trimmed.startsWith("<html", ignoreCase = true)
+        }
+
+        private fun isLikelyErrorText(trimmed: String): Boolean {
+            val firstLine = trimmed.lineSequence().firstOrNull().orEmpty()
+            return REGEX_RULE_SET_ERROR_TEXT.containsMatchIn(firstLine)
+        }
+
+        private fun isLikelyText(trimmed: String): Boolean {
+            return trimmed.isNotEmpty() && trimmed.all { char ->
+                char == '\t' || char == '\n' || char == '\r' || char.code in 32..126
+            }
+        }
+
+        private fun isSourceRuleSetJsonValid(content: String): Boolean {
+            return runCatching {
+                JsonReader(StringReader(content)).use { reader ->
+                    readSourceRuleSetJson(reader)
+                }
+            }.getOrDefault(false)
+        }
+
+        private fun readSourceRuleSetJson(reader: JsonReader): Boolean {
+            reader.beginObject()
+            var hasRules = false
+            while (reader.hasNext()) {
+                when (reader.nextName()) {
+                    "rules" -> {
+                        hasRules = true
+                        reader.skipValue()
+                    }
+                    else -> reader.skipValue()
+                }
+            }
+            reader.endObject()
+            return hasRules
         }
 
         private fun normalizeRawRuleSetUrl(url: String): String {
@@ -152,24 +299,31 @@ class RuleSetRepository(private val context: Context) {
 
     private val settingsRepository = SettingsRepository.getInstance(context)
 
-    private fun getDirectClient(): OkHttpClient {
-        return NetworkClient.createClientWithTimeout(
+    private val directClient: OkHttpClient by lazy {
+        NetworkClient.createClientWithTimeout(
             connectTimeoutSeconds = 30,
             readTimeoutSeconds = 60,
-            writeTimeoutSeconds = 30
+            writeTimeoutSeconds = 30,
+            callTimeoutSeconds = 90
         )
     }
+    private val proxyClientCache = mutableMapOf<Int, OkHttpClient>()
 
     private fun getProxyClient(settings: AppSettings): OkHttpClient? {
         if (!VpnStateStore.getActive() || settings.proxyPort <= 0) {
             return null
         }
-        return NetworkClient.createClientWithProxy(
-            proxyPort = settings.proxyPort,
-            connectTimeoutSeconds = 30,
-            readTimeoutSeconds = 60,
-            writeTimeoutSeconds = 30
-        )
+        return synchronized(proxyClientCache) {
+            proxyClientCache.getOrPut(settings.proxyPort) {
+                NetworkClient.createClientWithProxy(
+                    proxyPort = settings.proxyPort,
+                    connectTimeoutSeconds = 30,
+                    readTimeoutSeconds = 60,
+                    writeTimeoutSeconds = 30,
+                    callTimeoutSeconds = 90
+                )
+            }
+        }
     }
 
     /**
@@ -209,10 +363,17 @@ class RuleSetRepository(private val context: Context) {
                 installBaselineRuleSet(ruleSet.tag, file)
             }
 
-            if (allowNetwork && (!file.exists() || (forceUpdate && isExpired(file)))) {
+            if (
+                shouldDownloadRemoteRuleSet(
+                    fileExists = file.exists(),
+                    allowNetwork = allowNetwork,
+                    forceUpdate = forceUpdate,
+                    isExpired = file.exists() && isExpired(file)
+                )
+            ) {
                 onProgress("Updating rule set ${ruleSet.tag}...")
                 val success = downloadCustomRuleSet(ruleSet, settings)
-                if (!success && !file.exists()) {
+                if (!success && !isRemoteRuleSetReadyAfterDownloadFailure(file.exists(), forceUpdate)) {
                     allReady = false
                     Log.e(TAG, "Failed to download rule set ${ruleSet.tag} and no cache available")
                 }
@@ -245,9 +406,16 @@ class RuleSetRepository(private val context: Context) {
                 }
                 if (!allowNetwork) {
                     file.exists()
-                } else if (!file.exists() || (forceUpdate && isExpired(file))) {
+                } else if (
+                    shouldDownloadRemoteRuleSet(
+                        fileExists = file.exists(),
+                        allowNetwork = true,
+                        forceUpdate = forceUpdate,
+                        isExpired = file.exists() && isExpired(file)
+                    )
+                ) {
                     val success = downloadCustomRuleSet(ruleSet, settings)
-                    success || file.exists()
+                    success || isRemoteRuleSetReadyAfterDownloadFailure(file.exists(), forceUpdate)
                 } else {
                     true
                 }
@@ -282,7 +450,7 @@ class RuleSetRepository(private val context: Context) {
     }
 
     private fun getRuleSetFile(tag: String): File {
-        return File(ruleSetDir, "$tag.srs")
+        return File(ruleSetDir, ruleSetCacheFileName(tag))
     }
 
     private fun isExpired(file: File): Boolean {
@@ -300,13 +468,13 @@ class RuleSetRepository(private val context: Context) {
         val mirrorUrl = settings.ghProxyMirror.url
 
         val mirrorUrlString = normalizeRuleSetUrl(ruleSet.url, mirrorUrl)
-        val success = downloadFileWithFallback(mirrorUrlString, getRuleSetFile(ruleSet.tag), settings)
+        val success = downloadFileWithFallback(mirrorUrlString, getRuleSetFile(ruleSet.tag), settings, ruleSet.format)
 
         if (success) return true
 
         if (mirrorUrlString != ruleSet.url) {
             Log.w(TAG, "Mirror download failed, trying original URL: ${ruleSet.url}")
-            return downloadFileWithFallback(ruleSet.url, getRuleSetFile(ruleSet.tag), settings)
+            return downloadFileWithFallback(ruleSet.url, getRuleSetFile(ruleSet.tag), settings, ruleSet.format)
         }
 
         return false
@@ -315,12 +483,13 @@ class RuleSetRepository(private val context: Context) {
     private suspend fun downloadFileWithFallback(
         url: String,
         targetFile: File,
-        settings: AppSettings
+        settings: AppSettings,
+        format: String
     ): Boolean {
         val proxyClient = getProxyClient(settings)
         if (proxyClient != null) {
-            return try {
-                val success = downloadFile(proxyClient, url, targetFile)
+            val proxySuccess = try {
+                val success = downloadFile(proxyClient, url, targetFile, format)
                 if (success) {
                     Log.d(TAG, "Proxy download succeeded: ${targetFile.name}")
                 } else {
@@ -331,13 +500,16 @@ class RuleSetRepository(private val context: Context) {
                 Log.w(TAG, "Proxy download error: ${e.message}")
                 false
             }
+            if (proxySuccess) return true
+            Log.w(TAG, "Trying direct rule set download after proxy failure")
         }
 
-        return downloadFile(getDirectClient(), url, targetFile)
+        return downloadFile(directClient, url, targetFile, format)
     }
 
     @Suppress("ReturnCount", "NestedBlockDepth", "CyclomaticComplexMethod", "CognitiveComplexMethod")
-    private suspend fun downloadFile(client: OkHttpClient, url: String, targetFile: File): Boolean {
+    private suspend fun downloadFile(client: OkHttpClient, url: String, targetFile: File, format: String): Boolean {
+        var tempFile: File? = null
         return try {
             val request = Request.Builder().url(url).build()
             client.newCall(request).execute().use { response ->
@@ -347,30 +519,18 @@ class RuleSetRepository(private val context: Context) {
                 }
 
                 val body = response.body ?: return false
-                val tempFile = File(targetFile.parent, "${targetFile.name}.tmp")
+                tempFile = createDownloadTempFile(targetFile)
+                val downloadTempFile = tempFile ?: return false
 
                 body.byteStream().use { input ->
-                    tempFile.outputStream().use { output ->
+                    downloadTempFile.outputStream().use { output ->
                         input.copyTo(output)
                     }
                 }
 
                 val isValid = try {
-                    val header = tempFile.inputStream().use { input ->
-                        val buffer = ByteArray(64)
-                        val read = input.read(buffer)
-                        if (read > 0) String(buffer, 0, read) else ""
-                    }
-                    val trimmedHeader = header.trim()
-                    val isInvalid = trimmedHeader.startsWith("<!DOCTYPE html", ignoreCase = true) ||
-                        trimmedHeader.startsWith("<html", ignoreCase = true) ||
-                        trimmedHeader.startsWith("{") // JSON error
-
-                    if (isInvalid) {
-                        Log.e(TAG, "Downloaded file is invalid (HTML/JSON), discarding: ${targetFile.name}")
-                        false
-                    } else if (tempFile.length() < 10) {
-                        Log.e(TAG, "Downloaded file is too small, discarding: ${targetFile.name}")
+                    if (!isDownloadedRuleSetFileValid(downloadTempFile, format)) {
+                        Log.e(TAG, "Downloaded file is invalid, discarding: ${targetFile.name}")
                         false
                     } else {
                         true
@@ -382,62 +542,81 @@ class RuleSetRepository(private val context: Context) {
                 }
 
                 if (isValid) {
-                    if (!replaceRuleSetFile(tempFile, targetFile)) {
-                        Log.e(TAG, "Failed to replace rule set file, keeping temp file for retry: ${tempFile.name}")
+                    if (!replaceRuleSetFile(downloadTempFile, targetFile)) {
+                        Log.e(TAG, "Failed to replace rule set file: ${downloadTempFile.name}")
                         return false
                     }
-                    tempFile.delete()
+                    downloadTempFile.delete()
                     Log.i(TAG, "Rule set downloaded and verified successfully: ${targetFile.name}")
                     return true
                 } else {
-                    tempFile.delete()
+                    downloadTempFile.delete()
                     return false
                 }
             }
         } catch (e: Exception) {
             Log.e(TAG, "Download error: ${e.message}", e)
             false
+        } finally {
+            tempFile?.takeIf { it.exists() }?.delete()
+        }
+    }
+
+    private fun isDownloadedRuleSetFileValid(file: File, format: String): Boolean {
+        if (file.length() < RULE_SET_MIN_SIZE_BYTES) return false
+        if (isSourceFormat(format)) {
+            return isSourceRuleSetFileValid(file)
+        }
+
+        val sample = readValidationSample(file)
+        val header = sample.toString(Charsets.ISO_8859_1)
+        return isDownloadedRuleSetContentValid(header, file.length(), format)
+    }
+
+    private fun isSourceRuleSetFileValid(file: File): Boolean {
+        return runCatching {
+            InputStreamReader(file.inputStream(), Charsets.UTF_8).use { streamReader ->
+                JsonReader(streamReader).use { reader ->
+                    readSourceRuleSetJson(reader)
+                }
+            }
+        }.getOrDefault(false)
+    }
+
+    private fun readValidationSample(file: File): ByteArray {
+        return file.inputStream().use { input ->
+            val buffer = ByteArray(RULE_SET_VALIDATION_SAMPLE_BYTES)
+            val read = input.read(buffer)
+            if (read > 0) buffer.copyOf(read) else ByteArray(0)
         }
     }
 
     @Suppress("ReturnCount")
     private fun replaceRuleSetFile(tempFile: File, targetFile: File): Boolean {
-        val backupFile = File(targetFile.parentFile, "${targetFile.name}.bak")
-
-        if (backupFile.exists() && !backupFile.delete()) {
-            Log.e(TAG, "Failed to delete stale backup file: ${backupFile.name}")
-            return false
-        }
-
-        if (targetFile.exists()) {
+        targetFile.parentFile?.mkdirs()
+        return try {
+            Files.move(
+                tempFile.toPath(),
+                targetFile.toPath(),
+                StandardCopyOption.REPLACE_EXISTING,
+                StandardCopyOption.ATOMIC_MOVE
+            )
+            true
+        } catch (_: AtomicMoveNotSupportedException) {
             try {
-                targetFile.copyTo(backupFile, overwrite = true)
+                Files.move(
+                    tempFile.toPath(),
+                    targetFile.toPath(),
+                    StandardCopyOption.REPLACE_EXISTING
+                )
+                true
             } catch (e: Exception) {
-                Log.e(TAG, "Failed to create rule set backup before replace: ${targetFile.name}", e)
-                return false
+                Log.e(TAG, "Failed to replace rule set file: ${targetFile.name}", e)
+                false
             }
-
-            if (!targetFile.delete()) {
-                Log.e(TAG, "Failed to remove existing rule set before replace: ${targetFile.name}")
-                return false
-            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to replace rule set file: ${targetFile.name}", e)
+            false
         }
-
-        if (tempFile.renameTo(targetFile)) {
-            if (backupFile.exists() && !backupFile.delete()) {
-                Log.w(TAG, "Failed to delete rule set backup after successful replace: ${backupFile.name}")
-            }
-            return true
-        }
-
-        Log.e(TAG, "Failed to replace rule set file: ${targetFile.name}")
-        if (backupFile.exists()) {
-            try {
-                backupFile.copyTo(targetFile, overwrite = true)
-            } catch (e: Exception) {
-                Log.e(TAG, "Failed to restore original rule set after replace failure: ${targetFile.name}", e)
-            }
-        }
-        return false
     }
 }

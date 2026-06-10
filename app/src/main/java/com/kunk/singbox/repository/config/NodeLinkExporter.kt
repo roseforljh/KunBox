@@ -18,6 +18,10 @@ object NodeLinkExporter {
             "anytls" -> generateAnyTLSLink(outbound)
             "naive" -> generateNaiveLink(outbound)
             "tuic" -> generateTuicLink(outbound)
+            "http" -> generateHttpLink(outbound)
+            "socks" -> generateSocksLink(outbound)
+            "ssh" -> generateSshLink(outbound)
+            "wireguard" -> generateWireGuardLink(outbound)
             else -> null
         }?.takeIf { it.isNotBlank() }
     }
@@ -30,9 +34,26 @@ object NodeLinkExporter {
         return if (s.contains(":") && !s.startsWith("[") && !s.endsWith("]")) "[$s]" else s
     }
 
+    private fun encodeBase64NoWrap(bytes: ByteArray): String {
+        return try {
+            val base64Class = Class.forName("java.util.Base64")
+            val encoder = base64Class.getMethod("getEncoder").invoke(null)
+            encoder.javaClass.getMethod("encodeToString", ByteArray::class.java).invoke(encoder, bytes) as String
+        } catch (_: Throwable) {
+            Base64.encodeToString(bytes, Base64.NO_WRAP)
+        }
+    }
+
     private fun buildOptionalQuery(params: List<String>): String {
         val query = params.filter { it.isNotBlank() }.joinToString("&")
         return if (query.isNotEmpty()) "?$query" else ""
+    }
+
+    private fun buildUserInfo(username: String?, password: String?): String {
+        val user = username?.takeIf { it.isNotBlank() } ?: return ""
+        val encodedUser = encodeUrlComponent(user)
+        val encodedPassword = password?.takeIf { it.isNotBlank() }?.let { ":${encodeUrlComponent(it)}" }.orEmpty()
+        return "$encodedUser$encodedPassword@"
     }
 
     @Suppress("CyclomaticComplexMethod", "CognitiveComplexMethod", "NestedBlockDepth", "LongMethod")
@@ -93,6 +114,13 @@ object NodeLinkExporter {
                 outbound.transport.path?.let { params.add("path=${encodeUrlComponent(it)}") }
                 outbound.transport.host?.firstOrNull()?.let { params.add("host=${encodeUrlComponent(it)}") }
             }
+            "httpupgrade" -> {
+                outbound.transport.path?.let { params.add("path=${encodeUrlComponent(it)}") }
+                val host = outbound.transport.host?.firstOrNull()
+                    ?: outbound.transport.headers?.get("Host")
+                    ?: outbound.transport.headers?.get("host")
+                host?.let { params.add("host=${encodeUrlComponent(it)}") }
+            }
             "xhttp", "splithttp" -> {
                 outbound.transport.path?.let { params.add("path=${encodeUrlComponent(it)}") }
                 outbound.transport.host?.firstOrNull()?.let { params.add("host=${encodeUrlComponent(it)}") }
@@ -119,7 +147,7 @@ object NodeLinkExporter {
                 add = outbound.server,
                 port = outbound.serverPort?.toString(),
                 id = outbound.uuid,
-                aid = "0",
+                aid = (outbound.alterId ?: 0).toString(),
                 scy = outbound.security,
                 net = outbound.transport?.type ?: "tcp",
                 type = "none",
@@ -131,7 +159,7 @@ object NodeLinkExporter {
                 fp = outbound.tls?.utls?.fingerprint
             )
             val jsonStr = gson.toJson(json)
-            val base64 = Base64.encodeToString(jsonStr.toByteArray(), Base64.NO_WRAP)
+            val base64 = encodeBase64NoWrap(jsonStr.toByteArray())
             "vmess://$base64"
         } catch (_: Exception) {
             ""
@@ -144,7 +172,7 @@ object NodeLinkExporter {
         val server = outbound.server?.let { formatServerHost(it) } ?: return ""
         val port = outbound.serverPort ?: return ""
         val userInfo = "$method:$password"
-        val encodedUserInfo = Base64.encodeToString(userInfo.toByteArray(), Base64.NO_WRAP)
+        val encodedUserInfo = encodeBase64NoWrap(userInfo.toByteArray())
         val serverPart = "$server:$port"
         val name = encodeUrlComponent(outbound.tag)
         val params = mutableListOf<String>()
@@ -174,6 +202,51 @@ object NodeLinkExporter {
 
         val queryPart = buildOptionalQuery(params)
         return "trojan://$password@$server:$port$queryPart#$name"
+    }
+
+    private fun generateHttpLink(outbound: Outbound): String {
+        val server = outbound.server?.let { formatServerHost(it) } ?: return ""
+        val useTls = outbound.tls?.enabled == true
+        val scheme = if (useTls) "https" else "http"
+        val port = outbound.serverPort ?: if (useTls) 443 else 8080
+        val name = encodeUrlComponent(outbound.tag)
+        val userInfo = buildUserInfo(outbound.username, outbound.password)
+        return "$scheme://$userInfo$server:$port#$name"
+    }
+
+    private fun generateSocksLink(outbound: Outbound): String {
+        val server = outbound.server?.let { formatServerHost(it) } ?: return ""
+        val port = outbound.serverPort ?: 1080
+        val name = encodeUrlComponent(outbound.tag)
+        val userInfo = buildUserInfo(outbound.username, outbound.password)
+        return "socks://$userInfo$server:$port#$name"
+    }
+
+    private fun generateSshLink(outbound: Outbound): String {
+        val server = outbound.server?.let { formatServerHost(it) } ?: return ""
+        val port = outbound.serverPort ?: 22
+        val name = encodeUrlComponent(outbound.tag)
+        val userInfo = buildUserInfo(outbound.user, outbound.password)
+        return "ssh://$userInfo$server:$port#$name"
+    }
+
+    private fun generateWireGuardLink(outbound: Outbound): String {
+        val privateKey = outbound.privateKey?.takeIf { it.isNotBlank() } ?: return ""
+        val peer = outbound.peers?.firstOrNull() ?: return ""
+        val server = peer.server?.let { formatServerHost(it) } ?: return ""
+        val publicKey = peer.publicKey?.takeIf { it.isNotBlank() } ?: return ""
+        val localAddress = outbound.localAddress?.takeIf { it.isNotEmpty() }?.joinToString(",") ?: return ""
+        val port = peer.serverPort ?: 51820
+        val name = encodeUrlComponent(outbound.tag)
+        val params = mutableListOf(
+            "public_key=${encodeUrlComponent(publicKey)}",
+            "address=${encodeUrlComponent(localAddress)}"
+        )
+        peer.preSharedKey?.takeIf { it.isNotBlank() }?.let {
+            params.add("pre_shared_key=${encodeUrlComponent(it)}")
+        }
+        val queryPart = buildOptionalQuery(params)
+        return "wireguard://${encodeUrlComponent(privateKey)}@$server:$port$queryPart#$name"
     }
 
     private fun generateHysteria2Link(outbound: Outbound): String {

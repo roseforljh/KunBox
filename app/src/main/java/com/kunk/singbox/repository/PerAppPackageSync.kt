@@ -1,5 +1,6 @@
 package com.kunk.singbox.repository
 
+import android.content.Intent
 import com.kunk.singbox.model.AppSettings
 
 internal fun removePackageFromList(value: String, packageName: String): String {
@@ -30,8 +31,17 @@ internal fun sanitizePackageList(
         .joinToString("\n")
 }
 
-internal fun shouldReloadInstalledAppsForPackageChange(isReplacing: Boolean, packageName: String?): Boolean {
-    return !isReplacing && !packageName.isNullOrBlank()
+internal fun shouldReloadInstalledAppsForPackageChange(
+    action: String?,
+    isReplacing: Boolean,
+    packageName: String?
+): Boolean {
+    if (packageName.isNullOrBlank()) return false
+    return when (action) {
+        Intent.ACTION_PACKAGE_ADDED -> true
+        Intent.ACTION_PACKAGE_REMOVED -> !isReplacing
+        else -> false
+    }
 }
 
 private fun String.toPackageNames(): List<String> {

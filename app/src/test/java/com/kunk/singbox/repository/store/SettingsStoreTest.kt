@@ -10,6 +10,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.File
 
 class SettingsStoreTest {
 
@@ -128,5 +129,51 @@ class SettingsStoreTest {
         val migrated = SettingsStore.migrateSettings(version = 7, settings = loaded)
 
         assertFalse(SettingsStore.shouldPersistMigratedSettings(version = 7, loaded = loaded, migrated = migrated))
+    }
+
+    @Test
+    fun testFailedSettingsPersistenceRollsBackInMemorySettings() {
+        val previous = AppSettings(localDns = "https://old.example/dns-query")
+        val updated = previous.copy(localDns = "https://new.example/dns-query")
+
+        val result = SettingsStore.resolveSettingsAfterPersistenceForTest(
+            previous = previous,
+            updated = updated,
+            persisted = false
+        )
+
+        assertEquals(previous, result)
+    }
+
+    @Test
+    fun testSuccessfulSettingsPersistenceKeepsUpdatedSettings() {
+        val previous = AppSettings(localDns = "https://old.example/dns-query")
+        val updated = previous.copy(localDns = "https://new.example/dns-query")
+
+        val result = SettingsStore.resolveSettingsAfterPersistenceForTest(
+            previous = previous,
+            updated = updated,
+            persisted = true
+        )
+
+        assertEquals(updated, result)
+    }
+
+    @Test
+    fun settingsStoreDoesNotUseSynchronousSettingsDaoMethods() {
+        val storeSource = File("src/main/java/com/kunk/singbox/repository/store/SettingsStore.kt").readText()
+        val daoSource = File("src/main/java/com/kunk/singbox/database/dao/SettingsDao.kt").readText()
+
+        assertTrue(storeSource.contains("runBlocking(Dispatchers.IO)"))
+        assertTrue(storeSource.contains("private suspend fun loadSettings()"))
+        assertTrue(storeSource.contains("suspend fun reload()"))
+        assertTrue(storeSource.contains("settingsDao.getSettings()"))
+        assertTrue(storeSource.contains("settingsDao.hasSettings()"))
+        assertFalse(storeSource.contains("getSettingsSync"))
+        assertFalse(storeSource.contains("saveSettingsSync"))
+        assertFalse(storeSource.contains("hasSettingsSync"))
+        assertFalse(daoSource.contains("getSettingsSync"))
+        assertFalse(daoSource.contains("saveSettingsSync"))
+        assertFalse(daoSource.contains("hasSettingsSync"))
     }
 }

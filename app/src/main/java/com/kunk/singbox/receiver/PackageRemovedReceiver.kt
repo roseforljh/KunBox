@@ -18,7 +18,7 @@ class PackageRemovedReceiver : BroadcastReceiver() {
         if (intent.action != Intent.ACTION_PACKAGE_ADDED && intent.action != Intent.ACTION_PACKAGE_REMOVED) return
         val packageName = intent.data?.packageName() ?: return
         val isReplacing = intent.getBooleanExtra(Intent.EXTRA_REPLACING, false)
-        if (!shouldReloadInstalledAppsForPackageChange(isReplacing, packageName)) return
+        if (!shouldReloadInstalledAppsForPackageChange(intent.action, isReplacing, packageName)) return
 
         val pendingResult = goAsync()
         CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {

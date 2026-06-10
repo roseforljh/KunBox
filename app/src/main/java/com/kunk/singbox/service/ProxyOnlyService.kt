@@ -82,6 +82,61 @@ class ProxyOnlyService : Service() {
         private val _lastErrorFlow = kotlinx.coroutines.flow.MutableStateFlow<String?>(null)
         val lastErrorFlow = _lastErrorFlow.asStateFlow()
 
+        internal fun shouldClearRuntimeStateOnDestroyForTest(
+            isRunning: Boolean,
+            isStarting: Boolean,
+            isStopping: Boolean,
+            pending: String,
+            mode: VpnStateStore.CoreMode
+        ): Boolean {
+            return shouldClearRuntimeStateOnDestroy(
+                isRunning = isRunning,
+                isStarting = isStarting,
+                isStopping = isStopping,
+                pending = pending,
+                mode = mode
+            )
+        }
+
+        private fun shouldClearRuntimeStateOnDestroy(
+            isRunning: Boolean,
+            isStarting: Boolean,
+            isStopping: Boolean,
+            pending: String,
+            mode: VpnStateStore.CoreMode
+        ): Boolean {
+            if (isStopping || pending == "stopping") return true
+            val hasActiveProxyState = isRunning || isStarting || pending.isNotBlank()
+            if (mode == VpnStateStore.CoreMode.PROXY && hasActiveProxyState) {
+                return false
+            }
+            return mode == VpnStateStore.CoreMode.NONE && pending.isNotBlank()
+        }
+
+        internal fun shouldContinueCoreStartAfterForegroundResultForTest(foregroundStarted: Boolean): Boolean {
+            return shouldContinueCoreStartAfterForegroundResult(foregroundStarted)
+        }
+
+        private fun shouldContinueCoreStartAfterForegroundResult(foregroundStarted: Boolean): Boolean {
+            return foregroundStarted
+        }
+
+        internal fun shouldClearRuntimeStateAfterStopForTest(stopService: Boolean): Boolean {
+            return shouldClearRuntimeStateAfterStop(stopService)
+        }
+
+        private fun shouldClearRuntimeStateAfterStop(stopService: Boolean): Boolean {
+            return stopService
+        }
+
+        internal fun shouldStartForegroundBeforeConfigGenerationForTest(action: String?, configPath: String?): Boolean {
+            return shouldStartForegroundBeforeConfigGeneration(action, configPath)
+        }
+
+        private fun shouldStartForegroundBeforeConfigGeneration(action: String?, configPath: String?): Boolean {
+            return action == ACTION_START && configPath.isNullOrBlank()
+        }
+
         private fun setLastError(message: String?) {
             _lastErrorFlow.value = message
             if (!message.isNullOrBlank()) {
@@ -359,6 +414,7 @@ class ProxyOnlyService : Service() {
         }
     }
 
+    @Suppress("ReturnCount", "LongMethod", "CyclomaticComplexMethod", "CognitiveComplexMethod")
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         Log.i(TAG, "onStartCommand action=${intent?.action}")
         runCatching {
@@ -368,10 +424,18 @@ class ProxyOnlyService : Service() {
         when (intent?.action) {
             ACTION_START -> {
                 VpnTileService.persistVpnPending(applicationContext, "starting")
-                var configPath = intent.getStringExtra(EXTRA_CONFIG_PATH)
+                val configPath = intent.getStringExtra(EXTRA_CONFIG_PATH)
 
                 // P0 Optimization: If config path is missing, generate it inside Service
                 if (configPath == null) {
+                    if (shouldStartForegroundBeforeConfigGeneration(intent.action, configPath) &&
+                        !startForegroundForProxyStart()
+                    ) {
+                        setLastError("Failed to start foreground service")
+                        clearStartupFailureState()
+                        stopSelf()
+                        return START_NOT_STICKY
+                    }
                     Log.i(TAG, "ACTION_START received without config path, generating config...")
                     serviceScope.launch {
                         try {
@@ -388,12 +452,18 @@ class ProxyOnlyService : Service() {
                             } else {
                                 Log.e(TAG, "Failed to generate config file")
                                 setLastError("Failed to generate config file")
-                                withContext(Dispatchers.Main) { stopSelf() }
+                                withContext(Dispatchers.Main) {
+                                    clearStartupFailureState()
+                                    stopSelf()
+                                }
                             }
                         } catch (e: Exception) {
                             Log.e(TAG, "Error generating config in Service", e)
                             setLastError("Error generating config: ${e.message}")
-                            withContext(Dispatchers.Main) { stopSelf() }
+                            withContext(Dispatchers.Main) {
+                                clearStartupFailureState()
+                                stopSelf()
+                            }
                         }
                     }
                     return START_NOT_STICKY
@@ -481,11 +551,12 @@ class ProxyOnlyService : Service() {
         notifyRemoteState(state = ServiceState.STARTING)
         updateTileState()
 
-        try {
-            startForeground(NOTIFICATION_ID, createNotification())
-            hasForegroundStarted.set(true)
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to call startForeground", e)
+        val foregroundStarted = startForegroundForProxyStart()
+        if (!shouldContinueCoreStartAfterForegroundResult(foregroundStarted)) {
+            setLastError("Failed to start foreground service")
+            clearStartupFailureState()
+            stopSelf()
+            return
         }
 
         startJob?.cancel()
@@ -502,7 +573,10 @@ class ProxyOnlyService : Service() {
                 val configFile = File(configPath)
                 if (!configFile.exists()) {
                     setLastError("Config file not found: $configPath")
-                    withContext(Dispatchers.Main) { stopSelf() }
+                    withContext(Dispatchers.Main) {
+                        clearStartupFailureState()
+                        stopSelf()
+                    }
                     return@launch
                 }
 
@@ -526,14 +600,14 @@ class ProxyOnlyService : Service() {
                         Log.i(TAG, "Port $proxyPort available after ${waitTime}ms")
                     } else {
 
-                        Log.e(TAG, "Port $proxyPort NOT released after ${waitTime}ms, killing process to force release")
-
-                        runCatching {
-                            val nm = getSystemService(android.app.NotificationManager::class.java)
-                            nm?.cancel(NOTIFICATION_ID)
+                        val reason = "Proxy port $proxyPort is unavailable after ${waitTime}ms"
+                        Log.e(TAG, reason)
+                        setLastError(reason)
+                        withContext(Dispatchers.Main) {
+                            clearStartupFailureState()
+                            stopSelf()
                         }
-                        delay(50)
-                        android.os.Process.killProcess(android.os.Process.myPid())
+                        return@launch
                     }
                 }
 
@@ -592,6 +666,17 @@ class ProxyOnlyService : Service() {
         }
     }
 
+    private fun clearStartupFailureState() {
+        isRunning = false
+        isStarting = false
+        NetworkClient.onVpnStateChanged(false)
+        VpnTileService.persistVpnState(applicationContext, false)
+        VpnStateStore.setMode(VpnStateStore.CoreMode.NONE)
+        VpnTileService.persistVpnPending(applicationContext, "")
+        notifyRemoteState(state = ServiceState.STOPPED)
+        updateTileState()
+    }
+
     /**
      */
     @Suppress("CognitiveComplexMethod", "LongMethod")
@@ -645,15 +730,9 @@ class ProxyOnlyService : Service() {
                             Log.i(TAG, "CommandServer closed, port $proxyPort released in ${elapsed}ms")
                         } else {
 
-                            Log.e(TAG, "Port $proxyPort NOT released after ${elapsed}ms, " +
-                                "killing process to force release")
-
-                            runCatching {
-                                val nm = getSystemService(android.app.NotificationManager::class.java)
-                                nm?.cancel(NOTIFICATION_ID)
-                            }
-                            delay(50)
-                            android.os.Process.killProcess(android.os.Process.myPid())
+                            val reason = "Proxy port $proxyPort was not released after ${elapsed}ms"
+                            Log.e(TAG, reason)
+                            setLastError(reason)
                         }
                     } else {
                         Log.i(TAG, "CommandServer closed in ${SystemClock.elapsedRealtime() - closeStart}ms")
@@ -668,9 +747,11 @@ class ProxyOnlyService : Service() {
                 if (stopSelfRequested) {
                     stopSelf()
                 }
-                VpnTileService.persistVpnState(applicationContext, false)
-                VpnStateStore.setMode(VpnStateStore.CoreMode.NONE)
-                VpnTileService.persistVpnPending(applicationContext, "")
+                if (shouldClearRuntimeStateAfterStop(stopService = stopSelfRequested)) {
+                    VpnTileService.persistVpnState(applicationContext, false)
+                    VpnStateStore.setMode(VpnStateStore.CoreMode.NONE)
+                    VpnTileService.persistVpnPending(applicationContext, "")
+                }
                 notifyRemoteState(state = ServiceState.STOPPED)
                 updateTileState()
             }
@@ -825,6 +906,19 @@ class ProxyOnlyService : Service() {
         }
     }
 
+    private fun startForegroundForProxyStart(): Boolean {
+        if (hasForegroundStarted.get()) return true
+
+        return try {
+            startForeground(NOTIFICATION_ID, createNotification())
+            hasForegroundStarted.set(true)
+            true
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to call startForeground", e)
+            false
+        }
+    }
+
     private fun updateNotification() {
         val notification = createNotification()
         val manager = getSystemService(NotificationManager::class.java)
@@ -876,18 +970,54 @@ class ProxyOnlyService : Service() {
         }
     }
 
+    private fun clearRuntimeStateOnDestroy() {
+        isRunning = false
+        isStarting = false
+        NetworkClient.onVpnStateChanged(false)
+        VpnTileService.persistVpnState(applicationContext, false)
+        VpnStateStore.clearRuntimeState()
+        VpnStateStore.setMode(VpnStateStore.CoreMode.NONE)
+        VpnTileService.persistVpnPending(applicationContext, "")
+        notifyRemoteState(state = ServiceState.STOPPED)
+        updateTileState()
+    }
+
     override fun onDestroy() {
-        super.onDestroy()
-        runCatching { serviceSupervisorJob.cancel() }
-        runCatching { cleanupSupervisorJob.cancel() }
+        val shouldClearRuntimeState = shouldClearRuntimeStateOnDestroy(
+            isRunning = isRunning,
+            isStarting = isStarting,
+            isStopping = isStopping,
+            pending = VpnStateStore.getPending(),
+            mode = VpnStateStore.getMode()
+        )
+        val serverToClose = commandServer
+        commandServer = null
+        startJob?.cancel()
+        startJob = null
         notificationUpdateJob?.cancel()
         notificationUpdateJob = null
         hasForegroundStarted.set(false)
+        suppressNotificationUpdates = true
+
+        if (shouldClearRuntimeState) {
+            clearRuntimeStateOnDestroy()
+        }
+
+        runCatching {
+            serverToClose?.closeService()
+            serverToClose?.close()
+        }.onFailure { e ->
+            Log.w(TAG, "Failed to close proxy-only CommandServer on destroy", e)
+        }
 
         runCatching {
             val nm = getSystemService(android.app.NotificationManager::class.java)
             nm.cancel(NOTIFICATION_ID)
             stopForeground(STOP_FOREGROUND_REMOVE)
         }
+
+        runCatching { serviceSupervisorJob.cancel() }
+        runCatching { cleanupSupervisorJob.cancel() }
+        super.onDestroy()
     }
 }

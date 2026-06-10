@@ -8,10 +8,16 @@ import com.kunk.singbox.model.TransportConfig
 import com.kunk.singbox.model.UtlsConfig
 import org.yaml.snakeyaml.Yaml
 import org.yaml.snakeyaml.error.YAMLException
+import java.net.InetAddress
+import java.net.URI
 
 /**
  */
 class ClashYamlParser : SubscriptionParser {
+    private companion object {
+        private const val DEFAULT_URL_TEST_URL = "http://www.gstatic.com/generate_204"
+    }
+
     override fun canParse(content: String): Boolean {
         val trimmed = content.trim()
 
@@ -64,11 +70,15 @@ class ClashYamlParser : SubscriptionParser {
 
         val proxyGroupsRaw = rootMap["proxy-groups"] as? List<*>
         if (proxyGroupsRaw != null) {
+            val knownGroupNames = proxyGroupsRaw.mapNotNull { group ->
+                (group as? Map<*, *>)?.let { asString(it["name"]) }
+            }.toSet()
+            val knownOutboundTags = outbounds.map { it.tag }.toSet() + knownGroupNames
             for (g in proxyGroupsRaw) {
                 val gm = g as? Map<*, *> ?: continue
                 val name = asString(gm["name"]) ?: continue
                 val type = asString(gm["type"])?.lowercase() ?: continue
-                val proxies = (gm["proxies"] as? List<*>)?.mapNotNull { asString(it) }?.filter { it.isNotBlank() } ?: emptyList()
+                val proxies = normalizeProxyGroupRefs(gm["proxies"], knownOutboundTags)
                 if (proxies.isEmpty()) continue
 
                 when (type) {
@@ -84,7 +94,7 @@ class ClashYamlParser : SubscriptionParser {
                         )
                     }
                     "url-test", "urltest" -> {
-                        val url = asString(gm["url"]) ?: "http://www.gstatic.com/generate_204"
+                        val url = sanitizeUrlTestUrl(asString(gm["url"]))
                         val interval = asString(gm["interval"]) ?: asInt(gm["interval"])?.toString() ?: "300s"
                         val tolerance = asInt(gm["tolerance"]) ?: 50
                         outbounds.add(
@@ -106,6 +116,60 @@ class ClashYamlParser : SubscriptionParser {
         if (outbounds.isEmpty()) return null
 
         return SingBoxConfig(outbounds = outbounds)
+    }
+
+    private fun sanitizeUrlTestUrl(rawUrl: String?): String {
+        val trimmed = rawUrl?.trim().orEmpty()
+        val uri = runCatching { URI(trimmed) }.getOrNull()
+        return if (trimmed.isNotBlank() && uri != null && isSafeUrlTestUri(uri)) {
+            trimmed
+        } else {
+            DEFAULT_URL_TEST_URL
+        }
+    }
+
+    private fun isSafeUrlTestUri(uri: URI): Boolean {
+        val scheme = uri.scheme?.lowercase()
+        val host = uri.host?.trim()?.lowercase().orEmpty()
+        return (scheme == "http" || scheme == "https") &&
+            host.isNotBlank() &&
+            host != "localhost" &&
+            !isUnsafeLiteralAddress(host)
+    }
+
+    private fun isUnsafeLiteralAddress(host: String): Boolean {
+        val literalHost = host.removePrefix("[").removeSuffix("]")
+        if (!looksLikeIpLiteral(literalHost)) return false
+
+        val address = runCatching { InetAddress.getByName(literalHost) }.getOrNull() ?: return true
+        return address.isAnyLocalAddress ||
+            address.isLoopbackAddress ||
+            address.isLinkLocalAddress ||
+            address.isSiteLocalAddress
+    }
+
+    private fun looksLikeIpLiteral(host: String): Boolean {
+        return host.contains(":") || host.all { it.isDigit() || it == '.' }
+    }
+
+    private fun normalizeProxyGroupRefs(rawProxies: Any?, knownOutboundTags: Set<String>): List<String> {
+        return (rawProxies as? List<*>)
+            ?.mapNotNull { value -> asString(value)?.trim()?.takeIf { it.isNotBlank() } }
+            ?.mapNotNull { normalizeProxyGroupRef(it, knownOutboundTags) }
+            ?.distinct()
+            .orEmpty()
+    }
+
+    private fun normalizeProxyGroupRef(ref: String, knownOutboundTags: Set<String>): String? {
+        if (knownOutboundTags.contains(ref)) return ref
+        return when {
+            ref.equals("DIRECT", ignoreCase = true) -> "direct"
+            ref.equals("REJECT", ignoreCase = true) -> null
+            ref.equals("REJECT-DROP", ignoreCase = true) -> null
+            ref.equals("PASS", ignoreCase = true) -> null
+            ref.equals("GLOBAL", ignoreCase = true) -> null
+            else -> ref
+        }
     }
 
     private fun parseProxy(proxyMap: Map<*, *>, globalFingerprint: String? = null, globalTlsMinVersion: String? = null): List<Outbound>? {
@@ -213,16 +277,11 @@ class ClashYamlParser : SubscriptionParser {
                     headers["User-Agent"] = getUserAgent(fingerprint)
                 }
 
-                val maxEarlyData = asInt(wsOpts?.get("max-early-data")) ?: 2048
-                val earlyDataHeaderName = asString(wsOpts?.get("early-data-header-name")) ?: "Sec-WebSocket-Protocol"
-                val isHttpUpgrade = asBool(wsOpts?.get("v2ray-http-upgrade")) == true
-
-                TransportConfig(
-                    type = if (isHttpUpgrade) "httpupgrade" else "ws",
+                buildWsOrHttpUpgradeTransport(
+                    wsOpts = wsOpts,
                     path = path,
                     headers = headers,
-                    maxEarlyData = if (isHttpUpgrade) null else maxEarlyData,
-                    earlyDataHeaderName = if (isHttpUpgrade) null else earlyDataHeaderName
+                    host = host
                 )
             }
             "grpc" -> {
@@ -339,16 +398,11 @@ class ClashYamlParser : SubscriptionParser {
                     headers["User-Agent"] = getUserAgent(fingerprint)
                 }
 
-                val maxEarlyData = asInt(wsOpts?.get("max-early-data")) ?: 2048
-                val earlyDataHeaderName = asString(wsOpts?.get("early-data-header-name")) ?: "Sec-WebSocket-Protocol"
-                val isHttpUpgrade = asBool(wsOpts?.get("v2ray-http-upgrade")) == true
-
-                TransportConfig(
-                    type = if (isHttpUpgrade) "httpupgrade" else "ws",
+                buildWsOrHttpUpgradeTransport(
+                    wsOpts = wsOpts,
                     path = path,
                     headers = headers,
-                    maxEarlyData = if (isHttpUpgrade) null else maxEarlyData,
-                    earlyDataHeaderName = if (isHttpUpgrade) null else earlyDataHeaderName
+                    host = host
                 )
             }
             "grpc" -> {
@@ -456,6 +510,8 @@ class ClashYamlParser : SubscriptionParser {
                 val ssOutbound = Outbound(
                     type = "shadowsocks",
                     tag = name,
+                    server = server,
+                    serverPort = port,
                     method = cipher,
                     password = password,
                     detour = shadowTlsTag,
@@ -618,17 +674,13 @@ class ClashYamlParser : SubscriptionParser {
                 if (!headers.containsKey("User-Agent")) {
                     headers["User-Agent"] = getUserAgent(fingerprint)
                 }
+                val host = headers["Host"] ?: headers["host"] ?: sni
 
-                val maxEarlyData = asInt(wsOpts?.get("max-early-data")) ?: 2048
-                val earlyDataHeaderName = asString(wsOpts?.get("early-data-header-name")) ?: "Sec-WebSocket-Protocol"
-                val isHttpUpgrade = asBool(wsOpts?.get("v2ray-http-upgrade")) == true
-
-                TransportConfig(
-                    type = if (isHttpUpgrade) "httpupgrade" else "ws",
+                buildWsOrHttpUpgradeTransport(
+                    wsOpts = wsOpts,
                     path = path,
                     headers = headers,
-                    maxEarlyData = if (isHttpUpgrade) null else maxEarlyData,
-                    earlyDataHeaderName = if (isHttpUpgrade) null else earlyDataHeaderName
+                    host = host
                 )
             }
             "grpc" -> {
@@ -712,7 +764,7 @@ class ClashYamlParser : SubscriptionParser {
         val alpn = asStringList(map["alpn"])
 
         val fingerprint = asString(map["client-fingerprint"]) ?: asString(map["fingerprint"]) ?: globalFingerprint
-        val congestion = asString(map["congestion-controller"]) ?: asString(map["congestion"]) ?: "bbr"
+        val congestion = asString(map["congestion-controller"]) ?: asString(map["congestion"])
         val udpRelayMode = asString(map["udp-relay-mode"]) ?: "native"
         val zeroRtt = asBool(map["reduce-rtt"]) == true || asBool(map["zero-rtt-handshake"]) == true
 
@@ -936,7 +988,7 @@ class ClashYamlParser : SubscriptionParser {
             val sni = asString(map["sni"]) ?: asString(map["servername"]) ?: server
 
             val skipCertVerify = map["skip-cert-verify"]
-            val insecure = if (skipCertVerify == null) true else asBool(skipCertVerify) == true
+            val insecure = asBool(skipCertVerify) == true
             val alpn = asStringList(map["alpn"])
             val tlsMinVersion = asString(map["tls-version"]) ?: asString(map["min-tls-version"]) ?: globalTlsMinVersion
             buildTlsConfig(
@@ -1132,5 +1184,33 @@ class ClashYamlParser : SubscriptionParser {
             is String -> v.split(",").map { it.trim() }.filter { it.isNotEmpty() }.takeIf { it.isNotEmpty() }
             else -> null
         }
+    }
+
+    private fun buildWsOrHttpUpgradeTransport(
+        wsOpts: Map<*, *>?,
+        path: String,
+        headers: Map<String, String>,
+        host: String?
+    ): TransportConfig {
+        val maxEarlyData = asInt(wsOpts?.get("max-early-data"))?.takeIf { it > 0 }
+        val earlyDataHeaderName = if (maxEarlyData != null) {
+            asString(wsOpts?.get("early-data-header-name")) ?: "Sec-WebSocket-Protocol"
+        } else {
+            null
+        }
+        val isHttpUpgrade = asBool(wsOpts?.get("v2ray-http-upgrade")) == true
+
+        return TransportConfig(
+            type = if (isHttpUpgrade) "httpupgrade" else "ws",
+            path = path,
+            headers = if (isHttpUpgrade) headers.withoutHostHeader().ifEmpty { null } else headers,
+            host = if (isHttpUpgrade) host?.takeIf { it.isNotBlank() }?.let { listOf(it) } else null,
+            maxEarlyData = if (isHttpUpgrade) null else maxEarlyData,
+            earlyDataHeaderName = if (isHttpUpgrade) null else earlyDataHeaderName
+        )
+    }
+
+    private fun Map<String, String>.withoutHostHeader(): Map<String, String> {
+        return filterKeys { !it.equals("Host", ignoreCase = true) }
     }
 }

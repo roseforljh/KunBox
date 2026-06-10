@@ -1,6 +1,7 @@
 ﻿package com.kunk.singbox.database.entity
 
 import androidx.room.Entity
+import androidx.room.Index
 import androidx.room.PrimaryKey
 import com.kunk.singbox.model.ProfileType
 import com.kunk.singbox.model.ProfileUi
@@ -9,7 +10,14 @@ import com.kunk.singbox.model.UpdateStatus
 /**
  *
  */
-@Entity(tableName = "profiles")
+@Entity(
+    tableName = "profiles",
+    indices = [
+        Index(value = ["sortOrder"]),
+        Index(value = ["enabled", "sortOrder"]),
+        Index(value = ["type", "sortOrder"])
+    ]
+)
 data class ProfileEntity(
     @PrimaryKey
     val id: String,

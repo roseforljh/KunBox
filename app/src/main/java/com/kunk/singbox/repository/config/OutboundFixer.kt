@@ -164,6 +164,50 @@ object OutboundFixer {
             result = result.copy(tls = tlsAfterSni?.copy(alpn = listOf("http/1.1")))
         }
 
+        if (transport?.type == "httpupgrade") {
+            val headerHost = transport.headers?.get("Host")
+                ?: transport.headers?.get("host")
+            val httpUpgradeHost = transport.host
+                ?.firstOrNull()
+                ?.takeIf { it.isNotBlank() }
+                ?: headerHost?.takeIf { it.isNotBlank() }
+            val normalizedPath = transport.path?.trim()?.ifEmpty { "/" } ?: "/"
+            val cleanedHeaders = transport.headers
+                ?.filterKeys { !it.equals("Host", ignoreCase = true) }
+                ?.takeIf { it.isNotEmpty() }
+            val normalizedHost = httpUpgradeHost?.let { listOf(it) }
+
+            if (
+                normalizedPath != transport.path ||
+                normalizedHost != transport.host ||
+                cleanedHeaders != transport.headers
+            ) {
+                result = result.copy(
+                    transport = transport.copy(
+                        path = normalizedPath,
+                        host = normalizedHost,
+                        headers = cleanedHeaders
+                    )
+                )
+            }
+
+            val tlsForHttpUpgrade = result.tls?.takeIf { it.enabled == true }
+            val sni = tlsForHttpUpgrade?.serverName?.trim().orEmpty()
+            val server = result.server?.trim().orEmpty()
+            val shouldFixSni = tlsForHttpUpgrade != null &&
+                !httpUpgradeHost.isNullOrBlank() &&
+                !isIpLiteral(httpUpgradeHost) &&
+                (
+                    sni.isBlank() ||
+                        isIpLiteral(sni) ||
+                        (server.isNotBlank() && sni.equals(server, ignoreCase = true))
+                    )
+
+            if (shouldFixSni && tlsForHttpUpgrade != null) {
+                result = result.copy(tls = tlsForHttpUpgrade.copy(serverName = httpUpgradeHost))
+            }
+        }
+
         if (transport?.type == "xhttp") {
             val rawPath = transport.path ?: "/"
             val normalizedPath = normalizeXhttpPath(rawPath)
@@ -306,6 +350,9 @@ object OutboundFixer {
     /**
      */
     private fun normalizeLegacyTransport(outbound: Outbound): Outbound {
+        if (outbound.type == "http") {
+            return outbound
+        }
         val legacyNetwork = outbound.network?.takeIf { it.isNotBlank() }
         val legacyPath = outbound.path?.takeIf { it.isNotBlank() }
         val legacyHeaders = outbound.headers?.takeIf { it.isNotEmpty() }

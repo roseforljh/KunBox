@@ -45,6 +45,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -268,7 +269,9 @@ private fun DomainRuleEditorDialog(
     onConfirm: (CustomRule) -> Unit,
     onDelete: (() -> Unit)? = null
 ) {
-    var value by remember { mutableStateOf(initialRule?.value ?: "") }
+    var value by rememberSaveable(initialRule?.value) {
+        mutableStateOf(initialRule?.value ?: "")
+    }
     val context = LocalContext.current
 
     fun generateRuleNameFromValue(raw: String): String {
@@ -314,8 +317,12 @@ private fun DomainRuleEditorDialog(
         }
     }
 
-    var outboundMode by remember { mutableStateOf(initialRule?.outboundMode ?: legacyMode(initialRule?.outbound)) }
-    var outboundValue by remember { mutableStateOf(initialRule?.outboundValue) }
+    var outboundMode by rememberSaveable(initialRule?.outboundMode, initialRule?.outbound) {
+        mutableStateOf(initialRule?.outboundMode ?: legacyMode(initialRule?.outbound))
+    }
+    var outboundValue by rememberSaveable(initialRule?.outboundValue) {
+        mutableStateOf(initialRule?.outboundValue)
+    }
 
     var showOutboundDialog by remember { mutableStateOf(false) }
     var showTargetSelectionDialog by remember { mutableStateOf(false) }

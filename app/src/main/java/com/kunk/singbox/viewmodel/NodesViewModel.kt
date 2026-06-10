@@ -16,6 +16,7 @@ import com.kunk.singbox.repository.ConfigRepository
 import com.kunk.singbox.repository.SettingsRepository
 import com.kunk.singbox.viewmodel.shared.NodeDisplaySettings
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -24,8 +25,11 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.util.concurrent.atomic.AtomicInteger
 
 class NodesViewModel(application: Application) : AndroidViewModel(application) {
     companion object {
@@ -106,7 +110,7 @@ class NodesViewModel(application: Application) : AndroidViewModel(application) {
                 filtered.sortedBy { orderMap[it.id] ?: Int.MAX_VALUE }
             }
         }
-    }.stateIn(
+    }.flowOn(Dispatchers.Default).stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5000),
         initialValue = emptyList()
@@ -157,7 +161,7 @@ class NodesViewModel(application: Application) : AndroidViewModel(application) {
                 filtered
             }
         }
-    }.stateIn(
+    }.flowOn(Dispatchers.Default).stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5000),
         initialValue = emptyList()
@@ -233,19 +237,31 @@ class NodesViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun testLatency(nodeId: String) {
-        if (_testingNodeIds.value.contains(nodeId)) return
+        var shouldStart = false
+        _testingNodeIds.update { current ->
+            if (current.contains(nodeId)) {
+                current
+            } else {
+                shouldStart = true
+                current + nodeId
+            }
+        }
+        if (!shouldStart) return
+
         viewModelScope.launch {
-            _testingNodeIds.value = _testingNodeIds.value + nodeId
             try {
                 val node = nodes.value.find { it.id == nodeId }
                 val latency = configRepository.testNodeLatency(nodeId)
                 if (latency <= 0) {
-                    val msg = getApplication<Application>().getString(R.string.nodes_test_failed, node?.displayName ?: "")
+                    val msg = getApplication<Application>().getString(
+                        R.string.nodes_test_failed,
+                        node?.displayName ?: ""
+                    )
                     _latencyMessage.value = msg
                     emitToast(msg)
                 }
             } finally {
-                _testingNodeIds.value = _testingNodeIds.value - nodeId
+                _testingNodeIds.update { it - nodeId }
             }
         }
     }
@@ -281,29 +297,30 @@ class NodesViewModel(application: Application) : AndroidViewModel(application) {
             val totalCount = targetIds.size
             _testingNodeIds.value = targetIds.toSet()
 
-            var completedCount = 0
-            var successCount = 0
-            var timeoutCount = 0
-            var ipv6OnlyCount = 0
+            val completedCount = AtomicInteger(0)
+            val successCount = AtomicInteger(0)
+            val timeoutCount = AtomicInteger(0)
+            val ipv6OnlyCount = AtomicInteger(0)
             _testProgress.value = Pair(0, totalCount)
 
             try {
                 configRepository.testAllNodesLatency(targetIds) { finishedNodeId, latencyMs ->
-                    _testingNodeIds.value = _testingNodeIds.value - finishedNodeId
-                    completedCount++
+                    _testingNodeIds.update { it - finishedNodeId }
+                    val completed = completedCount.incrementAndGet()
                     when {
-                        latencyMs > 0 -> successCount++
-                        latencyMs == PingResultCode.IPV6_ONLY -> ipv6OnlyCount++
-                        else -> timeoutCount++
+                        latencyMs > 0 -> successCount.incrementAndGet()
+                        latencyMs == PingResultCode.IPV6_ONLY -> ipv6OnlyCount.incrementAndGet()
+                        else -> timeoutCount.incrementAndGet()
                     }
-                    _testProgress.value = Pair(completedCount, totalCount)
+                    _testProgress.value = Pair(completed, totalCount)
                 }
                 val context = getApplication<Application>()
-                val summary = if (ipv6OnlyCount > 0) {
-                    context.getString(R.string.nodes_test_complete_stats_v6, successCount, timeoutCount, ipv6OnlyCount)
-                } else {
-                    context.getString(R.string.nodes_test_complete_stats, successCount, timeoutCount)
-                }
+                val summary = buildLatencyTestSummary(
+                    context = context,
+                    successCount = successCount.get(),
+                    timeoutCount = timeoutCount.get(),
+                    ipv6OnlyCount = ipv6OnlyCount.get()
+                )
                 emitToast(summary)
             } catch (e: Exception) {
                 Log.e(TAG, "Failed during batch latency test", e)
@@ -317,6 +334,19 @@ class NodesViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    private fun buildLatencyTestSummary(
+        context: Application,
+        successCount: Int,
+        timeoutCount: Int,
+        ipv6OnlyCount: Int
+    ): String {
+        return if (ipv6OnlyCount > 0) {
+            context.getString(R.string.nodes_test_complete_stats_v6, successCount, timeoutCount, ipv6OnlyCount)
+        } else {
+            context.getString(R.string.nodes_test_complete_stats, successCount, timeoutCount)
+        }
+    }
+
     fun deleteNode(nodeId: String) {
         viewModelScope.launch {
             val nodeName = configRepository.getNodeById(nodeId)?.displayName ?: ""
@@ -325,7 +355,7 @@ class NodesViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun exportNode(nodeId: String): String? {
+    suspend fun exportNode(nodeId: String): String? {
         return configRepository.exportNode(nodeId)
     }
 

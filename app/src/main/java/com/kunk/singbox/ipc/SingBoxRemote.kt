@@ -38,6 +38,30 @@ sealed class RecoveryResult {
     ) : RecoveryResult()
 }
 
+internal enum class EnsureBoundAction {
+    NONE,
+    CONNECT,
+    WAIT_FOR_BIND,
+    REBIND
+}
+
+internal fun resolveSingBoxEnsureBoundAction(
+    connectionActive: Boolean,
+    bound: Boolean,
+    servicePresent: Boolean,
+    serviceAlive: Boolean,
+    bindingInProgress: Boolean
+): EnsureBoundAction {
+    return when {
+        connectionActive && bound && servicePresent && serviceAlive -> EnsureBoundAction.NONE
+        connectionActive && bound && servicePresent && !serviceAlive -> EnsureBoundAction.REBIND
+        !connectionActive -> EnsureBoundAction.CONNECT
+        bindingInProgress -> EnsureBoundAction.WAIT_FOR_BIND
+        !bound || !servicePresent -> EnsureBoundAction.REBIND
+        else -> EnsureBoundAction.NONE
+    }
+}
+
 @Suppress("TooManyFunctions")
 object SingBoxRemote {
     private const val TAG = "SingBoxRemote"
@@ -145,9 +169,10 @@ object SingBoxRemote {
 
     internal fun shouldReconnectAfterServiceLoss(
         systemVpn: Boolean,
-        storedManuallyStopped: Boolean
+        storedManuallyStopped: Boolean,
+        storedMode: VpnStateStore.CoreMode
     ): Boolean {
-        return systemVpn && !storedManuallyStopped
+        return !storedManuallyStopped && (systemVpn || storedMode == VpnStateStore.CoreMode.PROXY)
     }
 
     private val callback = object : ISingBoxServiceCallback.Stub() {
@@ -250,7 +275,8 @@ object SingBoxRemote {
                 if (ctx != null && !SagerConnection_restartingApp) {
                     val systemVpn = hasSystemVpn(ctx)
                     val storedManuallyStopped = VpnStateStore.isManuallyStopped()
-                    if (!shouldReconnectAfterServiceLoss(systemVpn, storedManuallyStopped)) {
+                    val storedMode = VpnStateStore.getMode()
+                    if (!shouldReconnectAfterServiceLoss(systemVpn, storedManuallyStopped, storedMode)) {
                         syncStoppedStateAfterDisconnect()
                     } else {
                         // 统一走指数退避重连逻辑，避免极端情况下的重连风暴
@@ -300,7 +326,7 @@ object SingBoxRemote {
             pending == "starting" -> ServiceState.STARTING
             pending == "stopping" -> ServiceState.STOPPING
             isActive && hasVpnTransport -> ServiceState.RUNNING
-            mode == VpnStateStore.CoreMode.PROXY && hasVpnTransport -> ServiceState.RUNNING
+            mode == VpnStateStore.CoreMode.PROXY -> ServiceState.RUNNING
             else -> ServiceState.STOPPED
         }
     }
@@ -445,10 +471,11 @@ object SingBoxRemote {
             val ctx = contextRef?.get()
             val systemVpn = ctx != null && hasSystemVpn(ctx)
             val storedManuallyStopped = VpnStateStore.isManuallyStopped()
-            if (shouldReconnectAfterServiceLoss(systemVpn, storedManuallyStopped)) {
+            val storedMode = VpnStateStore.getMode()
+            if (shouldReconnectAfterServiceLoss(systemVpn, storedManuallyStopped, storedMode)) {
                 Log.i(
                     TAG,
-                    "Service disconnected but system VPN present, keeping state and reconnecting"
+                    "Service disconnected but runtime marker is active, keeping state and reconnecting"
                 )
                 scheduleReconnect()
             } else {
@@ -608,20 +635,31 @@ object SingBoxRemote {
     fun ensureBound(context: Context) {
         contextRef = WeakReference(context.applicationContext)
 
-        if (connectionActive && bound && service != null) {
-            val isAlive = runCatching { service?.state }.isSuccess
-            if (isAlive) return
-
-            Log.w(TAG, "Service connection stale, rebinding...")
+        val currentService = service
+        val servicePresent = currentService != null
+        val serviceAlive = if (connectionActive && bound && servicePresent) {
+            runCatching { currentService?.state }.isSuccess
+        } else {
+            false
         }
 
-        if (!connectionActive) {
-            connect(context)
-        } else if (bindingInProgress) {
-            Log.d(TAG, "ensureBound: binding already in progress")
-        } else if (!bound || service == null) {
-            disconnect(context)
-            connect(context)
+        when (resolveSingBoxEnsureBoundAction(
+            connectionActive = connectionActive,
+            bound = bound,
+            servicePresent = servicePresent,
+            serviceAlive = serviceAlive,
+            bindingInProgress = bindingInProgress
+        )) {
+            EnsureBoundAction.NONE -> return
+            EnsureBoundAction.CONNECT -> connect(context)
+            EnsureBoundAction.WAIT_FOR_BIND -> Log.d(TAG, "ensureBound: binding already in progress")
+            EnsureBoundAction.REBIND -> {
+                if (bound && servicePresent && !serviceAlive) {
+                    Log.w(TAG, "Service connection stale, rebinding...")
+                }
+                disconnect(context)
+                connect(context)
+            }
         }
     }
 

@@ -1,5 +1,6 @@
 package com.kunk.singbox.utils.parser
 
+import com.google.gson.Gson
 import com.kunk.singbox.model.Outbound
 import com.kunk.singbox.model.TlsConfig
 import com.kunk.singbox.model.TransportConfig
@@ -8,6 +9,8 @@ import org.junit.Assert.assertNotNull
 import org.junit.Test
 
 class SubscriptionManagerTest {
+    private val nodeLinkParser = NodeLinkParser(Gson())
+    private val base64Parser = Base64Parser { nodeLinkParser.parse(it) }
 
     @Test
     fun deduplicateOutboundsKeepsSameEndpointWithDifferentTransport() {
@@ -82,5 +85,30 @@ class SubscriptionManagerTest {
         assertEquals("remote", config?.dns?.rules?.firstOrNull()?.server)
         assertEquals("remote", config?.dns?.finalServer)
         assertEquals("direct", config?.outbounds?.firstOrNull()?.tag)
+    }
+
+    @Test
+    fun base64ParserDecodesUnpaddedBase64Subscription() {
+        val rawLink = "vless://uuid@example.com:443?type=ws&path=%2F&host=cdn.example.com#B64"
+        val encoded = java.util.Base64.getEncoder()
+            .withoutPadding()
+            .encodeToString(rawLink.toByteArray(Charsets.UTF_8))
+
+        val config = base64Parser.parse(encoded)
+
+        assertNotNull(config)
+        assertEquals("B64", config?.outbounds?.singleOrNull()?.tag)
+        assertEquals("cdn.example.com", config?.outbounds?.singleOrNull()?.transport?.headers?.get("Host"))
+    }
+
+    @Test
+    fun base64ParserTrimsTrailingMarkdownPunctuationFromExtractedLinks() {
+        val content = "节点：(vless://uuid@example.com:443?type=ws&path=%2F&host=cdn.example.com)"
+
+        val config = base64Parser.parse(content)
+
+        assertNotNull(config)
+        assertEquals("cdn.example.com", config?.outbounds?.singleOrNull()?.transport?.headers?.get("Host"))
+        assertEquals("cdn.example.com", config?.outbounds?.singleOrNull()?.tls?.serverName)
     }
 }

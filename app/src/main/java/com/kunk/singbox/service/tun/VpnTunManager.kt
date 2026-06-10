@@ -466,7 +466,11 @@ class VpnTunManager(
                 return vpnInterface
             }
 
-            try { vpnInterface?.close() } catch (_: Exception) {}
+            try {
+                vpnInterface?.close()
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to close invalid VPN interface", e)
+            }
         }
 
         return null

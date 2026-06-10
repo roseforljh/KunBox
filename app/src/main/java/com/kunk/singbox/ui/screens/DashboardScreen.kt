@@ -36,6 +36,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
@@ -74,6 +75,7 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import kotlinx.coroutines.launch
 
 @Composable
 fun DashboardScreen(
@@ -83,6 +85,7 @@ fun DashboardScreen(
     nodesViewModel: NodesViewModel = viewModel()
 ) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
 
     val connectionState by viewModel.connectionState.collectAsState()
     val stats by viewModel.stats.collectAsState()
@@ -103,7 +106,7 @@ fun DashboardScreen(
         }
     }
 
-    val activeNodeName by remember(activeNodeId) {
+    val activeNodeName by remember(activeNodeId, nodes) {
         derivedStateOf {
             viewModel.getActiveNodeName()
         }
@@ -170,12 +173,15 @@ fun DashboardScreen(
             options = options,
             selectedIndex = RoutingMode.entries.indexOf(settings.routingMode).coerceAtLeast(0),
             onSelect = { index ->
-                settingsViewModel.setRoutingMode(
-                    RoutingMode.entries[index],
-                    notifyRestartRequired = false
-                )
-                if (connectionState == ConnectionState.Connected || connectionState == ConnectionState.Connecting) {
-                    viewModel.restartVpn()
+                val selectedMode = RoutingMode.entries[index]
+                scope.launch {
+                    settingsViewModel.setRoutingModeAndWait(
+                        selectedMode,
+                        notifyRestartRequired = false
+                    )
+                    if (connectionState == ConnectionState.Connected || connectionState == ConnectionState.Connecting) {
+                        viewModel.restartVpn()
+                    }
                 }
                 showModeDialog = false
             },

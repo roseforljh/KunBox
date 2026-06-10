@@ -30,6 +30,7 @@ import androidx.compose.material3.*
 import androidx.compose.foundation.layout.Box
 import androidx.compose.ui.res.stringResource
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -293,12 +294,13 @@ fun RuleSetsScreen(
         val currentRuleSet = checkNotNull(outboundEditingRuleSet)
         val currentValue = currentRuleSet.outboundValue
         val currentRef = resolveNodeByStoredValue(currentValue)?.let { toNodeRef(it) } ?: currentValue
+        val selectedIndex = targetOptions.indexOfFirst { it.second == currentRef }
         SingleSelectDialog(
             title = targetSelectionTitle,
             options = targetOptions.map { it.first },
-            selectedIndex = targetOptions.indexOfFirst { it.second == currentRef },
+            selectedIndex = selectedIndex.coerceAtLeast(0),
             onSelect = { index ->
-                val selectedValue = targetOptions[index].second
+                val selectedValue = targetOptions.getOrNull(index)?.second ?: return@SingleSelectDialog
                 val updatedRuleSet = currentRuleSet.copy(outboundValue = selectedValue)
                 settingsViewModel.updateRuleSet(updatedRuleSet)
                 showTargetSelectionDialog = false
@@ -913,11 +915,21 @@ fun RuleSetEditorDialog(
     onConfirm: (RuleSet) -> Unit,
     onDelete: (() -> Unit)? = null
 ) {
-    var tag by remember { mutableStateOf(initialRuleSet?.tag ?: "") }
-    var type by remember { mutableStateOf(initialRuleSet?.type ?: RuleSetType.REMOTE) }
-    var format by remember { mutableStateOf(initialRuleSet?.format ?: "binary") }
-    var url by remember { mutableStateOf(initialRuleSet?.url ?: "") }
-    var path by remember { mutableStateOf(initialRuleSet?.path ?: "") }
+    var tag by rememberSaveable(initialRuleSet?.tag) {
+        mutableStateOf(initialRuleSet?.tag ?: "")
+    }
+    var type by rememberSaveable(initialRuleSet?.type) {
+        mutableStateOf(initialRuleSet?.type ?: RuleSetType.REMOTE)
+    }
+    var format by rememberSaveable(initialRuleSet?.format) {
+        mutableStateOf(initialRuleSet?.format ?: "binary")
+    }
+    var url by rememberSaveable(initialRuleSet?.url) {
+        mutableStateOf(initialRuleSet?.url ?: "")
+    }
+    var path by rememberSaveable(initialRuleSet?.path) {
+        mutableStateOf(initialRuleSet?.path ?: "")
+    }
 
     var showTypeDialog by remember { mutableStateOf(false) }
     var showFormatDialog by remember { mutableStateOf(false) }
@@ -1022,17 +1034,17 @@ fun RuleSetEditorDialog(
             TextButton(
                 onClick = {
                     val newRuleSet = initialRuleSet?.copy(
-                        tag = tag,
+                        tag = tag.trim(),
                         type = type,
                         format = format,
-                        url = url,
-                        path = path
+                        url = url.trim(),
+                        path = path.trim()
                     ) ?: RuleSet(
-                        tag = tag,
+                        tag = tag.trim(),
                         type = type,
                         format = format,
-                        url = url,
-                        path = path
+                        url = url.trim(),
+                        path = path.trim()
                     )
                     onConfirm(newRuleSet)
                 },

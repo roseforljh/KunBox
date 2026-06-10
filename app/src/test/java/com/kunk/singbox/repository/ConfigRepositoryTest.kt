@@ -3,7 +3,9 @@ package com.kunk.singbox.repository
 import com.google.gson.Gson
 import com.kunk.singbox.model.AppGroup
 import com.kunk.singbox.model.AppSettings
+import com.kunk.singbox.model.CacheFileConfig
 import com.kunk.singbox.model.CustomRule
+import com.kunk.singbox.model.DefaultRule
 import com.kunk.singbox.model.DnsConfig
 import com.kunk.singbox.model.DnsFakeIpConfig
 import com.kunk.singbox.model.DnsRule
@@ -11,9 +13,13 @@ import com.kunk.singbox.model.DnsServer
 import com.kunk.singbox.model.DnsStrategy
 import com.kunk.singbox.model.DomainResolveConfig
 import com.kunk.singbox.model.EchConfig
+import com.kunk.singbox.model.ExperimentalConfig
+import com.kunk.singbox.model.Inbound
 import com.kunk.singbox.model.IpVersionMode
 import com.kunk.singbox.model.Outbound
 import com.kunk.singbox.model.OutboundTag
+import com.kunk.singbox.model.RouteConfig
+import com.kunk.singbox.model.RouteRule
 import com.kunk.singbox.model.RuleSet
 import com.kunk.singbox.model.RuleSetConfig
 import com.kunk.singbox.model.RuleSetOutboundMode
@@ -24,7 +30,6 @@ import com.kunk.singbox.model.BatchUpdateResult
 import com.kunk.singbox.model.ProfileType
 import com.kunk.singbox.model.ProfileUi
 import com.kunk.singbox.model.RoutingMode
-import com.kunk.singbox.model.DefaultRule
 import com.kunk.singbox.model.SubscriptionUpdateStage
 import com.kunk.singbox.model.SubscriptionUpdateResult
 import com.kunk.singbox.model.TlsConfig
@@ -131,6 +136,39 @@ class ConfigRepositoryTest {
 
         assertNotNull(id)
         assertTrue(id.isNotBlank())
+    }
+
+    @Test
+    fun testBuildConfigWithOutboundsPreservesExistingProfileSettings() {
+        val existingConfig = SingBoxConfig(
+            dns = DnsConfig(
+                servers = listOf(DnsServer(tag = "remote", type = "https", server = "dns.example.com")),
+                finalServer = "remote"
+            ),
+            inbounds = listOf(Inbound(type = "tun", tag = "tun-in")),
+            outbounds = listOf(Outbound(type = "vless", tag = "old")),
+            route = RouteConfig(
+                rules = listOf(RouteRule(domainSuffix = listOf("example.com"), outbound = "PROXY")),
+                finalOutbound = "PROXY"
+            ),
+            experimental = ExperimentalConfig(cacheFile = CacheFileConfig(enabled = true))
+        )
+        val newOutbounds = listOf(
+            Outbound(type = "vless", tag = "old"),
+            Outbound(type = "trojan", tag = "new"),
+            Outbound(type = "direct", tag = "direct")
+        )
+
+        val updatedConfig = ConfigRepository.buildConfigWithOutboundsPreservingProfileSettings(
+            existingConfig = existingConfig,
+            outbounds = newOutbounds
+        )
+
+        assertEquals(existingConfig.dns, updatedConfig.dns)
+        assertEquals(existingConfig.inbounds, updatedConfig.inbounds)
+        assertEquals(existingConfig.route, updatedConfig.route)
+        assertEquals(existingConfig.experimental, updatedConfig.experimental)
+        assertEquals(newOutbounds, updatedConfig.outbounds)
     }
 
     @Test
@@ -358,6 +396,26 @@ class ConfigRepositoryTest {
         )
 
         assertNull(budget)
+    }
+
+    @Test
+    fun testSubscriptionContentLengthLimitAllowsUnknownOrBoundedLength() {
+        assertFalse(ConfigRepository.isSubscriptionContentLengthTooLargeForTest(-1))
+        assertFalse(ConfigRepository.isSubscriptionContentLengthTooLargeForTest(1024))
+        assertFalse(
+            ConfigRepository.isSubscriptionContentLengthTooLargeForTest(
+                ConfigRepository.subscriptionResponseMaxBytesForTest()
+            )
+        )
+    }
+
+    @Test
+    fun testSubscriptionContentLengthLimitRejectsOversizedLength() {
+        assertTrue(
+            ConfigRepository.isSubscriptionContentLengthTooLargeForTest(
+                ConfigRepository.subscriptionResponseMaxBytesForTest() + 1
+            )
+        )
     }
 
     @Test
@@ -727,6 +785,36 @@ class ConfigRepositoryTest {
     }
 
     @Test
+    fun testDnsOverrideRuleStringFieldsParseAsLists() {
+        val config = gson.fromJson(
+            """
+            {
+              "servers": [
+                { "tag": "airport-dns", "type": "https", "server": "dns.example.com" }
+              ],
+              "rules": [
+                {
+                  "domain_suffix": "bestvmr.com",
+                  "query_type": "A",
+                  "inbound": "tun-in",
+                  "package_name": "com.example.app",
+                  "server": "airport-dns"
+                }
+              ]
+            }
+            """.trimIndent(),
+            DnsConfig::class.java
+        )
+
+        val rule = config.rules?.firstOrNull()
+
+        assertEquals(listOf("bestvmr.com"), rule?.domainSuffix)
+        assertEquals(listOf("A"), rule?.queryType)
+        assertEquals(listOf("tun-in"), rule?.inbound)
+        assertEquals(listOf("com.example.app"), rule?.packageName)
+    }
+
+    @Test
     fun testDnsOverrideDomainRuleAppliesToOutboundDomainResolver() {
         val outbounds = listOf(
             Outbound(
@@ -854,6 +942,78 @@ class ConfigRepositoryTest {
     }
 
     @Test
+    fun testDnsOverrideCatchAllRuleWinsOverLocalDefaultDomainResolver() {
+        val outbounds = ConfigRepository.applyDefaultOutboundDomainResolverForTest(
+            outbounds = listOf(
+                Outbound(
+                    type = "vless",
+                    tag = "airport-node",
+                    server = "fly-nnca.bestvmr.com"
+                )
+            ),
+            defaultResolverTag = "local"
+        )
+        val override = DnsConfig(
+            servers = listOf(DnsServer(tag = "airport-dns", type = "https", server = "dns.example.com")),
+            rules = listOf(DnsRule(queryType = listOf("A", "AAAA"), server = "airport-dns"))
+        )
+
+        val actual = ConfigRepository.applyDnsOverrideDomainResolversForTest(outbounds, override)
+
+        assertEquals("airport-dns", actual.first().domainResolver?.server)
+    }
+
+    @Test
+    fun testDnsOverrideOutboundAnyRuleWinsOverLocalDefaultDomainResolver() {
+        val outbounds = ConfigRepository.applyDefaultOutboundDomainResolverForTest(
+            outbounds = listOf(
+                Outbound(
+                    type = "vless",
+                    tag = "airport-node",
+                    server = "fly-nnca.bestvmr.com"
+                )
+            ),
+            defaultResolverTag = "local"
+        )
+        val override = DnsConfig(
+            servers = listOf(DnsServer(tag = "airport-dns", type = "https", server = "dns.example.com")),
+            rules = listOf(DnsRule(outboundRaw = "any", server = "airport-dns"))
+        )
+
+        val actual = ConfigRepository.applyDnsOverrideDomainResolversForTest(outbounds, override)
+
+        assertEquals("airport-dns", actual.first().domainResolver?.server)
+    }
+
+    @Test
+    fun testDnsOverrideSpecificOutboundRuleOnlyAppliesMatchingOutbound() {
+        val outbounds = ConfigRepository.applyDefaultOutboundDomainResolverForTest(
+            outbounds = listOf(
+                Outbound(
+                    type = "vless",
+                    tag = "airport-node",
+                    server = "fly-nnca.bestvmr.com"
+                ),
+                Outbound(
+                    type = "vless",
+                    tag = "other-node",
+                    server = "other.example.com"
+                )
+            ),
+            defaultResolverTag = "local"
+        )
+        val override = DnsConfig(
+            servers = listOf(DnsServer(tag = "airport-dns", type = "https", server = "dns.example.com")),
+            rules = listOf(DnsRule(outboundRaw = "airport-node", server = "airport-dns"))
+        )
+
+        val actual = ConfigRepository.applyDnsOverrideDomainResolversForTest(outbounds, override)
+
+        assertEquals("airport-dns", actual[0].domainResolver?.server)
+        assertEquals("local", actual[1].domainResolver?.server)
+    }
+
+    @Test
     fun testDnsOverrideMatchingDomainSkipsProfileDnsPreResolve() {
         val override = DnsConfig(
             servers = listOf(DnsServer(tag = "airport-dns", type = "https", server = "dns.example.com")),
@@ -862,10 +1022,73 @@ class ConfigRepositoryTest {
 
         val shouldPreResolve = ConfigRepository.shouldApplyDnsPreResolveToDomainForTest(
             domain = "fly-nnca.bestvmr.com",
+            dnsOverride = override,
+            outboundTag = "airport-node"
+        )
+
+        assertFalse(shouldPreResolve)
+    }
+
+    @Test
+    fun testDnsOverrideCatchAllRuleSkipsProfileDnsPreResolve() {
+        val override = DnsConfig(
+            servers = listOf(DnsServer(tag = "airport-dns", type = "https", server = "dns.example.com")),
+            rules = listOf(DnsRule(queryType = listOf("A", "AAAA"), server = "airport-dns"))
+        )
+
+        val shouldPreResolve = ConfigRepository.shouldApplyDnsPreResolveToDomainForTest(
+            domain = "fly-nnca.bestvmr.com",
             dnsOverride = override
         )
 
         assertFalse(shouldPreResolve)
+    }
+
+    @Test
+    fun testDnsOverrideOutboundAnyRuleSkipsProfileDnsPreResolve() {
+        val override = DnsConfig(
+            servers = listOf(DnsServer(tag = "airport-dns", type = "https", server = "dns.example.com")),
+            rules = listOf(DnsRule(outboundRaw = "any", server = "airport-dns"))
+        )
+
+        val shouldPreResolve = ConfigRepository.shouldApplyDnsPreResolveToDomainForTest(
+            domain = "fly-nnca.bestvmr.com",
+            dnsOverride = override
+        )
+
+        assertFalse(shouldPreResolve)
+    }
+
+    @Test
+    fun testDnsOverrideSpecificOutboundRuleSkipsMatchingProfileDnsPreResolve() {
+        val override = DnsConfig(
+            servers = listOf(DnsServer(tag = "airport-dns", type = "https", server = "dns.example.com")),
+            rules = listOf(DnsRule(outboundRaw = "airport-node", server = "airport-dns"))
+        )
+
+        val shouldPreResolve = ConfigRepository.shouldApplyDnsPreResolveToDomainForTest(
+            domain = "fly-nnca.bestvmr.com",
+            dnsOverride = override,
+            outboundTag = "airport-node"
+        )
+
+        assertFalse(shouldPreResolve)
+    }
+
+    @Test
+    fun testDnsOverrideSpecificOutboundRuleKeepsNonMatchingProfileDnsPreResolve() {
+        val override = DnsConfig(
+            servers = listOf(DnsServer(tag = "airport-dns", type = "https", server = "dns.example.com")),
+            rules = listOf(DnsRule(outboundRaw = "airport-node", server = "airport-dns"))
+        )
+
+        val shouldPreResolve = ConfigRepository.shouldApplyDnsPreResolveToDomainForTest(
+            domain = "fly-nnca.bestvmr.com",
+            dnsOverride = override,
+            outboundTag = "other-node"
+        )
+
+        assertTrue(shouldPreResolve)
     }
 
     @Test
@@ -1812,6 +2035,8 @@ class ConfigRepositoryTest {
 
         assertEquals(1, rules.size)
         assertTrue(rules.any { it.protocol?.contains("quic") == true })
+        assertEquals("reject", rules.first().action)
+        assertNull(rules.first().outbound)
         assertFalse(rules.any { it.network?.contains("udp") == true && it.port == listOf(443) })
     }
 
@@ -2193,6 +2418,33 @@ class ConfigRepositoryTest {
     }
 
     @Test
+    fun testAtomicTextWriteReplacesExistingFileAndCleansTempFiles() {
+        val tempDir = java.nio.file.Files.createTempDirectory("running_config_write_").toFile()
+        val target = java.io.File(tempDir, "running_config.json")
+        target.writeText("""{"old":true}""")
+
+        ConfigRepository.writeTextFileAtomicallyForTest(target, """{"new":true}""")
+
+        assertEquals("""{"new":true}""", target.readText())
+        assertFalse(java.io.File(tempDir, "running_config.json.tmp").exists())
+        assertFalse(java.io.File(tempDir, "running_config.json.bak").exists())
+    }
+
+    @Test
+    fun testAtomicTextWriteDoesNotUseSharedFixedTempPath() {
+        val tempDir = java.nio.file.Files.createTempDirectory("running_config_write_unique_").toFile()
+        val target = java.io.File(tempDir, "running_config.json")
+        val blockedTempPath = java.io.File(tempDir, "running_config.json.tmp")
+        target.writeText("""{"old":true}""")
+        blockedTempPath.mkdir()
+
+        ConfigRepository.writeTextFileAtomicallyForTest(target, """{"new":true}""")
+
+        assertEquals("""{"new":true}""", target.readText())
+        assertTrue(blockedTempPath.isDirectory)
+    }
+
+    @Test
     fun testDetectRuleSetRuleTypeIpRules() {
         val tempFile =
             createTempRuleSetFile("""
@@ -2301,6 +2553,15 @@ class ConfigRepositoryTest {
         val ruleType = ConfigRepository.detectRuleSetRuleTypeForTest(tempFile, "geosite-cn")
 
         assertEquals(ConfigRepository.RuleSetRuleType.DOMAIN, ruleType)
+    }
+
+    @Test
+    fun testDetectRuleSetRuleTypeKeepsUnknownBinaryAsUnknownWithoutTagHint() {
+        val tempFile = createTempRuleSetBytes(byteArrayOf('S'.code.toByte(), 'R'.code.toByte(), 'S'.code.toByte(), 1))
+
+        val ruleType = ConfigRepository.detectRuleSetRuleTypeForTest(tempFile, "ads")
+
+        assertEquals(ConfigRepository.RuleSetRuleType.UNKNOWN, ruleType)
     }
 
     private fun createTempRuleSetBytes(content: ByteArray): java.io.File {

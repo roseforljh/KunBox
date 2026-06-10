@@ -15,6 +15,7 @@ import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material3.*
 import androidx.compose.ui.res.stringResource
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -177,10 +178,18 @@ fun CustomRuleEditorDialog(
     onConfirm: (CustomRule) -> Unit,
     onDelete: (() -> Unit)? = null
 ) {
-    var name by remember { mutableStateOf(initialRule?.name ?: "") }
-    var type by remember { mutableStateOf(initialRule?.type ?: RuleType.DOMAIN_SUFFIX) }
-    var value by remember { mutableStateOf(initialRule?.value ?: "") }
-    var outbound by remember { mutableStateOf(initialRule?.outbound ?: OutboundTag.PROXY) }
+    var name by rememberSaveable(initialRule?.name) {
+        mutableStateOf(initialRule?.name ?: "")
+    }
+    var type by rememberSaveable(initialRule?.type) {
+        mutableStateOf(initialRule?.type ?: RuleType.DOMAIN_SUFFIX)
+    }
+    var value by rememberSaveable(initialRule?.value) {
+        mutableStateOf(initialRule?.value ?: "")
+    }
+    var outbound by rememberSaveable(initialRule?.outbound) {
+        mutableStateOf(initialRule?.outbound ?: OutboundTag.PROXY)
+    }
 
     var showTypeDialog by remember { mutableStateOf(false) }
     var showOutboundDialog by remember { mutableStateOf(false) }
@@ -281,14 +290,14 @@ fun CustomRuleEditorDialog(
             TextButton(
                 onClick = {
                     val newRule = initialRule?.copy(
-                        name = name,
+                        name = name.trim(),
                         type = type,
-                        value = value,
+                        value = value.trim(),
                         outbound = outbound
                     ) ?: CustomRule(
-                        name = name,
+                        name = name.trim(),
                         type = type,
-                        value = value,
+                        value = value.trim(),
                         outbound = outbound
                     )
                     onConfirm(newRule)

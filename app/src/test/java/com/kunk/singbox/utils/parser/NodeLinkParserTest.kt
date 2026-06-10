@@ -184,6 +184,36 @@ class NodeLinkParserTest {
     }
 
     @Test
+    fun testParseVMessHttpUpgradeUsesTransportHost() {
+        val vmessJson = """
+            {
+              "v":"2",
+              "ps":"httpupgrade vmess",
+              "add":"edge.example.com",
+              "port":"443",
+              "id":"c31a559b-8285-4b11-db99-d1edfc2b2b70",
+              "aid":"0",
+              "net":"httpupgrade",
+              "host":"cdn.example.com",
+              "path":"/up",
+              "tls":"tls"
+            }
+        """.trimIndent()
+        val encoded = java.util.Base64.getEncoder().encodeToString(vmessJson.toByteArray())
+        val link = "vmess://$encoded"
+
+        val outbound = parser.parse(link)
+
+        assertNotNull(outbound)
+        assertEquals("vmess", outbound?.type)
+        assertEquals("httpupgrade", outbound?.transport?.type)
+        assertEquals("/up", outbound?.transport?.path)
+        assertEquals(listOf("cdn.example.com"), outbound?.transport?.host)
+        assertNull(outbound?.transport?.headers?.get("Host"))
+        assertTrue(gson.toJson(outbound?.transport).contains("\"host\":\"cdn.example.com\""))
+    }
+
+    @Test
     fun testParseVMessBasic() {
         val vmessJson = """{"v":"2","ps":"VMess Node","add":"vmess.example.com","port":"443","id":"uuid-1234","aid":"0","net":"ws","type":"none","host":"","path":"/path","tls":"tls"}"""
         val encoded = java.util.Base64.getEncoder().encodeToString(vmessJson.toByteArray())
@@ -298,6 +328,21 @@ class NodeLinkParserTest {
         assertNotNull(outbound?.transport)
         assertEquals("ws", outbound?.transport?.type)
         assertEquals("/path", outbound?.transport?.path)
+    }
+
+    @Test
+    fun testParseVLessRejectsMissingRequiredFields() {
+        assertNull(parser.parse("vless://@vless.example.com:443?security=tls#NoUuid"))
+        assertNull(parser.parse("vless://uuid@:443?security=tls#NoServer"))
+    }
+
+    @Test
+    fun testParseVLessKeepsUnencodedChineseFragmentName() {
+        val link = "vless://uuid@example.com:443?security=tls&type=ws#香港节点"
+        val outbound = parser.parse(link)
+
+        assertNotNull(outbound)
+        assertEquals("香港节点", outbound?.tag)
     }
 
     @Test
@@ -455,7 +500,9 @@ class NodeLinkParserTest {
         assertEquals("vless", outbound?.type)
         assertEquals("httpupgrade", outbound?.transport?.type)
         assertEquals("/up", outbound?.transport?.path)
-        assertEquals("cdn.example.com", outbound?.transport?.headers?.get("Host"))
+        assertEquals(listOf("cdn.example.com"), outbound?.transport?.host)
+        assertNull(outbound?.transport?.headers?.get("Host"))
+        assertTrue(gson.toJson(outbound?.transport).contains("\"host\":\"cdn.example.com\""))
         assertEquals(true, outbound?.tls?.enabled)
         assertEquals("cdn.example.com", outbound?.tls?.serverName)
     }
@@ -526,6 +573,12 @@ class NodeLinkParserTest {
     }
 
     @Test
+    fun testParseTrojanRejectsMissingRequiredFields() {
+        assertNull(parser.parse("trojan://@trojan.example.com:443#NoPassword"))
+        assertNull(parser.parse("trojan://password@:443#NoServer"))
+    }
+
+    @Test
     fun testParseTrojanWithDefaultPort() {
         val link = "trojan://password@trojan.example.com#DefaultPort"
         val outbound = parser.parse(link)
@@ -580,7 +633,9 @@ class NodeLinkParserTest {
         assertEquals("trojan", outbound?.type)
         assertEquals("httpupgrade", outbound?.transport?.type)
         assertEquals("/up", outbound?.transport?.path)
-        assertEquals("cdn.example.com", outbound?.transport?.headers?.get("Host"))
+        assertEquals(listOf("cdn.example.com"), outbound?.transport?.host)
+        assertNull(outbound?.transport?.headers?.get("Host"))
+        assertTrue(gson.toJson(outbound?.transport).contains("\"host\":\"cdn.example.com\""))
         assertEquals(true, outbound?.tls?.enabled)
         assertEquals("sni.example.com", outbound?.tls?.serverName)
     }
@@ -772,6 +827,16 @@ class NodeLinkParserTest {
     }
 
     @Test
+    fun testParseTuicKeepsDefaultCongestionUnset() {
+        val link = "tuic://uuid:password@tuic.example.com:443#TUICDefaultCongestion"
+        val outbound = parser.parse(link)
+
+        assertNotNull(outbound)
+        assertEquals("tuic", outbound?.type)
+        assertNull(outbound?.congestionControl)
+    }
+
+    @Test
     fun testParseTuicWithZeroRtt() {
         val link = "tuic://uuid:password@tuic.example.com:443?reduce_rtt=1#ZeroRttNode"
         val outbound = parser.parse(link)
@@ -839,6 +904,34 @@ class NodeLinkParserTest {
         assertEquals("30s", outbound?.idleSessionCheckInterval)
         assertEquals("60s", outbound?.idleSessionTimeout)
         assertEquals(2, outbound?.minIdleSession)
+    }
+
+    // ==================== WireGuard ====================
+
+    @Test
+    fun testParseWireGuardUsesRequiredLocalAddress() {
+        val link = "wireguard://private-key@example.com:51820?" +
+            "public_key=peer-key&address=10.7.0.2%2F32,fd00%3A%3A2%2F128#WireGuardNode"
+
+        val outbound = parser.parse(link)
+
+        assertNotNull(outbound)
+        assertEquals("wireguard", outbound?.type)
+        assertEquals("WireGuardNode", outbound?.tag)
+        assertEquals("private-key", outbound?.privateKey)
+        assertEquals(listOf("10.7.0.2/32", "fd00::2/128"), outbound?.localAddress)
+        assertEquals("example.com", outbound?.peers?.firstOrNull()?.server)
+        assertEquals(51820, outbound?.peers?.firstOrNull()?.serverPort)
+        assertEquals("peer-key", outbound?.peers?.firstOrNull()?.publicKey)
+    }
+
+    @Test
+    fun testParseWireGuardRejectsMissingLocalAddress() {
+        val link = "wireguard://private-key@example.com:51820?public_key=peer-key#WireGuardNode"
+
+        val outbound = parser.parse(link)
+
+        assertNull(outbound)
     }
 
     // ==================== HTTP/HTTPS ====================

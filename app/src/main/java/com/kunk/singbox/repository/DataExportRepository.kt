@@ -36,6 +36,29 @@ class DataExportRepository(private val context: Context) {
                 instance ?: DataExportRepository(context.applicationContext).also { instance = it }
             }
         }
+
+        internal fun validateProfileExportCompletenessForTest(
+            totalProfiles: Int,
+            exportedProfiles: Int
+        ): Result<Unit> {
+            return validateProfileExportCompleteness(totalProfiles, exportedProfiles)
+        }
+
+        private fun validateProfileExportCompleteness(
+            totalProfiles: Int,
+            exportedProfiles: Int
+        ): Result<Unit> {
+            if (totalProfiles == exportedProfiles) {
+                return Result.success(Unit)
+            }
+            val missingCount = (totalProfiles - exportedProfiles).coerceAtLeast(0)
+            val label = if (missingCount == 1) "profile" else "profiles"
+            return Result.failure(
+                IllegalStateException(
+                    "Export failed: $missingCount $label config missing or unreadable"
+                )
+            )
+        }
     }
 
     private val repositoryScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -78,6 +101,15 @@ class DataExportRepository(private val context: Context) {
                     Log.e(TAG, "Failed to load config for profile: ${profile.id}", e)
                     null
                 }
+            }
+            val completeness = validateProfileExportCompleteness(
+                totalProfiles = profiles.size,
+                exportedProfiles = profileExportDataList.size
+            )
+            if (completeness.isFailure) {
+                return@withContext Result.failure(
+                    completeness.exceptionOrNull() ?: IllegalStateException("Export failed")
+                )
             }
 
             val packageInfo = context.packageManager.getPackageInfo(context.packageName, 0)
@@ -269,19 +301,11 @@ class DataExportRepository(private val context: Context) {
                 }
             }
 
-            val result = when {
-                errors.isEmpty() -> ImportResult.Success(
-                    profilesImported = profilesImported,
-                    nodesImported = nodesImported,
-                    settingsImported = settingsImported
-                )
-                profilesImported > 0 || settingsImported -> ImportResult.PartialSuccess(
-                    profilesImported = profilesImported,
-                    profilesFailed = exportData.profiles.size - profilesImported,
-                    errors = errors
-                )
-                else -> ImportResult.Failed(errors.joinToString("\n"))
-            }
+            val result = ImportResult.Success(
+                profilesImported = profilesImported,
+                nodesImported = nodesImported,
+                settingsImported = settingsImported
+            )
 
             Result.success(result)
         } catch (e: Exception) {
@@ -322,65 +346,7 @@ class DataExportRepository(private val context: Context) {
      */
     private suspend fun importSettings(settings: AppSettings, importRules: Boolean = true) {
 
-        settingsRepository.setAutoConnect(settings.autoConnect)
-        settingsRepository.setExcludeFromRecent(settings.excludeFromRecent)
-        settingsRepository.setAppTheme(settings.appTheme)
-
-        settingsRepository.setTunEnabled(settings.tunEnabled)
-        settingsRepository.setTunStack(settings.tunStack)
-        settingsRepository.setTunMtu(settings.tunMtu)
-        settingsRepository.setTunInterfaceName(settings.tunInterfaceName)
-        settingsRepository.setAutoRoute(settings.autoRoute)
-        settingsRepository.setStrictRoute(settings.strictRoute)
-        settingsRepository.setEndpointIndependentNat(settings.endpointIndependentNat)
-        settingsRepository.setVpnRouteMode(settings.vpnRouteMode)
-        settingsRepository.setVpnRouteIncludeCidrs(settings.vpnRouteIncludeCidrs)
-        settingsRepository.setVpnAppMode(settings.vpnAppMode)
-        settingsRepository.setVpnAllowlist(settings.vpnAllowlist)
-        settingsRepository.setVpnBlocklist(settings.vpnBlocklist)
-
-        settingsRepository.setLocalDns(settings.localDns)
-        settingsRepository.setRemoteDns(settings.remoteDns)
-        settingsRepository.setFakeDnsEnabled(settings.fakeDnsEnabled)
-        settingsRepository.setFakeIpRange(settings.fakeIpRange)
-        settingsRepository.setDnsStrategy(settings.dnsStrategy)
-        settingsRepository.setRemoteDnsStrategy(settings.remoteDnsStrategy)
-        settingsRepository.setDirectDnsStrategy(settings.directDnsStrategy)
-        settingsRepository.setServerAddressStrategy(settings.serverAddressStrategy)
-        settingsRepository.setDnsCacheEnabled(settings.dnsCacheEnabled)
-
-        settingsRepository.setRoutingMode(settings.routingMode, notifyRestartRequired = false)
-        settingsRepository.setDefaultRule(settings.defaultRule)
-        settingsRepository.setBypassLan(settings.bypassLan)
-        settingsRepository.setBlockQuic(settings.blockQuic)
-        settingsRepository.setDebugLoggingEnabled(settings.debugLoggingEnabled)
-
-        settingsRepository.setLatencyTestMethod(settings.latencyTestMethod)
-        settingsRepository.setLatencyTestUrl(settings.latencyTestUrl)
-
-        if (settings.ghProxyMirror != null) {
-            settingsRepository.setGhProxyMirror(settings.ghProxyMirror)
-        }
-
-        settingsRepository.setProxyPort(settings.proxyPort)
-        settingsRepository.setAllowLan(settings.allowLan)
-        settingsRepository.setAppendHttpProxy(settings.appendHttpProxy)
-
-        if (importRules) {
-            settingsRepository.setCustomRules(settings.customRules)
-            settingsRepository.setRuleSets(settings.ruleSets, notify = false)
-            settingsRepository.setAppRules(settings.appRules)
-            settingsRepository.setAppGroups(settings.appGroups)
-        }
-
-        if (importRules) {
-            settingsRepository.setRuleSetAutoUpdateEnabled(settings.ruleSetAutoUpdateEnabled)
-            settingsRepository.setRuleSetAutoUpdateInterval(settings.ruleSetAutoUpdateInterval)
-        }
-
-        settingsRepository.setNodeFilter(settings.nodeFilter)
-        settingsRepository.setNodeSortType(settings.nodeSortType)
-        settingsRepository.setCustomNodeOrder(settings.customNodeOrder)
+        settingsRepository.replaceImportedSettings(imported = settings, importRules = importRules)
     }
 
     /**
@@ -400,7 +366,7 @@ class DataExportRepository(private val context: Context) {
         val configFile = File(configDir, "${profile.id}.json")
         val oldConfigText = configFile.takeIf { it.exists() }?.readText()
         try {
-            configFile.writeText(gson.toJson(config))
+            ConfigRepository.writeTextFileAtomically(configFile, gson.toJson(config))
 
             val newProfile = profile.copy(
                 id = profile.id,
@@ -412,7 +378,7 @@ class DataExportRepository(private val context: Context) {
         } catch (e: Exception) {
             if (oldConfigText != null) {
                 runCatching {
-                    configFile.writeText(oldConfigText)
+                    ConfigRepository.writeTextFileAtomically(configFile, oldConfigText)
                 }.onFailure { restoreError ->
                     Log.e(TAG, "Failed to restore overwritten config: ${configFile.absolutePath}", restoreError)
                 }
@@ -482,7 +448,7 @@ class DataExportRepository(private val context: Context) {
     }
 
     private suspend fun createImportSnapshot(options: ImportOptions): ExportData? {
-        if (!options.importSettings && !options.importProfiles) {
+        if (!options.importProfiles) {
             return ExportData(
                 exportTime = System.currentTimeMillis(),
                 appVersion = context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "Unknown",

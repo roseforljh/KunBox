@@ -31,18 +31,8 @@ interface SettingsDao {
 
     /**
      */
-    @Query("SELECT * FROM settings WHERE id = 1")
-    fun getSettingsSync(): SettingsEntity?
-
-    /**
-     */
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun saveSettings(settings: SettingsEntity)
-
-    /**
-     */
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    fun saveSettingsSync(settings: SettingsEntity)
 
     /**
      */
@@ -54,10 +44,4 @@ interface SettingsDao {
      */
     @Query("SELECT EXISTS(SELECT 1 FROM settings WHERE id = 1)")
     suspend fun hasSettings(): Boolean
-
-    /**
-     *
-     */
-    @Query("SELECT EXISTS(SELECT 1 FROM settings WHERE id = 1)")
-    fun hasSettingsSync(): Boolean
 }

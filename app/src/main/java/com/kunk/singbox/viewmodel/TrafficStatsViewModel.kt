@@ -9,6 +9,7 @@ import com.kunk.singbox.repository.TrafficPeriod
 import com.kunk.singbox.repository.TrafficRepository
 import com.kunk.singbox.repository.TrafficSummary
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -26,11 +27,12 @@ data class TrafficStatsUiState(
 
 class TrafficStatsViewModel(application: Application) : AndroidViewModel(application) {
 
-    private val trafficRepository = TrafficRepository.getInstance(application)
-    private val configRepository = ConfigRepository.getInstance(application)
+    private val appContext = application.applicationContext
 
     private val _uiState = MutableStateFlow(TrafficStatsUiState())
     val uiState: StateFlow<TrafficStatsUiState> = _uiState.asStateFlow()
+
+    private var loadTrafficDataJob: Job? = null
 
     init {
         loadTrafficData()
@@ -45,51 +47,66 @@ class TrafficStatsViewModel(application: Application) : AndroidViewModel(applica
         _uiState.value = _uiState.value.copy(isLoading = true)
         viewModelScope.launch {
             withContext(Dispatchers.IO) {
-                trafficRepository.reloadFromDisk()
+                TrafficRepository.getInstance(appContext).reloadFromDisk()
             }
             loadTrafficData()
         }
     }
 
     private fun loadTrafficData() {
-        viewModelScope.launch {
+        loadTrafficDataJob?.cancel()
+        loadTrafficDataJob = viewModelScope.launch {
             val period = _uiState.value.selectedPeriod
-            val summary = trafficRepository.getTrafficSummary(period)
-            val topNodes = trafficRepository.getTopNodes(period, 10)
-            val percentages = trafficRepository.getNodeTrafficPercentages(period)
-
-            val nodeNames = mutableMapOf<String, String>()
-            val allNodeIds = mutableSetOf<String>()
-            topNodes.forEach { it.nodeId?.let { id -> allNodeIds.add(id) } }
-            percentages.forEach { it.first.nodeId?.let { id -> allNodeIds.add(id) } }
-
-            allNodeIds.forEach { nodeId ->
-                val storedName = topNodes.find { it.nodeId == nodeId }?.nodeName
-                    ?: percentages.find { it.first.nodeId == nodeId }?.first?.nodeName
-                if (!storedName.isNullOrBlank()) {
-                    nodeNames[nodeId] = storedName
-                } else {
-                    val node = configRepository.getNodeById(nodeId)
-                    if (node != null) {
-                        nodeNames[nodeId] = node.name
-                    }
-                }
+            val trafficRepository = withContext(Dispatchers.IO) {
+                TrafficRepository.getInstance(appContext)
+            }
+            val configRepository = withContext(Dispatchers.IO) {
+                ConfigRepository.getInstance(appContext)
             }
 
-            _uiState.value = _uiState.value.copy(
-                isLoading = false,
-                summary = summary,
-                topNodes = topNodes,
-                nodePercentages = percentages,
-                nodeNames = nodeNames
-            )
+            val loadedState = withContext(Dispatchers.Default) {
+                val summary = trafficRepository.getTrafficSummary(period)
+                val topNodes = trafficRepository.getTopNodes(summary, 10)
+                val percentages = trafficRepository.getNodeTrafficPercentages(summary)
+
+                val nodeNames = mutableMapOf<String, String>()
+                val allNodeIds = mutableSetOf<String>()
+                topNodes.forEach { it.nodeId?.let { id -> allNodeIds.add(id) } }
+                percentages.forEach { it.first.nodeId?.let { id -> allNodeIds.add(id) } }
+
+                allNodeIds.forEach { nodeId ->
+                    val storedName = topNodes.find { it.nodeId == nodeId }?.nodeName
+                        ?: percentages.find { it.first.nodeId == nodeId }?.first?.nodeName
+                    if (!storedName.isNullOrBlank()) {
+                        nodeNames[nodeId] = storedName
+                    } else {
+                        val node = configRepository.getNodeById(nodeId)
+                        if (node != null) {
+                            nodeNames[nodeId] = node.name
+                        }
+                    }
+                }
+
+                TrafficStatsUiState(
+                    isLoading = false,
+                    selectedPeriod = period,
+                    summary = summary,
+                    topNodes = topNodes,
+                    nodePercentages = percentages,
+                    nodeNames = nodeNames
+                )
+            }
+
+            if (_uiState.value.selectedPeriod != period) return@launch
+
+            _uiState.value = loadedState
         }
     }
 
     fun clearAllStats() {
         viewModelScope.launch {
             withContext(Dispatchers.IO) {
-                trafficRepository.clearAllStats()
+                TrafficRepository.getInstance(appContext).clearAllStats()
             }
             loadTrafficData()
         }

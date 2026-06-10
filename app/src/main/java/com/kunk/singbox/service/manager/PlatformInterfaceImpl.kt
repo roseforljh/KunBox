@@ -733,12 +733,16 @@ class PlatformInterfaceImpl(
         networkCallback?.let {
             try {
                 connectivityManager?.unregisterNetworkCallback(it)
-            } catch (_: Exception) {}
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to unregister default network callback", e)
+            }
         }
         vpnNetworkCallback?.let {
             try {
                 connectivityManager?.unregisterNetworkCallback(it)
-            } catch (_: Exception) {}
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to unregister VPN network callback", e)
+            }
         }
         vpnHealthJob?.cancel()
         postTunRebindJob?.cancel()

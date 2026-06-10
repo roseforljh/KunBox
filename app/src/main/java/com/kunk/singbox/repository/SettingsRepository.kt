@@ -86,8 +86,24 @@ class SettingsRepository(private val context: Context) {
 
     /**
      */
-    fun reloadFromStorage() {
+    suspend fun reloadFromStorage() {
         settingsStore.reload()
+    }
+
+    suspend fun replaceImportedSettings(imported: AppSettings, importRules: Boolean) {
+        val persisted = settingsStore.updateSettingsAndWait { current ->
+            buildImportedSettings(current = current, imported = imported, importRules = importRules)
+        }
+        if (!persisted) {
+            throw IllegalStateException("Failed to persist imported settings")
+        }
+        notifyRestartRequired()
+    }
+
+    private suspend fun updateSettingsAndNotifyRestart(update: (AppSettings) -> AppSettings): Boolean {
+        val persisted = settingsStore.updateSettingsAndWait(update)
+        if (persisted) notifyRestartRequired()
+        return persisted
     }
 
     suspend fun setAutoConnect(value: Boolean) {
@@ -111,148 +127,121 @@ class SettingsRepository(private val context: Context) {
     }
 
     suspend fun setTunEnabled(value: Boolean) {
-        settingsStore.updateSettingsAndWait { it.copy(tunEnabled = value) }
-        notifyRestartRequired()
+        updateSettingsAndNotifyRestart { it.copy(tunEnabled = value) }
     }
 
     suspend fun setTunStack(value: TunStack) {
-        settingsStore.updateSettingsAndWait { it.copy(tunStack = value) }
-        notifyRestartRequired()
+        updateSettingsAndNotifyRestart { it.copy(tunStack = value) }
     }
 
     suspend fun setIpVersionMode(value: IpVersionMode) {
-        settingsStore.updateSettingsAndWait { it.copy(ipVersionMode = value) }
-        notifyRestartRequired()
+        updateSettingsAndNotifyRestart { it.copy(ipVersionMode = value) }
     }
 
     suspend fun setTunMtu(value: Int) {
-        settingsStore.updateSettingsAndWait { it.copy(tunMtu = value) }
-        notifyRestartRequired()
+        updateSettingsAndNotifyRestart { it.copy(tunMtu = value) }
     }
 
     suspend fun setTunMtuAuto(value: Boolean) {
-        settingsStore.updateSettingsAndWait { it.copy(tunMtuAuto = value) }
-        notifyRestartRequired()
+        updateSettingsAndNotifyRestart { it.copy(tunMtuAuto = value) }
     }
 
     suspend fun setTunInterfaceName(value: String) {
-        settingsStore.updateSettingsAndWait { it.copy(tunInterfaceName = value) }
-        notifyRestartRequired()
+        updateSettingsAndNotifyRestart { it.copy(tunInterfaceName = value) }
     }
 
     suspend fun setAutoRoute(value: Boolean) {
-        settingsStore.updateSettingsAndWait { it.copy(autoRoute = value) }
-        notifyRestartRequired()
+        updateSettingsAndNotifyRestart { it.copy(autoRoute = value) }
     }
 
     suspend fun setStrictRoute(value: Boolean) {
-        settingsStore.updateSettingsAndWait { it.copy(strictRoute = value) }
-        notifyRestartRequired()
+        updateSettingsAndNotifyRestart { it.copy(strictRoute = value) }
     }
 
     suspend fun setEndpointIndependentNat(value: Boolean) {
-        settingsStore.updateSettingsAndWait { it.copy(endpointIndependentNat = value) }
-        notifyRestartRequired()
+        updateSettingsAndNotifyRestart { it.copy(endpointIndependentNat = value) }
     }
 
     suspend fun setVpnRouteMode(value: VpnRouteMode) {
-        settingsStore.updateSettingsAndWait { it.copy(vpnRouteMode = value) }
-        notifyRestartRequired()
+        updateSettingsAndNotifyRestart { it.copy(vpnRouteMode = value) }
     }
 
     suspend fun setVpnRouteIncludeCidrs(value: String) {
-        settingsStore.updateSettingsAndWait { it.copy(vpnRouteIncludeCidrs = value) }
-        notifyRestartRequired()
+        updateSettingsAndNotifyRestart { it.copy(vpnRouteIncludeCidrs = value) }
     }
 
     suspend fun setVpnAppMode(value: VpnAppMode) {
-        settingsStore.updateSettingsAndWait { it.copy(vpnAppMode = value) }
-        notifyRestartRequired()
+        updateSettingsAndNotifyRestart { it.copy(vpnAppMode = value) }
     }
 
     suspend fun setVpnAllowlist(value: String) {
-        settingsStore.updateSettingsAndWait { it.copy(vpnAllowlist = value) }
-        notifyRestartRequired()
+        updateSettingsAndNotifyRestart { it.copy(vpnAllowlist = value) }
     }
 
     suspend fun setVpnBlocklist(value: String) {
-        settingsStore.updateSettingsAndWait { it.copy(vpnBlocklist = value) }
-        notifyRestartRequired()
+        updateSettingsAndNotifyRestart { it.copy(vpnBlocklist = value) }
     }
 
     suspend fun removePackageFromPerAppSettings(packageName: String) {
-        settingsStore.updateSettingsAndWait { settings ->
+        updateSettingsAndNotifyRestart { settings ->
             removePackageFromPerAppSettings(settings, packageName)
         }
-        notifyRestartRequired()
     }
 
     suspend fun setLocalDns(value: String) {
-        settingsStore.updateSettingsAndWait { it.copy(localDns = value) }
-        notifyRestartRequired()
+        updateSettingsAndNotifyRestart { it.copy(localDns = value) }
     }
 
     suspend fun setRemoteDns(value: String) {
-        settingsStore.updateSettingsAndWait { it.copy(remoteDns = value) }
-        notifyRestartRequired()
+        updateSettingsAndNotifyRestart { it.copy(remoteDns = value) }
     }
 
     suspend fun setFakeDnsEnabled(value: Boolean) {
-        settingsStore.updateSettingsAndWait { it.copy(fakeDnsEnabled = value) }
-        notifyRestartRequired()
+        updateSettingsAndNotifyRestart { it.copy(fakeDnsEnabled = value) }
     }
 
     suspend fun setFakeIpRange(value: String?) {
         val normalized = value?.takeIf { it.isNotBlank() } ?: AppSettings.DEFAULT_FAKE_IP_RANGE
-        settingsStore.updateSettingsAndWait { it.copy(fakeIpRange = normalized) }
-        notifyRestartRequired()
+        updateSettingsAndNotifyRestart { it.copy(fakeIpRange = normalized) }
     }
 
     suspend fun setDnsStrategy(value: DnsStrategy) {
-        settingsStore.updateSettingsAndWait { it.copy(dnsStrategy = value) }
-        notifyRestartRequired()
+        updateSettingsAndNotifyRestart { it.copy(dnsStrategy = value) }
     }
 
     suspend fun setRemoteDnsStrategy(value: DnsStrategy) {
-        settingsStore.updateSettingsAndWait { it.copy(remoteDnsStrategy = value) }
-        notifyRestartRequired()
+        updateSettingsAndNotifyRestart { it.copy(remoteDnsStrategy = value) }
     }
 
     suspend fun setDirectDnsStrategy(value: DnsStrategy) {
-        settingsStore.updateSettingsAndWait { it.copy(directDnsStrategy = value) }
-        notifyRestartRequired()
+        updateSettingsAndNotifyRestart { it.copy(directDnsStrategy = value) }
     }
 
     suspend fun setServerAddressStrategy(value: DnsStrategy) {
-        settingsStore.updateSettingsAndWait { it.copy(serverAddressStrategy = value) }
-        notifyRestartRequired()
+        updateSettingsAndNotifyRestart { it.copy(serverAddressStrategy = value) }
     }
 
     suspend fun setDnsCacheEnabled(value: Boolean) {
-        settingsStore.updateSettingsAndWait { it.copy(dnsCacheEnabled = value) }
-        notifyRestartRequired()
+        updateSettingsAndNotifyRestart { it.copy(dnsCacheEnabled = value) }
     }
 
     suspend fun setRoutingMode(value: RoutingMode, notifyRestartRequired: Boolean = true) {
-        settingsStore.updateSettingsAndWait { it.copy(routingMode = value) }
-        if (notifyRestartRequired) {
+        val persisted = settingsStore.updateSettingsAndWait { it.copy(routingMode = value) }
+        if (persisted && notifyRestartRequired) {
             notifyRestartRequired()
         }
     }
 
     suspend fun setDefaultRule(value: DefaultRule) {
-        settingsStore.updateSettingsAndWait { it.copy(defaultRule = value) }
-        notifyRestartRequired()
+        updateSettingsAndNotifyRestart { it.copy(defaultRule = value) }
     }
 
     suspend fun setBlockQuic(value: Boolean) {
-        settingsStore.updateSettingsAndWait { it.copy(blockQuic = value) }
-        notifyRestartRequired()
+        updateSettingsAndNotifyRestart { it.copy(blockQuic = value) }
     }
 
     suspend fun setDebugLoggingEnabled(value: Boolean) {
-        settingsStore.updateSettingsAndWait { it.copy(debugLoggingEnabled = value) }
-        notifyRestartRequired()
+        updateSettingsAndNotifyRestart { it.copy(debugLoggingEnabled = value) }
     }
 
     suspend fun setLatencyTestMethod(value: LatencyTestMethod) {
@@ -268,17 +257,15 @@ class SettingsRepository(private val context: Context) {
     }
 
     suspend fun setLatencyTestConcurrency(value: Int) {
-        settingsStore.updateSettingsAndWait { it.copy(latencyTestConcurrency = value) }
+        settingsStore.updateSettingsAndWait { it.copy(latencyTestConcurrency = sanitizeLatencyTestConcurrency(value)) }
     }
 
     suspend fun setBypassLan(value: Boolean) {
-        settingsStore.updateSettingsAndWait { it.copy(bypassLan = value) }
-        notifyRestartRequired()
+        updateSettingsAndNotifyRestart { it.copy(bypassLan = value) }
     }
 
     suspend fun setIcmpEchoRoutingEnabled(value: Boolean) {
-        settingsStore.updateSettingsAndWait { it.copy(icmpEchoRoutingEnabled = value) }
-        notifyRestartRequired()
+        updateSettingsAndNotifyRestart { it.copy(icmpEchoRoutingEnabled = value) }
     }
 
     suspend fun setWakeResetConnections(value: Boolean) {
@@ -286,33 +273,28 @@ class SettingsRepository(private val context: Context) {
     }
 
     suspend fun setGhProxyMirror(value: GhProxyMirror) {
-        settingsStore.updateSettingsAndWait { it.copy(ghProxyMirror = value) }
-        notifyRestartRequired()
+        updateSettingsAndNotifyRestart { it.copy(ghProxyMirror = value) }
     }
 
     suspend fun setProxyPort(value: Int) {
-        settingsStore.updateSettingsAndWait { it.copy(proxyPort = value) }
-        notifyRestartRequired()
+        updateSettingsAndNotifyRestart { it.copy(proxyPort = sanitizeProxyPort(value)) }
     }
 
     suspend fun setAllowLan(value: Boolean) {
-        settingsStore.updateSettingsAndWait { it.copy(allowLan = value) }
-        notifyRestartRequired()
+        updateSettingsAndNotifyRestart { it.copy(allowLan = value) }
     }
 
     suspend fun setAppendHttpProxy(value: Boolean) {
-        settingsStore.updateSettingsAndWait { it.copy(appendHttpProxy = value) }
-        notifyRestartRequired()
+        updateSettingsAndNotifyRestart { it.copy(appendHttpProxy = value) }
     }
 
     suspend fun setCustomRules(value: List<CustomRule>) {
-        settingsStore.updateSettingsAndWait { it.copy(customRules = value) }
-        notifyRestartRequired()
+        updateSettingsAndNotifyRestart { it.copy(customRules = value) }
     }
 
     suspend fun setRuleSets(value: List<RuleSet>, notify: Boolean = true) {
-        settingsStore.updateSettingsAndWait { it.copy(ruleSets = value) }
-        if (notify) {
+        val persisted = settingsStore.updateSettingsAndWait { it.copy(ruleSets = value) }
+        if (persisted && notify) {
             notifyRestartRequired()
         }
     }
@@ -322,13 +304,11 @@ class SettingsRepository(private val context: Context) {
     }
 
     suspend fun setAppRules(value: List<AppRule>) {
-        settingsStore.updateSettingsAndWait { it.copy(appRules = value) }
-        notifyRestartRequired()
+        updateSettingsAndNotifyRestart { it.copy(appRules = value) }
     }
 
     suspend fun setAppGroups(value: List<AppGroup>) {
-        settingsStore.updateSettingsAndWait { it.copy(appGroups = value) }
-        notifyRestartRequired()
+        updateSettingsAndNotifyRestart { it.copy(appGroups = value) }
     }
 
     suspend fun setRuleSetAutoUpdateEnabled(value: Boolean) {
@@ -508,6 +488,11 @@ class SettingsRepository(private val context: Context) {
     }
 
     companion object {
+        private const val MIN_PROXY_PORT = 1
+        private const val MAX_PROXY_PORT = 65535
+        private const val MIN_LATENCY_TEST_CONCURRENCY = 1
+        private const val MAX_LATENCY_TEST_CONCURRENCY = 20
+
         private val _restartRequiredEvents = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
         val restartRequiredEvents: SharedFlow<Unit> = _restartRequiredEvents.asSharedFlow()
 
@@ -518,6 +503,65 @@ class SettingsRepository(private val context: Context) {
             return INSTANCE ?: synchronized(this) {
                 INSTANCE ?: SettingsRepository(context.applicationContext).also { INSTANCE = it }
             }
+        }
+
+        internal fun sanitizeProxyPortForTest(value: Int): Int {
+            return sanitizeProxyPort(value)
+        }
+
+        internal fun sanitizeLatencyTestConcurrencyForTest(value: Int): Int {
+            return sanitizeLatencyTestConcurrency(value)
+        }
+
+        internal fun buildImportedSettingsForTest(
+            current: AppSettings,
+            imported: AppSettings,
+            importRules: Boolean
+        ): AppSettings {
+            return buildImportedSettings(current = current, imported = imported, importRules = importRules)
+        }
+
+        private fun buildImportedSettings(
+            current: AppSettings,
+            imported: AppSettings,
+            importRules: Boolean
+        ): AppSettings {
+            val normalizedRuleSetAutoUpdateInterval =
+                com.kunk.singbox.service.RuleSetAutoUpdateWorker.normalizeIntervalMinutes(
+                    imported.ruleSetAutoUpdateInterval
+                )
+            val normalized = imported.copy(
+                fakeIpRange = normalizeFakeIpRange(imported),
+                proxyPort = sanitizeProxyPort(imported.proxyPort),
+                latencyTestConcurrency = sanitizeLatencyTestConcurrency(imported.latencyTestConcurrency),
+                ruleSetAutoUpdateInterval = normalizedRuleSetAutoUpdateInterval
+            )
+
+            return if (importRules) {
+                normalized
+            } else {
+                normalized.copy(
+                    customRules = current.customRules,
+                    ruleSets = current.ruleSets,
+                    appRules = current.appRules,
+                    appGroups = current.appGroups,
+                    ruleSetAutoUpdateEnabled = current.ruleSetAutoUpdateEnabled,
+                    ruleSetAutoUpdateInterval = current.ruleSetAutoUpdateInterval
+                )
+            }
+        }
+
+        private fun normalizeFakeIpRange(settings: AppSettings): String {
+            val fakeIpRange: String? = runCatching { settings.fakeIpRange }.getOrNull()
+            return fakeIpRange?.takeIf { it.isNotBlank() } ?: AppSettings.DEFAULT_FAKE_IP_RANGE
+        }
+
+        private fun sanitizeProxyPort(value: Int): Int {
+            return value.coerceIn(MIN_PROXY_PORT, MAX_PROXY_PORT)
+        }
+
+        private fun sanitizeLatencyTestConcurrency(value: Int): Int {
+            return value.coerceIn(MIN_LATENCY_TEST_CONCURRENCY, MAX_LATENCY_TEST_CONCURRENCY)
         }
     }
 }

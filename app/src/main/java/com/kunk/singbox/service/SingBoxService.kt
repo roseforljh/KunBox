@@ -330,6 +330,36 @@ class SingBoxService : VpnService() {
             return lastTriggeredAtMs <= 0L || nowAtMs - lastTriggeredAtMs >= debounceMs
         }
 
+        internal fun shouldContinueCoreStartAfterForegroundResultForTest(foregroundStarted: Boolean): Boolean {
+            return shouldContinueCoreStartAfterForegroundResult(foregroundStarted)
+        }
+
+        private fun shouldContinueCoreStartAfterForegroundResult(foregroundStarted: Boolean): Boolean {
+            return foregroundStarted
+        }
+
+        internal fun shouldRecoverFromStickyRestartForTest(
+            manuallyStopped: Boolean,
+            mode: VpnStateStore.CoreMode,
+            runningConfigUsable: Boolean
+        ): Boolean {
+            return shouldRecoverFromStickyRestart(manuallyStopped, mode, runningConfigUsable)
+        }
+
+        private fun shouldRecoverFromStickyRestart(
+            manuallyStopped: Boolean,
+            mode: VpnStateStore.CoreMode,
+            runningConfigUsable: Boolean
+        ): Boolean {
+            return !manuallyStopped &&
+                mode == VpnStateStore.CoreMode.VPN &&
+                runningConfigUsable
+        }
+
+        private fun isRunningConfigUsable(file: File): Boolean {
+            return file.exists() && file.isFile && file.canRead() && file.length() > 0L
+        }
+
         internal fun shouldScheduleNetworkTypeChangedFallback(
             request: RecoveryRequest,
             success: Boolean
@@ -2562,6 +2592,10 @@ class SingBoxService : VpnService() {
         runCatching {
             LogRepository.getInstance().addLog("INFO SingBoxService: onStartCommand action=${intent?.action}")
         }
+        if (intent?.action == null) {
+            handleStickyRestartIntent()
+            return START_STICKY
+        }
         when (intent?.action) {
             ACTION_START -> {
                 isManuallyStopped = false
@@ -2601,12 +2635,18 @@ class SingBoxService : VpnService() {
                             } else {
                                 Log.e(TAG, "Failed to generate config file")
                                 setLastError("Failed to generate config file")
-                                withContext(Dispatchers.Main) { stopSelf() }
+                                withContext(Dispatchers.Main) {
+                                    clearStartCommandFailureState()
+                                    stopSelf()
+                                }
                             }
                         } catch (e: Exception) {
                             Log.e(TAG, "Error generating config in Service", e)
                             setLastError("Error generating config: ${e.message}")
-                            withContext(Dispatchers.Main) { stopSelf() }
+                            withContext(Dispatchers.Main) {
+                                clearStartCommandFailureState()
+                                stopSelf()
+                            }
                         }
                     }
                     return START_STICKY
@@ -2767,6 +2807,50 @@ class SingBoxService : VpnService() {
         // This prevents "VPN mysteriously stops" issue on Android 14+
         // System will restart service with null intent, we handle it gracefully above
         return START_STICKY
+    }
+
+    private fun handleStickyRestartIntent() {
+        if (isRunning || isStarting) {
+            Log.i(TAG, "Sticky restart ignored: service is already running or starting")
+            return
+        }
+
+        val runningConfigFile = File(filesDir, "running_config.json")
+        val runningConfigUsable = isRunningConfigUsable(runningConfigFile)
+        val mode = VpnStateStore.getMode()
+        val manuallyStopped = VpnStateStore.isManuallyStopped()
+        if (!shouldRecoverFromStickyRestart(manuallyStopped, mode, runningConfigUsable)) {
+            Log.i(
+                TAG,
+                "Sticky restart skipped: manuallyStopped=$manuallyStopped, mode=$mode, " +
+                    "runningConfigUsable=$runningConfigUsable"
+            )
+            return
+        }
+
+        Log.w(TAG, "Sticky restart recovering VPN from ${runningConfigFile.absolutePath}")
+        isManuallyStopped = false
+        VpnStateStore.setManuallyStopped(false)
+        VpnTileService.persistVpnPending(applicationContext, "starting")
+        updateServiceState(ServiceState.STARTING)
+        startVpn(runningConfigFile.absolutePath)
+    }
+
+    private fun clearStartCommandFailureState() {
+        synchronized(this) {
+            isRunning = false
+            isStarting = false
+            isStopping = false
+            pendingStartConfigPath = null
+            pendingCleanCache = false
+            stopSelfRequested = false
+        }
+        NetworkClient.onVpnStateChanged(false)
+        VpnTileService.persistVpnState(applicationContext, false)
+        VpnStateStore.setMode(VpnStateStore.CoreMode.NONE)
+        VpnTileService.persistVpnPending(applicationContext, "")
+        updateServiceState(ServiceState.STOPPED)
+        updateTileState()
     }
 
     @Volatile private var pendingHotSwitchFallbackConfigPath: String? = null
@@ -2994,6 +3078,7 @@ class SingBoxService : VpnService() {
         }
 
         // 启动前台通知（必须在协程前调用）
+        var foregroundStarted = false
         try {
             val notification = createNotification()
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
@@ -3006,10 +3091,20 @@ class SingBoxService : VpnService() {
                 startForeground(VpnNotificationManager.NOTIFICATION_ID, notification)
             }
             notificationManager.markForegroundStarted()
+            foregroundStarted = true
         } catch (e: Exception) {
             Log.e(TAG, "Failed to call startForeground", e)
         }
+        if (!shouldContinueCoreStartAfterForegroundResult(foregroundStarted)) {
+            setLastError("Failed to start foreground service")
+            clearStartCommandFailureState()
+            stopSelf()
+        } else {
+            continueStartVpnAfterForeground(configPath)
+        }
+    }
 
+    private fun continueStartVpnAfterForeground(configPath: String) {
         // 获取清理缓存标志
         val cleanCache = synchronized(this) {
             val c = pendingCleanCache

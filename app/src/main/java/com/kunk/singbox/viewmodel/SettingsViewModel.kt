@@ -40,6 +40,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 data class DefaultRuleSetDownloadState(
@@ -93,10 +94,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     fun cancelDefaultRuleSetDownload() {
         defaultRuleSetDownloadJob?.cancel()
         defaultRuleSetDownloadJob = null
-        defaultRuleSetDownloadTags.forEach { tag ->
-            _downloadingRuleSets.value -= tag
-        }
-        defaultRuleSetDownloadTags.clear()
+        clearDefaultRuleSetDownloadTags()
         _defaultRuleSetDownloadState.value = _defaultRuleSetDownloadState.value.copy(
             isActive = false,
             currentTag = null,
@@ -130,11 +128,11 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                     )
 
                     defaultRuleSetDownloadTags.add(ruleSet.tag)
-                    _downloadingRuleSets.value += ruleSet.tag
+                    markRuleSetDownloading(ruleSet.tag)
                     try {
                         ruleSetRepository.prefetchRuleSet(ruleSet, forceUpdate = false, allowNetwork = true)
                     } finally {
-                        _downloadingRuleSets.value -= ruleSet.tag
+                        markRuleSetDownloadFinished(ruleSet.tag)
                         defaultRuleSetDownloadTags.remove(ruleSet.tag)
                     }
 
@@ -150,10 +148,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                     cancelled = false
                 )
             } catch (e: CancellationException) {
-                defaultRuleSetDownloadTags.forEach { tag ->
-                    _downloadingRuleSets.value -= tag
-                }
-                defaultRuleSetDownloadTags.clear()
+                clearDefaultRuleSetDownloadTags()
                 _defaultRuleSetDownloadState.value = _defaultRuleSetDownloadState.value.copy(
                     isActive = false,
                     currentTag = null,
@@ -161,6 +156,34 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                 )
             }
         }
+    }
+
+    private fun markRuleSetDownloading(tag: String) {
+        _downloadingRuleSets.update { it + tag }
+    }
+
+    private fun markRuleSetDownloadFinished(tag: String) {
+        _downloadingRuleSets.update { it - tag }
+    }
+
+    private fun tryMarkRuleSetDownloading(tag: String): Boolean {
+        var added = false
+        _downloadingRuleSets.update { current ->
+            if (current.contains(tag)) {
+                current
+            } else {
+                added = true
+                current + tag
+            }
+        }
+        return added
+    }
+
+    private fun clearDefaultRuleSetDownloadTags() {
+        defaultRuleSetDownloadTags.forEach { tag ->
+            markRuleSetDownloadFinished(tag)
+        }
+        defaultRuleSetDownloadTags.clear()
     }
 
     fun setAutoConnect(value: Boolean) {
@@ -306,6 +329,10 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         viewModelScope.launch { repository.setRoutingMode(value, notifyRestartRequired) }
     }
 
+    suspend fun setRoutingModeAndWait(value: RoutingMode, notifyRestartRequired: Boolean = true) {
+        repository.setRoutingMode(value, notifyRestartRequired)
+    }
+
     fun setDefaultRule(value: DefaultRule) {
         viewModelScope.launch { repository.setDefaultRule(value) }
     }
@@ -413,14 +440,14 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                 repository.setRuleSets(currentSets)
 
                 if (normalizedRuleSet.type == RuleSetType.REMOTE) {
-                    _downloadingRuleSets.value += normalizedRuleSet.tag
+                    markRuleSetDownloading(normalizedRuleSet.tag)
                 }
 
                 val downloadOk = try {
                     ruleSetRepository.prefetchRuleSet(normalizedRuleSet, forceUpdate = false, allowNetwork = true)
                 } finally {
                     if (normalizedRuleSet.type == RuleSetType.REMOTE) {
-                        _downloadingRuleSets.value -= normalizedRuleSet.tag
+                        markRuleSetDownloadFinished(normalizedRuleSet.tag)
                     }
                 }
 
@@ -459,14 +486,14 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             // Best-effort prefetch for newly added rule sets.
             addedRuleSets.forEach { ruleSet ->
                 if (ruleSet.type == RuleSetType.REMOTE) {
-                    _downloadingRuleSets.value += ruleSet.tag
+                    markRuleSetDownloading(ruleSet.tag)
                 }
                 launch {
                     try {
                         ruleSetRepository.prefetchRuleSet(ruleSet, forceUpdate = false, allowNetwork = true)
                     } finally {
                         if (ruleSet.type == RuleSetType.REMOTE) {
-                            _downloadingRuleSets.value -= ruleSet.tag
+                            markRuleSetDownloadFinished(ruleSet.tag)
                         }
                     }
                 }
@@ -490,8 +517,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                 repository.setRuleSets(currentSets)
 
                 if (!previous.enabled && normalizedRuleSet.enabled && normalizedRuleSet.type == RuleSetType.REMOTE) {
-                    if (!_downloadingRuleSets.value.contains(normalizedRuleSet.tag)) {
-                        _downloadingRuleSets.value += normalizedRuleSet.tag
+                    if (tryMarkRuleSetDownloading(normalizedRuleSet.tag)) {
                         launch {
                             try {
                                 ruleSetRepository.prefetchRuleSet(
@@ -500,7 +526,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                                     allowNetwork = true
                                 )
                             } finally {
-                                _downloadingRuleSets.value -= normalizedRuleSet.tag
+                                markRuleSetDownloadFinished(normalizedRuleSet.tag)
                             }
                         }
                     }
@@ -688,11 +714,6 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                         nodesImported = importResult.nodesImported,
                         settingsImported = importResult.settingsImported
                     )
-                    is ImportResult.PartialSuccess -> ImportState.PartialSuccess(
-                        profilesImported = importResult.profilesImported,
-                        profilesFailed = importResult.profilesFailed,
-                        errors = importResult.errors
-                    )
                     is ImportResult.Failed -> ImportState.Error(importResult.error)
                 }
             } else {
@@ -738,11 +759,6 @@ sealed class ImportState {
         val profilesImported: Int,
         val nodesImported: Int,
         val settingsImported: Boolean
-    ) : ImportState()
-    data class PartialSuccess(
-        val profilesImported: Int,
-        val profilesFailed: Int,
-        val errors: List<String>
     ) : ImportState()
     data class Error(val message: String) : ImportState()
 }

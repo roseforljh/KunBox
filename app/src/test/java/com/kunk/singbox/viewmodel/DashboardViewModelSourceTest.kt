@@ -1,0 +1,49 @@
+package com.kunk.singbox.viewmodel
+
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
+import org.junit.Test
+import java.io.File
+
+class DashboardViewModelSourceTest {
+
+    @Test
+    fun dashboardTestAllNodesLatencyUsesAllDashboardNodes() {
+        val source = File("src/main/java/com/kunk/singbox/viewmodel/DashboardViewModel.kt").readText()
+        val body = source.substring(
+            source.indexOf("fun testAllNodesLatency()"),
+            source.indexOf("private fun startTrafficMonitor()")
+        )
+
+        assertTrue(body.contains("val targetNodeIds = nodes.value.map { it.id }"))
+        assertTrue(body.contains("configRepository.testAllNodesLatency(targetNodeIds = targetNodeIds)"))
+        assertFalse(body.contains("configRepository.testNodeLatency(targetNodeId)"))
+    }
+
+    @Test
+    fun vpnPermissionDenialResetsConnectingState() {
+        val source = File("src/main/java/com/kunk/singbox/viewmodel/DashboardViewModel.kt").readText()
+        val body = source.substring(
+            source.indexOf("fun onVpnPermissionResult(granted: Boolean)"),
+            source.indexOf("fun updateAllSubscriptions()")
+        )
+
+        assertTrue(body.contains("if (!granted)"))
+        assertTrue(body.contains("_connectionState.value = ConnectionState.Idle"))
+        assertTrue(body.contains("startGraceUntilElapsedMs = null"))
+        assertTrue(body.contains("return"))
+    }
+
+    @Test
+    fun stopVpnStopsBothServicesWhenCoreModeIsUnknown() {
+        val source = File("src/main/java/com/kunk/singbox/viewmodel/DashboardViewModel.kt").readText()
+        val body = source.substring(
+            source.indexOf("private fun stopVpn()"),
+            source.indexOf("private fun startPingTest()")
+        )
+
+        assertTrue(body.contains("VpnStateStore.CoreMode.NONE -> {"))
+        assertTrue(body.contains("context.startService(Intent(context, ProxyOnlyService::class.java).apply"))
+        assertTrue(body.contains("context.startService(Intent(context, SingBoxService::class.java).apply"))
+    }
+}

@@ -9,6 +9,7 @@ import io.nekohasekai.libbox.Libbox
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 
 /**
  *
@@ -67,6 +68,21 @@ object KernelHttpClient {
         return !kernelFetchAvailable && !vpnActive
     }
 
+    internal fun timeoutSecondsForTest(timeoutMs: Int): Long {
+        return timeoutSeconds(timeoutMs)
+    }
+
+    private fun timeoutSeconds(timeoutMs: Int): Long {
+        val millis = timeoutMs.coerceAtLeast(1).toLong()
+        return ((millis + 999L) / 1000L).coerceAtLeast(1L)
+    }
+
+    private suspend fun <T> withRequestTimeout(timeoutMs: Int, block: suspend () -> T): T {
+        return withTimeout(timeoutMs.coerceAtLeast(1).toLong()) {
+            block()
+        }
+    }
+
     /**
      */
     fun getProxyPort(): Int = cachedProxyPort
@@ -81,22 +97,24 @@ object KernelHttpClient {
         outboundTag: String = "proxy",
         timeoutMs: Int = DEFAULT_TIMEOUT_MS
     ): HttpResult = withContext(Dispatchers.IO) {
+        withRequestTimeout(timeoutMs) {
 
-        val kernelFetchAvailable = isKernelFetchAvailable()
-        if (kernelFetchAvailable) {
-            val kernelResult = fetchViaKernel(url)
-            if (kernelResult.success) {
-                return@withContext kernelResult
+            val kernelFetchAvailable = isKernelFetchAvailable()
+            if (kernelFetchAvailable) {
+                val kernelResult = fetchViaKernel(url)
+                if (kernelResult.success) {
+                    return@withRequestTimeout kernelResult
+                }
+                Log.w(TAG, "Kernel fetch failed: ${kernelResult.error}")
             }
-            Log.w(TAG, "Kernel fetch failed: ${kernelResult.error}")
-        }
 
-        if (!shouldFallbackToOkHttp(kernelFetchAvailable)) {
-            return@withContext HttpResult.error("Kernel fetch failed while VPN is active")
-        }
+            if (!shouldFallbackToOkHttp(kernelFetchAvailable)) {
+                return@withRequestTimeout HttpResult.error("Kernel fetch failed while VPN is active")
+            }
 
-        Log.d(TAG, "fetch: $url (using OkHttp)")
-        fetchWithOkHttp(url, timeoutMs)
+            Log.d(TAG, "fetch: $url (using OkHttp)")
+            fetchWithOkHttp(url, timeoutMs)
+        }
     }
 
     /**
@@ -110,22 +128,24 @@ object KernelHttpClient {
         outboundTag: String = "proxy",
         timeoutMs: Int = DEFAULT_TIMEOUT_MS
     ): HttpResult = withContext(Dispatchers.IO) {
+        withRequestTimeout(timeoutMs) {
 
-        val kernelFetchAvailable = isKernelFetchAvailable()
-        if (kernelFetchAvailable) {
-            val kernelResult = fetchViaKernel(url, headers)
-            if (kernelResult.success) {
-                return@withContext kernelResult
+            val kernelFetchAvailable = isKernelFetchAvailable()
+            if (kernelFetchAvailable) {
+                val kernelResult = fetchViaKernel(url, headers)
+                if (kernelResult.success) {
+                    return@withRequestTimeout kernelResult
+                }
+                Log.w(TAG, "Kernel fetch with headers failed: ${kernelResult.error}")
             }
-            Log.w(TAG, "Kernel fetch with headers failed: ${kernelResult.error}")
-        }
 
-        if (!shouldFallbackToOkHttp(kernelFetchAvailable)) {
-            return@withContext HttpResult.error("Kernel fetch with headers failed while VPN is active")
-        }
+            if (!shouldFallbackToOkHttp(kernelFetchAvailable)) {
+                return@withRequestTimeout HttpResult.error("Kernel fetch with headers failed while VPN is active")
+            }
 
-        Log.d(TAG, "fetchWithHeaders: $url (using OkHttp)")
-        fetchWithOkHttpAndHeaders(url, headers, timeoutMs)
+            Log.d(TAG, "fetchWithHeaders: $url (using OkHttp)")
+            fetchWithOkHttpAndHeaders(url, headers, timeoutMs)
+        }
     }
 
     /**
@@ -138,21 +158,23 @@ object KernelHttpClient {
         preferKernel: Boolean = true,
         timeoutMs: Int = DEFAULT_TIMEOUT_MS
     ): HttpResult = withContext(Dispatchers.IO) {
+        withRequestTimeout(timeoutMs) {
 
-        val kernelFetchAvailable = preferKernel && isKernelFetchAvailable()
-        if (kernelFetchAvailable) {
-            val kernelResult = fetchViaKernel(url)
-            if (kernelResult.success) {
-                return@withContext kernelResult
+            val kernelFetchAvailable = preferKernel && isKernelFetchAvailable()
+            if (kernelFetchAvailable) {
+                val kernelResult = fetchViaKernel(url)
+                if (kernelResult.success) {
+                    return@withRequestTimeout kernelResult
+                }
+                Log.w(TAG, "smartFetch kernel failed: ${kernelResult.error}")
             }
-            Log.w(TAG, "smartFetch kernel failed: ${kernelResult.error}")
-        }
 
-        if (!shouldFallbackToOkHttp(kernelFetchAvailable)) {
-            return@withContext HttpResult.error("Kernel fetch failed while VPN is active")
-        }
+            if (!shouldFallbackToOkHttp(kernelFetchAvailable)) {
+                return@withRequestTimeout HttpResult.error("Kernel fetch failed while VPN is active")
+            }
 
-        fetchWithOkHttp(url, timeoutMs)
+            fetchWithOkHttp(url, timeoutMs)
+        }
     }
 
     /**
@@ -160,8 +182,9 @@ object KernelHttpClient {
     private fun fetchWithOkHttp(url: String, timeoutMs: Int): HttpResult {
         return try {
             val client = NetworkClient.createClientWithTimeout(
-                connectTimeoutSeconds = (timeoutMs / 1000).toLong(),
-                readTimeoutSeconds = (timeoutMs / 1000).toLong()
+                connectTimeoutSeconds = timeoutSeconds(timeoutMs),
+                readTimeoutSeconds = timeoutSeconds(timeoutMs),
+                callTimeoutSeconds = timeoutSeconds(timeoutMs)
             )
 
             val request = okhttp3.Request.Builder()
@@ -169,15 +192,16 @@ object KernelHttpClient {
                 .header("User-Agent", "KunBox/1.0")
                 .build()
 
-            val response = client.newCall(request).execute()
-            val body = response.body?.string() ?: ""
+            client.newCall(request).execute().use { response ->
+                val body = response.body?.string() ?: ""
 
-            HttpResult(
-                success = true,
-                statusCode = response.code,
-                body = body,
-                error = null
-            )
+                HttpResult(
+                    success = response.isSuccessful,
+                    statusCode = response.code,
+                    body = body,
+                    error = null
+                )
+            }
         } catch (e: Exception) {
             Log.e(TAG, "OkHttp fetch error: ${e.message}")
             HttpResult.error("OkHttp error: ${e.message}")
@@ -193,8 +217,9 @@ object KernelHttpClient {
     ): HttpResult {
         return try {
             val client = NetworkClient.createClientWithTimeout(
-                connectTimeoutSeconds = (timeoutMs / 1000).toLong(),
-                readTimeoutSeconds = (timeoutMs / 1000).toLong()
+                connectTimeoutSeconds = timeoutSeconds(timeoutMs),
+                readTimeoutSeconds = timeoutSeconds(timeoutMs),
+                callTimeoutSeconds = timeoutSeconds(timeoutMs)
             )
 
             val requestBuilder = okhttp3.Request.Builder()
@@ -205,15 +230,16 @@ object KernelHttpClient {
                 requestBuilder.header(key, value)
             }
 
-            val response = client.newCall(requestBuilder.build()).execute()
-            val body = response.body?.string() ?: ""
+            client.newCall(requestBuilder.build()).execute().use { response ->
+                val body = response.body?.string() ?: ""
 
-            HttpResult(
-                success = true,
-                statusCode = response.code,
-                body = body,
-                error = null
-            )
+                HttpResult(
+                    success = response.isSuccessful,
+                    statusCode = response.code,
+                    body = body,
+                    error = null
+                )
+            }
         } catch (e: Exception) {
             Log.e(TAG, "OkHttp fetch with headers error: ${e.message}")
             HttpResult.error("OkHttp error: ${e.message}")

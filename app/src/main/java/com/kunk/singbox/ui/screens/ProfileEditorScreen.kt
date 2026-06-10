@@ -16,6 +16,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.res.stringResource
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -23,81 +24,201 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import androidx.compose.material3.MaterialTheme
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.kunk.singbox.repository.ConfigRepository
+import com.kunk.singbox.ui.components.AppNotificationManager
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.launch
+
+private class ProfileEditorViewModel : ViewModel() {
+    var content by mutableStateOf("")
+        private set
+
+    var isLoading by mutableStateOf(true)
+        private set
+
+    var isSaving by mutableStateOf(false)
+        private set
+
+    private var loadedProfileId: String? = null
+
+    fun shouldLoad(profileId: String): Boolean {
+        return loadedProfileId != profileId
+    }
+
+    fun beginLoading(profileId: String) {
+        loadedProfileId = profileId
+        isLoading = true
+    }
+
+    fun finishLoading(loadedContent: String) {
+        content = loadedContent
+        isLoading = false
+    }
+
+    fun failLoading() {
+        loadedProfileId = null
+        isLoading = false
+    }
+
+    fun updateContent(value: String) {
+        content = value
+    }
+
+    fun updateSaving(value: Boolean) {
+        isSaving = value
+    }
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ProfileEditorScreen(navController: NavController) {
-    var content by remember { mutableStateOf(
-        """
-        {
-          "log": {
-            "level": "info",
-            "timestamp": true
-          },
-          "dns": {
-            "servers": [
-              {
-                "tag": "google",
-                "address": "tls://8.8.8.8"
-              }
-            ]
-          },
-          "inbounds": [
-            {
-              "type": "tun",
-              "tag": "tun-in",
-              "interface_name": "tun0",
-              "address": ["172.19.0.1/30", "fd00::1/126"],
-              "auto_route": true,
-              "strict_route": true
-            }
-          ]
-        }
-        """.trimIndent()
-    ) }
+fun ProfileEditorScreen(navController: NavController, profileId: String) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val configRepository = remember { ConfigRepository.getInstance(context) }
+    val editorViewModel: ProfileEditorViewModel = viewModel(key = profileId)
+
+    ProfileEditorLoadEffect(
+        profileId = profileId,
+        configRepository = configRepository,
+        navController = navController,
+        editorViewModel = editorViewModel
+    )
 
     Scaffold(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
-            TopAppBar(
-                title = { Text(stringResource(R.string.profile_editor_title), color = MaterialTheme.colorScheme.onBackground) },
-                navigationIcon = {
-                    IconButton(onClick = { navController.popBackStack() }) {
-                        Icon(Icons.Rounded.ArrowBack, contentDescription = stringResource(R.string.common_back), tint = MaterialTheme.colorScheme.onBackground)
+            ProfileEditorTopBar(
+                saveEnabled = !editorViewModel.isLoading && !editorViewModel.isSaving,
+                onBack = { navController.popBackStack() },
+                onSave = {
+                    if (isProfileContentTooLarge(editorViewModel.content)) {
+                        AppNotificationManager.showMessage(
+                            context,
+                            context.getString(R.string.profiles_import_content_too_large)
+                        )
+                        return@ProfileEditorTopBar
                     }
-                },
-                actions = {
-                    IconButton(onClick = {
-                        // TODO: Save logic
-                        navController.popBackStack()
-                    }) {
-                        Icon(Icons.Rounded.Save, contentDescription = stringResource(R.string.common_save), tint = MaterialTheme.colorScheme.onBackground)
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
+
+                    configRepository.saveProfileContent(
+                        scope = scope,
+                        profileId = profileId,
+                        content = editorViewModel.content,
+                        onSavingChanged = editorViewModel::updateSaving,
+                        onResult = { result ->
+                            handleProfileSaveResult(context, navController, result)
+                        }
+                    )
+                }
             )
         }
     ) { padding ->
-        Column(
+        ProfileEditorContent(
+            content = editorViewModel.content,
+            isLoading = editorViewModel.isLoading,
+            isSaving = editorViewModel.isSaving,
+            onContentChange = { editorViewModel.updateContent(it) },
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
                 .padding(16.dp)
                 .navigationBarsPadding()
-        ) {
+        )
+    }
+}
+
+@Composable
+private fun ProfileEditorLoadEffect(
+    profileId: String,
+    configRepository: ConfigRepository,
+    navController: NavController,
+    editorViewModel: ProfileEditorViewModel
+) {
+    val context = LocalContext.current
+    LaunchedEffect(profileId) {
+        if (!editorViewModel.shouldLoad(profileId)) return@LaunchedEffect
+
+        editorViewModel.beginLoading(profileId)
+        val result = configRepository.readProfileConfigContent(profileId)
+        result.fold(
+            onSuccess = editorViewModel::finishLoading,
+            onFailure = { error ->
+                editorViewModel.failLoading()
+                AppNotificationManager.showMessage(
+                    context,
+                    context.getString(R.string.profiles_import_failed, error.message)
+                )
+                navController.popBackStack()
+            }
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ProfileEditorTopBar(
+    saveEnabled: Boolean,
+    onBack: () -> Unit,
+    onSave: () -> Unit
+) {
+    TopAppBar(
+        title = {
+            Text(stringResource(R.string.profile_editor_title), color = MaterialTheme.colorScheme.onBackground)
+        },
+        navigationIcon = {
+            IconButton(onClick = onBack) {
+                Icon(
+                    Icons.Rounded.ArrowBack,
+                    contentDescription = stringResource(R.string.common_back),
+                    tint = MaterialTheme.colorScheme.onBackground
+                )
+            }
+        },
+        actions = {
+            IconButton(enabled = saveEnabled, onClick = onSave) {
+                Icon(
+                    Icons.Rounded.Save,
+                    contentDescription = stringResource(R.string.common_save),
+                    tint = MaterialTheme.colorScheme.onBackground
+                )
+            }
+        },
+        colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
+    )
+}
+
+@Composable
+private fun ProfileEditorContent(
+    content: String,
+    isLoading: Boolean,
+    isSaving: Boolean,
+    onContentChange: (String) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(modifier = modifier) {
+        if (isLoading) {
+            Text(
+                text = stringResource(R.string.common_loading),
+                color = MaterialTheme.colorScheme.onBackground
+            )
+        } else {
             BasicTextField(
                 value = content,
-                onValueChange = { content = it },
+                onValueChange = onContentChange,
+                enabled = !isSaving,
                 textStyle = TextStyle(
                     color = MaterialTheme.colorScheme.onBackground,
                     fontFamily = FontFamily.Monospace,
@@ -110,4 +231,43 @@ fun ProfileEditorScreen(navController: NavController) {
             )
         }
     }
+}
+
+private fun ConfigRepository.saveProfileContent(
+    scope: CoroutineScope,
+    profileId: String,
+    content: String,
+    onSavingChanged: (Boolean) -> Unit,
+    onResult: (Result<Unit>) -> Unit
+) {
+    onSavingChanged(true)
+    scope.launch {
+        val result = updateProfileConfigContent(profileId, content).map {}
+        onSavingChanged(false)
+        onResult(result)
+    }
+}
+
+private fun isProfileContentTooLarge(content: String): Boolean {
+    return content.toByteArray(Charsets.UTF_8).size >
+        com.kunk.singbox.viewmodel.ProfilesViewModel.MAX_IMPORT_CONTENT_BYTES
+}
+
+private fun handleProfileSaveResult(
+    context: android.content.Context,
+    navController: NavController,
+    result: Result<Unit>
+) {
+    result.fold(
+        onSuccess = {
+            AppNotificationManager.showMessage(context, context.getString(R.string.profiles_updated))
+            navController.popBackStack()
+        },
+        onFailure = { error ->
+            AppNotificationManager.showMessage(
+                context,
+                context.getString(R.string.profiles_import_failed, error.message)
+            )
+        }
+    )
 }

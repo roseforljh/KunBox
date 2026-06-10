@@ -5,7 +5,6 @@ import android.app.Application
 import android.net.ConnectivityManager
 import android.os.Process
 import androidx.work.Configuration
-import androidx.work.WorkManager
 import com.kunk.singbox.lifecycle.AppLifecycleObserver
 import com.kunk.singbox.repository.LogRepository
 import com.kunk.singbox.repository.SettingsRepository
@@ -19,6 +18,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class SingBoxApplication : Application(), Configuration.Provider {
 
@@ -26,6 +26,7 @@ class SingBoxApplication : Application(), Configuration.Provider {
 
     override val workManagerConfiguration: Configuration
         get() = Configuration.Builder()
+            .setDefaultProcessName(packageName)
             .setMinimumLoggingLevel(android.util.Log.INFO)
             .build()
 
@@ -34,26 +35,20 @@ class SingBoxApplication : Application(), Configuration.Provider {
 
         MMKV.initialize(this)
 
-        if (!isWorkManagerInitialized()) {
-            WorkManager.initialize(this, workManagerConfiguration)
-        }
-
         LogRepository.init(this)
-        val settingsRepository = SettingsRepository.getInstance(this)
-        LogRepository.getInstance().setEnabled(settingsRepository.settings.value.debugLoggingEnabled)
         applicationScope.launch {
-            settingsRepository.settings.collect { settings ->
-                LogRepository.getInstance().setEnabled(settings.debugLoggingEnabled)
+            val settingsRepository = withContext(Dispatchers.IO) {
+                SettingsRepository.getInstance(this@SingBoxApplication)
             }
-        }
+            LogRepository.getInstance().setEnabled(settingsRepository.settings.value.debugLoggingEnabled)
+            launch {
+                settingsRepository.settings.collect { settings ->
+                    LogRepository.getInstance().setEnabled(settings.debugLoggingEnabled)
+                }
+            }
 
-        cleanupOrphanedTempFiles()
-
-        if (isMainProcess()) {
-            AppLifecycleObserver.register(this)
-
-            applicationScope.launch {
-
+            if (isMainProcess()) {
+                AppLifecycleObserver.register(this@SingBoxApplication)
                 try {
                     val settings = settingsRepository.settings.value
                     AppLifecycleObserver.setBackgroundTimeout(settings.backgroundPowerSavingDelay.delayMs)
@@ -74,14 +69,9 @@ class SingBoxApplication : Application(), Configuration.Provider {
                 VpnKeepaliveWorker.schedule(this@SingBoxApplication)
             }
         }
-    }
 
-    private fun isWorkManagerInitialized(): Boolean {
-        return try {
-            WorkManager.getInstance(this)
-            true
-        } catch (e: IllegalStateException) {
-            false
+        applicationScope.launch(Dispatchers.IO) {
+            cleanupOrphanedTempFiles()
         }
     }
 

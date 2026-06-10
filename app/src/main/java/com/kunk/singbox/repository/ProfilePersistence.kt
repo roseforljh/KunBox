@@ -20,6 +20,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 
 /**
@@ -70,12 +71,12 @@ class ProfilePersistence(private val context: Context) {
     /**
      *
      */
-    fun loadSync(): LoadResult {
+    suspend fun load(): LoadResult = withContext(Dispatchers.IO) {
         val startTime = System.currentTimeMillis()
 
-        val profileEntities = profileDao.getAllSync()
-        val activeState = activeStateDao.getSync()
-        val latencyEntities = nodeLatencyDao.getAllSync()
+        val profileEntities = profileDao.getAll()
+        val activeState = activeStateDao.get()
+        val latencyEntities = nodeLatencyDao.getAll()
 
         if (profileEntities.isNotEmpty()) {
             val profiles = profileEntities.map { it.toUiModel().copy(updateStatus = UpdateStatus.Idle) }
@@ -85,7 +86,7 @@ class ProfilePersistence(private val context: Context) {
 
             cleanupLegacyFiles()
 
-            return LoadResult(
+            return@withContext LoadResult(
                 profiles = profiles,
                 activeProfileId = activeState?.activeProfileId,
                 activeNodeId = activeState?.activeNodeId,
@@ -99,7 +100,7 @@ class ProfilePersistence(private val context: Context) {
             val elapsed = System.currentTimeMillis() - startTime
             Log.i(TAG, "Migrated ${savedData.profiles.size} profiles to Room in ${elapsed}ms")
 
-            return LoadResult(
+            return@withContext LoadResult(
                 profiles = savedData.profiles.map { it.copy(updateStatus = UpdateStatus.Idle) },
                 activeProfileId = savedData.activeProfileId,
                 activeNodeId = savedData.activeNodeId,
@@ -107,7 +108,7 @@ class ProfilePersistence(private val context: Context) {
             )
         }
 
-        return LoadResult(
+        return@withContext LoadResult(
             profiles = emptyList(),
             activeProfileId = null,
             activeNodeId = null,
@@ -127,15 +128,15 @@ class ProfilePersistence(private val context: Context) {
         }
     }
 
-    private fun migrateToRoom(savedData: SavedProfilesData) {
+    private suspend fun migrateToRoom(savedData: SavedProfilesData) {
         try {
             val entities = savedData.profiles.mapIndexed { index, profile ->
                 ProfileEntity.fromUiModel(profile, sortOrder = index)
             }
-            profileDao.insertAllSync(entities)
+            profileDao.insertAll(entities)
 
             if (savedData.activeProfileId != null || savedData.activeNodeId != null) {
-                activeStateDao.saveSync(
+                activeStateDao.save(
                     ActiveStateEntity(
                         id = 1,
                         activeProfileId = savedData.activeProfileId,
@@ -148,7 +149,7 @@ class ProfilePersistence(private val context: Context) {
                 val latencies = savedData.nodeLatencies.map { (nodeId, latency) ->
                     NodeLatencyEntity(nodeId = nodeId, latencyMs = latency)
                 }
-                scope.launch { nodeLatencyDao.insertAll(latencies) }
+                nodeLatencyDao.insertAll(latencies)
             }
         } catch (e: Exception) {
             Log.e(TAG, "Failed to migrate to Room", e)
@@ -188,9 +189,9 @@ class ProfilePersistence(private val context: Context) {
 
     /**
      */
-    fun saveActiveStateSync(activeProfileId: String?, activeNodeId: String?) {
+    suspend fun saveActiveState(activeProfileId: String?, activeNodeId: String?) = withContext(Dispatchers.IO) {
         try {
-            activeStateDao.saveSync(
+            activeStateDao.save(
                 ActiveStateEntity(
                     id = 1,
                     activeProfileId = activeProfileId,
@@ -210,7 +211,7 @@ class ProfilePersistence(private val context: Context) {
     ) {
         val startTime = System.currentTimeMillis()
         try {
-            activeStateDao.saveSync(
+            activeStateDao.save(
                 ActiveStateEntity(
                     id = 1,
                     activeProfileId = activeProfileId,

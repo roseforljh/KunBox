@@ -57,6 +57,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -164,7 +165,7 @@ fun InputDialog(
     onConfirm: (String) -> Unit,
     onDismiss: () -> Unit
 ) {
-    var text by remember { mutableStateOf(initialValue) }
+    var text by rememberSaveable(initialValue) { mutableStateOf(initialValue) }
     val interactionSource = remember { MutableInteractionSource() }
     val scrollState = rememberScrollState()
 
@@ -684,6 +685,7 @@ fun SingleSelectDialog(
 ) {
     // Use selectedIndex as the initial value, but update it when selectedIndex changes
     var tempSelectedIndex by remember(selectedIndex) { mutableStateOf(selectedIndex) }
+    val canConfirm = tempSelectedIndex in options.indices
 
     Dialog(onDismissRequest = onDismiss) {
         Column(
@@ -741,7 +743,8 @@ fun SingleSelectDialog(
             Spacer(modifier = Modifier.height(24.dp))
 
             Button(
-                onClick = { onSelect(tempSelectedIndex) },
+                onClick = { if (canConfirm) onSelect(tempSelectedIndex) },
+                enabled = canConfirm,
                 modifier = Modifier.fillMaxWidth().height(50.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary, contentColor = MaterialTheme.colorScheme.onPrimary),
                 shape = RoundedCornerShape(25.dp)

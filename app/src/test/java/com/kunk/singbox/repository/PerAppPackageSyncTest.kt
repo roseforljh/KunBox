@@ -1,5 +1,6 @@
 package com.kunk.singbox.repository
 
+import android.content.Intent
 import com.kunk.singbox.model.AppGroup
 import com.kunk.singbox.model.AppInfo
 import com.kunk.singbox.model.AppRule
@@ -42,10 +43,49 @@ class PerAppPackageSyncTest {
     }
 
     @Test
-    fun packageRemovedEvent_skipsReplacingUpdates() {
-        assertFalse(shouldReloadInstalledAppsForPackageChange(isReplacing = true, packageName = "com.example"))
-        assertTrue(shouldReloadInstalledAppsForPackageChange(isReplacing = false, packageName = "com.example"))
-        assertFalse(shouldReloadInstalledAppsForPackageChange(isReplacing = false, packageName = ""))
+    fun packageChangeEvent_refreshesAddedAndNonReplacingRemovedPackages() {
+        assertTrue(
+            shouldReloadInstalledAppsForPackageChange(
+                action = Intent.ACTION_PACKAGE_ADDED,
+                isReplacing = false,
+                packageName = "com.example"
+            )
+        )
+        assertTrue(
+            shouldReloadInstalledAppsForPackageChange(
+                action = Intent.ACTION_PACKAGE_REMOVED,
+                isReplacing = false,
+                packageName = "com.example"
+            )
+        )
+        assertFalse(
+            shouldReloadInstalledAppsForPackageChange(
+                action = Intent.ACTION_PACKAGE_REMOVED,
+                isReplacing = true,
+                packageName = "com.example"
+            )
+        )
+        assertTrue(
+            shouldReloadInstalledAppsForPackageChange(
+                action = Intent.ACTION_PACKAGE_ADDED,
+                isReplacing = true,
+                packageName = "com.example"
+            )
+        )
+        assertFalse(
+            shouldReloadInstalledAppsForPackageChange(
+                action = Intent.ACTION_PACKAGE_ADDED,
+                isReplacing = false,
+                packageName = ""
+            )
+        )
+        assertFalse(
+            shouldReloadInstalledAppsForPackageChange(
+                action = "android.intent.action.PACKAGE_CHANGED",
+                isReplacing = false,
+                packageName = "com.example"
+            )
+        )
     }
 
     @Test

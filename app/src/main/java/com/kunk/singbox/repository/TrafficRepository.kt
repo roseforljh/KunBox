@@ -6,6 +6,9 @@ import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import com.kunk.singbox.ipc.VpnStateStore
 import java.io.File
+import java.io.IOException
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 import java.util.Calendar
 import java.util.concurrent.ConcurrentHashMap
 
@@ -66,9 +69,36 @@ class TrafficRepository private constructor(private val context: Context) {
             val cal = Calendar.getInstance()
             return "${cal.get(Calendar.YEAR)}-${cal.get(Calendar.MONTH) + 1}-${cal.get(Calendar.DAY_OF_MONTH)}"
         }
+
+        private fun writeTextFileAtomically(targetFile: File, content: String) {
+            targetFile.parentFile?.mkdirs()
+            val tempFile = File.createTempFile("${targetFile.name.take(64)}.", ".tmp", targetFile.parentFile)
+            try {
+                tempFile.writeText(content, Charsets.UTF_8)
+                try {
+                    Files.move(
+                        tempFile.toPath(),
+                        targetFile.toPath(),
+                        StandardCopyOption.REPLACE_EXISTING,
+                        StandardCopyOption.ATOMIC_MOVE
+                    )
+                } catch (_: IOException) {
+                    Files.move(
+                        tempFile.toPath(),
+                        targetFile.toPath(),
+                        StandardCopyOption.REPLACE_EXISTING
+                    )
+                }
+            } finally {
+                if (tempFile.isFile && !tempFile.delete()) {
+                    Log.w(TAG, "Failed to delete traffic temp file: ${tempFile.absolutePath}")
+                }
+            }
+        }
     }
 
     private val gson = Gson()
+    private val statsLock = Any()
     private val trafficMap = ConcurrentHashMap<String, NodeTrafficStats>()
     private val dailyRecords = ConcurrentHashMap<String, DailyTrafficRecord>()
     private val statsFile: File get() = File(context.filesDir, FILE_NAME)
@@ -78,13 +108,13 @@ class TrafficRepository private constructor(private val context: Context) {
 
     init {
         lastKnownClearTimestamp = VpnStateStore.getTrafficClearTimestamp()
-        loadStats()
-        loadDailyRecords()
+        loadStatsLocked()
+        loadDailyRecordsLocked()
         checkMonthlyReset()
         cleanOldRecords()
     }
 
-    private fun loadStats() {
+    private fun loadStatsLocked() {
         if (!statsFile.exists()) return
         try {
             val json = statsFile.readText()
@@ -100,7 +130,7 @@ class TrafficRepository private constructor(private val context: Context) {
     }
 
     @Suppress("NestedBlockDepth")
-    private fun loadDailyRecords() {
+    private fun loadDailyRecordsLocked() {
         if (!dailyFile.exists()) return
         try {
             val json = dailyFile.readText()
@@ -121,28 +151,22 @@ class TrafficRepository private constructor(private val context: Context) {
     }
 
     fun saveStats() {
+        synchronized(statsLock) {
+            saveStatsLocked(force = false)
+        }
+    }
+
+    private fun saveStatsLocked(force: Boolean) {
         val now = System.currentTimeMillis()
-        if (now - lastSaveTime < 10000) return
+        if (!force && now - lastSaveTime < 10000) return
 
         try {
-            val json = gson.toJson(trafficMap)
-            val tmpFile = File(context.filesDir, "$FILE_NAME.tmp")
-            tmpFile.writeText(json)
-            if (tmpFile.renameTo(statsFile)) {
-                lastSaveTime = now
-            } else {
-                tmpFile.copyTo(statsFile, overwrite = true)
-                tmpFile.delete()
-                lastSaveTime = now
-            }
+            val json = gson.toJson(trafficMap.mapValues { it.value.snapshot() })
+            writeTextFileAtomically(statsFile, json)
+            lastSaveTime = now
 
-            val dailyJson = gson.toJson(dailyRecords)
-            val dailyTmpFile = File(context.filesDir, "$DAILY_FILE_NAME.tmp")
-            dailyTmpFile.writeText(dailyJson)
-            if (!dailyTmpFile.renameTo(dailyFile)) {
-                dailyTmpFile.copyTo(dailyFile, overwrite = true)
-                dailyTmpFile.delete()
-            }
+            val dailyJson = gson.toJson(dailyRecords.mapValues { it.value.snapshot() })
+            writeTextFileAtomically(dailyFile, dailyJson)
         } catch (e: Exception) {
             Log.e(TAG, "Failed to save traffic stats", e)
         }
@@ -155,8 +179,10 @@ class TrafficRepository private constructor(private val context: Context) {
 
         if (lastMonth != -1 && lastMonth != currentMonth) {
             Log.i(TAG, "New month detected ($lastMonth -> $currentMonth), resetting traffic stats")
-            trafficMap.clear()
-            saveStats()
+            synchronized(statsLock) {
+                trafficMap.clear()
+                saveStatsLocked(force = true)
+            }
         }
 
         if (lastMonth != currentMonth) {
@@ -191,30 +217,32 @@ class TrafficRepository private constructor(private val context: Context) {
     fun addTraffic(nodeId: String, uploadDiff: Long, downloadDiff: Long, nodeName: String? = null) {
         if (uploadDiff <= 0 && downloadDiff <= 0) return
 
-        checkCrossProcessClear()
+        synchronized(statsLock) {
+            checkCrossProcessClearLocked()
 
-        val stats = trafficMap.getOrPut(nodeId) { NodeTrafficStats(nodeId) }
-        stats.upload += uploadDiff
-        stats.download += downloadDiff
-        stats.lastUpdated = System.currentTimeMillis()
-        if (!nodeName.isNullOrBlank()) {
-            stats.nodeName = nodeName
+            val stats = trafficMap.getOrPut(nodeId) { NodeTrafficStats(nodeId) }
+            stats.upload += uploadDiff
+            stats.download += downloadDiff
+            stats.lastUpdated = System.currentTimeMillis()
+            if (!nodeName.isNullOrBlank()) {
+                stats.nodeName = nodeName
+            }
+
+            val todayKey = getTodayKey()
+            val dailyRecord = dailyRecords.getOrPut(todayKey) { DailyTrafficRecord(todayKey) }
+            val dailyStats = dailyRecord.nodeStats.getOrPut(nodeId) { NodeTrafficStats(nodeId) }
+            dailyStats.upload += uploadDiff
+            dailyStats.download += downloadDiff
+            dailyStats.lastUpdated = System.currentTimeMillis()
+            if (!nodeName.isNullOrBlank()) {
+                dailyStats.nodeName = nodeName
+            }
+
+            saveStatsLocked(force = false)
         }
-
-        val todayKey = getTodayKey()
-        val dailyRecord = dailyRecords.getOrPut(todayKey) { DailyTrafficRecord(todayKey) }
-        val dailyStats = dailyRecord.nodeStats.getOrPut(nodeId) { NodeTrafficStats(nodeId) }
-        dailyStats.upload += uploadDiff
-        dailyStats.download += downloadDiff
-        dailyStats.lastUpdated = System.currentTimeMillis()
-        if (!nodeName.isNullOrBlank()) {
-            dailyStats.nodeName = nodeName
-        }
-
-        saveStats()
     }
 
-    private fun checkCrossProcessClear() {
+    private fun checkCrossProcessClearLocked() {
         val currentClearTs = VpnStateStore.getTrafficClearTimestamp()
         if (currentClearTs > lastKnownClearTimestamp) {
             Log.i(TAG, "Cross-process clear detected, clearing local data")
@@ -225,38 +253,48 @@ class TrafficRepository private constructor(private val context: Context) {
     }
 
     fun getStats(nodeId: String): NodeTrafficStats? {
-        return trafficMap[nodeId]
+        return synchronized(statsLock) {
+            trafficMap[nodeId]?.snapshot()
+        }
     }
 
     fun getMonthlyTotal(nodeId: String): Long {
-        val stats = trafficMap[nodeId] ?: return 0
-        return stats.upload + stats.download
+        return synchronized(statsLock) {
+            val stats = trafficMap[nodeId] ?: return@synchronized 0L
+            stats.upload + stats.download
+        }
     }
 
     fun getAllNodeStats(): List<NodeTrafficStats> {
-        return trafficMap.values.toList().sortedByDescending { it.upload + it.download }
+        return synchronized(statsLock) {
+            trafficMap.values.map { it.snapshot() }.sortedByDescending { it.upload + it.download }
+        }
     }
 
     fun getTotalTraffic(): Pair<Long, Long> {
-        var totalUpload = 0L
-        var totalDownload = 0L
-        trafficMap.values.forEach {
-            totalUpload += it.upload
-            totalDownload += it.download
+        return synchronized(statsLock) {
+            var totalUpload = 0L
+            var totalDownload = 0L
+            trafficMap.values.forEach {
+                totalUpload += it.upload
+                totalDownload += it.download
+            }
+            Pair(totalUpload, totalDownload)
         }
-        return Pair(totalUpload, totalDownload)
     }
 
     fun getTrafficSummary(period: TrafficPeriod): TrafficSummary {
-        return when (period) {
-            TrafficPeriod.TODAY -> getTodayTraffic()
-            TrafficPeriod.THIS_WEEK -> getWeekTraffic()
-            TrafficPeriod.THIS_MONTH -> getMonthTraffic()
-            TrafficPeriod.ALL_TIME -> getAllTimeTraffic()
+        return synchronized(statsLock) {
+            when (period) {
+                TrafficPeriod.TODAY -> getTodayTrafficLocked()
+                TrafficPeriod.THIS_WEEK -> getWeekTrafficLocked()
+                TrafficPeriod.THIS_MONTH -> getMonthTrafficLocked()
+                TrafficPeriod.ALL_TIME -> getAllTimeTrafficLocked()
+            }
         }
     }
 
-    private fun getTodayTraffic(): TrafficSummary {
+    private fun getTodayTrafficLocked(): TrafficSummary {
         val todayKey = getTodayKey()
         val record = dailyRecords[todayKey]
 
@@ -271,12 +309,12 @@ class TrafficRepository private constructor(private val context: Context) {
             totalDown += it.download
         }
 
-        val nodeList = record.nodeStats.values.toList().sortedByDescending { it.upload + it.download }
+        val nodeList = record.nodeStats.values.map { it.snapshot() }.sortedByDescending { it.upload + it.download }
         return TrafficSummary(totalUp, totalDown, nodeList, TrafficPeriod.TODAY)
     }
 
     @Suppress("NestedBlockDepth", "CognitiveComplexMethod")
-    private fun getWeekTraffic(): TrafficSummary {
+    private fun getWeekTrafficLocked(): TrafficSummary {
         val cal = Calendar.getInstance()
         cal.set(Calendar.DAY_OF_WEEK, cal.firstDayOfWeek)
         val weekStart = cal.timeInMillis
@@ -303,7 +341,9 @@ class TrafficRepository private constructor(private val context: Context) {
                         }
                     }
                 }
-            } catch (_: Exception) {}
+            } catch (e: Exception) {
+                Log.w(TAG, "Ignoring invalid daily traffic key: ${record.dateKey}", e)
+            }
         }
 
         var totalUp = 0L
@@ -317,7 +357,7 @@ class TrafficRepository private constructor(private val context: Context) {
         return TrafficSummary(totalUp, totalDown, nodeList, TrafficPeriod.THIS_WEEK)
     }
 
-    private fun getMonthTraffic(): TrafficSummary {
+    private fun getMonthTrafficLocked(): TrafficSummary {
         var totalUp = 0L
         var totalDown = 0L
         trafficMap.values.forEach {
@@ -325,11 +365,11 @@ class TrafficRepository private constructor(private val context: Context) {
             totalDown += it.download
         }
 
-        val nodeList = trafficMap.values.toList().sortedByDescending { it.upload + it.download }
+        val nodeList = trafficMap.values.map { it.snapshot() }.sortedByDescending { it.upload + it.download }
         return TrafficSummary(totalUp, totalDown, nodeList, TrafficPeriod.THIS_MONTH)
     }
 
-    private fun getAllTimeTraffic(): TrafficSummary {
+    private fun getAllTimeTrafficLocked(): TrafficSummary {
         val aggregated = mutableMapOf<String, NodeTrafficStats>()
         dailyRecords.values.forEach { record ->
             record.nodeStats.forEach { (nodeId, stats) ->
@@ -365,7 +405,11 @@ class TrafficRepository private constructor(private val context: Context) {
     }
 
     fun getTopNodes(period: TrafficPeriod, limit: Int = 10): List<NodeTrafficStats> {
-        return mergeByNodeName(getTrafficSummary(period).nodeStats)
+        return getTopNodes(getTrafficSummary(period), limit)
+    }
+
+    fun getTopNodes(summary: TrafficSummary, limit: Int = 10): List<NodeTrafficStats> {
+        return mergeByNodeName(summary.nodeStats)
             .filter { it.upload + it.download > 0 }
             .sortedByDescending { it.upload + it.download }
             .take(limit)
@@ -392,7 +436,10 @@ class TrafficRepository private constructor(private val context: Context) {
     }
 
     fun getNodeTrafficPercentages(period: TrafficPeriod): List<Pair<NodeTrafficStats, Float>> {
-        val summary = getTrafficSummary(period)
+        return getNodeTrafficPercentages(getTrafficSummary(period))
+    }
+
+    fun getNodeTrafficPercentages(summary: TrafficSummary): List<Pair<NodeTrafficStats, Float>> {
         val total = summary.totalUpload + summary.totalDownload
         if (total == 0L) return emptyList()
 
@@ -407,27 +454,50 @@ class TrafficRepository private constructor(private val context: Context) {
     }
 
     fun forceSave() {
-        lastSaveTime = 0L
-        saveStats()
+        synchronized(statsLock) {
+            lastSaveTime = 0L
+            saveStatsLocked(force = true)
+        }
     }
 
     /**
      */
     fun reloadFromDisk() {
-        trafficMap.clear()
-        dailyRecords.clear()
-        loadStats()
-        loadDailyRecords()
-        Log.i(TAG, "Reloaded traffic stats from disk: ${trafficMap.size} nodes")
+        synchronized(statsLock) {
+            trafficMap.clear()
+            dailyRecords.clear()
+            loadStatsLocked()
+            loadDailyRecordsLocked()
+            Log.i(TAG, "Reloaded traffic stats from disk: ${trafficMap.size} nodes")
+        }
     }
 
     fun clearAllStats() {
-        trafficMap.clear()
-        dailyRecords.clear()
-        val clearTs = System.currentTimeMillis()
-        lastKnownClearTimestamp = clearTs
-        VpnStateStore.setTrafficClearTimestamp(clearTs)
-        forceSave()
+        val clearTs = synchronized(statsLock) {
+            trafficMap.clear()
+            dailyRecords.clear()
+            val clearTs = System.currentTimeMillis()
+            lastKnownClearTimestamp = clearTs
+            VpnStateStore.setTrafficClearTimestamp(clearTs)
+            saveStatsLocked(force = true)
+            clearTs
+        }
         Log.i(TAG, "All traffic stats cleared, timestamp=$clearTs")
+    }
+
+    private fun NodeTrafficStats.snapshot(): NodeTrafficStats {
+        return NodeTrafficStats(
+            nodeId = nodeId,
+            upload = upload,
+            download = download,
+            lastUpdated = lastUpdated,
+            nodeName = nodeName
+        )
+    }
+
+    private fun DailyTrafficRecord.snapshot(): DailyTrafficRecord {
+        val copy = DailyTrafficRecord(dateKey)
+        copy.nodeStats.putAll(nodeStats.mapValues { it.value.snapshot() })
+        return copy
     }
 }

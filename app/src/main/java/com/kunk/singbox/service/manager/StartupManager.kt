@@ -12,6 +12,7 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.google.gson.Gson
 import com.kunk.singbox.R
+import com.kunk.singbox.ipc.VpnStateStore
 import com.kunk.singbox.model.AppSettings
 import com.kunk.singbox.model.SingBoxConfig
 import com.kunk.singbox.repository.LogRepository
@@ -74,20 +75,7 @@ class StartupManager(
             if (!hasTls) return true
 
             val explicitServerName = outbound.tls?.serverName?.takeIf { it.isNotBlank() }
-            val explicitHost = sequenceOf(
-                outbound.transport?.headers,
-                outbound.headers,
-                outbound.extraHeaders
-            )
-                .filterNotNull()
-                .mapNotNull { headers ->
-                    headers.entries.firstOrNull { (key, value) ->
-                        key.equals("Host", ignoreCase = true) && value.isNotBlank()
-                    }?.value
-                }
-                .firstOrNull()
-
-            return explicitServerName != null || explicitHost != null
+            return explicitServerName != null
         }
     }
 
@@ -562,6 +550,9 @@ class StartupManager(
         Log.w(TAG, "VPN permission required")
         callbacks.persistVpnState(false)
         callbacks.persistVpnPending("")
+        VpnStateStore.clearRuntimeState()
+        VpnStateStore.setMode(VpnStateStore.CoreMode.NONE)
+        VpnStateStore.setLastError("VPN permission required")
 
         runCatching {
             prepareIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)

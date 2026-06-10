@@ -8,6 +8,7 @@ import android.os.Looper
 import android.util.Log
 import com.kunk.singbox.ipc.SingBoxRemote
 import com.kunk.singbox.ipc.VpnStateStore
+import com.kunk.singbox.repository.SettingsRepository
 import com.kunk.singbox.service.ProxyOnlyService
 import com.kunk.singbox.service.SingBoxService
 
@@ -79,7 +80,7 @@ object VpnServiceManager {
     fun getActiveService(context: Context): String? {
         if (!isRunning(context)) return null
 
-        return if (isTunEnabled()) "tun" else "proxy"
+        return if (isTunEnabled(context)) "tun" else "proxy"
     }
 
     /**
@@ -213,11 +214,11 @@ object VpnServiceManager {
         }
 
         if (context != null) {
-            val prefs = context.applicationContext.getSharedPreferences(
-                "com.kunk.singbox_preferences",
-                Context.MODE_PRIVATE
-            )
-            val tunEnabled = prefs.getBoolean("tun_enabled", true)
+            val tunEnabled = SettingsRepository
+                .getInstance(context.applicationContext)
+                .settings
+                .value
+                .tunEnabled
 
             cachedTunEnabled = tunEnabled
             lastTunCheckTime = now
@@ -229,11 +230,11 @@ object VpnServiceManager {
     }
 
     fun refreshTunSetting(context: Context) {
-        val prefs = context.applicationContext.getSharedPreferences(
-            "com.kunk.singbox_preferences",
-            Context.MODE_PRIVATE
-        )
-        val tunEnabled = prefs.getBoolean("tun_enabled", true)
+        val tunEnabled = SettingsRepository
+            .getInstance(context.applicationContext)
+            .settings
+            .value
+            .tunEnabled
 
         cachedTunEnabled = tunEnabled
         lastTunCheckTime = System.currentTimeMillis()

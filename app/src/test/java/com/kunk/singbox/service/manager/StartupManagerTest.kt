@@ -4,6 +4,7 @@ import com.kunk.singbox.model.DomainResolveConfig
 import com.kunk.singbox.model.Outbound
 import com.kunk.singbox.model.SingBoxConfig
 import com.kunk.singbox.model.TlsConfig
+import com.kunk.singbox.model.TransportConfig
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -77,6 +78,32 @@ class StartupManagerTest {
         )
 
         assertEquals("hy2.example.com", patched.outbounds?.firstOrNull()?.server)
+    }
+
+    @Test
+    fun applyPrewarmedDomainIpsSkipsTlsOutboundsWithOnlyHttpHostHeader() {
+        val config = SingBoxConfig(
+            outbounds = listOf(
+                Outbound(
+                    type = "vless",
+                    tag = "ws",
+                    server = "node.example.com",
+                    serverPort = 443,
+                    tls = TlsConfig(enabled = true),
+                    transport = TransportConfig(
+                        type = "ws",
+                        headers = mapOf("Host" to "cdn.example.com")
+                    )
+                )
+            )
+        )
+
+        val patched = StartupManager.applyPrewarmedDomainIps(
+            config,
+            mapOf("node.example.com" to "1.2.3.4")
+        )
+
+        assertEquals("node.example.com", patched.outbounds?.firstOrNull()?.server)
     }
 
     @Test

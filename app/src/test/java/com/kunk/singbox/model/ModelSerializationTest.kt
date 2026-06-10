@@ -59,4 +59,34 @@ class ModelSerializationTest {
         assertTrue(json.contains("\"rcode\":\"NOERROR\""))
         assertTrue(json.contains("\"domain\":[\"www.googleadservices.com\"]"))
     }
+
+    @Test
+    fun transportHostSerializesSingleItemAsString() {
+        val transport = TransportConfig(
+            type = "httpupgrade",
+            path = "/up",
+            host = listOf("cdn.example.com")
+        )
+
+        val json = gson.toJson(transport)
+        val decoded = gson.fromJson(json, TransportConfig::class.java)
+
+        assertTrue(json.contains("\"host\":\"cdn.example.com\""))
+        assertEquals(listOf("cdn.example.com"), decoded.host)
+    }
+
+    @Test
+    fun transportHostSerializesMultipleItemsAsArray() {
+        val transport = TransportConfig(
+            type = "xhttp",
+            path = "/x",
+            host = listOf("h1.example.com", "h2.example.com")
+        )
+
+        val json = gson.toJson(transport)
+        val decoded = gson.fromJson(json, TransportConfig::class.java)
+
+        assertTrue(json.contains("\"host\":[\"h1.example.com\",\"h2.example.com\"]"))
+        assertEquals(listOf("h1.example.com", "h2.example.com"), decoded.host)
+    }
 }

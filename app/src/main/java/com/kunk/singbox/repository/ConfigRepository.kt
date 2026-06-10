@@ -30,13 +30,17 @@ import com.kunk.singbox.database.AppDatabase
 import com.kunk.singbox.database.entity.ProfileEntity
 import com.kunk.singbox.database.entity.ActiveStateEntity
 import com.kunk.singbox.database.entity.NodeLatencyEntity
+import java.io.ByteArrayOutputStream
 import java.io.File
+import java.io.IOException
 import java.net.ConnectException
 import java.net.Inet4Address
 import java.net.Inet6Address
 import java.net.InetAddress
 import java.net.URI
 import java.net.SocketTimeoutException
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 import java.util.Collections
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
@@ -54,6 +58,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.withPermit
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.ResponseBody
 import com.kunk.singbox.utils.NetworkClient
 import com.kunk.singbox.utils.dns.DnsResolver
 import com.kunk.singbox.utils.dns.DnsResolveStore
@@ -105,6 +110,7 @@ class ConfigRepository(private val context: Context) {
         private const val PARALLEL_CONCURRENCY = 8
         private const val SUBSCRIPTION_FAILURE_THRESHOLD = 1
         private const val SUBSCRIPTION_CIRCUIT_BREAKER_WINDOW_MS = 10 * 60 * 1000L
+        private const val SUBSCRIPTION_RESPONSE_MAX_BYTES = 1024 * 1024L
         private const val CONFIG_CACHE_EXPIRY_MS = 30 * 60 * 1000L
         private const val CONFIG_CACHE_CLEANUP_INTERVAL_MINUTES = 30L
         private val REGEX_TRAFFIC = Regex("([\\d.]+)\\s*([KMGTPE]?)B?")
@@ -128,10 +134,11 @@ class ConfigRepository(private val context: Context) {
             RegexOption.IGNORE_CASE
         )
         private val REGEX_RULE_SET_ERROR_TEXT = Regex(
-            "^(error|forbidden|not found|404|403|500|access denied|" +
-                "invalid request)\\b",
+            "^(error|forbidden|not found|404|403|401|429|500|access denied|" +
+                "invalid request|too many requests|rate limit|rate limited)\\b",
             RegexOption.IGNORE_CASE
         )
+        private const val RULE_SET_BINARY_MAGIC = "SRS"
         private const val RULE_SET_MIN_SIZE_BYTES = 10L
         private const val RULE_SET_SNIFF_BYTES = 512
         private const val RULE_SET_TEXT_PARSE_LIMIT_BYTES = 256 * 1024L
@@ -182,6 +189,94 @@ class ConfigRepository(private val context: Context) {
 
         internal fun applySelectorSafeOutboundsForTest(outbounds: List<Outbound>): List<Outbound> {
             return sanitizeSelectorSafeOutbounds(outbounds)
+        }
+
+        internal fun buildConfigWithOutboundsPreservingProfileSettings(
+            existingConfig: SingBoxConfig?,
+            outbounds: List<Outbound>
+        ): SingBoxConfig {
+            return existingConfig?.copy(outbounds = outbounds) ?: SingBoxConfig(outbounds = outbounds)
+        }
+
+        internal fun writeTextFileAtomicallyForTest(targetFile: File, content: String) {
+            writeTextFileAtomically(targetFile, content)
+        }
+
+        internal fun subscriptionResponseMaxBytesForTest(): Long {
+            return SUBSCRIPTION_RESPONSE_MAX_BYTES
+        }
+
+        internal fun isSubscriptionContentLengthTooLargeForTest(contentLength: Long): Boolean {
+            return isSubscriptionContentLengthTooLarge(contentLength)
+        }
+
+        private fun isSubscriptionContentLengthTooLarge(contentLength: Long): Boolean {
+            return contentLength > SUBSCRIPTION_RESPONSE_MAX_BYTES
+        }
+
+        private fun readSubscriptionResponseBody(responseBody: ResponseBody): String {
+            val contentLength = responseBody.contentLength()
+            require(!isSubscriptionContentLengthTooLarge(contentLength)) {
+                "Subscription response body is too large: $contentLength bytes"
+            }
+
+            val charset = responseBody.contentType()?.charset(Charsets.UTF_8) ?: Charsets.UTF_8
+            val output = ByteArrayOutputStream(
+                contentLength.takeIf { it in 0..SUBSCRIPTION_RESPONSE_MAX_BYTES }?.toInt() ?: 8192
+            )
+            var totalBytes = 0L
+            val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+
+            responseBody.byteStream().use { input ->
+                while (true) {
+                    val read = input.read(buffer)
+                    if (read == -1) break
+                    totalBytes += read
+                    require(totalBytes <= SUBSCRIPTION_RESPONSE_MAX_BYTES) {
+                        "Subscription response body exceeds $SUBSCRIPTION_RESPONSE_MAX_BYTES bytes"
+                    }
+                    output.write(buffer, 0, read)
+                }
+            }
+
+            return output.toString(charset.name())
+        }
+
+        internal fun writeTextFileAtomically(targetFile: File, content: String) {
+            targetFile.parentFile?.mkdirs()
+            val tempFile = createSiblingTempFile(targetFile)
+
+            try {
+                tempFile.writeText(content, Charsets.UTF_8)
+                moveTempFileIntoPlace(tempFile, targetFile)
+            } finally {
+                if (tempFile.isFile && !tempFile.delete()) {
+                    Log.w(TAG, "Failed to delete config temp file: ${tempFile.absolutePath}")
+                }
+            }
+        }
+
+        private fun createSiblingTempFile(targetFile: File): File {
+            targetFile.parentFile?.mkdirs()
+            val prefix = "${targetFile.name.take(64)}.".takeIf { it.length >= 3 } ?: "tmp."
+            return File.createTempFile(prefix, ".tmp", targetFile.parentFile)
+        }
+
+        private fun moveTempFileIntoPlace(tempFile: File, targetFile: File) {
+            try {
+                Files.move(
+                    tempFile.toPath(),
+                    targetFile.toPath(),
+                    StandardCopyOption.REPLACE_EXISTING,
+                    StandardCopyOption.ATOMIC_MOVE
+                )
+            } catch (_: IOException) {
+                Files.move(
+                    tempFile.toPath(),
+                    targetFile.toPath(),
+                    StandardCopyOption.REPLACE_EXISTING
+                )
+            }
         }
 
         private fun sanitizeSelectorSafeOutbounds(outbounds: List<Outbound>): List<Outbound> {
@@ -552,7 +647,7 @@ class ConfigRepository(private val context: Context) {
 
         private fun detectRuleSetRuleTypeFromSample(sample: ByteArray): RuleSetRuleType {
             if (sample.isEmpty()) return RuleSetRuleType.UNKNOWN
-            if (!isLikelyTextRuleSetFromBytes(sample)) return RuleSetRuleType.IP
+            if (!isLikelyTextRuleSetFromBytes(sample)) return RuleSetRuleType.UNKNOWN
             return detectRuleTypeFromTextContent(sample.toString(Charsets.UTF_8))
         }
 
@@ -802,7 +897,7 @@ class ConfigRepository(private val context: Context) {
 
         private fun buildQuicBlockRuleStatic(settings: AppSettings): List<RouteRule> {
             return if (settings.blockQuic) {
-                listOf(RouteRule(protocolRaw = listOf("quic"), action = "reject", outbound = "direct"))
+                listOf(RouteRule(protocolRaw = listOf("quic"), action = "reject"))
             } else {
                 emptyList()
             }
@@ -1241,7 +1336,7 @@ class ConfigRepository(private val context: Context) {
         internal fun buildQuicBlockRuleForTest(settings: AppSettings): List<RouteRule> {
             return if (settings.blockQuic) {
                 listOf(
-                    RouteRule(protocolRaw = listOf("quic"), action = "reject", outbound = "direct")
+                    RouteRule(protocolRaw = listOf("quic"), action = "reject")
                 )
             } else {
                 emptyList()
@@ -1535,14 +1630,16 @@ class ConfigRepository(private val context: Context) {
 
         internal fun shouldApplyDnsPreResolveToDomainForTest(
             domain: String,
-            dnsOverride: DnsConfig?
+            dnsOverride: DnsConfig?,
+            outboundTag: String? = null
         ): Boolean {
-            return shouldApplyDnsPreResolveToDomain(domain, dnsOverride)
+            return shouldApplyDnsPreResolveToDomain(domain, dnsOverride, outboundTag)
         }
 
         private fun shouldApplyDnsPreResolveToDomain(
             domain: String,
-            dnsOverride: DnsConfig?
+            dnsOverride: DnsConfig?,
+            outboundTag: String? = null
         ): Boolean {
             val normalizedDomain = domain.trim()
             if (normalizedDomain.isBlank() || isIpAddressValue(normalizedDomain) || dnsOverride == null) {
@@ -1550,7 +1647,13 @@ class ConfigRepository(private val context: Context) {
             }
             return dnsOverride.rules.orEmpty()
                 .map { normalizeDnsOverrideRule(it) }
-                .none { rule -> buildDomainResolverForMatchedDnsOverrideRule(normalizedDomain, rule) != null }
+                .none { rule ->
+                    buildDomainResolverForMatchedDnsOverrideRule(
+                        domain = normalizedDomain,
+                        outboundTag = outboundTag,
+                        rule = rule
+                    ) != null
+                }
         }
 
         private fun applyDnsOverrideDomainResolvers(
@@ -1566,7 +1669,11 @@ class ConfigRepository(private val context: Context) {
                     return@map outbound
                 }
                 val resolver = rules.firstNotNullOfOrNull { rule ->
-                    buildDomainResolverForMatchedDnsOverrideRule(server, rule)
+                    buildDomainResolverForMatchedDnsOverrideRule(
+                        domain = server,
+                        outboundTag = outbound.tag,
+                        rule = rule
+                    )
                 } ?: return@map outbound
                 outbound.copy(domainResolver = resolver)
             }
@@ -1574,13 +1681,14 @@ class ConfigRepository(private val context: Context) {
 
         private fun buildDomainResolverForMatchedDnsOverrideRule(
             domain: String,
+            outboundTag: String?,
             rule: DnsRule
         ): DomainResolveConfig? {
             val server = rule.server?.trim()?.takeIf { it.isNotBlank() }
             val matches = server != null &&
                 rule.action.equals("route", ignoreCase = true) &&
                 dnsRuleAppliesToAddressQuery(rule) &&
-                dnsRuleMatchesDomain(domain, rule)
+                dnsRuleCanResolveOutboundDomain(domain, outboundTag, rule)
             return if (matches) {
                 DomainResolveConfig(
                     server = server,
@@ -1592,6 +1700,50 @@ class ConfigRepository(private val context: Context) {
             } else {
                 null
             }
+        }
+
+        private fun dnsRuleCanResolveOutboundDomain(
+            domain: String,
+            outboundTag: String?,
+            rule: DnsRule
+        ): Boolean {
+            if (!dnsRuleMatchesOutbound(outboundTag, rule)) {
+                return false
+            }
+            if (dnsRuleHasDomainMatcher(rule)) {
+                return dnsRuleMatchesDomain(domain, rule)
+            }
+            return dnsRuleHasNoUnsupportedOutboundDomainMatcher(rule)
+        }
+
+        private fun dnsRuleMatchesOutbound(outboundTag: String?, rule: DnsRule): Boolean {
+            val outbounds = dnsRuleOutboundValues(rule)
+            if (outbounds.isEmpty()) return true
+            if (outbounds.any { it.equals("any", ignoreCase = true) }) return true
+            return outboundTag?.let { tag -> outbounds.any { it == tag } } == true
+        }
+
+        private fun dnsRuleOutboundValues(rule: DnsRule): List<String> {
+            return when (val raw = rule.outboundRaw) {
+                is String -> listOf(raw)
+                is List<*> -> raw.mapNotNull { it?.toString() }
+                else -> emptyList()
+            }.map { it.trim() }.filter { it.isNotBlank() }
+        }
+
+        private fun dnsRuleHasDomainMatcher(rule: DnsRule): Boolean {
+            return rule.domain.orEmpty().any { it.isNotBlank() } ||
+                rule.domainSuffix.orEmpty().any { it.isNotBlank() } ||
+                rule.domainKeyword.orEmpty().any { it.isNotBlank() } ||
+                rule.domainRegex.orEmpty().any { it.isNotBlank() }
+        }
+
+        private fun dnsRuleHasNoUnsupportedOutboundDomainMatcher(rule: DnsRule): Boolean {
+            return rule.geosite.orEmpty().none { it.isNotBlank() } &&
+                rule.ruleSet.orEmpty().none { it.isNotBlank() } &&
+                rule.inbound.orEmpty().none { it.isNotBlank() } &&
+                rule.packageName.orEmpty().none { it.isNotBlank() } &&
+                rule.userId.orEmpty().isEmpty()
         }
 
         private fun dnsRuleAppliesToAddressQuery(rule: DnsRule): Boolean {
@@ -2050,6 +2202,7 @@ class ConfigRepository(private val context: Context) {
     private val inFlightLatencyTests = ConcurrentHashMap<String, Deferred<Long>>()
     private val savedNodeLatencies = ConcurrentHashMap<String, Long>()
     @Volatile private var saveProfilesJob: kotlinx.coroutines.Job? = null
+    @Volatile private var initialProfilesLoadJob: kotlinx.coroutines.Job? = null
     private val saveDebounceMs = 300L
     private val saveProfilesMutex = Mutex()
     private val profileUpdateRunCounter = AtomicLong(0L)
@@ -2093,14 +2246,20 @@ class ConfigRepository(private val context: Context) {
         get() = File(context.filesDir, "profiles.json")
 
     init {
-        loadProfileNodeMemory()
-        loadSavedProfiles()
         startConfigCacheCleanup()
+        initialProfilesLoadJob = scope.launch {
+            loadProfileNodeMemory()
+            loadSavedProfiles()
+        }
         scope.launch {
             settingsRepository.settings.collect { settings ->
                 cachedSettings = settings
             }
         }
+    }
+
+    private suspend fun awaitInitialProfilesLoaded() {
+        initialProfilesLoadJob?.join()
     }
 
     private fun loadProfileNodeMemory() {
@@ -2242,13 +2401,13 @@ class ConfigRepository(private val context: Context) {
                     node.latencyMs?.let { latencies[node.id] = it }
                 }
                 try {
-                    activeStateDao.saveSync(ActiveStateEntity(
+                    activeStateDao.save(ActiveStateEntity(
                         id = 1,
                         activeProfileId = activeProfileId,
                         activeNodeId = activeNodeId
                     ))
                 } catch (e: Exception) {
-                    Log.e(TAG, "Failed to save active state synchronously", e)
+                    Log.e(TAG, "Failed to save active state", e)
                 }
 
                 val entities = profiles.mapIndexed { index, profile ->
@@ -2272,35 +2431,9 @@ class ConfigRepository(private val context: Context) {
 
     private fun writeConfigFileOrThrow(profileId: String, config: SingBoxConfig) {
         val configFile = File(configDir, "$profileId.json")
-        val tmpFile = File(configDir, "$profileId.json.tmp")
-        val backupFile = File(configDir, "$profileId.json.bak")
-        var backupCreated = false
         try {
-            configDir.mkdirs()
-            tmpFile.writeText(gson.toJson(config))
-            if (configFile.exists()) {
-                configFile.copyTo(backupFile, overwrite = true)
-                backupCreated = true
-            }
-            if (!tmpFile.renameTo(configFile)) {
-                tmpFile.copyTo(configFile, overwrite = true)
-                tmpFile.delete()
-            }
-            if (backupCreated && backupFile.exists() && !backupFile.delete()) {
-                Log.w(TAG, "Failed to delete config backup: ${backupFile.absolutePath}")
-            }
+            writeTextFileAtomically(configFile, gson.toJson(config))
         } catch (e: Exception) {
-            runCatching {
-                if (backupCreated && backupFile.exists()) {
-                    backupFile.copyTo(configFile, overwrite = true)
-                    backupFile.delete()
-                }
-                if (tmpFile.exists()) {
-                    tmpFile.delete()
-                }
-            }.onFailure { restoreError ->
-                Log.e(TAG, "Failed to restore config backup for profile: $profileId", restoreError)
-            }
             Log.e(TAG, "Failed to write config file for profile: $profileId", e)
             throw IllegalStateException("Failed to write config for profile $profileId", e)
         }
@@ -2622,15 +2755,17 @@ class ConfigRepository(private val context: Context) {
     }
 
     fun reloadProfiles() {
-        loadSavedProfiles()
+        scope.launch {
+            loadSavedProfiles()
+        }
     }
 
-    private fun loadSavedProfiles() {
+    private suspend fun loadSavedProfiles() {
         try {
             val startTime = System.currentTimeMillis()
-            val profileEntities = profileDao.getAllSync()
-            val activeState = activeStateDao.getSync()
-            val latencyEntities = nodeLatencyDao.getAllSync()
+            val profileEntities = profileDao.getAll()
+            val activeState = activeStateDao.get()
+            val latencyEntities = nodeLatencyDao.getAll()
 
             if (profileEntities.isNotEmpty()) {
                 val profiles = profileEntities.map { it.toUiModel().copy(updateStatus = UpdateStatus.Idle) }
@@ -2663,9 +2798,9 @@ class ConfigRepository(private val context: Context) {
                 val entities = profiles.mapIndexed { index, profile ->
                     ProfileEntity.fromUiModel(profile, sortOrder = index)
                 }
-                profileDao.insertAllSync(entities)
+                profileDao.insertAll(entities)
                 if (savedData.activeProfileId != null || savedData.activeNodeId != null) {
-                    activeStateDao.saveSync(ActiveStateEntity(
+                    activeStateDao.save(ActiveStateEntity(
                         id = 1,
                         activeProfileId = savedData.activeProfileId,
                         activeNodeId = savedData.activeNodeId
@@ -3089,7 +3224,7 @@ class ConfigRepository(private val context: Context) {
                 return SubscriptionAttemptResult(shouldStopFallback = true, terminalError = error)
             }
 
-            val responseBody = response.body?.string()
+            val responseBody = response.body?.let { readSubscriptionResponseBody(it) }
             if (responseBody.isNullOrBlank()) {
                 logSubscriptionAttempt(
                     level = Log.WARN,
@@ -3593,48 +3728,52 @@ class ConfigRepository(private val context: Context) {
         config: SingBoxConfig,
         profileId: String,
         onProgress: ((String) -> Unit)? = null
-    ): List<NodeUi> = withContext(Dispatchers.Default) {
-        val outbounds = config.outbounds ?: return@withContext emptyList()
-        val trafficRepo = TrafficRepository.getInstance(context)
-        val groupOutbounds = outbounds.filter {
-            it.type == "selector" || it.type == "urltest"
+    ): List<NodeUi> {
+        val outbounds = config.outbounds ?: return emptyList()
+        val trafficRepo = withContext(Dispatchers.IO) {
+            TrafficRepository.getInstance(context)
         }
-        val nodeToGroup = mutableMapOf<String, String>()
-        groupOutbounds.forEach { group ->
-            group.outbounds?.forEach { nodeName ->
-                nodeToGroup[nodeName] = group.tag
+        return withContext(Dispatchers.Default) {
+            val groupOutbounds = outbounds.filter {
+                it.type == "selector" || it.type == "urltest"
             }
-        }
-        val proxyTypes = setOf(
-            "shadowsocks", "vmess", "vless", "trojan",
-            "hysteria", "hysteria2", "tuic", "wireguard",
-            "shadowtls", "ssh", "anytls", "naive", "http", "socks"
-        )
-        val detourTags = outbounds.mapNotNull { it.detour }.toSet()
-
-        val validOutbounds = outbounds.filter {
-            it.type in proxyTypes && it.tag !in detourTags
-        }
-        if (validOutbounds.isEmpty()) return@withContext emptyList()
-
-        val total = validOutbounds.size
-        val completed = AtomicInteger(0)
-        val semaphore = Semaphore(PARALLEL_CONCURRENCY)
-
-        val deferredNodes = validOutbounds.map { outbound ->
-            async {
-                semaphore.withPermit {
-                    val node = createNodeUi(outbound, profileId, nodeToGroup, trafficRepo)
-                    val done = completed.incrementAndGet()
-                    if (done % 100 == 0 || done == total) {
-                        onProgress?.invoke(context.getString(R.string.profiles_extracting_nodes, done, total))
-                    }
-                    node
+            val nodeToGroup = mutableMapOf<String, String>()
+            groupOutbounds.forEach { group ->
+                group.outbounds?.forEach { nodeName ->
+                    nodeToGroup[nodeName] = group.tag
                 }
             }
-        }
+            val proxyTypes = setOf(
+                "shadowsocks", "vmess", "vless", "trojan",
+                "hysteria", "hysteria2", "tuic", "wireguard",
+                "shadowtls", "ssh", "anytls", "naive", "http", "socks"
+            )
+            val detourTags = outbounds.mapNotNull { it.detour }.toSet()
 
-        deferredNodes.awaitAll().filterNotNull()
+            val validOutbounds = outbounds.filter {
+                it.type in proxyTypes && it.tag !in detourTags
+            }
+            if (validOutbounds.isEmpty()) return@withContext emptyList()
+
+            val total = validOutbounds.size
+            val completed = AtomicInteger(0)
+            val semaphore = Semaphore(PARALLEL_CONCURRENCY)
+
+            val deferredNodes = validOutbounds.map { outbound ->
+                async {
+                    semaphore.withPermit {
+                        val node = createNodeUi(outbound, profileId, nodeToGroup, trafficRepo)
+                        val done = completed.incrementAndGet()
+                        if (done % 100 == 0 || done == total) {
+                            onProgress?.invoke(context.getString(R.string.profiles_extracting_nodes, done, total))
+                        }
+                        node
+                    }
+                }
+            }
+
+            deferredNodes.awaitAll().filterNotNull()
+        }
     }
 
     private fun extractNodesFromConfigSync(
@@ -3973,7 +4112,7 @@ class ConfigRepository(private val context: Context) {
         return true
     }
 
-    fun deleteProfile(profileId: String) {
+    suspend fun deleteProfile(profileId: String) = withContext(Dispatchers.IO) {
         com.kunk.singbox.service.SubscriptionAutoUpdateWorker.cancel(context, profileId)
 
         _profiles.update { list -> list.filter { it.id != profileId } }
@@ -3985,12 +4124,10 @@ class ConfigRepository(private val context: Context) {
         if (configFile.exists() && !configFile.delete()) {
             Log.w(TAG, "Failed to delete profile config file: ${configFile.absolutePath}")
         }
-        scope.launch {
-            try {
-                profileDao.deleteById(profileId)
-            } catch (e: Exception) {
-                Log.e(TAG, "Failed to delete profile from Room", e)
-            }
+        try {
+            profileDao.deleteById(profileId)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to delete profile from Room", e)
         }
 
         if (_activeProfileId.value == profileId) {
@@ -4006,14 +4143,14 @@ class ConfigRepository(private val context: Context) {
         saveProfiles()
     }
 
-    suspend fun importProfileDirectly(profile: ProfileUi, config: SingBoxConfig) {
+    suspend fun importProfileDirectly(profile: ProfileUi, config: SingBoxConfig) = withContext(Dispatchers.IO) {
         val deduplicatedConfig = deduplicateTags(config)
         val sortOrder = (profileDao.getMaxSortOrder() ?: -1) + 1
         val entity = ProfileEntity.fromUiModel(profile, sortOrder = sortOrder)
+        val nodes = extractNodesFromConfigSync(deduplicatedConfig, profile.id)
 
         profileDao.insert(entity)
         cacheConfig(profile.id, deduplicatedConfig)
-        val nodes = extractNodesFromConfigSync(deduplicatedConfig, profile.id)
         profileNodes[profile.id] = nodes
         _profiles.update { list ->
             val filtered = list.filter { it.id != profile.id }
@@ -4026,12 +4163,32 @@ class ConfigRepository(private val context: Context) {
     }
 
     fun toggleProfileEnabled(profileId: String) {
+        var updatedProfile: ProfileUi? = null
         _profiles.update { list ->
             list.map {
-                if (it.id == profileId) it.copy(enabled = !it.enabled) else it
+                if (it.id == profileId) {
+                    it.copy(enabled = !it.enabled).also { profile ->
+                        updatedProfile = profile
+                    }
+                } else {
+                    it
+                }
             }
         }
         saveProfiles()
+        updatedProfile?.let { profile ->
+            if (profile.type == ProfileType.Subscription) {
+                if (profile.enabled && profile.autoUpdateInterval > 0) {
+                    com.kunk.singbox.service.SubscriptionAutoUpdateWorker.schedule(
+                        context,
+                        profile.id,
+                        profile.autoUpdateInterval
+                    )
+                } else {
+                    com.kunk.singbox.service.SubscriptionAutoUpdateWorker.cancel(context, profile.id)
+                }
+            }
+        }
     }
 
     fun reorderProfiles(newProfiles: List<ProfileUi>) {
@@ -4394,7 +4551,7 @@ class ConfigRepository(private val context: Context) {
             previousConfigText?.let { oldText ->
                 runCatching {
                     val oldConfig = gson.fromJson(oldText, SingBoxConfig::class.java)
-                    File(configDir, "${profile.id}.json").writeText(oldText)
+                    writeTextFileAtomically(File(configDir, "${profile.id}.json"), oldText)
                     cacheConfig(profile.id, oldConfig)
                     profileNodes[profile.id] = extractNodesFromConfigSync(oldConfig, profile.id)
                     updateAllNodesAndGroups()
@@ -4438,13 +4595,14 @@ class ConfigRepository(private val context: Context) {
 
     suspend fun generateConfigFile(): ConfigGenerationResult? = withContext(Dispatchers.IO) {
         try {
+            awaitInitialProfilesLoaded()
             val activeId = _activeProfileId.value
-                ?: activeStateDao.getSync()?.activeProfileId
+                ?: activeStateDao.get()?.activeProfileId
                 ?: return@withContext null
             val activeProfile = _profiles.value.find { it.id == activeId }
             val config = loadConfigWithLegacyEchRepair(activeProfile, activeId) ?: return@withContext null
             val activeNodeId = _activeNodeId.value
-                ?: activeStateDao.getSync()?.activeNodeId
+                ?: activeStateDao.get()?.activeNodeId
 
             val allNodesSnapshot = _allNodes.value.takeIf { it.isNotEmpty() } ?: loadAllNodesSnapshot()
             val activeNode = _nodes.value.find { it.id == activeNodeId }
@@ -4519,7 +4677,7 @@ class ConfigRepository(private val context: Context) {
                 }
             }
             val configFile = File(context.filesDir, "running_config.json")
-            configFile.writeText(gson.toJson(stripInternalMetadata(runConfig)))
+            writeTextFileAtomically(configFile, gson.toJson(stripInternalMetadata(runConfig)))
 
             ConfigGenerationResult(configFile.absolutePath, resolvedTag, allTags)
         } catch (e: Exception) {
@@ -4609,27 +4767,27 @@ class ConfigRepository(private val context: Context) {
         }
     }
 
-    private fun isValidRuleSetFile(file: File, tag: String): Boolean {
+    private fun detectValidRuleSetFileFormat(file: File, tag: String): String? {
         if (!file.exists() || file.length() == 0L) {
             Log.w(TAG, "Rule set file not found or empty: $tag (${file.absolutePath})")
-            return false
+            return null
         }
 
         return try {
             val sample = readRuleSetSample(file)
             if (sample.isEmpty()) {
                 Log.w(TAG, "Rule set file header is empty, ignoring: $tag")
-                return false
+                return null
             }
 
             if (!isLikelyTextRuleSet(sample)) {
-                validateBinaryRuleSet(file, tag)
+                if (validateBinaryRuleSet(file, tag)) "binary" else null
             } else {
-                validateTextRuleSet(file, tag, readRuleSetInspectionText(file, sample))
+                if (validateTextRuleSet(file, tag, readRuleSetInspectionText(file, sample))) "source" else null
             }
         } catch (e: Exception) {
             Log.w(TAG, "Failed to validate rule set file: $tag", e)
-            false
+            null
         }
     }
 
@@ -4659,11 +4817,19 @@ class ConfigRepository(private val context: Context) {
     }
 
     private fun validateBinaryRuleSet(file: File, tag: String): Boolean {
-        if (file.length() >= RULE_SET_MIN_SIZE_BYTES) {
+        val sample = readRuleSetSample(file)
+        if (file.length() >= RULE_SET_MIN_SIZE_BYTES && hasRuleSetBinaryMagic(sample)) {
             return true
         }
-        Log.w(TAG, "Rule set binary file too small, ignoring: $tag (${file.length()} bytes)")
+        Log.w(TAG, "Rule set binary file is not a valid .srs file, ignoring: $tag (${file.length()} bytes)")
         return false
+    }
+
+    private fun hasRuleSetBinaryMagic(sample: ByteArray): Boolean {
+        if (sample.size < RULE_SET_BINARY_MAGIC.length) return false
+        return sample[0] == 'S'.code.toByte() &&
+            sample[1] == 'R'.code.toByte() &&
+            sample[2] == 'S'.code.toByte()
     }
 
     private fun validateTextRuleSet(file: File, tag: String, inspectionText: String): Boolean {
@@ -4684,11 +4850,11 @@ class ConfigRepository(private val context: Context) {
             }
 
             validTextRuleSet -> true
-            else -> shouldAcceptRuleSetTextByFallback(file, tag, trimmed)
+            else -> rejectUnrecognizedRuleSetText(file, tag, trimmed)
         }
     }
 
-    private fun shouldAcceptRuleSetTextByFallback(file: File, tag: String, trimmed: String): Boolean {
+    private fun rejectUnrecognizedRuleSetText(file: File, tag: String, trimmed: String): Boolean {
         if (file.length() < RULE_SET_MIN_SIZE_BYTES) {
             Log.w(TAG, "Rule set text file too small, ignoring: $tag (${file.length()} bytes)")
             return false
@@ -4698,8 +4864,8 @@ class ConfigRepository(private val context: Context) {
             return false
         }
 
-        Log.w(TAG, "Rule set file content not recognized, using size fallback: $tag (${file.length()} bytes)")
-        return true
+        Log.w(TAG, "Rule set file content not recognized, ignoring: $tag (${file.length()} bytes)")
+        return false
     }
 
     private fun isValidRuleSetJson(content: String): Boolean {
@@ -4737,30 +4903,27 @@ class ConfigRepository(private val context: Context) {
     private fun buildCustomRuleSets(settings: AppSettings): List<RuleSetConfig> {
         val ruleSetRepo = RuleSetRepository.getInstance(context)
 
-        val rules = settings.ruleSets.map { ruleSet ->
+        val rules = settings.ruleSets.filter { it.enabled }.map { ruleSet ->
             if (ruleSet.type == RuleSetType.REMOTE) {
                 val localPath = ruleSetRepo.getRuleSetPath(ruleSet.tag)
                 val file = File(localPath)
-                if (isValidRuleSetFile(file, ruleSet.tag)) {
+                val detectedFormat = detectValidRuleSetFileFormat(file, ruleSet.tag)
+                if (detectedFormat != null) {
                     RuleSetConfig(
                         tag = ruleSet.tag,
                         type = "local",
-                        format = ruleSet.format,
+                        format = detectedFormat,
                         path = localPath
                     )
-                } else {
-                    if (file.exists() && !file.delete()) {
-                        Log.w(TAG, "Failed to delete invalid rule set file: ${ruleSet.tag} ($localPath)")
-                    }
-                    null
-                }
+                } else null
             } else {
                 val file = File(ruleSet.path)
-                if (isValidRuleSetFile(file, ruleSet.tag)) {
+                val detectedFormat = detectValidRuleSetFileFormat(file, ruleSet.tag)
+                if (detectedFormat != null) {
                     RuleSetConfig(
                         tag = ruleSet.tag,
                         type = "local",
-                        format = ruleSet.format,
+                        format = detectedFormat,
                         path = ruleSet.path
                     )
                 } else {
@@ -5511,7 +5674,7 @@ class ConfigRepository(private val context: Context) {
             var processed = buildOutboundForRuntime(outbound) ?: return@mapNotNull null
             if (dnsPreResolve && profileId != null) {
                 val server = processed.server?.trim().orEmpty()
-                if (shouldApplyDnsPreResolveToDomain(server, dnsOverrideConfig)) {
+                if (shouldApplyDnsPreResolveToDomain(server, dnsOverrideConfig, processed.tag)) {
                     processed = applyDnsResolveToOutbound(profileId, processed)
                 } else {
                     Log.d(TAG, "Skip DNS pre-resolve for DNS override matched node domain: $server")
@@ -5783,7 +5946,7 @@ class ConfigRepository(private val context: Context) {
     private fun buildQuicBlockRule(settings: AppSettings): List<RouteRule> {
         return if (settings.blockQuic) {
             listOf(
-                RouteRule(protocolRaw = listOf("quic"), action = "reject", outbound = "direct")
+                RouteRule(protocolRaw = listOf("quic"), action = "reject")
             )
         } else {
             emptyList()
@@ -5849,6 +6012,8 @@ class ConfigRepository(private val context: Context) {
             if (rule.outbound == "block") {
                 // sing-box 1.13.0+: "block" outbound removed, use "reject" action
                 rule.copy(outbound = null, action = "reject")
+            } else if (rule.action == "reject" && !rule.outbound.isNullOrBlank()) {
+                rule.copy(outbound = null)
             } else if (!rule.outbound.isNullOrBlank() && rule.action.isNullOrBlank()) {
                 rule.copy(action = "route")
             } else {
@@ -5928,23 +6093,70 @@ class ConfigRepository(private val context: Context) {
         )
     }
 
-    fun getActiveConfig(): SingBoxConfig? {
-        val id = _activeProfileId.value ?: return null
-        return loadConfig(id)
+    suspend fun getActiveConfig(): SingBoxConfig? = withContext(Dispatchers.IO) {
+        val id = _activeProfileId.value ?: return@withContext null
+        loadConfig(id)
     }
 
     fun getConfig(profileId: String): SingBoxConfig? {
         return loadConfig(profileId)
     }
 
+    suspend fun readProfileConfigContent(profileId: String): Result<String> = withContext(Dispatchers.IO) {
+        runCatching {
+            require(_profiles.value.any { it.id == profileId }) { "Profile not found" }
+
+            val configFile = File(configDir, "$profileId.json")
+            if (configFile.exists()) {
+                return@runCatching configFile.readText(Charsets.UTF_8)
+            }
+
+            val config = loadConfig(profileId) ?: throw IllegalStateException("Config not found")
+            gson.toJson(config)
+        }
+    }
+
+    suspend fun updateProfileConfigContent(profileId: String, content: String): Result<ProfileUi> =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                require(content.isNotBlank()) { context.getString(R.string.profiles_content_empty) }
+
+                val existingProfile = _profiles.value.find { it.id == profileId }
+                    ?: throw IllegalArgumentException("Profile not found")
+                val parsedConfig = gson.fromJson(content, SingBoxConfig::class.java)
+                    ?: throw IllegalArgumentException(context.getString(R.string.profiles_parse_failed))
+                val deduplicatedConfig = deduplicateTags(parsedConfig)
+                val nodes = extractNodesFromConfig(deduplicatedConfig, profileId, {})
+                require(nodes.isNotEmpty()) { context.getString(R.string.profiles_parse_failed) }
+
+                writeConfigFileOrThrow(profileId, deduplicatedConfig)
+                cacheConfig(profileId, deduplicatedConfig)
+                profileNodes[profileId] = nodes
+                updateAllNodesAndGroups()
+                if (_activeProfileId.value == profileId) {
+                    applyActiveProfileNodes(profileId, nodes)
+                }
+
+                val updatedProfile = existingProfile.copy(lastUpdated = System.currentTimeMillis())
+                _profiles.update { list ->
+                    list.map { profile ->
+                        if (profile.id == profileId) updatedProfile else profile
+                    }
+                }
+                saveProfiles()
+
+                updatedProfile
+            }
+        }
+
     private fun resolveDnsStrategy(strategy: DnsStrategy, mode: IpVersionMode): String {
         return mode.resolveDnsStrategy(strategy)
     }
 
-    fun getOutboundByNodeId(nodeId: String): Outbound? {
-        val node = _nodes.value.find { it.id == nodeId } ?: return null
-        val config = loadConfig(node.sourceProfileId) ?: return null
-        return config.outbounds?.find { it.tag == node.name }
+    suspend fun getOutboundByNodeId(nodeId: String): Outbound? = withContext(Dispatchers.IO) {
+        val node = _nodes.value.find { it.id == nodeId } ?: return@withContext null
+        val config = loadConfig(node.sourceProfileId) ?: return@withContext null
+        config.outbounds?.find { it.tag == node.name }
     }
 
     fun getNodeById(nodeId: String): NodeUi? {
@@ -6029,7 +6241,9 @@ class ConfigRepository(private val context: Context) {
             if (newOutbounds.none { it.tag == "direct" }) {
                 newOutbounds.add(Outbound(type = "direct", tag = "direct"))
             }
-            val newConfig = deduplicateTags(SingBoxConfig(outbounds = newOutbounds))
+            val newConfig = deduplicateTags(
+                buildConfigWithOutboundsPreservingProfileSettings(existingConfig, newOutbounds)
+            )
 
             writeConfigFileOrThrow(profileId, newConfig)
 
@@ -6096,37 +6310,33 @@ class ConfigRepository(private val context: Context) {
         return config.copy(outbounds = filteredOutbounds)
     }
 
-    fun deleteNode(nodeId: String) {
-        val node = getNodeById(nodeId) ?: return
+    suspend fun deleteNode(nodeId: String) = withContext(Dispatchers.IO) {
+        val node = getNodeById(nodeId) ?: return@withContext
         val profileId = node.sourceProfileId
-        val config = loadConfig(profileId) ?: return
+        val config = loadConfig(profileId) ?: return@withContext
         val newConfig = removeOutboundFromConfig(config, node.name)
         cacheConfig(profileId, newConfig)
         writeConfigFileOrThrow(profileId, newConfig)
 
         val immediateNodes = (profileNodes[profileId] ?: _nodes.value)
             .filter { it.id != nodeId && it.name != node.name }
-        profileNodes[profileId] = immediateNodes
-        updateAllNodesAndGroups()
-        if (_activeProfileId.value == profileId) {
-            _nodes.value = immediateNodes
-            if (_activeNodeId.value == nodeId) {
-                _activeNodeId.value = immediateNodes.firstOrNull()?.id
-            }
-        }
+        applyDeletedNodeSnapshot(profileId, nodeId, immediateNodes)
 
         scope.launch {
             val newNodes = extractNodesFromConfig(newConfig, profileId)
-            profileNodes[profileId] = newNodes
-            updateAllNodesAndGroups()
-            if (_activeProfileId.value == profileId) {
-                _nodes.value = newNodes
-                if (_activeNodeId.value == nodeId) {
-                    _activeNodeId.value = newNodes.firstOrNull()?.id
-                }
-            }
-
+            applyDeletedNodeSnapshot(profileId, nodeId, newNodes)
             saveProfiles()
+        }
+    }
+
+    private fun applyDeletedNodeSnapshot(profileId: String, deletedNodeId: String, nodes: List<NodeUi>) {
+        profileNodes[profileId] = nodes
+        updateAllNodesAndGroups()
+        if (_activeProfileId.value != profileId) return
+
+        _nodes.value = nodes
+        if (_activeNodeId.value == deletedNodeId) {
+            _activeNodeId.value = nodes.firstOrNull()?.id
         }
     }
 
@@ -6191,7 +6401,9 @@ class ConfigRepository(private val context: Context) {
             if (newOutbounds.none { it.tag == "direct" }) {
                 newOutbounds.add(Outbound(type = "direct", tag = "direct"))
             }
-            val newConfig = deduplicateTags(SingBoxConfig(outbounds = newOutbounds))
+            val newConfig = deduplicateTags(
+                buildConfigWithOutboundsPreservingProfileSettings(existingConfig, newOutbounds)
+            )
 
             writeConfigFileOrThrow(profileId, newConfig)
 
@@ -6237,10 +6449,10 @@ class ConfigRepository(private val context: Context) {
         }
     }
 
-    fun renameNode(nodeId: String, newName: String) {
-        val node = _nodes.value.find { it.id == nodeId } ?: return
+    suspend fun renameNode(nodeId: String, newName: String) = withContext(Dispatchers.IO) {
+        val node = _nodes.value.find { it.id == nodeId } ?: return@withContext
         val profileId = node.sourceProfileId
-        val config = loadConfig(profileId) ?: return
+        val config = loadConfig(profileId) ?: return@withContext
         val newOutbounds = config.outbounds?.map {
             if (it.tag == node.name) it.copy(tag = newName) else it
         }
@@ -6249,37 +6461,18 @@ class ConfigRepository(private val context: Context) {
         cacheConfig(profileId, newConfig)
         writeConfigFileOrThrow(profileId, newConfig)
 
-        val oldNodes = profileNodes[profileId] ?: _nodes.value
-        val latencyById = oldNodes.associate { it.id to it.latencyMs }
-        val updatedNodeId = stableNodeId(profileId, newName)
-        val originalLatency = oldNodes.find { it.id == nodeId }?.latencyMs
-        scope.launch {
-            val newNodes = extractNodesFromConfig(newConfig, profileId)
-            val mergedNodes = newNodes.map { nodeItem ->
-                val storedLatency = latencyById[nodeItem.id]
-                    ?: if (nodeItem.id == updatedNodeId) originalLatency else null
-                if (storedLatency != null) nodeItem.copy(latencyMs = storedLatency) else nodeItem
-            }
-            profileNodes[profileId] = mergedNodes
-            updateAllNodesAndGroups()
-            if (_activeProfileId.value == profileId) {
-                _nodes.value = mergedNodes
-                if (_activeNodeId.value == nodeId) {
-                    val newNode = mergedNodes.find { it.name == newName }
-                    if (newNode != null) {
-                        _activeNodeId.value = newNode.id
-                    }
-                }
-            }
-
-            saveProfiles()
-        }
+        refreshNodesAfterNodeMutation(
+            profileId = profileId,
+            oldNodeId = nodeId,
+            newTag = newName,
+            newConfig = newConfig
+        )
     }
 
-    fun updateNode(nodeId: String, newOutbound: Outbound) {
-        val node = _nodes.value.find { it.id == nodeId } ?: return
+    suspend fun updateNode(nodeId: String, newOutbound: Outbound) = withContext(Dispatchers.IO) {
+        val node = _nodes.value.find { it.id == nodeId } ?: return@withContext
         val profileId = node.sourceProfileId
-        val config = loadConfig(profileId) ?: return
+        val config = loadConfig(profileId) ?: return@withContext
         val newOutbounds = config.outbounds?.map {
             if (it.tag == node.name) newOutbound else it
         }
@@ -6287,53 +6480,87 @@ class ConfigRepository(private val context: Context) {
         newConfig = deduplicateTags(newConfig)
         cacheConfig(profileId, newConfig)
         writeConfigFileOrThrow(profileId, newConfig)
+
+        refreshNodesAfterNodeMutation(
+            profileId = profileId,
+            oldNodeId = nodeId,
+            newTag = newOutbound.tag,
+            newConfig = newConfig
+        )
+    }
+
+    private fun refreshNodesAfterNodeMutation(
+        profileId: String,
+        oldNodeId: String,
+        newTag: String,
+        newConfig: SingBoxConfig
+    ) {
         val oldNodes = profileNodes[profileId] ?: _nodes.value
         val latencyById = oldNodes.associate { it.id to it.latencyMs }
-        val updatedNodeId = stableNodeId(profileId, newOutbound.tag)
-        val originalLatency = oldNodes.find { it.id == nodeId }?.latencyMs
-        val isActiveProfile = _activeProfileId.value == profileId
-        val isActiveNode = _activeNodeId.value == nodeId
-        val newTag = newOutbound.tag
+        val updatedNodeId = stableNodeId(profileId, newTag)
+        val originalLatency = oldNodes.find { it.id == oldNodeId }?.latencyMs
         scope.launch {
             val newNodes = extractNodesFromConfig(newConfig, profileId)
-            val mergedNodes = newNodes.map { nodeItem ->
-                val storedLatency = latencyById[nodeItem.id]
-                    ?: if (nodeItem.id == updatedNodeId) originalLatency else null
-                if (storedLatency != null) nodeItem.copy(latencyMs = storedLatency) else nodeItem
-            }
+            val mergedNodes = mergeMutatedNodeLatencies(
+                newNodes = newNodes,
+                latencyById = latencyById,
+                updatedNodeId = updatedNodeId,
+                originalLatency = originalLatency
+            )
             profileNodes[profileId] = mergedNodes
             updateAllNodesAndGroups()
-            if (isActiveProfile) {
-                _nodes.value = mergedNodes
-                if (isActiveNode) {
-                    val newNode = mergedNodes.find { it.name == newTag }
-                    if (newNode != null) {
-                        _activeNodeId.value = newNode.id
-                    }
-                }
-            }
-
+            applyMutatedActiveNode(profileId, oldNodeId, newTag, mergedNodes)
             saveProfiles()
         }
     }
 
-    fun exportNode(nodeId: String): String? {
+    private fun mergeMutatedNodeLatencies(
+        newNodes: List<NodeUi>,
+        latencyById: Map<String, Long?>,
+        updatedNodeId: String,
+        originalLatency: Long?
+    ): List<NodeUi> {
+        return newNodes.map { nodeItem ->
+            val storedLatency = latencyById[nodeItem.id]
+                ?: if (nodeItem.id == updatedNodeId) originalLatency else null
+            if (storedLatency != null) nodeItem.copy(latencyMs = storedLatency) else nodeItem
+        }
+    }
+
+    private fun applyMutatedActiveNode(
+        profileId: String,
+        oldNodeId: String,
+        newTag: String,
+        mergedNodes: List<NodeUi>
+    ) {
+        if (_activeProfileId.value != profileId) return
+
+        _nodes.value = mergedNodes
+        if (_activeNodeId.value != oldNodeId) return
+
+        val newNode = mergedNodes.find { it.name == newTag }
+        if (newNode != null) {
+            _activeNodeId.value = newNode.id
+        }
+    }
+
+    suspend fun exportNode(nodeId: String): String? = withContext(Dispatchers.IO) {
         val node = _nodes.value.find { it.id == nodeId } ?: run {
             Log.e(TAG, "exportNode: Node not found in UI list: $nodeId")
-            return null
+            return@withContext null
         }
 
         val config = loadConfig(node.sourceProfileId) ?: run {
             Log.e(TAG, "exportNode: Config not found for profile: ${node.sourceProfileId}")
-            return null
+            return@withContext null
         }
 
         val outbound = config.outbounds?.find { it.tag == node.name } ?: run {
             Log.e(TAG, "exportNode: Outbound not found in config with tag: ${node.name}")
-            return null
+            return@withContext null
         }
 
-        return NodeLinkExporter.export(outbound, gson)
+        NodeLinkExporter.export(outbound, gson)
     }
 
     private fun deduplicateTags(config: SingBoxConfig): SingBoxConfig {

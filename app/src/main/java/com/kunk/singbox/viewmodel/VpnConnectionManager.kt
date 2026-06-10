@@ -68,23 +68,26 @@ class VpnConnectionManager(
      *
      */
     suspend fun toggleConnection(): Boolean {
-        return when {
-            SingBoxRemote.isRunning.value || SingBoxRemote.isStarting.value -> {
-                stopVpn()
-                false
-            }
-            checkSystemVpn() -> {
-                callback?.onStatusMessage(
-                    context.getString(R.string.dashboard_system_vpn_running),
-                    3000
-                )
-                false
-            }
-            else -> {
-                startCore()
-                _vpnPermissionNeeded.value
-            }
+        if (SingBoxRemote.isRunning.value || SingBoxRemote.isStarting.value) {
+            stopVpn()
+            return false
         }
+
+        val settings = runCatching {
+            settingsRepository.settings.first()
+        }.getOrNull()
+        val tunEnabled = settings?.tunEnabled == true
+
+        if (tunEnabled && checkSystemVpn()) {
+            callback?.onStatusMessage(
+                context.getString(R.string.dashboard_system_vpn_running),
+                3000
+            )
+            return false
+        }
+
+        startCore()
+        return _vpnPermissionNeeded.value
     }
 
     /**
@@ -123,15 +126,26 @@ class VpnConnectionManager(
 
     private fun stopVpnInternal() {
         val mode = VpnStateStore.getMode()
-        val intent = when (mode) {
-            VpnStateStore.CoreMode.PROXY -> Intent(context, ProxyOnlyService::class.java).apply {
-                action = ProxyOnlyService.ACTION_STOP
+        when (mode) {
+            VpnStateStore.CoreMode.PROXY -> {
+                context.startService(Intent(context, ProxyOnlyService::class.java).apply {
+                    action = ProxyOnlyService.ACTION_STOP
+                })
             }
-            else -> Intent(context, SingBoxService::class.java).apply {
-                action = SingBoxService.ACTION_STOP
+            VpnStateStore.CoreMode.VPN -> {
+                context.startService(Intent(context, SingBoxService::class.java).apply {
+                    action = SingBoxService.ACTION_STOP
+                })
+            }
+            VpnStateStore.CoreMode.NONE -> {
+                context.startService(Intent(context, ProxyOnlyService::class.java).apply {
+                    action = ProxyOnlyService.ACTION_STOP
+                })
+                context.startService(Intent(context, SingBoxService::class.java).apply {
+                    action = SingBoxService.ACTION_STOP
+                })
             }
         }
-        context.startService(intent)
     }
 
     /**

@@ -19,14 +19,8 @@ interface ActiveStateDao {
     @Query("SELECT * FROM active_state WHERE id = 1")
     suspend fun get(): ActiveStateEntity?
 
-    @Query("SELECT * FROM active_state WHERE id = 1")
-    fun getSync(): ActiveStateEntity?
-
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun save(state: ActiveStateEntity)
-
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    fun saveSync(state: ActiveStateEntity)
 
     @Query("UPDATE active_state SET activeProfileId = :profileId WHERE id = 1")
     suspend fun setActiveProfileId(profileId: String?)

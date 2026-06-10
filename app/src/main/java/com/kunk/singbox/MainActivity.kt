@@ -59,16 +59,37 @@ import android.content.ComponentName
 import android.service.quicksettings.TileService
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
-import android.app.Activity
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import com.kunk.singbox.ui.scanner.QrScannerActivity
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
+import java.util.concurrent.atomic.AtomicLong
+
+private data class MainIntentEvent(
+    val id: Long,
+    val intent: Intent
+)
+
+private object MainIntentEvents {
+    private val nextIntentEventId = AtomicLong()
+    private val _events = MutableStateFlow<MainIntentEvent?>(null)
+    val events: StateFlow<MainIntentEvent?> = _events
+
+    fun emit(intent: Intent) {
+        _events.value = MainIntentEvent(
+            id = nextIntentEventId.incrementAndGet(),
+            intent = intent
+        )
+    }
+}
 
 class MainActivity : ComponentActivity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        MainIntentEvents.emit(intent)
     }
 
     override fun attachBaseContext(newBase: Context) {
@@ -96,6 +117,7 @@ class MainActivity : ComponentActivity() {
             navigationBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT)
         )
         super.onCreate(savedInstanceState)
+        MainIntentEvents.emit(intent)
         setContent {
             SingBoxApp()
         }
@@ -169,41 +191,40 @@ fun SingBoxApp() {
 
     // Handle App Shortcuts - need navController reference
     var pendingNavigation by remember { mutableStateOf<String?>(null) }
+    val intentEvent by MainIntentEvents.events.collectAsState(initial = null)
 
-    LaunchedEffect(Unit) {
-        val activity = context as? Activity
-        activity?.intent?.let { intent ->
-            when (intent.action) {
-                "com.kunk.singbox.action.SCAN" -> {
-                    val scanIntent = android.content.Intent(context, QrScannerActivity::class.java)
-                    context.startActivity(scanIntent)
-                    intent.action = null
-                }
-                "com.kunk.singbox.action.SWITCH_NODE" -> {
-                    pendingNavigation = "nodes"
-                    intent.action = null
-                }
-                android.content.Intent.ACTION_VIEW -> {
+    LaunchedEffect(intentEvent?.id) {
+        val intent = intentEvent?.intent ?: return@LaunchedEffect
+        when (intent.action) {
+            "com.kunk.singbox.action.SCAN" -> {
+                val scanIntent = android.content.Intent(context, QrScannerActivity::class.java)
+                context.startActivity(scanIntent)
+                intent.action = null
+            }
+            "com.kunk.singbox.action.SWITCH_NODE" -> {
+                pendingNavigation = "nodes"
+                intent.action = null
+            }
+            android.content.Intent.ACTION_VIEW -> {
 
-                    intent.data?.let { uri ->
-                        val scheme = uri.scheme
-                        val host = uri.host
+                intent.data?.let { uri ->
+                    val scheme = uri.scheme
+                    val host = uri.host
 
-                        if ((scheme == "singbox" || scheme == "kunbox") && host == "install-config") {
-                            val url = uri.getQueryParameter("url")
-                            val name = uri.getQueryParameter("name") ?: "Imported Subscription"
-                            val intervalStr = uri.getQueryParameter("interval")
-                            val interval = intervalStr?.toIntOrNull() ?: 0
+                    if ((scheme == "singbox" || scheme == "kunbox") && host == "install-config") {
+                        val url = uri.getQueryParameter("url")
+                        val name = uri.getQueryParameter("name") ?: "Imported Subscription"
+                        val intervalStr = uri.getQueryParameter("interval")
+                        val interval = intervalStr?.toIntOrNull() ?: 0
 
-                            if (!url.isNullOrBlank()) {
-                                DeepLinkHandler.setPendingSubscriptionImport(name, url, interval)
+                        if (!url.isNullOrBlank()) {
+                            DeepLinkHandler.setPendingSubscriptionImport(name, url, interval)
 
-                                pendingNavigation = "profiles"
-                            }
+                            pendingNavigation = "profiles"
                         }
                     }
-                    intent.data = null
                 }
+                intent.data = null
             }
         }
     }
@@ -219,7 +240,7 @@ fun SingBoxApp() {
         }
     }
 
-    LaunchedEffect(settings?.autoConnect, connectionState) {
+    LaunchedEffect(settings?.autoConnect, connectionState, isRunning, isStarting, manuallyStopped) {
         fun shouldAutoConnect(persistedManuallyStopped: Boolean): Boolean {
             return settings?.autoConnect == true &&
                 connectionState == ConnectionState.Idle &&
@@ -317,7 +338,7 @@ fun SingBoxApp() {
                         .fillMaxSize()
                         .padding(bottom = innerPadding.calculateBottomPadding())
                 ) {
-                    AppNavigation(navController)
+                    AppNavigation(navController, dashboardViewModel)
                 }
             }
         }

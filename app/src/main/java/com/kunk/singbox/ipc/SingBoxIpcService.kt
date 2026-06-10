@@ -3,21 +3,10 @@ package com.kunk.singbox.ipc
 import android.app.Service
 import android.content.Intent
 import android.os.IBinder
-import android.os.RemoteException
-import android.util.Log
 import com.kunk.singbox.aidl.ISingBoxService
 import com.kunk.singbox.aidl.ISingBoxServiceCallback
 
 class SingBoxIpcService : Service() {
-
-    companion object {
-        private const val TAG = "SingBoxIpcService"
-    }
-
-    private val deathRecipient = IBinder.DeathRecipient {
-        Log.w(TAG, "IPC binder died")
-        SingBoxIpcHub.onServiceBinderDied()
-    }
 
     private val binder = object : ISingBoxService.Stub() {
         override fun getState(): Int = SingBoxIpcHub.getStateOrdinal()
@@ -61,20 +50,9 @@ class SingBoxIpcService : Service() {
     override fun onCreate() {
         super.onCreate()
         SingBoxIpcHub.registerService(this)
-        try {
-            binder.asBinder().linkToDeath(deathRecipient, 0)
-        } catch (e: RemoteException) {
-            Log.w(TAG, "Failed to link binder death recipient", e)
-            SingBoxIpcHub.onServiceBinderDied()
-        }
     }
 
     override fun onDestroy() {
-        try {
-            binder.asBinder().unlinkToDeath(deathRecipient, 0)
-        } catch (_: NoSuchElementException) {
-            Log.d(TAG, "Death recipient already unlinked")
-        }
         SingBoxIpcHub.unregisterService()
         super.onDestroy()
     }

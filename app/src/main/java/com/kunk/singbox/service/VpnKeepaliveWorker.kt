@@ -3,11 +3,11 @@ package com.kunk.singbox.service
 import android.app.ActivityManager
 import android.content.Context
 import android.content.Intent
+import android.os.Build
 import android.util.Log
 import androidx.work.*
 import com.kunk.singbox.ipc.VpnStateStore
-import com.kunk.singbox.repository.SettingsRepository
-import kotlinx.coroutines.flow.first
+import java.io.File
 import java.util.concurrent.TimeUnit
 
 /**
@@ -25,6 +25,10 @@ class VpnKeepaliveWorker(
 
         private const val CHECK_INTERVAL_MINUTES = 15L
         private const val RUNNING_CONFIG_FILE = "running_config.json"
+
+        internal fun existingWorkPolicyForSchedule(): ExistingPeriodicWorkPolicy {
+            return ExistingPeriodicWorkPolicy.UPDATE
+        }
 
         /**
          *
@@ -45,7 +49,7 @@ class VpnKeepaliveWorker(
 
             WorkManager.getInstance(context).enqueueUniquePeriodicWork(
                 WORK_NAME,
-                ExistingPeriodicWorkPolicy.REPLACE,
+                existingWorkPolicyForSchedule(),
                 workRequest
             )
 
@@ -61,81 +65,187 @@ class VpnKeepaliveWorker(
 
         /**
          */
-        private fun isBackgroundProcessAlive(context: Context): Boolean {
+        @Suppress("DEPRECATION")
+        private fun isCoreServiceAlive(context: Context, mode: VpnStateStore.CoreMode): Boolean {
             val activityManager = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
-            val processes = activityManager.runningAppProcesses ?: return false
+            val expectedServiceName = when (mode) {
+                VpnStateStore.CoreMode.VPN -> SingBoxService::class.java.name
+                VpnStateStore.CoreMode.PROXY -> ProxyOnlyService::class.java.name
+                else -> return false
+            }
+            val services = activityManager.getRunningServices(Int.MAX_VALUE) ?: return false
+            return services.any { running ->
+                running.service.className == expectedServiceName
+            }
+        }
 
-            val bgProcessName = "${context.packageName}:bg"
-            return processes.any { it.processName == bgProcessName }
+        internal fun isRunningConfigUsableForTest(
+            exists: Boolean,
+            isFile: Boolean,
+            canRead: Boolean,
+            length: Long
+        ): Boolean {
+            return isRunningConfigUsable(exists, isFile, canRead, length)
+        }
+
+        internal fun shouldAttemptRecoveryForTest(
+            manuallyStopped: Boolean,
+            mode: VpnStateStore.CoreMode,
+            coreServiceAlive: Boolean,
+            runningConfigUsable: Boolean
+        ): Boolean {
+            return shouldAttemptRecovery(manuallyStopped, mode, coreServiceAlive, runningConfigUsable)
+        }
+
+        internal fun shouldClearStaleRecoveryStateForTest(
+            manuallyStopped: Boolean,
+            mode: VpnStateStore.CoreMode,
+            coreServiceAlive: Boolean,
+            runningConfigUsable: Boolean
+        ): Boolean {
+            return shouldClearStaleRecoveryState(manuallyStopped, mode, coreServiceAlive, runningConfigUsable)
+        }
+
+        internal fun shouldClearAfterRecoveryFailureForTest(
+            runAttemptCount: Int,
+            foregroundStartDenied: Boolean
+        ): Boolean {
+            return shouldClearAfterRecoveryFailure(runAttemptCount, foregroundStartDenied)
+        }
+
+        private fun shouldAttemptRecovery(
+            manuallyStopped: Boolean,
+            mode: VpnStateStore.CoreMode,
+            coreServiceAlive: Boolean,
+            runningConfigUsable: Boolean
+        ): Boolean {
+            return !manuallyStopped &&
+                mode != VpnStateStore.CoreMode.NONE &&
+                !coreServiceAlive &&
+                runningConfigUsable
+        }
+
+        private fun shouldClearStaleRecoveryState(
+            manuallyStopped: Boolean,
+            mode: VpnStateStore.CoreMode,
+            coreServiceAlive: Boolean,
+            runningConfigUsable: Boolean
+        ): Boolean {
+            return !manuallyStopped &&
+                mode != VpnStateStore.CoreMode.NONE &&
+                !coreServiceAlive &&
+                !runningConfigUsable
+        }
+
+        private fun shouldClearAfterRecoveryFailure(
+            runAttemptCount: Int,
+            foregroundStartDenied: Boolean
+        ): Boolean {
+            return foregroundStartDenied || runAttemptCount >= 3
+        }
+
+        private fun isForegroundStartDenied(error: Exception): Boolean {
+            return Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+                error.javaClass.name == "android.app.ForegroundServiceStartNotAllowedException"
+        }
+
+        private fun isRunningConfigUsable(file: File): Boolean {
+            return isRunningConfigUsable(
+                exists = file.exists(),
+                isFile = file.isFile,
+                canRead = file.canRead(),
+                length = file.length()
+            )
+        }
+
+        private fun isRunningConfigUsable(
+            exists: Boolean,
+            isFile: Boolean,
+            canRead: Boolean,
+            length: Long
+        ): Boolean {
+            return exists && isFile && canRead && length > 0L
         }
     }
 
-    @Suppress("NestedBlockDepth", "ReturnCount")
     override suspend fun doWork(): Result {
         return try {
-
-            val isManuallyStopped = VpnStateStore.isManuallyStopped()
-            if (isManuallyStopped) {
-                return Result.success()
-            }
-            val currentMode = VpnStateStore.getMode()
-            if (currentMode == VpnStateStore.CoreMode.NONE) {
-                return Result.success()
-            }
-
-            val bgProcessAlive = isBackgroundProcessAlive(applicationContext)
-
-            if (!bgProcessAlive) {
-                Log.w(TAG, "Detected background process died unexpectedly, attempting recovery...")
-                val recovered = attemptVpnRecovery(currentMode)
-                if (!recovered) {
-                    return if (runAttemptCount < 3) {
-                        Result.retry()
-                    } else {
-                        Result.failure()
-                    }
-                }
-            }
-
-            Result.success()
+            performKeepaliveCheck()
         } catch (e: Exception) {
-            Log.e(TAG, "VPN keepalive check failed", e)
+            handleKeepaliveError(e)
+        }
+    }
 
-            if (runAttemptCount < 3) {
-                Result.retry()
-            } else {
-                Result.failure()
+    private fun performKeepaliveCheck(): Result {
+        val isManuallyStopped = VpnStateStore.isManuallyStopped()
+        val currentMode = VpnStateStore.getMode()
+        if (isManuallyStopped || currentMode == VpnStateStore.CoreMode.NONE) {
+            return Result.success()
+        }
+
+        val coreServiceAlive = isCoreServiceAlive(applicationContext, currentMode)
+        val runningConfigFile = applicationContext.filesDir.resolve(RUNNING_CONFIG_FILE)
+        val runningConfigUsable = isRunningConfigUsable(runningConfigFile)
+
+        return when {
+            shouldClearStaleRecoveryState(isManuallyStopped, currentMode, coreServiceAlive, runningConfigUsable) -> {
+                Log.w(TAG, "Recovery skipped: running config is missing or unreadable")
+                clearStaleRecoveryState("VPN recovery skipped: running config is missing or unreadable")
+                Result.success()
             }
+            shouldAttemptRecovery(isManuallyStopped, currentMode, coreServiceAlive, runningConfigUsable) -> {
+                Log.w(TAG, "Detected core service died unexpectedly, attempting recovery...")
+                val recovered = attemptVpnRecovery(currentMode, runningConfigFile.absolutePath)
+                handleRecoveryResult(recovered)
+            }
+            else -> Result.success()
+        }
+    }
+
+    private fun handleRecoveryResult(recovered: Boolean): Result {
+        if (recovered) {
+            return Result.success()
+        }
+
+        if (VpnStateStore.getMode() == VpnStateStore.CoreMode.NONE) {
+            return Result.failure()
+        }
+
+        if (shouldClearAfterRecoveryFailure(runAttemptCount = runAttemptCount, foregroundStartDenied = false)) {
+            clearStaleRecoveryState("VPN recovery failed after retries")
+            return Result.failure()
+        }
+
+        return Result.retry()
+    }
+
+    private fun handleKeepaliveError(error: Exception): Result {
+        Log.e(TAG, "VPN keepalive check failed", error)
+        return if (runAttemptCount < 3) {
+            Result.retry()
+        } else {
+            Result.failure()
         }
     }
 
     /**
      *
      */
-    private suspend fun attemptVpnRecovery(mode: VpnStateStore.CoreMode): Boolean {
+    private fun attemptVpnRecovery(mode: VpnStateStore.CoreMode, runningConfigPath: String): Boolean {
         return try {
             Log.i(TAG, "Attempting to recover VPN service (mode: $mode)...")
-
-            val settingsRepo = SettingsRepository.getInstance(applicationContext)
-            val settings = settingsRepo.settings.first()
 
             val intent = when (mode) {
                 VpnStateStore.CoreMode.VPN -> {
                     Intent(applicationContext, SingBoxService::class.java).apply {
                         action = SingBoxService.ACTION_START
-                        putExtra(
-                            SingBoxService.EXTRA_CONFIG_PATH,
-                            applicationContext.filesDir.resolve(RUNNING_CONFIG_FILE).absolutePath
-                        )
+                        putExtra(SingBoxService.EXTRA_CONFIG_PATH, runningConfigPath)
                     }
                 }
                 VpnStateStore.CoreMode.PROXY -> {
                     Intent(applicationContext, ProxyOnlyService::class.java).apply {
                         action = ProxyOnlyService.ACTION_START
-                        putExtra(
-                            ProxyOnlyService.EXTRA_CONFIG_PATH,
-                            applicationContext.filesDir.resolve(RUNNING_CONFIG_FILE).absolutePath
-                        )
+                        putExtra(ProxyOnlyService.EXTRA_CONFIG_PATH, runningConfigPath)
                     }
                 }
                 else -> {
@@ -153,7 +263,18 @@ class VpnKeepaliveWorker(
             true
         } catch (e: Exception) {
             Log.e(TAG, "VPN recovery failed", e)
+            if (isForegroundStartDenied(e)) {
+                clearStaleRecoveryState("VPN recovery blocked by Android background service restrictions")
+            }
             false
         }
+    }
+
+    private fun clearStaleRecoveryState(reason: String) {
+        VpnTileService.persistVpnState(applicationContext, false)
+        VpnTileService.persistVpnPending(applicationContext, "")
+        VpnStateStore.clearRuntimeState()
+        VpnStateStore.setMode(VpnStateStore.CoreMode.NONE)
+        VpnStateStore.setLastError(reason)
     }
 }

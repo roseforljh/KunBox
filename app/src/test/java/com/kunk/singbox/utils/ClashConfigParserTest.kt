@@ -50,6 +50,101 @@ class ClashConfigParserTest {
     }
 
     @Test
+    fun testParseProxyGroupNormalizesClashBuiltinRefs() {
+        val yaml = """
+            proxies:
+              - name: "ss1"
+                type: ss
+                server: 1.2.3.4
+                port: 443
+                cipher: aes-256-gcm
+                password: "pass"
+            proxy-groups:
+              - name: "AUTO"
+                type: url-test
+                proxies:
+                  - DIRECT
+                  - ss1
+                  - REJECT
+                  - GLOBAL
+                url: http://www.gstatic.com/generate_204
+              - name: "PROXY"
+                type: select
+                proxies:
+                  - AUTO
+                  - DIRECT
+                  - REJECT-DROP
+        """.trimIndent()
+
+        val config = ClashConfigParser.parse(yaml)
+
+        val autoGroup = config?.outbounds?.find { it.tag == "AUTO" }
+        val proxyGroup = config?.outbounds?.find { it.tag == "PROXY" }
+        assertEquals(listOf("direct", "ss1"), autoGroup?.outbounds)
+        assertEquals(listOf("AUTO", "direct"), proxyGroup?.outbounds)
+        assertEquals("AUTO", proxyGroup?.default)
+    }
+
+    @Test
+    fun testUrlTestRejectsUnsafeProbeUrl() {
+        val yaml = """
+            proxies:
+              - name: "ss1"
+                type: ss
+                server: 1.2.3.4
+                port: 443
+                cipher: aes-256-gcm
+                password: "pass"
+            proxy-groups:
+              - name: "LOCAL"
+                type: url-test
+                proxies:
+                  - ss1
+                url: file:///data/local/tmp/secret
+              - name: "LOOPBACK"
+                type: url-test
+                proxies:
+                  - ss1
+                url: http://127.0.0.1:8080/generate_204
+              - name: "PRIVATE"
+                type: url-test
+                proxies:
+                  - ss1
+                url: http://192.168.1.1/generate_204
+        """.trimIndent()
+
+        val config = ClashConfigParser.parse(yaml)
+
+        assertEquals("http://www.gstatic.com/generate_204", config?.outbounds?.find { it.tag == "LOCAL" }?.url)
+        assertEquals("http://www.gstatic.com/generate_204", config?.outbounds?.find { it.tag == "LOOPBACK" }?.url)
+        assertEquals("http://www.gstatic.com/generate_204", config?.outbounds?.find { it.tag == "PRIVATE" }?.url)
+    }
+
+    @Test
+    fun testParseProxyGroupKeepsProxyNamedDirect() {
+        val yaml = """
+            proxies:
+              - name: "DIRECT"
+                type: ss
+                server: 1.2.3.4
+                port: 443
+                cipher: aes-256-gcm
+                password: "pass"
+            proxy-groups:
+              - name: "PROXY"
+                type: select
+                proxies:
+                  - DIRECT
+        """.trimIndent()
+
+        val config = ClashConfigParser.parse(yaml)
+        val proxyGroup = config?.outbounds?.find { it.tag == "PROXY" }
+
+        assertEquals(listOf("DIRECT"), proxyGroup?.outbounds)
+        assertEquals("DIRECT", proxyGroup?.default)
+    }
+
+    @Test
     fun testParseVLessWithReality() {
         val yaml = """
             proxies:
@@ -85,6 +180,65 @@ class ClashConfigParserTest {
         assertNotNull(vless?.transport)
         assertEquals("ws", vless?.transport?.type)
         assertEquals("/path?ed=2048", vless?.transport?.path)
+    }
+
+    @Test
+    fun testParseVLessWebSocketDoesNotEnableEarlyDataByDefault() {
+        val yaml = """
+            proxies:
+              - name: "vless-ws"
+                type: vless
+                server: example.com
+                port: 443
+                uuid: uuid-123
+                network: ws
+                ws-opts:
+                  path: /ws
+                  headers:
+                    Host: example.com
+                tls: true
+        """.trimIndent()
+
+        val config = ClashConfigParser.parse(yaml)
+        val vless = config?.outbounds?.find { it.tag == "vless-ws" }
+
+        assertNotNull(vless?.transport)
+        assertEquals("ws", vless?.transport?.type)
+        assertEquals("/ws", vless?.transport?.path)
+        assertNull(vless?.transport?.maxEarlyData)
+        assertNull(vless?.transport?.earlyDataHeaderName)
+    }
+
+    @Test
+    fun testParseVLessHttpUpgradeUsesTransportHost() {
+        val yaml = """
+            proxies:
+              - name: "vless-httpupgrade"
+                type: vless
+                server: edge.example.com
+                port: 443
+                uuid: uuid-123
+                tls: true
+                network: ws
+                ws-opts:
+                  path: /up
+                  v2ray-http-upgrade: true
+                  headers:
+                    Host: cdn.example.com
+                    User-Agent: custom-agent
+        """.trimIndent()
+
+        val config = ClashConfigParser.parse(yaml)
+        val vless = config?.outbounds?.find { it.tag == "vless-httpupgrade" }
+        val transportJson = gson.toJson(vless?.transport)
+
+        assertNotNull(vless)
+        assertEquals("httpupgrade", vless?.transport?.type)
+        assertEquals("/up", vless?.transport?.path)
+        assertEquals(listOf("cdn.example.com"), vless?.transport?.host)
+        assertFalse(vless?.transport?.headers?.containsKey("Host") == true)
+        assertEquals("custom-agent", vless?.transport?.headers?.get("User-Agent"))
+        assertTrue(Regex("\"host\"\\s*:\\s*\"cdn\\.example\\.com\"").containsMatchIn(transportJson))
     }
 
     @Test
@@ -159,6 +313,28 @@ class ClashConfigParserTest {
     }
 
     @Test
+    fun testParseHttpWithTlsDefaultsToCertificateVerification() {
+        val yaml = """
+            proxies:
+              - name: "http-default-secure"
+                port: 443
+                server: proxy.example.com
+                tls: true
+                type: http
+                username: user123
+                password: pass456
+        """.trimIndent()
+
+        val config = ClashConfigParser.parse(yaml)
+        val http = config?.outbounds?.find { it.tag == "http-default-secure" }
+
+        assertNotNull(http?.tls)
+        assertEquals(true, http?.tls?.enabled)
+        assertEquals("proxy.example.com", http?.tls?.serverName)
+        assertEquals(false, http?.tls?.insecure)
+    }
+
+    @Test
     fun testParseHysteria2YamlWithExtendedFields() {
         val yaml = """
             proxies:
@@ -202,6 +378,26 @@ class ClashConfigParserTest {
         assertEquals("chrome", hy2?.tls?.utls?.fingerprint)
         assertEquals("salamander", hy2?.obfs?.type)
         assertEquals("obfs-pass", hy2?.obfs?.password)
+    }
+
+    @Test
+    fun testParseTuicKeepsDefaultCongestionUnset() {
+        val yaml = """
+            proxies:
+              - name: "tuic-default"
+                type: tuic
+                server: tuic.example.com
+                port: 443
+                uuid: uuid-123
+                password: pass
+        """.trimIndent()
+
+        val config = ClashConfigParser.parse(yaml)
+        val tuic = config?.outbounds?.find { it.tag == "tuic-default" }
+
+        assertNotNull(tuic)
+        assertEquals("tuic", tuic?.type)
+        assertNull(tuic?.congestionControl)
     }
 
     @Test
@@ -268,6 +464,8 @@ class ClashConfigParserTest {
         val ss = outbounds.find { it.tag == "ss-shadowtls" }
         assertNotNull("SS outbound not found", ss)
         assertEquals("shadowsocks", ss?.type)
+        assertEquals("14.3.28.11", ss?.server)
+        assertEquals(2245, ss?.serverPort)
         assertEquals("aes-256-gcm", ss?.method)
         assertEquals("vzx0", ss?.password)
         assertNotNull("SS should have detour", ss?.detour)
@@ -331,6 +529,8 @@ class ClashConfigParserTest {
         assertNotNull("SS outbound missing", ss)
         assertNotNull("ShadowTLS outbound missing", stls)
 
+        assertEquals("144.34.238.115", ss?.server)
+        assertEquals(20004, ss?.serverPort)
         assertEquals("aes-256-gcm", ss?.method)
         assertEquals("vzx0fcb5MWN-aze1arp", ss?.password)
         assertEquals("BWH-ShadowTLS_shadowtls", ss?.detour)

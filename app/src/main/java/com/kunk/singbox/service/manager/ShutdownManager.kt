@@ -161,7 +161,9 @@ class ShutdownManager(
         return cleanupScope.launch(NonCancellable) {
             try {
                 jobToJoin?.join()
-            } catch (_: Exception) {}
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to wait for startup job before shutdown", e)
+            }
 
             if (stopService) {
                 withContext(Dispatchers.Main) {
@@ -195,13 +197,19 @@ class ShutdownManager(
             if (stopService) {
                 try {
                     platformInterfaceImpl.closeDefaultInterfaceMonitor(listener)
-                } catch (_: Exception) {}
+                } catch (e: Exception) {
+                    Log.w(TAG, "Failed to close default interface monitor", e)
+                }
             }
 
             try {
                 withTimeout(2000L) {
                     if (interfaceToClose != null) {
-                        try { interfaceToClose.close() } catch (_: Exception) {}
+                        try {
+                            interfaceToClose.close()
+                        } catch (e: Exception) {
+                            Log.w(TAG, "Failed to close VPN interface", e)
+                        }
                     }
                 }
             } catch (e: Exception) {

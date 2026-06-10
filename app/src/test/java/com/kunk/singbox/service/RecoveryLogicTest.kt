@@ -597,4 +597,42 @@ class RecoveryLogicTest {
             )
         )
     }
+
+    @Test
+    fun coreStartContinuesOnlyAfterForegroundStartSucceeds() {
+        assertTrue(SingBoxService.shouldContinueCoreStartAfterForegroundResultForTest(true))
+        assertFalse(SingBoxService.shouldContinueCoreStartAfterForegroundResultForTest(false))
+    }
+
+    @Test
+    fun stickyRestartRecoversOnlyVpnModeWithReadableRunningConfig() {
+        assertTrue(
+            SingBoxService.shouldRecoverFromStickyRestartForTest(
+                manuallyStopped = false,
+                mode = com.kunk.singbox.ipc.VpnStateStore.CoreMode.VPN,
+                runningConfigUsable = true
+            )
+        )
+        assertFalse(
+            SingBoxService.shouldRecoverFromStickyRestartForTest(
+                manuallyStopped = true,
+                mode = com.kunk.singbox.ipc.VpnStateStore.CoreMode.VPN,
+                runningConfigUsable = true
+            )
+        )
+        assertFalse(
+            SingBoxService.shouldRecoverFromStickyRestartForTest(
+                manuallyStopped = false,
+                mode = com.kunk.singbox.ipc.VpnStateStore.CoreMode.PROXY,
+                runningConfigUsable = true
+            )
+        )
+        assertFalse(
+            SingBoxService.shouldRecoverFromStickyRestartForTest(
+                manuallyStopped = false,
+                mode = com.kunk.singbox.ipc.VpnStateStore.CoreMode.VPN,
+                runningConfigUsable = false
+            )
+        )
+    }
 }

@@ -173,11 +173,13 @@ class ProfilesViewModel(application: Application) : AndroidViewModel(application
 
     fun deleteProfile(profileId: String) {
         val name = profiles.value.find { it.id == profileId }?.name
-        configRepository.deleteProfile(profileId)
-        if (!name.isNullOrBlank()) {
-            emitToast(getApplication<Application>().getString(R.string.profiles_deleted) + ": $name")
-        } else {
-            emitToast(getApplication<Application>().getString(R.string.profiles_deleted))
+        viewModelScope.launch {
+            configRepository.deleteProfile(profileId)
+            if (!name.isNullOrBlank()) {
+                emitToast(getApplication<Application>().getString(R.string.profiles_deleted) + ": $name")
+            } else {
+                emitToast(getApplication<Application>().getString(R.string.profiles_deleted))
+            }
         }
     }
 

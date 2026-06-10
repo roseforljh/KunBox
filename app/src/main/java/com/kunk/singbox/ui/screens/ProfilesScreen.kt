@@ -83,6 +83,7 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.zIndex
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -816,7 +817,7 @@ fun ProfilesScreen(
                                     profile.type == com.kunk.singbox.model.ProfileType.Imported) {
                                     editingProfile = profile
                                 } else {
-                                    navController.navigate(Screen.ProfileEditor.route)
+                                    navController.navigate(Screen.ProfileEditor.createRoute(profile.id))
                                 }
                             },
                             onDelete = { viewModel.deleteProfile(profile.id) }
@@ -828,13 +829,15 @@ fun ProfilesScreen(
     }
 }
 
-private fun MutableList<String>.updateCustomSelection(nodeId: String, checked: Boolean) {
-    if (checked) {
-        if (!contains(nodeId)) {
-            add(nodeId)
+private fun List<String>.updatedCustomSelection(nodeId: String, checked: Boolean): List<String> {
+    return if (checked) {
+        if (contains(nodeId)) {
+            this
+        } else {
+            this + nodeId
         }
     } else {
-        remove(nodeId)
+        filterNot { it == nodeId }
     }
 }
 
@@ -842,7 +845,8 @@ private fun MutableList<String>.updateCustomSelection(nodeId: String, checked: B
 private fun CustomConfigNodeList(
     nodes: List<NodeUi>,
     profileNames: Map<String, String>,
-    selectedNodeIds: MutableList<String>
+    selectedNodeIds: List<String>,
+    onSelectionChange: (String, Boolean) -> Unit
 ) {
     val nodesByProfile = remember(nodes) { nodes.groupBy { it.sourceProfileId } }
     val sortedProfileIds = remember(nodesByProfile, profileNames) {
@@ -867,7 +871,8 @@ private fun CustomConfigNodeList(
                     isExpanded = isExpanded,
                     onToggle = { expandedProfileId = if (isExpanded) null else profileId },
                     nodes = nodesForProfile,
-                    selectedNodeIds = selectedNodeIds
+                    selectedNodeIds = selectedNodeIds,
+                    onSelectionChange = onSelectionChange
                 )
                 Spacer(modifier = Modifier.height(8.dp))
             }
@@ -883,7 +888,8 @@ private fun ExpandableProfileGroup(
     isExpanded: Boolean,
     onToggle: () -> Unit,
     nodes: List<NodeUi>,
-    selectedNodeIds: MutableList<String>
+    selectedNodeIds: List<String>,
+    onSelectionChange: (String, Boolean) -> Unit
 ) {
     Column(
         modifier = Modifier
@@ -950,7 +956,7 @@ private fun ExpandableProfileGroup(
                                 }
                             )
                             .clickable {
-                                selectedNodeIds.updateCustomSelection(node.id, !isSelected)
+                                onSelectionChange(node.id, !isSelected)
                             }
                             .padding(vertical = 10.dp, horizontal = 12.dp),
                         verticalAlignment = Alignment.CenterVertically
@@ -958,7 +964,7 @@ private fun ExpandableProfileGroup(
                         Checkbox(
                             checked = isSelected,
                             onCheckedChange = { checked ->
-                                selectedNodeIds.updateCustomSelection(node.id, checked)
+                                onSelectionChange(node.id, checked)
                             }
                         )
                         Spacer(modifier = Modifier.width(10.dp))
@@ -990,8 +996,8 @@ private fun CustomConfigDialog(
     onDismiss: () -> Unit,
     onConfirm: (String, List<String>) -> Unit
 ) {
-    var name by remember { mutableStateOf("") }
-    val selectedNodeIds = remember { mutableStateListOf<String>() }
+    var name by rememberSaveable { mutableStateOf("") }
+    var selectedNodeIds by rememberSaveable { mutableStateOf(emptyList<String>()) }
 
     androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss) {
         Column(
@@ -1050,7 +1056,10 @@ private fun CustomConfigDialog(
                 CustomConfigNodeList(
                     nodes = nodes,
                     profileNames = profileNames,
-                    selectedNodeIds = selectedNodeIds
+                    selectedNodeIds = selectedNodeIds,
+                    onSelectionChange = { nodeId, checked ->
+                        selectedNodeIds = selectedNodeIds.updatedCustomSelection(nodeId, checked)
+                    }
                 )
             }
 
@@ -1256,15 +1265,33 @@ private fun SubscriptionInputDialog(
         dnsOverride: String?
     ) -> Unit
 ) {
-    var name by remember { mutableStateOf(initialName) }
-    var url by remember { mutableStateOf(initialUrl) }
-    var autoUpdateEnabled by remember { mutableStateOf(initialAutoUpdateInterval > 0) }
-    var autoUpdateMinutes by remember { mutableStateOf(if (initialAutoUpdateInterval > 0) initialAutoUpdateInterval.toString() else "60") }
-    var dnsPreResolveEnabled by remember { mutableStateOf(initialDnsPreResolve) }
-    var selectedDnsServer by remember { mutableStateOf(initialDnsServer ?: "https://cloudflare-dns.com/dns-query") }
+    var name by rememberSaveable(initialName) { mutableStateOf(initialName) }
+    var url by rememberSaveable(initialUrl) { mutableStateOf(initialUrl) }
+    var autoUpdateEnabled by rememberSaveable(initialAutoUpdateInterval) {
+        mutableStateOf(initialAutoUpdateInterval > 0)
+    }
+    var autoUpdateMinutes by rememberSaveable(initialAutoUpdateInterval) {
+        mutableStateOf(
+            if (initialAutoUpdateInterval > 0) {
+                initialAutoUpdateInterval.toString()
+            } else {
+                "60"
+            }
+        )
+    }
+    var dnsPreResolveEnabled by rememberSaveable(initialDnsPreResolve) {
+        mutableStateOf(initialDnsPreResolve)
+    }
+    var selectedDnsServer by rememberSaveable(initialDnsServer) {
+        mutableStateOf(initialDnsServer ?: "https://cloudflare-dns.com/dns-query")
+    }
     var dnsDropdownExpanded by remember { mutableStateOf(false) }
-    var dnsOverrideText by remember { mutableStateOf(initialDnsOverride ?: "") }
-    var showDnsOverride by remember { mutableStateOf(!initialDnsOverride.isNullOrBlank()) }
+    var dnsOverrideText by rememberSaveable(initialDnsOverride) {
+        mutableStateOf(initialDnsOverride ?: "")
+    }
+    var showDnsOverride by rememberSaveable(initialDnsOverride) {
+        mutableStateOf(!initialDnsOverride.isNullOrBlank())
+    }
 
     val dnsServerOptions = listOf(
         "https://cloudflare-dns.com/dns-query" to stringResource(R.string.profiles_dns_server_cloudflare),

@@ -100,6 +100,7 @@ import com.kunk.singbox.ui.components.NodeCard
 import com.kunk.singbox.ui.navigation.Screen
 import com.kunk.singbox.ui.theme.Neutral500
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.launch
 
 @Suppress("FunctionNaming", "LongMethod", "CyclomaticComplexMethod", "CognitiveComplexMethod")
 @OptIn(ExperimentalFoundationApi::class)
@@ -509,10 +510,13 @@ fun NodesScreen(
                         }
                         val onExport = remember(node.id) {
                             {
-                                val link = viewModel.exportNode(node.id)
-                                if (link != null) {
-                                    exportLink = link
+                                scope.launch {
+                                    val link = viewModel.exportNode(node.id)
+                                    if (link != null) {
+                                        exportLink = link
+                                    }
                                 }
+                                Unit
                             }
                         }
                         val onLatency = remember(node.id) { { viewModel.testLatency(node.id) } }

@@ -48,6 +48,7 @@ import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
@@ -232,7 +233,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         }
 
         sorted
-    }.stateIn(
+    }.flowOn(Dispatchers.Default).stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5000),
         initialValue = emptyList()
@@ -943,16 +944,26 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         _connectedAtElapsedMs.value = null
         _statsBase.value = ConnectionStats(0, 0, 0, 0, 0)
 
-        val mode = VpnStateStore.getMode()
-        val intent = when (mode) {
-            VpnStateStore.CoreMode.PROXY -> Intent(context, ProxyOnlyService::class.java).apply {
-                action = ProxyOnlyService.ACTION_STOP
+        when (VpnStateStore.getMode()) {
+            VpnStateStore.CoreMode.PROXY -> {
+                context.startService(Intent(context, ProxyOnlyService::class.java).apply {
+                    action = ProxyOnlyService.ACTION_STOP
+                })
             }
-            else -> Intent(context, SingBoxService::class.java).apply {
-                action = SingBoxService.ACTION_STOP
+            VpnStateStore.CoreMode.VPN -> {
+                context.startService(Intent(context, SingBoxService::class.java).apply {
+                    action = SingBoxService.ACTION_STOP
+                })
+            }
+            VpnStateStore.CoreMode.NONE -> {
+                context.startService(Intent(context, ProxyOnlyService::class.java).apply {
+                    action = ProxyOnlyService.ACTION_STOP
+                })
+                context.startService(Intent(context, SingBoxService::class.java).apply {
+                    action = SingBoxService.ACTION_STOP
+                })
             }
         }
-        context.startService(intent)
     }
 
     private fun startPingTest() {
@@ -990,6 +1001,13 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
 
     fun onVpnPermissionResult(granted: Boolean) {
         _vpnPermissionNeeded.value = false
+        if (!granted) {
+            startGraceUntilElapsedMs = null
+            startMonitorJob?.cancel()
+            startMonitorJob = null
+            _connectionState.value = ConnectionState.Idle
+            return
+        }
         if (granted) {
             startCore()
         }
@@ -1011,12 +1029,12 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
     fun testAllNodesLatency() {
         viewModelScope.launch {
             _testStatus.value = getApplication<Application>().getString(R.string.common_loading)
-            val targetNodeId = activeNodeId.value
-            if (targetNodeId.isNullOrBlank()) {
+            val targetNodeIds = nodes.value.map { it.id }
+            if (targetNodeIds.isEmpty()) {
                 _testStatus.value = null
                 return@launch
             }
-            configRepository.testNodeLatency(targetNodeId)
+            configRepository.testAllNodesLatency(targetNodeIds = targetNodeIds)
             _testStatus.value = getApplication<Application>().getString(R.string.dashboard_test_complete)
             delay(2000)
             _testStatus.value = null

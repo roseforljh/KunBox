@@ -263,7 +263,6 @@ fun ImportProgressDialog(
     val shouldShow = when (state) {
         is ImportState.Importing,
         is ImportState.Success,
-        is ImportState.PartialSuccess,
         is ImportState.Error -> true
         else -> false
     }
@@ -344,65 +343,6 @@ fun ImportProgressDialog(
                             color = MaterialTheme.colorScheme.primary,
                             textAlign = TextAlign.Center
                         )
-                        Spacer(modifier = Modifier.height(24.dp))
-                        Button(onClick = onDismiss) {
-                            Text(stringResource(R.string.common_ok))
-                        }
-                    }
-                    is ImportState.PartialSuccess -> {
-                        Icon(
-                            imageVector = Icons.Rounded.Warning,
-                            contentDescription = null,
-                            modifier = Modifier.size(48.dp),
-                            tint = MaterialTheme.colorScheme.tertiary
-                        )
-                        Spacer(modifier = Modifier.height(16.dp))
-                        Text(
-                            text = stringResource(R.string.import_partial_success),
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            text = stringResource(
-                                R.string.import_partial_detail,
-                                state.profilesImported,
-                                state.profilesFailed
-                            ),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            textAlign = TextAlign.Center
-                        )
-                        if (state.errors.isNotEmpty()) {
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Card(
-                                modifier = Modifier.fillMaxWidth(),
-                                colors = CardDefaults.cardColors(
-                                    containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.3f)
-                                )
-                            ) {
-                                Column(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(12.dp)
-                                ) {
-                                    state.errors.take(3).forEach { error ->
-                                        Text(
-                                            text = "- $error",
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.error
-                                        )
-                                    }
-                                    if (state.errors.size > 3) {
-                                        Text(
-                                            text = stringResource(R.string.import_more_errors, state.errors.size - 3),
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.error
-                                        )
-                                    }
-                                }
-                            }
-                        }
                         Spacer(modifier = Modifier.height(24.dp))
                         Button(onClick = onDismiss) {
                             Text(stringResource(R.string.common_ok))

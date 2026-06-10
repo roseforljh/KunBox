@@ -24,7 +24,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -46,9 +46,9 @@ fun SelectProfileDialog(
     onConfirm: (target: SelectProfileTarget) -> Unit,
     onDismiss: () -> Unit
 ) {
-    var isCreatingNew by remember { mutableStateOf(false) }
-    var newProfileName by remember { mutableStateOf("") }
-    var selectedProfileId by remember { mutableStateOf(profiles.firstOrNull()?.id) }
+    var isCreatingNew by rememberSaveable { mutableStateOf(false) }
+    var newProfileName by rememberSaveable { mutableStateOf("") }
+    var selectedProfileId by rememberSaveable { mutableStateOf(profiles.firstOrNull()?.id) }
 
     LaunchedEffect(profiles) {
         if (profiles.isNotEmpty() && profiles.none { it.id == selectedProfileId }) {

@@ -9,6 +9,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
 /**
@@ -37,13 +39,18 @@ class InstalledAppsRepository private constructor(private val context: Context) 
     private val _loadingState = MutableStateFlow<LoadingState>(LoadingState.Idle)
     val loadingState: StateFlow<LoadingState> = _loadingState.asStateFlow()
 
+    private val loadMutex = Mutex()
+
     /**
      */
     suspend fun loadApps() {
+        loadMutex.withLock {
+            loadAppsLocked(force = false, clearBeforeLoad = false)
+        }
+    }
 
-        if (_loadingState.value is LoadingState.Loaded) return
-
-        if (_loadingState.value is LoadingState.Loading) return
+    private suspend fun loadAppsLocked(force: Boolean, clearBeforeLoad: Boolean) {
+        if (!prepareForLoad(force, clearBeforeLoad)) return
 
         try {
             withContext(Dispatchers.IO) {
@@ -93,17 +100,34 @@ class InstalledAppsRepository private constructor(private val context: Context) 
         }
     }
 
+    private fun prepareForLoad(force: Boolean, clearBeforeLoad: Boolean): Boolean {
+        if (force) {
+            _loadingState.value = LoadingState.Idle
+            if (clearBeforeLoad) {
+                _installedApps.value = emptyList()
+            }
+            return true
+        }
+
+        if (_loadingState.value is LoadingState.Loaded) return false
+
+        if (_loadingState.value is LoadingState.Loading) return false
+
+        return true
+    }
+
     /**
      */
     suspend fun reloadApps() {
-        _loadingState.value = LoadingState.Idle
-        _installedApps.value = emptyList()
-        loadApps()
+        loadMutex.withLock {
+            loadAppsLocked(force = true, clearBeforeLoad = true)
+        }
     }
 
     suspend fun refreshApps() {
-        _loadingState.value = LoadingState.Idle
-        loadApps()
+        loadMutex.withLock {
+            loadAppsLocked(force = true, clearBeforeLoad = false)
+        }
     }
 
     fun needsLoading(): Boolean {

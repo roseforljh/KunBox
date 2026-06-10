@@ -463,6 +463,56 @@ class OutboundFixerTest {
     }
 
     @Test
+    fun testBuildForRuntimeKeepsHttpOutboundTopLevelPathAndHeaders() {
+        val outbound = Outbound(
+            type = "http",
+            tag = "http-node",
+            server = "proxy.example.com",
+            serverPort = 443,
+            username = "user",
+            password = "pass",
+            path = "/proxy",
+            headers = mapOf("User-Agent" to "KunBox")
+        )
+
+        val runtime = OutboundFixer.buildForRuntimeWithDialConfigForTest(outbound)
+
+        assertEquals("http", runtime?.type)
+        assertEquals("/proxy", runtime?.path)
+        assertEquals("KunBox", runtime?.headers?.get("User-Agent"))
+        assertNull(runtime?.transport)
+    }
+
+    @Test
+    fun testBuildForRuntimeMigratesHttpUpgradeHostHeader() {
+        val outbound = Outbound(
+            type = "vless",
+            tag = "legacy-httpupgrade-node",
+            server = "edge.example.com",
+            serverPort = 443,
+            uuid = "uuid",
+            tls = TlsConfig(enabled = true, serverName = "edge.example.com"),
+            transport = TransportConfig(
+                type = "httpupgrade",
+                path = "/up",
+                headers = mapOf(
+                    "Host" to "cdn.example.com",
+                    "User-Agent" to "custom-agent"
+                )
+            )
+        )
+
+        val runtime = OutboundFixer.buildForRuntimeWithDialConfigForTest(outbound)
+
+        assertEquals("httpupgrade", runtime?.transport?.type)
+        assertEquals("/up", runtime?.transport?.path)
+        assertEquals(listOf("cdn.example.com"), runtime?.transport?.host)
+        assertFalse(runtime?.transport?.headers?.containsKey("Host") == true)
+        assertEquals("custom-agent", runtime?.transport?.headers?.get("User-Agent"))
+        assertEquals("cdn.example.com", runtime?.tls?.serverName)
+    }
+
+    @Test
     fun testFixPreservesOuterSelectorDefaultForRouteGroup() {
         val outbound = Outbound(
             type = "selector",

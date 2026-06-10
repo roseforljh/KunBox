@@ -1,5 +1,6 @@
 package com.kunk.singbox.utils
 
+import android.util.Log
 import com.kunk.singbox.utils.dns.DnsResolver
 import java.net.InetSocketAddress
 import java.net.Socket
@@ -7,6 +8,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 object TcpPing {
+    private const val TAG = "TcpPing"
+
     private val dnsResolver = DnsResolver()
 
     private val dohFallbackServers = listOf(
@@ -36,7 +39,9 @@ object TcpPing {
         } finally {
             try {
                 socket.close()
-            } catch (_: Exception) { }
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to close TCP probe socket", e)
+            }
         }
     }
 

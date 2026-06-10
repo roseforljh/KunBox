@@ -245,7 +245,7 @@ class Base64Parser(private val nodeParser: (String) -> Outbound?) : Subscription
             val start = sortedPositions[i].first
             val end = if (i + 1 < sortedPositions.size) sortedPositions[i + 1].first else normalized.length
             var candidate = normalized.substring(start, end).trim()
-            candidate = candidate.trimEnd(',', ';')
+            candidate = candidate.trimEnd(',', '，', ';', '；', '.', '。', ')', '）', ']', '】', '}', '`', '"', '\'')
             if (candidate.isNotBlank()) {
                 results.add(candidate)
             }
@@ -254,6 +254,13 @@ class Base64Parser(private val nodeParser: (String) -> Outbound?) : Subscription
     }
 
     private fun tryDecodeBase64(content: String): String? {
+        val cleaned = content.replace(Regex("\\s+"), "")
+        val padded = padBase64(cleaned)
+
+        val jvmDecoded = decodeWithJvmBase64(padded, urlSafe = false)
+            ?: decodeWithJvmBase64(padded, urlSafe = true)
+        if (jvmDecoded != null) return jvmDecoded
+
         val candidates = arrayOf(
             Base64.DEFAULT,
             Base64.NO_WRAP,
@@ -262,19 +269,46 @@ class Base64Parser(private val nodeParser: (String) -> Outbound?) : Subscription
         )
         for (flags in candidates) {
             try {
-                val decoded = Base64.decode(content, flags)
-                val text = String(decoded)
-
-                if (text.isNotBlank() && (
-                        text.contains("://") ||
-                            text.contains("\n") ||
-                            text.contains("\r") ||
-                            text.all { it.isLetterOrDigit() || it.isWhitespace() || "=/-_:.".contains(it) }
-                        )) {
-                    return text
-                }
-            } catch (_: Exception) {}
+                val decoded = Base64.decode(padded, flags)
+                decodeSubscriptionText(decoded)?.let { return it }
+            } catch (e: Exception) {
+                Log.d("Base64Parser", "Base64 decode failed for flags=$flags: ${e.message}")
+            }
         }
         return null
+    }
+
+    private fun padBase64(content: String): String {
+        return when (content.length % 4) {
+            2 -> content + "=="
+            3 -> content + "="
+            else -> content
+        }
+    }
+
+    private fun decodeWithJvmBase64(content: String, urlSafe: Boolean): String? {
+        return try {
+            val decoded = if (urlSafe) {
+                java.util.Base64.getUrlDecoder().decode(content)
+            } else {
+                java.util.Base64.getDecoder().decode(content)
+            }
+            decodeSubscriptionText(decoded)
+        } catch (_: IllegalArgumentException) {
+            null
+        }
+    }
+
+    private fun decodeSubscriptionText(decoded: ByteArray?): String? {
+        if (decoded == null) return null
+        val text = String(decoded, Charsets.UTF_8)
+        return if (text.isNotBlank() && looksLikeSubscriptionText(text)) text else null
+    }
+
+    private fun looksLikeSubscriptionText(text: String): Boolean {
+        return text.contains("://") ||
+            text.contains("\n") ||
+            text.contains("\r") ||
+            text.all { it.isLetterOrDigit() || it.isWhitespace() || "=/-_:.".contains(it) }
     }
 }

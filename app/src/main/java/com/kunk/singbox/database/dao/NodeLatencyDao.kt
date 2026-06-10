@@ -17,9 +17,6 @@ interface NodeLatencyDao {
     suspend fun getAll(): List<NodeLatencyEntity>
 
     @Query("SELECT * FROM node_latencies")
-    fun getAllSync(): List<NodeLatencyEntity>
-
-    @Query("SELECT * FROM node_latencies")
     fun getAllFlow(): Flow<List<NodeLatencyEntity>>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)

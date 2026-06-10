@@ -3,7 +3,7 @@
 import android.content.Context
 import android.util.Log
 import androidx.work.*
-import com.kunk.singbox.repository.ConfigRepository
+import com.kunk.singbox.model.RuleSetType
 import com.kunk.singbox.repository.RuleSetRepository
 import com.kunk.singbox.repository.SettingsRepository
 import kotlinx.coroutines.Dispatchers
@@ -97,7 +97,6 @@ class RuleSetAutoUpdateWorker(
         try {
             val settingsRepository = SettingsRepository.getInstance(applicationContext)
             val ruleSetRepository = RuleSetRepository.getInstance(applicationContext)
-            val configRepository = ConfigRepository(applicationContext)
             val settings = settingsRepository.settings.first()
 
             if (!settings.ruleSetAutoUpdateEnabled) {
@@ -105,7 +104,9 @@ class RuleSetAutoUpdateWorker(
                 return@withContext Result.success()
             }
 
-            val remoteRuleSets = configRepository.getAppliedRemoteRuleSets(settings)
+            val remoteRuleSets = settings.ruleSets.filter { ruleSet ->
+                ruleSet.enabled && ruleSet.type == RuleSetType.REMOTE
+            }
 
             if (remoteRuleSets.isEmpty()) {
                 return@withContext Result.success()

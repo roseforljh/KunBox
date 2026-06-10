@@ -21,6 +21,22 @@ class NodeLinkParser(private val gson: Gson) {
         }
     }
 
+    private fun hasRequiredLinkFields(protocol: String, server: String?, credential: String?, port: Int): Boolean {
+        if (server.isNullOrBlank()) {
+            Log.w("NodeLinkParser", "$protocol link missing server")
+            return false
+        }
+        if (credential.isNullOrBlank()) {
+            Log.w("NodeLinkParser", "$protocol link missing credential")
+            return false
+        }
+        if (port !in 1..65535) {
+            Log.w("NodeLinkParser", "$protocol link has invalid port: $port")
+            return false
+        }
+        return true
+    }
+
     private fun parseBooleanFlag(value: String?): Boolean? {
         val normalized = value?.trim()?.lowercase() ?: return null
         return when (normalized) {
@@ -34,6 +50,18 @@ class NodeLinkParser(private val gson: Gson) {
         if (value.isNullOrBlank()) return null
         val hosts = value.split(',').map { it.trim() }.filter { it.isNotBlank() }
         return hosts.takeIf { it.isNotEmpty() }
+    }
+
+    private fun parseSingleHost(value: String?): List<String>? {
+        return parseHostList(value)?.firstOrNull()?.let { listOf(it) }
+    }
+
+    private fun parseWireGuardLocalAddress(params: Map<String, String>): List<String>? {
+        return firstParam(params, "address", "local_address", "localAddress", "ip")
+            ?.split(",")
+            ?.map { it.trim() }
+            ?.filter { it.isNotEmpty() }
+            ?.takeIf { it.isNotEmpty() }
     }
 
     private fun parseEchConfig(params: Map<String, String>): EchConfig? {
@@ -115,7 +143,7 @@ class NodeLinkParser(private val gson: Gson) {
     )
 
     private data class TuicTransportOptions(
-        val congestionControl: String,
+        val congestionControl: String?,
         val udpRelayMode: String,
         val zeroRtt: Boolean
     )
@@ -150,7 +178,7 @@ class NodeLinkParser(private val gson: Gson) {
 
     private fun buildTuicTransportOptions(params: Map<String, String>): TuicTransportOptions {
         return TuicTransportOptions(
-            congestionControl = params["congestion_control"] ?: params["congestion"] ?: "bbr",
+            congestionControl = params["congestion_control"] ?: params["congestion"],
             udpRelayMode = params["udp_relay_mode"] ?: "native",
             zeroRtt = params["reduce_rtt"] == "1" || params["zero_rtt"] == "1"
         )
@@ -210,7 +238,7 @@ class NodeLinkParser(private val gson: Gson) {
 
     private fun normalizeInputLink(link: String): String {
         val trimmed = link.trim().trim('`', '"', '\'')
-        val prefixMatch = Regex("^[A-Za-z][A-Za-z0-9+.-]*://[A-Za-z0-9\\-._~%!$&'()*+,;=:@/?#\\[\\]]+")
+        val prefixMatch = Regex("^[A-Za-z][A-Za-z0-9+.-]*://\\S+")
             .find(trimmed)
             ?.value
             ?: trimmed
@@ -531,7 +559,7 @@ class NodeLinkParser(private val gson: Gson) {
                 "httpupgrade" -> TransportConfig(
                     type = "httpupgrade",
                     path = if (path.isBlank()) "/" else path,
-                    headers = if (host.isNotBlank()) mapOf("Host" to host) else null
+                    host = parseSingleHost(host)
                 )
                 "xhttp", "splithttp" -> TransportConfig(
                     type = "xhttp",
@@ -578,6 +606,7 @@ class NodeLinkParser(private val gson: Gson) {
         return null
     }
 
+    @Suppress("CognitiveComplexMethod", "CyclomaticComplexMethod", "LongMethod")
     private fun parseVLessLink(link: String): Outbound? {
         try {
             val uri = java.net.URI(sanitizeUri(link))
@@ -585,6 +614,7 @@ class NodeLinkParser(private val gson: Gson) {
             val uuid = uri.userInfo
             val server = uri.host
             val port = if (uri.port > 0) uri.port else 443
+            if (!hasRequiredLinkFields("VLESS", server, uuid, port)) return null
 
             val params = mutableMapOf<String, String>()
             uri.query?.split("&")?.forEach { param ->
@@ -666,7 +696,7 @@ class NodeLinkParser(private val gson: Gson) {
                 "httpupgrade" -> TransportConfig(
                     type = "httpupgrade",
                     path = firstParam(params, "path") ?: "/",
-                    headers = hostParam?.let { mapOf("Host" to it) }
+                    host = parseSingleHost(hostParam)
                 )
                 "xhttp", "splithttp" -> TransportConfig(
                     type = "xhttp",
@@ -708,6 +738,7 @@ class NodeLinkParser(private val gson: Gson) {
             val password = uri.userInfo
             val server = uri.host
             val port = if (uri.port > 0) uri.port else 443
+            if (!hasRequiredLinkFields("Trojan", server, password, port)) return null
 
             val params = parseQueryParams(uri.query)
 
@@ -774,7 +805,7 @@ class NodeLinkParser(private val gson: Gson) {
             "httpupgrade" -> TransportConfig(
                 type = "httpupgrade",
                 path = firstParam(params, "path") ?: "/",
-                headers = hostParam?.let { mapOf("Host" to it) }
+                host = parseSingleHost(hostParam)
             )
 
             "xhttp", "splithttp" -> TransportConfig(
@@ -1089,28 +1120,26 @@ class NodeLinkParser(private val gson: Gson) {
         try {
             val uri = java.net.URI(sanitizeUri(link))
             val name = java.net.URLDecoder.decode(uri.fragment ?: "WireGuard Node", "UTF-8")
-            val privateKey = uri.userInfo
-            val server = uri.host
+            val privateKey = uri.userInfo?.takeIf { it.isNotBlank() } ?: return null
+            val server = uri.host?.takeIf { it.isNotBlank() } ?: return null
             val port = if (uri.port > 0) uri.port else 51820
 
-            val params = mutableMapOf<String, String>()
-            uri.query?.split("&")?.forEach { param ->
-                val parts = param.split("=", limit = 2)
-                if (parts.size == 2) {
-                    params[parts[0]] = java.net.URLDecoder.decode(parts[1], "UTF-8")
-                }
-            }
+            val params = parseQueryParams(uri.rawQuery.orEmpty())
+            val publicKey = firstParam(params, "public_key", "publicKey", "peer_public_key") ?: return null
+            val localAddress = parseWireGuardLocalAddress(params) ?: return null
 
             val peer = WireGuardPeer(
                 server = server,
                 serverPort = port,
-                publicKey = params["public_key"] ?: ""
+                publicKey = publicKey,
+                preSharedKey = firstParam(params, "pre_shared_key", "preSharedKey")
             )
 
             return Outbound(
                 type = "wireguard",
                 tag = name,
                 privateKey = privateKey,
+                localAddress = localAddress,
                 peers = listOf(peer)
             )
         } catch (e: Exception) {

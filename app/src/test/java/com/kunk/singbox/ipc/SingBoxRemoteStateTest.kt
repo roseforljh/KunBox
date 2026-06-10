@@ -62,14 +62,14 @@ class SingBoxRemoteStateTest {
     }
 
     @Test
-    fun `mode PROXY with hasVpnTransport false returns STOPPED`() {
+    fun `mode PROXY with hasVpnTransport false returns RUNNING`() {
         val result = SingBoxRemote.resolvePersistedStateFromValues(
             pending = "",
             isActive = false,
             mode = VpnStateStore.CoreMode.PROXY,
             hasVpnTransport = false
         )
-        assertEquals(ServiceState.STOPPED, result)
+        assertEquals(ServiceState.RUNNING, result)
     }
 
     @Test
@@ -141,23 +141,77 @@ class SingBoxRemoteStateTest {
     }
 
     @Test
-    fun `service loss reconnects only when vpn still exists and stop was not terminal`() {
+    fun `service loss reconnects when vpn still exists or proxy mode is active`() {
         assertTrue(
             SingBoxRemote.shouldReconnectAfterServiceLoss(
                 systemVpn = true,
-                storedManuallyStopped = false
+                storedManuallyStopped = false,
+                storedMode = VpnStateStore.CoreMode.VPN
             )
         )
         assertFalse(
             SingBoxRemote.shouldReconnectAfterServiceLoss(
                 systemVpn = true,
-                storedManuallyStopped = true
+                storedManuallyStopped = true,
+                storedMode = VpnStateStore.CoreMode.VPN
+            )
+        )
+        assertTrue(
+            SingBoxRemote.shouldReconnectAfterServiceLoss(
+                systemVpn = false,
+                storedManuallyStopped = false,
+                storedMode = VpnStateStore.CoreMode.PROXY
             )
         )
         assertFalse(
             SingBoxRemote.shouldReconnectAfterServiceLoss(
                 systemVpn = false,
-                storedManuallyStopped = false
+                storedManuallyStopped = false,
+                storedMode = VpnStateStore.CoreMode.VPN
+            )
+        )
+        assertFalse(
+            SingBoxRemote.shouldReconnectAfterServiceLoss(
+                systemVpn = false,
+                storedManuallyStopped = false,
+                storedMode = VpnStateStore.CoreMode.NONE
+            )
+        )
+    }
+
+    @Test
+    fun `ensure bound rebinds stale live reference`() {
+        val result = resolveSingBoxEnsureBoundAction(
+            connectionActive = true,
+            bound = true,
+            servicePresent = true,
+            serviceAlive = false,
+            bindingInProgress = false
+        )
+
+        assertEquals(EnsureBoundAction.REBIND, result)
+    }
+
+    @Test
+    fun `ensure bound skips healthy connection and waits for active bind`() {
+        assertEquals(
+            EnsureBoundAction.NONE,
+            resolveSingBoxEnsureBoundAction(
+                connectionActive = true,
+                bound = true,
+                servicePresent = true,
+                serviceAlive = true,
+                bindingInProgress = false
+            )
+        )
+        assertEquals(
+            EnsureBoundAction.WAIT_FOR_BIND,
+            resolveSingBoxEnsureBoundAction(
+                connectionActive = true,
+                bound = false,
+                servicePresent = false,
+                serviceAlive = false,
+                bindingInProgress = true
             )
         )
     }

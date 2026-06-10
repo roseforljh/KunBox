@@ -23,7 +23,6 @@ import com.kunk.singbox.ui.components.AppNotificationManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.io.InputStream
 
 /**
  */
@@ -70,11 +69,14 @@ class QrScannerActivity : AppCompatActivity() {
     private fun parseQrCodeFromUri(uri: Uri) {
         lifecycleScope.launch(Dispatchers.IO) {
             try {
-                val inputStream: InputStream? = contentResolver.openInputStream(uri)
-                val bitmap = BitmapFactory.decodeStream(inputStream)
+                val bitmap = decodeQrBitmapSafely(uri)
 
                 if (bitmap != null) {
-                    val result = decodeQRCode(bitmap)
+                    val result = try {
+                        decodeQRCode(bitmap)
+                    } finally {
+                        bitmap.recycle()
+                    }
                     withContext(Dispatchers.Main) {
                         if (result != null) {
                             val intent = Intent()
@@ -109,10 +111,29 @@ class QrScannerActivity : AppCompatActivity() {
         }
     }
 
+    private fun decodeQrBitmapSafely(uri: Uri): Bitmap? {
+        val boundsOptions = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        contentResolver.openInputStream(uri)?.use { inputStream ->
+            BitmapFactory.decodeStream(inputStream, null, boundsOptions)
+        } ?: return null
+
+        val sampleSize = calculateQrImageSampleSize(boundsOptions.outWidth, boundsOptions.outHeight)
+        if (sampleSize <= 0) return null
+
+        val decodeOptions = BitmapFactory.Options().apply {
+            inSampleSize = sampleSize
+        }
+        return contentResolver.openInputStream(uri)?.use { inputStream ->
+            BitmapFactory.decodeStream(inputStream, null, decodeOptions)
+        }
+    }
+
     private fun decodeQRCode(bitmap: Bitmap): String? {
         return try {
             val width = bitmap.width
             val height = bitmap.height
+            val pixelCount = width.toLong() * height.toLong()
+            if (pixelCount > MAX_QR_IMAGE_PIXELS) return null
             val pixels = IntArray(width * height)
             bitmap.getPixels(pixels, 0, width, 0, 0, width, height)
 
@@ -124,6 +145,15 @@ class QrScannerActivity : AppCompatActivity() {
         } catch (e: Exception) {
             null
         }
+    }
+
+    private fun calculateQrImageSampleSize(width: Int, height: Int): Int {
+        if (width <= 0 || height <= 0) return 0
+        var sampleSize = 1
+        while ((width / sampleSize).toLong() * (height / sampleSize).toLong() > MAX_QR_IMAGE_PIXELS) {
+            sampleSize *= 2
+        }
+        return sampleSize
     }
 
     private fun toggleFlash() {
@@ -168,6 +198,7 @@ class QrScannerActivity : AppCompatActivity() {
 
     companion object {
         private const val TAG = "QrScannerActivity"
+        private const val MAX_QR_IMAGE_PIXELS = 12_000_000L
         const val EXTRA_RESULT = "scan_result"
 
         fun createIntent(activity: Activity): Intent {
