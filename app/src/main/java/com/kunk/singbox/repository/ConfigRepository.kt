@@ -77,7 +77,13 @@ class ConfigRepository(private val context: Context) {
     private data class NodeTestInfo(
         val outbound: Outbound,
         val nodeId: String,
-        val profileId: String
+        val profileId: String,
+        val dnsConfig: DnsConfig?
+    )
+
+    private data class LatencyRuntimeContext(
+        val outbounds: List<Outbound>,
+        val dnsConfig: DnsConfig?
     )
 
     private data class SubscriptionAttemptContext(
@@ -1348,14 +1354,19 @@ class ConfigRepository(private val context: Context) {
         }
 
         internal fun buildOutboundDomainResolverDnsRulesForTest(outbounds: List<Outbound>): List<DnsRule> {
+            return buildOutboundDomainResolverDnsRulesForRuntime(outbounds)
+        }
+
+        internal fun buildOutboundDomainResolverDnsRulesForRuntime(outbounds: List<Outbound>): List<DnsRule> {
             return buildOutboundDomainResolverDnsRules(outbounds)
         }
 
         internal fun applyDefaultOutboundDomainResolverForTest(
             outbounds: List<Outbound>,
-            defaultResolverTag: String
+            defaultResolverTag: String,
+            defaultResolverStrategy: String? = null
         ): List<Outbound> {
-            return applyDefaultOutboundDomainResolver(outbounds, defaultResolverTag)
+            return applyDefaultOutboundDomainResolver(outbounds, defaultResolverTag, defaultResolverStrategy)
         }
 
         internal fun buildEchDnsRulesForTest(outbounds: List<Outbound>, serverTag: String): List<DnsRule> {
@@ -1383,33 +1394,39 @@ class ConfigRepository(private val context: Context) {
         }
 
         private fun buildOutboundDomainResolverDnsRules(outbounds: List<Outbound>): List<DnsRule> {
-            val domainToServer = linkedMapOf<String, String>()
+            val domainToResolver = linkedMapOf<String, DomainResolveConfig>()
             outbounds.forEach { outbound ->
                 val domain = outbound.server
                     ?.trim()
                     ?.takeIf { it.isNotBlank() && !isIpAddressValue(it) }
                     ?.let { normalizeDnsRuleDomain(it) }
                     ?: return@forEach
-                val resolverServer = outbound.domainResolver
+                val resolver = outbound.domainResolver ?: return@forEach
+                val resolverServer = resolver
                     ?.server
                     ?.trim()
                     ?.takeIf { it.isNotBlank() && it != "fakeip-dns" }
                     ?: return@forEach
-                domainToServer.putIfAbsent(domain, resolverServer)
+                domainToResolver.putIfAbsent(domain, resolver.copy(server = resolverServer))
             }
-            return domainToServer.map { (domain, resolverServer) ->
+            return domainToResolver.map { (domain, resolver) ->
                 DnsRule(
                     domain = listOf(domain),
                     queryType = IP_DNS_QUERY_TYPES,
                     action = "route",
-                    server = resolverServer
+                    server = resolver.server,
+                    strategy = resolver.strategy,
+                    disableCache = resolver.disableCache,
+                    rewriteTtl = resolver.rewriteTtl,
+                    clientSubnet = resolver.clientSubnet
                 )
             }
         }
 
         private fun applyDefaultOutboundDomainResolver(
             outbounds: List<Outbound>,
-            defaultResolverTag: String
+            defaultResolverTag: String,
+            defaultResolverStrategy: String? = null
         ): List<Outbound> {
             return outbounds.map { outbound ->
                 val server = outbound.server?.trim().orEmpty()
@@ -1421,7 +1438,10 @@ class ConfigRepository(private val context: Context) {
                 }
 
                 outbound.copy(
-                    domainResolver = (existing ?: DomainResolveConfig()).copy(server = defaultResolverTag)
+                    domainResolver = (existing ?: DomainResolveConfig()).copy(
+                        server = defaultResolverTag,
+                        strategy = existing?.strategy ?: defaultResolverStrategy
+                    )
                 )
             }
         }
@@ -1560,13 +1580,60 @@ class ConfigRepository(private val context: Context) {
         internal fun sanitizeInjectedDnsServerForTest(
             server: DnsServer,
             routingMode: RoutingMode,
-            proxyDetourTag: String
+            proxyDetourTag: String,
+            directDnsServerTags: Set<String> = emptySet()
         ): DnsServer {
-            if (routingMode == RoutingMode.GLOBAL_DIRECT) return server
-            if (!server.detour.isNullOrBlank()) return server
-            val t = server.type?.lowercase().orEmpty()
-            if (t == "fakeip" || t == "local" || t == "dhcp") return server
-            return server.copy(detour = proxyDetourTag)
+            return sanitizeInjectedDnsServerForRuntime(server, routingMode, proxyDetourTag, directDnsServerTags)
+        }
+
+        internal fun sanitizeInjectedDnsServerForRuntime(
+            server: DnsServer,
+            routingMode: RoutingMode,
+            proxyDetourTag: String,
+            directDnsServerTags: Set<String> = emptySet()
+        ): DnsServer {
+            val normalizedServer = normalizeInjectedDnsServer(server)
+            val serverTag = normalizedServer.tag?.trim().orEmpty()
+            val t = normalizedServer.type?.lowercase().orEmpty()
+            val shouldKeepDirect = routingMode == RoutingMode.GLOBAL_DIRECT ||
+                (serverTag.isNotBlank() && serverTag in directDnsServerTags)
+            val shouldPreserve = shouldKeepDirect ||
+                !normalizedServer.detour.isNullOrBlank() ||
+                t == "fakeip" ||
+                t == "local" ||
+                t == "dhcp"
+            return if (shouldPreserve) normalizedServer else normalizedServer.copy(detour = proxyDetourTag)
+        }
+
+        private fun normalizeInjectedDnsServer(server: DnsServer): DnsServer {
+            val tag = server.tag?.trim().orEmpty()
+            val address = server.address?.trim().orEmpty()
+            val hasNewEndpoint = !server.type.isNullOrBlank() || !server.server.isNullOrBlank()
+            if (tag.isBlank() || address.isBlank() || hasNewEndpoint) {
+                return server
+            }
+
+            val domainResolver = server.domainResolver ?: server.addressResolver
+                ?.trim()
+                ?.takeIf { it.isNotBlank() }
+                ?.let { DomainResolveConfig(server = it) }
+            return buildDnsServer(
+                address = address,
+                tag = tag,
+                detour = server.detour,
+                domainStrategy = server.domainStrategy ?: server.strategy,
+                domainResolver = domainResolver
+            ).copy(
+                udpFragment = server.udpFragment,
+                networkStrategy = server.networkStrategy,
+                networkType = server.networkType,
+                fallbackNetworkType = server.fallbackNetworkType,
+                fallbackDelay = server.fallbackDelay,
+                inet4Range = server.inet4Range,
+                inet6Range = server.inet6Range,
+                headers = server.headers,
+                tls = server.tls
+            )
         }
 
         internal fun applyDnsOverrideForTest(
@@ -1575,6 +1642,23 @@ class ConfigRepository(private val context: Context) {
             sanitizeServer: (DnsServer) -> DnsServer = { it }
         ): DnsConfig {
             return applyDnsOverride(baseConfig, overrideConfig, sanitizeServer)
+        }
+
+        internal fun parseDnsOverrideForTest(dnsOverride: String?): DnsConfig? {
+            return parseDnsOverrideConfig(dnsOverride)
+        }
+
+        private fun parseDnsOverrideConfig(dnsOverride: String?): DnsConfig? {
+            val trimmed = dnsOverride?.trim().orEmpty()
+            if (trimmed.isBlank()) return null
+            val root = JsonParser.parseString(trimmed)
+            val dnsElement = root
+                .takeIf { it.isJsonObject }
+                ?.asJsonObject
+                ?.get("dns")
+                ?.takeIf { it.isJsonObject }
+                ?: root
+            return Gson().fromJson(dnsElement, DnsConfig::class.java)
         }
 
         private fun applyDnsOverride(
@@ -1628,6 +1712,13 @@ class ConfigRepository(private val context: Context) {
             return applyDnsOverrideDomainResolvers(outbounds, overrideConfig)
         }
 
+        internal fun resolveDnsOverrideDirectDnsServerTagsForTest(
+            outbounds: List<Outbound>,
+            overrideConfig: DnsConfig?
+        ): Set<String> {
+            return resolveDnsOverrideDirectDnsServerTags(outbounds, overrideConfig)
+        }
+
         internal fun shouldApplyDnsPreResolveToDomainForTest(
             domain: String,
             dnsOverride: DnsConfig?,
@@ -1675,8 +1766,38 @@ class ConfigRepository(private val context: Context) {
                         rule = rule
                     )
                 } ?: return@map outbound
-                outbound.copy(domainResolver = resolver)
+                outbound.copy(
+                    domainResolver = resolver.copy(
+                        strategy = resolver.strategy ?: outbound.domainResolver?.strategy
+                    )
+                )
             }
+        }
+
+        private fun resolveDnsOverrideDirectDnsServerTags(
+            outbounds: List<Outbound>,
+            overrideConfig: DnsConfig?
+        ): Set<String> {
+            val rules = overrideConfig?.rules.orEmpty().map { normalizeDnsOverrideRule(it) }
+            if (rules.isEmpty()) return emptySet()
+
+            val directTags = linkedSetOf<String>()
+            outbounds.forEach { outbound ->
+                val server = outbound.server?.trim().orEmpty()
+                if (server.isBlank() || isIpAddressValue(server)) return@forEach
+                rules.forEach { rule ->
+                    val resolver = buildDomainResolverForMatchedDnsOverrideRule(
+                        domain = server,
+                        outboundTag = outbound.tag,
+                        rule = rule
+                    )
+                    val resolverTag = resolver?.server?.trim().orEmpty()
+                    if (resolverTag.isNotBlank()) {
+                        directTags.add(resolverTag)
+                    }
+                }
+            }
+            return directTags
         }
 
         private fun buildDomainResolverForMatchedDnsOverrideRule(
@@ -2475,9 +2596,8 @@ class ConfigRepository(private val context: Context) {
     }
 
     private fun parseDnsOverride(dnsOverride: String?): DnsConfig? {
-        if (dnsOverride.isNullOrBlank()) return null
         return try {
-            gson.fromJson(dnsOverride, DnsConfig::class.java)
+            parseDnsOverrideConfig(dnsOverride)
         } catch (e: Exception) {
             Log.w(TAG, "Failed to parse dnsOverride JSON, skipping", e)
             null
@@ -2682,12 +2802,49 @@ class ConfigRepository(private val context: Context) {
         onNodeComplete?.invoke(info.nodeId, latencyValue)
     }
 
-    private fun buildNodeTestInfos(nodes: List<NodeUi>): List<NodeTestInfo> {
+    private fun buildLatencyRuntimeContext(
+        profileId: String,
+        config: SingBoxConfig,
+        settings: AppSettings
+    ): LatencyRuntimeContext {
+        val rawOutbounds = config.outbounds.orEmpty().mapNotNull { buildOutboundForRuntime(it) }
+        val dnsOverrideConfig = parseDnsOverride(_profiles.value.find { it.id == profileId }?.dnsOverride)
+        val serverAddressStrategy = resolveDnsStrategy(settings.serverAddressStrategy, settings.ipVersionMode)
+        val defaultResolverOutbounds = applyDefaultOutboundDomainResolver(
+            rawOutbounds,
+            "local",
+            serverAddressStrategy
+        )
+        val runtimeOutbounds = if (dnsOverrideConfig != null) {
+            applyDnsOverrideDomainResolvers(defaultResolverOutbounds, dnsOverrideConfig)
+        } else {
+            defaultResolverOutbounds
+        }
+        val directDnsTags = resolveDnsOverrideDirectDnsServerTags(runtimeOutbounds, dnsOverrideConfig)
+        val dnsConfig = SingBoxCore.buildLatencyTestDnsConfigForRuntime(
+            settings = settings,
+            outbounds = runtimeOutbounds,
+            dnsOverride = dnsOverrideConfig
+        ) { server ->
+            sanitizeInjectedDnsServerForRuntime(
+                server = server,
+                routingMode = RoutingMode.GLOBAL_DIRECT,
+                proxyDetourTag = "direct",
+                directDnsServerTags = directDnsTags
+            )
+        }
+        return LatencyRuntimeContext(runtimeOutbounds, dnsConfig)
+    }
+
+    private fun buildNodeTestInfos(nodes: List<NodeUi>, settings: AppSettings): List<NodeTestInfo> {
+        val runtimeContexts = mutableMapOf<String, LatencyRuntimeContext>()
         return nodes.mapNotNull { node ->
             val config = loadConfig(node.sourceProfileId) ?: return@mapNotNull null
-            val outbound = config.outbounds?.find { it.tag == node.name } ?: return@mapNotNull null
-            val runtimeOutbound = buildOutboundForRuntime(outbound) ?: return@mapNotNull null
-            NodeTestInfo(runtimeOutbound, node.id, node.sourceProfileId)
+            val runtimeContext = runtimeContexts.getOrPut(node.sourceProfileId) {
+                buildLatencyRuntimeContext(node.sourceProfileId, config, settings)
+            }
+            val runtimeOutbound = runtimeContext.outbounds.find { it.tag == node.name } ?: return@mapNotNull null
+            NodeTestInfo(runtimeOutbound, node.id, node.sourceProfileId, runtimeContext.dnsConfig)
         }
     }
 
@@ -2700,24 +2857,29 @@ class ConfigRepository(private val context: Context) {
         coroutineScope {
             if (infos.isEmpty()) return@coroutineScope
 
-            val preparedInfoPairs = infos.map { info ->
-                info to prepareOfflineProbeOutbound(info.outbound)
-            }
-            val infoByTag = preparedInfoPairs.associate { (info, outbound) -> outbound.tag to Pair(info, outbound) }
+            val infosByDnsConfig = infos.groupBy { it.dnsConfig }
             val initialResults = ConcurrentHashMap<String, Long>()
 
-            singBoxCore.testOutboundsLatency(preparedInfoPairs.map { it.second }) { tag, latency ->
-                initialResults[tag] = latency
-                if (latency > 0L) {
-                    val pair = infoByTag[tag] ?: return@testOutboundsLatency
-                    applyLatencyResult(pair.first, latency, onNodeComplete)
+            infosByDnsConfig.forEach { (dnsConfig, groupedInfos) ->
+                val preparedInfoPairs = groupedInfos.map { info ->
+                    info to prepareOfflineProbeOutbound(info.outbound)
+                }
+                val infoByTag = preparedInfoPairs.associate { (info, outbound) -> outbound.tag to Pair(info, outbound) }
+
+                singBoxCore.testOutboundsLatency(preparedInfoPairs.map { it.second }, dnsConfig) { tag, latency ->
+                    initialResults[tag] = latency
+                    if (latency > 0L) {
+                        val pair = infoByTag[tag] ?: return@testOutboundsLatency
+                        applyLatencyResult(pair.first, latency, onNodeComplete)
+                    }
                 }
             }
 
             val fallbackSemaphore = Semaphore(concurrency)
-            preparedInfoPairs.map { (info, probeOutbound) ->
+            infos.map { info ->
                 async {
                     fallbackSemaphore.withPermit {
+                        val probeOutbound = prepareOfflineProbeOutbound(info.outbound)
                         val latency = initialResults[probeOutbound.tag] ?: -1L
                         if (latency > 0L) return@withPermit
 
@@ -4256,20 +4418,26 @@ class ConfigRepository(private val context: Context) {
                             return@withContext -1L
                         }
 
-                        val outbound = config.outbounds?.find { it.tag == node.name }
-                        if (outbound == null) {
+                        val rawOutbound = config.outbounds?.find { it.tag == node.name }
+                        if (rawOutbound == null) {
                             Log.e(TAG, "Outbound not found: ${node.name}")
                             return@withContext -1L
                         }
 
-                        val fixedOutbound = buildOutboundForRuntime(outbound)
+                        val settings = settingsRepository.settings.first()
+                        val runtimeContext = buildLatencyRuntimeContext(node.sourceProfileId, config, settings)
+                        val fixedOutbound = runtimeContext.outbounds.find { it.tag == rawOutbound.tag }
                         if (fixedOutbound == null) {
-                            Log.e(TAG, "Outbound type removed: ${outbound.type}")
+                            Log.e(TAG, "Outbound type removed: ${rawOutbound.type}")
                             return@withContext -1L
                         }
-                        val allOutbounds = config.outbounds.mapNotNull { buildOutboundForRuntime(it) }
+                        val allOutbounds = runtimeContext.outbounds
                         val probeOutbound = prepareOfflineProbeOutbound(fixedOutbound)
-                        val latency = singBoxCore.testOutboundLatency(probeOutbound, allOutbounds)
+                        val latency = singBoxCore.testOutboundLatency(
+                            probeOutbound,
+                            allOutbounds,
+                            runtimeContext.dnsConfig
+                        )
                         val finalLatency = if (latency > 0) {
                             latency
                         } else {
@@ -4354,7 +4522,8 @@ class ConfigRepository(private val context: Context) {
             sourceNodes
         }
 
-        val testInfoList = buildNodeTestInfos(nodes)
+        val settings = settingsRepository.settings.first()
+        val testInfoList = buildNodeTestInfos(nodes, settings)
 
         if (testInfoList.isEmpty()) {
             Log.w(TAG, "No valid nodes to test")
@@ -4365,7 +4534,6 @@ class ConfigRepository(private val context: Context) {
             LatencyProbePolicy.shouldUseTcpFallback(it.outbound)
         }
 
-        val settings = settingsRepository.settings.first()
         val concurrency = settings.latencyTestConcurrency.coerceIn(1, 20)
 
         coroutineScope {
@@ -4618,7 +4786,15 @@ class ConfigRepository(private val context: Context) {
                 config, activeNode, sanitizedSettings, allNodesSnapshot,
                 activeProfile?.dnsPreResolve ?: false, activeId, dnsOverrideConfig
             )
-            val defaultResolverOutbounds = applyDefaultOutboundDomainResolver(rawOutboundsContext.outbounds, "local")
+            val serverAddressStrategy = resolveDnsStrategy(
+                sanitizedSettings.serverAddressStrategy,
+                sanitizedSettings.ipVersionMode
+            )
+            val defaultResolverOutbounds = applyDefaultOutboundDomainResolver(
+                rawOutboundsContext.outbounds,
+                "local",
+                serverAddressStrategy
+            )
             val outboundsContext = rawOutboundsContext.copy(
                 outbounds = if (dnsOverrideConfig != null) {
                     applyDnsOverrideDomainResolvers(defaultResolverOutbounds, dnsOverrideConfig)
@@ -5602,9 +5778,15 @@ class ConfigRepository(private val context: Context) {
             fakeDnsEnabled = settings.fakeDnsEnabled,
             proxyServerTag = proxyServerTag
         )
+        val directOverrideDnsServerTags = resolveDnsOverrideDirectDnsServerTags(outboundsContext.outbounds, dnsOverride)
 
         fun sanitizeDnsServer(server: DnsServer): DnsServer {
-            return sanitizeInjectedDnsServerForTest(server, settings.routingMode, proxyDetourTag)
+            return sanitizeInjectedDnsServerForRuntime(
+                server,
+                settings.routingMode,
+                proxyDetourTag,
+                directOverrideDnsServerTags
+            )
         }
 
         // 追加订阅原始配置中的 DNS servers 和 rules

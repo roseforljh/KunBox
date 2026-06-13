@@ -1,8 +1,13 @@
 package com.kunk.singbox.core
 
 import com.kunk.singbox.model.AppSettings
+import com.kunk.singbox.model.DnsConfig
+import com.kunk.singbox.model.DnsRule
+import com.kunk.singbox.model.DnsServer
 import com.kunk.singbox.model.DomainResolveConfig
 import com.kunk.singbox.model.Outbound
+import com.kunk.singbox.model.RoutingMode
+import com.kunk.singbox.repository.ConfigRepository
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -43,7 +48,7 @@ class SingBoxCoreLatencyPathTest {
     }
 
     @Test
-    fun testLatencyOutboundDomainResolverReplacesCustomResolverWithLocalDns() {
+    fun testLatencyOutboundDomainResolverPreservesCustomResolver() {
         val outbound = Outbound(
             type = "vless",
             tag = "airport-node",
@@ -53,7 +58,50 @@ class SingBoxCoreLatencyPathTest {
 
         val actual = SingBoxCore.applyLatencyLocalDomainResolverForTest(outbound)
 
-        assertEquals("local", actual.domainResolver?.server)
+        assertEquals("airport-dns", actual.domainResolver?.server)
+    }
+
+    @Test
+    fun testLatencyDnsConfigIncludesDnsOverrideServerAndNodeResolverRuleBeforeLocalFallback() {
+        val outbounds = listOf(
+            Outbound(
+                type = "vless",
+                tag = "airport-node",
+                server = "fly-nnca.bestvmr.com",
+                domainResolver = DomainResolveConfig(server = "bestvmr-dns", strategy = "prefer_ipv4")
+            )
+        )
+        val override = DnsConfig(
+            servers = listOf(DnsServer(tag = "bestvmr-dns", address = "udp://47.110.75.65:8053")),
+            rules = listOf(DnsRule(domainSuffix = listOf(".bestvmr.com"), server = "bestvmr-dns"))
+        )
+
+        val config = SingBoxCore.buildLatencyTestDnsConfigForTest(
+            settings = AppSettings(localDns = "local"),
+            outbounds = outbounds,
+            dnsOverride = override
+        ) { server ->
+            ConfigRepository.sanitizeInjectedDnsServerForTest(
+                server = server,
+                routingMode = RoutingMode.GLOBAL_DIRECT,
+                proxyDetourTag = "direct"
+            )
+        }
+        val privateDns = config.servers?.firstOrNull { it.tag == "bestvmr-dns" }
+        val nodeRuleIndex = config.rules.orEmpty().indexOfFirst {
+            it.domain == listOf("fly-nnca.bestvmr.com") && it.server == "bestvmr-dns"
+        }
+        val localFallbackIndex = config.rules.orEmpty().indexOfFirst {
+            it.queryType == listOf("A", "AAAA") && it.server == "local" && it.domain == null
+        }
+
+        assertEquals("udp", privateDns?.type)
+        assertEquals("47.110.75.65", privateDns?.server)
+        assertEquals(8053, privateDns?.serverPort)
+        assertTrue(nodeRuleIndex >= 0)
+        assertTrue(localFallbackIndex >= 0)
+        assertTrue(nodeRuleIndex < localFallbackIndex)
+        assertEquals("prefer_ipv4", config.rules?.get(nodeRuleIndex)?.strategy)
     }
 
     @Test

@@ -82,15 +82,34 @@ class SingBoxCore private constructor(private val context: Context) {
             }
         }
 
-        internal fun buildLatencyTestDnsConfigForTest(settings: AppSettings): DnsConfig {
-            return buildLatencyTestDnsConfig(settings)
+        internal fun buildLatencyTestDnsConfigForTest(
+            settings: AppSettings,
+            outbounds: List<Outbound> = emptyList(),
+            dnsOverride: DnsConfig? = null,
+            sanitizeDnsServer: (DnsServer) -> DnsServer = { it }
+        ): DnsConfig {
+            return buildLatencyTestDnsConfigForRuntime(settings, outbounds, dnsOverride, sanitizeDnsServer)
+        }
+
+        internal fun buildLatencyTestDnsConfigForRuntime(
+            settings: AppSettings,
+            outbounds: List<Outbound> = emptyList(),
+            dnsOverride: DnsConfig? = null,
+            sanitizeDnsServer: (DnsServer) -> DnsServer = { it }
+        ): DnsConfig {
+            return buildLatencyTestDnsConfig(settings, outbounds, dnsOverride, sanitizeDnsServer)
         }
 
         internal fun applyLatencyLocalDomainResolverForTest(outbound: Outbound): Outbound {
             return applyLatencyLocalDomainResolver(outbound)
         }
 
-        private fun buildLatencyTestDnsConfig(settings: AppSettings): DnsConfig {
+        private fun buildLatencyTestDnsConfig(
+            settings: AppSettings,
+            outbounds: List<Outbound> = emptyList(),
+            dnsOverride: DnsConfig? = null,
+            sanitizeDnsServer: (DnsServer) -> DnsServer = { it }
+        ): DnsConfig {
             val localDnsAddr = ConfigRepository.normalizeLocalDns(settings.localDns)
             val localResolver = ConfigRepository.buildDnsResolverForAddress(localDnsAddr)
             val localServer = ConfigRepository.buildDnsServer(
@@ -99,24 +118,40 @@ class SingBoxCore private constructor(private val context: Context) {
                 domainStrategy = "prefer_ipv4",
                 domainResolver = localResolver
             )
+            val servers = mutableListOf(
+                DnsServer(
+                    tag = "dns-bootstrap",
+                    type = "udp",
+                    server = "223.5.5.5",
+                    serverPort = 53
+                ),
+                localServer,
+                DnsServer(
+                    tag = "dns-backup",
+                    type = "udp",
+                    server = "119.29.29.29",
+                    serverPort = 53
+                )
+            )
+            dnsOverride?.servers.orEmpty().forEach { server ->
+                val tag = server.tag?.trim().orEmpty()
+                if (tag.isBlank()) return@forEach
+                val sanitized = sanitizeDnsServer(server)
+                val existingIndex = servers.indexOfFirst { it.tag == tag }
+                if (existingIndex >= 0) {
+                    servers[existingIndex] = sanitized
+                } else {
+                    servers.add(sanitized)
+                }
+            }
+            val specificRules = buildList {
+                dnsOverride?.rules.orEmpty().map { normalizeLatencyDnsRule(it) }.forEach { add(it) }
+                addAll(ConfigRepository.buildOutboundDomainResolverDnsRulesForRuntime(outbounds))
+            }
 
             return DnsConfig(
-                servers = listOf(
-                    DnsServer(
-                        tag = "dns-bootstrap",
-                        type = "udp",
-                        server = "223.5.5.5",
-                        serverPort = 53
-                    ),
-                    localServer,
-                    DnsServer(
-                        tag = "dns-backup",
-                        type = "udp",
-                        server = "119.29.29.29",
-                        serverPort = 53
-                    )
-                ),
-                rules = listOf(
+                servers = servers,
+                rules = specificRules + listOf(
                     DnsRule(
                         queryType = listOf("A", "AAAA"),
                         server = LATENCY_LOCAL_DNS_TAG
@@ -127,12 +162,24 @@ class SingBoxCore private constructor(private val context: Context) {
             )
         }
 
+        private fun normalizeLatencyDnsRule(rule: DnsRule): DnsRule {
+            if (!rule.action.isNullOrBlank() || rule.server.isNullOrBlank()) {
+                return rule
+            }
+            return rule.copy(action = "route")
+        }
+
         private fun applyLatencyLocalDomainResolver(outbound: Outbound): Outbound {
             val server = outbound.server?.trim().orEmpty()
             if (server.isBlank() || isIpLiteral(server)) return outbound
 
+            val existingResolver = outbound.domainResolver
+            val existingResolverServer = existingResolver?.server?.trim().orEmpty()
+            if (existingResolverServer.isNotBlank() && existingResolverServer != "dns-bootstrap") {
+                return outbound
+            }
             return outbound.copy(
-                domainResolver = (outbound.domainResolver ?: DomainResolveConfig()).copy(server = LATENCY_LOCAL_DNS_TAG)
+                domainResolver = (existingResolver ?: DomainResolveConfig()).copy(server = LATENCY_LOCAL_DNS_TAG)
             )
         }
 
@@ -206,7 +253,8 @@ class SingBoxCore private constructor(private val context: Context) {
     private suspend fun testOutboundLatencyWithOfflineTemporaryService(
         outbound: Outbound,
         settings: com.kunk.singbox.model.AppSettings? = null,
-        dependencyOutbounds: List<Outbound> = emptyList()
+        dependencyOutbounds: List<Outbound> = emptyList(),
+        dnsConfig: DnsConfig? = null
     ): Long = withContext(Dispatchers.IO) {
         if (!libboxAvailable) return@withContext -1L
 
@@ -228,12 +276,21 @@ class SingBoxCore private constructor(private val context: Context) {
                 fallbackUrl,
                 timeoutMs,
                 dependencyOutbounds,
-                finalSettings
+                finalSettings,
+                dnsConfig
             )
             if (rtt >= 0) {
                 rtt
             } else {
-                testWithLocalHttpProxy(outbound, url, fallbackUrl, timeoutMs, dependencyOutbounds, finalSettings)
+                testWithLocalHttpProxy(
+                    outbound,
+                    url,
+                    fallbackUrl,
+                    timeoutMs,
+                    dependencyOutbounds,
+                    finalSettings,
+                    dnsConfig
+                )
             }
         } catch (e: Exception) {
             Log.w(TAG, "Temporary HTTP proxy latency test failed: ${e.message}")
@@ -297,11 +354,20 @@ class SingBoxCore private constructor(private val context: Context) {
         fallbackUrl: String? = null,
         timeoutMs: Int,
         dependencyOutbounds: List<Outbound> = emptyList(),
-        settings: AppSettings
+        settings: AppSettings,
+        dnsConfig: DnsConfig? = null
     ): Long = withContext(Dispatchers.IO) {
 
         httpProxySemaphore.withPermit {
-            testWithLocalHttpProxyInternal(outbound, targetUrl, fallbackUrl, timeoutMs, dependencyOutbounds, settings)
+            testWithLocalHttpProxyInternal(
+                outbound,
+                targetUrl,
+                fallbackUrl,
+                timeoutMs,
+                dependencyOutbounds,
+                settings,
+                dnsConfig
+            )
         }
     }
 
@@ -312,7 +378,8 @@ class SingBoxCore private constructor(private val context: Context) {
         fallbackUrl: String? = null,
         timeoutMs: Int,
         dependencyOutbounds: List<Outbound> = emptyList(),
-        settings: AppSettings
+        settings: AppSettings,
+        dnsConfig: DnsConfig? = null
     ): Long = processNetworkBindMutex.withLock {
 
         val port = allocateLocalPort()
@@ -359,7 +426,7 @@ class SingBoxCore private constructor(private val context: Context) {
                 log = com.kunk.singbox.model.LogConfig(level = "debug", timestamp = true),
 
                 // sing-box 1.13+: 不设 detour 即为直连
-                dns = buildLatencyTestDnsConfig(settings),
+                dns = dnsConfig ?: buildLatencyTestDnsConfig(settings, allOutbounds),
                 inbounds = listOf(inbound),
                 outbounds = allOutbounds,
                 route = com.kunk.singbox.model.RouteConfig(
@@ -470,9 +537,18 @@ class SingBoxCore private constructor(private val context: Context) {
         fallbackUrl: String? = null,
         timeoutMs: Int,
         dependencyOutbounds: List<Outbound> = emptyList(),
-        settings: AppSettings
+        settings: AppSettings,
+        dnsConfig: DnsConfig? = null
     ): Long = withContext(Dispatchers.IO) {
-        testWithLocalHttpProxyInternal(outbound, targetUrl, fallbackUrl, timeoutMs, dependencyOutbounds, settings)
+        testWithLocalHttpProxyInternal(
+            outbound,
+            targetUrl,
+            fallbackUrl,
+            timeoutMs,
+            dependencyOutbounds,
+            settings,
+            dnsConfig
+        )
     }
 
     private suspend fun testOutboundsLatencyOfflineWithTemporaryService(
@@ -480,6 +556,7 @@ class SingBoxCore private constructor(private val context: Context) {
         targetUrl: String,
         timeoutMs: Int,
         method: LatencyTestMethod,
+        dnsConfig: DnsConfig? = null,
         onResult: (tag: String, latency: Long) -> Unit
     ) = withContext(Dispatchers.IO) {
 
@@ -490,7 +567,7 @@ class SingBoxCore private constructor(private val context: Context) {
 
         outbounds.chunked(batchSize).forEach { batch ->
 
-            testOutboundsLatencyBatchInternal(batch, targetUrl, timeoutMs, concurrency, settings, onResult)
+            testOutboundsLatencyBatchInternal(batch, targetUrl, timeoutMs, concurrency, settings, dnsConfig, onResult)
         }
     }
 
@@ -503,6 +580,7 @@ class SingBoxCore private constructor(private val context: Context) {
         timeoutMs: Int,
         concurrency: Int,
         settings: AppSettings,
+        dnsConfig: DnsConfig? = null,
         onResult: (tag: String, latency: Long) -> Unit
     ) {
         if (batchOutbounds.isEmpty()) return
@@ -526,7 +604,7 @@ class SingBoxCore private constructor(private val context: Context) {
         }
 
         val portToTagMap = ports.zip(fixedOutbounds.map { it.tag }).toMap()
-        val config = buildBatchTestConfig(fixedOutbounds, ports, settings)
+        val config = buildBatchTestConfig(fixedOutbounds, ports, settings, dnsConfig)
         val configJson = gson.toJson(config)
         val batchTestDbPath = config.experimental?.cacheFile?.path
 
@@ -580,7 +658,8 @@ class SingBoxCore private constructor(private val context: Context) {
     private fun buildBatchTestConfig(
         batchOutbounds: List<Outbound>,
         ports: List<Int>,
-        settings: AppSettings
+        settings: AppSettings,
+        dnsConfig: DnsConfig? = null
     ): SingBoxConfig {
         val inbounds = ArrayList<com.kunk.singbox.model.Inbound>()
         val rules = ArrayList<com.kunk.singbox.model.RouteRule>()
@@ -600,9 +679,6 @@ class SingBoxCore private constructor(private val context: Context) {
             ))
         }
 
-        // sing-box 1.13+: 不设 detour 即为直连
-        val dnsConfig = buildLatencyTestDnsConfig(settings)
-
         val safeOutbounds = ArrayList(batchOutbounds)
         val addedTags = batchOutbounds.map { it.tag }.toMutableSet()
 
@@ -617,12 +693,13 @@ class SingBoxCore private constructor(private val context: Context) {
 
         if (safeOutbounds.none { it.tag == "direct" }) safeOutbounds.add(com.kunk.singbox.model.Outbound(type = "direct", tag = "direct"))
         // sing-box 1.13.0+: "block" outbound type removed, no longer needed
+        val latencyDnsConfig = dnsConfig ?: buildLatencyTestDnsConfig(settings, safeOutbounds)
 
         val batchTestDbPath = File(tempDir, "batch_test_${UUID.randomUUID()}.db").absolutePath
 
         return SingBoxConfig(
             log = com.kunk.singbox.model.LogConfig(level = "debug", timestamp = true),
-            dns = dnsConfig,
+            dns = latencyDnsConfig,
             inbounds = inbounds,
             outbounds = safeOutbounds,
             route = com.kunk.singbox.model.RouteConfig(
@@ -749,7 +826,8 @@ class SingBoxCore private constructor(private val context: Context) {
      */
     suspend fun testOutboundLatency(
         outbound: Outbound,
-        allOutbounds: List<Outbound> = emptyList()
+        allOutbounds: List<Outbound> = emptyList(),
+        dnsConfig: DnsConfig? = null
     ): Long = withContext(Dispatchers.IO) {
         val settings = SettingsRepository.getInstance(context).settings.first()
 
@@ -759,13 +837,14 @@ class SingBoxCore private constructor(private val context: Context) {
             emptyList()
         }
 
-        testOutboundLatencyWithOfflineTemporaryService(outbound, settings, dependencyOutbounds)
+        testOutboundLatencyWithOfflineTemporaryService(outbound, settings, dependencyOutbounds, dnsConfig)
     }
 
     /**
      */
     suspend fun testOutboundsLatency(
         outbounds: List<Outbound>,
+        dnsConfig: DnsConfig? = null,
         onResult: (tag: String, latency: Long) -> Unit
     ) = withContext(Dispatchers.IO) {
         val settings = SettingsRepository.getInstance(context).settings.first()
@@ -776,6 +855,7 @@ class SingBoxCore private constructor(private val context: Context) {
             url,
             timeoutMs,
             settings.latencyTestMethod,
+            dnsConfig,
             onResult
         )
     }
