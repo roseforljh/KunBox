@@ -11,9 +11,11 @@ class TrafficRepositorySourceTest {
     fun trafficStatsPersistenceUsesNioAtomicMove() {
         val source = File("src/main/java/com/kunk/singbox/repository/TrafficRepository.kt").readText()
 
+        assertTrue(source.contains("Build.VERSION.SDK_INT < Build.VERSION_CODES.O"))
+        assertTrue(source.contains("moveTempFileWithNio(tempFile, targetFile, atomic = true)"))
+        assertTrue(source.contains("moveTempFileWithFileApi(tempFile, targetFile)"))
         assertTrue(source.contains("StandardCopyOption.ATOMIC_MOVE"))
         assertTrue(source.contains("Files.move("))
-        assertFalse(source.contains(".renameTo("))
         assertFalse(source.contains(".copyTo(statsFile"))
         assertFalse(source.contains(".copyTo(dailyFile"))
     }

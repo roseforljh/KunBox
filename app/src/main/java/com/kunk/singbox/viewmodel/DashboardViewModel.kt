@@ -1,15 +1,13 @@
-﻿package com.kunk.singbox.viewmodel
+package com.kunk.singbox.viewmodel
 
 import com.kunk.singbox.R
 import android.app.Application
 import android.content.Context
 import android.content.Intent
-import android.net.TrafficStats
 import android.net.VpnService
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.os.Build
-import android.os.Process
 import android.os.SystemClock
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
@@ -17,9 +15,6 @@ import androidx.lifecycle.viewModelScope
 import com.kunk.singbox.model.ConnectionState
 import com.kunk.singbox.model.ConnectionStats
 import com.kunk.singbox.model.AppSettings
-import com.kunk.singbox.model.FilterMode
-import com.kunk.singbox.model.NodeFilter
-import com.kunk.singbox.model.NodeSortType
 import com.kunk.singbox.model.NodeUi
 import com.kunk.singbox.model.ProfileUi
 import com.kunk.singbox.repository.SettingsRepository
@@ -30,7 +25,6 @@ import com.kunk.singbox.service.ServiceState
 import com.kunk.singbox.service.ProxyOnlyService
 import com.kunk.singbox.service.VpnTileService
 import com.kunk.singbox.core.SingBoxCore
-import com.kunk.singbox.core.BoxWrapperManager
 import com.kunk.singbox.repository.ConfigRepository
 import com.kunk.singbox.viewmodel.shared.NodeDisplaySettings
 import kotlinx.coroutines.Job
@@ -62,26 +56,8 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
     companion object {
         private const val TAG = "DashboardViewModel"
 
-        internal fun resolveTrustedConnectionStateForTest(
-            serviceState: ServiceState,
-            ipcBound: Boolean
-        ): ConnectionState {
-            return resolveTrustedConnectionState(serviceState, ipcBound)
-        }
-
-        private fun resolveTrustedConnectionState(
-            serviceState: ServiceState,
-            ipcBound: Boolean
-        ): ConnectionState {
-            if (!ipcBound) return ConnectionState.Idle
-
-            return when (serviceState) {
-                ServiceState.RUNNING -> ConnectionState.Connected
-                ServiceState.STARTING -> ConnectionState.Connecting
-                ServiceState.STOPPING -> ConnectionState.Disconnecting
-                ServiceState.STOPPED -> ConnectionState.Idle
-            }
-        }
+        internal fun resolveTrustedConnectionStateForTest(serviceState: ServiceState, ipcBound: Boolean): ConnectionState =
+            resolveTrustedDashboardConnectionState(serviceState, ipcBound)
     }
 
     private val configRepository = ConfigRepository.getInstance(application)
@@ -98,6 +74,16 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
     // Stats
     private val _statsBase = MutableStateFlow(ConnectionStats(0, 0, 0, 0, 0))
     private val _connectedAtElapsedMs = MutableStateFlow<Long?>(null)
+    private val trafficMonitor = DashboardTrafficMonitor(viewModelScope) { snapshot ->
+        _statsBase.update { current ->
+            current.copy(
+                uploadSpeed = snapshot.uploadSpeed,
+                downloadSpeed = snapshot.downloadSpeed,
+                uploadTotal = snapshot.uploadTotal,
+                downloadTotal = snapshot.downloadTotal
+            )
+        }
+    }
 
     private val durationMsFlow: Flow<Long> = connectionState.flatMapLatest { state ->
         if (state == ConnectionState.Connected) {
@@ -181,10 +167,6 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
     private var lastErrorToastJob: Job? = null
     private var startMonitorJob: Job? = null
 
-    // 用于平滑流量显示的缓存
-    private var lastUploadSpeed: Long = 0
-    private var lastDownloadSpeed: Long = 0
-
     // Active profile and node from ConfigRepository
     val activeProfileId: StateFlow<String?> = configRepository.activeProfileId
         .stateIn(
@@ -221,51 +203,13 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         displaySettings.sortType,
         displaySettings.customOrder,
         configRepository.activeNodeId
-    ) { nodes: List<NodeUi>, filter: NodeFilter, sortType: NodeSortType, customOrder: List<String>, _ ->
-        val filtered = when (filter.filterMode) {
-            FilterMode.NONE -> nodes
-            FilterMode.INCLUDE -> {
-                val keywords = filter.effectiveIncludeKeywords
-                if (keywords.isEmpty()) nodes
-                else nodes.filter { node -> keywords.any { keyword -> node.displayName.contains(keyword, ignoreCase = true) } }
-            }
-            FilterMode.EXCLUDE -> {
-                val keywords = filter.effectiveExcludeKeywords
-                if (keywords.isEmpty()) nodes
-                else nodes.filter { node -> keywords.none { keyword -> node.displayName.contains(keyword, ignoreCase = true) } }
-            }
-        }
-
-        // 应用排序
-        val sorted = when (sortType) {
-            NodeSortType.DEFAULT -> filtered
-            NodeSortType.LATENCY -> filtered.sortedWith(compareBy<NodeUi> {
-                val l = it.latencyMs
-                // 将未测试(null)和超时/失败(<=0)的节点排到最后
-                if (l == null || l <= 0) Long.MAX_VALUE else l
-            })
-            NodeSortType.NAME,
-            NodeSortType.REGION -> filtered.sortedBy { it.name }
-
-            NodeSortType.CUSTOM -> {
-                val orderMap = customOrder.withIndex().associate { it.value to it.index }
-                filtered.sortedBy { orderMap[it.id] ?: Int.MAX_VALUE }
-            }
-        }
-
-        sorted
+    ) { nodes, filter, sortType, customOrder, _ ->
+        buildDashboardNodes(nodes, filter, sortType, customOrder)
     }.flowOn(Dispatchers.Default).stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5000),
         initialValue = emptyList()
     )
-
-    private var trafficSmoothingJob: Job? = null
-    private var trafficBaseTxBytes: Long = 0
-    private var trafficBaseRxBytes: Long = 0
-    private var lastTrafficTxBytes: Long = 0
-    private var lastTrafficRxBytes: Long = 0
-    private var lastTrafficSampleAtElapsedMs: Long = 0
 
     // Status
     private val _updateStatus = MutableStateFlow<String?>(null)
@@ -328,7 +272,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                     VpnTileService.persistVpnState(context, false)
                 }
 
-                val trustedInitialState = resolveTrustedConnectionState(
+                val trustedInitialState = resolveTrustedDashboardConnectionState(
                     serviceState = SingBoxRemote.state.value,
                     ipcBound = SingBoxRemote.isBound()
                 )
@@ -404,7 +348,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         val stateFlow = SingBoxRemote.state
         viewModelScope.launch {
             stateFlow.collect { state ->
-                when (resolveTrustedConnectionState(state, SingBoxRemote.isBound())) {
+                when (resolveTrustedDashboardConnectionState(state, SingBoxRemote.isBound())) {
                     ConnectionState.Connected -> {
                         systemVpnDetectedOnBoot = false
                         setConnectionState(ConnectionState.Connected)
@@ -552,7 +496,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
             // 避免产生重复的前台通知导致网络恢复抖动
 
             // 只信任已绑定 IPC 的实时状态，避免清后台后的过期 MMKV active/pending 造成假启动态
-            val phase1State = resolveTrustedConnectionState(
+            val phase1State = resolveTrustedDashboardConnectionState(
                 serviceState = SingBoxRemote.state.value,
                 ipcBound = SingBoxRemote.isBound()
             )
@@ -570,7 +514,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
             if (SingBoxRemote.isBound()) {
                 val state = SingBoxRemote.state.value
                 Log.i(TAG, "refreshState Phase 2: state=$state, bound=true, retries=$retries")
-                setConnectionState(resolveTrustedConnectionState(state, ipcBound = true))
+                setConnectionState(resolveTrustedDashboardConnectionState(state, ipcBound = true))
             } else {
                 Log.w(TAG, "refreshState Phase 2: IPC not bound, showing idle until real service state arrives")
                 setConnectionState(ConnectionState.Idle)
@@ -1033,153 +977,18 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     private fun startTrafficMonitor() {
-        stopTrafficMonitor()
-
-        lastUploadSpeed = 0
-        lastDownloadSpeed = 0
-
-        val uid = Process.myUid()
-        val tx0 = TrafficStats.getUidTxBytes(uid).let { if (it > 0) it else 0L }
-        val rx0 = TrafficStats.getUidRxBytes(uid).let { if (it > 0) it else 0L }
-        trafficBaseTxBytes = tx0
-        trafficBaseRxBytes = rx0
-        lastTrafficTxBytes = tx0
-        lastTrafficRxBytes = rx0
-        lastTrafficSampleAtElapsedMs = SystemClock.elapsedRealtime()
-
-        // 记录 BoxWrapper 初始流量值 (用于计算本次会话流量)
-        wrapperBaseUpload = if (BoxWrapperManager.isAvailable()) {
-            BoxWrapperManager.getUploadTotal().let { if (it > 0) it else 0L }
-        } else {
-            0L
-        }
-        wrapperBaseDownload = if (BoxWrapperManager.isAvailable()) {
-            BoxWrapperManager.getDownloadTotal().let { if (it > 0) it else 0L }
-        } else {
-            0L
-        }
-
-        trafficSmoothingJob = viewModelScope.launch(Dispatchers.Default) {
-            while (true) {
-                delay(1000)
-
-                val nowElapsed = SystemClock.elapsedRealtime()
-
-                val sample = if (BoxWrapperManager.isAvailable()) {
-                    val wrapperUp = BoxWrapperManager.getUploadTotal()
-                    val wrapperDown = BoxWrapperManager.getDownloadTotal()
-                    if (wrapperUp >= 0 && wrapperDown >= 0) {
-                        // 计算本次会话流量
-                        val sessionUp = (wrapperUp - wrapperBaseUpload).coerceAtLeast(0L)
-                        val sessionDown = (wrapperDown - wrapperBaseDownload).coerceAtLeast(0L)
-                        Quadruple(wrapperUp, wrapperDown, sessionUp, sessionDown)
-                    } else {
-                        // BoxWrapper 返回无效值，回退到 TrafficStats
-                        val sysTx = TrafficStats.getUidTxBytes(uid).let { if (it > 0) it else 0L }
-                        val sysRx = TrafficStats.getUidRxBytes(uid).let { if (it > 0) it else 0L }
-                        Quadruple(sysTx, sysRx, (sysTx - trafficBaseTxBytes).coerceAtLeast(0L), (sysRx - trafficBaseRxBytes).coerceAtLeast(0L))
-                    }
-                } else {
-                    // BoxWrapper 不可用，使用 TrafficStats
-                    val sysTx = TrafficStats.getUidTxBytes(uid).let { if (it > 0) it else 0L }
-                    val sysRx = TrafficStats.getUidRxBytes(uid).let { if (it > 0) it else 0L }
-                    Quadruple(sysTx, sysRx, (sysTx - trafficBaseTxBytes).coerceAtLeast(0L), (sysRx - trafficBaseRxBytes).coerceAtLeast(0L))
-                }
-
-                val dtMs = (nowElapsed - lastTrafficSampleAtElapsedMs).coerceAtLeast(1L)
-                val dTx = (sample.tx - lastTrafficTxBytes).coerceAtLeast(0L)
-                val dRx = (sample.rx - lastTrafficRxBytes).coerceAtLeast(0L)
-
-                val up = (dTx * 1000L) / dtMs
-                val down = (dRx * 1000L) / dtMs
-
-                // 优化: 使用自适应平滑因子，根据速度变化幅度动态调整
-                val uploadSmoothFactor = calculateAdaptiveSmoothFactor(up, lastUploadSpeed)
-                val downloadSmoothFactor = calculateAdaptiveSmoothFactor(down, lastDownloadSpeed)
-
-                val smoothedUp = if (lastUploadSpeed == 0L) up
-                else (lastUploadSpeed * (1 - uploadSmoothFactor) + up * uploadSmoothFactor).toLong()
-                val smoothedDown = if (lastDownloadSpeed == 0L) down
-                else (lastDownloadSpeed * (1 - downloadSmoothFactor) + down * downloadSmoothFactor).toLong()
-
-                lastUploadSpeed = smoothedUp
-                lastDownloadSpeed = smoothedDown
-
-                _statsBase.update { current ->
-                    current.copy(
-                        uploadSpeed = smoothedUp,
-                        downloadSpeed = smoothedDown,
-                        uploadTotal = sample.totalTx,
-                        downloadTotal = sample.totalRx
-                    )
-                }
-
-                lastTrafficTxBytes = sample.tx
-                lastTrafficRxBytes = sample.rx
-                lastTrafficSampleAtElapsedMs = nowElapsed
-            }
-        }
+        trafficMonitor.start()
     }
-
-    // 用于双源流量统计的辅助数据类
-    private data class Quadruple(val tx: Long, val rx: Long, val totalTx: Long, val totalRx: Long)
-
-    // BoxWrapper 流量基准值 (用于计算本次会话流量)
-    private var wrapperBaseUpload: Long = 0
-    private var wrapperBaseDownload: Long = 0
 
     private fun stopTrafficMonitor() {
-        trafficSmoothingJob?.cancel()
-        trafficSmoothingJob = null
-        lastUploadSpeed = 0
-        lastDownloadSpeed = 0
-        trafficBaseTxBytes = 0
-        trafficBaseRxBytes = 0
-        lastTrafficTxBytes = 0
-        lastTrafficRxBytes = 0
-        lastTrafficSampleAtElapsedMs = 0
-        wrapperBaseUpload = 0
-        wrapperBaseDownload = 0
+        trafficMonitor.stop()
     }
 
-    /**
-     * 计算自适应平滑因子
-     * @param current 当前速度
-     * @param previous 上一次速度
-     * @return 平滑因子 (0.0-1.0)，值越大响应越快
-     */
-    private fun calculateAdaptiveSmoothFactor(current: Long, previous: Long): Double {
-        if (previous <= 0) return 1.0
+    fun getActiveProfileName(): String? =
+        activeProfileId.value?.let { activeId -> profiles.value.find { it.id == activeId }?.name }
 
-        // 计算变化幅度比例
-        val change = kotlin.math.abs(current - previous).toDouble()
-        val ratio = change / previous
-
-        // 根据变化幅度返回不同的平滑因子
-        return when {
-            ratio > 2.0 -> 0.7 // 大幅变化(200%+)，快速响应
-            ratio > 0.5 -> 0.4 // 中等变化(50%-200%)，平衡响应
-            ratio > 0.1 -> 0.25 // 小幅变化(10%-50%)，适度平滑
-            else -> 0.15 // 微小变化(<10%)，高度平滑
-        }
-    }
-
-    /**
-     * 获取活跃配置的名称
-     */
-    fun getActiveProfileName(): String? {
-        val activeId = activeProfileId.value ?: return null
-        return profiles.value.find { it.id == activeId }?.name
-    }
-
-    /**
-     * 获取活跃节点的名称
-     *
-     */
-    fun getActiveNodeName(): String? {
-        val activeId = activeNodeId.value ?: return null
-        return configRepository.getNodeById(activeId)?.displayName
-    }
+    fun getActiveNodeName(): String? =
+        activeNodeId.value?.let { activeId -> configRepository.getNodeById(activeId)?.displayName }
 
     override fun onCleared() {
         super.onCleared()

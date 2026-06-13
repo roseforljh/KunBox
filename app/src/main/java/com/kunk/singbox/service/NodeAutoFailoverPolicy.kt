@@ -2,7 +2,7 @@ package com.kunk.singbox.service
 
 import com.kunk.singbox.service.manager.UrlTestTagMatcher
 
-internal object NodeAutoFailoverPolicy {
+object NodeAutoFailoverPolicy {
 
     internal const val RECENT_TRAFFIC_WINDOW_MS = 30_000L
     internal const val AUTO_FAILOVER_COOLDOWN_MS = 60_000L
@@ -25,7 +25,7 @@ internal object NodeAutoFailoverPolicy {
         val budgetCount: Int
     )
 
-    internal enum class ProbeOutcome {
+    enum class ProbeOutcome {
         CURRENT_HEALTHY,
         CURRENT_FAILED_WITH_ALTERNATIVE,
         NETWORK_FAILURE,
@@ -33,7 +33,7 @@ internal object NodeAutoFailoverPolicy {
         NO_RESULTS
     }
 
-    internal data class ProbeEvaluation(
+    data class ProbeEvaluation(
         val outcome: ProbeOutcome,
         val currentTag: String? = null,
         val currentDelayMs: Int? = null,
@@ -46,7 +46,7 @@ internal object NodeAutoFailoverPolicy {
         val count: Int
     )
 
-    internal data class QuarantinedNode(
+    data class QuarantinedNode(
         val tag: String,
         val expiresAtMs: Long
     )

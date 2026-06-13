@@ -288,13 +288,17 @@ class Base64Parser(private val nodeParser: (String) -> Outbound?) : Subscription
 
     private fun decodeWithJvmBase64(content: String, urlSafe: Boolean): String? {
         return try {
-            val decoded = if (urlSafe) {
-                java.util.Base64.getUrlDecoder().decode(content)
-            } else {
-                java.util.Base64.getDecoder().decode(content)
-            }
+            val base64Class = Class.forName("java.util.Base64")
+            val methodName = if (urlSafe) "getUrlDecoder" else "getDecoder"
+            val decoder = base64Class.getMethod(methodName).invoke(null)
+            val decoded = decoder.javaClass.getMethod("decode", String::class.java)
+                .invoke(decoder, content) as? ByteArray
             decodeSubscriptionText(decoded)
+        } catch (_: ReflectiveOperationException) {
+            null
         } catch (_: IllegalArgumentException) {
+            null
+        } catch (_: ClassCastException) {
             null
         }
     }

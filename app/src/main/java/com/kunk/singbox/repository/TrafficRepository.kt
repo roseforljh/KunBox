@@ -1,6 +1,8 @@
 package com.kunk.singbox.repository
 
+import android.annotation.TargetApi
 import android.content.Context
+import android.os.Build
 import android.util.Log
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
@@ -75,24 +77,54 @@ class TrafficRepository private constructor(private val context: Context) {
             val tempFile = File.createTempFile("${targetFile.name.take(64)}.", ".tmp", targetFile.parentFile)
             try {
                 tempFile.writeText(content, Charsets.UTF_8)
-                try {
-                    Files.move(
-                        tempFile.toPath(),
-                        targetFile.toPath(),
-                        StandardCopyOption.REPLACE_EXISTING,
-                        StandardCopyOption.ATOMIC_MOVE
-                    )
-                } catch (_: IOException) {
-                    Files.move(
-                        tempFile.toPath(),
-                        targetFile.toPath(),
-                        StandardCopyOption.REPLACE_EXISTING
-                    )
-                }
+                moveTempFileIntoPlace(tempFile, targetFile)
             } finally {
                 if (tempFile.isFile && !tempFile.delete()) {
                     Log.w(TAG, "Failed to delete traffic temp file: ${tempFile.absolutePath}")
                 }
+            }
+        }
+
+        private fun moveTempFileIntoPlace(tempFile: File, targetFile: File) {
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+                moveTempFileWithFileApi(tempFile, targetFile)
+                return
+            }
+
+            try {
+                moveTempFileWithNio(tempFile, targetFile, atomic = true)
+            } catch (_: IOException) {
+                moveTempFileWithNio(tempFile, targetFile, atomic = false)
+            }
+        }
+
+        @TargetApi(Build.VERSION_CODES.O)
+        private fun moveTempFileWithNio(tempFile: File, targetFile: File, atomic: Boolean) {
+            if (atomic) {
+                Files.move(
+                    tempFile.toPath(),
+                    targetFile.toPath(),
+                    StandardCopyOption.REPLACE_EXISTING,
+                    StandardCopyOption.ATOMIC_MOVE
+                )
+            } else {
+                Files.move(
+                    tempFile.toPath(),
+                    targetFile.toPath(),
+                    StandardCopyOption.REPLACE_EXISTING
+                )
+            }
+        }
+
+        private fun moveTempFileWithFileApi(tempFile: File, targetFile: File) {
+            if (targetFile.exists() && !targetFile.delete()) {
+                throw IOException("Failed to delete old traffic file: ${targetFile.absolutePath}")
+            }
+            if (tempFile.renameTo(targetFile)) return
+
+            tempFile.copyTo(targetFile, overwrite = true)
+            if (!tempFile.delete()) {
+                Log.w(TAG, "Failed to delete moved traffic temp file: ${tempFile.absolutePath}")
             }
         }
     }

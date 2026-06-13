@@ -32,13 +32,11 @@ import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.io.File
-import java.net.NetworkInterface
 import java.net.ServerSocket
 import java.net.URI
 import java.net.InetSocketAddress
 import java.net.Socket
 import com.kunk.singbox.utils.PreciseLatencyTester
-import java.util.Collections
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -243,13 +241,7 @@ class SingBoxCore private constructor(private val context: Context) {
             false
         }
     }
-
-    /**
-     */
     fun isLibboxAvailable(): Boolean = libboxAvailable
-
-    /**
-     */
     private suspend fun testOutboundLatencyWithOfflineTemporaryService(
         outbound: Outbound,
         settings: com.kunk.singbox.model.AppSettings? = null,
@@ -297,12 +289,6 @@ class SingBoxCore private constructor(private val context: Context) {
             -1L
         }
     }
-
-    // private var discoveredUrlTestMethod: java.lang.reflect.Method? = null
-    // private var discoveredMethodType: Int = 0 // 0: long, 1: URLTest object
-
-    /**
-     */
     private fun resolveDependencyOutbounds(
         outbound: Outbound,
         allOutbounds: List<Outbound>
@@ -345,8 +331,6 @@ class SingBoxCore private constructor(private val context: Context) {
             original
         }
     }
-
-    // Removed reflection helpers: extractDelayFromUrlTest, hasDelayAccessors, buildUrlTestArgs
 
     private suspend fun testWithLocalHttpProxy(
         outbound: Outbound,
@@ -570,9 +554,6 @@ class SingBoxCore private constructor(private val context: Context) {
             testOutboundsLatencyBatchInternal(batch, targetUrl, timeoutMs, concurrency, settings, dnsConfig, onResult)
         }
     }
-
-    /**
-     */
     @Suppress("CognitiveComplexMethod", "LongMethod", "LongParameterList")
     private suspend fun testOutboundsLatencyBatchInternal(
         batchOutbounds: List<Outbound>,
@@ -821,9 +802,6 @@ class SingBoxCore private constructor(private val context: Context) {
         sockets.forEach { runCatching { it.close() } }
         return ports
     }
-
-    /**
-     */
     suspend fun testOutboundLatency(
         outbound: Outbound,
         allOutbounds: List<Outbound> = emptyList(),
@@ -839,9 +817,6 @@ class SingBoxCore private constructor(private val context: Context) {
 
         testOutboundLatencyWithOfflineTemporaryService(outbound, settings, dependencyOutbounds, dnsConfig)
     }
-
-    /**
-     */
     suspend fun testOutboundsLatency(
         outbounds: List<Outbound>,
         dnsConfig: DnsConfig? = null,
@@ -887,9 +862,6 @@ class SingBoxCore private constructor(private val context: Context) {
             false
         }
     }
-
-    /**
-     */
     private fun getPhysicalNetworkInterface(): String? {
         val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
             ?: return null
@@ -916,9 +888,6 @@ class SingBoxCore private constructor(private val context: Context) {
         val linkProps = cm.getLinkProperties(activeNetwork)
         return linkProps?.interfaceName
     }
-
-    /**
-     */
     suspend fun validateConfig(config: SingBoxConfig): Result<Unit> = withContext(Dispatchers.IO) {
         if (!libboxAvailable) {
             return@withContext try {
@@ -938,9 +907,6 @@ class SingBoxCore private constructor(private val context: Context) {
             Result.failure(e)
         }
     }
-
-    /**
-     */
     fun validateOutbound(outbound: Outbound): Boolean {
         if (!libboxAvailable) {
             return true
@@ -986,161 +952,6 @@ class SingBoxCore private constructor(private val context: Context) {
     }
 
     fun formatConfig(config: SingBoxConfig): String = gson.toJson(config)
-
-    // --- Inner Classes for Platform Interface ---
-
-    private class TestPlatformInterface(private val context: Context) : PlatformInterface {
-        private val connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
-
-        override fun autoDetectInterfaceControl(fd: Int) {
-
-            val service = com.kunk.singbox.service.SingBoxService.instance
-            if (service != null) {
-                try {
-                    val protected = service.protect(fd)
-                    if (!protected) {
-                        Log.w(TAG, "Failed to protect socket fd=$fd, continuing anyway")
-                    } else {
-                        Log.d(TAG, "autoDetectInterfaceControl: protected fd=$fd")
-                    }
-                } catch (e: Exception) {
-                    Log.w(TAG, "Socket protection error for fd=$fd: ${e.message}")
-                }
-                return
-            }
-
-            try {
-                val network = connectivityManager.activeNetwork
-                if (network != null) {
-
-                    val pfd = android.os.ParcelFileDescriptor.adoptFd(fd)
-                    try {
-                        network.bindSocket(pfd.fileDescriptor)
-                        Log.d(TAG, "autoDetectInterfaceControl: bound fd=$fd to network")
-                    } finally {
-
-                        pfd.detachFd()
-                    }
-                } else {
-                    Log.w(TAG, "autoDetectInterfaceControl: no active network for fd=$fd")
-                }
-            } catch (e: Exception) {
-                Log.w(TAG, "autoDetectInterfaceControl: bind network error for fd=$fd: ${e.message}")
-            }
-        }
-
-        override fun openTun(options: TunOptions?): Int {
-            // Should not be called as we don't provide tun inbound
-            Log.w(TAG, "TestPlatformInterface: openTun called unexpected!")
-            return -1
-        }
-
-        override fun startDefaultInterfaceMonitor(listener: InterfaceUpdateListener?) {
-
-            if (listener == null) return
-
-            try {
-                val activeNetwork = connectivityManager.activeNetwork
-                if (activeNetwork != null) {
-                    val linkProperties = connectivityManager.getLinkProperties(activeNetwork)
-                    val interfaceName = linkProperties?.interfaceName ?: ""
-                    if (interfaceName.isNotEmpty()) {
-                        val index = try {
-                            java.net.NetworkInterface.getByName(interfaceName)?.index ?: 0
-                        } catch (e: Exception) { 0 }
-                        val caps = connectivityManager.getNetworkCapabilities(activeNetwork)
-                        val isExpensive = caps?.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_NOT_METERED) == false
-                        listener.updateDefaultInterface(interfaceName, index, isExpensive, false)
-                        Log.d(TAG, "TestPlatformInterface: initialized default interface: $interfaceName (index=$index)")
-                    } else {
-                        Log.w(TAG, "TestPlatformInterface: no interface name for active network")
-                    }
-                } else {
-                    Log.w(TAG, "TestPlatformInterface: no active network available")
-                }
-            } catch (e: Exception) {
-                Log.w(TAG, "TestPlatformInterface: failed to get default interface: ${e.message}")
-            }
-        }
-
-        override fun closeDefaultInterfaceMonitor(listener: InterfaceUpdateListener?) {
-        }
-
-        override fun getInterfaces(): NetworkInterfaceIterator? {
-            return try {
-                val interfaces = Collections.list(NetworkInterface.getNetworkInterfaces())
-                object : NetworkInterfaceIterator {
-                    private val iterator = interfaces.filter { it.isUp && !it.isLoopback }.iterator()
-                    override fun hasNext(): Boolean = iterator.hasNext()
-                    override fun next(): io.nekohasekai.libbox.NetworkInterface {
-                        val iface = iterator.next()
-                        return io.nekohasekai.libbox.NetworkInterface().apply {
-                            name = iface.name
-                            index = iface.index
-                            mtu = iface.mtu
-                            // type = ... (Field removed/renamed in v1.10)
-                            var flagsStr = 0
-                            if (iface.isUp) flagsStr = flagsStr or 1
-                            if (iface.isLoopback) flagsStr = flagsStr or 4
-                            if (iface.isPointToPoint) flagsStr = flagsStr or 8
-                            if (iface.supportsMulticast()) flagsStr = flagsStr or 16
-                            flags = flagsStr
-                            val addrList = ArrayList<String>()
-                            for (addr in iface.interfaceAddresses) {
-                                val ip = addr.address.hostAddress
-                                val cleanIp = if (ip != null && ip.contains("%")) ip.substring(0, ip.indexOf("%")) else ip
-                                if (cleanIp != null) addrList.add("$cleanIp/${addr.networkPrefixLength}")
-                            }
-                            addresses = StringIteratorImpl(addrList)
-                        }
-                    }
-                }
-            } catch (e: Exception) { null }
-        }
-
-        override fun usePlatformAutoDetectInterfaceControl(): Boolean = true
-        override fun useProcFS(): Boolean = false
-
-        override fun findConnectionOwner(
-            p0: Int,
-            p1: String?,
-            p2: Int,
-            p3: String?,
-            p4: Int
-        ): ConnectionOwner {
-            return ConnectionOwner()
-        }
-
-        override fun underNetworkExtension(): Boolean = false
-        override fun includeAllNetworks(): Boolean = false
-        override fun readWIFIState(): WIFIState? = null
-        override fun clearDNSCache() {}
-        override fun sendNotification(p0: io.nekohasekai.libbox.Notification?) {}
-        override fun localDNSTransport(): io.nekohasekai.libbox.LocalDNSTransport {
-            return com.kunk.singbox.core.LocalResolverImpl
-        }
-        override fun systemCertificates(): StringIterator? = null
-    }
-
-/**
-     */
-    private class TestCommandServerHandler : io.nekohasekai.libbox.CommandServerHandler {
-        override fun serviceStop() {}
-        override fun serviceReload() {}
-        override fun getSystemProxyStatus(): io.nekohasekai.libbox.SystemProxyStatus? = null
-        override fun setSystemProxyEnabled(isEnabled: Boolean) {}
-        override fun writeDebugMessage(message: String?) {}
-    }
-
-    private class StringIteratorImpl(private val list: List<String>) : StringIterator {
-        private var index = 0
-        override fun hasNext(): Boolean = index < list.size
-        override fun next(): String = list[index++]
-        override fun len(): Int = list.size
-    }
-
-    /**
-     */
     fun hasActiveConnections(): Boolean {
         if (!libboxAvailable) return false
 
@@ -1151,14 +962,8 @@ class SingBoxCore private constructor(private val context: Context) {
             false
         }
     }
-
-    /**
-     */
     @Suppress("FunctionOnlyReturningConstant")
     fun getActiveConnections(): List<ActiveConnection> = emptyList()
-
-    /**
-     */
     fun closeConnectionsForApp(packageName: String): Int {
         if (!libboxAvailable) return 0
 
@@ -1170,21 +975,5 @@ class SingBoxCore private constructor(private val context: Context) {
         return closeConnectionsForApp(packageName) > 0
     }
 
-    data class ActiveConnection(
-        val packageName: String?,
-        val uid: Int,
-        val network: String,
-        val remoteAddr: String,
-        val remotePort: Int,
-        val state: String,
-        val connectionCount: Int = 0,
-        val totalUpload: Long = 0,
-        val totalDownload: Long = 0,
-        val oldestConnMs: Long = 0,
-        val newestConnMs: Long = 0,
-        val hasRecentData: Boolean = true
-    )
-
-    fun cleanup() {
-    }
+    fun cleanup() {}
 }

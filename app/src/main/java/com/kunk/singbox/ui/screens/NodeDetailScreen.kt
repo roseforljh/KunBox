@@ -1,28 +1,15 @@
 package com.kunk.singbox.ui.screens
 
 import com.kunk.singbox.R
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.animateContentSize
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
@@ -30,8 +17,6 @@ import androidx.compose.material.icons.rounded.Bolt
 import androidx.compose.material.icons.rounded.CallSplit
 import androidx.compose.material.icons.rounded.CompareArrows
 import androidx.compose.material.icons.rounded.Dns
-import androidx.compose.material.icons.rounded.ExpandLess
-import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.Fingerprint
 import androidx.compose.material.icons.rounded.Key
 import androidx.compose.material.icons.rounded.Language
@@ -39,31 +24,20 @@ import androidx.compose.material.icons.rounded.Layers
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.Merge
 import androidx.compose.material.icons.rounded.Numbers
-import androidx.compose.material.icons.rounded.Password
-import androidx.compose.material.icons.rounded.Person
-import androidx.compose.material.icons.rounded.RadioButtonChecked
-import androidx.compose.material.icons.rounded.RadioButtonUnchecked
 import androidx.compose.material.icons.rounded.Route
 import androidx.compose.material.icons.rounded.Router
 import androidx.compose.material.icons.rounded.Save
 import androidx.compose.material.icons.rounded.Security
-import androidx.compose.material.icons.rounded.Settings
-import androidx.compose.material.icons.rounded.SettingsInputAntenna
-import androidx.compose.material.icons.rounded.Speed
 import androidx.compose.material.icons.rounded.SwapHoriz
 import androidx.compose.material.icons.rounded.Tag
 import androidx.compose.material.icons.rounded.Title
 import androidx.compose.material.icons.rounded.Tune
-import androidx.compose.material.icons.rounded.Waves
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.ui.res.stringResource
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -79,24 +53,18 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Dialog
 import androidx.navigation.NavController
 import com.google.gson.Gson
 import com.kunk.singbox.model.EchConfig
 import com.kunk.singbox.model.MultiplexConfig
-import com.kunk.singbox.model.ObfsConfig
 import com.kunk.singbox.model.Outbound
 import com.kunk.singbox.model.TlsConfig
 import com.kunk.singbox.model.TransportConfig
-import com.kunk.singbox.model.UdpOverTcpConfig
-import com.kunk.singbox.model.WireGuardPeer
 import com.kunk.singbox.repository.ConfigRepository
 import com.kunk.singbox.ui.components.AppNotificationManager
-import com.kunk.singbox.ui.components.EditableMultilineTextItem
 import com.kunk.singbox.ui.components.EditableSelectionItem
 import com.kunk.singbox.ui.components.EditableTextItem
 import com.kunk.singbox.ui.components.SelectProfileDialog
@@ -212,9 +180,10 @@ fun NodeDetailScreen(
     val node = if (!isCreateMode) nodes.find { it.id == nodeId } else null
     val profiles by configRepository.profiles.collectAsState(initial = emptyList())
 
-    var editingOutbound by rememberSaveable(nodeId, createProtocol, saver = outboundEditorStateSaver) {
+    val editingOutboundState = rememberSaveable(nodeId, createProtocol, saver = outboundEditorStateSaver) {
         mutableStateOf<Outbound?>(null)
     }
+    var editingOutbound by editingOutboundState
     var showSelectProfileDialog by remember { mutableStateOf(false) }
     var showDetourNodeDialog by remember { mutableStateOf(false) }
     var pendingDetourRef by remember { mutableStateOf<String?>(null) }
@@ -380,513 +349,11 @@ fun NodeDetailScreen(
                         )
                     }
 
-                    // --- Protocol Specific Fields ---
-
-                    // 1. Shadowsocks
-                    if (type == "shadowsocks") {
-                        EditableSelectionItem(
-                            title = stringResource(R.string.node_detail_encryption),
-                            value = outbound.method ?: "aes-256-gcm",
-                            options = listOf(
-                                "2022-blake3-aes-128-gcm", "2022-blake3-aes-256-gcm", "2022-blake3-chacha20-poly1305",
-                                "aes-128-gcm", "aes-192-gcm", "aes-256-gcm",
-                                "chacha20-ietf-poly1305", "xchacha20-ietf-poly1305",
-                                "aes-128-ctr", "aes-192-ctr", "aes-256-ctr",
-                                "aes-128-cfb", "aes-192-cfb", "aes-256-cfb",
-                                "rc4-md5", "chacha20-ietf", "xchacha20", "none"
-                            ),
-                            icon = Icons.Rounded.Lock,
-                            onValueChange = { editingOutbound = outbound.copy(method = it) }
-                        )
-                        EditableTextItem(
-                            title = stringResource(R.string.node_detail_password),
-                            value = outbound.password ?: "",
-                            icon = Icons.Rounded.Password,
-                            onValueChange = { editingOutbound = outbound.copy(password = it) }
-                        )
-                        EditableTextItem(
-                            title = stringResource(R.string.node_detail_plugin),
-                            value = outbound.plugin ?: "",
-                            icon = Icons.Rounded.Settings,
-                            onValueChange = { editingOutbound = outbound.copy(plugin = if (it.isEmpty()) null else it) }
-                        )
-                        if (!outbound.plugin.isNullOrBlank()) {
-                            EditableTextItem(
-                                title = stringResource(R.string.node_detail_plugin_options),
-                                value = outbound.pluginOpts ?: "",
-                                icon = Icons.Rounded.Settings,
-                                onValueChange = { editingOutbound = outbound.copy(pluginOpts = if (it.isEmpty()) null else it) }
-                            )
-                        }
-                        // UDP over TCP
-                        val uot = outbound.udpOverTcp ?: UdpOverTcpConfig(enabled = false)
-                        SettingSwitchItem(
-                            title = stringResource(R.string.node_detail_udp_over_tcp),
-                            checked = uot.enabled == true,
-                            icon = Icons.Rounded.SwapHoriz,
-                            onCheckedChange = { editingOutbound = outbound.copy(udpOverTcp = uot.copy(enabled = it)) }
-                        )
-                    }
-
-                    // 2. VMess / VLESS
-                    if (type == "vmess" || type == "vless") {
-                        EditableTextItem(
-                            title = stringResource(R.string.node_detail_uuid),
-                            value = outbound.uuid ?: "",
-                            icon = Icons.Rounded.Person,
-                            onValueChange = { editingOutbound = outbound.copy(uuid = it) }
-                        )
-
-                        if (type == "vmess") {
-                            EditableSelectionItem(
-                                title = stringResource(R.string.node_detail_encryption),
-                                value = outbound.security ?: "auto",
-                                options = listOf("auto", "aes-128-gcm", "chacha20-poly1305", "none", "zero"),
-                                icon = Icons.Rounded.Security,
-                                onValueChange = { editingOutbound = outbound.copy(security = it) }
-                            )
-                        }
-
-                        if (type == "vless") {
-                            EditableSelectionItem(
-                                title = stringResource(R.string.node_detail_flow),
-                                value = outbound.flow ?: "",
-                                options = listOf("", "xtls-rprx-vision"),
-                                icon = Icons.Rounded.Waves,
-                                onValueChange = { editingOutbound = outbound.copy(flow = it) }
-                            )
-                        }
-
-                        EditableSelectionItem(
-                            title = stringResource(R.string.node_detail_packet_encoding),
-                            value = outbound.packetEncoding ?: "",
-                            options = listOf("", "xudp", "packet"),
-                            icon = Icons.Rounded.Layers,
-                            onValueChange = { editingOutbound = outbound.copy(packetEncoding = if (it.isEmpty()) null else it) }
-                        )
-                    }
-
-                    // 3. Trojan
-                    if (type == "trojan") {
-                        EditableTextItem(
-                            title = stringResource(R.string.node_detail_password),
-                            value = outbound.password ?: "",
-                            icon = Icons.Rounded.Password,
-                            onValueChange = { editingOutbound = outbound.copy(password = it) }
-                        )
-                    }
-
-                    // 4. Hysteria 2
-                    if (type == "hysteria2") {
-                        EditableTextItem(
-                            title = stringResource(R.string.node_detail_password),
-                            value = outbound.password ?: "",
-                            icon = Icons.Rounded.Password,
-                            onValueChange = { editingOutbound = outbound.copy(password = it) }
-                        )
-                        EditableTextItem(
-                            title = stringResource(R.string.node_detail_ports_jumping),
-                            value = outbound.serverPorts?.firstOrNull() ?: "",
-                            icon = Icons.Rounded.Numbers,
-                            onValueChange = {
-                                editingOutbound = outbound.copy(
-                                    serverPorts = if (it.isEmpty()) null else listOf(it)
-                                )
-                            }
-                        )
-                        EditableTextItem(
-                            title = stringResource(R.string.node_detail_obfs_type),
-                            value = outbound.obfs?.type ?: "",
-                            icon = Icons.Rounded.Lock,
-                            onValueChange = {
-                                val newObfs = if (it.isEmpty()) null else (outbound.obfs?.copy(type = it) ?: ObfsConfig(type = it))
-                                editingOutbound = outbound.copy(obfs = newObfs)
-                            }
-                        )
-                        if (outbound.obfs?.type == "salamander") {
-                            EditableTextItem(
-                                title = stringResource(R.string.node_detail_obfs_password),
-                                value = outbound.obfs.password ?: "",
-                                icon = Icons.Rounded.Key,
-                                onValueChange = { editingOutbound = outbound.copy(obfs = outbound.obfs.copy(password = it)) }
-                            )
-                        }
-                        EditableTextItem(
-                            title = stringResource(R.string.node_detail_upload_speed),
-                            value = outbound.upMbps?.toString() ?: "",
-                            icon = Icons.Rounded.Speed,
-                            onValueChange = { editingOutbound = outbound.copy(upMbps = it.toIntOrNull()) }
-                        )
-                        EditableTextItem(
-                            title = stringResource(R.string.node_detail_download_speed),
-                            value = outbound.downMbps?.toString() ?: "",
-                            icon = Icons.Rounded.Speed,
-                            onValueChange = { editingOutbound = outbound.copy(downMbps = it.toIntOrNull()) }
-                        )
-                    }
-
-                    // 5. TUIC
-                    if (type == "tuic") {
-                        EditableTextItem(
-                            title = "UUID",
-                            value = outbound.uuid ?: "",
-                            icon = Icons.Rounded.Person,
-                            onValueChange = { editingOutbound = outbound.copy(uuid = it) }
-                        )
-                        EditableTextItem(
-                            title = stringResource(R.string.node_detail_password),
-                            value = outbound.password ?: "",
-                            icon = Icons.Rounded.Password,
-                            onValueChange = { editingOutbound = outbound.copy(password = it) }
-                        )
-                        EditableSelectionItem(
-                            title = stringResource(R.string.node_detail_congestion_control),
-                            value = outbound.congestionControl ?: "bbr",
-                            options = listOf("bbr", "cubic", "new_reno"),
-                            icon = Icons.Rounded.Speed,
-                            onValueChange = { editingOutbound = outbound.copy(congestionControl = it) }
-                        )
-                        EditableSelectionItem(
-                            title = stringResource(R.string.node_detail_udp_relay_mode),
-                            value = outbound.udpRelayMode ?: "native",
-                            options = listOf("native", "quic"),
-                            icon = Icons.Rounded.SwapHoriz,
-                            onValueChange = { editingOutbound = outbound.copy(udpRelayMode = it) }
-                        )
-                        EditableTextItem(
-                            title = stringResource(R.string.node_detail_heartbeat),
-                            value = outbound.heartbeat ?: "3s",
-                            icon = Icons.Rounded.Bolt,
-                            onValueChange = { editingOutbound = outbound.copy(heartbeat = it) }
-                        )
-                        SettingSwitchItem(
-                            title = stringResource(R.string.node_detail_zero_rtt),
-                            checked = outbound.zeroRttHandshake == true,
-                            icon = Icons.Rounded.Bolt,
-                            onCheckedChange = { editingOutbound = outbound.copy(zeroRttHandshake = it) }
-                        )
-                    }
-                    if (type == "tuic" || type == "hysteria2") {
-                        SettingSwitchItem(
-                            title = stringResource(R.string.node_detail_disable_sni),
-                            checked = outbound.disableSni == true,
-                            icon = Icons.Rounded.Fingerprint,
-                            onCheckedChange = { checked ->
-                                val currentTls = outbound.tls ?: TlsConfig(enabled = true)
-                                editingOutbound = outbound.copy(
-                                    disableSni = if (checked) true else null,
-                                    tls = currentTls.copy(
-                                        enabled = true
-                                    )
-                                )
-                            }
-                        )
-                    }
-
-                    // 6. Naive
-                    if (type == "naive") {
-                        EditableTextItem(
-                            title = stringResource(R.string.node_detail_username),
-                            value = outbound.username ?: "",
-                            icon = Icons.Rounded.Person,
-                            onValueChange = { editingOutbound = outbound.copy(username = if (it.isEmpty()) null else it) }
-                        )
-                        EditableTextItem(
-                            title = stringResource(R.string.node_detail_password),
-                            value = outbound.password ?: "",
-                            icon = Icons.Rounded.Password,
-                            onValueChange = { editingOutbound = outbound.copy(password = if (it.isEmpty()) null else it) }
-                        )
-                        EditableSelectionItem(
-                            title = stringResource(R.string.node_detail_transport_protocol),
-                            value = if (outbound.quic == true || outbound.network == "quic") "quic" else "h2",
-                            options = listOf("h2", "quic"),
-                            icon = Icons.Rounded.SwapHoriz,
-                            onValueChange = {
-                                val useQuic = it == "quic"
-                                editingOutbound = outbound.copy(
-                                    network = if (useQuic) "quic" else "h2",
-                                    quic = useQuic
-                                )
-                            }
-                        )
-                        EditableTextItem(
-                            title = stringResource(R.string.node_detail_insecure_concurrency),
-                            value = outbound.insecureConcurrency?.toString() ?: "",
-                            icon = Icons.Rounded.Numbers,
-                            onValueChange = {
-                                editingOutbound = outbound.copy(insecureConcurrency = it.toIntOrNull())
-                            }
-                        )
-                        EditableMultilineTextItem(
-                            title = stringResource(R.string.node_detail_extra_headers),
-                            value = formatHeaderLines(outbound.extraHeaders),
-                            subtitle = stringResource(R.string.node_detail_extra_headers_hint),
-                            placeholder = "User-Agent: naive\nX-Trace: demo",
-                            icon = Icons.Rounded.Language,
-                            onValueChange = {
-                                editingOutbound = outbound.copy(extraHeaders = parseHeaderLines(it))
-                            }
-                        )
-                        EditableSelectionItem(
-                            title = stringResource(R.string.node_detail_congestion_control),
-                            value = outbound.congestionControl ?: "",
-                            options = listOf("", "bbr", "cubic", "new_reno"),
-                            icon = Icons.Rounded.Speed,
-                            onValueChange = { editingOutbound = outbound.copy(congestionControl = it.ifEmpty { null }) }
-                        )
-                        val uot = outbound.udpOverTcp ?: UdpOverTcpConfig(enabled = false)
-                        SettingSwitchItem(
-                            title = stringResource(R.string.node_detail_udp_over_tcp),
-                            checked = uot.enabled == true,
-                            icon = Icons.Rounded.SwapHoriz,
-                            onCheckedChange = { enabled ->
-                                editingOutbound = outbound.copy(
-                                    udpOverTcp = if (enabled) {
-                                        uot.copy(enabled = true)
-                                    } else {
-                                        null
-                                    }
-                                )
-                            }
-                        )
-                    }
-
-                    // 7. WireGuard
-                    if (type == "wireguard") {
-                        val peer = outbound.peers?.firstOrNull() ?: WireGuardPeer()
-
-                        EditableTextItem(
-                            title = stringResource(R.string.node_detail_server_address),
-                            value = peer.server ?: "",
-                            icon = Icons.Rounded.Router,
-                            onValueChange = {
-                                val newPeer = peer.copy(server = it)
-                                editingOutbound = outbound.copy(peers = listOf(newPeer))
-                            }
-                        )
-                        EditableTextItem(
-                            title = stringResource(R.string.node_detail_server_port),
-                            value = peer.serverPort?.toString() ?: "",
-                            icon = Icons.Rounded.Numbers,
-                            onValueChange = {
-                                val newPeer = peer.copy(serverPort = it.toIntOrNull())
-                                editingOutbound = outbound.copy(peers = listOf(newPeer))
-                            }
-                        )
-                        EditableTextItem(
-                            title = stringResource(R.string.node_detail_private_key),
-                            value = outbound.privateKey ?: "",
-                            icon = Icons.Rounded.Key,
-                            onValueChange = { editingOutbound = outbound.copy(privateKey = it) }
-                        )
-                        EditableTextItem(
-                            title = stringResource(R.string.node_detail_peer_public_key),
-                            value = peer.publicKey ?: "",
-                            icon = Icons.Rounded.Key,
-                            onValueChange = {
-                                val newPeer = peer.copy(publicKey = it)
-                                editingOutbound = outbound.copy(peers = listOf(newPeer))
-                            }
-                        )
-                        EditableTextItem(
-                            title = stringResource(R.string.node_detail_pre_shared_key),
-                            value = peer.preSharedKey ?: "",
-                            icon = Icons.Rounded.Key,
-                            onValueChange = {
-                                val newPeer = peer.copy(preSharedKey = if (it.isEmpty()) null else it)
-                                editingOutbound = outbound.copy(peers = listOf(newPeer))
-                            }
-                        )
-                        EditableTextItem(
-                            title = stringResource(R.string.node_detail_local_address),
-                            value = outbound.localAddress?.joinToString(", ") ?: "",
-                            icon = Icons.Rounded.Dns,
-                            onValueChange = {
-                                val list = it.split(",").map { s -> s.trim() }.filter { s -> s.isNotEmpty() }
-                                editingOutbound = outbound.copy(localAddress = list)
-                            }
-                        )
-                        EditableTextItem(
-                            title = stringResource(R.string.node_detail_mtu),
-                            value = outbound.mtu?.toString() ?: "1420",
-                            icon = Icons.Rounded.SettingsInputAntenna,
-                            onValueChange = { editingOutbound = outbound.copy(mtu = it.toIntOrNull()) }
-                        )
-                        EditableTextItem(
-                            title = stringResource(R.string.node_detail_reserved),
-                            value = outbound.reserved?.joinToString(", ") ?: "",
-                            icon = Icons.Rounded.Tag,
-                            onValueChange = {
-                                val list = it.split(",").mapNotNull { s -> s.trim().toIntOrNull() }
-                                editingOutbound = outbound.copy(reserved = if (list.isEmpty()) null else list)
-                            }
-                        )
-                    }
-
-                    // 7. SSH
-                    if (type == "ssh") {
-                        EditableTextItem(
-                            title = stringResource(R.string.node_detail_username),
-                            value = outbound.user ?: "",
-                            icon = Icons.Rounded.Person,
-                            onValueChange = { editingOutbound = outbound.copy(user = it) }
-                        )
-                        EditableTextItem(
-                            title = stringResource(R.string.node_detail_password),
-                            value = outbound.password ?: "",
-                            icon = Icons.Rounded.Password,
-                            onValueChange = { editingOutbound = outbound.copy(password = if (it.isEmpty()) null else it) }
-                        )
-                        EditableTextItem(
-                            title = stringResource(R.string.node_detail_private_key),
-                            value = outbound.privateKey ?: "",
-                            icon = Icons.Rounded.Key,
-                            onValueChange = { editingOutbound = outbound.copy(privateKey = if (it.isEmpty()) null else it) }
-                        )
-                        EditableTextItem(
-                            title = stringResource(R.string.node_detail_passphrase),
-                            value = outbound.privateKeyPassphrase ?: "",
-                            icon = Icons.Rounded.Key,
-                            onValueChange = { editingOutbound = outbound.copy(privateKeyPassphrase = if (it.isEmpty()) null else it) }
-                        )
-                        EditableTextItem(
-                            title = stringResource(R.string.node_detail_host_key),
-                            value = outbound.hostKey?.joinToString("\n") ?: "",
-                            icon = Icons.Rounded.Fingerprint,
-                            onValueChange = {
-                                val list = it.split("\n").map { s -> s.trim() }.filter { s -> s.isNotEmpty() }
-                                editingOutbound = outbound.copy(hostKey = list)
-                            }
-                        )
-                    }
-
-                    // 8. AnyTLS
-                    if (type == "anytls") {
-                        EditableTextItem(
-                            title = stringResource(R.string.node_detail_password),
-                            value = outbound.password ?: "",
-                            icon = Icons.Rounded.Password,
-                            onValueChange = { editingOutbound = outbound.copy(password = it) }
-                        )
-                        EditableTextItem(
-                            title = stringResource(R.string.node_detail_idle_session_check),
-                            value = outbound.idleSessionCheckInterval ?: "30s",
-                            icon = Icons.Rounded.SwapHoriz,
-                            onValueChange = { editingOutbound = outbound.copy(idleSessionCheckInterval = it) }
-                        )
-                        EditableTextItem(
-                            title = stringResource(R.string.node_detail_idle_session_timeout),
-                            value = outbound.idleSessionTimeout ?: "30s",
-                            icon = Icons.Rounded.SwapHoriz,
-                            onValueChange = { editingOutbound = outbound.copy(idleSessionTimeout = it) }
-                        )
-                        EditableTextItem(
-                            title = stringResource(R.string.node_detail_min_idle_sessions),
-                            value = outbound.minIdleSession?.toString() ?: "0",
-                            icon = Icons.Rounded.Numbers,
-                            onValueChange = { editingOutbound = outbound.copy(minIdleSession = it.toIntOrNull()) }
-                        )
-                    }
-
-                    // 9. SOCKS
-                    if (type == "socks") {
-                        EditableSelectionItem(
-                            title = stringResource(R.string.node_detail_socks_version),
-                            value = outbound.version?.toString() ?: "5",
-                            options = listOf("4", "4a", "5"),
-                            icon = Icons.Rounded.Tag,
-                            onValueChange = { editingOutbound = outbound.copy(version = it.replace("a", "").toIntOrNull()) }
-                        )
-                        EditableTextItem(
-                            title = stringResource(R.string.node_detail_username_optional),
-                            value = outbound.username ?: "",
-                            icon = Icons.Rounded.Person,
-                            onValueChange = { editingOutbound = outbound.copy(username = if (it.isEmpty()) null else it) }
-                        )
-                        EditableTextItem(
-                            title = stringResource(R.string.node_detail_password_optional),
-                            value = outbound.password ?: "",
-                            icon = Icons.Rounded.Password,
-                            onValueChange = { editingOutbound = outbound.copy(password = if (it.isEmpty()) null else it) }
-                        )
-                    }
-
-                    // 10. HTTP
-                    if (type == "http") {
-                        EditableTextItem(
-                            title = stringResource(R.string.node_detail_username_optional),
-                            value = outbound.username ?: "",
-                            icon = Icons.Rounded.Person,
-                            onValueChange = { editingOutbound = outbound.copy(username = if (it.isEmpty()) null else it) }
-                        )
-                        EditableTextItem(
-                            title = stringResource(R.string.node_detail_password_optional),
-                            value = outbound.password ?: "",
-                            icon = Icons.Rounded.Password,
-                            onValueChange = { editingOutbound = outbound.copy(password = if (it.isEmpty()) null else it) }
-                        )
-                    }
-
-                    // 11. ShadowTLS
-                    if (type == "shadowtls") {
-                        EditableSelectionItem(
-                            title = stringResource(R.string.node_detail_shadowtls_version),
-                            value = outbound.version?.toString() ?: "3",
-                            options = listOf("1", "2", "3"),
-                            icon = Icons.Rounded.Tag,
-                            onValueChange = { editingOutbound = outbound.copy(version = it.toIntOrNull()) }
-                        )
-                        EditableTextItem(
-                            title = stringResource(R.string.node_detail_password),
-                            value = outbound.password ?: "",
-                            icon = Icons.Rounded.Password,
-                            onValueChange = { editingOutbound = outbound.copy(password = it) }
-                        )
-                        EditableTextItem(
-                            title = stringResource(R.string.node_detail_common_settings),
-                            value = outbound.detour ?: "",
-                            icon = Icons.Rounded.Route,
-                            onValueChange = { editingOutbound = outbound.copy(detour = if (it.isEmpty()) null else it) }
-                        )
-                    }
-
-                    // 12. Hysteria (v1)
-                    if (type == "hysteria") {
-                        EditableTextItem(
-                            title = stringResource(R.string.node_detail_auth_string),
-                            value = outbound.authStr ?: "",
-                            icon = Icons.Rounded.Password,
-                            onValueChange = { editingOutbound = outbound.copy(authStr = it) }
-                        )
-                        EditableTextItem(
-                            title = stringResource(R.string.node_detail_upload_speed),
-                            value = outbound.upMbps?.toString() ?: "",
-                            icon = Icons.Rounded.Speed,
-                            onValueChange = { editingOutbound = outbound.copy(upMbps = it.toIntOrNull()) }
-                        )
-                        EditableTextItem(
-                            title = stringResource(R.string.node_detail_download_speed),
-                            value = outbound.downMbps?.toString() ?: "",
-                            icon = Icons.Rounded.Speed,
-                            onValueChange = { editingOutbound = outbound.copy(downMbps = it.toIntOrNull()) }
-                        )
-                        EditableTextItem(
-                            title = stringResource(R.string.node_detail_obfs_type),
-                            value = outbound.obfs?.type ?: "",
-                            icon = Icons.Rounded.Lock,
-                            onValueChange = {
-                                val newObfs = if (it.isEmpty()) null else (outbound.obfs?.copy(type = it) ?: ObfsConfig(type = it))
-                                editingOutbound = outbound.copy(obfs = newObfs)
-                            }
-                        )
-                        EditableTextItem(
-                            title = stringResource(R.string.node_detail_hop_interval),
-                            value = outbound.hopInterval ?: "10",
-                            icon = Icons.Rounded.SwapHoriz,
-                            onValueChange = { editingOutbound = outbound.copy(hopInterval = it) }
-                        )
-                    }
+                    NodeProtocolFields(
+                        type = type,
+                        outbound = outbound,
+                        editingOutboundState = editingOutboundState
+                    )
                 }
 
                 Spacer(modifier = Modifier.height(16.dp))
@@ -1333,263 +800,4 @@ fun SectionHeader(title: String) {
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         modifier = Modifier.padding(bottom = 8.dp, start = 8.dp)
     )
-}
-
-@Suppress("LongMethod", "CognitiveComplexMethod", "CyclomaticComplexMethod", "LongParameterList")
-@Composable
-private fun DetourNodeSelectDialog(
-    profiles: List<com.kunk.singbox.model.ProfileUi>,
-    nodesForSelection: List<com.kunk.singbox.model.NodeUi>,
-    selectedNodeRef: String?,
-    onSelect: (String?) -> Unit,
-    onConfirm: () -> Unit,
-    onDismiss: () -> Unit
-) {
-    fun toNodeRef(node: com.kunk.singbox.model.NodeUi): String = "${node.sourceProfileId}::${node.name}"
-
-    val groupedNodes = remember(nodesForSelection, profiles) {
-        val profileNameMap = profiles.associate { it.id to it.name }
-        nodesForSelection
-            .groupBy { it.sourceProfileId }
-            .toList()
-            .sortedBy { (profileId, _) -> profileNameMap[profileId] ?: profileId }
-    }
-    var expandedProfileId by remember { mutableStateOf<String?>(null) }
-
-    Dialog(onDismissRequest = onDismiss) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(28.dp))
-                .padding(24.dp)
-        ) {
-            Text(
-                text = stringResource(R.string.node_detail_select_detour_node),
-                style = MaterialTheme.typography.titleLarge,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            LazyColumn(modifier = Modifier.height(460.dp)) {
-                item {
-                    val isNoneSelected = selectedNodeRef == null
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { onSelect(null) }
-                            .background(
-                                if (isNoneSelected) {
-                                    MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)
-                                } else {
-                                    MaterialTheme.colorScheme.surface
-                                },
-                                RoundedCornerShape(10.dp)
-                            )
-                            .padding(horizontal = 12.dp, vertical = 10.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            imageVector = if (isNoneSelected) {
-                                Icons.Rounded.RadioButtonChecked
-                            } else {
-                                Icons.Rounded.RadioButtonUnchecked
-                            },
-                            contentDescription = null,
-                            tint = if (isNoneSelected) {
-                                MaterialTheme.colorScheme.primary
-                            } else {
-                                MaterialTheme.colorScheme.onSurfaceVariant
-                            }
-                        )
-                        Spacer(modifier = Modifier.width(10.dp))
-                        Text(text = stringResource(R.string.common_none), color = MaterialTheme.colorScheme.onSurface)
-                    }
-                    Spacer(modifier = Modifier.height(8.dp))
-                }
-
-                groupedNodes.forEach { (profileId, profileNodes) ->
-                    val profileName = profiles.firstOrNull { it.id == profileId }?.name
-                    val isExpanded = expandedProfileId == profileId
-
-                    item(key = "group_$profileId") {
-                        val profileTitle = profileName
-                            ?: stringResource(R.string.node_detail_unknown_profile, profileId)
-
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .background(
-                                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
-                                    RoundedCornerShape(10.dp)
-                                )
-                                .animateContentSize(animationSpec = tween(durationMillis = 220))
-                        ) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable {
-                                        expandedProfileId = if (isExpanded) null else profileId
-                                    }
-                                    .padding(vertical = 10.dp, horizontal = 10.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    text = "$profileTitle (${profileNodes.size})",
-                                    style = MaterialTheme.typography.labelLarge,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.weight(1f)
-                                )
-                                Icon(
-                                    imageVector = if (isExpanded) {
-                                        Icons.Rounded.ExpandLess
-                                    } else {
-                                        Icons.Rounded.ExpandMore
-                                    },
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-
-                            AnimatedVisibility(
-                                visible = isExpanded,
-                                enter = fadeIn(animationSpec = tween(180)),
-                                exit = fadeOut(animationSpec = tween(120))
-                            ) {
-                                LazyColumn(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .heightIn(max = 280.dp)
-                                ) {
-                                    items(profileNodes, key = { it.id }) { detourNode ->
-                                        val ref = toNodeRef(detourNode)
-                                        val selected = selectedNodeRef == ref
-                                        Row(
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .clickable { onSelect(ref) }
-                                                .background(
-                                                    if (selected) {
-                                                        MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)
-                                                    } else {
-                                                        MaterialTheme.colorScheme.surface
-                                                    },
-                                                    RoundedCornerShape(10.dp)
-                                                )
-                                                .padding(horizontal = 12.dp, vertical = 10.dp),
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            Icon(
-                                                imageVector = if (selected) {
-                                                    Icons.Rounded.RadioButtonChecked
-                                                } else {
-                                                    Icons.Rounded.RadioButtonUnchecked
-                                                },
-                                                contentDescription = null,
-                                                tint = if (selected) {
-                                                    MaterialTheme.colorScheme.primary
-                                                } else {
-                                                    MaterialTheme.colorScheme.onSurfaceVariant
-                                                }
-                                            )
-                                            Spacer(modifier = Modifier.width(10.dp))
-                                            Text(text = detourNode.name, color = MaterialTheme.colorScheme.onSurface)
-                                        }
-                                        Spacer(modifier = Modifier.height(6.dp))
-                                    }
-                                }
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(6.dp))
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            Row(modifier = Modifier.fillMaxWidth()) {
-                TextButton(
-                    onClick = onDismiss,
-                    modifier = Modifier.weight(1f).height(50.dp),
-                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.onSurfaceVariant)
-                ) {
-                    Text(stringResource(R.string.common_cancel))
-                }
-
-                Spacer(modifier = Modifier.width(8.dp))
-
-                Button(
-                    onClick = onConfirm,
-                    modifier = Modifier.weight(1f).height(50.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.primary,
-                        contentColor = MaterialTheme.colorScheme.onPrimary
-                    ),
-                    shape = RoundedCornerShape(25.dp)
-                ) {
-                    Text(
-                        text = stringResource(R.string.common_ok),
-                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
-                    )
-                }
-            }
-        }
-    }
-}
-
-private fun createEmptyOutbound(protocol: String): Outbound {
-    val defaultPort = when (protocol) {
-        "shadowsocks" -> 8388
-        "vmess", "vless" -> 443
-        "trojan" -> 443
-        "hysteria2", "hysteria" -> 443
-        "tuic" -> 443
-        "naive" -> 443
-        "anytls" -> 443
-        "ssh" -> 22
-        "socks" -> 1080
-        "http" -> 8080
-        "wireguard" -> 51820
-        else -> 443
-    }
-
-    val needsTls = protocol in listOf("vless", "trojan", "hysteria2", "hysteria", "tuic", "naive", "anytls")
-
-    return Outbound(
-        type = protocol,
-        tag = "New-${protocol.uppercase()}",
-        server = "",
-        serverPort = defaultPort,
-        network = if (protocol == "naive") "h2" else null,
-        quic = if (protocol == "naive") false else null,
-        tls = if (needsTls) TlsConfig(enabled = true) else null
-    )
-}
-
-private fun formatHeaderLines(headers: Map<String, String>?): String {
-    return headers
-        ?.entries
-        ?.sortedBy { it.key.lowercase() }
-        ?.joinToString("\n") { (key, value) -> "$key: $value" }
-        .orEmpty()
-}
-
-private fun parseHeaderLines(text: String): Map<String, String>? {
-    val parsed = linkedMapOf<String, String>()
-    text.lineSequence()
-        .map { it.trim() }
-        .filter { it.isNotEmpty() }
-        .forEach { line ->
-            val separatorIndex = line.indexOf(':')
-            if (separatorIndex <= 0) return@forEach
-
-            val key = line.substring(0, separatorIndex).trim()
-            val value = line.substring(separatorIndex + 1).trim()
-            if (key.isNotEmpty() && value.isNotEmpty()) {
-                parsed[key] = value
-            }
-        }
-
-    return parsed.ifEmpty { null }
 }

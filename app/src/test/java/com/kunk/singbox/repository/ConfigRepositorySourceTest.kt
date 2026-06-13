@@ -8,9 +8,9 @@ import java.io.File
 class ConfigRepositorySourceTest {
     @Test
     fun customRuleSetConfigUsesDetectedFileFormat() {
-        val source = File("src/main/java/com/kunk/singbox/repository/ConfigRepository.kt").readText()
+        val source = readConfigRepositorySourcesForTextTests()
 
-        assertTrue(source.contains("private fun detectValidRuleSetFileFormat(file: File, tag: String): String?"))
+        assertTrue(source.contains("fun detectValidRuleSetFileFormat(file: File, tag: String): String?"))
         assertTrue(source.contains("format = detectedFormat"))
         assertFalse(source.contains("format = ruleSet.format,\n                        path = localPath"))
         assertFalse(source.contains("format = ruleSet.format,\n                        path = ruleSet.path"))
@@ -18,7 +18,7 @@ class ConfigRepositorySourceTest {
 
     @Test
     fun togglingSubscriptionProfileUpdatesAutoUpdateWork() {
-        val source = File("src/main/java/com/kunk/singbox/repository/ConfigRepository.kt").readText()
+        val source = readConfigRepositorySourcesForTextTests()
 
         assertTrue(source.contains("var updatedProfile: ProfileUi? = null"))
         assertTrue(source.contains("if (profile.type == ProfileType.Subscription)"))
@@ -29,9 +29,8 @@ class ConfigRepositorySourceTest {
 
     @Test
     fun directProfileImportParsesNodesBeforePersistingProfileState() {
-        val source = File("src/main/java/com/kunk/singbox/repository/ConfigRepository.kt").readText()
-        val function = source.substringAfter("suspend fun importProfileDirectly")
-            .substringBefore("fun toggleProfileEnabled")
+        val source = readConfigRepositorySourcesForTextTests()
+        val function = extractKotlinFunctionBodyForTextTests(source, "importProfileDirectly")
 
         val ioIndex = function.indexOf("withContext(Dispatchers.IO)")
         val extractIndex = function.indexOf("val nodes = extractNodesFromConfigSync")
@@ -49,9 +48,8 @@ class ConfigRepositorySourceTest {
 
     @Test
     fun nodeExtractionInitializesTrafficRepositoryOnIoBeforeCpuParsing() {
-        val source = File("src/main/java/com/kunk/singbox/repository/ConfigRepository.kt").readText()
-        val function = source.substringAfter("private suspend fun extractNodesFromConfig")
-            .substringBefore("private fun extractNodesFromConfigSync")
+        val source = readConfigRepositorySourcesForTextTests()
+        val function = extractKotlinFunctionBodyForTextTests(source, "extractNodesFromConfig")
 
         val ioInitIndex = function.indexOf("val trafficRepo = withContext(Dispatchers.IO)")
         val defaultParsingIndex = function.indexOf("return withContext(Dispatchers.Default)")
@@ -63,9 +61,8 @@ class ConfigRepositorySourceTest {
 
     @Test
     fun deleteNodeRunsConfigFileWorkOnIoDispatcher() {
-        val source = File("src/main/java/com/kunk/singbox/repository/ConfigRepository.kt").readText()
-        val function = source.substringAfter("suspend fun deleteNode")
-            .substringBefore("suspend fun addSingleNode")
+        val source = readConfigRepositorySourcesForTextTests()
+        val function = extractKotlinFunctionBodyForTextTests(source, "deleteNode")
 
         assertTrue(function.contains("withContext(Dispatchers.IO)"))
         assertTrue(function.contains("loadConfig(profileId)"))
@@ -75,11 +72,9 @@ class ConfigRepositorySourceTest {
 
     @Test
     fun profileInitializationRunsOnIoAndRuntimeConfigWaitsForIt() {
-        val source = File("src/main/java/com/kunk/singbox/repository/ConfigRepository.kt").readText()
-        val initBlock = source.substringAfter("init {")
-            .substringBefore("private suspend fun awaitInitialProfilesLoaded")
-        val generateConfig = source.substringAfter("suspend fun generateConfigFile")
-            .substringBefore("private fun buildOutboundForRuntime")
+        val source = readConfigRepositorySourcesForTextTests()
+        val initBlock = extractKotlinBlockAfterMarkerForTextTests(source, "init {")
+        val generateConfig = extractKotlinFunctionBodyForTextTests(source, "generateConfigFile")
 
         assertTrue(initBlock.contains("initialProfilesLoadJob = scope.launch"))
         assertTrue(initBlock.contains("loadProfileNodeMemory()"))
@@ -90,13 +85,10 @@ class ConfigRepositorySourceTest {
 
     @Test
     fun profileAndNodeMutationsKeepFileIoOffCallingThread() {
-        val source = File("src/main/java/com/kunk/singbox/repository/ConfigRepository.kt").readText()
-        val deleteProfile = source.substringAfter("suspend fun deleteProfile")
-            .substringBefore("suspend fun importProfileDirectly")
-        val renameNode = source.substringAfter("suspend fun renameNode")
-            .substringBefore("suspend fun updateNode")
-        val updateNode = source.substringAfter("suspend fun updateNode")
-            .substringBefore("fun exportNode")
+        val source = readConfigRepositorySourcesForTextTests()
+        val deleteProfile = extractKotlinFunctionBodyForTextTests(source, "deleteProfile")
+        val renameNode = extractKotlinFunctionBodyForTextTests(source, "renameNode")
+        val updateNode = extractKotlinFunctionBodyForTextTests(source, "updateNode")
 
         assertTrue(deleteProfile.contains("withContext(Dispatchers.IO)"))
         assertTrue(deleteProfile.contains("configFile.delete()"))
@@ -111,9 +103,8 @@ class ConfigRepositorySourceTest {
 
     @Test
     fun nodeExportLoadsConfigOnIoDispatcher() {
-        val source = File("src/main/java/com/kunk/singbox/repository/ConfigRepository.kt").readText()
-        val exportNode = source.substringAfter("suspend fun exportNode")
-            .substringBefore("private fun deduplicateTags")
+        val source = readConfigRepositorySourcesForTextTests()
+        val exportNode = extractKotlinFunctionBodyForTextTests(source, "exportNode")
 
         assertTrue(exportNode.contains("withContext(Dispatchers.IO)"))
         assertTrue(exportNode.contains("loadConfig(node.sourceProfileId)"))
@@ -122,15 +113,84 @@ class ConfigRepositorySourceTest {
 
     @Test
     fun activeConfigAndOutboundLookupLoadConfigOnIoDispatcher() {
-        val source = File("src/main/java/com/kunk/singbox/repository/ConfigRepository.kt").readText()
-        val activeConfig = source.substringAfter("suspend fun getActiveConfig")
-            .substringBefore("fun getConfig")
-        val outboundByNode = source.substringAfter("suspend fun getOutboundByNodeId")
-            .substringBefore("fun getNodeById")
+        val source = readConfigRepositorySourcesForTextTests()
+        val activeConfig = extractKotlinFunctionBodyForTextTests(source, "getActiveConfig")
+        val outboundByNode = extractKotlinFunctionBodyForTextTests(source, "getOutboundByNodeId")
 
         assertTrue(activeConfig.contains("withContext(Dispatchers.IO)"))
         assertTrue(activeConfig.contains("loadConfig(id)"))
         assertTrue(outboundByNode.contains("withContext(Dispatchers.IO)"))
         assertTrue(outboundByNode.contains("loadConfig(node.sourceProfileId)"))
+    }
+}
+
+internal fun readConfigRepositorySourcesForTextTests(): String {
+    val candidates = listOf(
+        File("src/main/java/com/kunk/singbox/repository"),
+        File("app/src/main/java/com/kunk/singbox/repository")
+    )
+    val sourceDir = candidates.firstOrNull { it.isDirectory }
+        ?: error("ConfigRepository sources not found from ${File(".").absolutePath}")
+
+    return sourceDir.listFiles { file ->
+        file.isFile && file.name.startsWith("ConfigRepository") && file.extension == "kt"
+    }.orEmpty()
+        .sortedWith(compareBy<File> { configRepositorySourceOrder(it.name) }.thenBy { it.name })
+        .joinToString(separator = "\n") { it.readText() }
+}
+
+internal fun extractKotlinFunctionBodyForTextTests(source: String, functionName: String): String {
+    val markers = listOf(
+        "protected override suspend fun $functionName(",
+        "override suspend fun $functionName(",
+        "protected override fun $functionName(",
+        "override fun $functionName(",
+        "private suspend fun $functionName(",
+        "suspend fun $functionName(",
+        "private fun $functionName(",
+        "fun $functionName("
+    )
+    val start = markers.asSequence()
+        .map { source.indexOf(it) }
+        .filter { it >= 0 }
+        .minOrNull()
+        ?: error("$functionName not found")
+    val bodyStart = source.indexOf('{', start)
+    val body = extractKotlinBlockAtStartForTextTests(source, bodyStart, "$functionName body")
+    return source.substring(start, bodyStart) + body
+}
+
+internal fun extractKotlinBlockAfterMarkerForTextTests(source: String, marker: String): String {
+    val markerStart = source.indexOf(marker)
+    require(markerStart >= 0) { "$marker not found" }
+    return extractKotlinBlockAtStartForTextTests(source, source.indexOf('{', markerStart), "$marker block")
+}
+
+private fun extractKotlinBlockAtStartForTextTests(source: String, bodyStart: Int, label: String): String {
+    require(bodyStart >= 0) { "$label not found" }
+
+    var depth = 0
+    for (index in bodyStart until source.length) {
+        when (source[index]) {
+            '{' -> depth++
+            '}' -> {
+                depth--
+                if (depth == 0) {
+                    return source.substring(bodyStart, index + 1)
+                }
+            }
+        }
+    }
+    error("$label end not found")
+}
+
+private fun configRepositorySourceOrder(fileName: String): Int {
+    return when {
+        fileName == "ConfigRepository.kt" -> 0
+        fileName.startsWith("ConfigRepositoryPart") -> 1
+        fileName.startsWith("ConfigRepositoryCompanion") -> 2
+        fileName == "ConfigRepositoryBase.kt" -> 3
+        fileName == "ConfigRepositoryTypes.kt" -> 4
+        else -> 5
     }
 }

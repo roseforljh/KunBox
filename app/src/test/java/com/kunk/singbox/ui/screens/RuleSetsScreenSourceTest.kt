@@ -8,7 +8,7 @@ class RuleSetsScreenSourceTest {
 
     @Test
     fun ruleSetEditorSavesDraftAcrossRecreationAndTrimsSavedFields() {
-        val source = File("src/main/java/com/kunk/singbox/ui/screens/RuleSetsScreen.kt").readText()
+        val source = readRuleSetsScreenSourcesForTextTests()
         val body = source.substring(
             source.indexOf("fun RuleSetEditorDialog("),
             source.indexOf("if (showTypeDialog)")
@@ -31,7 +31,7 @@ class RuleSetsScreenSourceTest {
 
     @Test
     fun targetSelectionDialogGuardsMissingSelectionIndex() {
-        val source = File("src/main/java/com/kunk/singbox/ui/screens/RuleSetsScreen.kt").readText()
+        val source = readRuleSetsScreenSourcesForTextTests()
 
         assertTrue(source.contains("val selectedIndex = targetOptions.indexOfFirst"))
         assertTrue(source.contains("selectedIndex = selectedIndex.coerceAtLeast(0)"))
@@ -39,4 +39,11 @@ class RuleSetsScreenSourceTest {
             source.contains("val selectedValue = targetOptions.getOrNull(index)?.second ?: return@SingleSelectDialog")
         )
     }
+}
+
+private fun readRuleSetsScreenSourcesForTextTests(): String {
+    return listOf(
+        File("src/main/java/com/kunk/singbox/ui/screens/RuleSetsScreen.kt"),
+        File("src/main/java/com/kunk/singbox/ui/screens/RuleSetsDialogs.kt")
+    ).joinToString(separator = "\n") { it.readText() }
 }

@@ -56,7 +56,7 @@ class DashboardViewModelSourceTest {
             source.indexOf("fun toggleConnection()")
         )
 
-        assertTrue(body.contains("resolveTrustedConnectionState("))
+        assertTrue(body.contains("resolveTrustedDashboardConnectionState("))
         assertFalse(body.contains("isActive -> ConnectionState.Connected"))
         assertFalse(body.contains("keeping Connected"))
     }

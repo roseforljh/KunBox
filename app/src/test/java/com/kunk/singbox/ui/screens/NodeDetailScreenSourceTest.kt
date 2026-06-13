@@ -36,7 +36,8 @@ class NodeDetailScreenSourceTest {
         assertTrue(source.contains("import androidx.compose.runtime.saveable.Saver"))
         assertTrue(source.contains("import androidx.compose.runtime.saveable.rememberSaveable"))
         assertTrue(source.contains("Saver<MutableState<Outbound?>, String>"))
-        assertTrue(source.contains("var editingOutbound by rememberSaveable("))
+        assertTrue(source.contains("val editingOutboundState = rememberSaveable("))
+        assertTrue(source.contains("var editingOutbound by editingOutboundState"))
         assertFalse(source.contains("var editingOutbound by remember { mutableStateOf<Outbound?>(null) }"))
     }
 }

@@ -1,21 +1,16 @@
 ﻿package com.kunk.singbox.service
 
-import android.app.Notification
-import android.app.NotificationChannel
 import android.app.NotificationManager
-import android.app.PendingIntent
 import android.app.Service
 import android.content.Intent
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.NetworkRequest
-import com.kunk.singbox.R
 import android.os.Build
 import android.os.IBinder
 import android.os.SystemClock
 import android.util.Log
-import com.kunk.singbox.MainActivity
 import com.kunk.singbox.core.LibboxCompat
 import com.kunk.singbox.core.SingBoxCore
 import com.kunk.singbox.ipc.SingBoxIpcHub
@@ -65,11 +60,11 @@ class ProxyOnlyService : Service() {
         private const val PORT_WAIT_TIMEOUT_MS = 5000L
         private const val PORT_CHECK_INTERVAL_MS = 100L
 
-        const val ACTION_START = SingBoxService.ACTION_START
-        const val ACTION_STOP = SingBoxService.ACTION_STOP
-        const val ACTION_SWITCH_NODE = SingBoxService.ACTION_SWITCH_NODE
-        const val ACTION_PREPARE_RESTART = SingBoxService.ACTION_PREPARE_RESTART
-        const val EXTRA_CONFIG_PATH = SingBoxService.EXTRA_CONFIG_PATH
+        const val ACTION_START = "com.kunk.singbox.START"
+        const val ACTION_STOP = "com.kunk.singbox.STOP"
+        const val ACTION_SWITCH_NODE = "com.kunk.singbox.SWITCH_NODE"
+        const val ACTION_PREPARE_RESTART = "com.kunk.singbox.PREPARE_RESTART"
+        const val EXTRA_CONFIG_PATH = "config_path"
 
         @Volatile
         var isRunning = false
@@ -395,7 +390,7 @@ class ProxyOnlyService : Service() {
 
     override fun onCreate() {
         super.onCreate()
-        createNotificationChannel()
+        createProxyOnlyNotificationChannel(CHANNEL_ID, LEGACY_CHANNEL_ID, TAG)
         connectivityManager = getSystemService(ConnectivityManager::class.java)
 
         serviceScope.launch {
@@ -851,66 +846,11 @@ class ProxyOnlyService : Service() {
         }
     }
 
-    private fun createNotificationChannel() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val manager = getSystemService(NotificationManager::class.java)
-            try {
-                manager.deleteNotificationChannel(LEGACY_CHANNEL_ID)
-            } catch (e: Exception) {
-                Log.w(TAG, "Failed to delete legacy notification channel", e)
-            }
-
-            val channel = NotificationChannel(
-                CHANNEL_ID,
-                "SingBox Proxy",
-                NotificationManager.IMPORTANCE_LOW
-            ).apply {
-                setShowBadge(false)
-                enableVibration(false)
-                enableLights(false)
-                setSound(null, null)
-                lockscreenVisibility = Notification.VISIBILITY_PUBLIC
-            }
-            manager.createNotificationChannel(channel)
-        }
-    }
-
-    private fun createNotification(): Notification {
-        val intent = Intent(this, MainActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
-        }
-        val pendingIntent = PendingIntent.getActivity(
-            this,
-            0,
-            intent,
-            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
-        )
-
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            Notification.Builder(this, CHANNEL_ID)
-                .setContentTitle("KunBox")
-                .setContentText("Proxy-only running")
-                .setSmallIcon(R.drawable.ic_notification)
-                .setContentIntent(pendingIntent)
-                .setOngoing(true)
-                .build()
-        } else {
-            @Suppress("DEPRECATION")
-            Notification.Builder(this)
-                .setContentTitle("KunBox")
-                .setContentText("Proxy-only running")
-                .setSmallIcon(R.drawable.ic_notification)
-                .setContentIntent(pendingIntent)
-                .setOngoing(true)
-                .build()
-        }
-    }
-
     private fun startForegroundForProxyStart(): Boolean {
         if (hasForegroundStarted.get()) return true
 
         return try {
-            startForeground(NOTIFICATION_ID, createNotification())
+            startForeground(NOTIFICATION_ID, createProxyOnlyNotification(CHANNEL_ID))
             hasForegroundStarted.set(true)
             true
         } catch (e: Exception) {
@@ -920,7 +860,7 @@ class ProxyOnlyService : Service() {
     }
 
     private fun updateNotification() {
-        val notification = createNotification()
+        val notification = createProxyOnlyNotification(CHANNEL_ID)
         val manager = getSystemService(NotificationManager::class.java)
         if (!hasForegroundStarted.get()) {
             runCatching {

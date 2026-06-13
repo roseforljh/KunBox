@@ -1,5 +1,7 @@
 package com.kunk.singbox
 
+import com.kunk.singbox.repository.extractKotlinFunctionBodyForTextTests
+import com.kunk.singbox.repository.readConfigRepositorySourcesForTextTests
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -43,7 +45,7 @@ class AppShortcutsResourceTest {
         val navigation = File("src/main/java/com/kunk/singbox/ui/navigation/AppNavigation.kt").readText()
         val profilesScreen = File("src/main/java/com/kunk/singbox/ui/screens/ProfilesScreen.kt").readText()
         val editorScreen = File("src/main/java/com/kunk/singbox/ui/screens/ProfileEditorScreen.kt").readText()
-        val repository = File("src/main/java/com/kunk/singbox/repository/ConfigRepository.kt").readText()
+        val repository = readConfigRepositorySourcesForTextTests()
 
         assertTrue(navigation.contains("object ProfileEditor : Screen(\"profile_editor/{profileId}\")"))
         assertTrue(navigation.contains("fun createRoute(profileId: String)"))
@@ -55,7 +57,7 @@ class AppShortcutsResourceTest {
 
     @Test
     fun blockedDnsRulesUsePredefinedNoErrorInsteadOfReject() {
-        val content = File("src/main/java/com/kunk/singbox/repository/ConfigRepository.kt").readText()
+        val content = readConfigRepositorySourcesForTextTests()
 
         assertTrue(content.contains("fun dnsReject(rule: DnsRule): DnsRule ="))
         assertTrue(content.contains("action = \"predefined\""))
@@ -67,7 +69,7 @@ class AppShortcutsResourceTest {
     fun subscriptionImportPreservesDnsOverrideChain() {
         val profilesScreen = File("src/main/java/com/kunk/singbox/ui/screens/ProfilesScreen.kt").readText()
         val profilesViewModel = File("src/main/java/com/kunk/singbox/viewmodel/ProfilesViewModel.kt").readText()
-        val configRepository = File("src/main/java/com/kunk/singbox/repository/ConfigRepository.kt").readText()
+        val configRepository = readConfigRepositorySourcesForTextTests()
 
         assertTrue(
             profilesScreen.contains(
@@ -81,11 +83,12 @@ class AppShortcutsResourceTest {
             ).containsMatchIn(profilesViewModel)
         )
         assertTrue(
-            Regex(
-                """suspend fun importFromSubscription\([\s\S]*dnsOverride: String\? = null[\s\S]*""" +
-                    """ProfileUi\([\s\S]*dnsOverride = dnsOverride"""
-            ).containsMatchIn(configRepository)
+            configRepository.contains("dnsOverride: String? = null")
         )
+        val importFromSubscription = extractKotlinFunctionBodyForTextTests(configRepository, "importFromSubscription")
+        assertTrue(importFromSubscription.contains("dnsOverride: String?"))
+        assertTrue(importFromSubscription.contains("ProfileUi("))
+        assertTrue(importFromSubscription.contains("dnsOverride = dnsOverride"))
     }
 
     @Test

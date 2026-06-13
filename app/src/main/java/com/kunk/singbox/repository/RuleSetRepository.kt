@@ -1,6 +1,8 @@
 package com.kunk.singbox.repository
 
+import android.annotation.TargetApi
 import android.content.Context
+import android.os.Build
 import android.util.Log
 import com.google.gson.stream.JsonReader
 import com.kunk.singbox.ipc.VpnStateStore
@@ -594,26 +596,57 @@ class RuleSetRepository(private val context: Context) {
     @Suppress("ReturnCount")
     private fun replaceRuleSetFile(tempFile: File, targetFile: File): Boolean {
         targetFile.parentFile?.mkdirs()
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+            return replaceRuleSetFileWithFileApi(tempFile, targetFile)
+        }
+
         return try {
+            replaceRuleSetFileWithNio(tempFile, targetFile, atomic = true)
+            true
+        } catch (_: AtomicMoveNotSupportedException) {
+            try {
+                replaceRuleSetFileWithNio(tempFile, targetFile, atomic = false)
+                true
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to replace rule set file: ${targetFile.name}", e)
+                false
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to replace rule set file: ${targetFile.name}", e)
+            false
+        }
+    }
+
+    @TargetApi(Build.VERSION_CODES.O)
+    private fun replaceRuleSetFileWithNio(tempFile: File, targetFile: File, atomic: Boolean) {
+        if (atomic) {
             Files.move(
                 tempFile.toPath(),
                 targetFile.toPath(),
                 StandardCopyOption.REPLACE_EXISTING,
                 StandardCopyOption.ATOMIC_MOVE
             )
-            true
-        } catch (_: AtomicMoveNotSupportedException) {
-            try {
-                Files.move(
-                    tempFile.toPath(),
-                    targetFile.toPath(),
-                    StandardCopyOption.REPLACE_EXISTING
-                )
-                true
-            } catch (e: Exception) {
-                Log.e(TAG, "Failed to replace rule set file: ${targetFile.name}", e)
-                false
+        } else {
+            Files.move(
+                tempFile.toPath(),
+                targetFile.toPath(),
+                StandardCopyOption.REPLACE_EXISTING
+            )
+        }
+    }
+
+    private fun replaceRuleSetFileWithFileApi(tempFile: File, targetFile: File): Boolean {
+        return try {
+            if (targetFile.exists() && !targetFile.delete()) {
+                throw java.io.IOException("Failed to delete old rule set file: ${targetFile.absolutePath}")
             }
+            if (!tempFile.renameTo(targetFile)) {
+                tempFile.copyTo(targetFile, overwrite = true)
+                if (!tempFile.delete()) {
+                    Log.w(TAG, "Failed to delete moved rule set temp file: ${tempFile.absolutePath}")
+                }
+            }
+            true
         } catch (e: Exception) {
             Log.e(TAG, "Failed to replace rule set file: ${targetFile.name}", e)
             false

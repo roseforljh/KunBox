@@ -1,5 +1,6 @@
 package com.kunk.singbox.core
 
+import android.annotation.TargetApi
 import android.net.DnsResolver
 import android.os.Build
 import android.os.CancellationSignal
@@ -55,6 +56,7 @@ object LocalResolverImpl : LocalDNSTransport {
         }
     }
 
+    @TargetApi(Build.VERSION_CODES.Q)
     private suspend fun lookupWithDnsResolver(
         ctx: ExchangeContext,
         defaultNetwork: android.net.Network,
@@ -121,6 +123,7 @@ object LocalResolverImpl : LocalDNSTransport {
         ctx.success(answer.mapNotNull { it.hostAddress }.joinToString("\n"))
     }
 
+    @TargetApi(Build.VERSION_CODES.Q)
     private suspend fun exchangeWithDnsResolver(
         ctx: ExchangeContext,
         defaultNetwork: android.net.Network,

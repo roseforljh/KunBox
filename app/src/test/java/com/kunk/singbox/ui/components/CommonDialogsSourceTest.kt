@@ -21,9 +21,12 @@ class CommonDialogsSourceTest {
     @Test
     fun singleSelectDialogDoesNotConfirmInvalidSelection() {
         val source = File("src/main/java/com/kunk/singbox/ui/components/CommonDialogs.kt").readText()
+        val end = source.indexOf("fun ProfileNodeSelectDialog(")
+            .takeIf { it >= 0 }
+            ?: source.length
         val body = source.substring(
             source.indexOf("fun SingleSelectDialog("),
-            source.indexOf("fun ProfileNodeSelectDialog(")
+            end
         )
 
         assertTrue(body.contains("val canConfirm = tempSelectedIndex in options.indices"))

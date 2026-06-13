@@ -6,11 +6,11 @@ import org.junit.Test
 class RecoveryLogicTest {
 
     private fun makeRequest(
-        reason: SingBoxService.RecoveryReason,
+        reason: RecoveryReason,
         force: Boolean = false,
         requestedAtMs: Long = 0L
-    ): SingBoxService.RecoveryRequest {
-        return SingBoxService.RecoveryRequest(
+    ): RecoveryRequest {
+        return RecoveryRequest(
             reason = reason,
             rawReason = reason.name,
             force = force,
@@ -21,14 +21,14 @@ class RecoveryLogicTest {
 
     @Test
     fun networkTypeChangedHasHighestPriority() {
-        val reason = SingBoxService.RecoveryReason.NETWORK_TYPE_CHANGED
+        val reason = RecoveryReason.NETWORK_TYPE_CHANGED
         assertEquals(100, reason.priority)
     }
 
     @Test
     fun networkTypeChangedOutranksNetworkValidated() {
-        val networkTypeChanged = SingBoxService.RecoveryReason.NETWORK_TYPE_CHANGED
-        val networkValidated = SingBoxService.RecoveryReason.NETWORK_VALIDATED
+        val networkTypeChanged = RecoveryReason.NETWORK_TYPE_CHANGED
+        val networkValidated = RecoveryReason.NETWORK_VALIDATED
 
         assertTrue(networkTypeChanged.priority > networkValidated.priority)
         assertEquals(100, networkTypeChanged.priority)
@@ -37,8 +37,8 @@ class RecoveryLogicTest {
 
     @Test
     fun networkTypeChangedOutranksAppForeground() {
-        val networkTypeChanged = SingBoxService.RecoveryReason.NETWORK_TYPE_CHANGED
-        val appForeground = SingBoxService.RecoveryReason.APP_FOREGROUND
+        val networkTypeChanged = RecoveryReason.NETWORK_TYPE_CHANGED
+        val appForeground = RecoveryReason.APP_FOREGROUND
 
         assertTrue(networkTypeChanged.priority > appForeground.priority)
         assertEquals(100, networkTypeChanged.priority)
@@ -48,13 +48,13 @@ class RecoveryLogicTest {
     @Test
     fun priorityOrderingIsCorrect() {
         val priorities = listOf(
-            SingBoxService.RecoveryReason.NETWORK_TYPE_CHANGED,
-            SingBoxService.RecoveryReason.DOZE_EXIT,
-            SingBoxService.RecoveryReason.NETWORK_VALIDATED,
-            SingBoxService.RecoveryReason.VPN_HEALTH,
-            SingBoxService.RecoveryReason.APP_FOREGROUND,
-            SingBoxService.RecoveryReason.SCREEN_ON,
-            SingBoxService.RecoveryReason.UNKNOWN
+            RecoveryReason.NETWORK_TYPE_CHANGED,
+            RecoveryReason.DOZE_EXIT,
+            RecoveryReason.NETWORK_VALIDATED,
+            RecoveryReason.VPN_HEALTH,
+            RecoveryReason.APP_FOREGROUND,
+            RecoveryReason.SCREEN_ON,
+            RecoveryReason.UNKNOWN
         )
 
         val expectedOrder = listOf(100, 90, 80, 70, 50, 50, 10)
@@ -67,40 +67,40 @@ class RecoveryLogicTest {
     @Test
     fun parseRecoveryReasonRecognizesNetworkTypeChanged() {
         assertEquals(
-            SingBoxService.RecoveryReason.NETWORK_TYPE_CHANGED,
-            SingBoxService.RecoveryReason.fromReasonString("network_type_changed")
+            RecoveryReason.NETWORK_TYPE_CHANGED,
+            RecoveryReason.fromReasonString("network_type_changed")
         )
         assertEquals(
-            SingBoxService.RecoveryReason.NETWORK_TYPE_CHANGED,
-            SingBoxService.RecoveryReason.fromReasonString("NETWORK_TYPE_CHANGED")
+            RecoveryReason.NETWORK_TYPE_CHANGED,
+            RecoveryReason.fromReasonString("NETWORK_TYPE_CHANGED")
         )
         assertEquals(
-            SingBoxService.RecoveryReason.NETWORK_TYPE_CHANGED,
-            SingBoxService.RecoveryReason.fromReasonString("typechange")
+            RecoveryReason.NETWORK_TYPE_CHANGED,
+            RecoveryReason.fromReasonString("typechange")
         )
     }
 
     @Test
     fun parseRecoveryReasonRecognizesNetworkValidated() {
         assertEquals(
-            SingBoxService.RecoveryReason.NETWORK_VALIDATED,
-            SingBoxService.RecoveryReason.fromReasonString("network_validated")
+            RecoveryReason.NETWORK_VALIDATED,
+            RecoveryReason.fromReasonString("network_validated")
         )
         assertEquals(
-            SingBoxService.RecoveryReason.NETWORK_VALIDATED,
-            SingBoxService.RecoveryReason.fromReasonString("NETWORK_VALIDATED")
+            RecoveryReason.NETWORK_VALIDATED,
+            RecoveryReason.fromReasonString("NETWORK_VALIDATED")
         )
     }
 
     @Test
     fun parseRecoveryReasonRecognizesAppForeground() {
         assertEquals(
-            SingBoxService.RecoveryReason.APP_FOREGROUND,
-            SingBoxService.RecoveryReason.fromReasonString("app_foreground")
+            RecoveryReason.APP_FOREGROUND,
+            RecoveryReason.fromReasonString("app_foreground")
         )
         assertEquals(
-            SingBoxService.RecoveryReason.APP_FOREGROUND,
-            SingBoxService.RecoveryReason.fromReasonString("APP_FOREGROUND")
+            RecoveryReason.APP_FOREGROUND,
+            RecoveryReason.fromReasonString("APP_FOREGROUND")
         )
     }
 
@@ -108,12 +108,12 @@ class RecoveryLogicTest {
     fun triggerRouteGroupImmediateReselectForNetworkTypeChangedAndValidated() {
         assertTrue(
             SingBoxService.shouldTriggerRouteGroupImmediateReselect(
-                SingBoxService.RecoveryReason.NETWORK_TYPE_CHANGED
+                RecoveryReason.NETWORK_TYPE_CHANGED
             )
         )
         assertTrue(
             SingBoxService.shouldTriggerRouteGroupImmediateReselect(
-                SingBoxService.RecoveryReason.NETWORK_VALIDATED
+                RecoveryReason.NETWORK_VALIDATED
             )
         )
     }
@@ -122,12 +122,12 @@ class RecoveryLogicTest {
     fun doesNotTriggerRouteGroupImmediateReselectForOtherReasons() {
         assertFalse(
             SingBoxService.shouldTriggerRouteGroupImmediateReselect(
-                SingBoxService.RecoveryReason.APP_FOREGROUND
+                RecoveryReason.APP_FOREGROUND
             )
         )
         assertFalse(
             SingBoxService.shouldTriggerRouteGroupImmediateReselect(
-                SingBoxService.RecoveryReason.VPN_HEALTH
+                RecoveryReason.VPN_HEALTH
             )
         )
     }
@@ -136,17 +136,17 @@ class RecoveryLogicTest {
     fun routeGroupImmediateSwitchConvergenceOnlyAppliesToNetworkReasons() {
         assertTrue(
             SingBoxService.shouldConvergeConnectionsAfterImmediateRouteGroupSwitch(
-                SingBoxService.RecoveryReason.NETWORK_TYPE_CHANGED
+                RecoveryReason.NETWORK_TYPE_CHANGED
             )
         )
         assertTrue(
             SingBoxService.shouldConvergeConnectionsAfterImmediateRouteGroupSwitch(
-                SingBoxService.RecoveryReason.NETWORK_VALIDATED
+                RecoveryReason.NETWORK_VALIDATED
             )
         )
         assertFalse(
             SingBoxService.shouldConvergeConnectionsAfterImmediateRouteGroupSwitch(
-                SingBoxService.RecoveryReason.APP_FOREGROUND
+                RecoveryReason.APP_FOREGROUND
             )
         )
     }
@@ -180,19 +180,19 @@ class RecoveryLogicTest {
     fun foregroundFastRecoveryDoesNotCloseActiveConnections() {
         assertFalse(
             SingBoxService.shouldCloseConnectionsDuringForegroundFastRecovery(
-                SingBoxService.RecoveryProfile.DEFAULT
+                RecoveryProfile.DEFAULT
             )
         )
         assertFalse(
             SingBoxService.shouldCloseConnectionsDuringForegroundFastRecovery(
-                SingBoxService.RecoveryProfile.HYSTERIA2
+                RecoveryProfile.HYSTERIA2
             )
         )
     }
 
     @Test
     fun allRecoveryReasonValuesHavePositivePriority() {
-        val values = SingBoxService.RecoveryReason.values()
+        val values = RecoveryReason.values()
         for (reason in values) {
             assertTrue(reason.priority > 0)
         }
@@ -201,14 +201,14 @@ class RecoveryLogicTest {
     @Test
     fun appForegroundAndScreenOnSharePriority() {
         assertEquals(
-            SingBoxService.RecoveryReason.APP_FOREGROUND.priority,
-            SingBoxService.RecoveryReason.SCREEN_ON.priority
+            RecoveryReason.APP_FOREGROUND.priority,
+            RecoveryReason.SCREEN_ON.priority
         )
 
-        val values = SingBoxService.RecoveryReason.values()
+        val values = RecoveryReason.values()
         val filtered = values.filter {
-            it != SingBoxService.RecoveryReason.APP_FOREGROUND &&
-                it != SingBoxService.RecoveryReason.SCREEN_ON
+            it != RecoveryReason.APP_FOREGROUND &&
+                it != RecoveryReason.SCREEN_ON
         }
         val priorities = filtered.map { it.priority }
         assertEquals(priorities.size, priorities.distinct().size)
@@ -217,12 +217,12 @@ class RecoveryLogicTest {
     @Test
     fun chooseHigherPriorityRecoveryForceWinsOverPriority() {
         val forceLower = makeRequest(
-            SingBoxService.RecoveryReason.NETWORK_VALIDATED,
+            RecoveryReason.NETWORK_VALIDATED,
             force = true,
             requestedAtMs = 100L
         )
         val noForceHigher = makeRequest(
-            SingBoxService.RecoveryReason.NETWORK_TYPE_CHANGED,
+            RecoveryReason.NETWORK_TYPE_CHANGED,
             force = false,
             requestedAtMs = 50L
         )
@@ -234,12 +234,12 @@ class RecoveryLogicTest {
     @Test
     fun chooseHigherPriorityRecoveryNetworkTypeChangedWinsOverNetworkValidated() {
         val networkTypeChanged = makeRequest(
-            SingBoxService.RecoveryReason.NETWORK_TYPE_CHANGED,
+            RecoveryReason.NETWORK_TYPE_CHANGED,
             force = false,
             requestedAtMs = 50L
         )
         val networkValidated = makeRequest(
-            SingBoxService.RecoveryReason.NETWORK_VALIDATED,
+            RecoveryReason.NETWORK_VALIDATED,
             force = false,
             requestedAtMs = 100L
         )
@@ -254,12 +254,12 @@ class RecoveryLogicTest {
     @Test
     fun chooseHigherPriorityRecoveryNetworkTypeChangedWinsOverAppForeground() {
         val networkTypeChanged = makeRequest(
-            SingBoxService.RecoveryReason.NETWORK_TYPE_CHANGED,
+            RecoveryReason.NETWORK_TYPE_CHANGED,
             force = false,
             requestedAtMs = 50L
         )
         val appForeground = makeRequest(
-            SingBoxService.RecoveryReason.APP_FOREGROUND,
+            RecoveryReason.APP_FOREGROUND,
             force = false,
             requestedAtMs = 100L
         )
@@ -274,12 +274,12 @@ class RecoveryLogicTest {
     @Test
     fun chooseHigherPriorityRecoveryNetworkValidatedWinsOverAppForeground() {
         val networkValidated = makeRequest(
-            SingBoxService.RecoveryReason.NETWORK_VALIDATED,
+            RecoveryReason.NETWORK_VALIDATED,
             force = false,
             requestedAtMs = 50L
         )
         val appForeground = makeRequest(
-            SingBoxService.RecoveryReason.APP_FOREGROUND,
+            RecoveryReason.APP_FOREGROUND,
             force = false,
             requestedAtMs = 100L
         )
@@ -291,12 +291,12 @@ class RecoveryLogicTest {
     @Test
     fun chooseHigherPriorityRecoveryByTimestampWhenSamePriority() {
         val earlier = makeRequest(
-            SingBoxService.RecoveryReason.APP_FOREGROUND,
+            RecoveryReason.APP_FOREGROUND,
             force = false,
             requestedAtMs = 100L
         )
         val later = makeRequest(
-            SingBoxService.RecoveryReason.APP_FOREGROUND,
+            RecoveryReason.APP_FOREGROUND,
             force = false,
             requestedAtMs = 200L
         )
@@ -312,32 +312,32 @@ class RecoveryLogicTest {
     fun hysteria2ForceDowngradeOnlyWhenNetworkTypeChanged() {
         assertTrue(
             SingBoxService.shouldDowngradeForceForHysteria2(
-                SingBoxService.RecoveryProfile.HYSTERIA2,
-                SingBoxService.RecoveryReason.NETWORK_TYPE_CHANGED,
+                RecoveryProfile.HYSTERIA2,
+                RecoveryReason.NETWORK_TYPE_CHANGED,
                 force = true
             )
         )
 
         assertFalse(
             SingBoxService.shouldDowngradeForceForHysteria2(
-                SingBoxService.RecoveryProfile.HYSTERIA2,
-                SingBoxService.RecoveryReason.NETWORK_VALIDATED,
+                RecoveryProfile.HYSTERIA2,
+                RecoveryReason.NETWORK_VALIDATED,
                 force = true
             )
         )
 
         assertFalse(
             SingBoxService.shouldDowngradeForceForHysteria2(
-                SingBoxService.RecoveryProfile.HYSTERIA2,
-                SingBoxService.RecoveryReason.NETWORK_TYPE_CHANGED,
+                RecoveryProfile.HYSTERIA2,
+                RecoveryReason.NETWORK_TYPE_CHANGED,
                 force = false
             )
         )
 
         assertFalse(
             SingBoxService.shouldDowngradeForceForHysteria2(
-                SingBoxService.RecoveryProfile.DEFAULT,
-                SingBoxService.RecoveryReason.NETWORK_TYPE_CHANGED,
+                RecoveryProfile.DEFAULT,
+                RecoveryReason.NETWORK_TYPE_CHANGED,
                 force = true
             )
         )
@@ -345,21 +345,21 @@ class RecoveryLogicTest {
 
     @Test
     fun hysteria2ForceDowngradeDoesNotEraseNetworkTypeChangedIdentity() {
-        val profile = SingBoxService.RecoveryProfile.HYSTERIA2
-        val reason = SingBoxService.RecoveryReason.NETWORK_TYPE_CHANGED
+        val profile = RecoveryProfile.HYSTERIA2
+        val reason = RecoveryReason.NETWORK_TYPE_CHANGED
 
         val shouldDowngrade = SingBoxService.shouldDowngradeForceForHysteria2(profile, reason, force = true)
         assertTrue(shouldDowngrade)
 
         val adjustedForce = if (shouldDowngrade) false else true
         assertFalse(adjustedForce)
-        assertEquals(SingBoxService.RecoveryReason.NETWORK_TYPE_CHANGED, reason)
+        assertEquals(RecoveryReason.NETWORK_TYPE_CHANGED, reason)
     }
 
     @Test
     fun networkTypeChangedSchedulesFallbackOnlyAfterSuccessfulExecution() {
-        val request = makeRequest(SingBoxService.RecoveryReason.NETWORK_TYPE_CHANGED)
-        val foregroundRequest = makeRequest(SingBoxService.RecoveryReason.APP_FOREGROUND)
+        val request = makeRequest(RecoveryReason.NETWORK_TYPE_CHANGED)
+        val foregroundRequest = makeRequest(RecoveryReason.APP_FOREGROUND)
 
         assertTrue(SingBoxService.shouldScheduleNetworkTypeChangedFallback(request, success = true))
         assertFalse(SingBoxService.shouldScheduleNetworkTypeChangedFallback(request, success = false))
@@ -368,8 +368,8 @@ class RecoveryLogicTest {
 
     @Test
     fun foregroundFastLaneOnlyAppliesToRealForegroundReturn() {
-        val foregroundRequest = SingBoxService.RecoveryRequest(
-            reason = SingBoxService.RecoveryReason.APP_FOREGROUND,
+        val foregroundRequest = RecoveryRequest(
+            reason = RecoveryReason.APP_FOREGROUND,
             rawReason = "app_foreground",
             force = true,
             requestedAtMs = 100L,
@@ -383,7 +383,7 @@ class RecoveryLogicTest {
 
     @Test
     fun foregroundHardFallbackRunsAfterForcedFastRecovery() {
-        val request = makeRequest(SingBoxService.RecoveryReason.APP_FOREGROUND, force = true)
+        val request = makeRequest(RecoveryReason.APP_FOREGROUND, force = true)
 
         assertTrue(
             SingBoxService.shouldScheduleForegroundHardFallback(
@@ -556,7 +556,7 @@ class RecoveryLogicTest {
     @Test
     fun networkTypeChangedFallbackEscalatesSoftRecoveryFirst() {
         assertEquals(
-            SingBoxService.NetworkTypeChangedFallbackAction.ESCALATE_HARD,
+            NetworkTypeChangedFallbackAction.ESCALATE_HARD,
             SingBoxService.determineNetworkTypeChangedFallbackAction(
                 com.kunk.singbox.core.BoxWrapperManager.RecoveryMode.SOFT
             )
@@ -566,7 +566,7 @@ class RecoveryLogicTest {
     @Test
     fun networkTypeChangedFallbackRestartsAfterHardRecoveryStillLooksHalfDead() {
         assertEquals(
-            SingBoxService.NetworkTypeChangedFallbackAction.RESTART_VPN,
+            NetworkTypeChangedFallbackAction.RESTART_VPN,
             SingBoxService.determineNetworkTypeChangedFallbackAction(
                 com.kunk.singbox.core.BoxWrapperManager.RecoveryMode.HARD
             )

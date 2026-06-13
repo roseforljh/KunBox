@@ -67,6 +67,10 @@ class ProfilesViewModel(application: Application) : AndroidViewModel(application
         _toastEvents.tryEmit(message)
     }
 
+    private fun emitDnsOverrideCompatibilityWarning(dnsOverride: String?) {
+        ConfigRepository.buildDnsOverrideCompatibilityWarning(dnsOverride)?.let { emitToast(it) }
+    }
+
     fun setActiveProfile(profileId: String) {
         configRepository.setActiveProfile(profileId)
 
@@ -120,6 +124,7 @@ class ProfilesViewModel(application: Application) : AndroidViewModel(application
             dnsOverride
         )
         emitToast(getApplication<Application>().getString(R.string.profiles_updated))
+        emitDnsOverrideCompatibilityWarning(dnsOverride)
     }
 
     @Suppress("CognitiveComplexMethod")
@@ -222,6 +227,7 @@ class ProfilesViewModel(application: Application) : AndroidViewModel(application
             result.fold(
                 onSuccess = { profile ->
                     _importState.value = ImportState.Success(profile)
+                    emitDnsOverrideCompatibilityWarning(profile.dnsOverride)
                 },
                 onFailure = { error ->
 
