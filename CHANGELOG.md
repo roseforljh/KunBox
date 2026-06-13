@@ -1,5 +1,21 @@
 # Changelog
 
+## [2.17.0](https://github.com/roseforljh/KunBox/compare/v2.16.2...v2.17.0) (2026-06-13)
+
+
+### Features
+
+* split oversized Kotlin files ([d244fc8](https://github.com/roseforljh/KunBox/commit/d244fc8d34c6360ccd2410247be8f45ccca981c5))
+
+
+### Bug Fixes
+
+* 修复DNS覆写与测速解析链路 ([95f1bc1](https://github.com/roseforljh/KunBox/commit/95f1bc187c73b0b6b9f1187a081d36738dd8b04b))
+* 修复节点域名解析DNS选择 ([ea123f5](https://github.com/roseforljh/KunBox/commit/ea123f50e6cc4ecba70b82e7c0f479c57abe7709))
+* 修复首页假连接状态同步 ([22d4be8](https://github.com/roseforljh/KunBox/commit/22d4be8c61cdbbdd5da259dee2a8256de1741b2c))
+* 全面修复DNS解析、协议解析、服务稳定性与配置原子性 ([b6bdf7e](https://github.com/roseforljh/KunBox/commit/b6bdf7ed5712ebffb61c765ea81fc0a232c89e69))
+* 全面修复内核同步与运行稳定性问题 ([d284a8d](https://github.com/roseforljh/KunBox/commit/d284a8daf435796fa8a00f5af9d19f66d2fcbd55))
+
 ## [2.16.2](https://github.com/roseforljh/KunBox/compare/v2.16.1...v2.16.2) (2026-06-04)
 
 
