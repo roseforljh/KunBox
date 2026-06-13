@@ -650,7 +650,10 @@ object SingBoxRemote {
             serviceAlive = serviceAlive,
             bindingInProgress = bindingInProgress
         )) {
-            EnsureBoundAction.NONE -> return
+            EnsureBoundAction.NONE -> {
+                syncStateFromService(currentService)
+                return
+            }
             EnsureBoundAction.CONNECT -> connect(context)
             EnsureBoundAction.WAIT_FOR_BIND -> Log.d(TAG, "ensureBound: binding already in progress")
             EnsureBoundAction.REBIND -> {

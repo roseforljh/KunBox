@@ -190,6 +190,14 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         viewModelScope.launch { repository.setAutoConnect(value) }
     }
 
+    fun setNetworkAutoSwitchEnabled(value: Boolean) {
+        viewModelScope.launch { repository.setNetworkAutoSwitchEnabled(value) }
+    }
+
+    fun setTrustedWifiSsids(value: String) {
+        viewModelScope.launch { repository.setTrustedWifiSsids(value) }
+    }
+
     fun setExcludeFromRecent(value: Boolean) {
         viewModelScope.launch { repository.setExcludeFromRecent(value) }
     }

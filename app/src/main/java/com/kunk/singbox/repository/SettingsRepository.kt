@@ -110,6 +110,14 @@ class SettingsRepository(private val context: Context) {
         settingsStore.updateSettingsAndWait { it.copy(autoConnect = value) }
     }
 
+    suspend fun setNetworkAutoSwitchEnabled(value: Boolean) {
+        settingsStore.updateSettingsAndWait { it.copy(networkAutoSwitchEnabled = value) }
+    }
+
+    suspend fun setTrustedWifiSsids(value: String) {
+        settingsStore.updateSettingsAndWait { it.copy(trustedWifiSsids = value) }
+    }
+
     suspend fun setExcludeFromRecent(value: Boolean) {
         settingsStore.updateSettingsAndWait { it.copy(excludeFromRecent = value) }
     }

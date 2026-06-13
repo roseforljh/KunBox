@@ -141,6 +141,12 @@
     <string name="connection_settings_title">Connection &amp; Startup</string>
     <string name="connection_settings_auto_connect">Auto Connect</string>
     <string name="connection_settings_auto_connect_subtitle">Automatically connect VPN on app launch</string>
+    <string name="connection_settings_network_auto_switch">Network Auto Switch</string>
+    <string name="connection_settings_network_auto_switch_subtitle">Disconnect on selected Wi-Fi, start on cellular</string>
+    <string name="connection_settings_network_auto_switch_permission_denied">Wi-Fi name permission is required</string>
+    <string name="connection_settings_trusted_wifi_ssids">Wi-Fi to Disconnect On</string>
+    <string name="connection_settings_trusted_wifi_ssids_subtitle">One Wi-Fi name per line</string>
+    <string name="connection_settings_trusted_wifi_ssids_placeholder">Home WiFi&#10;Office WiFi</string>
     <string name="connection_settings_hide_recent">Hide from Recent Tasks</string>
     <string name="connection_settings_hide_recent_subtitle">When enabled, app will not appear in recent tasks list</string>
     <string name="connection_settings_proxy_port">Proxy Port</string>

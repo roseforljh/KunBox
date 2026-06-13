@@ -141,6 +141,12 @@
     <string name="connection_settings_title">连接与启动</string>
     <string name="connection_settings_auto_connect">自动连接</string>
     <string name="connection_settings_auto_connect_subtitle">启动应用时自动连接 VPN</string>
+    <string name="connection_settings_network_auto_switch">按网络自动切换</string>
+    <string name="connection_settings_network_auto_switch_subtitle">连接指定 WiFi 自动断开，切换到移动数据自动开启</string>
+    <string name="connection_settings_network_auto_switch_permission_denied">需要 WiFi 名称读取权限</string>
+    <string name="connection_settings_trusted_wifi_ssids">自动断开的 WiFi</string>
+    <string name="connection_settings_trusted_wifi_ssids_subtitle">每行一个 WiFi 名称</string>
+    <string name="connection_settings_trusted_wifi_ssids_placeholder">Home WiFi&#10;Office WiFi</string>
     <string name="connection_settings_hide_recent">在最近任务中隐藏</string>
     <string name="connection_settings_hide_recent_subtitle">开启后，应用将不会出现在手机的最近任务列表中</string>
     <string name="connection_settings_proxy_port">代理端口</string>

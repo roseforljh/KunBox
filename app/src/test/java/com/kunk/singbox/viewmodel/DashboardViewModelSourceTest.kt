@@ -8,14 +8,15 @@ import java.io.File
 class DashboardViewModelSourceTest {
 
     @Test
-    fun dashboardTestAllNodesLatencyUsesAllDashboardNodes() {
+    fun dashboardTestAllNodesLatencyUsesUnfilteredRepositoryNodes() {
         val source = File("src/main/java/com/kunk/singbox/viewmodel/DashboardViewModel.kt").readText()
         val body = source.substring(
             source.indexOf("fun testAllNodesLatency()"),
             source.indexOf("private fun startTrafficMonitor()")
         )
 
-        assertTrue(body.contains("val targetNodeIds = nodes.value.map { it.id }"))
+        assertTrue(body.contains("val targetNodeIds = configRepository.nodes.value.map { it.id }"))
+        assertFalse(body.contains("val targetNodeIds = nodes.value.map { it.id }"))
         assertTrue(body.contains("configRepository.testAllNodesLatency(targetNodeIds = targetNodeIds)"))
         assertFalse(body.contains("configRepository.testNodeLatency(targetNodeId)"))
     }
@@ -45,5 +46,30 @@ class DashboardViewModelSourceTest {
         assertTrue(body.contains("VpnStateStore.CoreMode.NONE -> {"))
         assertTrue(body.contains("context.startService(Intent(context, ProxyOnlyService::class.java).apply"))
         assertTrue(body.contains("context.startService(Intent(context, SingBoxService::class.java).apply"))
+    }
+
+    @Test
+    fun refreshStateDoesNotTrustPersistedActiveAsConnectedUiState() {
+        val source = File("src/main/java/com/kunk/singbox/viewmodel/DashboardViewModel.kt").readText()
+        val body = source.substring(
+            source.indexOf("fun refreshState()"),
+            source.indexOf("fun toggleConnection()")
+        )
+
+        assertTrue(body.contains("resolveTrustedConnectionState("))
+        assertFalse(body.contains("isActive -> ConnectionState.Connected"))
+        assertFalse(body.contains("keeping Connected"))
+    }
+
+    @Test
+    fun refreshStateDoesNotImportPersistedRecoveryStateIntoHomeUi() {
+        val source = File("src/main/java/com/kunk/singbox/viewmodel/DashboardViewModel.kt").readText()
+        val body = source.substring(
+            source.indexOf("fun refreshState()"),
+            source.indexOf("fun toggleConnection()")
+        )
+
+        assertTrue(body.contains("SingBoxRemote.ensureBound(context)"))
+        assertFalse(body.contains("SingBoxRemote.instantRecovery(context)"))
     }
 }

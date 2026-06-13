@@ -8,6 +8,7 @@ import android.util.Log
 import com.kunk.singbox.aidl.ISingBoxServiceCallback
 import com.kunk.singbox.repository.ConfigRepository
 import com.kunk.singbox.repository.LogRepository
+import com.kunk.singbox.service.ProxyOnlyService
 import com.kunk.singbox.service.ServiceState
 import com.kunk.singbox.service.manager.BackgroundPowerManager
 import com.kunk.singbox.service.manager.ServiceStateHolder
@@ -137,6 +138,57 @@ object SingBoxIpcHub {
         return resolvedDelay
     }
 
+    internal fun resolveVisibleStateOrdinalForTest(
+        cachedStateOrdinal: Int,
+        liveCoreState: ServiceState?
+    ): Int {
+        return resolveVisibleStateOrdinal(
+            cachedStateOrdinal = cachedStateOrdinal,
+            liveCoreState = liveCoreState
+        )
+    }
+
+    private fun currentVisibleStateOrdinal(): Int {
+        return resolveVisibleStateOrdinal(
+            cachedStateOrdinal = stateOrdinal,
+            liveCoreState = currentLiveCoreState()
+        )
+    }
+
+    private fun currentLiveCoreState(): ServiceState? {
+        return when {
+            ServiceStateHolder.instance != null && ServiceStateHolder.isRunning -> ServiceState.RUNNING
+            ProxyOnlyService.isRunning -> ServiceState.RUNNING
+            ServiceStateHolder.instance != null && ServiceStateHolder.isStarting -> ServiceState.STARTING
+            ProxyOnlyService.isStarting -> ServiceState.STARTING
+            ServiceStateHolder.instance != null -> ServiceState.STOPPING
+            else -> null
+        }
+    }
+
+    private fun resolveVisibleStateOrdinal(
+        cachedStateOrdinal: Int,
+        liveCoreState: ServiceState?
+    ): Int {
+        return when (ServiceState.values().getOrNull(cachedStateOrdinal)) {
+            ServiceState.RUNNING -> {
+                if (liveCoreState == ServiceState.RUNNING) cachedStateOrdinal else ServiceState.STOPPED.ordinal
+            }
+            ServiceState.STARTING -> {
+                if (liveCoreState == ServiceState.STARTING || liveCoreState == ServiceState.RUNNING) {
+                    cachedStateOrdinal
+                } else {
+                    ServiceState.STOPPED.ordinal
+                }
+            }
+            ServiceState.STOPPING -> {
+                if (liveCoreState != null) cachedStateOrdinal else ServiceState.STOPPED.ordinal
+            }
+            ServiceState.STOPPED -> ServiceState.STOPPED.ordinal
+            null -> ServiceState.STOPPED.ordinal
+        }
+    }
+
     fun onAppLifecycle(isForeground: Boolean) {
         val vpnState = stateNames.getOrNull(stateOrdinal) ?: "UNKNOWN"
         log("onAppLifecycle: isForeground=$isForeground, vpnState=$vpnState")
@@ -149,7 +201,7 @@ object SingBoxIpcHub {
         }
     }
 
-    fun getStateOrdinal(): Int = stateOrdinal
+    fun getStateOrdinal(): Int = currentVisibleStateOrdinal()
 
     fun getActiveLabel(): String = activeLabel
 
@@ -199,7 +251,7 @@ object SingBoxIpcHub {
         callbacks.register(callback)
         mainHandler.post {
             runCatching {
-                callback.onStateChanged(stateOrdinal, activeLabel, lastError, manuallyStopped)
+                callback.onStateChanged(currentVisibleStateOrdinal(), activeLabel, lastError, manuallyStopped)
             }
         }
     }
@@ -252,7 +304,7 @@ object SingBoxIpcHub {
                 return
             }
 
-            val snapshot = StateSnapshot(stateOrdinal, activeLabel, lastError, manuallyStopped)
+            val snapshot = StateSnapshot(currentVisibleStateOrdinal(), activeLabel, lastError, manuallyStopped)
 
             broadcastCallbacks { callback ->
                 callback.onStateChanged(

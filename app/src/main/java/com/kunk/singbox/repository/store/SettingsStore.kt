@@ -28,6 +28,7 @@ class SettingsStore private constructor(context: Context) {
         private const val TAG = "SettingsStore"
         private const val AUTO_ROUTE_MIGRATION_VERSION = 6
         private const val FAKE_IP_RANGE_MIGRATION_VERSION = 7
+        private const val NETWORK_AUTO_SWITCH_MIGRATION_VERSION = 8
         private const val LEGACY_DEFAULT_FAKE_IP_RANGE = "198.18.0.0/15"
 
         @Volatile
@@ -99,6 +100,7 @@ class SettingsStore private constructor(context: Context) {
             }
 
             result = migrateFakeIpRange(version, result)
+            result = migrateNetworkAutoSwitch(version, result)
 
             return result
         }
@@ -118,6 +120,15 @@ class SettingsStore private constructor(context: Context) {
 
             Log.i(TAG, "Migrating legacy fakeIpRange to '${AppSettings.DEFAULT_FAKE_IP_RANGE}'")
             return settings.copy(fakeIpRange = AppSettings.DEFAULT_FAKE_IP_RANGE)
+        }
+
+        private fun migrateNetworkAutoSwitch(version: Int, settings: AppSettings): AppSettings {
+            val trustedWifiSsids: String? = runCatching { settings.trustedWifiSsids }.getOrNull()
+            if (version >= NETWORK_AUTO_SWITCH_MIGRATION_VERSION && trustedWifiSsids != null) {
+                return settings
+            }
+
+            return settings.copy(trustedWifiSsids = trustedWifiSsids.orEmpty())
         }
 
         internal fun shouldPersistMigratedSettings(

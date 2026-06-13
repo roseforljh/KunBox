@@ -1,6 +1,8 @@
 package com.kunk.singbox.ui.screens
 
 import com.kunk.singbox.R
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
@@ -28,9 +30,13 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
+import com.kunk.singbox.service.manager.NetworkAutoSwitchManager
+import com.kunk.singbox.ui.components.AppNotificationManager
+import com.kunk.singbox.ui.components.EditableMultilineTextItem
 import com.kunk.singbox.ui.components.EditableTextItem
 import com.kunk.singbox.ui.components.SettingItem
 import com.kunk.singbox.ui.components.SettingSwitchItem
@@ -46,9 +52,20 @@ fun ConnectionSettingsScreen(
     navController: NavController,
     settingsViewModel: SettingsViewModel = viewModel()
 ) {
+    val context = LocalContext.current
     val scrollState = rememberScrollState()
     val settings by settingsViewModel.settings.collectAsState()
     var showPowerSavingDelayDialog by remember { mutableStateOf(false) }
+    val permissionDeniedMessage = stringResource(R.string.connection_settings_network_auto_switch_permission_denied)
+    val wifiPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions()
+    ) {
+        if (NetworkAutoSwitchManager.hasWifiSsidPermission(context)) {
+            settingsViewModel.setNetworkAutoSwitchEnabled(true)
+        } else {
+            AppNotificationManager.showMessage(context, permissionDeniedMessage)
+        }
+    }
 
     if (showPowerSavingDelayDialog) {
         SingleSelectDialog(
@@ -93,6 +110,29 @@ fun ConnectionSettingsScreen(
                     checked = settings.autoConnect,
                     onCheckedChange = { settingsViewModel.setAutoConnect(it) }
                 )
+                SettingSwitchItem(
+                    title = stringResource(R.string.connection_settings_network_auto_switch),
+                    subtitle = stringResource(R.string.connection_settings_network_auto_switch_subtitle),
+                    checked = settings.networkAutoSwitchEnabled,
+                    onCheckedChange = { enabled ->
+                        if (!enabled) {
+                            settingsViewModel.setNetworkAutoSwitchEnabled(false)
+                        } else if (NetworkAutoSwitchManager.hasWifiSsidPermission(context)) {
+                            settingsViewModel.setNetworkAutoSwitchEnabled(true)
+                        } else {
+                            wifiPermissionLauncher.launch(NetworkAutoSwitchManager.requiredWifiSsidPermissions())
+                        }
+                    }
+                )
+                if (settings.networkAutoSwitchEnabled) {
+                    EditableMultilineTextItem(
+                        title = stringResource(R.string.connection_settings_trusted_wifi_ssids),
+                        subtitle = stringResource(R.string.connection_settings_trusted_wifi_ssids_subtitle),
+                        value = settings.trustedWifiSsids,
+                        placeholder = stringResource(R.string.connection_settings_trusted_wifi_ssids_placeholder),
+                        onValueChange = { settingsViewModel.setTrustedWifiSsids(it) }
+                    )
+                }
                 SettingSwitchItem(
                     title = stringResource(R.string.connection_settings_hide_recent),
                     subtitle = stringResource(R.string.connection_settings_hide_recent_subtitle),

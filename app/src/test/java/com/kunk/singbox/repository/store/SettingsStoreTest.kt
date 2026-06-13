@@ -1,6 +1,7 @@
 package com.kunk.singbox.repository.store
 
 import com.google.gson.Gson
+import com.kunk.singbox.database.entity.SettingsEntity
 import com.kunk.singbox.model.AppSettings
 import com.kunk.singbox.model.AppGroup
 import com.kunk.singbox.model.AppInfo
@@ -110,25 +111,46 @@ class SettingsStoreTest {
     fun testMigrateSettingsRecoversNullFakeIpRangeAtCurrentVersion() {
         val settings = Gson().fromJson("""{"fakeIpRange":null}""", AppSettings::class.java)
 
-        val migrated = SettingsStore.migrateSettings(version = 7, settings = settings)
+        val migrated = SettingsStore.migrateSettings(version = SettingsEntity.CURRENT_VERSION, settings = settings)
 
         assertEquals(AppSettings.DEFAULT_FAKE_IP_RANGE, migrated.fakeIpRange)
     }
 
     @Test
+    fun testMigrateSettingsRecoversNullTrustedWifiSsids() {
+        val settings = Gson().fromJson("""{"trustedWifiSsids":null}""", AppSettings::class.java)
+
+        val migrated = SettingsStore.migrateSettings(version = 7, settings = settings)
+
+        assertEquals("", migrated.trustedWifiSsids)
+    }
+
+    @Test
     fun testShouldPersistCurrentVersionWhenMigrationChangesSettings() {
         val loaded = Gson().fromJson("""{"fakeIpRange":null}""", AppSettings::class.java)
-        val migrated = SettingsStore.migrateSettings(version = 7, settings = loaded)
+        val migrated = SettingsStore.migrateSettings(version = SettingsEntity.CURRENT_VERSION, settings = loaded)
 
-        assertTrue(SettingsStore.shouldPersistMigratedSettings(version = 7, loaded = loaded, migrated = migrated))
+        assertTrue(
+            SettingsStore.shouldPersistMigratedSettings(
+                version = SettingsEntity.CURRENT_VERSION,
+                loaded = loaded,
+                migrated = migrated
+            )
+        )
     }
 
     @Test
     fun testShouldNotPersistCurrentVersionWhenMigrationDoesNotChangeSettings() {
         val loaded = AppSettings()
-        val migrated = SettingsStore.migrateSettings(version = 7, settings = loaded)
+        val migrated = SettingsStore.migrateSettings(version = SettingsEntity.CURRENT_VERSION, settings = loaded)
 
-        assertFalse(SettingsStore.shouldPersistMigratedSettings(version = 7, loaded = loaded, migrated = migrated))
+        assertFalse(
+            SettingsStore.shouldPersistMigratedSettings(
+                version = SettingsEntity.CURRENT_VERSION,
+                loaded = loaded,
+                migrated = migrated
+            )
+        )
     }
 
     @Test

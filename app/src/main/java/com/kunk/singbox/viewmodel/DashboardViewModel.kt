@@ -61,6 +61,27 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
 
     companion object {
         private const val TAG = "DashboardViewModel"
+
+        internal fun resolveTrustedConnectionStateForTest(
+            serviceState: ServiceState,
+            ipcBound: Boolean
+        ): ConnectionState {
+            return resolveTrustedConnectionState(serviceState, ipcBound)
+        }
+
+        private fun resolveTrustedConnectionState(
+            serviceState: ServiceState,
+            ipcBound: Boolean
+        ): ConnectionState {
+            if (!ipcBound) return ConnectionState.Idle
+
+            return when (serviceState) {
+                ServiceState.RUNNING -> ConnectionState.Connected
+                ServiceState.STARTING -> ConnectionState.Connecting
+                ServiceState.STOPPING -> ConnectionState.Disconnecting
+                ServiceState.STOPPED -> ConnectionState.Idle
+            }
+        }
     }
 
     private val configRepository = ConfigRepository.getInstance(application)
@@ -307,11 +328,15 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                     VpnTileService.persistVpnState(context, false)
                 }
 
-                if (hasSystemVpn && persisted) {
+                val trustedInitialState = resolveTrustedConnectionState(
+                    serviceState = SingBoxRemote.state.value,
+                    ipcBound = SingBoxRemote.isBound()
+                )
+                if (trustedInitialState == ConnectionState.Connected) {
                     _connectionState.value = ConnectionState.Connected
                     _connectedAtElapsedMs.value = SystemClock.elapsedRealtime()
-                } else if (!SingBoxRemote.isStarting.value) {
-                    _connectionState.value = ConnectionState.Idle
+                } else {
+                    _connectionState.value = trustedInitialState
                 }
             }
 
@@ -379,22 +404,23 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         val stateFlow = SingBoxRemote.state
         viewModelScope.launch {
             stateFlow.collect { state ->
-                when (state) {
-                    ServiceState.RUNNING -> {
+                when (resolveTrustedConnectionState(state, SingBoxRemote.isBound())) {
+                    ConnectionState.Connected -> {
                         systemVpnDetectedOnBoot = false
                         setConnectionState(ConnectionState.Connected)
                     }
-                    ServiceState.STARTING -> {
+                    ConnectionState.Connecting -> {
                         systemVpnDetectedOnBoot = false
                         setConnectionState(ConnectionState.Connecting)
                     }
-                    ServiceState.STOPPING -> {
+                    ConnectionState.Disconnecting -> {
                         systemVpnDetectedOnBoot = false
                         setConnectionState(ConnectionState.Disconnecting)
                     }
-                    ServiceState.STOPPED -> {
+                    ConnectionState.Idle -> {
                         setConnectionState(ConnectionState.Idle)
                     }
+                    ConnectionState.Error -> setConnectionState(ConnectionState.Error)
                 }
             }
         }
@@ -508,48 +534,32 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     /**
-     * 2025-fix-v12: 刷新 VPN 状态 (三阶段恢复)
+     * 刷新 VPN 状态。
      *
-     * Phase 1: 即时恢复 (< 1ms)
-     * - 从 MMKV 读取 VPN 状态，立即更新 UI
-     * - 异步验证/重建 IPC（不阻塞，不强制 rebind）
-     *
-     * Phase 2: 异步精确同步 (后台完成，用户无感)
-     * - 等待 IPC 绑定完成
-     * - 仅当 AIDL 返回的状态与 MMKV 一致或更可信时才覆盖 UI
-     * - 如果 IPC 超时未绑定但 MMKV 显示 active，保持 Connected 不回退
-     *
-     * Phase 3: 强制确保状态收集器启动 (关键修复)
-     * - 无论 IPC 是否绑定成功，确保 startStateCollector() 被调用
-     * - 防止 init 块超时导致状态监听器永不启动
+     * 首页只展示 IPC 返回的实时服务态。MMKV 里的 active/pending 只能作为服务恢复线索，
+     * 不能直接驱动首页开关，否则清后台后残留的 starting/running 会让耿鬼先醒再睡。
      */
     fun refreshState() {
         refreshStateJob?.cancel()
         refreshStateJob = viewModelScope.launch {
             val context = getApplication<Application>()
 
-            // Phase 1: 即时恢复 (< 1ms，从 MMKV 读状态 + 异步验证 IPC)
-            SingBoxRemote.instantRecovery(context)
+            SingBoxRemote.ensureBound(context)
 
             // 统一前台恢复入口：由 AppLifecycleObserver -> IPC -> :bg 网关处理
             // 注意：这里不再主动调用 SingBoxRemote.notifyAppLifecycle(true)
             // 因为 AppLifecycleObserver.onStart 已经负责了生命周期的同步，
             // 避免产生重复的前台通知导致网络恢复抖动
 
-            // 立即从 MMKV 状态更新 UI（不等 IPC）
-            val isActive = VpnStateStore.getActive()
-            val phase1State = when {
-                isActive -> ConnectionState.Connected
-                SingBoxRemote.isStarting.value -> ConnectionState.Connecting
-                else -> ConnectionState.Idle
-            }
+            // 只信任已绑定 IPC 的实时状态，避免清后台后的过期 MMKV active/pending 造成假启动态
+            val phase1State = resolveTrustedConnectionState(
+                serviceState = SingBoxRemote.state.value,
+                ipcBound = SingBoxRemote.isBound()
+            )
             setConnectionState(phase1State)
 
             startStateCollector()
 
-            // Phase 2: IPC 就绪后精确同步（后台静默完成，用户无感）
-            // 2025-fix-v12: 增加等待次数，从 50 次增加到 80 次（总共 8 秒）
-            // 原因: 在低性能设备或系统负载高时，IPC 绑定可能需要更长时间
             var retries = 0
             val maxRetries = 80 // 80 * 100ms = 8 秒
             while (!SingBoxRemote.isBound() && retries < maxRetries) {
@@ -560,29 +570,10 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
             if (SingBoxRemote.isBound()) {
                 val state = SingBoxRemote.state.value
                 Log.i(TAG, "refreshState Phase 2: state=$state, bound=true, retries=$retries")
-                when (state) {
-                    ServiceState.RUNNING -> setConnectionState(ConnectionState.Connected)
-                    ServiceState.STARTING -> setConnectionState(ConnectionState.Connecting)
-                    ServiceState.STOPPING -> setConnectionState(ConnectionState.Disconnecting)
-                    ServiceState.STOPPED -> {
-                        if (VpnStateStore.getActive()) {
-                            Log.w(
-                                TAG,
-                                "refreshState Phase 2: AIDL says STOPPED but MMKV says active, " +
-                                    "keeping Connected (wait for callback)"
-                            )
-                        } else {
-                            setConnectionState(ConnectionState.Idle)
-                        }
-                    }
-                }
+                setConnectionState(resolveTrustedConnectionState(state, ipcBound = true))
             } else {
-                if (isActive) {
-                    Log.w(TAG, "refreshState Phase 2: IPC not bound but MMKV active, keeping Connected")
-                } else {
-                    Log.w(TAG, "refreshState Phase 2: IPC not bound and MMKV inactive")
-                    setConnectionState(ConnectionState.Idle)
-                }
+                Log.w(TAG, "refreshState Phase 2: IPC not bound, showing idle until real service state arrives")
+                setConnectionState(ConnectionState.Idle)
             }
         }
     }
@@ -1029,7 +1020,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
     fun testAllNodesLatency() {
         viewModelScope.launch {
             _testStatus.value = getApplication<Application>().getString(R.string.common_loading)
-            val targetNodeIds = nodes.value.map { it.id }
+            val targetNodeIds = configRepository.nodes.value.map { it.id }
             if (targetNodeIds.isEmpty()) {
                 _testStatus.value = null
                 return@launch

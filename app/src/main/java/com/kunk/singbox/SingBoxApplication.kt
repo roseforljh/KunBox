@@ -11,6 +11,7 @@ import com.kunk.singbox.repository.SettingsRepository
 import com.kunk.singbox.service.RuleSetAutoUpdateWorker
 import com.kunk.singbox.service.SubscriptionAutoUpdateWorker
 import com.kunk.singbox.service.VpnKeepaliveWorker
+import com.kunk.singbox.service.manager.NetworkAutoSwitchManager
 import com.kunk.singbox.utils.DefaultNetworkListener
 import com.tencent.mmkv.MMKV
 import kotlinx.coroutines.CoroutineScope
@@ -62,6 +63,7 @@ class SingBoxApplication : Application(), Configuration.Provider {
                         android.util.Log.d("SingBoxApp", "Underlying network updated: $network")
                     }
                 }
+                NetworkAutoSwitchManager.start(this@SingBoxApplication)
 
                 SubscriptionAutoUpdateWorker.rescheduleAll(this@SingBoxApplication)
                 RuleSetAutoUpdateWorker.rescheduleAll(this@SingBoxApplication)

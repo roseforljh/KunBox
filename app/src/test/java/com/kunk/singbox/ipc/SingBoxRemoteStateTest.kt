@@ -3,6 +3,7 @@ package com.kunk.singbox.ipc
 import com.kunk.singbox.service.ServiceState
 import org.junit.Assert.*
 import org.junit.Test
+import java.io.File
 
 class SingBoxRemoteStateTest {
 
@@ -214,5 +215,17 @@ class SingBoxRemoteStateTest {
                 bindingInProgress = true
             )
         )
+    }
+
+    @Test
+    fun `ensure bound syncs live service state before returning healthy connection`() {
+        val source = File("src/main/java/com/kunk/singbox/ipc/SingBoxRemote.kt").readText()
+        val body = source.substring(
+            source.indexOf("fun ensureBound(context: Context)"),
+            source.indexOf("/**", source.indexOf("fun ensureBound(context: Context)"))
+        )
+
+        assertTrue(body.contains("EnsureBoundAction.NONE -> {"))
+        assertTrue(body.contains("syncStateFromService(currentService)"))
     }
 }

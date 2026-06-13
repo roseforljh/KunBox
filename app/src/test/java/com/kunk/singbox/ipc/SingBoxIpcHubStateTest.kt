@@ -4,6 +4,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import com.kunk.singbox.service.ServiceState
 
 class SingBoxIpcHubStateTest {
 
@@ -53,5 +54,45 @@ class SingBoxIpcHubStateTest {
         )
 
         assertEquals(-1, delay)
+    }
+
+    @Test
+    fun `stale running cache becomes stopped when core service is gone`() {
+        assertEquals(
+            ServiceState.STOPPED.ordinal,
+            SingBoxIpcHub.resolveVisibleStateOrdinalForTest(
+                cachedStateOrdinal = ServiceState.RUNNING.ordinal,
+                liveCoreState = null
+            )
+        )
+    }
+
+    @Test
+    fun `stale starting cache becomes stopped when core service is gone`() {
+        assertEquals(
+            ServiceState.STOPPED.ordinal,
+            SingBoxIpcHub.resolveVisibleStateOrdinalForTest(
+                cachedStateOrdinal = ServiceState.STARTING.ordinal,
+                liveCoreState = null
+            )
+        )
+    }
+
+    @Test
+    fun `live vpn and proxy states stay visible`() {
+        assertEquals(
+            ServiceState.RUNNING.ordinal,
+            SingBoxIpcHub.resolveVisibleStateOrdinalForTest(
+                cachedStateOrdinal = ServiceState.RUNNING.ordinal,
+                liveCoreState = ServiceState.RUNNING
+            )
+        )
+        assertEquals(
+            ServiceState.STARTING.ordinal,
+            SingBoxIpcHub.resolveVisibleStateOrdinalForTest(
+                cachedStateOrdinal = ServiceState.STARTING.ordinal,
+                liveCoreState = ServiceState.STARTING
+            )
+        )
     }
 }
