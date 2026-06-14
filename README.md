@@ -374,6 +374,8 @@ A: Minimum support is Android 7.0 (API 24), Android 10+ recommended for best exp
 
 Thanks to the following users for their generous support:
 
+Support KunBox via [ForZTH Sponsorship](https://sponsorship.forzth.com/github/roseforljh/KunBox).
+
 | Sponsor | Amount |
 |:---|:---|
 | [@WestWood](https://github.com/yuedaochangmendian) | ¥30 |
