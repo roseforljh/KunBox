@@ -26,7 +26,7 @@
 
 Thanks to the following users for their generous support:
 
-Support KunBox via [ForZTH](https://sponsorship.forzth.com/github/roseforljh/KunBox).
+Thanks to [ForZTN](https://sponsorship.forzth.com/github/roseforljh/KunBox) for supporting KunBox.
 
 | Sponsor | Amount |
 |:---|:---|

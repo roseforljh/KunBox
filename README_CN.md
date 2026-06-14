@@ -19,7 +19,7 @@
 
 感谢以下用户的慷慨支持：
 
-通过 [ForZTH](https://sponsorship.forzth.com/github/roseforljh/KunBox) 支持 KunBox。
+感谢 [ForZTN](https://sponsorship.forzth.com/github/roseforljh/KunBox) 支持 KunBox。
 
 | 赞助者 | 金额 |
 |:---|:---|
