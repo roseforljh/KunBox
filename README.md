@@ -22,6 +22,20 @@
 
 ---
 
+## 💖 Sponsorship
+
+Thanks to the following users for their generous support:
+
+Support KunBox via [ForZTH Sponsorship](https://sponsorship.forzth.com/github/roseforljh/KunBox).
+
+| Sponsor | Amount |
+|:---|:---|
+| [@WestWood](https://github.com/yuedaochangmendian) | ¥30 |
+
+> Your support is our motivation for continuous development! If you wish to sponsor, please contact us via [Telegram](https://t.me/+978J0WfmJLk4ZmQ1).
+
+---
+
 ## 📥 Download and Installation
 
 ### Download from GitHub Releases
@@ -367,22 +381,6 @@ A: Suggestions:
 
 ### Q: Which Android versions are supported?
 A: Minimum support is Android 7.0 (API 24), Android 10+ recommended for best experience.
-
----
-
-## 💖 Sponsorship
-
-Thanks to the following users for their generous support:
-
-Support KunBox via [ForZTH Sponsorship](https://sponsorship.forzth.com/github/roseforljh/KunBox).
-
-| Sponsor | Amount |
-|:---|:---|
-| [@WestWood](https://github.com/yuedaochangmendian) | ¥30 |
-
-> Your support is our motivation for continuous development! If you wish to sponsor, please contact us via [Telegram](https://t.me/+978J0WfmJLk4ZmQ1).
-
----
 
 ## ❤️ Acknowledgments
 
