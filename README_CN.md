@@ -15,6 +15,20 @@
 
 ---
 
+## 💖 赞助支持
+
+感谢以下用户的慷慨支持：
+
+通过 [ForZTH Sponsorship](https://sponsorship.forzth.com/github/roseforljh/KunBox) 支持 KunBox。
+
+| 赞助者 | 金额 |
+|:---|:---|
+| [@WestWood](https://github.com/yuedaochangmendian) | ¥30 |
+
+> 您的支持是我们持续开发的动力！如有意愿赞助，请通过 [Telegram](https://t.me/+978J0WfmJLk4ZmQ1) 联系我们。
+
+---
+
 ## 📥 下载安装
 
 ### 从 GitHub Releases 下载
@@ -360,20 +374,6 @@ A: 建议：
 
 ### Q: 支持哪些 Android 版本？
 A: 最低支持 Android 7.0 (API 24)，推荐 Android 10+ 以获得最佳体验。
-
----
-
-## 💖 赞助支持
-
-感谢以下用户的慷慨支持：
-
-| 赞助者 | 金额 |
-|:---|:---|
-| [@WestWood](https://github.com/yuedaochangmendian) | ¥30 |
-
-> 您的支持是我们持续开发的动力！如有意愿赞助，请通过 [Telegram](https://t.me/+978J0WfmJLk4ZmQ1) 联系我们。
-
----
 
 ## ❤️ 致谢与引用
 
