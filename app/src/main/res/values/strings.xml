@@ -796,4 +796,22 @@
     <string name="info_card_download">下载</string>
     <string name="info_card_ping">延迟</string>
 
+    <!-- Connection Info -->
+    <string name="settings_connection_info">连接信息</string>
+    <string name="settings_connection_info_subtitle">查看当前活跃网络连接详情</string>
+    <string name="connection_info_title">连接信息</string>
+    <string name="connection_info_no_connections">暂无活跃的连接</string>
+    <string name="connection_info_vpn_not_running">VPN 服务未运行</string>
+    <string name="connection_info_close_all">关闭所有连接</string>
+    <string name="connection_info_close_all_confirm">确定要切断当前所有连接吗？</string>
+    <string name="connection_info_pause">暂停刷新</string>
+    <string name="connection_info_resume">恢复刷新</string>
+    <string name="connection_info_total_upload">总上传</string>
+    <string name="connection_info_total_download">总下载</string>
+    <string name="connection_info_active_count">活跃连接数</string>
+    <string name="connection_info_no_match_title">无匹配连接</string>
+    <string name="connection_info_no_match">未找到匹配该关键词的连接</string>
+    <string name="connection_info_no_active">当前没有活跃的网络连接</string>
+    <string name="connection_info_close_connection">关闭连接</string>
+
 </resources>

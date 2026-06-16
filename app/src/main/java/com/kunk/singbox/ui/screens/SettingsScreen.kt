@@ -29,6 +29,7 @@ import androidx.compose.material.icons.rounded.Sync
 import androidx.compose.material.icons.rounded.SystemUpdate
 import androidx.compose.material.icons.rounded.Upload
 import androidx.compose.material.icons.rounded.VpnKey
+import androidx.compose.material.icons.rounded.SwapVert
 import androidx.compose.material.icons.rounded.Brightness6
 import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material3.CircularProgressIndicator
@@ -238,6 +239,12 @@ fun SettingsScreen(
                 subtitle = stringResource(R.string.settings_tun_vpn_subtitle),
                 icon = Icons.Rounded.VpnKey,
                 onClick = { navController.navigate(Screen.TunSettings.route) }
+            )
+            SettingItem(
+                title = stringResource(R.string.settings_connection_info),
+                subtitle = stringResource(R.string.settings_connection_info_subtitle),
+                icon = Icons.Rounded.SwapVert,
+                onClick = { navController.navigate(Screen.ConnectionInfo.route) }
             )
         }
 
