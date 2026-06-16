@@ -1,4 +1,4 @@
-﻿package com.kunk.singbox.utils.parser
+package com.kunk.singbox.utils.parser
 
 import android.util.Log
 import com.kunk.singbox.model.Outbound
@@ -137,6 +137,39 @@ class SubscriptionManager(private val parsers: List<SubscriptionParser>) {
             }
 
             return result
+        }
+
+        fun parseSubscriptionNameFromHeader(profileTitle: String?, contentDisposition: String?): String? {
+            var rawName: String? = null
+            if (!profileTitle.isNullOrBlank()) {
+                rawName = try {
+                    java.net.URLDecoder.decode(profileTitle, "UTF-8")
+                } catch (e: Exception) {
+                    profileTitle
+                }
+            } else if (!contentDisposition.isNullOrBlank()) {
+                val filenameRegex = """filename\*?=\s*(?:([^'"]*)'[^']*')?["']?([^"';]*)["']?""".toRegex(RegexOption.IGNORE_CASE)
+                val match = filenameRegex.find(contentDisposition)
+                if (match != null) {
+                    val charset = match.groupValues[1].takeIf { it.isNotBlank() }
+                    val encodedFilename = match.groupValues[2]
+                    if (charset != null) {
+                        try {
+                            rawName = java.net.URLDecoder.decode(encodedFilename, charset)
+                        } catch (e: Exception) {
+                            // ignore
+                        }
+                    }
+                    if (rawName == null) {
+                        rawName = try {
+                            java.net.URLDecoder.decode(encodedFilename, "UTF-8")
+                        } catch (e: Exception) {
+                            encodedFilename
+                        }
+                    }
+                }
+            }
+            return rawName?.removeSuffix(".yaml")?.removeSuffix(".yml")?.removeSuffix(".json")
         }
     }
 

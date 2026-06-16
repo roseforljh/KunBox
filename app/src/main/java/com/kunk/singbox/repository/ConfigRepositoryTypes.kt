@@ -24,7 +24,8 @@ data class ConfigRepositorySubscriptionAttemptContext(
 
 data class ConfigRepositoryFetchResult(
     val config: SingBoxConfig,
-    val userInfo: ConfigRepository.SubscriptionUserInfo?
+    val userInfo: ConfigRepository.SubscriptionUserInfo?,
+    val subscriptionName: String? = null
 )
 
 data class ConfigRepositorySubscriptionAttemptResult(

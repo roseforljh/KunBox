@@ -303,10 +303,19 @@ abstract class ConfigRepositoryPart4(context: Context) : ConfigRepositoryPart3(c
             if (_activeProfileId.value == profile.id) {
                 _nodes.value = newNodes
             }
+            val defaultQrName = context.getString(R.string.profiles_qrcode_subscription)
+            val finalName = if ((profile.name == defaultQrName || profile.name.isBlank() || profile.name == "扫码订阅" || profile.name == "QR Code Subscription") &&
+                !fetchResult.subscriptionName.isNullOrBlank()) {
+                fetchResult.subscriptionName
+            } else {
+                profile.name
+            }
+
             _profiles.update { list ->
                 list.map {
                     if (it.id == profile.id) {
                         it.copy(
+                            name = finalName,
                             expireDate = userInfo?.expire ?: it.expireDate,
                             totalTraffic = userInfo?.total ?: it.totalTraffic,
                             usedTraffic = if (userInfo != null) (userInfo.upload + userInfo.download) else it.usedTraffic

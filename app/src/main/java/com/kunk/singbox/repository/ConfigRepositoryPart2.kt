@@ -4,6 +4,7 @@ import com.kunk.singbox.R
 import android.content.Context
 import android.util.Log
 import com.kunk.singbox.model.*
+import com.kunk.singbox.utils.parser.SubscriptionManager
 import com.kunk.singbox.database.entity.ProfileEntity
 import com.kunk.singbox.database.entity.ActiveStateEntity
 import com.kunk.singbox.database.entity.NodeLatencyEntity
@@ -511,8 +512,19 @@ abstract class ConfigRepositoryPart2(context: Context) : ConfigRepositoryPart1(c
                 responseBody = responseBody,
                 subscriptionUserInfoHeader = response.header("Subscription-Userinfo")
             )
-            logSubscriptionParseResult(attemptResult, contentType, context, costMs)
-            return attemptResult
+            val profileTitle = response.header("profile-title")
+            val contentDisposition = response.header("Content-Disposition")
+            val subName = SubscriptionManager.parseSubscriptionNameFromHeader(profileTitle, contentDisposition)
+
+            val finalAttemptResult = if (subName != null && attemptResult.fetchResult != null) {
+                attemptResult.copy(
+                    fetchResult = attemptResult.fetchResult.copy(subscriptionName = subName)
+                )
+            } else {
+                attemptResult
+            }
+            logSubscriptionParseResult(finalAttemptResult, contentType, context, costMs)
+            return finalAttemptResult
         }
     }
 
@@ -622,6 +634,14 @@ abstract class ConfigRepositoryPart2(context: Context) : ConfigRepositoryPart1(c
             val config = fetchResult.config
             val userInfo = fetchResult.userInfo
 
+            val defaultQrName = context.getString(R.string.profiles_qrcode_subscription)
+            val finalName = if ((name == defaultQrName || name.isBlank() || name == "扫码订阅" || name == "QR Code Subscription") &&
+                !fetchResult.subscriptionName.isNullOrBlank()) {
+                fetchResult.subscriptionName
+            } else {
+                name
+            }
+
             onProgress(context.getString(R.string.profiles_extracting_nodes, 0, 0))
 
             profileId = UUID.randomUUID().toString()
@@ -634,7 +654,7 @@ abstract class ConfigRepositoryPart2(context: Context) : ConfigRepositoryPart1(c
             writeConfigFileOrThrow(profileId, deduplicatedConfig)
             val profile = ProfileUi(
                 id = profileId,
-                name = name,
+                name = finalName,
                 type = ProfileType.Subscription,
                 url = url,
                 lastUpdated = System.currentTimeMillis(),

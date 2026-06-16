@@ -111,4 +111,33 @@ class SubscriptionManagerTest {
         assertEquals("cdn.example.com", config?.outbounds?.singleOrNull()?.transport?.headers?.get("Host"))
         assertEquals("cdn.example.com", config?.outbounds?.singleOrNull()?.tls?.serverName)
     }
+
+    @Test
+    fun parseSubscriptionNameFromHeaderPrefersProfileTitle() {
+        val title = "My Best Subscription"
+        val disposition = "attachment; filename=\"ignore_me.yaml\""
+        val name = SubscriptionManager.parseSubscriptionNameFromHeader(title, disposition)
+        assertEquals("My Best Subscription", name)
+    }
+
+    @Test
+    fun parseSubscriptionNameFromHeaderDecodesUrlEncodedProfileTitle() {
+        val title = "%E6%88%91%E7%9A%84%E8%AE%A2%E9%98%85"
+        val name = SubscriptionManager.parseSubscriptionNameFromHeader(title, null)
+        assertEquals("我的订阅", name)
+    }
+
+    @Test
+    fun parseSubscriptionNameFromHeaderParsesContentDispositionFilename() {
+        val disposition = "attachment; filename=\"Config.yaml\""
+        val name = SubscriptionManager.parseSubscriptionNameFromHeader(null, disposition)
+        assertEquals("Config", name)
+    }
+
+    @Test
+    fun parseSubscriptionNameFromHeaderParsesContentDispositionFilenameUtf8() {
+        val disposition = "attachment; filename*=UTF-8''%E6%88%91%E7%9A%84%E9%85%8D%E7%BD%AE.yml"
+        val name = SubscriptionManager.parseSubscriptionNameFromHeader(null, disposition)
+        assertEquals("我的配置", name)
+    }
 }

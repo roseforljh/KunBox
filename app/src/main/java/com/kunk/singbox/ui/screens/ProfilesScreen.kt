@@ -332,8 +332,18 @@ fun ProfilesScreen(
                     viewModel.importFromContent(context.getString(R.string.profiles_qrcode_import), scannedContent)
                 }
                 isSubscriptionUrl -> {
-
-                    viewModel.importSubscription(context.getString(R.string.profiles_qrcode_subscription), scannedContent, 0)
+                    val urlParts = scannedContent.split("#")
+                    val parsedName = if (urlParts.size > 1 && urlParts[1].isNotBlank()) {
+                        try {
+                            java.net.URLDecoder.decode(urlParts[1], "UTF-8")
+                        } catch (e: Exception) {
+                            urlParts[1]
+                        }
+                    } else {
+                        null
+                    }
+                    val name = parsedName ?: context.getString(R.string.profiles_qrcode_subscription)
+                    viewModel.importSubscription(name, scannedContent, 0)
                 }
                 scannedContent.trim().startsWith("{") || scannedContent.trim().startsWith("proxies:") -> {
 
