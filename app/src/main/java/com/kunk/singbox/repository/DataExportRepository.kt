@@ -1,4 +1,4 @@
-﻿package com.kunk.singbox.repository
+package com.kunk.singbox.repository
 
 import com.kunk.singbox.R
 import android.content.Context
@@ -25,7 +25,7 @@ class DataExportRepository(private val context: Context) {
     companion object {
         private const val TAG = "DataExportRepository"
         private const val CURRENT_VERSION = 1
-        private const val MAX_IMPORT_JSON_BYTES = 2 * 1024 * 1024
+        private const val MAX_IMPORT_JSON_BYTES = 15 * 1024 * 1024
         private const val MAX_IMPORT_PROFILE_COUNT = 64
 
         @Volatile
