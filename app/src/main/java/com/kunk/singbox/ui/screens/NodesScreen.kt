@@ -20,10 +20,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.layout.wrapContentSize
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.itemsIndexed
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.ui.draw.clip
 import androidx.compose.material.icons.Icons
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -45,7 +48,14 @@ import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.FilterAlt
 import androidx.compose.material.icons.rounded.Sort
 import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.MyLocation
+import androidx.compose.material.icons.rounded.GridView
+import androidx.compose.material.icons.rounded.ViewCompact
+import androidx.compose.material.icons.rounded.ViewList
+import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -97,6 +107,7 @@ import com.kunk.singbox.ui.components.InputDialog
 import com.kunk.singbox.ui.components.NodeFilterDialog
 import com.kunk.singbox.ui.components.SingleSelectDialog
 import com.kunk.singbox.ui.components.NodeCard
+import com.kunk.singbox.ui.components.NodeGridCard
 import com.kunk.singbox.ui.navigation.Screen
 import com.kunk.singbox.ui.theme.Neutral500
 import kotlinx.coroutines.flow.collectLatest
@@ -112,7 +123,7 @@ fun NodesScreen(
     val context = LocalContext.current
     val clipboardManager = LocalClipboardManager.current
     val scope = rememberCoroutineScope()
-    val listState = rememberLazyListState()
+    val gridState = rememberLazyGridState()
 
     var isFabVisible by remember { mutableStateOf(true) }
 
@@ -138,6 +149,7 @@ fun NodesScreen(
     val sortType by viewModel.sortType.collectAsState()
     val testProgress by viewModel.testProgress.collectAsState()
     val profiles by viewModel.profiles.collectAsState()
+    val nodeColumnCount by viewModel.nodeColumnCount.collectAsState()
 
     var searchQuery by remember { mutableStateOf("") }
     var isSearchExpanded by remember { mutableStateOf(false) }
@@ -162,6 +174,7 @@ fun NodesScreen(
     }
 
     var showSortDialog by remember { mutableStateOf(false) }
+    var showMoreMenu by remember { mutableStateOf(false) }
     var showFilterDialog by remember { mutableStateOf(false) }
     var showProtocolSelectDialog by remember { mutableStateOf(false) }
     var exportLink by remember { mutableStateOf<String?>(null) }
@@ -424,16 +437,122 @@ fun NodesScreen(
                 )
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(onClick = { showFilterDialog = true }) {
-                        val hasFilter = nodeFilter.filterMode != FilterMode.NONE
+                    val activeIndex = remember(filteredNodes, activeNodeId) {
+                        filteredNodes.indexOfFirst { it.id == activeNodeId }
+                    }
+
+                    val layoutIcon = when (nodeColumnCount) {
+                        1 -> Icons.Rounded.GridView
+                        2 -> Icons.Rounded.ViewCompact
+                        else -> Icons.Rounded.ViewList
+                    }
+                    IconButton(
+                        onClick = {
+                            val nextCount = when (nodeColumnCount) {
+                                1 -> 2
+                                2 -> 3
+                                else -> 1
+                            }
+                            viewModel.setNodeColumnCount(nextCount)
+                        }
+                    ) {
                         Icon(
-                            imageVector = Icons.Rounded.FilterAlt,
-                            contentDescription = stringResource(R.string.nodes_filter),
-                            tint = if (hasFilter) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onBackground
+                            imageVector = layoutIcon,
+                            contentDescription = "Switch layout",
+                            tint = MaterialTheme.colorScheme.onBackground
                         )
                     }
-                    IconButton(onClick = { showSortDialog = true }) {
-                        Icon(Icons.Rounded.Sort, contentDescription = stringResource(R.string.nodes_sort), tint = MaterialTheme.colorScheme.onBackground)
+
+                    Box(modifier = Modifier.wrapContentSize(Alignment.TopStart)) {
+                        IconButton(onClick = { showMoreMenu = true }) {
+                            Icon(
+                                imageVector = Icons.Rounded.MoreVert,
+                                contentDescription = "More options",
+                                tint = MaterialTheme.colorScheme.onBackground
+                            )
+                        }
+
+                        MaterialTheme(
+                            shapes = MaterialTheme.shapes.copy(extraSmall = RoundedCornerShape(12.dp))
+                        ) {
+                            DropdownMenu(
+                                expanded = showMoreMenu,
+                                onDismissRequest = { showMoreMenu = false },
+                                modifier = Modifier
+                                    .background(MaterialTheme.colorScheme.surfaceVariant)
+                                    .border(
+                                        width = 1.dp,
+                                        color = MaterialTheme.colorScheme.outline,
+                                        shape = RoundedCornerShape(12.dp)
+                                    )
+                            ) {
+                                DropdownMenuItem(
+                                    leadingIcon = {
+                                        Icon(
+                                            imageVector = Icons.Rounded.MyLocation,
+                                            contentDescription = null,
+                                            tint = if (activeIndex >= 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+                                        )
+                                    },
+                                    text = {
+                                        Text(
+                                            text = "定位当前节点",
+                                            color = if (activeIndex >= 0) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+                                        )
+                                    },
+                                    enabled = activeIndex >= 0,
+                                    onClick = {
+                                        showMoreMenu = false
+                                        if (activeIndex >= 0) {
+                                            scope.launch {
+                                                gridState.animateScrollToItem(activeIndex)
+                                            }
+                                        }
+                                    }
+                                )
+
+                                DropdownMenuItem(
+                                    leadingIcon = {
+                                        val hasFilter = nodeFilter.filterMode != FilterMode.NONE
+                                        Icon(
+                                            imageVector = Icons.Rounded.FilterAlt,
+                                            contentDescription = null,
+                                            tint = if (hasFilter) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    },
+                                    text = {
+                                        Text(
+                                            text = stringResource(R.string.nodes_filter),
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    },
+                                    onClick = {
+                                        showMoreMenu = false
+                                        showFilterDialog = true
+                                    }
+                                )
+
+                                DropdownMenuItem(
+                                    leadingIcon = {
+                                        Icon(
+                                            imageVector = Icons.Rounded.Sort,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    },
+                                    text = {
+                                        Text(
+                                            text = stringResource(R.string.nodes_sort),
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    },
+                                    onClick = {
+                                        showMoreMenu = false
+                                        showSortDialog = true
+                                    }
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -491,9 +610,11 @@ fun NodesScreen(
             Spacer(modifier = Modifier.height(12.dp))
 
             Box(modifier = Modifier.fillMaxSize()) {
-                LazyColumn(
-                    state = listState,
+                LazyVerticalGrid(
+                    columns = GridCells.Fixed(nodeColumnCount),
+                    state = gridState,
                     contentPadding = PaddingValues(bottom = 88.dp, top = 12.dp, start = 16.dp, end = 16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     itemsIndexed(
@@ -539,25 +660,47 @@ fun NodesScreen(
                             label = "translateY"
                         )
 
-                        NodeCard(
-                            name = node.displayName,
-                            type = node.protocolDisplay,
-                            latency = node.latencyMs,
-                            isSelected = isSelected,
-                            isTesting = isTestingNode,
-                            trafficUsed = node.trafficUsed,
-                            onClick = onNodeClick,
-                            onEdit = onEdit,
-                            onExport = onExport,
-                            onLatency = onLatency,
-                            onDelete = onDelete,
-                            modifier = Modifier
-                                .animateItemPlacement()
-                                .graphicsLayer(
-                                    alpha = alpha,
-                                    translationY = translateY
-                                )
-                        )
+                        if (nodeColumnCount == 1) {
+                            NodeCard(
+                                name = node.displayName,
+                                type = node.protocolDisplay,
+                                latency = node.latencyMs,
+                                isSelected = isSelected,
+                                isTesting = isTestingNode,
+                                trafficUsed = node.trafficUsed,
+                                onClick = onNodeClick,
+                                onEdit = onEdit,
+                                onExport = onExport,
+                                onLatency = onLatency,
+                                onDelete = onDelete,
+                                modifier = Modifier
+                                    .animateItemPlacement()
+                                    .graphicsLayer(
+                                        alpha = alpha,
+                                        translationY = translateY
+                                    )
+                            )
+                        } else {
+                            NodeGridCard(
+                                name = node.displayName,
+                                type = node.protocolDisplay,
+                                latency = node.latencyMs,
+                                isSelected = isSelected,
+                                isTesting = isTestingNode,
+                                trafficUsed = node.trafficUsed,
+                                onClick = onNodeClick,
+                                onEdit = onEdit,
+                                onExport = onExport,
+                                onLatency = onLatency,
+                                onDelete = onDelete,
+                                modifier = Modifier
+                                    .animateItemPlacement()
+                                    .graphicsLayer(
+                                        alpha = alpha,
+                                        translationY = translateY
+                                    )
+                            )
+                        }
                     }
                 }
             }

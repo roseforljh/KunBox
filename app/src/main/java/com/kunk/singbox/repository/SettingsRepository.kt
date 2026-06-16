@@ -368,6 +368,14 @@ class SettingsRepository(private val context: Context) {
         return settings.map { it.customNodeOrder }
     }
 
+    suspend fun setNodeColumnCount(value: Int) {
+        settingsStore.updateSettingsAndWait { it.copy(nodeColumnCount = value) }
+    }
+
+    fun getNodeColumnCount(): Flow<Int> {
+        return settings.map { it.nodeColumnCount }
+    }
+
     suspend fun checkAndMigrateRuleSets() {
         try {
             val currentSettings = settings.value

@@ -4,6 +4,8 @@ import com.kunk.singbox.R
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -15,6 +17,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -188,6 +191,11 @@ fun NodeCard(
                             onDismissRequest = { showMenu = false },
                             modifier = Modifier
                                 .background(MaterialTheme.colorScheme.surfaceVariant)
+                                .border(
+                                    width = 1.dp,
+                                    color = MaterialTheme.colorScheme.outline,
+                                    shape = RoundedCornerShape(12.dp)
+                                )
                                 .width(100.dp)
                         ) {
                             DropdownMenuItem(
@@ -260,6 +268,178 @@ fun NodeCard(
                             )
                         }
                     }
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+fun NodeGridCard(
+    name: String,
+    type: String,
+    latency: Long? = null,
+    isSelected: Boolean,
+    isTesting: Boolean = false,
+    trafficUsed: Long = 0,
+    onClick: () -> Unit,
+    onEdit: () -> Unit,
+    onExport: () -> Unit,
+    onLatency: () -> Unit,
+    onDelete: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var showMenu by remember { mutableStateOf(false) }
+
+    val borderColor = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
+    val borderWidth = if (isSelected) 2.dp else 1.dp
+
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(84.dp)
+            .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(12.dp))
+            .border(borderWidth, borderColor, RoundedCornerShape(12.dp))
+            .combinedClickable(
+                onClick = onClick,
+                onLongClick = { showMenu = true }
+            )
+            .padding(10.dp)
+    ) {
+        Column(
+            modifier = Modifier.fillMaxSize(),
+            verticalArrangement = Arrangement.SpaceBetween
+        ) {
+            // Name
+            Text(
+                text = name,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 2,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            // Protocol & Latency
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                // Protocol
+                Text(
+                    text = type,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f)
+                )
+
+                Spacer(modifier = Modifier.width(4.dp))
+
+                // Latency / Testing
+                if (isTesting) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(10.dp),
+                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f),
+                        strokeWidth = 1.5.dp
+                    )
+                } else {
+                    val placeholderColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                    val latencyColor = remember(latency) {
+                        when {
+                            latency == null -> placeholderColor
+                            latency < 0 -> Color.Red
+                            latency <= 100 -> Color(0xFF00BFA5)
+                            latency <= 200 -> Color(0xFF4CAF50)
+                            latency <= 500 -> Color(0xFFFF9800)
+                            else -> Color.Red
+                        }
+                    }
+                    val timeoutText = stringResource(R.string.common_timeout)
+                    val ipv6OnlyText = stringResource(R.string.common_ipv6_only)
+                    val latencyText = remember(latency, timeoutText, ipv6OnlyText) {
+                        when {
+                            latency == null -> "---"
+                            latency == com.kunk.singbox.model.PingResultCode.IPV6_ONLY -> ipv6OnlyText
+                            latency < 0 -> timeoutText
+                            else -> "${latency}ms"
+                        }
+                    }
+                    Text(
+                        text = latencyText,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = latencyColor,
+                        fontWeight = if (latency == null) FontWeight.Normal else FontWeight.Bold,
+                        maxLines = 1
+                    )
+                }
+            }
+        }
+
+        if (showMenu) {
+            MaterialTheme(
+                shapes = MaterialTheme.shapes.copy(extraSmall = RoundedCornerShape(12.dp))
+            ) {
+                DropdownMenu(
+                    expanded = showMenu,
+                    onDismissRequest = { showMenu = false },
+                    modifier = Modifier
+                        .background(MaterialTheme.colorScheme.surfaceVariant)
+                        .border(
+                            width = 1.dp,
+                            color = MaterialTheme.colorScheme.outline,
+                            shape = RoundedCornerShape(12.dp)
+                        )
+                        .width(100.dp)
+                ) {
+                    DropdownMenuItem(
+                        text = {
+                            Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                                Text(stringResource(R.string.common_edit), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        },
+                        onClick = {
+                            showMenu = false
+                            onEdit()
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = {
+                            Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                                Text(stringResource(R.string.common_export), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        },
+                        onClick = {
+                            showMenu = false
+                            onExport()
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = {
+                            Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                                Text(stringResource(R.string.common_latency), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        },
+                        onClick = {
+                            showMenu = false
+                            onLatency()
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = {
+                            Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                                Text(stringResource(R.string.common_delete), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        },
+                        onClick = {
+                            showMenu = false
+                            onDelete()
+                        }
+                    )
                 }
             }
         }

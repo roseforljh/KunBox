@@ -1,4 +1,4 @@
-﻿package com.kunk.singbox.viewmodel
+package com.kunk.singbox.viewmodel
 
 import com.kunk.singbox.R
 import android.app.Application
@@ -26,6 +26,7 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -51,6 +52,15 @@ class NodesViewModel(application: Application) : AndroidViewModel(application) {
 
     val sortType: StateFlow<NodeSortType> = displaySettings.sortType
     val nodeFilter: StateFlow<NodeFilter> = displaySettings.nodeFilter
+
+    val nodeColumnCount: StateFlow<Int> = settingsRepository.settings
+        .map { it.nodeColumnCount }
+        .flowOn(Dispatchers.Default)
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = 1
+        )
 
     private val _customNodeOrder = MutableStateFlow<List<String>>(emptyList())
 
@@ -362,6 +372,12 @@ class NodesViewModel(application: Application) : AndroidViewModel(application) {
     fun setSortType(type: NodeSortType) {
         viewModelScope.launch {
             settingsRepository.setNodeSortType(type)
+        }
+    }
+
+    fun setNodeColumnCount(value: Int) {
+        viewModelScope.launch {
+            settingsRepository.setNodeColumnCount(value)
         }
     }
 

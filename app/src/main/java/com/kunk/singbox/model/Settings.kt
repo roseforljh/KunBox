@@ -1,4 +1,4 @@
-﻿package com.kunk.singbox.model
+package com.kunk.singbox.model
 
 import androidx.annotation.StringRes
 import com.google.gson.annotations.SerializedName
@@ -103,7 +103,9 @@ data class AppSettings(
 
     @SerializedName("autoCheckUpdate") val autoCheckUpdate: Boolean = true,
 
-    @SerializedName("backgroundPowerSavingDelay") val backgroundPowerSavingDelay: BackgroundPowerSavingDelay = BackgroundPowerSavingDelay.MINUTES_30
+    @SerializedName("backgroundPowerSavingDelay") val backgroundPowerSavingDelay: BackgroundPowerSavingDelay = BackgroundPowerSavingDelay.MINUTES_30,
+
+    @SerializedName("nodeColumnCount") val nodeColumnCount: Int = 1
 ) {
     companion object {
         const val DEFAULT_LOCAL_DNS = "https://dns.alidns.com/dns-query"
