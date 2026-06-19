@@ -54,6 +54,7 @@ import com.kunk.singbox.ui.theme.liquidGlassPanel
 import com.kunk.singbox.ui.theme.liquidGlassTextFieldBorderColor
 import com.kunk.singbox.ui.theme.liquidGlassTextFieldContainerColor
 import com.kunk.singbox.ui.theme.liquidGlassTextFieldPanel
+import com.kunk.singbox.ui.theme.liquidGlassTextButtonPanel
 
 @Composable
 private fun Modifier.dialogPanel(shape: RoundedCornerShape = RoundedCornerShape(28.dp)): Modifier {
@@ -155,7 +156,10 @@ fun ConfirmDialog(
 
             TextButton(
                 onClick = onDismiss,
-                modifier = Modifier.fillMaxWidth().height(50.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(50.dp)
+                    .liquidGlassTextButtonPanel(shape = RoundedCornerShape(25.dp)),
                 colors = ButtonDefaults.textButtonColors(contentColor = Neutral500)
             ) {
                 Text(stringResource(R.string.common_cancel))
@@ -283,7 +287,10 @@ fun InputDialog(
 
             TextButton(
                 onClick = onDismiss,
-                modifier = Modifier.fillMaxWidth().height(50.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(50.dp)
+                    .liquidGlassTextButtonPanel(shape = RoundedCornerShape(25.dp)),
                 colors = ButtonDefaults.textButtonColors(contentColor = Neutral500)
             ) {
                 Text(stringResource(R.string.common_cancel))
@@ -394,7 +401,10 @@ fun SingleSelectDialog(
 
             TextButton(
                 onClick = onDismiss,
-                modifier = Modifier.fillMaxWidth().height(50.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(50.dp)
+                    .liquidGlassTextButtonPanel(shape = RoundedCornerShape(25.dp)),
                 colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.onSurfaceVariant)
             ) {
                 Text(stringResource(R.string.common_cancel))

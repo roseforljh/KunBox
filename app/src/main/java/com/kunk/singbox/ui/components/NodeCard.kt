@@ -161,7 +161,9 @@ fun NodeCard(
                         if (isTesting) {
                             CircularProgressIndicator(
                                 modifier = Modifier.size(12.dp),
-                                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f),
+                                color = liquidGlassProgressColor(
+                                    MaterialTheme.colorScheme.primary.copy(alpha = 0.7f)
+                                ),
                                 strokeWidth = 2.dp
                             )
                         } else {
@@ -216,7 +218,9 @@ fun NodeCard(
                 Box(modifier = Modifier.wrapContentSize(Alignment.TopStart)) {
                     IconButton(
                         onClick = { showMenu = true },
-                        modifier = Modifier.size(32.dp)
+                        modifier = Modifier
+                            .size(32.dp)
+                            .liquidGlassIconButtonPanel(shadowElevation = 3.dp)
                     ) {
                         Icon(
                             imageVector = Icons.Rounded.MoreVert,
@@ -394,7 +398,9 @@ fun NodeGridCard(
                 if (isTesting) {
                     CircularProgressIndicator(
                         modifier = Modifier.size(10.dp),
-                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f),
+                        color = liquidGlassProgressColor(
+                            MaterialTheme.colorScheme.primary.copy(alpha = 0.7f)
+                        ),
                         strokeWidth = 1.5.dp
                     )
                 } else {

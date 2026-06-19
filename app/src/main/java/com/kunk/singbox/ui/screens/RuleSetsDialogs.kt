@@ -33,10 +33,15 @@ import com.kunk.singbox.viewmodel.DefaultRuleSetDownloadState
 import com.kunk.singbox.model.RuleSetOutboundMode
 import androidx.compose.ui.draw.scale
 import com.kunk.singbox.ui.theme.isLiquidGlassTheme
+import com.kunk.singbox.ui.theme.liquidGlassCheckboxColors
+import com.kunk.singbox.ui.theme.liquidGlassIconButtonPanel
 import com.kunk.singbox.ui.theme.liquidGlassPanel
 import com.kunk.singbox.ui.theme.liquidGlassDialogContainerColor
 import com.kunk.singbox.ui.theme.liquidGlassDialogPanel
+import com.kunk.singbox.ui.theme.liquidGlassProgressColor
+import com.kunk.singbox.ui.theme.liquidGlassProgressTrackColor
 import com.kunk.singbox.ui.theme.liquidGlassSwitchColors
+import com.kunk.singbox.ui.theme.liquidGlassTextButtonPanel
 
 @Composable
 private fun Modifier.ruleSetMenuPanel(shape: RoundedCornerShape = RoundedCornerShape(12.dp)): Modifier {
@@ -116,7 +121,8 @@ fun RuleSetItem(
                 Checkbox(
                     checked = isSelected,
                     onCheckedChange = { onClick() },
-                    modifier = Modifier.padding(end = 8.dp)
+                    modifier = Modifier.padding(end = 8.dp),
+                    colors = liquidGlassCheckboxColors()
                 )
             }
             Column(modifier = Modifier.weight(1f)) {
@@ -137,7 +143,7 @@ fun RuleSetItem(
                         CircularProgressIndicator(
                             modifier = Modifier.size(14.dp),
                             strokeWidth = 2.dp,
-                            color = MaterialTheme.colorScheme.primary
+                            color = liquidGlassProgressColor(MaterialTheme.colorScheme.primary)
                         )
                         Spacer(modifier = Modifier.width(4.dp))
                         Text(
@@ -210,7 +216,10 @@ fun RuleSetItem(
                     )
                 } else {
                     Box(modifier = Modifier.wrapContentSize(Alignment.TopStart)) {
-                        IconButton(onClick = { showMenu = true }) {
+                        IconButton(
+                            modifier = Modifier.liquidGlassIconButtonPanel(),
+                            onClick = { showMenu = true }
+                        ) {
                             Icon(
                                 imageVector = Icons.Rounded.MoreVert,
                                 contentDescription = "More actions",
@@ -405,6 +414,7 @@ fun RuleSetEditorDialog(
         },
         confirmButton = {
             TextButton(
+                modifier = Modifier.liquidGlassTextButtonPanel(enabled = tag.isNotBlank()),
                 onClick = {
                     val newRuleSet = initialRuleSet?.copy(
                         tag = tag.trim(),
@@ -429,11 +439,17 @@ fun RuleSetEditorDialog(
         dismissButton = {
             Row {
                 if (initialRuleSet != null && onDelete != null) {
-                    TextButton(onClick = { showDeleteConfirm = true }) {
+                    TextButton(
+                        modifier = Modifier.liquidGlassTextButtonPanel(),
+                        onClick = { showDeleteConfirm = true }
+                    ) {
                         Text(stringResource(R.string.common_delete), color = MaterialTheme.colorScheme.error)
                     }
                 }
-                TextButton(onClick = onDismiss) {
+                TextButton(
+                    modifier = Modifier.liquidGlassTextButtonPanel(),
+                    onClick = onDismiss
+                ) {
                     Text(stringResource(R.string.common_cancel))
                 }
             }
@@ -480,14 +496,17 @@ fun DefaultRuleSetProgressDialog(
                 LinearProgressIndicator(
                     progress = { if (state.total > 0) state.completed.toFloat() / state.total else 0f },
                     modifier = Modifier.fillMaxWidth(),
-                    color = MaterialTheme.colorScheme.primary,
-                    trackColor = MaterialTheme.colorScheme.surfaceVariant,
+                    color = liquidGlassProgressColor(MaterialTheme.colorScheme.primary),
+                    trackColor = liquidGlassProgressTrackColor(MaterialTheme.colorScheme.surfaceVariant),
                 )
             }
         },
         confirmButton = {},
         dismissButton = {
-            TextButton(onClick = onCancel) {
+            TextButton(
+                modifier = Modifier.liquidGlassTextButtonPanel(),
+                onClick = onCancel
+            ) {
                 Text(stringResource(R.string.common_cancel))
             }
         }

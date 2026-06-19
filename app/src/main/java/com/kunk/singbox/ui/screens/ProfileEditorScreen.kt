@@ -41,6 +41,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.kunk.singbox.repository.ConfigRepository
 import com.kunk.singbox.ui.components.AppNotificationManager
 import com.kunk.singbox.ui.theme.isLiquidGlassTheme
+import com.kunk.singbox.ui.theme.liquidGlassIconButtonPanel
 import com.kunk.singbox.ui.theme.liquidGlassPanel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
@@ -192,7 +193,10 @@ private fun ProfileEditorTopBar(
             Text(stringResource(R.string.profile_editor_title), color = MaterialTheme.colorScheme.onBackground)
         },
         navigationIcon = {
-            IconButton(onClick = onBack) {
+            IconButton(
+                modifier = Modifier.liquidGlassIconButtonPanel(),
+                onClick = onBack
+            ) {
                 Icon(
                     Icons.Rounded.ArrowBack,
                     contentDescription = stringResource(R.string.common_back),
@@ -201,7 +205,11 @@ private fun ProfileEditorTopBar(
             }
         },
         actions = {
-            IconButton(enabled = saveEnabled, onClick = onSave) {
+            IconButton(
+                modifier = Modifier.liquidGlassIconButtonPanel(enabled = saveEnabled),
+                enabled = saveEnabled,
+                onClick = onSave
+            ) {
                 Icon(
                     Icons.Rounded.Save,
                     contentDescription = stringResource(R.string.common_save),

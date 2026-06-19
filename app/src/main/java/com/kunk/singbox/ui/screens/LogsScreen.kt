@@ -56,6 +56,7 @@ import com.kunk.singbox.ui.theme.liquidGlassPanel
 import com.kunk.singbox.ui.theme.liquidGlassTextFieldBorderColor
 import com.kunk.singbox.ui.theme.liquidGlassTextFieldContainerColor
 import com.kunk.singbox.ui.theme.liquidGlassTextFieldPanel
+import com.kunk.singbox.ui.theme.liquidGlassIconButtonPanel
 import com.kunk.singbox.viewmodel.LogViewModel
 import com.kunk.singbox.ui.theme.liquidGlassTopAppBarContainerColor
 
@@ -81,7 +82,10 @@ fun LogsScreen(navController: NavController, viewModel: LogViewModel = viewModel
                     )
                 },
                 navigationIcon = {
-                    IconButton(onClick = { navController.popBackStack() }) {
+                    IconButton(
+                        modifier = Modifier.liquidGlassIconButtonPanel(),
+                        onClick = { navController.popBackStack() }
+                    ) {
                         Icon(
                             Icons.Rounded.ArrowBack,
                             contentDescription = stringResource(R.string.common_back),
@@ -92,24 +96,30 @@ fun LogsScreen(navController: NavController, viewModel: LogViewModel = viewModel
                 actions = {
                     val exportSubject = "KunBox " + stringResource(R.string.logs_title)
                     val exportTitle = stringResource(R.string.logs_export)
-                    IconButton(onClick = {
-                        val logsText = viewModel.getLogsForExport()
-                        val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                            type = "text/plain"
-                            putExtra(Intent.EXTRA_SUBJECT, exportSubject)
-                            putExtra(Intent.EXTRA_TEXT, logsText)
+                    IconButton(
+                        modifier = Modifier.liquidGlassIconButtonPanel(),
+                        onClick = {
+                            val logsText = viewModel.getLogsForExport()
+                            val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                type = "text/plain"
+                                putExtra(Intent.EXTRA_SUBJECT, exportSubject)
+                                putExtra(Intent.EXTRA_TEXT, logsText)
+                            }
+                            context.startActivity(
+                                Intent.createChooser(shareIntent, exportTitle)
+                            )
                         }
-                        context.startActivity(
-                            Intent.createChooser(shareIntent, exportTitle)
-                        )
-                    }) {
+                    ) {
                         Icon(
                             Icons.Rounded.Share,
                             contentDescription = stringResource(R.string.logs_export),
                             tint = MaterialTheme.colorScheme.onBackground
                         )
                     }
-                    IconButton(onClick = { viewModel.clearLogs() }) {
+                    IconButton(
+                        modifier = Modifier.liquidGlassIconButtonPanel(),
+                        onClick = { viewModel.clearLogs() }
+                    ) {
                         Icon(
                             Icons.Rounded.Delete,
                             contentDescription = stringResource(R.string.logs_clear),
@@ -204,7 +214,10 @@ private fun LogsSearchField(
         },
         trailingIcon = {
             if (searchKeyword.isNotEmpty()) {
-                IconButton(onClick = { onSearchKeywordChange("") }) {
+                IconButton(
+                    modifier = Modifier.liquidGlassIconButtonPanel(shadowElevation = 3.dp),
+                    onClick = { onSearchKeywordChange("") }
+                ) {
                     Icon(Icons.Rounded.Clear, contentDescription = null)
                 }
             }

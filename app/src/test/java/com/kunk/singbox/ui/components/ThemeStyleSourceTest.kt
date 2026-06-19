@@ -372,7 +372,8 @@ class ThemeStyleSourceTest {
 
     @Test
     fun selectionControlsUseLiquidGlassColors() {
-        val liquidControls = File("src/main/java/com/kunk/singbox/ui/theme/LiquidGlassControls.kt").readText()
+        val liquidControls = File("src/main/java/com/kunk/singbox/ui/theme/LiquidGlassSelectionControls.kt")
+            .readText()
         val radioFiles = listOf(
             "AddNodeDialog.kt",
             "SelectProfileDialog.kt"

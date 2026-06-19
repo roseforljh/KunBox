@@ -42,13 +42,16 @@ import com.kunk.singbox.ui.theme.isLiquidGlassTheme
 import com.kunk.singbox.ui.theme.liquidGlassButtonContainerColor
 import com.kunk.singbox.ui.theme.liquidGlassButtonContentColor
 import com.kunk.singbox.ui.theme.liquidGlassButtonPanel
+import com.kunk.singbox.ui.theme.liquidGlassCheckboxColors
 import com.kunk.singbox.ui.theme.liquidGlassPanel
 import com.kunk.singbox.ui.theme.liquidGlassDialogContainerColor
 import com.kunk.singbox.ui.theme.liquidGlassDialogPanel
+import com.kunk.singbox.ui.theme.liquidGlassIconButtonPanel
 import com.kunk.singbox.ui.theme.liquidGlassSwitchColors
 import com.kunk.singbox.ui.theme.liquidGlassTextFieldBorderColor
 import com.kunk.singbox.ui.theme.liquidGlassTextFieldContainerColor
 import com.kunk.singbox.ui.theme.liquidGlassTextFieldPanel
+import com.kunk.singbox.ui.theme.liquidGlassTextButtonPanel
 
 private const val APP_INFO_SEPARATOR = "\t"
 
@@ -177,7 +180,12 @@ private fun appRuleEnabledSwitch(
 
 @Composable
 private fun appRuleDeleteButton(onDelete: () -> Unit) {
-    IconButton(onClick = onDelete, modifier = Modifier.size(36.dp)) {
+    IconButton(
+        onClick = onDelete,
+        modifier = Modifier
+            .size(36.dp)
+            .liquidGlassIconButtonPanel(shadowElevation = 3.dp)
+    ) {
         Icon(
             Icons.Rounded.Delete,
             contentDescription = stringResource(R.string.common_delete),
@@ -412,9 +420,43 @@ fun AppRuleEditorDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = { selectedApp?.let { app -> val rule = initialRule?.copy(packageName = app.packageName, appName = app.appName, outboundMode = outboundMode, outboundValue = outboundValue) ?: AppRule(packageName = app.packageName, appName = app.appName, outboundMode = outboundMode, outboundValue = outboundValue); onConfirm(rule) } }, enabled = selectedApp != null) { Text(stringResource(R.string.common_save), color = if (selectedApp != null) MaterialTheme.colorScheme.primary else Neutral500) }
+            TextButton(
+                modifier = Modifier.liquidGlassTextButtonPanel(enabled = selectedApp != null),
+                onClick = {
+                    selectedApp?.let { app ->
+                        val rule = initialRule?.copy(
+                            packageName = app.packageName,
+                            appName = app.appName,
+                            outboundMode = outboundMode,
+                            outboundValue = outboundValue
+                        ) ?: AppRule(
+                            packageName = app.packageName,
+                            appName = app.appName,
+                            outboundMode = outboundMode,
+                            outboundValue = outboundValue
+                        )
+                        onConfirm(rule)
+                    }
+                },
+                enabled = selectedApp != null
+            ) {
+                Text(
+                    stringResource(R.string.common_save),
+                    color = if (selectedApp != null) MaterialTheme.colorScheme.primary else Neutral500
+                )
+            }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_cancel), color = MaterialTheme.colorScheme.onSurfaceVariant) } }
+        dismissButton = {
+            TextButton(
+                modifier = Modifier.liquidGlassTextButtonPanel(),
+                onClick = onDismiss
+            ) {
+                Text(
+                    stringResource(R.string.common_cancel),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
     )
 }
 
@@ -481,7 +523,7 @@ fun AppPickerDialog(apps: List<InstalledApp>, existingPackages: Set<String>, onS
                             checked = showSystemApps,
                             onCheckedChange = { showSystemApps = it },
                             modifier = Modifier.size(20.dp),
-                            colors = CheckboxDefaults.colors(
+                            colors = liquidGlassCheckboxColors(
                                 checkedColor = MaterialTheme.colorScheme.primary,
                                 uncheckedColor = Neutral500
                             )
@@ -505,7 +547,10 @@ fun AppPickerDialog(apps: List<InstalledApp>, existingPackages: Set<String>, onS
         },
         confirmButton = {},
         dismissButton = {
-            TextButton(onClick = onDismiss) {
+            TextButton(
+                modifier = Modifier.liquidGlassTextButtonPanel(),
+                onClick = onDismiss
+            ) {
                 Text(stringResource(R.string.common_cancel), color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
@@ -627,7 +672,12 @@ fun AppGroupCard(
                         color = color
                     )
                 }
-                IconButton(onClick = onDelete, modifier = Modifier.size(32.dp)) {
+                IconButton(
+                    onClick = onDelete,
+                    modifier = Modifier
+                        .size(32.dp)
+                        .liquidGlassIconButtonPanel(shadowElevation = 3.dp)
+                ) {
                     Icon(Icons.Rounded.Delete, contentDescription = stringResource(R.string.common_delete), tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(18.dp))
                 }
                 Switch(
@@ -723,7 +773,7 @@ fun SelectableAppItem(
             checked = isSelected,
             onCheckedChange = { onClick() },
             modifier = Modifier.size(20.dp),
-            colors = CheckboxDefaults.colors(
+            colors = liquidGlassCheckboxColors(
                 checkedColor = MaterialTheme.colorScheme.primary,
                 uncheckedColor = Neutral500,
                 checkmarkColor = MaterialTheme.colorScheme.onPrimary
@@ -813,7 +863,7 @@ fun MultiAppSelectorDialog(
                             checked = showSystemApps,
                             onCheckedChange = { showSystemApps = it },
                             modifier = Modifier.size(18.dp),
-                            colors = CheckboxDefaults.colors(
+                            colors = liquidGlassCheckboxColors(
                                 checkedColor = MaterialTheme.colorScheme.primary,
                                 uncheckedColor = Neutral500
                             )
@@ -895,7 +945,16 @@ fun MultiAppSelectorDialog(
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_cancel), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp) }
+            TextButton(
+                modifier = Modifier.liquidGlassTextButtonPanel(),
+                onClick = onDismiss
+            ) {
+                Text(
+                    stringResource(R.string.common_cancel),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 13.sp
+                )
+            }
         }
     )
 }
@@ -1099,7 +1158,10 @@ fun AppGroupEditorDialog(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(stringResource(R.string.app_rules_tabs_individual) + " (${selectedApps.size})", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.Medium)
-                        TextButton(onClick = { showAppSelector = true }) {
+                        TextButton(
+                            modifier = Modifier.liquidGlassTextButtonPanel(),
+                            onClick = { showAppSelector = true }
+                        ) {
                             Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(16.dp))
                             Spacer(modifier = Modifier.width(4.dp))
                             Text(stringResource(R.string.app_groups_select_apps))
@@ -1165,7 +1227,10 @@ fun AppGroupEditorDialog(
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) {
+            TextButton(
+                modifier = Modifier.liquidGlassTextButtonPanel(),
+                onClick = onDismiss
+            ) {
                 Text(stringResource(R.string.common_cancel), color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }

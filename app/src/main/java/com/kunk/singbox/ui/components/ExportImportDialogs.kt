@@ -25,7 +25,10 @@ import com.kunk.singbox.ui.theme.isLiquidGlassTheme
 import com.kunk.singbox.ui.theme.liquidGlassButtonContainerColor
 import com.kunk.singbox.ui.theme.liquidGlassButtonContentColor
 import com.kunk.singbox.ui.theme.liquidGlassButtonPanel
+import com.kunk.singbox.ui.theme.liquidGlassDividerColor
 import com.kunk.singbox.ui.theme.liquidGlassPanel
+import com.kunk.singbox.ui.theme.liquidGlassProgressColor
+import com.kunk.singbox.ui.theme.liquidGlassTextButtonPanel
 import com.kunk.singbox.viewmodel.ExportState
 import com.kunk.singbox.viewmodel.ImportState
 import java.text.SimpleDateFormat
@@ -91,7 +94,8 @@ fun ExportProgressDialog(
                 when (state) {
                     is ExportState.Exporting -> {
                         CircularProgressIndicator(
-                            modifier = Modifier.size(48.dp)
+                            modifier = Modifier.size(48.dp),
+                            color = liquidGlassProgressColor(MaterialTheme.colorScheme.primary)
                         )
                         Spacer(modifier = Modifier.height(16.dp))
                         Text(
@@ -222,12 +226,18 @@ fun ImportPreviewDialog(
                         SummaryRow(stringResource(R.string.import_app_version), summary.appVersion)
                         SummaryRow(stringResource(R.string.import_data_version), "v${summary.version}")
 
-                        HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
+                        HorizontalDivider(
+                            modifier = Modifier.padding(vertical = 12.dp),
+                            color = liquidGlassDividerColor(MaterialTheme.colorScheme.outlineVariant)
+                        )
 
                         SummaryRow(stringResource(R.string.import_profile_count), stringResource(R.string.import_count_items, summary.profileCount))
                         SummaryRow(stringResource(R.string.import_node_count), stringResource(R.string.import_count_items, summary.totalNodeCount))
 
-                        HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
+                        HorizontalDivider(
+                            modifier = Modifier.padding(vertical = 12.dp),
+                            color = liquidGlassDividerColor(MaterialTheme.colorScheme.outlineVariant)
+                        )
 
                         SummaryRow(stringResource(R.string.import_has_settings), if (summary.hasSettings) stringResource(R.string.common_yes) else stringResource(R.string.common_no))
                         SummaryRow(stringResource(R.string.import_has_custom_rules), if (summary.hasCustomRules) stringResource(R.string.common_yes) else stringResource(R.string.common_no))
@@ -270,7 +280,10 @@ fun ImportPreviewDialog(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.End
                 ) {
-                    TextButton(onClick = onDismiss) {
+                    TextButton(
+                        modifier = Modifier.liquidGlassTextButtonPanel(),
+                        onClick = onDismiss
+                    ) {
                         Text(stringResource(R.string.common_cancel))
                     }
                     Spacer(modifier = Modifier.width(8.dp))
@@ -354,7 +367,8 @@ fun ImportProgressDialog(
                 when (state) {
                     is ImportState.Importing -> {
                         CircularProgressIndicator(
-                            modifier = Modifier.size(48.dp)
+                            modifier = Modifier.size(48.dp),
+                            color = liquidGlassProgressColor(MaterialTheme.colorScheme.primary)
                         )
                         Spacer(modifier = Modifier.height(16.dp))
                         Text(
@@ -483,7 +497,8 @@ fun ValidatingDialog() {
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 CircularProgressIndicator(
-                    modifier = Modifier.size(48.dp)
+                    modifier = Modifier.size(48.dp),
+                    color = liquidGlassProgressColor(MaterialTheme.colorScheme.primary)
                 )
                 Spacer(modifier = Modifier.height(16.dp))
                 Text(

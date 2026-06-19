@@ -28,6 +28,8 @@ import com.kunk.singbox.ui.theme.TextPrimary
 import com.kunk.singbox.ui.theme.TextSecondary
 import com.kunk.singbox.ui.theme.isLiquidGlassTheme
 import com.kunk.singbox.ui.theme.liquidGlassPanel
+import com.kunk.singbox.ui.theme.liquidGlassProgressColor
+import com.kunk.singbox.ui.theme.liquidGlassProgressTrackColor
 
 @Composable
 private fun Modifier.loadingDialogPanel(shape: RoundedCornerShape = RoundedCornerShape(28.dp)): Modifier {
@@ -65,9 +67,9 @@ fun AppListLoadingDialog(
             CircularProgressIndicator(
                 progress = { loadingState.progress },
                 modifier = Modifier.size(72.dp),
-                color = PureWhite,
+                color = liquidGlassProgressColor(PureWhite),
                 strokeWidth = 6.dp,
-                trackColor = Divider
+                trackColor = liquidGlassProgressTrackColor(Divider)
             )
 
             Spacer(modifier = Modifier.height(24.dp))
@@ -93,8 +95,8 @@ fun AppListLoadingDialog(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(6.dp),
-                color = PureWhite,
-                trackColor = Divider
+                color = liquidGlassProgressColor(PureWhite),
+                trackColor = liquidGlassProgressTrackColor(Divider)
             )
         }
     }
@@ -125,7 +127,7 @@ fun SimpleLoadingDialog(
         ) {
             CircularProgressIndicator(
                 modifier = Modifier.size(56.dp),
-                color = PureWhite,
+                color = liquidGlassProgressColor(PureWhite),
                 strokeWidth = 5.dp
             )
 

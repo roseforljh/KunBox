@@ -48,7 +48,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.ui.draw.alpha
 import com.kunk.singbox.ui.theme.isLiquidGlassTheme
+import com.kunk.singbox.ui.theme.liquidGlassIconButtonPanel
 import com.kunk.singbox.ui.theme.liquidGlassPanel
+import com.kunk.singbox.ui.theme.liquidGlassProgressColor
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -223,7 +225,7 @@ fun ProfileCard(
                             Spacer(modifier = Modifier.width(8.dp))
                             CircularProgressIndicator(
                                 modifier = Modifier.size(16.dp),
-                                color = MaterialTheme.colorScheme.onSurface,
+                                color = liquidGlassProgressColor(MaterialTheme.colorScheme.onSurface),
                                 strokeWidth = 2.dp
                             )
                         }
@@ -349,7 +351,10 @@ fun ProfileCard(
         }
 
         Box(modifier = Modifier.wrapContentSize(Alignment.TopStart)) {
-            IconButton(onClick = { showMenu = true }) {
+            IconButton(
+                modifier = Modifier.liquidGlassIconButtonPanel(),
+                onClick = { showMenu = true }
+            ) {
                 Icon(
                     imageVector = Icons.Rounded.MoreVert,
                     contentDescription = "More",

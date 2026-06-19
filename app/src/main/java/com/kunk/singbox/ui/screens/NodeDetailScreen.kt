@@ -75,6 +75,7 @@ import com.kunk.singbox.ui.components.StandardCard
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import com.kunk.singbox.ui.theme.liquidGlassIconButtonPanel
 import com.kunk.singbox.ui.theme.liquidGlassTopAppBarContainerColor
 
 internal fun resolveTransportHostTextForEditor(transport: TransportConfig): String {
@@ -266,36 +267,44 @@ fun NodeDetailScreen(
                     )
                 },
                 navigationIcon = {
-                    IconButton(onClick = { navController.popBackStack() }) {
+                    IconButton(
+                        modifier = Modifier.liquidGlassIconButtonPanel(),
+                        onClick = { navController.popBackStack() }
+                    ) {
                         Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = stringResource(R.string.common_back), tint = MaterialTheme.colorScheme.onBackground)
                     }
                 },
                 actions = {
                     val savedMsg = stringResource(R.string.node_detail_saved)
-                    IconButton(onClick = {
-                        val currentOutbound = editingOutbound
-                        if (currentOutbound != null) {
-                            if (isCreateMode) {
-                                showSelectProfileDialog = true
-                            } else {
-                                scope.launch {
-                                    runCatching {
-                                        withContext(Dispatchers.IO) {
-                                            configRepository.updateNode(nodeId, currentOutbound)
+                    IconButton(
+                        modifier = Modifier.liquidGlassIconButtonPanel(
+                            enabled = editingOutbound != null
+                        ),
+                        onClick = {
+                            val currentOutbound = editingOutbound
+                            if (currentOutbound != null) {
+                                if (isCreateMode) {
+                                    showSelectProfileDialog = true
+                                } else {
+                                    scope.launch {
+                                        runCatching {
+                                            withContext(Dispatchers.IO) {
+                                                configRepository.updateNode(nodeId, currentOutbound)
+                                            }
+                                        }.onSuccess {
+                                            AppNotificationManager.showMessage(context, savedMsg)
+                                            navController.popBackStack()
+                                        }.onFailure {
+                                            AppNotificationManager.showMessage(
+                                                context,
+                                                context.getString(R.string.profiles_import_failed, it.message ?: "")
+                                            )
                                         }
-                                    }.onSuccess {
-                                        AppNotificationManager.showMessage(context, savedMsg)
-                                        navController.popBackStack()
-                                    }.onFailure {
-                                        AppNotificationManager.showMessage(
-                                            context,
-                                            context.getString(R.string.profiles_import_failed, it.message ?: "")
-                                        )
                                     }
                                 }
                             }
                         }
-                    }) {
+                    ) {
                         Icon(Icons.Rounded.Save, contentDescription = stringResource(R.string.common_save), tint = MaterialTheme.colorScheme.onBackground)
                     }
                 },

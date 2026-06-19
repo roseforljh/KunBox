@@ -69,6 +69,7 @@ import com.kunk.singbox.ui.components.SingleSelectDialog
 import com.kunk.singbox.ui.components.StandardCard
 import com.kunk.singbox.ui.components.ValidatingDialog
 import com.kunk.singbox.ui.navigation.Screen
+import com.kunk.singbox.ui.theme.liquidGlassProgressColor
 import com.kunk.singbox.ui.theme.liquidGlassScreenContainerColor
 import com.kunk.singbox.viewmodel.ImportState
 import com.kunk.singbox.viewmodel.SettingsViewModel
@@ -294,7 +295,7 @@ fun SettingsScreen(
                     if (isUpdatingRuleSets) {
                         CircularProgressIndicator(
                             modifier = Modifier.size(18.dp).padding(end = 8.dp),
-                            color = MaterialTheme.colorScheme.primary,
+                            color = liquidGlassProgressColor(MaterialTheme.colorScheme.primary),
                             strokeWidth = 2.dp
                         )
                     }

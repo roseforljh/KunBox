@@ -114,7 +114,10 @@ import com.kunk.singbox.ui.theme.isLiquidGlassTheme
 import com.kunk.singbox.ui.theme.liquidGlassFloatingActionContainerColor
 import com.kunk.singbox.ui.theme.liquidGlassFloatingActionContentColor
 import com.kunk.singbox.ui.theme.liquidGlassFloatingActionPanel
+import com.kunk.singbox.ui.theme.liquidGlassIconButtonPanel
 import com.kunk.singbox.ui.theme.liquidGlassPanel
+import com.kunk.singbox.ui.theme.liquidGlassProgressColor
+import com.kunk.singbox.ui.theme.liquidGlassProgressTrackColor
 import com.kunk.singbox.ui.theme.liquidGlassScreenContainerColor
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
@@ -415,7 +418,7 @@ fun NodesScreen(
                                 if (isTesting) {
                                     CircularProgressIndicator(
                                         modifier = Modifier.size(20.dp),
-                                        color = fabContentColor,
+                                        color = liquidGlassProgressColor(fabContentColor),
                                         strokeWidth = 2.dp
                                     )
                                 } else {
@@ -500,6 +503,7 @@ fun NodesScreen(
                             else -> Icons.Rounded.ViewList
                         }
                         IconButton(
+                            modifier = Modifier.liquidGlassIconButtonPanel(),
                             onClick = {
                                 val nextCount = when (nodeColumnCount) {
                                     1 -> 2
@@ -517,7 +521,10 @@ fun NodesScreen(
                         }
 
                         Box(modifier = Modifier.wrapContentSize(Alignment.TopStart)) {
-                            IconButton(onClick = { showMoreMenu = true }) {
+                            IconButton(
+                                modifier = Modifier.liquidGlassIconButtonPanel(),
+                                onClick = { showMoreMenu = true }
+                            ) {
                                 Icon(
                                     imageVector = Icons.Rounded.MoreVert,
                                     contentDescription = "More options",
@@ -660,8 +667,10 @@ fun NodesScreen(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .height(4.dp),
-                                color = MaterialTheme.colorScheme.primary,
-                                trackColor = MaterialTheme.colorScheme.surfaceVariant,
+                                color = liquidGlassProgressColor(MaterialTheme.colorScheme.primary),
+                                trackColor = liquidGlassProgressTrackColor(
+                                    MaterialTheme.colorScheme.surfaceVariant
+                                ),
                             )
                         }
                     }
@@ -793,7 +802,9 @@ private fun NodeSearchBar(
     ) {
         IconButton(
             onClick = onToggle,
-            modifier = Modifier.size(40.dp)
+            modifier = Modifier
+                .size(40.dp)
+                .liquidGlassIconButtonPanel(selected = isExpanded)
         ) {
             Icon(
                 imageVector = if (isExpanded) Icons.Rounded.Close else Icons.Rounded.Search,
@@ -915,6 +926,7 @@ private fun NodeSearchBar(
                         modifier = Modifier
                             .align(Alignment.CenterEnd)
                             .size(32.dp)
+                            .liquidGlassIconButtonPanel(shadowElevation = 3.dp)
                     ) {
                         Icon(
                             imageVector = Icons.Rounded.Close,

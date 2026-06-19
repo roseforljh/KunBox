@@ -39,6 +39,7 @@ import com.kunk.singbox.ui.theme.liquidGlassRadioButtonColors
 import com.kunk.singbox.ui.theme.liquidGlassTextFieldBorderColor
 import com.kunk.singbox.ui.theme.liquidGlassTextFieldContainerColor
 import com.kunk.singbox.ui.theme.liquidGlassTextFieldPanel
+import com.kunk.singbox.ui.theme.liquidGlassTextButtonPanel
 
 sealed class AddNodeTarget {
     data class ExistingProfile(val profileId: String) : AddNodeTarget()
@@ -201,6 +202,7 @@ fun AddNodeDialog(
         },
         confirmButton = {
             TextButton(
+                modifier = Modifier.liquidGlassTextButtonPanel(enabled = isValid),
                 onClick = {
                     val target = if (isCreatingNew) {
                         AddNodeTarget.NewProfile(newProfileName.trim())
@@ -216,7 +218,10 @@ fun AddNodeDialog(
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) {
+            TextButton(
+                modifier = Modifier.liquidGlassTextButtonPanel(),
+                onClick = onDismiss
+            ) {
                 Text(stringResource(R.string.common_cancel))
             }
         }

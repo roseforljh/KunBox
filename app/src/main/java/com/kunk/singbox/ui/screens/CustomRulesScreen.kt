@@ -33,6 +33,8 @@ import com.kunk.singbox.ui.components.StyledTextField
 import androidx.compose.foundation.shape.RoundedCornerShape
 import com.kunk.singbox.ui.theme.liquidGlassDialogContainerColor
 import com.kunk.singbox.ui.theme.liquidGlassDialogPanel
+import com.kunk.singbox.ui.theme.liquidGlassIconButtonPanel
+import com.kunk.singbox.ui.theme.liquidGlassTextButtonPanel
 import com.kunk.singbox.viewmodel.SettingsViewModel
 import com.kunk.singbox.ui.theme.liquidGlassTopAppBarContainerColor
 
@@ -79,12 +81,18 @@ fun CustomRulesScreen(
             TopAppBar(
                 title = { Text(stringResource(R.string.custom_rules_title), color = MaterialTheme.colorScheme.onBackground) },
                 navigationIcon = {
-                    IconButton(onClick = { navController.popBackStack() }) {
+                    IconButton(
+                        modifier = Modifier.liquidGlassIconButtonPanel(),
+                        onClick = { navController.popBackStack() }
+                    ) {
                         Icon(Icons.Rounded.ArrowBack, contentDescription = stringResource(R.string.common_back), tint = MaterialTheme.colorScheme.onBackground)
                     }
                 },
                 actions = {
-                    IconButton(onClick = { showAddDialog = true }) {
+                    IconButton(
+                        modifier = Modifier.liquidGlassIconButtonPanel(),
+                        onClick = { showAddDialog = true }
+                    ) {
                         Icon(Icons.Rounded.Add, contentDescription = stringResource(R.string.common_add), tint = MaterialTheme.colorScheme.onBackground)
                     }
                 },
@@ -179,6 +187,7 @@ fun CustomRuleItem(
 }
 
 @Composable
+@Suppress("CyclomaticComplexMethod", "CognitiveComplexMethod", "LongMethod")
 fun CustomRuleEditorDialog(
     initialRule: CustomRule? = null,
     onDismiss: () -> Unit,
@@ -296,6 +305,9 @@ fun CustomRuleEditorDialog(
         },
         confirmButton = {
             TextButton(
+                modifier = Modifier.liquidGlassTextButtonPanel(
+                    enabled = name.isNotBlank() && value.isNotBlank()
+                ),
                 onClick = {
                     val newRule = initialRule?.copy(
                         name = name.trim(),
@@ -318,11 +330,17 @@ fun CustomRuleEditorDialog(
         dismissButton = {
             Row {
                 if (initialRule != null && onDelete != null) {
-                    TextButton(onClick = { showDeleteConfirm = true }) {
+                    TextButton(
+                        modifier = Modifier.liquidGlassTextButtonPanel(),
+                        onClick = { showDeleteConfirm = true }
+                    ) {
                         Text(stringResource(R.string.common_delete), color = MaterialTheme.colorScheme.error)
                     }
                 }
-                TextButton(onClick = onDismiss) {
+                TextButton(
+                    modifier = Modifier.liquidGlassTextButtonPanel(),
+                    onClick = onDismiss
+                ) {
                     Text(stringResource(R.string.common_cancel), color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }

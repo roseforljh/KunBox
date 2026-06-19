@@ -70,11 +70,15 @@ import com.kunk.singbox.ui.theme.isLiquidGlassTheme
 import com.kunk.singbox.ui.theme.liquidGlassButtonContainerColor
 import com.kunk.singbox.ui.theme.liquidGlassButtonContentColor
 import com.kunk.singbox.ui.theme.liquidGlassButtonPanel
+import com.kunk.singbox.ui.theme.liquidGlassCheckboxColors
 import com.kunk.singbox.ui.theme.liquidGlassPanel
+import com.kunk.singbox.ui.theme.liquidGlassProgressColor
+import com.kunk.singbox.ui.theme.liquidGlassProgressTrackColor
 import com.kunk.singbox.ui.theme.liquidGlassSwitchColors
 import com.kunk.singbox.ui.theme.liquidGlassTextFieldBorderColor
 import com.kunk.singbox.ui.theme.liquidGlassTextFieldContainerColor
 import com.kunk.singbox.ui.theme.liquidGlassTextFieldPanel
+import com.kunk.singbox.ui.theme.liquidGlassTextButtonPanel
 
 @Composable
 private fun Modifier.profileDialogPanel(shape: RoundedCornerShape): Modifier {
@@ -262,7 +266,8 @@ internal fun ExpandableProfileGroup(
                             checked = isSelected,
                             onCheckedChange = { checked ->
                                 onSelectionChange(node.id, checked)
-                            }
+                            },
+                            colors = liquidGlassCheckboxColors()
                         )
                         Spacer(modifier = Modifier.width(10.dp))
                         Column(modifier = Modifier.weight(1f)) {
@@ -393,7 +398,8 @@ internal fun CustomConfigDialog(
                 onClick = onDismiss,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(50.dp),
+                    .height(50.dp)
+                    .liquidGlassTextButtonPanel(shape = RoundedCornerShape(25.dp)),
                 colors = ButtonDefaults.textButtonColors(
                     contentColor = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -482,13 +488,13 @@ internal fun ImportLoadingDialog(message: String, onCancel: () -> Unit = {}) {
                 androidx.compose.material3.LinearProgressIndicator(
                     progress = progress,
                     modifier = Modifier.fillMaxWidth().height(8.dp),
-                    color = MaterialTheme.colorScheme.primary,
-                    trackColor = MaterialTheme.colorScheme.outline,
+                    color = liquidGlassProgressColor(MaterialTheme.colorScheme.primary),
+                    trackColor = liquidGlassProgressTrackColor(MaterialTheme.colorScheme.outline),
                     strokeCap = androidx.compose.ui.graphics.StrokeCap.Round
                 )
             } else {
                 androidx.compose.material3.CircularProgressIndicator(
-                    color = MaterialTheme.colorScheme.primary
+                    color = liquidGlassProgressColor(MaterialTheme.colorScheme.primary)
                 )
             }
             Text(
@@ -499,7 +505,9 @@ internal fun ImportLoadingDialog(message: String, onCancel: () -> Unit = {}) {
             )
             TextButton(
                 onClick = onCancel,
-                modifier = Modifier.align(Alignment.End)
+                modifier = Modifier
+                    .align(Alignment.End)
+                    .liquidGlassTextButtonPanel()
             ) {
                 Text(
                     text = stringResource(R.string.common_cancel),
@@ -1020,7 +1028,10 @@ internal fun SubscriptionInputDialog(
 
             androidx.compose.material3.TextButton(
                 onClick = onDismiss,
-                modifier = Modifier.fillMaxWidth().height(50.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(50.dp)
+                    .liquidGlassTextButtonPanel(shape = RoundedCornerShape(25.dp)),
                 colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.onSurfaceVariant)
             ) {
                 Text(stringResource(R.string.common_cancel))

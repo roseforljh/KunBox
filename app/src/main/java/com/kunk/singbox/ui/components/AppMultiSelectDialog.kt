@@ -62,10 +62,15 @@ import com.kunk.singbox.ui.theme.isLiquidGlassTheme
 import com.kunk.singbox.ui.theme.liquidGlassButtonContainerColor
 import com.kunk.singbox.ui.theme.liquidGlassButtonContentColor
 import com.kunk.singbox.ui.theme.liquidGlassButtonPanel
+import com.kunk.singbox.ui.theme.liquidGlassCheckboxColors
+import com.kunk.singbox.ui.theme.liquidGlassIconButtonPanel
 import com.kunk.singbox.ui.theme.liquidGlassPanel
+import com.kunk.singbox.ui.theme.liquidGlassProgressColor
+import com.kunk.singbox.ui.theme.liquidGlassProgressTrackColor
 import com.kunk.singbox.ui.theme.liquidGlassTextFieldBorderColor
 import com.kunk.singbox.ui.theme.liquidGlassTextFieldContainerColor
 import com.kunk.singbox.ui.theme.liquidGlassTextFieldPanel
+import com.kunk.singbox.ui.theme.liquidGlassTextButtonPanel
 
 @Composable
 private fun Modifier.appSelectDialogPanel(shape: RoundedCornerShape = RoundedCornerShape(28.dp)): Modifier {
@@ -226,7 +231,9 @@ fun AppMultiSelectDialog(
                 IconButton(
                     onClick = { scope.launch { repository.reloadApps() } },
                     enabled = !isLoading,
-                    modifier = Modifier.size(32.dp)
+                    modifier = Modifier
+                        .size(32.dp)
+                        .liquidGlassIconButtonPanel(enabled = !isLoading, shadowElevation = 3.dp)
                 ) {
                     val tintColor = if (isLoading) {
                         MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
@@ -253,9 +260,9 @@ fun AppMultiSelectDialog(
                     CircularProgressIndicator(
                         progress = { loading.progress },
                         modifier = Modifier.size(48.dp),
-                        color = MaterialTheme.colorScheme.primary,
+                        color = liquidGlassProgressColor(MaterialTheme.colorScheme.primary),
                         strokeWidth = 4.dp,
-                        trackColor = MaterialTheme.colorScheme.outline
+                        trackColor = liquidGlassProgressTrackColor(MaterialTheme.colorScheme.outline)
                     )
                     Spacer(modifier = Modifier.height(12.dp))
                     Text(
@@ -273,8 +280,8 @@ fun AppMultiSelectDialog(
                     LinearProgressIndicator(
                         progress = { loading.progress },
                         modifier = Modifier.fillMaxWidth().height(4.dp),
-                        color = MaterialTheme.colorScheme.primary,
-                        trackColor = MaterialTheme.colorScheme.outline
+                        color = liquidGlassProgressColor(MaterialTheme.colorScheme.primary),
+                        trackColor = liquidGlassProgressTrackColor(MaterialTheme.colorScheme.outline)
                     )
                     Spacer(modifier = Modifier.height(16.dp))
                 }
@@ -320,7 +327,8 @@ fun AppMultiSelectDialog(
                     Checkbox(
                         checked = showSystemApps,
                         onCheckedChange = { showSystemApps = it },
-                        modifier = Modifier.scale(0.8f).size(16.dp)
+                        modifier = Modifier.scale(0.8f).size(16.dp),
+                        colors = liquidGlassCheckboxColors()
                     )
                     Spacer(modifier = Modifier.width(4.dp))
                     Text(stringResource(R.string.app_list_show_system), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -338,7 +346,8 @@ fun AppMultiSelectDialog(
                     Checkbox(
                         checked = showNoLauncherApps,
                         onCheckedChange = { showNoLauncherApps = it },
-                        modifier = Modifier.scale(0.8f).size(16.dp)
+                        modifier = Modifier.scale(0.8f).size(16.dp),
+                        colors = liquidGlassCheckboxColors()
                     )
                     Spacer(modifier = Modifier.width(4.dp))
                     Text(stringResource(R.string.app_list_show_no_launcher), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -429,7 +438,8 @@ fun AppMultiSelectDialog(
                                 tempSelected = tempSelected.toMutableSet().apply {
                                     if (newChecked) add(app.packageName) else remove(app.packageName)
                                 }
-                            }
+                            },
+                            colors = liquidGlassCheckboxColors()
                         )
                         Spacer(modifier = Modifier.width(12.dp))
                         if (iconBitmap != null) {
@@ -483,7 +493,10 @@ fun AppMultiSelectDialog(
             ) {
                 TextButton(
                     onClick = onDismiss,
-                    modifier = Modifier.weight(1f).height(50.dp),
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(50.dp)
+                        .liquidGlassTextButtonPanel(shape = RoundedCornerShape(25.dp)),
                     colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.onSurfaceVariant)
                 ) {
                     Text(stringResource(R.string.common_cancel))

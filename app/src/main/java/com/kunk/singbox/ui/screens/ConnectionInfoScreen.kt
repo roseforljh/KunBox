@@ -82,6 +82,8 @@ import com.kunk.singbox.ui.theme.isLiquidGlassTheme
 import com.kunk.singbox.ui.theme.liquidGlassPanel
 import com.kunk.singbox.ui.theme.liquidGlassDialogContainerColor
 import com.kunk.singbox.ui.theme.liquidGlassDialogPanel
+import com.kunk.singbox.ui.theme.liquidGlassIconButtonPanel
+import com.kunk.singbox.ui.theme.liquidGlassTextButtonPanel
 import com.kunk.singbox.viewmodel.ConnectionInfoViewModel
 import java.util.Locale
 import com.kunk.singbox.ui.theme.liquidGlassTopAppBarContainerColor
@@ -203,6 +205,7 @@ fun ConnectionInfoScreen(
             text = { Text(stringResource(R.string.connection_info_close_all_confirm)) },
             confirmButton = {
                 TextButton(
+                    modifier = Modifier.liquidGlassTextButtonPanel(),
                     onClick = {
                         viewModel.closeAllConnections()
                         showConfirmDeleteAll = false
@@ -215,7 +218,10 @@ fun ConnectionInfoScreen(
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showConfirmDeleteAll = false }) {
+                TextButton(
+                    modifier = Modifier.liquidGlassTextButtonPanel(),
+                    onClick = { showConfirmDeleteAll = false }
+                ) {
                     Text(stringResource(R.string.common_cancel))
                 }
             }
@@ -235,7 +241,10 @@ fun ConnectionInfoScreen(
                     )
                 },
                 navigationIcon = {
-                    IconButton(onClick = { navController.popBackStack() }) {
+                    IconButton(
+                        modifier = Modifier.liquidGlassIconButtonPanel(),
+                        onClick = { navController.popBackStack() }
+                    ) {
                         Icon(
                             Icons.Rounded.ArrowBack,
                             contentDescription = stringResource(R.string.common_back),
@@ -245,10 +254,13 @@ fun ConnectionInfoScreen(
                 },
                 actions = {
                     // 搜索按钮
-                    IconButton(onClick = {
-                        isSearchExpanded = !isSearchExpanded
-                        if (!isSearchExpanded) searchQuery = ""
-                    }) {
+                    IconButton(
+                        modifier = Modifier.liquidGlassIconButtonPanel(selected = isSearchExpanded),
+                        onClick = {
+                            isSearchExpanded = !isSearchExpanded
+                            if (!isSearchExpanded) searchQuery = ""
+                        }
+                    ) {
                         Icon(
                             Icons.Rounded.Search,
                             contentDescription = null,
@@ -258,7 +270,10 @@ fun ConnectionInfoScreen(
                                 MaterialTheme.colorScheme.onBackground
                         )
                     }
-                    IconButton(onClick = { viewModel.setRefreshing(!isRefreshing) }) {
+                    IconButton(
+                        modifier = Modifier.liquidGlassIconButtonPanel(selected = isRefreshing),
+                        onClick = { viewModel.setRefreshing(!isRefreshing) }
+                    ) {
                         Icon(
                             if (isRefreshing) Icons.Rounded.Pause
                             else Icons.Rounded.PlayArrow,
@@ -270,6 +285,7 @@ fun ConnectionInfoScreen(
                         )
                     }
                     IconButton(
+                        modifier = Modifier.liquidGlassIconButtonPanel(enabled = canCloseAll),
                         onClick = { showConfirmDeleteAll = true },
                         enabled = canCloseAll
                     ) {
@@ -431,6 +447,7 @@ private fun ConnectionSearchBar(
                 modifier = Modifier
                     .align(Alignment.CenterEnd)
                     .size(32.dp)
+                    .liquidGlassIconButtonPanel(shadowElevation = 3.dp)
             ) {
                 Icon(
                     imageVector = Icons.Rounded.Close,

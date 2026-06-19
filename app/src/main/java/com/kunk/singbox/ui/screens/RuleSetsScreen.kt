@@ -41,8 +41,11 @@ import com.kunk.singbox.viewmodel.ProfilesViewModel
 import com.kunk.singbox.viewmodel.SettingsViewModel
 import com.kunk.singbox.model.RuleSetOutboundMode
 import com.kunk.singbox.model.NodeUi
+import com.kunk.singbox.ui.theme.liquidGlassCheckboxColors
 import com.kunk.singbox.ui.theme.liquidGlassDialogContainerColor
 import com.kunk.singbox.ui.theme.liquidGlassDialogPanel
+import com.kunk.singbox.ui.theme.liquidGlassIconButtonPanel
+import com.kunk.singbox.ui.theme.liquidGlassTextButtonPanel
 import kotlinx.coroutines.launch
 import com.kunk.singbox.ui.theme.liquidGlassTopAppBarContainerColor
 
@@ -357,7 +360,8 @@ fun RuleSetsScreen(
                             val inboundList = ruleSet.inbounds ?: emptyList()
                             Checkbox(
                                 checked = inboundList.contains(inbound),
-                                onCheckedChange = null
+                                onCheckedChange = null,
+                                colors = liquidGlassCheckboxColors()
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(text = inbound, color = MaterialTheme.colorScheme.onSurface)
@@ -367,6 +371,7 @@ fun RuleSetsScreen(
             },
             confirmButton = {
                 TextButton(
+                    modifier = Modifier.liquidGlassTextButtonPanel(),
                     onClick = {
                         val ruleSet = outboundEditingRuleSet ?: currentRuleSet
                         settingsViewModel.updateRuleSet(ruleSet)
@@ -379,6 +384,7 @@ fun RuleSetsScreen(
             },
             dismissButton = {
                 TextButton(
+                    modifier = Modifier.liquidGlassTextButtonPanel(),
                     onClick = {
                         showInboundDialog = false
                         outboundEditingRuleSet = null
@@ -406,13 +412,16 @@ fun RuleSetsScreen(
                     }
                 },
                 navigationIcon = {
-                    IconButton(onClick = {
-                        if (isSelectionMode) {
-                            exitSelectionMode()
-                        } else {
-                            navController.popBackStack()
+                    IconButton(
+                        modifier = Modifier.liquidGlassIconButtonPanel(selected = isSelectionMode),
+                        onClick = {
+                            if (isSelectionMode) {
+                                exitSelectionMode()
+                            } else {
+                                navController.popBackStack()
+                            }
                         }
-                    }) {
+                    ) {
                         Icon(
                             if (isSelectionMode) Icons.Rounded.Close else Icons.AutoMirrored.Rounded.ArrowBack,
                             contentDescription = if (isSelectionMode) "Close" else "Back",
@@ -424,6 +433,10 @@ fun RuleSetsScreen(
                     if (isSelectionMode) {
                         val selectedCount = selectedItems.count { it.value }
                         IconButton(
+                            modifier = Modifier.liquidGlassIconButtonPanel(
+                                selected = selectedCount > 0,
+                                enabled = selectedCount > 0
+                            ),
                             onClick = { showDeleteConfirmDialog = true },
                             enabled = selectedCount > 0
                         ) {
@@ -434,10 +447,16 @@ fun RuleSetsScreen(
                             )
                         }
                     } else {
-                        IconButton(onClick = { navController.navigate(Screen.RuleSetHub.route) }) {
+                        IconButton(
+                            modifier = Modifier.liquidGlassIconButtonPanel(),
+                            onClick = { navController.navigate(Screen.RuleSetHub.route) }
+                        ) {
                             Icon(Icons.Rounded.CloudDownload, contentDescription = "Download", tint = MaterialTheme.colorScheme.onBackground)
                         }
-                        IconButton(onClick = { showAddDialog = true }) {
+                        IconButton(
+                            modifier = Modifier.liquidGlassIconButtonPanel(),
+                            onClick = { showAddDialog = true }
+                        ) {
                             Icon(Icons.Rounded.Add, contentDescription = "Add", tint = MaterialTheme.colorScheme.onBackground)
                         }
                     }

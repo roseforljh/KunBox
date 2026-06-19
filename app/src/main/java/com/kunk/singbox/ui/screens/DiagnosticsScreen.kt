@@ -41,6 +41,7 @@ import com.kunk.singbox.ui.components.ConfirmDialog
 import com.kunk.singbox.ui.components.SettingItem
 import com.kunk.singbox.ui.components.StandardCard
 import com.kunk.singbox.viewmodel.DiagnosticsViewModel
+import com.kunk.singbox.ui.theme.liquidGlassIconButtonPanel
 import com.kunk.singbox.ui.theme.liquidGlassTopAppBarContainerColor
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -81,7 +82,10 @@ fun DiagnosticsScreen(
             TopAppBar(
                 title = { Text(stringResource(R.string.diagnostics_title), color = MaterialTheme.colorScheme.onBackground) },
                 navigationIcon = {
-                    IconButton(onClick = { navController.popBackStack() }) {
+                    IconButton(
+                        modifier = Modifier.liquidGlassIconButtonPanel(),
+                        onClick = { navController.popBackStack() }
+                    ) {
                         Icon(Icons.Rounded.ArrowBack, contentDescription = stringResource(R.string.common_back), tint = MaterialTheme.colorScheme.onBackground)
                     }
                 },

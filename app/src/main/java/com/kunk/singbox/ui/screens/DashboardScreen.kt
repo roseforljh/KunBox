@@ -76,6 +76,7 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import com.kunk.singbox.ui.theme.liquidGlassIconButtonPanel
 import kotlinx.coroutines.launch
 
 @Composable
@@ -561,7 +562,10 @@ fun QuickActionButton(
     onClick: () -> Unit
 ) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        IconButton(onClick = onClick) {
+        IconButton(
+            modifier = Modifier.liquidGlassIconButtonPanel(),
+            onClick = onClick
+        ) {
             Icon(
                 imageVector = icon,
                 contentDescription = label,

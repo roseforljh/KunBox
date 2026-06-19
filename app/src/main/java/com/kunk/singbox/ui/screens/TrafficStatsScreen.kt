@@ -73,7 +73,10 @@ import com.kunk.singbox.repository.TrafficPeriod
 import com.kunk.singbox.ui.components.ConfirmDialog
 import com.kunk.singbox.ui.components.StandardCard
 import com.kunk.singbox.ui.theme.isLiquidGlassTheme
+import com.kunk.singbox.ui.theme.liquidGlassIconButtonPanel
 import com.kunk.singbox.ui.theme.liquidGlassPanel
+import com.kunk.singbox.ui.theme.liquidGlassProgressColor
+import com.kunk.singbox.ui.theme.liquidGlassProgressTrackColor
 import com.kunk.singbox.viewmodel.TrafficStatsViewModel
 import com.kunk.singbox.ui.theme.liquidGlassTopAppBarContainerColor
 
@@ -159,7 +162,10 @@ fun TrafficStatsScreen(
                     )
                 },
                 navigationIcon = {
-                    IconButton(onClick = { navController.popBackStack() }) {
+                    IconButton(
+                        modifier = Modifier.liquidGlassIconButtonPanel(),
+                        onClick = { navController.popBackStack() }
+                    ) {
                         Icon(
                             Icons.Rounded.ArrowBack,
                             contentDescription = stringResource(R.string.common_back),
@@ -171,9 +177,12 @@ fun TrafficStatsScreen(
                     Box(
                         modifier = Modifier
                             .size(48.dp)
+                            .liquidGlassIconButtonPanel(
+                                selected = isRefreshPressed || uiState.isLoading
+                            )
                             .clip(CircleShape)
                             .background(
-                                if (isRefreshPressed || uiState.isLoading) {
+                                if (!isLiquidGlassTheme() && (isRefreshPressed || uiState.isLoading)) {
                                     MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)
                                 } else {
                                     Color.Transparent
@@ -202,7 +211,10 @@ fun TrafficStatsScreen(
                             }
                         )
                     }
-                    IconButton(onClick = { showClearDialog = true }) {
+                    IconButton(
+                        modifier = Modifier.liquidGlassIconButtonPanel(),
+                        onClick = { showClearDialog = true }
+                    ) {
                         Icon(
                             Icons.Rounded.Delete,
                             contentDescription = stringResource(R.string.traffic_stats_clear_title),
@@ -656,8 +668,8 @@ private fun NodeRankingItem(
                 .fillMaxWidth()
                 .height(6.dp)
                 .clip(RoundedCornerShape(3.dp)),
-            color = color,
-            trackColor = MaterialTheme.colorScheme.surfaceVariant,
+            color = liquidGlassProgressColor(color),
+            trackColor = liquidGlassProgressTrackColor(MaterialTheme.colorScheme.surfaceVariant),
         )
     }
 }

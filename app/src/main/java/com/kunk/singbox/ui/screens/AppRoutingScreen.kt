@@ -27,6 +27,9 @@ import com.kunk.singbox.viewmodel.NodesViewModel
 import com.kunk.singbox.viewmodel.ProfilesViewModel
 import com.kunk.singbox.viewmodel.SettingsViewModel
 import com.kunk.singbox.ui.theme.liquidGlassTopAppBarContainerColor
+import com.kunk.singbox.ui.theme.liquidGlassIconButtonPanel
+import com.kunk.singbox.ui.theme.liquidGlassTabIndicatorColor
+import com.kunk.singbox.ui.theme.liquidGlassTabRowPanel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -168,15 +171,21 @@ fun AppRoutingScreen(
                 TopAppBar(
                     title = { Text(stringResource(R.string.app_rules_title), color = MaterialTheme.colorScheme.onBackground) },
                     navigationIcon = {
-                        IconButton(onClick = { navController.popBackStack() }) {
+                        IconButton(
+                            modifier = Modifier.liquidGlassIconButtonPanel(),
+                            onClick = { navController.popBackStack() }
+                        ) {
                             Icon(Icons.Rounded.ArrowBack, contentDescription = stringResource(R.string.common_back), tint = MaterialTheme.colorScheme.onBackground)
                         }
                     },
                     actions = {
-                        IconButton(onClick = {
-                            if (selectedTab == 0) showAddGroupDialog = true
-                            else showAddRuleDialog = true
-                        }) {
+                        IconButton(
+                            modifier = Modifier.liquidGlassIconButtonPanel(),
+                            onClick = {
+                                if (selectedTab == 0) showAddGroupDialog = true
+                                else showAddRuleDialog = true
+                            }
+                        ) {
                             Icon(Icons.Rounded.Add, contentDescription = stringResource(R.string.common_add), tint = MaterialTheme.colorScheme.onBackground)
                         }
                     },
@@ -187,13 +196,14 @@ fun AppRoutingScreen(
                     )
                 )
                 TabRow(
+                    modifier = Modifier.liquidGlassTabRowPanel(),
                     selectedTabIndex = selectedTab,
                     containerColor = liquidGlassTopAppBarContainerColor(MaterialTheme.colorScheme.background),
                     contentColor = MaterialTheme.colorScheme.onBackground,
                     indicator = { tabPositions ->
                         TabRowDefaults.Indicator(
                             Modifier.tabIndicatorOffset(tabPositions[selectedTab]),
-                            color = MaterialTheme.colorScheme.primary
+                            color = liquidGlassTabIndicatorColor(MaterialTheme.colorScheme.primary)
                         )
                     },
                     divider = {}

@@ -33,10 +33,13 @@ import com.kunk.singbox.ui.theme.isLiquidGlassTheme
 import com.kunk.singbox.ui.theme.liquidGlassButtonContainerColor
 import com.kunk.singbox.ui.theme.liquidGlassButtonContentColor
 import com.kunk.singbox.ui.theme.liquidGlassButtonPanel
+import com.kunk.singbox.ui.theme.liquidGlassIconButtonPanel
 import com.kunk.singbox.ui.theme.liquidGlassPanel
+import com.kunk.singbox.ui.theme.liquidGlassProgressColor
 import com.kunk.singbox.ui.theme.liquidGlassTextFieldBorderColor
 import com.kunk.singbox.ui.theme.liquidGlassTextFieldContainerColor
 import com.kunk.singbox.ui.theme.liquidGlassTextFieldPanel
+import com.kunk.singbox.ui.theme.liquidGlassTextButtonPanel
 import com.kunk.singbox.viewmodel.RuleSetViewModel
 import com.kunk.singbox.viewmodel.SettingsViewModel
 import com.kunk.singbox.ui.theme.liquidGlassTopAppBarContainerColor
@@ -116,12 +119,18 @@ fun RuleSetHubScreen(
                     }
                 },
                 navigationIcon = {
-                    IconButton(onClick = { navController.popBackStack() }) {
+                    IconButton(
+                        modifier = Modifier.liquidGlassIconButtonPanel(),
+                        onClick = { navController.popBackStack() }
+                    ) {
                         Icon(Icons.Rounded.ArrowBack, contentDescription = stringResource(R.string.common_back), tint = MaterialTheme.colorScheme.onBackground)
                     }
                 },
                 actions = {
-                    IconButton(onClick = { activityRuleSetViewModel.fetchRuleSets() }) {
+                    IconButton(
+                        modifier = Modifier.liquidGlassIconButtonPanel(),
+                        onClick = { activityRuleSetViewModel.fetchRuleSets() }
+                    ) {
                         Icon(Icons.Rounded.Refresh, contentDescription = stringResource(R.string.common_refresh), tint = MaterialTheme.colorScheme.onBackground)
                     }
                 },
@@ -148,7 +157,9 @@ fun RuleSetHubScreen(
 
             if (isLoading) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+                    CircularProgressIndicator(
+                        color = liquidGlassProgressColor(MaterialTheme.colorScheme.primary)
+                    )
                 }
             } else if (error != null) {
                 val errorMessage = error.orEmpty()
@@ -311,7 +322,7 @@ fun HubRuleSetItem(
                         CircularProgressIndicator(
                             modifier = Modifier.size(14.dp),
                             strokeWidth = 2.dp,
-                            color = MaterialTheme.colorScheme.primary
+                            color = liquidGlassProgressColor(MaterialTheme.colorScheme.primary)
                         )
                     } else if (isDownloaded) {
                         Spacer(modifier = Modifier.width(8.dp))
@@ -358,6 +369,7 @@ fun HubRuleSetItem(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 TextButton(
+                    modifier = Modifier.liquidGlassTextButtonPanel(),
                     onClick = onAddSource,
                     contentPadding = PaddingValues(horizontal = 8.dp)
                 ) {
@@ -365,6 +377,7 @@ fun HubRuleSetItem(
                 }
 
                 TextButton(
+                    modifier = Modifier.liquidGlassTextButtonPanel(),
                     onClick = onAddBinary,
                     contentPadding = PaddingValues(horizontal = 8.dp)
                 ) {

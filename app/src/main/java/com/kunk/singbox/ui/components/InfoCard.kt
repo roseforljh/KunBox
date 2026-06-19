@@ -30,6 +30,7 @@ import androidx.compose.ui.unit.dp
 import com.kunk.singbox.R
 import com.kunk.singbox.ui.theme.isLiquidGlassTheme
 import com.kunk.singbox.ui.theme.liquidGlassPanel
+import com.kunk.singbox.ui.theme.liquidGlassProgressColor
 
 @Composable
 fun InfoCard(
@@ -107,7 +108,7 @@ private fun InfoItem(
             if (isLoading) {
                 CircularProgressIndicator(
                     modifier = Modifier.size(16.dp),
-                    color = MaterialTheme.colorScheme.onSurface,
+                    color = liquidGlassProgressColor(MaterialTheme.colorScheme.onSurface),
                     strokeWidth = 2.dp
                 )
             } else {

@@ -72,9 +72,11 @@ import com.kunk.singbox.ui.theme.liquidGlassButtonContainerColor
 import com.kunk.singbox.ui.theme.liquidGlassButtonContentColor
 import com.kunk.singbox.ui.theme.liquidGlassButtonPanel
 import com.kunk.singbox.ui.theme.liquidGlassPanel
+import com.kunk.singbox.ui.theme.liquidGlassProgressColor
 import com.kunk.singbox.ui.theme.liquidGlassTextFieldBorderColor
 import com.kunk.singbox.ui.theme.liquidGlassTextFieldContainerColor
 import com.kunk.singbox.ui.theme.liquidGlassTextFieldPanel
+import com.kunk.singbox.ui.theme.liquidGlassTextButtonPanel
 
 @Composable
 private fun Modifier.nodeSelectionDialogPanel(shape: RoundedCornerShape = RoundedCornerShape(28.dp)): Modifier {
@@ -388,7 +390,10 @@ fun ProfileNodeSelectDialog(
 
             TextButton(
                 onClick = onDismiss,
-                modifier = Modifier.fillMaxWidth().height(50.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(50.dp)
+                    .liquidGlassTextButtonPanel(shape = RoundedCornerShape(25.dp)),
                 colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.onSurfaceVariant)
             ) {
                 Text(stringResource(R.string.common_cancel))
@@ -679,7 +684,10 @@ fun NodeFilterDialog(
                         excludeKeywordsText = ""
                     },
 
-                    modifier = Modifier.weight(1f).height(50.dp),
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(50.dp)
+                        .liquidGlassTextButtonPanel(shape = RoundedCornerShape(25.dp)),
                     colors = ButtonDefaults.textButtonColors(contentColor = Destructive)
                 ) {
                     Text(stringResource(R.string.common_clear))
@@ -687,7 +695,10 @@ fun NodeFilterDialog(
 
                 TextButton(
                     onClick = onDismiss,
-                    modifier = Modifier.weight(1f).height(50.dp),
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(50.dp)
+                        .liquidGlassTextButtonPanel(shape = RoundedCornerShape(25.dp)),
                     colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.onSurfaceVariant)
                 ) {
                     Text(stringResource(R.string.common_cancel))
@@ -799,7 +810,10 @@ fun NodeSelectorDialog(
 
             TextButton(
                 onClick = onDismiss,
-                modifier = Modifier.fillMaxWidth().height(50.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(50.dp)
+                    .liquidGlassTextButtonPanel(shape = RoundedCornerShape(25.dp)),
                 colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.onSurfaceVariant)
             ) {
                 Text(stringResource(R.string.common_cancel))
@@ -877,7 +891,9 @@ internal fun NodeSelectorItem(
                 if (isTesting) {
                     CircularProgressIndicator(
                         modifier = Modifier.size(10.dp),
-                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f),
+                        color = liquidGlassProgressColor(
+                            MaterialTheme.colorScheme.primary.copy(alpha = 0.7f)
+                        ),
                         strokeWidth = 1.5.dp
                     )
                 } else {
