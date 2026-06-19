@@ -289,7 +289,7 @@ fun SingBoxApp() {
     val appTheme = settings?.appTheme ?: com.kunk.singbox.model.AppThemeMode.SYSTEM
     val appThemeStyle = settings?.appThemeStyle ?: AppThemeStyle.DEFAULT
 
-    SingBoxTheme(appTheme = appTheme) {
+    SingBoxTheme(appTheme = appTheme, appThemeStyle = appThemeStyle) {
         val navController = rememberNavController()
         val useLiquidGlassNav = appThemeStyle == AppThemeStyle.LIQUID_GLASS
 

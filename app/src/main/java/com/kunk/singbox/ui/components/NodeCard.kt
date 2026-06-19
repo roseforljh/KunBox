@@ -52,14 +52,23 @@ fun NodeCard(
         return String.format(java.util.Locale.US, "%.1f %s", value, units[unitIndex])
     }
 
+    val shape = RoundedCornerShape(16.dp)
+    val useLiquidGlass = isLiquidGlassTheme()
     val borderColor = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
     val borderWidth = if (isSelected) 2.dp else 1.dp
+    val cardModifier = if (useLiquidGlass) {
+        modifier
+            .fillMaxWidth()
+            .liquidGlassPanel(shape = shape, selected = isSelected)
+    } else {
+        modifier
+            .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.surface, shape)
+            .border(borderWidth, borderColor, shape)
+    }
 
     Box(
-        modifier = modifier
-            .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(16.dp))
-            .border(borderWidth, borderColor, RoundedCornerShape(16.dp))
+        modifier = cardModifier
             .clickable(onClick = onClick)
             .padding(16.dp)
     ) {
@@ -291,19 +300,29 @@ fun NodeGridCard(
 ) {
     var showMenu by remember { mutableStateOf(false) }
 
+    val shape = RoundedCornerShape(12.dp)
+    val useLiquidGlass = isLiquidGlassTheme()
     val borderColor = if (isSelected) {
         MaterialTheme.colorScheme.primary
     } else {
         MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
     }
     val borderWidth = if (isSelected) 2.dp else 1.dp
-
-    Box(
-        modifier = modifier
+    val cardModifier = if (useLiquidGlass) {
+        modifier
             .fillMaxWidth()
             .height(84.dp)
-            .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(12.dp))
-            .border(borderWidth, borderColor, RoundedCornerShape(12.dp))
+            .liquidGlassPanel(shape = shape, selected = isSelected, shadowElevation = 8.dp)
+    } else {
+        modifier
+            .fillMaxWidth()
+            .height(84.dp)
+            .background(MaterialTheme.colorScheme.surface, shape)
+            .border(borderWidth, borderColor, shape)
+    }
+
+    Box(
+        modifier = cardModifier
             .combinedClickable(
                 onClick = onClick,
                 onLongClick = { showMenu = true }

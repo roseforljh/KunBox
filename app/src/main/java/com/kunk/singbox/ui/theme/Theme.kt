@@ -8,10 +8,12 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
 import com.kunk.singbox.model.AppThemeMode
+import com.kunk.singbox.model.AppThemeStyle
 
 // Force Dark Theme for OLED Minimalist Look
 private val OLEDColorScheme = darkColorScheme(
@@ -47,9 +49,11 @@ private val LightColorScheme = lightColorScheme(
     error = Destructive
 )
 
+@Suppress("FunctionNaming")
 @Composable
 fun SingBoxTheme(
     appTheme: AppThemeMode = AppThemeMode.SYSTEM,
+    appThemeStyle: AppThemeStyle = AppThemeStyle.DEFAULT,
     content: @Composable () -> Unit
 ) {
     val isSystemDark = isSystemInDarkTheme()
@@ -80,9 +84,11 @@ fun SingBoxTheme(
         }
     }
 
-    MaterialTheme(
-        colorScheme = colorScheme,
-        typography = Typography,
-        content = content
-    )
+    CompositionLocalProvider(LocalAppThemeStyle provides appThemeStyle) {
+        MaterialTheme(
+            colorScheme = colorScheme,
+            typography = Typography,
+            content = content
+        )
+    }
 }

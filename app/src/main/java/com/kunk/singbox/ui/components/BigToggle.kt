@@ -36,6 +36,8 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import com.kunk.singbox.R
+import com.kunk.singbox.ui.theme.isLiquidGlassTheme
+import com.kunk.singbox.ui.theme.liquidGlassPanel
 import kotlinx.coroutines.launch
 import kotlin.random.Random
 
@@ -150,6 +152,20 @@ fun BigToggle(
     // Color animations
 
     val backgroundColor = Color.Transparent
+    val touchSurfaceModifier = if (isLiquidGlassTheme()) {
+        Modifier
+            .size(200.dp)
+            .liquidGlassPanel(
+                shape = CircleShape,
+                selected = isRunning,
+                shadowElevation = 18.dp
+            )
+    } else {
+        Modifier
+            .size(200.dp)
+            .clip(CircleShape)
+            .background(backgroundColor)
+    }
 
     Box(
         contentAlignment = Alignment.Center,
@@ -190,10 +206,7 @@ fun BigToggle(
                 }
 
                 Box(
-                    modifier = Modifier
-                        .size(200.dp)
-                        .clip(CircleShape)
-                        .background(backgroundColor)
+                    modifier = touchSurfaceModifier
                         .clickable(
                             interactionSource = interactionSource,
                             indication = null,

@@ -44,6 +44,42 @@ class ThemeStyleSourceTest {
     }
 
     @Test
+    fun appThemeStyleIsProvidedThroughThemeCompositionLocal() {
+        val theme = File("src/main/java/com/kunk/singbox/ui/theme/Theme.kt").readText()
+        val liquidTheme = File("src/main/java/com/kunk/singbox/ui/theme/LiquidGlassTheme.kt").readText()
+        val main = File("src/main/java/com/kunk/singbox/MainActivity.kt").readText()
+
+        assertTrue(theme.contains("appThemeStyle: AppThemeStyle = AppThemeStyle.DEFAULT"))
+        assertTrue(theme.contains("CompositionLocalProvider(LocalAppThemeStyle provides appThemeStyle)"))
+        assertTrue(liquidTheme.contains("val LocalAppThemeStyle"))
+        assertTrue(liquidTheme.contains("fun isLiquidGlassTheme()"))
+        assertTrue(liquidTheme.contains("fun Modifier.liquidGlassPanel("))
+        assertTrue(main.contains("SingBoxTheme(appTheme = appTheme, appThemeStyle = appThemeStyle)"))
+    }
+
+    @Test
+    fun commonComponentsUseLiquidGlassStyleOnlyFromSharedThemeState() {
+        val componentFiles = listOf(
+            "StandardCard.kt",
+            "InfoCard.kt",
+            "SettingItem.kt",
+            "NodeCard.kt",
+            "ProfileCard.kt",
+            "BigToggle.kt"
+        )
+
+        componentFiles.forEach { fileName ->
+            val source = File("src/main/java/com/kunk/singbox/ui/components/$fileName").readText()
+            assertTrue("$fileName should read liquid glass theme state", source.contains("isLiquidGlassTheme"))
+        }
+        assertTrue(
+            File("src/main/java/com/kunk/singbox/ui/components/StandardCard.kt")
+                .readText()
+                .contains("Card(")
+        )
+    }
+
+    @Test
     fun liquidGlassNavUsesFloatingCapsuleWithPressFeedback() {
         val source = File("src/main/java/com/kunk/singbox/ui/components/AppNavBar.kt").readText()
 

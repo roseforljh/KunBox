@@ -47,6 +47,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.ui.draw.alpha
+import com.kunk.singbox.ui.theme.isLiquidGlassTheme
+import com.kunk.singbox.ui.theme.liquidGlassPanel
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -103,6 +105,28 @@ fun ProfileCard(
     } else {
         MaterialTheme.colorScheme.primary
     }
+    val shape = RoundedCornerShape(16.dp)
+    val useLiquidGlass = isLiquidGlassTheme()
+    val cardModifier = if (useLiquidGlass) {
+        modifier
+            .fillMaxWidth()
+            .liquidGlassPanel(shape = shape, selected = isSelected, enabled = isEnabled)
+            .clickable(enabled = isEnabled, onClick = onClick)
+            .padding(16.dp)
+    } else {
+        modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .background(MaterialTheme.colorScheme.surface)
+            .border(
+                width = if (isSelected) 2.dp else 1.dp,
+                color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
+                shape = shape
+            )
+            .clickable(enabled = isEnabled, onClick = onClick)
+            .padding(16.dp)
+            .alpha(if (isEnabled) 1f else 0.5f)
+    }
 
     fun formatDate(timestamp: Long): String {
         if (timestamp <= 0) return noExpiryMsg
@@ -117,18 +141,7 @@ fun ProfileCard(
     }
 
     Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
-            .background(MaterialTheme.colorScheme.surface)
-            .border(
-                width = if (isSelected) 2.dp else 1.dp,
-                color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
-                shape = RoundedCornerShape(16.dp)
-            )
-            .clickable(enabled = isEnabled, onClick = onClick)
-            .padding(16.dp)
-            .alpha(if (isEnabled) 1f else 0.5f),
+        modifier = cardModifier,
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
     ) {

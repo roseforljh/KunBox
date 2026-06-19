@@ -28,6 +28,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.kunk.singbox.R
+import com.kunk.singbox.ui.theme.isLiquidGlassTheme
+import com.kunk.singbox.ui.theme.liquidGlassPanel
+
 @Composable
 fun InfoCard(
     modifier: Modifier = Modifier,
@@ -37,10 +40,19 @@ fun InfoCard(
     isPingLoading: Boolean = false,
     onPingClick: (() -> Unit)? = null
 ) {
-    Row(
-        modifier = modifier
+    val shape = RoundedCornerShape(16.dp)
+    val containerModifier = if (isLiquidGlassTheme()) {
+        modifier
             .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(16.dp))
+            .liquidGlassPanel(shape = shape)
+    } else {
+        modifier
+            .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.surface, shape)
+    }
+
+    Row(
+        modifier = containerModifier
             .padding(20.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
