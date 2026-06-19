@@ -48,6 +48,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.ui.draw.alpha
 import com.kunk.singbox.ui.theme.LiquidGlassDropdownMenu
 import com.kunk.singbox.ui.theme.isLiquidGlassTheme
+import com.kunk.singbox.ui.theme.liquidGlassDropdownMenuItemColors
 import com.kunk.singbox.ui.theme.liquidGlassIconButtonPanel
 import com.kunk.singbox.ui.theme.liquidGlassPanel
 import com.kunk.singbox.ui.theme.liquidGlassProgressColor
@@ -378,7 +379,8 @@ fun ProfileCard(
                         onClick = {
                             showMenu = false
                             onUpdate()
-                        }
+                        },
+                        colors = liquidGlassDropdownMenuItemColors()
                     )
                     DropdownMenuItem(
                         text = {
@@ -389,7 +391,8 @@ fun ProfileCard(
                         onClick = {
                             showMenu = false
                             onToggle()
-                        }
+                        },
+                        colors = liquidGlassDropdownMenuItemColors()
                     )
                     DropdownMenuItem(
                         text = {
@@ -400,7 +403,8 @@ fun ProfileCard(
                         onClick = {
                             showMenu = false
                             onEdit()
-                        }
+                        },
+                        colors = liquidGlassDropdownMenuItemColors()
                     )
                     DropdownMenuItem(
                         text = {
@@ -411,7 +415,8 @@ fun ProfileCard(
                         onClick = {
                             showMenu = false
                             onDelete()
-                        }
+                        },
+                        colors = liquidGlassDropdownMenuItemColors()
                     )
                 }
             }

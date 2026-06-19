@@ -145,9 +145,23 @@ class LiquidGlassControlCoverageTest {
         val screenFiles = listOf("NodesScreen.kt", "RuleSetsDialogs.kt")
 
         assertTrue(liquidControls.contains("fun LiquidGlassDropdownMenu("))
+        assertTrue(liquidControls.contains("fun liquidGlassDropdownMenuItemColors("))
         assertTrue(liquidControls.contains("containerColor = Color.Transparent"))
         componentFiles.assertComponentSourcesContain("LiquidGlassDropdownMenu(")
+        componentFiles.assertComponentSourcesContain("liquidGlassDropdownMenuItemColors(")
         screenFiles.assertScreenSourcesContain("LiquidGlassDropdownMenu(")
+        screenFiles.assertScreenSourcesContain("liquidGlassDropdownMenuItemColors(")
+    }
+
+    @Test
+    fun dropdownMenuItemsUseLiquidGlassColors() {
+        val uiDir = File("src/main/java/com/kunk/singbox/ui")
+        val failures = uiDir.walkTopDown()
+            .filter { file -> file.extension == "kt" }
+            .flatMap { file -> dropdownMenuItemColorFailures(file, uiDir) }
+            .toList()
+
+        assertTrue("DropdownMenuItem should use liquid glass item colors: $failures", failures.isEmpty())
     }
 
     @Test
@@ -262,6 +276,7 @@ class LiquidGlassControlCoverageTest {
     fun liquidGlassHelpersPreserveDefaultThemeBranches() {
         val liquidTheme = File("src/main/java/com/kunk/singbox/ui/theme/LiquidGlassTheme.kt").readText()
         val controls = File("src/main/java/com/kunk/singbox/ui/theme/LiquidGlassControls.kt").readText()
+        val menuControls = File("src/main/java/com/kunk/singbox/ui/theme/LiquidGlassMenuControls.kt").readText()
         val selections = File("src/main/java/com/kunk/singbox/ui/theme/LiquidGlassSelectionControls.kt")
             .readText()
 
@@ -276,7 +291,7 @@ class LiquidGlassControlCoverageTest {
         assertTrue(controls.contains("private fun liquidGlassTransparentContainerColor(defaultColor: Color): Color"))
         assertTrue(controls.contains("else {\n        defaultColor"))
         assertTrue(controls.contains("private fun liquidGlassPrimaryContentColor(defaultColor: Color): Color"))
-        assertTrue(controls.contains("else {\n        DropdownMenu("))
+        assertTrue(menuControls.contains("else {\n        DropdownMenu("))
         assertTrue(selections.contains("unselectedColor = if (isLiquidGlassTheme())"))
         assertTrue(
             selections.contains(
@@ -329,6 +344,17 @@ class LiquidGlassControlCoverageTest {
             .toList()
 
         assertTrue("Dialog surfaces should use liquid glass wrappers: $failures", failures.isEmpty())
+    }
+
+    @Test
+    fun directDialogBlocksUseNearbyLiquidGlassPanels() {
+        val uiDir = File("src/main/java/com/kunk/singbox/ui")
+        val failures = uiDir.walkTopDown()
+            .filter { file -> file.extension == "kt" }
+            .flatMap { file -> directDialogPanelFailures(file, uiDir) }
+            .toList()
+
+        assertTrue("Direct Dialog blocks should wrap content with liquid glass panels: $failures", failures.isEmpty())
     }
 
     @Test
@@ -393,9 +419,10 @@ class LiquidGlassControlCoverageTest {
 
     private fun liquidControlSources(): String {
         val controls = File("src/main/java/com/kunk/singbox/ui/theme/LiquidGlassControls.kt").readText()
+        val menus = File("src/main/java/com/kunk/singbox/ui/theme/LiquidGlassMenuControls.kt").readText()
         val selections = File("src/main/java/com/kunk/singbox/ui/theme/LiquidGlassSelectionControls.kt")
             .readText()
-        return controls + selections
+        return controls + menus + selections
     }
 
     private fun findMaterialControlsWithoutLiquidGlassMarkers(uiDir: File): List<String> {
@@ -469,10 +496,42 @@ class LiquidGlassControlCoverageTest {
             }
     }
 
+    private fun directDialogPanelFailures(
+        file: File,
+        uiDir: File
+    ): Sequence<String> {
+        val lines = file.readLines()
+        return lines.asSequence()
+            .mapIndexedNotNull { index, line ->
+                val trimmed = line.trim()
+                val isDirectDialog = trimmed.startsWith("Dialog(") ||
+                    trimmed.startsWith("androidx.compose.ui.window.Dialog(")
+                if (!isDirectDialog || trimmed.startsWith("AlertDialog(")) return@mapIndexedNotNull null
+                val context = lines.contextAround(index)
+                if (directDialogLiquidGlassMarkers.any(context::contains)) return@mapIndexedNotNull null
+                val lineNumber = index + 1
+                "${file.relativeTo(uiDir).invariantSeparatorsPath}:$lineNumber:$trimmed"
+            }
+    }
+
     private fun List<String>.contextAround(index: Int): String {
         val start = (index - CONTROL_CONTEXT_BEFORE).coerceAtLeast(0)
         val end = (index + CONTROL_CONTEXT_AFTER).coerceAtMost(lastIndex)
         return subList(start, end + 1).joinToString("\n")
+    }
+
+    private fun dropdownMenuItemColorFailures(
+        file: File,
+        uiDir: File
+    ): Sequence<String> {
+        val lines = file.readLines()
+        return lines.asSequence()
+            .mapIndexedNotNull { index, line ->
+                if (!line.contains("DropdownMenuItem(")) return@mapIndexedNotNull null
+                val context = lines.contextAround(index)
+                if (context.contains("colors = liquidGlassDropdownMenuItemColors()")) return@mapIndexedNotNull null
+                "${file.relativeTo(uiDir).invariantSeparatorsPath}:${index + 1}:${line.trim()}"
+            }
     }
 
     private fun List<String>.assertComponentSourcesContain(pattern: String) {
@@ -522,6 +581,20 @@ class LiquidGlassControlCoverageTest {
             "nodeSearchPanel",
             "connectionSearchPanel",
             "profileEditorPanel"
+        )
+
+        val directDialogLiquidGlassMarkers = listOf(
+            "liquidGlassDialogPanel",
+            "liquidGlassPanel",
+            "dialogPanel(",
+            "nodeSelectionDialogPanel",
+            "profileDialogPanel",
+            "profileDnsMenuPanel",
+            "nodeDetailDialogPanel",
+            "loadingDialogPanel",
+            "appSelectDialogPanel",
+            "ExportImportCard",
+            "ImportOptionCard"
         )
 
         val liquidGlassAwareSurfaceMarkers = liquidGlassAwareControlMarkers + listOf(

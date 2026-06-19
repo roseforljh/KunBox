@@ -89,4 +89,15 @@ class ModelSerializationTest {
         assertTrue(json.contains("\"host\":[\"h1.example.com\",\"h2.example.com\"]"))
         assertEquals(listOf("h1.example.com", "h2.example.com"), decoded.host)
     }
+
+    @Test
+    fun appSettingsSerializesLiquidGlassThemeStyle() {
+        val settings = AppSettings(appThemeStyle = AppThemeStyle.LIQUID_GLASS)
+
+        val json = gson.toJson(settings)
+        val decoded = gson.fromJson(json, AppSettings::class.java)
+
+        assertTrue(json.contains("\"appThemeStyle\":\"LIQUID_GLASS\""))
+        assertEquals(AppThemeStyle.LIQUID_GLASS, decoded.appThemeStyle)
+    }
 }

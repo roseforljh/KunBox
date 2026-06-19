@@ -35,6 +35,7 @@ import androidx.compose.ui.draw.scale
 import com.kunk.singbox.ui.theme.LiquidGlassDropdownMenu
 import com.kunk.singbox.ui.theme.isLiquidGlassTheme
 import com.kunk.singbox.ui.theme.liquidGlassCheckboxColors
+import com.kunk.singbox.ui.theme.liquidGlassDropdownMenuItemColors
 import com.kunk.singbox.ui.theme.liquidGlassIconButtonPanel
 import com.kunk.singbox.ui.theme.liquidGlassPanel
 import com.kunk.singbox.ui.theme.liquidGlassDialogContainerColor
@@ -246,7 +247,8 @@ fun RuleSetItem(
                                     onClick = {
                                         showMenu = false
                                         onEditClick()
-                                    }
+                                    },
+                                    colors = liquidGlassDropdownMenuItemColors()
                                 )
                                 DropdownMenuItem(
                                     text = {
@@ -257,7 +259,8 @@ fun RuleSetItem(
                                     onClick = {
                                         showMenu = false
                                         showDeleteConfirm = true
-                                    }
+                                    },
+                                    colors = liquidGlassDropdownMenuItemColors()
                                 )
                                 DropdownMenuItem(
                                     text = {
@@ -268,7 +271,8 @@ fun RuleSetItem(
                                     onClick = {
                                         showMenu = false
                                         onOutboundClick()
-                                    }
+                                    },
+                                    colors = liquidGlassDropdownMenuItemColors()
                                 )
                                 DropdownMenuItem(
                                     text = {
@@ -279,7 +283,8 @@ fun RuleSetItem(
                                     onClick = {
                                         showMenu = false
                                         onInboundClick()
-                                    }
+                                    },
+                                    colors = liquidGlassDropdownMenuItemColors()
                                 )
                             }
                         }

@@ -114,6 +114,7 @@ import com.kunk.singbox.ui.theme.isLiquidGlassTheme
 import com.kunk.singbox.ui.theme.liquidGlassFloatingActionContainerColor
 import com.kunk.singbox.ui.theme.liquidGlassFloatingActionContentColor
 import com.kunk.singbox.ui.theme.liquidGlassFloatingActionPanel
+import com.kunk.singbox.ui.theme.liquidGlassDropdownMenuItemColors
 import com.kunk.singbox.ui.theme.liquidGlassIconButtonPanel
 import com.kunk.singbox.ui.theme.liquidGlassPanel
 import com.kunk.singbox.ui.theme.liquidGlassProgressColor
@@ -596,7 +597,8 @@ fun NodesScreen(
                                                     gridState.animateScrollToItem(activeIndex)
                                                 }
                                             }
-                                        }
+                                        },
+                                        colors = liquidGlassDropdownMenuItemColors()
                                     )
 
                                     DropdownMenuItem(
@@ -621,7 +623,8 @@ fun NodesScreen(
                                         onClick = {
                                             showMoreMenu = false
                                             showFilterDialog = true
-                                        }
+                                        },
+                                        colors = liquidGlassDropdownMenuItemColors()
                                     )
 
                                     DropdownMenuItem(
@@ -641,7 +644,8 @@ fun NodesScreen(
                                         onClick = {
                                             showMoreMenu = false
                                             showSortDialog = true
-                                        }
+                                        },
+                                        colors = liquidGlassDropdownMenuItemColors()
                                     )
                                 }
                             }

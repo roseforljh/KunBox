@@ -1,11 +1,9 @@
 package com.kunk.singbox.ui.theme
 
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
@@ -134,33 +132,6 @@ fun Modifier.liquidGlassLoadingStatePanel(
             .padding(contentPadding)
     } else {
         this
-    }
-}
-
-@Composable
-fun LiquidGlassDropdownMenu(
-    expanded: Boolean,
-    onDismissRequest: () -> Unit,
-    modifier: Modifier = Modifier,
-    content: @Composable ColumnScope.() -> Unit
-) {
-    if (isLiquidGlassTheme()) {
-        DropdownMenu(
-            expanded = expanded,
-            onDismissRequest = onDismissRequest,
-            modifier = modifier,
-            containerColor = Color.Transparent,
-            tonalElevation = 0.dp,
-            shadowElevation = 0.dp,
-            content = content
-        )
-    } else {
-        DropdownMenu(
-            expanded = expanded,
-            onDismissRequest = onDismissRequest,
-            modifier = modifier,
-            content = content
-        )
     }
 }
 

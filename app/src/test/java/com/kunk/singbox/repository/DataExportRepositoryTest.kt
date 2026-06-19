@@ -2,6 +2,7 @@ package com.kunk.singbox.repository
 
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.File
 
 class DataExportRepositoryTest {
 
@@ -24,5 +25,15 @@ class DataExportRepositoryTest {
         )
 
         assertTrue(result.isSuccess)
+    }
+
+    @Test
+    fun `settings export and rollback snapshots keep full theme style settings`() {
+        val source = File("src/main/java/com/kunk/singbox/repository/DataExportRepository.kt").readText()
+
+        assertTrue(source.contains("val settings = settingsRepository.settings.first()"))
+        assertTrue(source.contains("settings = settings,"))
+        assertTrue(source.contains("settings = settingsRepository.settings.first()"))
+        assertTrue(source.contains("importSettings(exportData.settings, importRules = options.importRules)"))
     }
 }

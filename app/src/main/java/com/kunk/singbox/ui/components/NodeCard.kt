@@ -253,7 +253,8 @@ fun NodeCard(
                                 onClick = {
                                     showMenu = false
                                     onEdit()
-                                }
+                                },
+                                colors = liquidGlassDropdownMenuItemColors()
                             )
                             DropdownMenuItem(
                                 text = {
@@ -270,7 +271,8 @@ fun NodeCard(
                                 onClick = {
                                     showMenu = false
                                     onExport()
-                                }
+                                },
+                                colors = liquidGlassDropdownMenuItemColors()
                             )
                             DropdownMenuItem(
                                 text = {
@@ -287,7 +289,8 @@ fun NodeCard(
                                 onClick = {
                                     showMenu = false
                                     onLatency()
-                                }
+                                },
+                                colors = liquidGlassDropdownMenuItemColors()
                             )
                             DropdownMenuItem(
                                 text = {
@@ -304,7 +307,8 @@ fun NodeCard(
                                 onClick = {
                                     showMenu = false
                                     onDelete()
-                                }
+                                },
+                                colors = liquidGlassDropdownMenuItemColors()
                             )
                         }
                     }
@@ -460,7 +464,8 @@ fun NodeGridCard(
                         onClick = {
                             showMenu = false
                             onEdit()
-                        }
+                        },
+                        colors = liquidGlassDropdownMenuItemColors()
                     )
                     DropdownMenuItem(
                         text = {
@@ -477,7 +482,8 @@ fun NodeGridCard(
                         onClick = {
                             showMenu = false
                             onExport()
-                        }
+                        },
+                        colors = liquidGlassDropdownMenuItemColors()
                     )
                     DropdownMenuItem(
                         text = {
@@ -494,7 +500,8 @@ fun NodeGridCard(
                         onClick = {
                             showMenu = false
                             onLatency()
-                        }
+                        },
+                        colors = liquidGlassDropdownMenuItemColors()
                     )
                     DropdownMenuItem(
                         text = {
@@ -511,7 +518,8 @@ fun NodeGridCard(
                         onClick = {
                             showMenu = false
                             onDelete()
-                        }
+                        },
+                        colors = liquidGlassDropdownMenuItemColors()
                     )
                 }
             }
