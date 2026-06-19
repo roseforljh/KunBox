@@ -415,10 +415,10 @@ fun AppMultiSelectDialog(
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(12.dp))
                             .then(
-                                if (useLiquidGlass && checked) {
+                                if (useLiquidGlass) {
                                     Modifier.liquidGlassPanel(
                                         shape = RoundedCornerShape(12.dp),
-                                        selected = true,
+                                        selected = checked,
                                         shadowElevation = 4.dp
                                     )
                                 } else {

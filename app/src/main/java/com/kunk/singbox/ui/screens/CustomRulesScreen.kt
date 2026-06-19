@@ -33,6 +33,7 @@ import com.kunk.singbox.ui.components.StyledTextField
 import androidx.compose.foundation.shape.RoundedCornerShape
 import com.kunk.singbox.ui.theme.liquidGlassDialogContainerColor
 import com.kunk.singbox.ui.theme.liquidGlassDialogPanel
+import com.kunk.singbox.ui.theme.liquidGlassEmptyStatePanel
 import com.kunk.singbox.ui.theme.liquidGlassIconButtonPanel
 import com.kunk.singbox.ui.theme.liquidGlassTextButtonPanel
 import com.kunk.singbox.viewmodel.SettingsViewModel
@@ -121,6 +122,7 @@ fun CustomRulesScreen(
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
+                            .liquidGlassEmptyStatePanel()
                             .padding(32.dp),
                         contentAlignment = Alignment.Center
                     ) {

@@ -111,6 +111,18 @@ fun liquidGlassTopAppBarContainerColor(defaultColor: Color): Color {
 }
 
 @Composable
+fun Modifier.liquidGlassEmptyStatePanel(
+    shape: Shape = RoundedCornerShape(20.dp),
+    shadowElevation: Dp = 8.dp
+): Modifier {
+    return if (isLiquidGlassTheme()) {
+        liquidGlassPanel(shape = shape, shadowElevation = shadowElevation)
+    } else {
+        this
+    }
+}
+
+@Composable
 fun LiquidGlassDropdownMenu(
     expanded: Boolean,
     onDismissRequest: () -> Unit,

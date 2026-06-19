@@ -70,6 +70,7 @@ import com.kunk.singbox.ui.theme.liquidGlassButtonContentColor
 import com.kunk.singbox.ui.theme.liquidGlassButtonPanel
 import com.kunk.singbox.ui.theme.liquidGlassDialogContainerColor
 import com.kunk.singbox.ui.theme.liquidGlassDialogPanel
+import com.kunk.singbox.ui.theme.liquidGlassEmptyStatePanel
 import com.kunk.singbox.ui.theme.liquidGlassIconButtonPanel
 import com.kunk.singbox.ui.theme.liquidGlassOutlinedButtonBorder
 import com.kunk.singbox.ui.theme.liquidGlassPanel
@@ -269,6 +270,7 @@ fun DomainRulesScreen(
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
+                            .liquidGlassEmptyStatePanel()
                             .padding(32.dp),
                         contentAlignment = Alignment.Center
                     ) {

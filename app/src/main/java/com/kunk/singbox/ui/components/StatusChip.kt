@@ -24,6 +24,17 @@ import com.kunk.singbox.ui.theme.isLiquidGlassTheme
 import com.kunk.singbox.ui.theme.liquidGlassPanel
 
 @Composable
+private fun Modifier.modeChipIndicatorPanel(indicatorColor: Color): Modifier {
+    return if (isLiquidGlassTheme()) {
+        size(14.dp)
+            .liquidGlassPanel(shape = CircleShape, selected = true, shadowElevation = 3.dp)
+    } else {
+        size(8.dp)
+            .background(indicatorColor, CircleShape)
+    }
+}
+
+@Composable
 fun StatusChip(
     label: String,
     icon: @Composable (() -> Unit)? = null,
@@ -82,6 +93,7 @@ fun ModeChip(
     indicatorColor: Color = Neutral500,
     onClick: () -> Unit
 ) {
+    val useLiquidGlass = isLiquidGlassTheme()
     StatusChip(
         label = mode,
         icon = {
@@ -91,9 +103,15 @@ fun ModeChip(
             ) {
                 Box(
                     modifier = Modifier
-                        .size(8.dp)
-                        .background(indicatorColor, CircleShape)
+                        .modeChipIndicatorPanel(indicatorColor)
                 )
+                if (useLiquidGlass) {
+                    Box(
+                        modifier = Modifier
+                            .size(5.dp)
+                            .background(indicatorColor, CircleShape)
+                    )
+                }
             }
         },
         onClick = onClick

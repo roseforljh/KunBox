@@ -111,6 +111,18 @@ private fun Modifier.trafficRankPanel(defaultColor: Color): Modifier {
     }
 }
 
+@Composable
+private fun Modifier.trafficLegendMarkerPanel(defaultColor: Color): Modifier {
+    return if (isLiquidGlassTheme()) {
+        size(14.dp)
+            .liquidGlassPanel(shape = CircleShape, selected = true, shadowElevation = 3.dp)
+    } else {
+        size(12.dp)
+            .clip(CircleShape)
+            .background(defaultColor)
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 @Suppress("LongMethod", "CognitiveComplexMethod")
@@ -514,16 +526,24 @@ private fun ChartLegendItem(
     percentage: Float,
     traffic: String
 ) {
+    val useLiquidGlass = isLiquidGlassTheme()
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Box(
+            contentAlignment = Alignment.Center,
             modifier = Modifier
-                .size(12.dp)
-                .clip(CircleShape)
-                .background(color)
-        )
+                .trafficLegendMarkerPanel(color)
+        ) {
+            if (useLiquidGlass) {
+                Box(
+                    modifier = Modifier
+                        .size(5.dp)
+                        .background(color, CircleShape)
+                )
+            }
+        }
         Spacer(modifier = Modifier.width(8.dp))
         Text(
             text = label,

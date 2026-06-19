@@ -68,8 +68,8 @@ private fun Modifier.dialogPanel(shape: RoundedCornerShape = RoundedCornerShape(
 @Composable
 private fun Modifier.dialogOptionPanel(isSelected: Boolean): Modifier {
     val shape = RoundedCornerShape(12.dp)
-    return if (isLiquidGlassTheme() && isSelected) {
-        liquidGlassPanel(shape = shape, selected = true, shadowElevation = 4.dp)
+    return if (isLiquidGlassTheme()) {
+        liquidGlassPanel(shape = shape, selected = isSelected, shadowElevation = 4.dp)
     } else {
         background(
             if (isSelected) {

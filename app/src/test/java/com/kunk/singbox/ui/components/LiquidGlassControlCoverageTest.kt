@@ -130,6 +130,8 @@ class LiquidGlassControlCoverageTest {
         assertTrue(exportImport.contains("liquidGlassDividerColor("))
         assertTrue(appMultiSelect.contains("liquidGlassDividerColor("))
         assertTrue(connectionInfo.contains("private fun connectionOverviewDividerBrush()"))
+        assertTrue(connectionInfo.contains("private fun connectionOverviewLabelColor()"))
+        assertTrue(connectionInfo.contains("private fun connectionOverviewValueColor()"))
         assertTrue(connectionInfo.contains("liquidGlassDividerColor("))
         assertTrue(appRouting.contains("liquidGlassTabRowPanel("))
         assertTrue(appRouting.contains("liquidGlassTabIndicatorColor("))
@@ -165,6 +167,22 @@ class LiquidGlassControlCoverageTest {
         }
 
         assertTrue("Scaffold should use liquid glass container colors: $failures", failures.isEmpty())
+    }
+
+    @Test
+    fun emptyStatesUseLiquidGlassPanels() {
+        val liquidControls = liquidControlSources()
+        val screenFiles = listOf(
+            "AppGroupsScreen.kt",
+            "AppRoutingScreen.kt",
+            "AppRulesScreen.kt",
+            "CustomRulesScreen.kt",
+            "DomainRulesScreen.kt",
+            "RuleSetsScreen.kt"
+        )
+
+        assertTrue(liquidControls.contains("fun Modifier.liquidGlassEmptyStatePanel("))
+        screenFiles.assertScreenSourcesContain("liquidGlassEmptyStatePanel(")
     }
 
     @Test

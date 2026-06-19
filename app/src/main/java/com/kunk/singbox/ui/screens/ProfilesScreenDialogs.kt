@@ -110,8 +110,8 @@ private fun Modifier.profileDnsMenuPanel(): Modifier {
 
 @Composable
 private fun Modifier.profileDnsOptionPanel(isSelected: Boolean): Modifier {
-    return if (isLiquidGlassTheme() && isSelected) {
-        liquidGlassPanel(shape = RoundedCornerShape(12.dp), selected = true, shadowElevation = 4.dp)
+    return if (isLiquidGlassTheme()) {
+        liquidGlassPanel(shape = RoundedCornerShape(12.dp), selected = isSelected, shadowElevation = 4.dp)
     } else {
         background(
             if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f) else Color.Transparent
@@ -122,8 +122,8 @@ private fun Modifier.profileDnsOptionPanel(isSelected: Boolean): Modifier {
 @Composable
 private fun Modifier.profileCustomNodePanel(isSelected: Boolean): Modifier {
     val shape = RoundedCornerShape(10.dp)
-    return if (isLiquidGlassTheme() && isSelected) {
-        liquidGlassPanel(shape = shape, selected = true, shadowElevation = 4.dp)
+    return if (isLiquidGlassTheme()) {
+        liquidGlassPanel(shape = shape, selected = isSelected, shadowElevation = 4.dp)
     } else {
         background(
             if (isSelected) {

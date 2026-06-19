@@ -153,6 +153,20 @@ private fun Modifier.nodeSearchPanel(): Modifier {
     }
 }
 
+@Composable
+private fun Modifier.nodeActiveIndicatorPanel(): Modifier {
+    return if (isLiquidGlassTheme()) {
+        size(10.dp)
+            .liquidGlassPanel(shape = RoundedCornerShape(5.dp), selected = true, shadowElevation = 3.dp)
+    } else {
+        size(6.dp)
+            .background(
+                color = MaterialTheme.colorScheme.primary,
+                shape = RoundedCornerShape(3.dp)
+            )
+    }
+}
+
 @Suppress("FunctionNaming", "LongMethod", "CyclomaticComplexMethod", "CognitiveComplexMethod")
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -845,13 +859,21 @@ private fun NodeSearchBar(
                         modifier = Modifier.padding(start = 8.dp)
                     ) {
                         Box(
+                            contentAlignment = Alignment.Center,
                             modifier = Modifier
-                                .size(6.dp)
-                                .background(
-                                    color = MaterialTheme.colorScheme.primary,
-                                    shape = RoundedCornerShape(3.dp)
+                                .nodeActiveIndicatorPanel()
+                        ) {
+                            if (isLiquidGlassTheme()) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(4.dp)
+                                        .background(
+                                            color = MaterialTheme.colorScheme.primary,
+                                            shape = RoundedCornerShape(2.dp)
+                                        )
                                 )
-                        )
+                            }
+                        }
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(
                             text = activeNodeName,

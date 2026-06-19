@@ -1,8 +1,7 @@
 package com.kunk.singbox.ui.components
 
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.background
-import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.horizontalScroll as foundationHorizontalScroll
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -34,7 +33,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.kunk.singbox.ui.theme.isLiquidGlassTheme
-import com.kunk.singbox.ui.theme.liquidGlassPanelBorderColor
+import com.kunk.singbox.ui.theme.liquidGlassPanel
 import com.kunk.singbox.ui.theme.liquidGlassSwitchColors
 
 private fun shouldDrawSettingSubtitleFade(useLiquidGlass: Boolean, scrollMaxValue: Int): Boolean {
@@ -70,7 +69,7 @@ fun SettingItem(
                 modifier = if (useLiquidGlass) {
                     Modifier
                         .size(34.dp)
-                        .background(liquidGlassPanelBorderColor().copy(alpha = 0.22f), CircleShape)
+                        .liquidGlassPanel(shape = CircleShape, shadowElevation = 4.dp)
                 } else {
                     Modifier.size(24.dp)
                 },
@@ -131,7 +130,7 @@ fun SettingItem(
                         color = if (enabled) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
                         maxLines = 1,
                         softWrap = false,
-                        modifier = Modifier.horizontalScroll(scrollState)
+                        modifier = Modifier.foundationHorizontalScroll(scrollState)
                     )
                 }
             }

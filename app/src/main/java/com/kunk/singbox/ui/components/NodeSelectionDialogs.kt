@@ -121,8 +121,8 @@ private fun Modifier.nodeSelectionItemPanel(isSelected: Boolean): Modifier {
 @Composable
 private fun Modifier.nodeSelectionListItemPanel(isSelected: Boolean): Modifier {
     val shape = RoundedCornerShape(10.dp)
-    return if (isLiquidGlassTheme() && isSelected) {
-        liquidGlassPanel(shape = shape, selected = true, shadowElevation = 4.dp)
+    return if (isLiquidGlassTheme()) {
+        liquidGlassPanel(shape = shape, selected = isSelected, shadowElevation = 4.dp)
     } else {
         background(
             if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.1f) else Color.Transparent,
@@ -134,8 +134,8 @@ private fun Modifier.nodeSelectionListItemPanel(isSelected: Boolean): Modifier {
 @Composable
 private fun Modifier.nodeFilterModePanel(isSelected: Boolean): Modifier {
     val shape = RoundedCornerShape(12.dp)
-    return if (isLiquidGlassTheme() && isSelected) {
-        liquidGlassPanel(shape = shape, selected = true, shadowElevation = 5.dp)
+    return if (isLiquidGlassTheme()) {
+        liquidGlassPanel(shape = shape, selected = isSelected, shadowElevation = 5.dp)
     } else {
         background(
             if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.1f) else Color.Transparent,

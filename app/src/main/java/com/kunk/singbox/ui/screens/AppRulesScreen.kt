@@ -18,6 +18,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -28,11 +29,24 @@ import com.kunk.singbox.model.*
 import com.kunk.singbox.ui.components.ConfirmDialog
 import com.kunk.singbox.ui.components.StandardCard
 import com.kunk.singbox.ui.theme.Neutral500
+import com.kunk.singbox.ui.theme.isLiquidGlassTheme
+import com.kunk.singbox.ui.theme.liquidGlassEmptyStatePanel
 import com.kunk.singbox.ui.theme.liquidGlassIconButtonPanel
+import com.kunk.singbox.ui.theme.liquidGlassPanel
 import com.kunk.singbox.viewmodel.NodesViewModel
 import com.kunk.singbox.viewmodel.ProfilesViewModel
 import com.kunk.singbox.viewmodel.SettingsViewModel
 import com.kunk.singbox.ui.theme.liquidGlassTopAppBarContainerColor
+
+@Composable
+private fun Modifier.outboundChipPanel(): Modifier {
+    return if (isLiquidGlassTheme()) {
+        liquidGlassPanel(shape = CircleShape, selected = true, shadowElevation = 4.dp)
+            .padding(horizontal = 8.dp, vertical = 4.dp)
+    } else {
+        this
+    }
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -180,7 +194,13 @@ fun AppRulesScreen(
 
             if (settings.appRules.isEmpty()) {
                 item {
-                    Box(modifier = Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .liquidGlassEmptyStatePanel()
+                            .padding(32.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             Icon(Icons.Rounded.Apps, contentDescription = null, tint = Neutral500, modifier = Modifier.size(48.dp))
                             Spacer(modifier = Modifier.height(16.dp))
@@ -232,7 +252,11 @@ fun OutboundChip(mode: RuleSetOutboundMode, label: String) {
         RuleSetOutboundMode.DIRECT -> Icons.Rounded.Public to Color(0xFF2196F3)
         RuleSetOutboundMode.BLOCK -> Icons.Rounded.Block to Color(0xFFFF5252)
     }
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+    Row(
+        modifier = Modifier.outboundChipPanel(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
         Icon(icon, contentDescription = null, tint = color, modifier = Modifier.size(16.dp))
         Text(text = label, fontSize = 12.sp, color = color)
     }

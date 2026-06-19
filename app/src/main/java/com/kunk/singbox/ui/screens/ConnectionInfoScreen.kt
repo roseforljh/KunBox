@@ -175,6 +175,42 @@ private fun connectionOverviewDividerBrush(): Brush {
 }
 
 @Composable
+private fun connectionOverviewLabelColor(): Color {
+    return if (isLiquidGlassTheme()) {
+        MaterialTheme.colorScheme.onSurfaceVariant
+    } else {
+        MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
+    }
+}
+
+@Composable
+private fun connectionOverviewValueColor(): Color {
+    return if (isLiquidGlassTheme()) {
+        MaterialTheme.colorScheme.onSurface
+    } else {
+        MaterialTheme.colorScheme.onPrimaryContainer
+    }
+}
+
+@Composable
+private fun connectionProtocolBadgeTextColor(defaultColor: Color): Color {
+    return if (isLiquidGlassTheme()) {
+        MaterialTheme.colorScheme.primary
+    } else {
+        defaultColor
+    }
+}
+
+@Composable
+private fun connectionMetaBadgeTextColor(defaultColor: Color): Color {
+    return if (isLiquidGlassTheme()) {
+        MaterialTheme.colorScheme.onSurfaceVariant
+    } else {
+        defaultColor
+    }
+}
+
+@Composable
 private fun ConnectionCloseButton(
     useLiquidGlass: Boolean,
     onClose: () -> Unit
@@ -556,13 +592,13 @@ private fun OverviewCardContent(
             Text(
                 text = stringResource(R.string.connection_info_active_count),
                 style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
+                color = connectionOverviewLabelColor()
             )
             Text(
                 text = "$totalConnections",
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onPrimaryContainer
+                color = connectionOverviewValueColor()
             )
         }
         Spacer(
@@ -579,13 +615,13 @@ private fun OverviewCardContent(
             Text(
                 text = stringResource(R.string.connection_info_total_upload),
                 style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
+                color = connectionOverviewLabelColor()
             )
             Text(
                 text = formatTraffic(uploadTotal),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onPrimaryContainer
+                color = connectionOverviewValueColor()
             )
         }
         Spacer(
@@ -602,13 +638,13 @@ private fun OverviewCardContent(
             Text(
                 text = stringResource(R.string.connection_info_total_download),
                 style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
+                color = connectionOverviewLabelColor()
             )
             Text(
                 text = formatTraffic(downloadTotal),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onPrimaryContainer
+                color = connectionOverviewValueColor()
             )
         }
     }
@@ -630,6 +666,7 @@ private fun ConnectionItemCard(
         MaterialTheme.colorScheme.onTertiaryContainer
     else
         MaterialTheme.colorScheme.onPrimaryContainer
+    val protocolBadgeTextColor = connectionProtocolBadgeTextColor(badgeTextColor)
 
     val hostStr = connection.metadata.host.ifBlank { connection.metadata.destinationIP }
     val portStr = connection.metadata.destinationPort
@@ -684,7 +721,7 @@ private fun ConnectionItemCard(
                         text = connection.metadata.network.uppercase(),
                         fontSize = 10.sp,
                         fontWeight = FontWeight.Bold,
-                        color = badgeTextColor
+                        color = protocolBadgeTextColor
                     )
                 }
 
@@ -760,7 +797,9 @@ private fun ConnectionItemCard(
                                 text = chainText,
                                 fontSize = 10.sp,
                                 fontWeight = FontWeight.Medium,
-                                color = MaterialTheme.colorScheme.onSecondaryContainer
+                                color = connectionMetaBadgeTextColor(
+                                    MaterialTheme.colorScheme.onSecondaryContainer
+                                )
                             )
                         }
                     }

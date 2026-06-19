@@ -44,6 +44,7 @@ import com.kunk.singbox.model.NodeUi
 import com.kunk.singbox.ui.theme.liquidGlassCheckboxColors
 import com.kunk.singbox.ui.theme.liquidGlassDialogContainerColor
 import com.kunk.singbox.ui.theme.liquidGlassDialogPanel
+import com.kunk.singbox.ui.theme.liquidGlassEmptyStatePanel
 import com.kunk.singbox.ui.theme.liquidGlassIconButtonPanel
 import com.kunk.singbox.ui.theme.liquidGlassTextButtonPanel
 import kotlinx.coroutines.launch
@@ -487,6 +488,7 @@ fun RuleSetsScreen(
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
+                            .liquidGlassEmptyStatePanel()
                             .padding(32.dp),
                         contentAlignment = Alignment.Center
                     ) {

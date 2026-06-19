@@ -85,15 +85,46 @@ class ThemeStyleSourceTest {
     }
 
     @Test
+    fun settingItemsUseLiquidGlassPanelsForIconsAndSwitches() {
+        val source = File("src/main/java/com/kunk/singbox/ui/components/SettingItem.kt").readText()
+
+        assertTrue(source.contains("liquidGlassPanel(shape = CircleShape"))
+        assertTrue(source.contains("liquidGlassSwitchColors("))
+        assertFalse(source.contains("liquidGlassPanelBorderColor"))
+    }
+
+    @Test
+    fun dashboardStatusChipsUseLiquidGlassPanels() {
+        val source = File("src/main/java/com/kunk/singbox/ui/components/StatusChip.kt").readText()
+
+        assertTrue(source.contains("fun StatusChip("))
+        assertTrue(source.contains("Modifier.liquidGlassPanel("))
+        assertTrue(source.contains("modeChipIndicatorPanel("))
+        assertTrue(source.contains(".liquidGlassPanel(shape = CircleShape, selected = true"))
+    }
+
+    @Test
     fun selectionListsUseLiquidGlassPanels() {
+        val commonDialogs = File("src/main/java/com/kunk/singbox/ui/components/CommonDialogs.kt").readText()
         val appMultiSelect = File("src/main/java/com/kunk/singbox/ui/components/AppMultiSelectDialog.kt").readText()
         val nodeSelection = File("src/main/java/com/kunk/singbox/ui/components/NodeSelectionDialogs.kt").readText()
         val profileDialogs = File("src/main/java/com/kunk/singbox/ui/screens/ProfilesScreenDialogs.kt").readText()
 
+        assertTrue(commonDialogs.contains("dialogOptionPanel(isSelected: Boolean)"))
+        assertTrue(commonDialogs.contains("liquidGlassPanel(shape = shape, selected = isSelected"))
         assertTrue(appMultiSelect.contains("appSelectIconPanel("))
+        assertTrue(appMultiSelect.contains("if (useLiquidGlass)"))
+        assertTrue(appMultiSelect.contains("selected = checked"))
         assertTrue(nodeSelection.contains("nodeSelectionListItemPanel("))
         assertTrue(nodeSelection.contains("nodeFilterModePanel("))
+        assertTrue(nodeSelection.contains("liquidGlassPanel(shape = shape, selected = isSelected"))
         assertTrue(profileDialogs.contains("profileCustomNodePanel("))
+        assertTrue(profileDialogs.contains("profileDnsOptionPanel(isSelected: Boolean)"))
+        assertTrue(profileDialogs.contains("liquidGlassPanel(shape = RoundedCornerShape(12.dp), selected = isSelected"))
+        assertFalse(commonDialogs.contains("isLiquidGlassTheme() && isSelected"))
+        assertFalse(appMultiSelect.contains("useLiquidGlass && checked"))
+        assertFalse(nodeSelection.contains("isLiquidGlassTheme() && isSelected"))
+        assertFalse(profileDialogs.contains("isLiquidGlassTheme() && isSelected"))
     }
 
     @Test
@@ -169,11 +200,20 @@ class ThemeStyleSourceTest {
     }
 
     @Test
+    fun appRulesOutboundChipsUseLiquidGlassPanels() {
+        val source = File("src/main/java/com/kunk/singbox/ui/screens/AppRulesScreen.kt").readText()
+
+        assertTrue(source.contains("outboundChipPanel("))
+        assertTrue(source.contains("liquidGlassPanel(shape = CircleShape"))
+    }
+
+    @Test
     fun trafficStatsSmallSurfacesUseLiquidGlassPanels() {
         val source = File("src/main/java/com/kunk/singbox/ui/screens/TrafficStatsScreen.kt").readText()
 
         assertTrue(source.contains("trafficStatIconPanel("))
         assertTrue(source.contains("trafficRankPanel("))
+        assertTrue(source.contains("trafficLegendMarkerPanel("))
     }
 
     @Test
@@ -232,6 +272,8 @@ class ThemeStyleSourceTest {
         assertTrue(connectionInfo.contains("connectionEmptyIconPanel()"))
         assertTrue(connectionInfo.contains("connectionMetaBadgePanel("))
         assertTrue(connectionInfo.contains("connectionProtocolBadgePanel("))
+        assertTrue(connectionInfo.contains("connectionProtocolBadgeTextColor("))
+        assertTrue(connectionInfo.contains("connectionMetaBadgeTextColor("))
         assertTrue(connectionInfo.contains("connectionCloseButtonPanel("))
     }
 
@@ -253,6 +295,7 @@ class ThemeStyleSourceTest {
         val logs = File("src/main/java/com/kunk/singbox/ui/screens/LogsScreen.kt").readText()
 
         assertTrue(nodes.contains("nodeSearchPanel()"))
+        assertTrue(nodes.contains("nodeActiveIndicatorPanel()"))
         assertTrue(connectionInfo.contains("connectionSearchPanel()"))
         assertTrue(ruleSetHub.contains("RuleSetHubSearchField("))
         assertTrue(ruleSetHub.contains("liquidGlassTextFieldPanel("))
