@@ -28,6 +28,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -35,6 +36,9 @@ import com.kunk.singbox.R
 import com.kunk.singbox.model.ProfileUi
 import com.kunk.singbox.ui.theme.liquidGlassDialogContainerColor
 import com.kunk.singbox.ui.theme.liquidGlassDialogPanel
+import com.kunk.singbox.ui.theme.liquidGlassTextFieldBorderColor
+import com.kunk.singbox.ui.theme.liquidGlassTextFieldContainerColor
+import com.kunk.singbox.ui.theme.liquidGlassTextFieldPanel
 
 sealed class AddNodeTarget {
     data class ExistingProfile(val profileId: String) : AddNodeTarget()
@@ -63,6 +67,7 @@ fun AddNodeDialog(
         (isCreatingNew && newProfileName.isNotBlank()) ||
             (!isCreatingNew && selectedProfileId != null)
         )
+    val textFieldShape = RoundedCornerShape(12.dp)
 
     AlertDialog(
         modifier = Modifier.liquidGlassDialogPanel(),
@@ -85,15 +90,19 @@ fun AddNodeDialog(
                             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
                         )
                     },
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .liquidGlassTextFieldPanel(shape = textFieldShape),
                     singleLine = false,
                     minLines = 2,
                     maxLines = 4,
                     colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = MaterialTheme.colorScheme.primary,
-                        unfocusedBorderColor = MaterialTheme.colorScheme.outline
+                        focusedBorderColor = liquidGlassTextFieldBorderColor(MaterialTheme.colorScheme.primary),
+                        unfocusedBorderColor = liquidGlassTextFieldBorderColor(MaterialTheme.colorScheme.outline),
+                        focusedContainerColor = liquidGlassTextFieldContainerColor(Color.Transparent),
+                        unfocusedContainerColor = liquidGlassTextFieldContainerColor(Color.Transparent)
                     ),
-                    shape = RoundedCornerShape(12.dp)
+                    shape = textFieldShape
                 )
 
                 Spacer(modifier = Modifier.height(16.dp))
@@ -175,13 +184,17 @@ fun AddNodeDialog(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
                             )
                         },
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .liquidGlassTextFieldPanel(shape = textFieldShape),
                         singleLine = true,
                         colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = MaterialTheme.colorScheme.primary,
-                            unfocusedBorderColor = MaterialTheme.colorScheme.outline
+                            focusedBorderColor = liquidGlassTextFieldBorderColor(MaterialTheme.colorScheme.primary),
+                            unfocusedBorderColor = liquidGlassTextFieldBorderColor(MaterialTheme.colorScheme.outline),
+                            focusedContainerColor = liquidGlassTextFieldContainerColor(Color.Transparent),
+                            unfocusedContainerColor = liquidGlassTextFieldContainerColor(Color.Transparent)
                         ),
-                        shape = RoundedCornerShape(12.dp)
+                        shape = textFieldShape
                     )
                 }
             }

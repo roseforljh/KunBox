@@ -63,11 +63,26 @@ import com.kunk.singbox.ui.components.ProfileNodeSelectDialog
 import com.kunk.singbox.ui.components.SingleSelectDialog
 import com.kunk.singbox.ui.components.StandardCard
 import com.kunk.singbox.ui.components.StyledTextField
+import com.kunk.singbox.ui.theme.isLiquidGlassTheme
 import com.kunk.singbox.ui.theme.liquidGlassDialogContainerColor
 import com.kunk.singbox.ui.theme.liquidGlassDialogPanel
+import com.kunk.singbox.ui.theme.liquidGlassPanel
 import com.kunk.singbox.viewmodel.NodesViewModel
 import com.kunk.singbox.viewmodel.ProfilesViewModel
 import com.kunk.singbox.viewmodel.SettingsViewModel
+
+@Composable
+private fun Modifier.domainRuleSelectorPanel(): Modifier {
+    val shape = RoundedCornerShape(8.dp)
+    return if (isLiquidGlassTheme()) {
+        liquidGlassPanel(shape = shape, shadowElevation = 6.dp)
+    } else {
+        background(
+            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+            shape = shape
+        )
+    }
+}
 
 @Composable
 private fun resolveOutboundText(
@@ -456,10 +471,7 @@ private fun DomainRuleEditorDialog(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .background(
-                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                            shape = RoundedCornerShape(8.dp)
-                        )
+                        .domainRuleSelectorPanel()
                         .clickable { showOutboundDialog = true }
                         .padding(horizontal = 12.dp, vertical = 12.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -483,10 +495,7 @@ private fun DomainRuleEditorDialog(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .background(
-                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                                shape = RoundedCornerShape(8.dp)
-                            )
+                            .domainRuleSelectorPanel()
                             .clickable {
                                 when (outboundMode) {
                                     RuleSetOutboundMode.NODE -> {

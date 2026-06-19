@@ -48,6 +48,9 @@ import com.kunk.singbox.ui.theme.Destructive
 import com.kunk.singbox.ui.theme.Neutral500
 import com.kunk.singbox.ui.theme.isLiquidGlassTheme
 import com.kunk.singbox.ui.theme.liquidGlassPanel
+import com.kunk.singbox.ui.theme.liquidGlassTextFieldBorderColor
+import com.kunk.singbox.ui.theme.liquidGlassTextFieldContainerColor
+import com.kunk.singbox.ui.theme.liquidGlassTextFieldPanel
 
 @Composable
 private fun Modifier.dialogPanel(shape: RoundedCornerShape = RoundedCornerShape(28.dp)): Modifier {
@@ -150,6 +153,7 @@ fun InputDialog(
     var text by rememberSaveable(initialValue) { mutableStateOf(initialValue) }
     val interactionSource = remember { MutableInteractionSource() }
     val scrollState = rememberScrollState()
+    val textFieldShape = RoundedCornerShape(16.dp)
 
     Dialog(onDismissRequest = onDismiss) {
         Column(
@@ -171,6 +175,7 @@ fun InputDialog(
                 onValueChange = { text = it },
                 modifier = Modifier
                     .fillMaxWidth()
+                    .liquidGlassTextFieldPanel(shape = textFieldShape)
                     .then(if (singleLine) Modifier.horizontalScroll(scrollState) else Modifier),
                 singleLine = singleLine,
                 minLines = minLines,
@@ -197,8 +202,10 @@ fun InputDialog(
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedTextColor = MaterialTheme.colorScheme.onSurface,
                             unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
-                            focusedBorderColor = MaterialTheme.colorScheme.primary,
-                            unfocusedBorderColor = MaterialTheme.colorScheme.outline,
+                            focusedBorderColor = liquidGlassTextFieldBorderColor(MaterialTheme.colorScheme.primary),
+                            unfocusedBorderColor = liquidGlassTextFieldBorderColor(MaterialTheme.colorScheme.outline),
+                            focusedContainerColor = liquidGlassTextFieldContainerColor(Color.Transparent),
+                            unfocusedContainerColor = liquidGlassTextFieldContainerColor(Color.Transparent),
                             focusedLabelColor = MaterialTheme.colorScheme.primary,
                             unfocusedLabelColor = MaterialTheme.colorScheme.onSurfaceVariant
                         ),
@@ -208,10 +215,16 @@ fun InputDialog(
                                 isError = false,
                                 interactionSource = interactionSource,
                                 colors = OutlinedTextFieldDefaults.colors(
-                                    focusedBorderColor = MaterialTheme.colorScheme.primary,
-                                    unfocusedBorderColor = MaterialTheme.colorScheme.outline
+                                    focusedBorderColor = liquidGlassTextFieldBorderColor(
+                                        MaterialTheme.colorScheme.primary
+                                    ),
+                                    unfocusedBorderColor = liquidGlassTextFieldBorderColor(
+                                        MaterialTheme.colorScheme.outline
+                                    ),
+                                    focusedContainerColor = liquidGlassTextFieldContainerColor(Color.Transparent),
+                                    unfocusedContainerColor = liquidGlassTextFieldContainerColor(Color.Transparent)
                                 ),
-                                shape = RoundedCornerShape(16.dp)
+                                shape = textFieldShape
                             )
                         }
                     )

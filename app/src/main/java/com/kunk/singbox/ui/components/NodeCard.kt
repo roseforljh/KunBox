@@ -39,6 +39,37 @@ private fun Modifier.nodeOverflowMenuPanel(): Modifier {
     }
 }
 
+@Composable
+private fun Modifier.nodeSelectedIndicatorPanel(): Modifier {
+    return if (isLiquidGlassTheme()) {
+        liquidGlassPanel(shape = CircleShape, selected = true, shadowElevation = 4.dp)
+    } else {
+        background(MaterialTheme.colorScheme.primary, CircleShape)
+    }
+}
+
+@Composable
+private fun NodeSelectedIndicator(useLiquidGlass: Boolean) {
+    Box(
+        modifier = Modifier
+            .size(24.dp)
+            .nodeSelectedIndicatorPanel()
+            .padding(4.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(
+            imageVector = Icons.Rounded.Check,
+            contentDescription = "Selected",
+            tint = if (useLiquidGlass) {
+                MaterialTheme.colorScheme.primary
+            } else {
+                MaterialTheme.colorScheme.onPrimary
+            },
+            modifier = Modifier.size(16.dp)
+        )
+    }
+}
+
 @Suppress("LongParameterList", "LongMethod", "CognitiveComplexMethod")
 @Composable
 fun NodeCard(
@@ -99,20 +130,7 @@ fun NodeCard(
                 modifier = Modifier.weight(1f)
             ) {
                 if (isSelected) {
-                    Box(
-                        modifier = Modifier
-                            .size(24.dp)
-                            .background(MaterialTheme.colorScheme.primary, CircleShape)
-                            .padding(4.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Rounded.Check,
-                            contentDescription = "Selected",
-                            tint = MaterialTheme.colorScheme.onPrimary,
-                            modifier = Modifier.size(16.dp)
-                        )
-                    }
+                    NodeSelectedIndicator(useLiquidGlass = useLiquidGlass)
                 } else {
                     Spacer(modifier = Modifier.size(24.dp))
                 }

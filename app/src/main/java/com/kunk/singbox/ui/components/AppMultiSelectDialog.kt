@@ -42,6 +42,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -59,6 +60,9 @@ import com.kunk.singbox.model.InstalledApp
 import com.kunk.singbox.repository.InstalledAppsRepository
 import com.kunk.singbox.ui.theme.isLiquidGlassTheme
 import com.kunk.singbox.ui.theme.liquidGlassPanel
+import com.kunk.singbox.ui.theme.liquidGlassTextFieldBorderColor
+import com.kunk.singbox.ui.theme.liquidGlassTextFieldContainerColor
+import com.kunk.singbox.ui.theme.liquidGlassTextFieldPanel
 
 @Composable
 private fun Modifier.appSelectDialogPanel(shape: RoundedCornerShape = RoundedCornerShape(28.dp)): Modifier {
@@ -75,6 +79,15 @@ private fun Modifier.appSelectActionPanel(shape: RoundedCornerShape = RoundedCor
         liquidGlassPanel(shape = shape, selected = true, shadowElevation = 6.dp)
     } else {
         background(MaterialTheme.colorScheme.primary.copy(alpha = 0.1f))
+    }
+}
+
+@Composable
+private fun Modifier.appSelectIconPanel(shape: RoundedCornerShape = RoundedCornerShape(10.dp)): Modifier {
+    return if (isLiquidGlassTheme()) {
+        liquidGlassPanel(shape = shape, shadowElevation = 6.dp)
+    } else {
+        background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f), shape)
     }
 }
 
@@ -264,23 +277,28 @@ fun AppMultiSelectDialog(
                 }
             }
 
+            val searchFieldShape = RoundedCornerShape(12.dp)
             OutlinedTextField(
                 value = query,
                 onValueChange = { query = it },
                 placeholder = { Text(stringResource(R.string.app_list_search_hint), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)) },
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .liquidGlassTextFieldPanel(shape = searchFieldShape),
                 singleLine = true,
                 textStyle = MaterialTheme.typography.bodyMedium,
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedTextColor = MaterialTheme.colorScheme.onSurface,
                     unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
-                    focusedBorderColor = MaterialTheme.colorScheme.primary,
-                    unfocusedBorderColor = MaterialTheme.colorScheme.outline,
+                    focusedBorderColor = liquidGlassTextFieldBorderColor(MaterialTheme.colorScheme.primary),
+                    unfocusedBorderColor = liquidGlassTextFieldBorderColor(MaterialTheme.colorScheme.outline),
+                    focusedContainerColor = liquidGlassTextFieldContainerColor(Color.Transparent),
+                    unfocusedContainerColor = liquidGlassTextFieldContainerColor(Color.Transparent),
                     focusedLabelColor = MaterialTheme.colorScheme.primary,
                     unfocusedLabelColor = MaterialTheme.colorScheme.onSurfaceVariant,
                     cursorColor = MaterialTheme.colorScheme.primary
                 ),
-                shape = RoundedCornerShape(12.dp)
+                shape = searchFieldShape
             )
 
             Spacer(modifier = Modifier.height(8.dp))
@@ -424,8 +442,7 @@ fun AppMultiSelectDialog(
                             Box(
                                 modifier = Modifier
                                     .size(iconSize)
-                                    .clip(RoundedCornerShape(10.dp))
-                                    .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
+                                    .appSelectIconPanel()
                             )
                         }
                         Spacer(modifier = Modifier.width(12.dp))

@@ -22,6 +22,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -41,6 +42,9 @@ import com.kunk.singbox.ui.theme.isLiquidGlassTheme
 import com.kunk.singbox.ui.theme.liquidGlassPanel
 import com.kunk.singbox.ui.theme.liquidGlassDialogContainerColor
 import com.kunk.singbox.ui.theme.liquidGlassDialogPanel
+import com.kunk.singbox.ui.theme.liquidGlassTextFieldBorderColor
+import com.kunk.singbox.ui.theme.liquidGlassTextFieldContainerColor
+import com.kunk.singbox.ui.theme.liquidGlassTextFieldPanel
 
 private const val APP_INFO_SEPARATOR = "\t"
 
@@ -73,12 +77,80 @@ private fun Modifier.routingChipPanel(shape: RoundedCornerShape): Modifier {
 }
 
 @Composable
+private fun Modifier.routingIconPanel(shape: RoundedCornerShape): Modifier {
+    return if (isLiquidGlassTheme()) {
+        liquidGlassPanel(shape = shape, shadowElevation = 6.dp)
+    } else {
+        background(Neutral700, shape)
+    }
+}
+
+@Composable
+private fun Modifier.routingEmptySelectionPanel(): Modifier {
+    val shape = RoundedCornerShape(12.dp)
+    return if (isLiquidGlassTheme()) {
+        liquidGlassPanel(shape = shape, shadowElevation = 6.dp)
+    } else {
+        background(Neutral700.copy(alpha = 0.3f), shape)
+    }
+}
+
+@Composable
+private fun Modifier.routingMoreCountPanel(): Modifier {
+    val shape = RoundedCornerShape(8.dp)
+    return if (isLiquidGlassTheme()) {
+        liquidGlassPanel(shape = shape, shadowElevation = 6.dp)
+    } else {
+        background(Neutral700, shape)
+    }
+}
+
+@Composable
+private fun Modifier.routingStatusBadgePanel(defaultColor: Color): Modifier {
+    return if (isLiquidGlassTheme()) {
+        liquidGlassPanel(shape = CircleShape, selected = true, shadowElevation = 4.dp)
+    } else {
+        background(defaultColor, CircleShape)
+    }
+}
+
+@Composable
+private fun Modifier.routingGroupIconPanel(defaultColor: Color): Modifier {
+    return if (isLiquidGlassTheme()) {
+        liquidGlassPanel(shape = CircleShape, shadowElevation = 6.dp)
+    } else {
+        background(defaultColor, CircleShape)
+    }
+}
+
+@Composable
 private fun Modifier.routingSelectablePanel(isSelected: Boolean): Modifier {
     val shape = RoundedCornerShape(8.dp)
-    return if (isLiquidGlassTheme() && isSelected) {
-        liquidGlassPanel(shape = shape, selected = true, shadowElevation = 4.dp)
+    return if (isLiquidGlassTheme()) {
+        liquidGlassPanel(shape = shape, selected = isSelected, shadowElevation = 4.dp)
     } else {
         background(if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.12f) else Color.Transparent, shape)
+    }
+}
+
+@Composable
+private fun RoutingStatusBadge(
+    icon: ImageVector,
+    color: Color,
+    modifier: Modifier = Modifier
+) {
+    Box(
+        modifier = modifier
+            .size(18.dp)
+            .routingStatusBadgePanel(color),
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(
+            icon,
+            contentDescription = null,
+            tint = if (isLiquidGlassTheme()) color else MaterialTheme.colorScheme.onPrimary,
+            modifier = Modifier.size(10.dp)
+        )
     }
 }
 
@@ -115,13 +187,20 @@ fun AppRuleItem(
                 if (appIcon != null) {
                     Image(bitmap = appIcon, contentDescription = null, modifier = Modifier.size(40.dp).clip(RoundedCornerShape(10.dp)))
                 } else {
-                    Box(modifier = Modifier.size(40.dp).clip(RoundedCornerShape(10.dp)).background(Neutral700), contentAlignment = Alignment.Center) {
+                    Box(
+                        modifier = Modifier
+                            .size(40.dp)
+                            .routingIconPanel(RoundedCornerShape(10.dp)),
+                        contentAlignment = Alignment.Center
+                    ) {
                         Icon(Icons.Rounded.Apps, contentDescription = null, tint = Neutral500, modifier = Modifier.size(24.dp))
                     }
                 }
-                Box(modifier = Modifier.align(Alignment.BottomEnd).size(18.dp).clip(CircleShape).background(color), contentAlignment = Alignment.Center) {
-                    Icon(outboundIcon, contentDescription = null, tint = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(10.dp))
-                }
+                RoutingStatusBadge(
+                    icon = outboundIcon,
+                    color = color,
+                    modifier = Modifier.align(Alignment.BottomEnd)
+                )
             }
             Spacer(modifier = Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
@@ -331,19 +410,28 @@ fun AppPickerDialog(apps: List<InstalledApp>, existingPackages: Set<String>, onS
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
+                    val searchFieldShape = RoundedCornerShape(12.dp)
                     OutlinedTextField(
                         value = searchQuery,
                         onValueChange = { searchQuery = it },
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier
+                            .weight(1f)
+                            .liquidGlassTextFieldPanel(shape = searchFieldShape),
                         placeholder = { Text(stringResource(R.string.common_search), color = Neutral500, fontSize = 14.sp) },
                         leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null, tint = Neutral500, modifier = Modifier.size(20.dp)) },
                         singleLine = true,
-                        shape = RoundedCornerShape(12.dp),
+                        shape = searchFieldShape,
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedTextColor = MaterialTheme.colorScheme.onSurface,
                             unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
-                            focusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f),
-                            unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f),
+                            focusedBorderColor = liquidGlassTextFieldBorderColor(
+                                MaterialTheme.colorScheme.primary.copy(alpha = 0.6f)
+                            ),
+                            unfocusedBorderColor = liquidGlassTextFieldBorderColor(
+                                MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)
+                            ),
+                            focusedContainerColor = liquidGlassTextFieldContainerColor(Color.Transparent),
+                            unfocusedContainerColor = liquidGlassTextFieldContainerColor(Color.Transparent),
                             cursorColor = MaterialTheme.colorScheme.primary
                         )
                     )
@@ -410,7 +498,12 @@ fun AppListItem(app: InstalledApp, onClick: () -> Unit) {
         if (appIcon != null) {
             Image(bitmap = appIcon, contentDescription = app.appName, modifier = Modifier.size(36.dp).clip(RoundedCornerShape(8.dp)))
         } else {
-            Box(modifier = Modifier.size(36.dp).clip(RoundedCornerShape(8.dp)).background(Neutral700), contentAlignment = Alignment.Center) {
+            Box(
+                modifier = Modifier
+                    .size(36.dp)
+                    .routingIconPanel(RoundedCornerShape(8.dp)),
+                contentAlignment = Alignment.Center
+            ) {
                 Icon(Icons.Rounded.Apps, contentDescription = null, tint = Neutral500, modifier = Modifier.size(20.dp))
             }
         }
@@ -442,7 +535,9 @@ fun AppIconSmall(packageName: String) {
         )
     } else {
         Box(
-            modifier = Modifier.size(32.dp).clip(RoundedCornerShape(8.dp)).background(Neutral700),
+            modifier = Modifier
+                .size(32.dp)
+                .routingIconPanel(RoundedCornerShape(8.dp)),
             contentAlignment = Alignment.Center
         ) {
             Icon(Icons.Rounded.Apps, contentDescription = null, tint = Neutral500, modifier = Modifier.size(16.dp))
@@ -476,8 +571,7 @@ fun AppGroupCard(
                 Box(
                     modifier = Modifier
                         .size(36.dp)
-                        .clip(CircleShape)
-                        .background(color.copy(alpha = 0.15f)),
+                        .routingGroupIconPanel(color.copy(alpha = 0.15f)),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(outboundIcon, contentDescription = null, tint = color, modifier = Modifier.size(18.dp))
@@ -527,8 +621,7 @@ fun AppGroupCard(
                             Box(
                                 modifier = Modifier
                                     .size(32.dp)
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .background(Neutral700),
+                                    .routingMoreCountPanel(),
                                 contentAlignment = Alignment.Center
                             ) {
                                 Text("+${group.apps.size - 8}", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -606,7 +699,12 @@ fun SelectableAppItem(
         if (appIcon != null) {
             Image(bitmap = appIcon, contentDescription = app.appName, modifier = Modifier.size(32.dp).clip(RoundedCornerShape(6.dp)))
         } else {
-            Box(modifier = Modifier.size(32.dp).clip(RoundedCornerShape(6.dp)).background(Neutral700), contentAlignment = Alignment.Center) {
+            Box(
+                modifier = Modifier
+                    .size(32.dp)
+                    .routingIconPanel(RoundedCornerShape(6.dp)),
+                contentAlignment = Alignment.Center
+            ) {
                 Icon(Icons.Rounded.Apps, contentDescription = null, tint = Neutral500, modifier = Modifier.size(18.dp))
             }
         }
@@ -693,19 +791,28 @@ fun MultiAppSelectorDialog(
 
                 Spacer(modifier = Modifier.height(8.dp))
 
+                val searchFieldShape = RoundedCornerShape(10.dp)
                 OutlinedTextField(
                     value = searchQuery,
                     onValueChange = { searchQuery = it },
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .liquidGlassTextFieldPanel(shape = searchFieldShape),
                     placeholder = { Text(stringResource(R.string.common_search), color = Neutral500, fontSize = 13.sp) },
                     leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null, tint = Neutral500, modifier = Modifier.size(18.dp)) },
                     singleLine = true,
-                    shape = RoundedCornerShape(10.dp),
+                    shape = searchFieldShape,
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedTextColor = MaterialTheme.colorScheme.onSurface,
                         unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
-                        focusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f),
-                        unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f),
+                        focusedBorderColor = liquidGlassTextFieldBorderColor(
+                            MaterialTheme.colorScheme.primary.copy(alpha = 0.6f)
+                        ),
+                        unfocusedBorderColor = liquidGlassTextFieldBorderColor(
+                            MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)
+                        ),
+                        focusedContainerColor = liquidGlassTextFieldContainerColor(Color.Transparent),
+                        unfocusedContainerColor = liquidGlassTextFieldContainerColor(Color.Transparent),
                         cursorColor = MaterialTheme.colorScheme.primary
                     )
                 )
@@ -964,8 +1071,7 @@ fun AppGroupEditorDialog(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .height(60.dp)
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(Neutral700.copy(alpha = 0.3f)),
+                                .routingEmptySelectionPanel(),
                             contentAlignment = Alignment.Center
                         ) {
                             Text(stringResource(R.string.app_groups_click_to_add), color = Neutral500, fontSize = 13.sp)

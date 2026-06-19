@@ -70,6 +70,27 @@ private fun Modifier.profileOverflowMenuPanel(): Modifier {
     }
 }
 
+@Composable
+private fun Modifier.profileBadgePanel(
+    defaultColor: Color,
+    shape: RoundedCornerShape = RoundedCornerShape(6.dp)
+): Modifier {
+    return if (isLiquidGlassTheme()) {
+        liquidGlassPanel(shape = shape, selected = true, shadowElevation = 4.dp)
+    } else {
+        background(defaultColor, shape)
+    }
+}
+
+@Composable
+private fun Modifier.profileSelectedIndicatorPanel(): Modifier {
+    return if (isLiquidGlassTheme()) {
+        liquidGlassPanel(shape = CircleShape, selected = true, shadowElevation = 4.dp)
+    } else {
+        background(MaterialTheme.colorScheme.primary, CircleShape)
+    }
+}
+
 @Suppress("LongMethod", "CyclomaticComplexMethod", "CognitiveComplexMethod", "LongParameterList")
 @Composable
 fun ProfileCard(
@@ -171,10 +192,14 @@ fun ProfileCard(
                 Icon(
                     imageVector = Icons.Rounded.Check,
                     contentDescription = "Selected",
-                    tint = MaterialTheme.colorScheme.onPrimary,
+                    tint = if (useLiquidGlass) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.onPrimary
+                    },
                     modifier = Modifier
                         .size(24.dp)
-                        .background(MaterialTheme.colorScheme.primary, CircleShape)
+                        .profileSelectedIndicatorPanel()
                         .padding(4.dp)
                 )
             } else {
@@ -245,9 +270,9 @@ fun ProfileCard(
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.primary,
                             modifier = Modifier
-                                .background(
-                                    MaterialTheme.colorScheme.primaryContainer,
-                                    RoundedCornerShape(4.dp)
+                                .profileBadgePanel(
+                                    defaultColor = MaterialTheme.colorScheme.primaryContainer,
+                                    shape = RoundedCornerShape(4.dp)
                                 )
                                 .padding(horizontal = 4.dp, vertical = 1.dp)
                         )
@@ -261,10 +286,7 @@ fun ProfileCard(
                         style = MaterialTheme.typography.labelSmall,
                         color = stageTextColor,
                         modifier = Modifier
-                            .background(
-                                stageContainerColor,
-                                RoundedCornerShape(6.dp)
-                            )
+                            .profileBadgePanel(stageContainerColor)
                             .padding(horizontal = 6.dp, vertical = 2.dp)
                     )
                 }

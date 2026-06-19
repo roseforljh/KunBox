@@ -89,6 +89,24 @@ private val chartColors = listOf(
     Color(0xFF64748B)
 )
 
+@Composable
+private fun Modifier.trafficStatIconPanel(defaultColor: Color): Modifier {
+    return if (isLiquidGlassTheme()) {
+        liquidGlassPanel(shape = CircleShape, shadowElevation = 6.dp)
+    } else {
+        background(defaultColor, CircleShape)
+    }
+}
+
+@Composable
+private fun Modifier.trafficRankPanel(defaultColor: Color): Modifier {
+    return if (isLiquidGlassTheme()) {
+        liquidGlassPanel(shape = CircleShape, selected = true, shadowElevation = 5.dp)
+    } else {
+        background(defaultColor, CircleShape)
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 @Suppress("LongMethod", "CognitiveComplexMethod")
@@ -367,8 +385,7 @@ private fun TrafficStatItem(
         Box(
             modifier = Modifier
                 .size(48.dp)
-                .clip(CircleShape)
-                .background(color.copy(alpha = 0.15f)),
+                .trafficStatIconPanel(color.copy(alpha = 0.15f)),
             contentAlignment = Alignment.Center
         ) {
             Icon(
@@ -564,6 +581,12 @@ private fun NodeRankingItem(
 ) {
     val nodeTotal = stats.upload + stats.download
     val progress = if (totalTraffic > 0) nodeTotal.toFloat() / totalTraffic else 0f
+    val rankColor = when (rank) {
+        1 -> Color(0xFFFFD700)
+        2 -> Color(0xFFC0C0C0)
+        3 -> Color(0xFFCD7F32)
+        else -> MaterialTheme.colorScheme.surfaceVariant
+    }
 
     val animatedProgress by animateFloatAsState(
         targetValue = progress,
@@ -579,15 +602,7 @@ private fun NodeRankingItem(
             Box(
                 modifier = Modifier
                     .size(28.dp)
-                    .clip(CircleShape)
-                    .background(
-                        when (rank) {
-                            1 -> Color(0xFFFFD700)
-                            2 -> Color(0xFFC0C0C0)
-                            3 -> Color(0xFFCD7F32)
-                            else -> MaterialTheme.colorScheme.surfaceVariant
-                        }
-                    ),
+                    .trafficRankPanel(rankColor),
                 contentAlignment = Alignment.Center
             ) {
                 Text(

@@ -31,6 +31,9 @@ import com.kunk.singbox.ui.components.AppNotificationManager
 import com.kunk.singbox.ui.components.StandardCard
 import com.kunk.singbox.ui.theme.isLiquidGlassTheme
 import com.kunk.singbox.ui.theme.liquidGlassPanel
+import com.kunk.singbox.ui.theme.liquidGlassTextFieldBorderColor
+import com.kunk.singbox.ui.theme.liquidGlassTextFieldContainerColor
+import com.kunk.singbox.ui.theme.liquidGlassTextFieldPanel
 import com.kunk.singbox.viewmodel.RuleSetViewModel
 import com.kunk.singbox.viewmodel.SettingsViewModel
 
@@ -205,6 +208,7 @@ private fun RuleSetHubSearchField(
     searchQuery: String,
     onSearchQueryChange: (String) -> Unit
 ) {
+    val searchFieldShape = RoundedCornerShape(12.dp)
     OutlinedTextField(
         value = searchQuery,
         onValueChange = onSearchQueryChange,
@@ -220,14 +224,15 @@ private fun RuleSetHubSearchField(
         },
         modifier = Modifier
             .fillMaxWidth()
-            .padding(4.dp),
+            .padding(4.dp)
+            .liquidGlassTextFieldPanel(shape = searchFieldShape),
         singleLine = true,
-        shape = RoundedCornerShape(12.dp),
+        shape = searchFieldShape,
         colors = OutlinedTextFieldDefaults.colors(
-            focusedContainerColor = Color.Transparent,
-            unfocusedContainerColor = Color.Transparent,
-            focusedBorderColor = Color.Transparent,
-            unfocusedBorderColor = Color.Transparent,
+            focusedContainerColor = liquidGlassTextFieldContainerColor(Color.Transparent),
+            unfocusedContainerColor = liquidGlassTextFieldContainerColor(Color.Transparent),
+            focusedBorderColor = liquidGlassTextFieldBorderColor(Color.Transparent),
+            unfocusedBorderColor = liquidGlassTextFieldBorderColor(Color.Transparent),
             cursorColor = MaterialTheme.colorScheme.onSurface,
             focusedTextColor = MaterialTheme.colorScheme.onSurface,
             unfocusedTextColor = MaterialTheme.colorScheme.onSurface

@@ -68,6 +68,9 @@ import com.kunk.singbox.ui.components.AppNotificationManager
 import com.kunk.singbox.ui.components.StandardCard
 import com.kunk.singbox.ui.theme.isLiquidGlassTheme
 import com.kunk.singbox.ui.theme.liquidGlassPanel
+import com.kunk.singbox.ui.theme.liquidGlassTextFieldBorderColor
+import com.kunk.singbox.ui.theme.liquidGlassTextFieldContainerColor
+import com.kunk.singbox.ui.theme.liquidGlassTextFieldPanel
 
 @Composable
 private fun Modifier.profileDialogPanel(shape: RoundedCornerShape): Modifier {
@@ -84,6 +87,44 @@ private fun Modifier.profileGroupPanel(shape: RoundedCornerShape = RoundedCorner
         liquidGlassPanel(shape = shape, shadowElevation = 6.dp)
     } else {
         background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
+    }
+}
+
+@Composable
+private fun Modifier.profileDnsMenuPanel(): Modifier {
+    val shape = RoundedCornerShape(24.dp)
+    return if (isLiquidGlassTheme()) {
+        liquidGlassPanel(shape = shape, shadowElevation = 24.dp)
+    } else {
+        background(MaterialTheme.colorScheme.surface, shape)
+    }
+}
+
+@Composable
+private fun Modifier.profileDnsOptionPanel(isSelected: Boolean): Modifier {
+    return if (isLiquidGlassTheme() && isSelected) {
+        liquidGlassPanel(shape = RoundedCornerShape(12.dp), selected = true, shadowElevation = 4.dp)
+    } else {
+        background(
+            if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f) else Color.Transparent
+        )
+    }
+}
+
+@Composable
+private fun Modifier.profileCustomNodePanel(isSelected: Boolean): Modifier {
+    val shape = RoundedCornerShape(10.dp)
+    return if (isLiquidGlassTheme() && isSelected) {
+        liquidGlassPanel(shape = shape, selected = true, shadowElevation = 4.dp)
+    } else {
+        background(
+            if (isSelected) {
+                MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)
+            } else {
+                Color.Transparent
+            },
+            shape
+        )
     }
 }
 
@@ -206,13 +247,7 @@ internal fun ExpandableProfileGroup(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .background(
-                                if (isSelected) {
-                                    MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)
-                                } else {
-                                    Color.Transparent
-                                }
-                            )
+                            .profileCustomNodePanel(isSelected)
                             .clickable {
                                 onSelectionChange(node.id, !isSelected)
                             }
@@ -273,10 +308,13 @@ internal fun CustomConfigDialog(
 
             Spacer(modifier = Modifier.height(16.dp))
 
+            val nameFieldShape = RoundedCornerShape(16.dp)
             OutlinedTextField(
                 value = name,
                 onValueChange = { name = it },
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .liquidGlassTextFieldPanel(shape = nameFieldShape),
                 singleLine = true,
                 placeholder = {
                     Text(
@@ -284,12 +322,14 @@ internal fun CustomConfigDialog(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 },
-                shape = RoundedCornerShape(16.dp),
+                shape = nameFieldShape,
                 colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
                     focusedTextColor = MaterialTheme.colorScheme.onSurface,
                     unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
-                    focusedBorderColor = MaterialTheme.colorScheme.primary,
-                    unfocusedBorderColor = MaterialTheme.colorScheme.outline,
+                    focusedBorderColor = liquidGlassTextFieldBorderColor(MaterialTheme.colorScheme.primary),
+                    unfocusedBorderColor = liquidGlassTextFieldBorderColor(MaterialTheme.colorScheme.outline),
+                    focusedContainerColor = liquidGlassTextFieldContainerColor(Color.Transparent),
+                    unfocusedContainerColor = liquidGlassTextFieldContainerColor(Color.Transparent),
                     focusedLabelColor = MaterialTheme.colorScheme.primary,
                     unfocusedLabelColor = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -574,18 +614,23 @@ internal fun SubscriptionInputDialog(
             )
             Spacer(modifier = Modifier.height(16.dp))
 
+            val nameFieldShape = RoundedCornerShape(16.dp)
             androidx.compose.material3.OutlinedTextField(
                 value = name,
                 onValueChange = { name = it },
                 label = { Text(stringResource(R.string.profiles_name_label)) },
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .liquidGlassTextFieldPanel(shape = nameFieldShape),
                 singleLine = true,
-                shape = RoundedCornerShape(16.dp),
+                shape = nameFieldShape,
                 colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
                     focusedTextColor = MaterialTheme.colorScheme.onSurface,
                     unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
-                    focusedBorderColor = MaterialTheme.colorScheme.primary,
-                    unfocusedBorderColor = MaterialTheme.colorScheme.outline,
+                    focusedBorderColor = liquidGlassTextFieldBorderColor(MaterialTheme.colorScheme.primary),
+                    unfocusedBorderColor = liquidGlassTextFieldBorderColor(MaterialTheme.colorScheme.outline),
+                    focusedContainerColor = liquidGlassTextFieldContainerColor(Color.Transparent),
+                    unfocusedContainerColor = liquidGlassTextFieldContainerColor(Color.Transparent),
                     focusedLabelColor = MaterialTheme.colorScheme.primary,
                     unfocusedLabelColor = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -593,18 +638,23 @@ internal fun SubscriptionInputDialog(
 
             Spacer(modifier = Modifier.height(12.dp))
 
+            val urlFieldShape = RoundedCornerShape(16.dp)
             androidx.compose.material3.OutlinedTextField(
                 value = url,
                 onValueChange = { url = it },
                 label = { Text(stringResource(R.string.profiles_url_label)) },
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .liquidGlassTextFieldPanel(shape = urlFieldShape),
                 singleLine = true,
-                shape = RoundedCornerShape(16.dp),
+                shape = urlFieldShape,
                 colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
                     focusedTextColor = MaterialTheme.colorScheme.onSurface,
                     unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
-                    focusedBorderColor = MaterialTheme.colorScheme.primary,
-                    unfocusedBorderColor = MaterialTheme.colorScheme.outline,
+                    focusedBorderColor = liquidGlassTextFieldBorderColor(MaterialTheme.colorScheme.primary),
+                    unfocusedBorderColor = liquidGlassTextFieldBorderColor(MaterialTheme.colorScheme.outline),
+                    focusedContainerColor = liquidGlassTextFieldContainerColor(Color.Transparent),
+                    unfocusedContainerColor = liquidGlassTextFieldContainerColor(Color.Transparent),
                     focusedLabelColor = MaterialTheme.colorScheme.primary,
                     unfocusedLabelColor = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -648,6 +698,7 @@ internal fun SubscriptionInputDialog(
                 Column {
                     Spacer(modifier = Modifier.height(12.dp))
 
+                    val autoUpdateFieldShape = RoundedCornerShape(16.dp)
                     androidx.compose.material3.OutlinedTextField(
                         value = autoUpdateMinutes,
                         onValueChange = { newValue ->
@@ -657,8 +708,10 @@ internal fun SubscriptionInputDialog(
                             }
                         },
                         label = { Text(stringResource(R.string.profiles_auto_update_interval)) },
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(16.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .liquidGlassTextFieldPanel(shape = autoUpdateFieldShape),
+                        shape = autoUpdateFieldShape,
                         singleLine = true,
                         keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
                             keyboardType = androidx.compose.ui.text.input.KeyboardType.Number
@@ -673,8 +726,10 @@ internal fun SubscriptionInputDialog(
                         colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
                             focusedTextColor = MaterialTheme.colorScheme.onSurface,
                             unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
-                            focusedBorderColor = MaterialTheme.colorScheme.primary,
-                            unfocusedBorderColor = MaterialTheme.colorScheme.outline,
+                            focusedBorderColor = liquidGlassTextFieldBorderColor(MaterialTheme.colorScheme.primary),
+                            unfocusedBorderColor = liquidGlassTextFieldBorderColor(MaterialTheme.colorScheme.outline),
+                            focusedContainerColor = liquidGlassTextFieldContainerColor(Color.Transparent),
+                            unfocusedContainerColor = liquidGlassTextFieldContainerColor(Color.Transparent),
                             focusedLabelColor = MaterialTheme.colorScheme.primary,
                             unfocusedLabelColor = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -727,6 +782,7 @@ internal fun SubscriptionInputDialog(
                 Column {
                     Spacer(modifier = Modifier.height(12.dp))
 
+                    val dnsFieldShape = RoundedCornerShape(16.dp)
                     androidx.compose.material3.OutlinedTextField(
                         value = dnsServerOptions.find { it.first == selectedDnsServer }?.second ?: selectedDnsServer,
                         onValueChange = {},
@@ -742,11 +798,13 @@ internal fun SubscriptionInputDialog(
                         },
                         modifier = Modifier
                             .fillMaxWidth()
+                            .liquidGlassTextFieldPanel(shape = dnsFieldShape)
                             .clickable { dnsDropdownExpanded = true },
-                        shape = RoundedCornerShape(16.dp),
+                        shape = dnsFieldShape,
                         colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
                             disabledTextColor = MaterialTheme.colorScheme.onSurface,
-                            disabledBorderColor = MaterialTheme.colorScheme.outline,
+                            disabledBorderColor = liquidGlassTextFieldBorderColor(MaterialTheme.colorScheme.outline),
+                            disabledContainerColor = liquidGlassTextFieldContainerColor(Color.Transparent),
                             disabledLabelColor = MaterialTheme.colorScheme.onSurfaceVariant,
                             disabledTrailingIconColor = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -761,10 +819,7 @@ internal fun SubscriptionInputDialog(
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .background(
-                                MaterialTheme.colorScheme.surface,
-                                RoundedCornerShape(24.dp)
-                            )
+                            .profileDnsMenuPanel()
                             .padding(vertical = 16.dp)
                     ) {
                         Text(
@@ -786,10 +841,7 @@ internal fun SubscriptionInputDialog(
                                         selectedDnsServer = url
                                         dnsDropdownExpanded = false
                                     }
-                                    .background(
-                                        if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
-                                        else Color.Transparent
-                                    )
+                                    .profileDnsOptionPanel(isSelected)
                                     .padding(horizontal = 24.dp, vertical = 14.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.SpaceBetween
@@ -843,21 +895,27 @@ internal fun SubscriptionInputDialog(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Spacer(modifier = Modifier.height(8.dp))
+                    val dnsOverrideFieldShape = RoundedCornerShape(16.dp)
                     androidx.compose.material3.OutlinedTextField(
                         value = dnsOverrideText,
                         onValueChange = { dnsOverrideText = it },
                         label = { Text("DNS JSON") },
-                        modifier = Modifier.fillMaxWidth().height(160.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(160.dp)
+                            .liquidGlassTextFieldPanel(shape = dnsOverrideFieldShape),
                         textStyle = TextStyle(
                             fontFamily = FontFamily.Monospace,
                             fontSize = 12.sp
                         ),
-                        shape = RoundedCornerShape(16.dp),
+                        shape = dnsOverrideFieldShape,
                         colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
                             focusedTextColor = MaterialTheme.colorScheme.onSurface,
                             unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
-                            focusedBorderColor = MaterialTheme.colorScheme.primary,
-                            unfocusedBorderColor = MaterialTheme.colorScheme.outline,
+                            focusedBorderColor = liquidGlassTextFieldBorderColor(MaterialTheme.colorScheme.primary),
+                            unfocusedBorderColor = liquidGlassTextFieldBorderColor(MaterialTheme.colorScheme.outline),
+                            focusedContainerColor = liquidGlassTextFieldContainerColor(Color.Transparent),
+                            unfocusedContainerColor = liquidGlassTextFieldContainerColor(Color.Transparent),
                             focusedLabelColor = MaterialTheme.colorScheme.primary,
                             unfocusedLabelColor = MaterialTheme.colorScheme.onSurfaceVariant
                         )

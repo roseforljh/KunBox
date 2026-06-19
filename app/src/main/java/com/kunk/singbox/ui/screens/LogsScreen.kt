@@ -53,6 +53,9 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import com.kunk.singbox.ui.theme.isLiquidGlassTheme
 import com.kunk.singbox.ui.theme.liquidGlassPanel
+import com.kunk.singbox.ui.theme.liquidGlassTextFieldBorderColor
+import com.kunk.singbox.ui.theme.liquidGlassTextFieldContainerColor
+import com.kunk.singbox.ui.theme.liquidGlassTextFieldPanel
 import com.kunk.singbox.viewmodel.LogViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -126,7 +129,6 @@ fun LogsScreen(navController: NavController, viewModel: LogViewModel = viewModel
         ) {
             LogsSearchField(
                 searchKeyword = searchKeyword,
-                useLiquidGlass = useLiquidGlass,
                 onSearchKeywordChange = { viewModel.setSearchKeyword(it) }
             )
 
@@ -183,7 +185,6 @@ fun LogsScreen(navController: NavController, viewModel: LogViewModel = viewModel
 @Composable
 private fun LogsSearchField(
     searchKeyword: String,
-    useLiquidGlass: Boolean,
     onSearchKeywordChange: (String) -> Unit
 ) {
     val searchShape = RoundedCornerShape(12.dp)
@@ -193,13 +194,7 @@ private fun LogsSearchField(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 4.dp)
-            .then(
-                if (useLiquidGlass) {
-                    Modifier.liquidGlassPanel(shape = searchShape, shadowElevation = 8.dp)
-                } else {
-                    Modifier
-                }
-            ),
+            .liquidGlassTextFieldPanel(shape = searchShape),
         placeholder = {
             Text(stringResource(R.string.logs_search_hint))
         },
@@ -216,14 +211,12 @@ private fun LogsSearchField(
         singleLine = true,
         shape = searchShape,
         colors = OutlinedTextFieldDefaults.colors(
-            focusedBorderColor = if (useLiquidGlass) Color.Transparent else MaterialTheme.colorScheme.primary,
-            unfocusedBorderColor = if (useLiquidGlass) {
-                Color.Transparent
-            } else {
+            focusedBorderColor = liquidGlassTextFieldBorderColor(MaterialTheme.colorScheme.primary),
+            unfocusedBorderColor = liquidGlassTextFieldBorderColor(
                 MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)
-            },
-            focusedContainerColor = Color.Transparent,
-            unfocusedContainerColor = Color.Transparent
+            ),
+            focusedContainerColor = liquidGlassTextFieldContainerColor(Color.Transparent),
+            unfocusedContainerColor = liquidGlassTextFieldContainerColor(Color.Transparent)
         )
     )
 }

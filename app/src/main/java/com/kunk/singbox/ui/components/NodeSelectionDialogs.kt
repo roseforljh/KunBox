@@ -27,6 +27,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -68,6 +69,9 @@ import com.kunk.singbox.model.NodeUi
 import com.kunk.singbox.model.ProfileUi
 import com.kunk.singbox.ui.theme.isLiquidGlassTheme
 import com.kunk.singbox.ui.theme.liquidGlassPanel
+import com.kunk.singbox.ui.theme.liquidGlassTextFieldBorderColor
+import com.kunk.singbox.ui.theme.liquidGlassTextFieldContainerColor
+import com.kunk.singbox.ui.theme.liquidGlassTextFieldPanel
 
 @Composable
 private fun Modifier.nodeSelectionDialogPanel(shape: RoundedCornerShape = RoundedCornerShape(28.dp)): Modifier {
@@ -106,6 +110,41 @@ private fun Modifier.nodeSelectionItemPanel(isSelected: Boolean): Modifier {
                 color = borderColor,
                 shape = shape
             )
+    }
+}
+
+@Composable
+private fun Modifier.nodeSelectionListItemPanel(isSelected: Boolean): Modifier {
+    val shape = RoundedCornerShape(10.dp)
+    return if (isLiquidGlassTheme() && isSelected) {
+        liquidGlassPanel(shape = shape, selected = true, shadowElevation = 4.dp)
+    } else {
+        background(
+            if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.1f) else Color.Transparent,
+            shape
+        )
+    }
+}
+
+@Composable
+private fun Modifier.nodeFilterModePanel(isSelected: Boolean): Modifier {
+    val shape = RoundedCornerShape(12.dp)
+    return if (isLiquidGlassTheme() && isSelected) {
+        liquidGlassPanel(shape = shape, selected = true, shadowElevation = 5.dp)
+    } else {
+        background(
+            if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.1f) else Color.Transparent,
+            shape
+        )
+    }
+}
+
+@Composable
+private fun Modifier.nodeSelectorCheckPanel(): Modifier {
+    return if (isLiquidGlassTheme()) {
+        liquidGlassPanel(shape = CircleShape, selected = true, shadowElevation = 4.dp)
+    } else {
+        background(MaterialTheme.colorScheme.primary, CircleShape)
     }
 }
 
@@ -207,7 +246,7 @@ fun ProfileNodeSelectDialog(
                                         Row(
                                             modifier = Modifier
                                                 .fillMaxWidth()
-                                                .background(if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.1f) else Color.Transparent)
+                                                .nodeSelectionListItemPanel(selected)
                                                 .clickable {
                                                     onSelect(ref)
                                                     onDismiss()
@@ -305,7 +344,7 @@ fun ProfileNodeSelectDialog(
                                         Row(
                                             modifier = Modifier
                                                 .fillMaxWidth()
-                                                .background(if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.1f) else Color.Transparent)
+                                                .nodeSelectionListItemPanel(selected)
                                                 .clickable {
                                                     onSelect(ref)
                                                     onDismiss()
@@ -499,8 +538,7 @@ fun NodeFilterDialog(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(if (filterMode == FilterMode.NONE) MaterialTheme.colorScheme.primary.copy(alpha = 0.1f) else Color.Transparent)
+                    .nodeFilterModePanel(filterMode == FilterMode.NONE)
                     .clickable { filterMode = FilterMode.NONE }
                     .padding(vertical = 12.dp, horizontal = 8.dp),
                 verticalAlignment = Alignment.CenterVertically
@@ -522,8 +560,7 @@ fun NodeFilterDialog(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(if (filterMode == FilterMode.INCLUDE) MaterialTheme.colorScheme.primary.copy(alpha = 0.1f) else Color.Transparent)
+                    .nodeFilterModePanel(filterMode == FilterMode.INCLUDE)
                     .clickable { filterMode = FilterMode.INCLUDE }
                     .padding(vertical = 12.dp, horizontal = 8.dp),
                 verticalAlignment = Alignment.CenterVertically
@@ -545,8 +582,7 @@ fun NodeFilterDialog(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(if (filterMode == FilterMode.EXCLUDE) MaterialTheme.colorScheme.primary.copy(alpha = 0.1f) else Color.Transparent)
+                    .nodeFilterModePanel(filterMode == FilterMode.EXCLUDE)
                     .clickable { filterMode = FilterMode.EXCLUDE }
                     .padding(vertical = 12.dp, horizontal = 8.dp),
                 verticalAlignment = Alignment.CenterVertically
@@ -586,6 +622,7 @@ fun NodeFilterDialog(
                     excludeKeywordsText
                 }
 
+                val keywordFieldShape = RoundedCornerShape(16.dp)
                 OutlinedTextField(
                     value = activeKeywords,
                     onValueChange = { newValue ->
@@ -596,19 +633,23 @@ fun NodeFilterDialog(
                         }
                     },
                     placeholder = { Text(stringResource(R.string.node_filter_keywords_hint), color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)) },
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .liquidGlassTextFieldPanel(shape = keywordFieldShape),
                     singleLine = false,
                     minLines = 2,
                     maxLines = 3,
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedTextColor = MaterialTheme.colorScheme.onSurface,
                         unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
-                        focusedBorderColor = MaterialTheme.colorScheme.primary,
-                        unfocusedBorderColor = MaterialTheme.colorScheme.outline,
+                        focusedBorderColor = liquidGlassTextFieldBorderColor(MaterialTheme.colorScheme.primary),
+                        unfocusedBorderColor = liquidGlassTextFieldBorderColor(MaterialTheme.colorScheme.outline),
+                        focusedContainerColor = liquidGlassTextFieldContainerColor(Color.Transparent),
+                        unfocusedContainerColor = liquidGlassTextFieldContainerColor(Color.Transparent),
                         focusedLabelColor = MaterialTheme.colorScheme.primary,
                         unfocusedLabelColor = MaterialTheme.colorScheme.onSurfaceVariant
                     ),
-                    shape = RoundedCornerShape(16.dp)
+                    shape = keywordFieldShape
                 )
 
                 Spacer(modifier = Modifier.height(8.dp))
@@ -764,6 +805,7 @@ internal fun NodeSelectorItem(
     isTesting: Boolean,
     onClick: () -> Unit
 ) {
+    val useLiquidGlass = isLiquidGlassTheme()
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -780,13 +822,17 @@ internal fun NodeSelectorItem(
                 Box(
                     modifier = Modifier
                         .size(20.dp)
-                        .background(MaterialTheme.colorScheme.primary, androidx.compose.foundation.shape.CircleShape),
+                        .nodeSelectorCheckPanel(),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
                         imageVector = androidx.compose.material.icons.Icons.Rounded.Check,
                         contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onPrimary,
+                        tint = if (useLiquidGlass) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.onPrimary
+                        },
                         modifier = Modifier.size(14.dp)
                     )
                 }

@@ -62,8 +62,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
@@ -109,6 +107,62 @@ private fun Modifier.connectionSearchPanel(): Modifier {
             width = 1.dp,
             color = Color.White.copy(alpha = 0.2f),
             shape = shape
+        )
+    }
+}
+
+@Composable
+private fun Modifier.connectionMetaBadgePanel(defaultColor: Color): Modifier {
+    val shape = RoundedCornerShape(4.dp)
+    return if (isLiquidGlassTheme()) {
+        liquidGlassPanel(shape = shape, shadowElevation = 4.dp)
+    } else {
+        background(defaultColor, shape)
+    }
+}
+
+@Composable
+private fun Modifier.connectionProtocolBadgePanel(defaultColor: Color): Modifier {
+    val shape = RoundedCornerShape(6.dp)
+    return if (isLiquidGlassTheme()) {
+        liquidGlassPanel(shape = shape, selected = true, shadowElevation = 4.dp)
+    } else {
+        background(defaultColor, shape)
+    }
+}
+
+@Composable
+private fun Modifier.connectionCloseButtonPanel(): Modifier {
+    return if (isLiquidGlassTheme()) {
+        liquidGlassPanel(shape = CircleShape, selected = true, shadowElevation = 4.dp)
+    } else {
+        this
+    }
+}
+
+@Composable
+private fun ConnectionCloseButton(
+    useLiquidGlass: Boolean,
+    onClose: () -> Unit
+) {
+    IconButton(
+        onClick = onClose,
+        modifier = Modifier
+            .size(26.dp)
+            .connectionCloseButtonPanel(),
+        colors = IconButtonDefaults.iconButtonColors(
+            containerColor = if (useLiquidGlass) {
+                Color.Transparent
+            } else {
+                MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.2f)
+            },
+            contentColor = MaterialTheme.colorScheme.error
+        )
+    ) {
+        Icon(
+            Icons.Rounded.Close,
+            contentDescription = stringResource(R.string.connection_info_close_connection),
+            modifier = Modifier.size(14.dp)
         )
     }
 }
@@ -326,7 +380,7 @@ private fun ConnectionSearchBar(
     modifier: Modifier = Modifier
 ) {
     var isFocused by remember { mutableStateOf(false) }
-    val focusRequester = remember { FocusRequester() }
+    val focusRequester = remember { androidx.compose.ui.focus.FocusRequester() }
 
     LaunchedEffect(Unit) {
         focusRequester.requestFocus()
@@ -582,8 +636,7 @@ private fun ConnectionItemCard(
                 // 协议药丸
                 Box(
                     modifier = Modifier
-                        .clip(RoundedCornerShape(6.dp))
-                        .background(badgeBg)
+                        .connectionProtocolBadgePanel(badgeBg)
                         .padding(horizontal = 6.dp, vertical = 2.dp)
                 ) {
                     Text(
@@ -607,21 +660,10 @@ private fun ConnectionItemCard(
                     overflow = TextOverflow.Ellipsis
                 )
 
-                // 切断按钮
-                IconButton(
-                    onClick = onClose,
-                    modifier = Modifier.size(26.dp),
-                    colors = IconButtonDefaults.iconButtonColors(
-                        containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.2f),
-                        contentColor = MaterialTheme.colorScheme.error
-                    )
-                ) {
-                    Icon(
-                        Icons.Rounded.Close,
-                        contentDescription = stringResource(R.string.connection_info_close_connection),
-                        modifier = Modifier.size(14.dp)
-                    )
-                }
+                ConnectionCloseButton(
+                    useLiquidGlass = useLiquidGlass,
+                    onClose = onClose
+                )
             }
 
             // 额外的目的IP显示（如果host不为空）
@@ -649,8 +691,9 @@ private fun ConnectionItemCard(
                         Box(
                             modifier = Modifier
                                 .padding(end = 6.dp, bottom = 4.dp)
-                                .clip(RoundedCornerShape(4.dp))
-                                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                                .connectionMetaBadgePanel(
+                                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                                )
                                 .padding(horizontal = 6.dp, vertical = 2.dp)
                         ) {
                             Text(
@@ -667,8 +710,9 @@ private fun ConnectionItemCard(
                         Box(
                             modifier = Modifier
                                 .padding(bottom = 4.dp)
-                                .clip(RoundedCornerShape(4.dp))
-                                .background(MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.3f))
+                                .connectionMetaBadgePanel(
+                                    MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.3f)
+                                )
                                 .padding(horizontal = 6.dp, vertical = 2.dp)
                         ) {
                             Text(

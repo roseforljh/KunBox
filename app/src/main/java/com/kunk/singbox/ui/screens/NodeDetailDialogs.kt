@@ -54,6 +54,33 @@ private fun Modifier.nodeDetailDialogPanel(shape: RoundedCornerShape = RoundedCo
     }
 }
 
+@Composable
+private fun Modifier.nodeDetailSelectionPanel(isSelected: Boolean): Modifier {
+    val shape = RoundedCornerShape(10.dp)
+    return if (isLiquidGlassTheme()) {
+        liquidGlassPanel(shape = shape, selected = isSelected, shadowElevation = 5.dp)
+    } else {
+        background(
+            if (isSelected) {
+                MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)
+            } else {
+                MaterialTheme.colorScheme.surface
+            },
+            shape
+        )
+    }
+}
+
+@Composable
+private fun Modifier.nodeDetailGroupPanel(): Modifier {
+    val shape = RoundedCornerShape(10.dp)
+    return if (isLiquidGlassTheme()) {
+        liquidGlassPanel(shape = shape, shadowElevation = 6.dp)
+    } else {
+        background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f), shape)
+    }
+}
+
 @Suppress("LongMethod", "CognitiveComplexMethod", "CyclomaticComplexMethod", "LongParameterList")
 @Composable
 internal fun DetourNodeSelectDialog(
@@ -97,14 +124,7 @@ internal fun DetourNodeSelectDialog(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clickable { onSelect(null) }
-                            .background(
-                                if (isNoneSelected) {
-                                    MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)
-                                } else {
-                                    MaterialTheme.colorScheme.surface
-                                },
-                                RoundedCornerShape(10.dp)
-                            )
+                            .nodeDetailSelectionPanel(isNoneSelected)
                             .padding(horizontal = 12.dp, vertical = 10.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
@@ -138,10 +158,7 @@ internal fun DetourNodeSelectDialog(
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .background(
-                                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
-                                    RoundedCornerShape(10.dp)
-                                )
+                                .nodeDetailGroupPanel()
                                 .animateContentSize(animationSpec = tween(durationMillis = 220))
                         ) {
                             Row(
@@ -187,14 +204,7 @@ internal fun DetourNodeSelectDialog(
                                             modifier = Modifier
                                                 .fillMaxWidth()
                                                 .clickable { onSelect(ref) }
-                                                .background(
-                                                    if (selected) {
-                                                        MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)
-                                                    } else {
-                                                        MaterialTheme.colorScheme.surface
-                                                    },
-                                                    RoundedCornerShape(10.dp)
-                                                )
+                                                .nodeDetailSelectionPanel(selected)
                                                 .padding(horizontal = 12.dp, vertical = 10.dp),
                                             verticalAlignment = Alignment.CenterVertically
                                         ) {

@@ -85,6 +85,36 @@ class ThemeStyleSourceTest {
     }
 
     @Test
+    fun selectionListsUseLiquidGlassPanels() {
+        val appMultiSelect = File("src/main/java/com/kunk/singbox/ui/components/AppMultiSelectDialog.kt").readText()
+        val nodeSelection = File("src/main/java/com/kunk/singbox/ui/components/NodeSelectionDialogs.kt").readText()
+        val profileDialogs = File("src/main/java/com/kunk/singbox/ui/screens/ProfilesScreenDialogs.kt").readText()
+
+        assertTrue(appMultiSelect.contains("appSelectIconPanel("))
+        assertTrue(nodeSelection.contains("nodeSelectionListItemPanel("))
+        assertTrue(nodeSelection.contains("nodeFilterModePanel("))
+        assertTrue(profileDialogs.contains("profileCustomNodePanel("))
+    }
+
+    @Test
+    fun profileCardBadgesUseLiquidGlassPanels() {
+        val profileCard = File("src/main/java/com/kunk/singbox/ui/components/ProfileCard.kt").readText()
+
+        assertTrue(profileCard.contains("profileBadgePanel("))
+    }
+
+    @Test
+    fun selectedIndicatorsUseLiquidGlassPanels() {
+        val nodeCard = File("src/main/java/com/kunk/singbox/ui/components/NodeCard.kt").readText()
+        val profileCard = File("src/main/java/com/kunk/singbox/ui/components/ProfileCard.kt").readText()
+        val nodeSelection = File("src/main/java/com/kunk/singbox/ui/components/NodeSelectionDialogs.kt").readText()
+
+        assertTrue(nodeCard.contains("nodeSelectedIndicatorPanel("))
+        assertTrue(profileCard.contains("profileSelectedIndicatorPanel("))
+        assertTrue(nodeSelection.contains("nodeSelectorCheckPanel("))
+    }
+
+    @Test
     fun trafficAndDetailSurfacesUseSharedLiquidGlassPanel() {
         val screenFiles = listOf(
             "TrafficStatsScreen.kt",
@@ -123,6 +153,27 @@ class ThemeStyleSourceTest {
             assertTrue("$fileName should read liquid glass theme state", source.contains("isLiquidGlassTheme"))
             assertTrue("$fileName should use shared liquid glass panel", source.contains("liquidGlassPanel"))
         }
+    }
+
+    @Test
+    fun appRoutingSmallSurfacesUseLiquidGlassPanels() {
+        val source = File("src/main/java/com/kunk/singbox/ui/screens/AppRoutingComponents.kt").readText()
+
+        assertTrue(source.contains("routingIconPanel("))
+        assertTrue(source.contains("routingEmptySelectionPanel("))
+        assertTrue(source.contains("routingMoreCountPanel("))
+        assertTrue(source.contains("routingStatusBadgePanel("))
+        assertTrue(source.contains("routingGroupIconPanel("))
+        assertTrue(source.contains("routingSelectablePanel(isSelected: Boolean)"))
+        assertFalse(source.contains("isLiquidGlassTheme() && isSelected"))
+    }
+
+    @Test
+    fun trafficStatsSmallSurfacesUseLiquidGlassPanels() {
+        val source = File("src/main/java/com/kunk/singbox/ui/screens/TrafficStatsScreen.kt").readText()
+
+        assertTrue(source.contains("trafficStatIconPanel("))
+        assertTrue(source.contains("trafficRankPanel("))
     }
 
     @Test
@@ -179,6 +230,9 @@ class ThemeStyleSourceTest {
         assertTrue(ruleSetHub.contains("RuleSetBadge("))
         assertTrue(ruleSetsDialogs.contains("RuleSetBadge("))
         assertTrue(connectionInfo.contains("connectionEmptyIconPanel()"))
+        assertTrue(connectionInfo.contains("connectionMetaBadgePanel("))
+        assertTrue(connectionInfo.contains("connectionProtocolBadgePanel("))
+        assertTrue(connectionInfo.contains("connectionCloseButtonPanel("))
     }
 
     @Test
@@ -196,10 +250,13 @@ class ThemeStyleSourceTest {
         val connectionInfo = File("src/main/java/com/kunk/singbox/ui/screens/ConnectionInfoScreen.kt").readText()
         val ruleSetHub = File("src/main/java/com/kunk/singbox/ui/screens/RuleSetHubScreen.kt").readText()
         val profileEditor = File("src/main/java/com/kunk/singbox/ui/screens/ProfileEditorScreen.kt").readText()
+        val logs = File("src/main/java/com/kunk/singbox/ui/screens/LogsScreen.kt").readText()
 
         assertTrue(nodes.contains("nodeSearchPanel()"))
         assertTrue(connectionInfo.contains("connectionSearchPanel()"))
         assertTrue(ruleSetHub.contains("RuleSetHubSearchField("))
+        assertTrue(ruleSetHub.contains("liquidGlassTextFieldPanel("))
+        assertTrue(logs.contains("liquidGlassTextFieldPanel("))
         assertTrue(profileEditor.contains("profileEditorPanel()"))
     }
 
@@ -214,6 +271,64 @@ class ThemeStyleSourceTest {
         assertTrue(fields.contains("liquidGlassTextFieldPanel("))
         assertTrue(fields.contains("liquidGlassTextFieldContainerColor("))
         assertTrue(fields.contains("liquidGlassTextFieldBorderColor("))
+    }
+
+    @Test
+    fun dialogAndEditorTextFieldsUseLiquidGlassPanels() {
+        val componentFiles = listOf(
+            "AddNodeDialog.kt",
+            "AppMultiSelectDialog.kt",
+            "NodeSelectionDialogs.kt",
+            "SelectProfileDialog.kt"
+        )
+        val screenFiles = listOf(
+            "AppRoutingComponents.kt",
+            "ProfilesScreenDialogs.kt"
+        )
+
+        componentFiles.forEach { fileName ->
+            val source = File("src/main/java/com/kunk/singbox/ui/components/$fileName").readText()
+            assertTrue(
+                "$fileName should use liquid glass text field panel",
+                source.contains("liquidGlassTextFieldPanel(")
+            )
+            assertTrue(
+                "$fileName should make liquid glass text field containers transparent",
+                source.contains("liquidGlassTextFieldContainerColor(")
+            )
+            assertTrue(
+                "$fileName should make liquid glass text field borders transparent",
+                source.contains("liquidGlassTextFieldBorderColor(")
+            )
+        }
+        screenFiles.forEach { fileName ->
+            val source = File("src/main/java/com/kunk/singbox/ui/screens/$fileName").readText()
+            assertTrue(
+                "$fileName should use liquid glass text field panel",
+                source.contains("liquidGlassTextFieldPanel(")
+            )
+            assertTrue(
+                "$fileName should make liquid glass text field containers transparent",
+                source.contains("liquidGlassTextFieldContainerColor(")
+            )
+            assertTrue(
+                "$fileName should make liquid glass text field borders transparent",
+                source.contains("liquidGlassTextFieldBorderColor(")
+            )
+        }
+    }
+
+    @Test
+    fun nestedDialogSelectionSurfacesUseLiquidGlassPanels() {
+        val domainRules = File("src/main/java/com/kunk/singbox/ui/screens/DomainRulesScreen.kt").readText()
+        val profileDialogs = File("src/main/java/com/kunk/singbox/ui/screens/ProfilesScreenDialogs.kt").readText()
+        val nodeDetailDialogs = File("src/main/java/com/kunk/singbox/ui/screens/NodeDetailDialogs.kt").readText()
+
+        assertTrue(domainRules.contains("domainRuleSelectorPanel("))
+        assertTrue(profileDialogs.contains("profileDnsMenuPanel("))
+        assertTrue(profileDialogs.contains("profileDnsOptionPanel("))
+        assertTrue(nodeDetailDialogs.contains("nodeDetailSelectionPanel("))
+        assertTrue(nodeDetailDialogs.contains("nodeDetailGroupPanel("))
     }
 
     @Test
