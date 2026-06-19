@@ -57,6 +57,9 @@ class ThemeStyleSourceTest {
         assertTrue(source.contains("collectIsPressedAsState"))
         assertTrue(source.contains("animateFloatAsState"))
         assertTrue(source.contains("graphicsLayer"))
+        assertTrue(source.contains(".consumeUnclaimedClicks()"))
+        assertTrue(source.contains("PointerEventPass.Final"))
+        assertTrue(source.contains("change.consume()"))
     }
 
     @Test

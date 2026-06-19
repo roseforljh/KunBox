@@ -50,6 +50,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
@@ -253,6 +255,7 @@ private fun LiquidGlassCapsule(
             .clip(liquidGlassButtonShape)
             .background(brush = liquidGlassCapsuleBrush(isDark = isDark))
             .border(BorderStroke(1.dp, colors.capsuleBorderColor), liquidGlassButtonShape)
+            .consumeUnclaimedClicks()
             .padding(horizontal = 6.dp, vertical = 2.dp),
         contentAlignment = Alignment.Center
     ) {
@@ -263,6 +266,21 @@ private fun LiquidGlassCapsule(
             maxWidth = maxWidth
         )
         content()
+    }
+}
+
+private fun Modifier.consumeUnclaimedClicks(): Modifier {
+    return pointerInput(Unit) {
+        awaitPointerEventScope {
+            while (true) {
+                val event = awaitPointerEvent(PointerEventPass.Final)
+                event.changes.forEach { change ->
+                    if (!change.isConsumed) {
+                        change.consume()
+                    }
+                }
+            }
+        }
     }
 }
 
