@@ -284,9 +284,12 @@ class ThemeStyleSourceTest {
     @Test
     fun logsFiltersUseLiquidGlassPanels() {
         val logsScreen = File("src/main/java/com/kunk/singbox/ui/screens/LogsScreen.kt").readText()
+        val chipControls = File("src/main/java/com/kunk/singbox/ui/theme/LiquidGlassChipControls.kt").readText()
 
-        assertTrue(logsScreen.contains("isLiquidGlassTheme"))
-        assertTrue(logsScreen.contains("liquidGlassPanel"))
+        assertTrue(chipControls.contains("fun LiquidGlassFilterChip("))
+        assertTrue(chipControls.contains("isLiquidGlassTheme"))
+        assertTrue(chipControls.contains("liquidGlassPanel"))
+        assertTrue(logsScreen.contains("LiquidGlassFilterChip("))
         assertTrue(logsScreen.contains("LogCategoryChip("))
     }
 

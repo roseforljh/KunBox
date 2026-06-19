@@ -37,6 +37,24 @@ class LiquidGlassMaterialCallCoverageTest {
     }
 
     @Test
+    fun directMaterialSurfaceEntrypointsStayInAllowList() {
+        val mainDir = File("src/main/java/com/kunk/singbox")
+        val surfaceCalls = listDirectMaterialCalls(
+            sourceDir = mainDir,
+            callNames = listOf(
+                "Card",
+                "Surface",
+                "NavigationBar",
+                "NavigationBarItem",
+                "DropdownMenu",
+                "FilterChip"
+            )
+        )
+
+        assertEquals(directMaterialSurfaceAllowList, surfaceCalls)
+    }
+
+    @Test
     fun materialControlCallsKeepLiquidGlassParameters() {
         val uiDir = File("src/main/java/com/kunk/singbox/ui")
         val failures = materialCallRules().flatMap { rule ->
@@ -51,6 +69,17 @@ class LiquidGlassMaterialCallCoverageTest {
         val chipControls = File("src/main/java/com/kunk/singbox/ui/theme/LiquidGlassChipControls.kt").readText()
 
         assertTrue(chipControls.contains("else {\n        FilterChip("))
+    }
+
+    @Test
+    fun liquidGlassChipUsesPressedFeedbackWithoutMaterialRipple() {
+        val chipControls = File("src/main/java/com/kunk/singbox/ui/theme/LiquidGlassChipControls.kt").readText()
+
+        assertTrue(chipControls.contains("MutableInteractionSource"))
+        assertTrue(chipControls.contains("collectIsPressedAsState"))
+        assertTrue(chipControls.contains("animateFloatAsState"))
+        assertTrue(chipControls.contains("graphicsLayer"))
+        assertTrue(chipControls.contains("indication = null"))
     }
 
     @Test
@@ -118,6 +147,30 @@ class LiquidGlassMaterialCallCoverageTest {
                         }
                     }
             }
+            .toList()
+    }
+
+    private fun listDirectMaterialCalls(
+        sourceDir: File,
+        callNames: List<String>
+    ): List<String> {
+        val callPatterns = callNames.map { callName ->
+            callName to Regex("(?<![A-Za-z0-9_.])${Regex.escape(callName)}\\s*\\(")
+        }
+        return sourceDir.walkTopDown()
+            .filter { file -> file.extension == "kt" }
+            .flatMap { file ->
+                val relativePath = file.relativeTo(sourceDir).invariantSeparatorsPath
+                file.readLines()
+                    .asSequence()
+                    .mapIndexedNotNull { index, line ->
+                        val callName = callPatterns.firstOrNull { (_, pattern) ->
+                            pattern.containsMatchIn(line)
+                        }?.first ?: return@mapIndexedNotNull null
+                        "$relativePath:${index + 1}:$callName:${line.trim()}"
+                    }
+            }
+            .sorted()
             .toList()
     }
 
@@ -302,6 +355,21 @@ class LiquidGlassMaterialCallCoverageTest {
             "layout/custom_barcode_scanner.xml:24:android:background=\"@android:color/transparent\"",
             "values/themes.xml:16:<item name=\"android:windowBackground\">@android:color/transparent</item>",
             "values/themes.xml:8:<item name=\"android:windowBackground\">@color/black</item>"
+        )
+
+        val directMaterialSurfaceAllowList = listOf(
+            "MainActivity.kt:350:Surface:Surface(",
+            "ui/components/AppNavBar.kt:111:NavigationBar:NavigationBar(",
+            "ui/components/AppNavBar.kt:164:NavigationBarItem:NavigationBarItem(",
+            "ui/components/ExportImportDialogs.kt:54:Card:Card(",
+            "ui/components/StandardCard.kt:42:Card:Card(",
+            "ui/components/StandardCard.kt:53:Card:Card(",
+            "ui/screens/ConnectionInfoScreen.kt:569:Card:Card(",
+            "ui/screens/ConnectionInfoScreen.kt:708:Card:Card(",
+            "ui/screens/RuleSetHubScreen.kt:319:Card:Card(",
+            "ui/theme/LiquidGlassChipControls.kt:75:FilterChip:FilterChip(",
+            "ui/theme/LiquidGlassMenuControls.kt:21:DropdownMenu:DropdownMenu(",
+            "ui/theme/LiquidGlassMenuControls.kt:31:DropdownMenu:DropdownMenu("
         )
     }
 }
