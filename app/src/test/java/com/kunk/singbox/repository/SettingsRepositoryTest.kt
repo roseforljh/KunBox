@@ -2,6 +2,7 @@ package com.kunk.singbox.repository
 
 import com.kunk.singbox.model.AppLanguage
 import com.kunk.singbox.model.AppSettings
+import com.kunk.singbox.model.AppThemeStyle
 import com.kunk.singbox.model.BackgroundPowerSavingDelay
 import com.kunk.singbox.model.CustomRule
 import com.kunk.singbox.model.IpVersionMode
@@ -34,6 +35,7 @@ class SettingsRepositoryTest {
     fun buildImportedSettingsImportsPreviouslySkippedFields() {
         val imported = AppSettings(
             appLanguage = AppLanguage.ENGLISH,
+            appThemeStyle = AppThemeStyle.LIQUID_GLASS,
             showNotificationSpeed = false,
             ipVersionMode = IpVersionMode.IPV6_ONLY,
             tunMtuAuto = false,
@@ -55,6 +57,7 @@ class SettingsRepositoryTest {
         )
 
         assertEquals(AppLanguage.ENGLISH, result.appLanguage)
+        assertEquals(AppThemeStyle.LIQUID_GLASS, result.appThemeStyle)
         assertFalse(result.showNotificationSpeed)
         assertEquals(IpVersionMode.IPV6_ONLY, result.ipVersionMode)
         assertFalse(result.tunMtuAuto)

@@ -100,6 +100,7 @@
     <string name="settings_data_management">Data Management</string>
     <string name="settings_about">About</string>
     <string name="settings_app_theme">App Theme</string>
+    <string name="settings_theme_style">Theme Style</string>
     <string name="settings_app_language">Language</string>
     <string name="settings_connection_startup">Connection &amp; Startup</string>
     <string name="settings_connection_startup_subtitle">Auto connect, reconnect</string>
@@ -648,6 +649,10 @@
     <string name="theme_system">Follow System</string>
     <string name="theme_light">Light Mode</string>
     <string name="theme_dark">Dark Mode</string>
+
+    <!-- Enum: AppThemeStyle -->
+    <string name="theme_style_default">Default</string>
+    <string name="theme_style_liquid_glass">Liquid Glass</string>
 
     <!-- Enum: AppLanguage -->
     <string name="language_system">Follow System</string>

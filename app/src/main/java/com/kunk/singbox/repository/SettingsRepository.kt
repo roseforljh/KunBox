@@ -19,6 +19,7 @@ import com.kunk.singbox.model.VpnRouteMode
 import com.kunk.singbox.model.GhProxyMirror
 import com.kunk.singbox.model.IpVersionMode
 import com.kunk.singbox.model.AppThemeMode
+import com.kunk.singbox.model.AppThemeStyle
 import com.kunk.singbox.model.AppLanguage
 import com.kunk.singbox.model.NodeSortType
 import com.kunk.singbox.model.NodeFilter
@@ -124,6 +125,10 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun setAppTheme(value: AppThemeMode) {
         settingsStore.updateSettingsAndWait { it.copy(appTheme = value) }
+    }
+
+    suspend fun setAppThemeStyle(value: AppThemeStyle) {
+        settingsStore.updateSettingsAndWait { it.copy(appThemeStyle = value) }
     }
 
     suspend fun setAppLanguage(value: AppLanguage) {
@@ -547,6 +552,7 @@ class SettingsRepository(private val context: Context) {
                     imported.ruleSetAutoUpdateInterval
                 )
             val normalized = imported.copy(
+                appThemeStyle = normalizeAppThemeStyle(imported),
                 fakeIpRange = normalizeFakeIpRange(imported),
                 proxyPort = sanitizeProxyPort(imported.proxyPort),
                 latencyTestConcurrency = sanitizeLatencyTestConcurrency(imported.latencyTestConcurrency),
@@ -570,6 +576,10 @@ class SettingsRepository(private val context: Context) {
         private fun normalizeFakeIpRange(settings: AppSettings): String {
             val fakeIpRange: String? = runCatching { settings.fakeIpRange }.getOrNull()
             return fakeIpRange?.takeIf { it.isNotBlank() } ?: AppSettings.DEFAULT_FAKE_IP_RANGE
+        }
+
+        private fun normalizeAppThemeStyle(settings: AppSettings): AppThemeStyle {
+            return runCatching { settings.appThemeStyle }.getOrNull() ?: AppThemeStyle.DEFAULT
         }
 
         private fun sanitizeProxyPort(value: Int): Int {

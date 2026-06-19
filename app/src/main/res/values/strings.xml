@@ -100,6 +100,7 @@
     <string name="settings_data_management">数据管理</string>
     <string name="settings_about">关于</string>
     <string name="settings_app_theme">应用主题</string>
+    <string name="settings_theme_style">主题样式</string>
     <string name="settings_app_language">应用语言</string>
     <string name="settings_connection_startup">连接与启动</string>
     <string name="settings_connection_startup_subtitle">自动连接、断线重连</string>
@@ -651,6 +652,10 @@
     <string name="theme_system">跟随系统</string>
     <string name="theme_light">亮色模式</string>
     <string name="theme_dark">暗色模式</string>
+
+    <!-- Enum: AppThemeStyle -->
+    <string name="theme_style_default">默认</string>
+    <string name="theme_style_liquid_glass">液态玻璃</string>
 
     <!-- Enum: AppLanguage -->
     <string name="language_system">跟随系统</string>

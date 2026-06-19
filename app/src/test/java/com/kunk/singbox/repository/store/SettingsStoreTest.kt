@@ -3,6 +3,7 @@ package com.kunk.singbox.repository.store
 import com.google.gson.Gson
 import com.kunk.singbox.database.entity.SettingsEntity
 import com.kunk.singbox.model.AppSettings
+import com.kunk.singbox.model.AppThemeStyle
 import com.kunk.singbox.model.AppGroup
 import com.kunk.singbox.model.AppInfo
 import com.kunk.singbox.model.AppRule
@@ -89,6 +90,11 @@ class SettingsStoreTest {
     }
 
     @Test
+    fun testDefaultAppThemeStyleIsDefault() {
+        assertEquals(AppThemeStyle.DEFAULT, AppSettings().appThemeStyle)
+    }
+
+    @Test
     fun testMigrateSettingsAddsIpv6RangeToLegacyDefaultFakeIpRange() {
         val migrated = SettingsStore.migrateSettings(
             version = 6,
@@ -123,6 +129,15 @@ class SettingsStoreTest {
         val migrated = SettingsStore.migrateSettings(version = 7, settings = settings)
 
         assertEquals("", migrated.trustedWifiSsids)
+    }
+
+    @Test
+    fun testMigrateSettingsRecoversNullAppThemeStyle() {
+        val settings = Gson().fromJson("""{"appThemeStyle":null}""", AppSettings::class.java)
+
+        val migrated = SettingsStore.migrateSettings(version = 8, settings = settings)
+
+        assertEquals(AppThemeStyle.DEFAULT, migrated.appThemeStyle)
     }
 
     @Test

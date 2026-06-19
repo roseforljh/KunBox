@@ -10,6 +10,7 @@ import com.kunk.singbox.model.CustomRule
 import com.kunk.singbox.model.DefaultRule
 import com.kunk.singbox.model.DnsStrategy
 import com.kunk.singbox.model.AppThemeMode
+import com.kunk.singbox.model.AppThemeStyle
 import com.kunk.singbox.model.AppLanguage
 import com.kunk.singbox.model.ExportData
 import com.kunk.singbox.model.ExportDataSummary
@@ -204,6 +205,10 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 
     fun setAppTheme(value: AppThemeMode) {
         viewModelScope.launch { repository.setAppTheme(value) }
+    }
+
+    fun setAppThemeStyle(value: AppThemeStyle) {
+        viewModelScope.launch { repository.setAppThemeStyle(value) }
     }
 
     fun setAppLanguage(value: AppLanguage) {

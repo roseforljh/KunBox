@@ -24,6 +24,7 @@ data class AppSettings(
     @SerializedName("trustedWifiSsids") val trustedWifiSsids: String = "",
     @SerializedName("excludeFromRecent") val excludeFromRecent: Boolean = false,
     @SerializedName("appTheme") val appTheme: AppThemeMode = AppThemeMode.SYSTEM,
+    @SerializedName("appThemeStyle") val appThemeStyle: AppThemeStyle = AppThemeStyle.DEFAULT,
     @SerializedName("appLanguage") val appLanguage: AppLanguage = AppLanguage.SYSTEM,
     @SerializedName("showNotificationSpeed") val showNotificationSpeed: Boolean = true,
 
@@ -225,6 +226,17 @@ enum class AppThemeMode(@StringRes val displayNameRes: Int) {
     companion object {
         fun fromDisplayName(name: String): AppThemeMode {
             return entries.find { it.name == name } ?: SYSTEM
+        }
+    }
+}
+
+enum class AppThemeStyle(@StringRes val displayNameRes: Int) {
+    @SerializedName("DEFAULT") DEFAULT(R.string.theme_style_default),
+    @SerializedName("LIQUID_GLASS") LIQUID_GLASS(R.string.theme_style_liquid_glass);
+
+    companion object {
+        fun fromDisplayName(name: String): AppThemeStyle {
+            return entries.find { it.name == name } ?: DEFAULT
         }
     }
 }

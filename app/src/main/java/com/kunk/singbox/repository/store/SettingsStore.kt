@@ -7,6 +7,7 @@ import com.google.gson.GsonBuilder
 import com.kunk.singbox.database.AppDatabase
 import com.kunk.singbox.database.entity.SettingsEntity
 import com.kunk.singbox.model.AppSettings
+import com.kunk.singbox.model.AppThemeStyle
 import com.kunk.singbox.model.RuleSetOutboundMode
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -29,6 +30,7 @@ class SettingsStore private constructor(context: Context) {
         private const val AUTO_ROUTE_MIGRATION_VERSION = 6
         private const val FAKE_IP_RANGE_MIGRATION_VERSION = 7
         private const val NETWORK_AUTO_SWITCH_MIGRATION_VERSION = 8
+        private const val APP_THEME_STYLE_MIGRATION_VERSION = 9
         private const val LEGACY_DEFAULT_FAKE_IP_RANGE = "198.18.0.0/15"
 
         @Volatile
@@ -101,6 +103,7 @@ class SettingsStore private constructor(context: Context) {
 
             result = migrateFakeIpRange(version, result)
             result = migrateNetworkAutoSwitch(version, result)
+            result = migrateAppThemeStyle(version, result)
 
             return result
         }
@@ -129,6 +132,15 @@ class SettingsStore private constructor(context: Context) {
             }
 
             return settings.copy(trustedWifiSsids = trustedWifiSsids.orEmpty())
+        }
+
+        private fun migrateAppThemeStyle(version: Int, settings: AppSettings): AppSettings {
+            val appThemeStyle: AppThemeStyle? = runCatching { settings.appThemeStyle }.getOrNull()
+            if (version >= APP_THEME_STYLE_MIGRATION_VERSION && appThemeStyle != null) {
+                return settings
+            }
+
+            return settings.copy(appThemeStyle = appThemeStyle ?: AppThemeStyle.DEFAULT)
         }
 
         internal fun shouldPersistMigratedSettings(
