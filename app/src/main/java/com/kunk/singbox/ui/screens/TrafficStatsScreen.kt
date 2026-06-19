@@ -35,7 +35,6 @@ import androidx.compose.material.icons.rounded.ArrowUpward
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -72,6 +71,7 @@ import com.kunk.singbox.repository.NodeTrafficStats
 import com.kunk.singbox.repository.TrafficPeriod
 import com.kunk.singbox.ui.components.ConfirmDialog
 import com.kunk.singbox.ui.components.StandardCard
+import com.kunk.singbox.ui.theme.LiquidGlassFilterChip
 import com.kunk.singbox.ui.theme.isLiquidGlassTheme
 import com.kunk.singbox.ui.theme.liquidGlassIconButtonPanel
 import com.kunk.singbox.ui.theme.liquidGlassPanel
@@ -308,39 +308,21 @@ private fun PeriodSelector(
                 TrafficPeriod.ALL_TIME -> stringResource(R.string.traffic_stats_period_all)
             }
             val isSelected = selectedPeriod == period
-            if (useLiquidGlass) {
-                Box(
-                    modifier = Modifier
-                        .liquidGlassPanel(
-                            shape = CircleShape,
-                            selected = isSelected,
-                            shadowElevation = 6.dp
-                        )
-                        .clickable { onPeriodSelected(period) }
-                        .padding(horizontal = 12.dp, vertical = 8.dp)
-                ) {
+            LiquidGlassFilterChip(
+                selected = isSelected,
+                onClick = { onPeriodSelected(period) },
+                label = {
                     Text(
                         text = label,
                         style = MaterialTheme.typography.labelLarge,
-                        fontWeight = FontWeight.Medium,
-                        color = if (isSelected) {
-                            MaterialTheme.colorScheme.primary
-                        } else {
-                            MaterialTheme.colorScheme.onSurfaceVariant
-                        }
+                        fontWeight = FontWeight.Medium
                     )
-                }
-            } else {
-                FilterChip(
-                    selected = isSelected,
-                    onClick = { onPeriodSelected(period) },
-                    label = { Text(label) },
-                    colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = MaterialTheme.colorScheme.primary,
-                        selectedLabelColor = MaterialTheme.colorScheme.onPrimary
-                    )
+                },
+                colors = FilterChipDefaults.filterChipColors(
+                    selectedContainerColor = MaterialTheme.colorScheme.primary,
+                    selectedLabelColor = MaterialTheme.colorScheme.onPrimary
                 )
-            }
+            )
         }
     }
 }

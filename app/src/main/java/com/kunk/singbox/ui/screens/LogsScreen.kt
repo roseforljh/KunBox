@@ -2,10 +2,8 @@ package com.kunk.singbox.ui.screens
 
 import com.kunk.singbox.R
 import android.content.Intent
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -18,7 +16,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -28,7 +25,6 @@ import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -51,13 +47,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
-import com.kunk.singbox.ui.theme.isLiquidGlassTheme
-import com.kunk.singbox.ui.theme.liquidGlassPanel
 import com.kunk.singbox.ui.theme.liquidGlassTextFieldBorderColor
 import com.kunk.singbox.ui.theme.liquidGlassTextFieldContainerColor
 import com.kunk.singbox.ui.theme.liquidGlassTextFieldPanel
 import com.kunk.singbox.ui.theme.liquidGlassIconButtonPanel
 import com.kunk.singbox.viewmodel.LogViewModel
+import com.kunk.singbox.ui.theme.LiquidGlassFilterChip
 import com.kunk.singbox.ui.theme.liquidGlassTopAppBarContainerColor
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -68,7 +63,6 @@ fun LogsScreen(navController: NavController, viewModel: LogViewModel = viewModel
     val selectedCategory by viewModel.selectedCategory.collectAsState()
     val context = LocalContext.current
     val listState = rememberLazyListState()
-    val useLiquidGlass = isLiquidGlassTheme()
 
     Scaffold(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
@@ -146,7 +140,6 @@ fun LogsScreen(navController: NavController, viewModel: LogViewModel = viewModel
             LogsCategoryRow(
                 categories = viewModel.categories,
                 selectedCategory = selectedCategory,
-                useLiquidGlass = useLiquidGlass,
                 onCategorySelected = { viewModel.setCategory(it) }
             )
 
@@ -239,7 +232,6 @@ private fun LogsSearchField(
 private fun LogsCategoryRow(
     categories: List<String>,
     selectedCategory: String?,
-    useLiquidGlass: Boolean,
     onCategorySelected: (String) -> Unit
 ) {
     Row(
@@ -253,7 +245,6 @@ private fun LogsCategoryRow(
             LogCategoryChip(
                 label = category,
                 selected = selectedCategory == category,
-                useLiquidGlass = useLiquidGlass,
                 onClick = { onCategorySelected(category) }
             )
         }
@@ -264,36 +255,17 @@ private fun LogsCategoryRow(
 private fun LogCategoryChip(
     label: String,
     selected: Boolean,
-    useLiquidGlass: Boolean,
     onClick: () -> Unit
 ) {
-    if (useLiquidGlass) {
-        Box(
-            modifier = Modifier
-                .liquidGlassPanel(
-                    shape = CircleShape,
-                    selected = selected,
-                    shadowElevation = 6.dp
-                )
-                .clickable(onClick = onClick)
-                .padding(horizontal = 12.dp, vertical = 8.dp)
-        ) {
+    LiquidGlassFilterChip(
+        selected = selected,
+        onClick = onClick,
+        label = {
             Text(
                 text = label,
                 fontSize = 12.sp,
-                fontWeight = FontWeight.Medium,
-                color = if (selected) {
-                    MaterialTheme.colorScheme.primary
-                } else {
-                    MaterialTheme.colorScheme.onSurfaceVariant
-                }
+                fontWeight = FontWeight.Medium
             )
         }
-    } else {
-        FilterChip(
-            selected = selected,
-            onClick = onClick,
-            label = { Text(label, fontSize = 12.sp) }
-        )
-    }
+    )
 }
