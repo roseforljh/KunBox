@@ -273,6 +273,7 @@ fun NodeCard(
     }
 }
 
+@Suppress("LongParameterList", "LongMethod", "CognitiveComplexMethod")
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun NodeGridCard(
@@ -281,7 +282,6 @@ fun NodeGridCard(
     latency: Long? = null,
     isSelected: Boolean,
     isTesting: Boolean = false,
-    trafficUsed: Long = 0,
     onClick: () -> Unit,
     onEdit: () -> Unit,
     onExport: () -> Unit,
@@ -291,7 +291,11 @@ fun NodeGridCard(
 ) {
     var showMenu by remember { mutableStateOf(false) }
 
-    val borderColor = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
+    val borderColor = if (isSelected) {
+        MaterialTheme.colorScheme.primary
+    } else {
+        MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
+    }
     val borderWidth = if (isSelected) 2.dp else 1.dp
 
     Box(
@@ -397,8 +401,14 @@ fun NodeGridCard(
                 ) {
                     DropdownMenuItem(
                         text = {
-                            Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                                Text(stringResource(R.string.common_edit), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Box(
+                                modifier = Modifier.fillMaxWidth(),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    stringResource(R.string.common_edit),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
                             }
                         },
                         onClick = {
@@ -408,8 +418,14 @@ fun NodeGridCard(
                     )
                     DropdownMenuItem(
                         text = {
-                            Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                                Text(stringResource(R.string.common_export), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Box(
+                                modifier = Modifier.fillMaxWidth(),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    stringResource(R.string.common_export),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
                             }
                         },
                         onClick = {
@@ -419,8 +435,14 @@ fun NodeGridCard(
                     )
                     DropdownMenuItem(
                         text = {
-                            Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                                Text(stringResource(R.string.common_latency), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Box(
+                                modifier = Modifier.fillMaxWidth(),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    stringResource(R.string.common_latency),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
                             }
                         },
                         onClick = {
@@ -430,8 +452,14 @@ fun NodeGridCard(
                     )
                     DropdownMenuItem(
                         text = {
-                            Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                                Text(stringResource(R.string.common_delete), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Box(
+                                modifier = Modifier.fillMaxWidth(),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    stringResource(R.string.common_delete),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
                             }
                         },
                         onClick = {

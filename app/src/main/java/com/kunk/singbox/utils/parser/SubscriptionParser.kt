@@ -5,6 +5,7 @@ import com.kunk.singbox.model.Outbound
 import com.kunk.singbox.model.SingBoxConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import java.net.URLDecoder
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -97,6 +98,8 @@ class SubscriptionManager(private val parsers: List<SubscriptionParser>) {
 
     companion object {
         private const val TAG = "SubscriptionManager"
+        private val FILENAME_REGEX =
+            """filename\*?=\s*(?:([^'"]*)'[^']*')?["']?([^"';]*)["']?""".toRegex(RegexOption.IGNORE_CASE)
 
         /**
          */
@@ -140,36 +143,47 @@ class SubscriptionManager(private val parsers: List<SubscriptionParser>) {
         }
 
         fun parseSubscriptionNameFromHeader(profileTitle: String?, contentDisposition: String?): String? {
-            var rawName: String? = null
-            if (!profileTitle.isNullOrBlank()) {
-                rawName = try {
-                    java.net.URLDecoder.decode(profileTitle, "UTF-8")
-                } catch (e: Exception) {
-                    profileTitle
-                }
-            } else if (!contentDisposition.isNullOrBlank()) {
-                val filenameRegex = """filename\*?=\s*(?:([^'"]*)'[^']*')?["']?([^"';]*)["']?""".toRegex(RegexOption.IGNORE_CASE)
-                val match = filenameRegex.find(contentDisposition)
-                if (match != null) {
-                    val charset = match.groupValues[1].takeIf { it.isNotBlank() }
-                    val encodedFilename = match.groupValues[2]
-                    if (charset != null) {
-                        try {
-                            rawName = java.net.URLDecoder.decode(encodedFilename, charset)
-                        } catch (e: Exception) {
-                            // ignore
-                        }
-                    }
-                    if (rawName == null) {
-                        rawName = try {
-                            java.net.URLDecoder.decode(encodedFilename, "UTF-8")
-                        } catch (e: Exception) {
-                            encodedFilename
-                        }
-                    }
-                }
+            val rawName = parseProfileTitleName(profileTitle)
+                ?: parseContentDispositionName(contentDisposition)
+            return rawName?.removeKnownSubscriptionSuffix()
+        }
+
+        private fun parseProfileTitleName(profileTitle: String?): String? {
+            if (profileTitle.isNullOrBlank()) {
+                return null
             }
-            return rawName?.removeSuffix(".yaml")?.removeSuffix(".yml")?.removeSuffix(".json")
+            return decodeHeaderValue(profileTitle, fallback = profileTitle)
+        }
+
+        private fun parseContentDispositionName(contentDisposition: String?): String? {
+            if (contentDisposition.isNullOrBlank()) {
+                return null
+            }
+            val match = FILENAME_REGEX.find(contentDisposition) ?: return null
+            val charset = match.groupValues[1].takeIf { it.isNotBlank() }
+            val encodedFilename = match.groupValues[2]
+
+            return decodeHeaderValue(encodedFilename, charset = charset, fallback = null)
+                ?: decodeHeaderValue(encodedFilename, fallback = encodedFilename)
+        }
+
+        private fun decodeHeaderValue(
+            value: String,
+            charset: String? = "UTF-8",
+            fallback: String?
+        ): String? {
+            return try {
+                URLDecoder.decode(value, charset ?: "UTF-8")
+            } catch (e: Exception) {
+                Log.d(TAG, "Failed to decode subscription header value with charset=$charset", e)
+                fallback
+            }
+        }
+
+        private fun String.removeKnownSubscriptionSuffix(): String {
+            return removeSuffix(".yaml")
+                .removeSuffix(".yml")
+                .removeSuffix(".json")
         }
     }
 

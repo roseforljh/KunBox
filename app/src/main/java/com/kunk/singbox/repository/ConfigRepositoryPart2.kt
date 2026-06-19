@@ -459,6 +459,31 @@ abstract class ConfigRepositoryPart2(context: Context) : ConfigRepositoryPart1(c
         )
     }
 
+    private fun handleUnsuccessfulSubscriptionResponse(
+        responseCode: Int,
+        responseMessage: String,
+        context: ConfigRepositorySubscriptionAttemptContext,
+        costMs: Long
+    ): ConfigRepositorySubscriptionAttemptResult {
+        val shouldStopFallback = ConfigRepository.shouldStopSubscriptionFallback(httpStatusCode = responseCode)
+        val error = Exception("HTTP $responseCode: $responseMessage")
+        logSubscriptionAttempt(
+            level = Log.WARN,
+            message = if (shouldStopFallback) {
+                "Subscription request hit terminal response"
+            } else {
+                "Subscription request failed"
+            },
+            context = context,
+            costMs = costMs,
+            extra = "code=$responseCode"
+        )
+        if (!shouldStopFallback) {
+            throw error
+        }
+        return ConfigRepositorySubscriptionAttemptResult(shouldStopFallback = true, terminalError = error)
+    }
+
     protected override fun executeSubscriptionAttempt(
         client: OkHttpClient,
         url: String,
@@ -472,23 +497,12 @@ abstract class ConfigRepositoryPart2(context: Context) : ConfigRepositoryPart1(c
         client.newCall(request).execute().use { response ->
             val costMs = System.currentTimeMillis() - startedAt
             if (!response.isSuccessful) {
-                val shouldStopFallback = ConfigRepository.shouldStopSubscriptionFallback(httpStatusCode = response.code)
-                val error = Exception("HTTP ${response.code}: ${response.message}")
-                logSubscriptionAttempt(
-                    level = Log.WARN,
-                    message = if (shouldStopFallback) {
-                        "Subscription request hit terminal response"
-                    } else {
-                        "Subscription request failed"
-                    },
+                return handleUnsuccessfulSubscriptionResponse(
+                    responseCode = response.code,
+                    responseMessage = response.message,
                     context = context,
-                    costMs = costMs,
-                    extra = "code=${response.code}"
+                    costMs = costMs
                 )
-                if (!shouldStopFallback) {
-                    throw error
-                }
-                return ConfigRepositorySubscriptionAttemptResult(shouldStopFallback = true, terminalError = error)
             }
 
             val responseBody = response.body?.let { ConfigRepository.readSubscriptionResponseBody(it) }
@@ -635,12 +649,7 @@ abstract class ConfigRepositoryPart2(context: Context) : ConfigRepositoryPart1(c
             val userInfo = fetchResult.userInfo
 
             val defaultQrName = context.getString(R.string.profiles_qrcode_subscription)
-            val finalName = if ((name == defaultQrName || name.isBlank() || name == "扫码订阅" || name == "QR Code Subscription") &&
-                !fetchResult.subscriptionName.isNullOrBlank()) {
-                fetchResult.subscriptionName
-            } else {
-                name
-            }
+            val finalName = resolveSubscriptionProfileName(name, defaultQrName, fetchResult.subscriptionName)
 
             onProgress(context.getString(R.string.profiles_extracting_nodes, 0, 0))
 
@@ -773,5 +782,27 @@ abstract class ConfigRepositoryPart2(context: Context) : ConfigRepositoryPart1(c
             Log.e(ConfigRepository.TAG, "Failed to create custom profile", e)
             Result.failure(e)
         }
+    }
+
+    protected fun resolveSubscriptionProfileName(
+        currentName: String,
+        defaultQrName: String,
+        subscriptionName: String?
+    ): String {
+        if (subscriptionName.isNullOrBlank()) {
+            return currentName
+        }
+        return if (isDefaultSubscriptionProfileName(currentName, defaultQrName)) {
+            subscriptionName
+        } else {
+            currentName
+        }
+    }
+
+    private fun isDefaultSubscriptionProfileName(currentName: String, defaultQrName: String): Boolean {
+        return currentName.isBlank() ||
+            currentName == defaultQrName ||
+            currentName == "扫码订阅" ||
+            currentName == "QR Code Subscription"
     }
 }

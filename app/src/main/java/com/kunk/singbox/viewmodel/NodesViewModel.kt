@@ -32,6 +32,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.util.concurrent.atomic.AtomicInteger
 
+@Suppress("TooManyFunctions")
 class NodesViewModel(application: Application) : AndroidViewModel(application) {
     companion object {
         private const val TAG = "NodesViewModel"

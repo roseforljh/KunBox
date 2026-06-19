@@ -304,12 +304,11 @@ abstract class ConfigRepositoryPart4(context: Context) : ConfigRepositoryPart3(c
                 _nodes.value = newNodes
             }
             val defaultQrName = context.getString(R.string.profiles_qrcode_subscription)
-            val finalName = if ((profile.name == defaultQrName || profile.name.isBlank() || profile.name == "扫码订阅" || profile.name == "QR Code Subscription") &&
-                !fetchResult.subscriptionName.isNullOrBlank()) {
-                fetchResult.subscriptionName
-            } else {
-                profile.name
-            }
+            val finalName = resolveSubscriptionProfileName(
+                currentName = profile.name,
+                defaultQrName = defaultQrName,
+                subscriptionName = fetchResult.subscriptionName
+            )
 
             _profiles.update { list ->
                 list.map {
