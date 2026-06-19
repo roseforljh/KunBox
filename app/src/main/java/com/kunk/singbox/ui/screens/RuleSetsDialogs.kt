@@ -32,6 +32,45 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import com.kunk.singbox.viewmodel.DefaultRuleSetDownloadState
 import com.kunk.singbox.model.RuleSetOutboundMode
 import androidx.compose.ui.draw.scale
+import com.kunk.singbox.ui.theme.isLiquidGlassTheme
+import com.kunk.singbox.ui.theme.liquidGlassPanel
+import com.kunk.singbox.ui.theme.liquidGlassDialogContainerColor
+import com.kunk.singbox.ui.theme.liquidGlassDialogPanel
+
+@Composable
+private fun Modifier.ruleSetMenuPanel(shape: RoundedCornerShape = RoundedCornerShape(12.dp)): Modifier {
+    return if (isLiquidGlassTheme()) {
+        liquidGlassPanel(shape = shape, shadowElevation = 8.dp)
+    } else {
+        background(MaterialTheme.colorScheme.surfaceVariant, shape)
+    }
+}
+
+@Composable
+private fun RuleSetBadge(
+    text: String,
+    backgroundColor: Color,
+    contentColor: Color
+) {
+    val shape = RoundedCornerShape(4.dp)
+    Box(
+        modifier = Modifier
+            .then(
+                if (isLiquidGlassTheme()) {
+                    Modifier.liquidGlassPanel(shape = shape, selected = true, shadowElevation = 4.dp)
+                } else {
+                    Modifier.background(backgroundColor, shape)
+                }
+            )
+            .padding(horizontal = 4.dp, vertical = 2.dp)
+    ) {
+        Text(
+            text = text,
+            color = contentColor,
+            style = MaterialTheme.typography.labelSmall
+        )
+    }
+}
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -106,17 +145,11 @@ fun RuleSetItem(
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     } else {
-                        Surface(
-                            color = Color(0xFF2E7D32).copy(alpha = 0.8f),
-                            shape = RoundedCornerShape(4.dp)
-                        ) {
-                            Text(
-                                text = stringResource(R.string.common_ready),
-                                color = Color.White,
-                                style = MaterialTheme.typography.labelSmall,
-                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
-                            )
-                        }
+                        RuleSetBadge(
+                            text = stringResource(R.string.common_ready),
+                            backgroundColor = Color(0xFF2E7D32).copy(alpha = 0.8f),
+                            contentColor = Color.White
+                        )
                     }
                     Spacer(modifier = Modifier.width(6.dp))
                     val outboundMode = ruleSet.outboundMode ?: RuleSetOutboundMode.DIRECT
@@ -128,31 +161,19 @@ fun RuleSetItem(
                         RuleSetOutboundMode.NODE -> Color(0xFFE65100)
                         RuleSetOutboundMode.PROFILE -> Color(0xFF00838F)
                     }
-                    Surface(
-                        color = outboundColor.copy(alpha = 0.8f),
-                        shape = RoundedCornerShape(4.dp)
-                    ) {
-                        Text(
-                            text = outboundText,
-                            color = Color.White,
-                            style = MaterialTheme.typography.labelSmall,
-                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
-                        )
-                    }
+                    RuleSetBadge(
+                        text = outboundText,
+                        backgroundColor = outboundColor.copy(alpha = 0.8f),
+                        contentColor = Color.White
+                    )
                     Spacer(modifier = Modifier.width(6.dp))
                     val inbounds = ruleSet.inbounds ?: emptyList()
                     val inboundText = if (inbounds.isEmpty()) stringResource(R.string.common_all) else inbounds.joinToString(",")
-                    Surface(
-                        color = Color(0xFFFF8F00).copy(alpha = 0.8f),
-                        shape = RoundedCornerShape(4.dp)
-                    ) {
-                        Text(
-                            text = inboundText,
-                            color = Color.White,
-                            style = MaterialTheme.typography.labelSmall,
-                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
-                        )
-                    }
+                    RuleSetBadge(
+                        text = inboundText,
+                        backgroundColor = Color(0xFFFF8F00).copy(alpha = 0.8f),
+                        contentColor = Color.White
+                    )
                 }
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
@@ -201,8 +222,8 @@ fun RuleSetItem(
                                 expanded = showMenu,
                                 onDismissRequest = { showMenu = false },
                                 modifier = Modifier
-                                    .background(MaterialTheme.colorScheme.surfaceVariant)
                                     .width(100.dp)
+                                    .ruleSetMenuPanel()
                             ) {
                                 DropdownMenuItem(
                                     text = {
@@ -326,9 +347,10 @@ fun RuleSetEditorDialog(
     }
 
     AlertDialog(
+        modifier = Modifier.liquidGlassDialogPanel(RoundedCornerShape(24.dp)),
         onDismissRequest = onDismiss,
         shape = RoundedCornerShape(24.dp),
-        containerColor = MaterialTheme.colorScheme.surface,
+        containerColor = liquidGlassDialogContainerColor(),
         title = {
             Text(
                 text = if (initialRuleSet == null) stringResource(R.string.rulesets_add) else stringResource(R.string.rulesets_edit),
@@ -423,8 +445,9 @@ fun DefaultRuleSetProgressDialog(
     onCancel: () -> Unit
 ) {
     AlertDialog(
+        modifier = Modifier.liquidGlassDialogPanel(),
         onDismissRequest = {},
-        containerColor = MaterialTheme.colorScheme.surface,
+        containerColor = liquidGlassDialogContainerColor(),
         title = {
             Text(
                 text = stringResource(R.string.rulesets_add_default),

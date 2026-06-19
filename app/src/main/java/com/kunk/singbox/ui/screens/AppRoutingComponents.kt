@@ -37,6 +37,10 @@ import com.kunk.singbox.ui.components.StandardCard
 import com.kunk.singbox.ui.components.StyledTextField
 import com.kunk.singbox.ui.theme.Neutral500
 import com.kunk.singbox.ui.theme.Neutral700
+import com.kunk.singbox.ui.theme.isLiquidGlassTheme
+import com.kunk.singbox.ui.theme.liquidGlassPanel
+import com.kunk.singbox.ui.theme.liquidGlassDialogContainerColor
+import com.kunk.singbox.ui.theme.liquidGlassDialogPanel
 
 private const val APP_INFO_SEPARATOR = "\t"
 
@@ -57,6 +61,25 @@ private fun Set<AppInfo>.toSavedValues(): List<String> {
 
 private fun List<String>.toAppInfoSet(): Set<AppInfo> {
     return map { it.toAppInfo() }.toSet()
+}
+
+@Composable
+private fun Modifier.routingChipPanel(shape: RoundedCornerShape): Modifier {
+    return if (isLiquidGlassTheme()) {
+        liquidGlassPanel(shape = shape, shadowElevation = 6.dp)
+    } else {
+        background(Neutral700, shape)
+    }
+}
+
+@Composable
+private fun Modifier.routingSelectablePanel(isSelected: Boolean): Modifier {
+    val shape = RoundedCornerShape(8.dp)
+    return if (isLiquidGlassTheme() && isSelected) {
+        liquidGlassPanel(shape = shape, selected = true, shadowElevation = 4.dp)
+    } else {
+        background(if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.12f) else Color.Transparent, shape)
+    }
 }
 
 @Composable
@@ -234,9 +257,10 @@ fun AppRuleEditorDialog(
     }
 
     AlertDialog(
+        modifier = Modifier.liquidGlassDialogPanel(RoundedCornerShape(24.dp)),
         onDismissRequest = onDismiss,
         shape = RoundedCornerShape(24.dp),
-        containerColor = MaterialTheme.colorScheme.surface,
+        containerColor = liquidGlassDialogContainerColor(),
         title = { Text(text = if (initialRule == null) stringResource(R.string.app_rules_add) else stringResource(R.string.app_rules_edit), fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface) },
         text = {
             Column(modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(20.dp)) {
@@ -296,9 +320,10 @@ fun AppPickerDialog(apps: List<InstalledApp>, existingPackages: Set<String>, onS
     }
 
     AlertDialog(
+        modifier = Modifier.liquidGlassDialogPanel(RoundedCornerShape(20.dp)),
         onDismissRequest = onDismiss,
         shape = RoundedCornerShape(20.dp),
-        containerColor = MaterialTheme.colorScheme.surface,
+        containerColor = liquidGlassDialogContainerColor(),
         title = null,
         text = {
             Column(modifier = Modifier.fillMaxWidth().fillMaxHeight(0.8f)) {
@@ -527,8 +552,7 @@ fun SelectedAppChip(app: AppInfo, onRemove: () -> Unit) {
 
     Row(
         modifier = Modifier
-            .clip(RoundedCornerShape(20.dp))
-            .background(Neutral700)
+            .routingChipPanel(RoundedCornerShape(20.dp))
             .padding(start = 4.dp, end = 8.dp, top = 4.dp, bottom = 4.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -563,8 +587,7 @@ fun SelectableAppItem(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(8.dp))
-            .background(if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.12f) else Color.Transparent)
+            .routingSelectablePanel(isSelected)
             .clickable(onClick = onClick)
             .padding(horizontal = 8.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically
@@ -629,9 +652,10 @@ fun MultiAppSelectorDialog(
     }
 
     AlertDialog(
+        modifier = Modifier.liquidGlassDialogPanel(RoundedCornerShape(20.dp)),
         onDismissRequest = onDismiss,
         shape = RoundedCornerShape(20.dp),
-        containerColor = MaterialTheme.colorScheme.surface,
+        containerColor = liquidGlassDialogContainerColor(),
         title = null,
         text = {
             Column(modifier = Modifier.fillMaxWidth().fillMaxHeight(0.8f)) {
@@ -858,9 +882,10 @@ fun AppGroupEditorDialog(
     }
 
     AlertDialog(
+        modifier = Modifier.liquidGlassDialogPanel(RoundedCornerShape(24.dp)),
         onDismissRequest = onDismiss,
         shape = RoundedCornerShape(24.dp),
-        containerColor = MaterialTheme.colorScheme.surface,
+        containerColor = liquidGlassDialogContainerColor(),
         title = {
             Text(
                 text = if (initialGroup == null) stringResource(R.string.app_groups_create) else stringResource(R.string.app_groups_edit),

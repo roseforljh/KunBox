@@ -13,16 +13,48 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.kunk.singbox.model.ExportDataSummary
+import com.kunk.singbox.ui.theme.isLiquidGlassTheme
+import com.kunk.singbox.ui.theme.liquidGlassPanel
 import com.kunk.singbox.viewmodel.ExportState
 import com.kunk.singbox.viewmodel.ImportState
 import java.text.SimpleDateFormat
 import java.util.*
+
+@Suppress("FunctionNaming")
+@Composable
+private fun ExportImportCard(
+    modifier: Modifier = Modifier,
+    shape: Shape = MaterialTheme.shapes.large,
+    selected: Boolean = false,
+    containerColor: Color = MaterialTheme.colorScheme.surface,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    val useLiquidGlass = isLiquidGlassTheme()
+    Card(
+        modifier = if (useLiquidGlass) {
+            modifier.liquidGlassPanel(
+                shape = shape,
+                selected = selected,
+                shadowElevation = 20.dp
+            )
+        } else {
+            modifier
+        },
+        shape = shape,
+        colors = CardDefaults.cardColors(
+            containerColor = if (useLiquidGlass) Color.Transparent else containerColor
+        ),
+        content = content
+    )
+}
 
 /**
  */
@@ -41,7 +73,7 @@ fun ExportProgressDialog(
         },
         properties = DialogProperties(dismissOnBackPress = state !is ExportState.Exporting)
     ) {
-        Card(
+        ExportImportCard(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(16.dp),
@@ -134,7 +166,7 @@ fun ImportPreviewDialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false)
     ) {
-        Card(
+        ExportImportCard(
             modifier = Modifier
                 .fillMaxWidth(0.9f)
                 .padding(16.dp),
@@ -154,11 +186,9 @@ fun ImportPreviewDialog(
 
                 Spacer(modifier = Modifier.height(16.dp))
 
-                Card(
+                ExportImportCard(
                     modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant
-                    )
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant
                 ) {
                     Column(
                         modifier = Modifier
@@ -185,11 +215,10 @@ fun ImportPreviewDialog(
 
                 Spacer(modifier = Modifier.height(16.dp))
 
-                Card(
+                ExportImportCard(
                     modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.3f)
-                    )
+                    selected = true,
+                    containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.3f)
                 ) {
                     Row(
                         modifier = Modifier
@@ -277,7 +306,7 @@ fun ImportProgressDialog(
         },
         properties = DialogProperties(dismissOnBackPress = state !is ImportState.Importing)
     ) {
-        Card(
+        ExportImportCard(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(16.dp),
@@ -388,7 +417,7 @@ fun ValidatingDialog() {
         onDismissRequest = { },
         properties = DialogProperties(dismissOnBackPress = false)
     ) {
-        Card(
+        ExportImportCard(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(16.dp),

@@ -41,6 +41,8 @@ import com.kunk.singbox.viewmodel.ProfilesViewModel
 import com.kunk.singbox.viewmodel.SettingsViewModel
 import com.kunk.singbox.model.RuleSetOutboundMode
 import com.kunk.singbox.model.NodeUi
+import com.kunk.singbox.ui.theme.liquidGlassDialogContainerColor
+import com.kunk.singbox.ui.theme.liquidGlassDialogPanel
 import kotlinx.coroutines.launch
 
 internal val defaultRuleSetTags = setOf(
@@ -323,11 +325,12 @@ fun RuleSetsScreen(
     if (showInboundDialog && outboundEditingRuleSet != null) {
         val currentRuleSet = checkNotNull(outboundEditingRuleSet)
         AlertDialog(
+            modifier = Modifier.liquidGlassDialogPanel(RoundedCornerShape(24.dp)),
             onDismissRequest = {
                 showInboundDialog = false
                 outboundEditingRuleSet = null
             },
-            containerColor = MaterialTheme.colorScheme.surface,
+            containerColor = liquidGlassDialogContainerColor(),
             shape = RoundedCornerShape(24.dp),
             title = { Text(stringResource(R.string.rulesets_select_inbound), color = MaterialTheme.colorScheme.onSurface) },
             text = {

@@ -26,6 +26,17 @@ import com.kunk.singbox.ui.theme.PureWhite
 import com.kunk.singbox.ui.theme.SurfaceCard
 import com.kunk.singbox.ui.theme.TextPrimary
 import com.kunk.singbox.ui.theme.TextSecondary
+import com.kunk.singbox.ui.theme.isLiquidGlassTheme
+import com.kunk.singbox.ui.theme.liquidGlassPanel
+
+@Composable
+private fun Modifier.loadingDialogPanel(shape: RoundedCornerShape = RoundedCornerShape(28.dp)): Modifier {
+    return if (isLiquidGlassTheme()) {
+        liquidGlassPanel(shape = shape, shadowElevation = 24.dp)
+    } else {
+        background(SurfaceCard, shape)
+    }
+}
 
 /**
  */
@@ -46,7 +57,7 @@ fun AppListLoadingDialog(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(SurfaceCard, RoundedCornerShape(28.dp))
+                .loadingDialogPanel()
                 .padding(32.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
@@ -108,7 +119,7 @@ fun SimpleLoadingDialog(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(SurfaceCard, RoundedCornerShape(28.dp))
+                .loadingDialogPanel()
                 .padding(32.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {

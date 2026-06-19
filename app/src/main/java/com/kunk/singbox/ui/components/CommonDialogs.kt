@@ -46,6 +46,34 @@ import androidx.compose.material.icons.rounded.RadioButtonChecked
 import androidx.compose.material.icons.rounded.RadioButtonUnchecked
 import com.kunk.singbox.ui.theme.Destructive
 import com.kunk.singbox.ui.theme.Neutral500
+import com.kunk.singbox.ui.theme.isLiquidGlassTheme
+import com.kunk.singbox.ui.theme.liquidGlassPanel
+
+@Composable
+private fun Modifier.dialogPanel(shape: RoundedCornerShape = RoundedCornerShape(28.dp)): Modifier {
+    return if (isLiquidGlassTheme()) {
+        liquidGlassPanel(shape = shape, shadowElevation = 22.dp)
+    } else {
+        background(MaterialTheme.colorScheme.surface, shape)
+    }
+}
+
+@Composable
+private fun Modifier.dialogOptionPanel(isSelected: Boolean): Modifier {
+    val shape = RoundedCornerShape(12.dp)
+    return if (isLiquidGlassTheme() && isSelected) {
+        liquidGlassPanel(shape = shape, selected = true, shadowElevation = 4.dp)
+    } else {
+        background(
+            if (isSelected) {
+                MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)
+            } else {
+                Color.Transparent
+            },
+            shape
+        )
+    }
+}
 
 @Composable
 fun ConfirmDialog(
@@ -60,7 +88,7 @@ fun ConfirmDialog(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(28.dp))
+                .dialogPanel()
                 .padding(24.dp)
         ) {
             Text(
@@ -127,7 +155,7 @@ fun InputDialog(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(28.dp))
+                .dialogPanel()
                 .padding(24.dp)
         ) {
             Text(
@@ -245,7 +273,7 @@ fun SingleSelectDialog(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(28.dp))
+                .dialogPanel()
                 .padding(24.dp)
         ) {
             Text(
@@ -273,7 +301,7 @@ fun SingleSelectDialog(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(12.dp))
-                            .background(if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.1f) else Color.Transparent)
+                            .dialogOptionPanel(isSelected)
                             .clickable { tempSelectedIndex = index }
                             .padding(vertical = 12.dp, horizontal = 8.dp),
                         verticalAlignment = Alignment.CenterVertically

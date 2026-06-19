@@ -29,8 +29,37 @@ import com.kunk.singbox.model.RuleSetType
 import com.kunk.singbox.model.HubRuleSet
 import com.kunk.singbox.ui.components.AppNotificationManager
 import com.kunk.singbox.ui.components.StandardCard
+import com.kunk.singbox.ui.theme.isLiquidGlassTheme
+import com.kunk.singbox.ui.theme.liquidGlassPanel
 import com.kunk.singbox.viewmodel.RuleSetViewModel
 import com.kunk.singbox.viewmodel.SettingsViewModel
+
+@Composable
+private fun RuleSetBadge(
+    text: String,
+    backgroundColor: Color,
+    contentColor: Color,
+    modifier: Modifier = Modifier
+) {
+    val shape = RoundedCornerShape(4.dp)
+    Box(
+        modifier = modifier
+            .then(
+                if (isLiquidGlassTheme()) {
+                    Modifier.liquidGlassPanel(shape = shape, selected = true, shadowElevation = 4.dp)
+                } else {
+                    Modifier.background(backgroundColor, shape)
+                }
+            )
+            .padding(horizontal = 6.dp, vertical = 2.dp)
+    ) {
+        Text(
+            text = text,
+            color = contentColor,
+            style = MaterialTheme.typography.labelSmall
+        )
+    }
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -100,31 +129,9 @@ fun RuleSetHubScreen(
         ) {
             // Search Bar
             StandardCard(modifier = Modifier.padding(16.dp)) {
-                OutlinedTextField(
-                    value = searchQuery,
-                    onValueChange = { searchQuery = it },
-                    placeholder = { Text(stringResource(R.string.common_search), color = MaterialTheme.colorScheme.onSurfaceVariant) },
-                    leadingIcon = {
-                        Icon(
-                            Icons.Rounded.Search,
-                            contentDescription = stringResource(R.string.common_search),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(4.dp),
-                    singleLine = true,
-                    shape = RoundedCornerShape(12.dp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedContainerColor = Color.Transparent,
-                        unfocusedContainerColor = Color.Transparent,
-                        focusedBorderColor = Color.Transparent,
-                        unfocusedBorderColor = Color.Transparent,
-                        cursorColor = MaterialTheme.colorScheme.onSurface,
-                        focusedTextColor = MaterialTheme.colorScheme.onSurface,
-                        unfocusedTextColor = MaterialTheme.colorScheme.onSurface
-                    )
+                RuleSetHubSearchField(
+                    searchQuery = searchQuery,
+                    onSearchQueryChange = { searchQuery = it }
                 )
             }
 
@@ -194,6 +201,41 @@ fun RuleSetHubScreen(
 }
 
 @Composable
+private fun RuleSetHubSearchField(
+    searchQuery: String,
+    onSearchQueryChange: (String) -> Unit
+) {
+    OutlinedTextField(
+        value = searchQuery,
+        onValueChange = onSearchQueryChange,
+        placeholder = {
+            Text(stringResource(R.string.common_search), color = MaterialTheme.colorScheme.onSurfaceVariant)
+        },
+        leadingIcon = {
+            Icon(
+                Icons.Rounded.Search,
+                contentDescription = stringResource(R.string.common_search),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        },
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(4.dp),
+        singleLine = true,
+        shape = RoundedCornerShape(12.dp),
+        colors = OutlinedTextFieldDefaults.colors(
+            focusedContainerColor = Color.Transparent,
+            unfocusedContainerColor = Color.Transparent,
+            focusedBorderColor = Color.Transparent,
+            unfocusedBorderColor = Color.Transparent,
+            cursorColor = MaterialTheme.colorScheme.onSurface,
+            focusedTextColor = MaterialTheme.colorScheme.onSurface,
+            unfocusedTextColor = MaterialTheme.colorScheme.onSurface
+        )
+    )
+}
+
+@Composable
 fun HubRuleSetItem(
     ruleSet: HubRuleSet,
     isDownloading: Boolean = false,
@@ -201,10 +243,26 @@ fun HubRuleSetItem(
     onAddBinary: () -> Unit,
     isDownloaded: Boolean
 ) {
+    val shape = RoundedCornerShape(12.dp)
+    val useLiquidGlass = isLiquidGlassTheme()
+    val cardModifier = if (useLiquidGlass) {
+        Modifier
+            .fillMaxWidth()
+            .liquidGlassPanel(shape = shape, shadowElevation = 8.dp)
+    } else {
+        Modifier.fillMaxWidth()
+    }
+
     Card(
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        shape = RoundedCornerShape(12.dp),
-        modifier = Modifier.fillMaxWidth()
+        colors = CardDefaults.cardColors(
+            containerColor = if (useLiquidGlass) {
+                Color.Transparent
+            } else {
+                MaterialTheme.colorScheme.surface
+            }
+        ),
+        shape = shape,
+        modifier = cardModifier
     ) {
         Column(
             modifier = Modifier.padding(16.dp)
@@ -234,34 +292,22 @@ fun HubRuleSetItem(
                         )
                     } else if (isDownloaded) {
                         Spacer(modifier = Modifier.width(8.dp))
-                        Surface(
-                            color = Color(0xFF2E7D32),
-                            shape = RoundedCornerShape(4.dp)
-                        ) {
-                            Text(
-                                text = stringResource(R.string.common_downloaded),
-                                color = Color.White,
-                                style = MaterialTheme.typography.labelSmall,
-                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
-                            )
-                        }
+                        RuleSetBadge(
+                            text = stringResource(R.string.common_downloaded),
+                            backgroundColor = Color(0xFF2E7D32),
+                            contentColor = Color.White
+                        )
                     }
                 }
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     ruleSet.tags.forEach { tag ->
-                        Surface(
-                            color = MaterialTheme.colorScheme.secondary,
-                            shape = RoundedCornerShape(4.dp),
+                        RuleSetBadge(
+                            text = tag,
+                            backgroundColor = MaterialTheme.colorScheme.secondary,
+                            contentColor = MaterialTheme.colorScheme.onSecondary,
                             modifier = Modifier.padding(start = 4.dp)
-                        ) {
-                            Text(
-                                text = tag,
-                                color = MaterialTheme.colorScheme.onSecondary,
-                                style = MaterialTheme.typography.labelSmall,
-                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                            )
-                        }
+                        )
                     }
                 }
             }

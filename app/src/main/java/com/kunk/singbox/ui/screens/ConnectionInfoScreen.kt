@@ -49,7 +49,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -81,8 +80,38 @@ import androidx.navigation.NavController
 import com.kunk.singbox.R
 import com.kunk.singbox.model.ClashConnection
 import com.kunk.singbox.ui.theme.Neutral500
+import com.kunk.singbox.ui.theme.isLiquidGlassTheme
+import com.kunk.singbox.ui.theme.liquidGlassPanel
+import com.kunk.singbox.ui.theme.liquidGlassDialogContainerColor
+import com.kunk.singbox.ui.theme.liquidGlassDialogPanel
 import com.kunk.singbox.viewmodel.ConnectionInfoViewModel
 import java.util.Locale
+
+@Composable
+private fun Modifier.connectionEmptyIconPanel(): Modifier {
+    return if (isLiquidGlassTheme()) {
+        liquidGlassPanel(shape = CircleShape, shadowElevation = 12.dp)
+    } else {
+        background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f), CircleShape)
+    }
+}
+
+@Composable
+private fun Modifier.connectionSearchPanel(): Modifier {
+    val shape = RoundedCornerShape(20.dp)
+    return if (isLiquidGlassTheme()) {
+        liquidGlassPanel(shape = shape, shadowElevation = 8.dp)
+    } else {
+        background(
+            color = MaterialTheme.colorScheme.surface,
+            shape = shape
+        ).border(
+            width = 1.dp,
+            color = Color.White.copy(alpha = 0.2f),
+            shape = shape
+        )
+    }
+}
 
 @Suppress("LongMethod", "CyclomaticComplexMethod", "CognitiveComplexMethod")
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
@@ -112,6 +141,8 @@ fun ConnectionInfoScreen(
 
     if (showConfirmDeleteAll) {
         AlertDialog(
+            modifier = Modifier.liquidGlassDialogPanel(),
+            containerColor = liquidGlassDialogContainerColor(),
             onDismissRequest = { showConfirmDeleteAll = false },
             title = { Text(stringResource(R.string.connection_info_close_all)) },
             text = { Text(stringResource(R.string.connection_info_close_all_confirm)) },
@@ -305,15 +336,7 @@ private fun ConnectionSearchBar(
         modifier = modifier
             .fillMaxWidth()
             .height(40.dp)
-            .background(
-                color = MaterialTheme.colorScheme.surface,
-                shape = RoundedCornerShape(20.dp)
-            )
-            .border(
-                width = 1.dp,
-                color = Color.White.copy(alpha = 0.2f),
-                shape = RoundedCornerShape(20.dp)
-            ),
+            .connectionSearchPanel(),
         contentAlignment = Alignment.CenterStart
     ) {
         BasicTextField(
@@ -379,83 +402,117 @@ private fun OverviewCard(
             Color.Transparent
         )
     )
+    val shape = RoundedCornerShape(16.dp)
+
+    if (isLiquidGlassTheme()) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 6.dp)
+                .liquidGlassPanel(shape = shape, selected = true, shadowElevation = 10.dp)
+        ) {
+            OverviewCardContent(
+                totalConnections = totalConnections,
+                uploadTotal = uploadTotal,
+                downloadTotal = downloadTotal,
+                dividerGradient = dividerGradient
+            )
+        }
+        return
+    }
 
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 6.dp),
-        shape = RoundedCornerShape(16.dp),
+        shape = shape,
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.2f)
         ),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f))
     ) {
-        Row(
+        OverviewCardContent(
+            totalConnections = totalConnections,
+            uploadTotal = uploadTotal,
+            downloadTotal = downloadTotal,
+            dividerGradient = dividerGradient
+        )
+    }
+}
+
+@Composable
+@Suppress("LongMethod")
+private fun OverviewCardContent(
+    totalConnections: Int,
+    uploadTotal: Long,
+    downloadTotal: Long,
+    dividerGradient: Brush
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(16.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = stringResource(R.string.connection_info_active_count),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
+            )
+            Text(
+                text = "$totalConnections",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onPrimaryContainer
+            )
+        }
+        Spacer(
             modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+                .height(36.dp)
+                .width(1.dp)
+                .background(dividerGradient)
+        )
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .padding(start = 16.dp)
         ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = stringResource(R.string.connection_info_active_count),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
-                )
-                Text(
-                    text = "$totalConnections",
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer
-                )
-            }
-            Spacer(
-                modifier = Modifier
-                    .height(36.dp)
-                    .width(1.dp)
-                    .background(dividerGradient)
+            Text(
+                text = stringResource(R.string.connection_info_total_upload),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
             )
-            Column(
-                modifier = Modifier
-                    .weight(1f)
-                    .padding(start = 16.dp)
-            ) {
-                Text(
-                    text = stringResource(R.string.connection_info_total_upload),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
-                )
-                Text(
-                    text = formatTraffic(uploadTotal),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer
-                )
-            }
-            Spacer(
-                modifier = Modifier
-                    .height(36.dp)
-                    .width(1.dp)
-                    .background(dividerGradient)
+            Text(
+                text = formatTraffic(uploadTotal),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onPrimaryContainer
             )
-            Column(
-                modifier = Modifier
-                    .weight(1f)
-                    .padding(start = 16.dp)
-            ) {
-                Text(
-                    text = stringResource(R.string.connection_info_total_download),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
-                )
-                Text(
-                    text = formatTraffic(downloadTotal),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer
-                )
-            }
+        }
+        Spacer(
+            modifier = Modifier
+                .height(36.dp)
+                .width(1.dp)
+                .background(dividerGradient)
+        )
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .padding(start = 16.dp)
+        ) {
+            Text(
+                text = stringResource(R.string.connection_info_total_download),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
+            )
+            Text(
+                text = formatTraffic(downloadTotal),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onPrimaryContainer
+            )
         }
     }
 }
@@ -486,18 +543,31 @@ private fun ConnectionItemCard(
     } else {
         MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
     }
-
-    Card(
-        modifier = Modifier
+    val shape = RoundedCornerShape(16.dp)
+    val useLiquidGlass = isLiquidGlassTheme()
+    val cardModifier = if (useLiquidGlass) {
+        Modifier
+            .fillMaxWidth()
+            .liquidGlassPanel(shape = shape, shadowElevation = 8.dp)
+    } else {
+        Modifier
             .fillMaxWidth()
             .border(
                 1.dp,
                 borderColor,
-                RoundedCornerShape(16.dp)
-            ),
-        shape = RoundedCornerShape(16.dp),
+                shape
+            )
+    }
+
+    Card(
+        modifier = cardModifier,
+        shape = shape,
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.15f)
+            containerColor = if (useLiquidGlass) {
+                Color.Transparent
+            } else {
+                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.15f)
+            }
         )
     ) {
         Column(
@@ -663,19 +733,18 @@ private fun ConnectionEmptyState(
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Surface(
-            modifier = Modifier.size(72.dp),
-            shape = CircleShape,
-            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
+        Box(
+            modifier = Modifier
+                .size(72.dp)
+                .connectionEmptyIconPanel(),
+            contentAlignment = Alignment.Center
         ) {
-            Box(contentAlignment = Alignment.Center) {
-                Icon(
-                    imageVector = icon,
-                    contentDescription = null,
-                    modifier = Modifier.size(36.dp),
-                    tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f)
-                )
-            }
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                modifier = Modifier.size(36.dp),
+                tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f)
+            )
         }
         Spacer(modifier = Modifier.height(16.dp))
         Text(

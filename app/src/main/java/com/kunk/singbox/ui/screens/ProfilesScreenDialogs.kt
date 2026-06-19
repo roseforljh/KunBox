@@ -66,6 +66,26 @@ import com.kunk.singbox.model.NodeUi
 import com.kunk.singbox.repository.ConfigRepository
 import com.kunk.singbox.ui.components.AppNotificationManager
 import com.kunk.singbox.ui.components.StandardCard
+import com.kunk.singbox.ui.theme.isLiquidGlassTheme
+import com.kunk.singbox.ui.theme.liquidGlassPanel
+
+@Composable
+private fun Modifier.profileDialogPanel(shape: RoundedCornerShape): Modifier {
+    return if (isLiquidGlassTheme()) {
+        liquidGlassPanel(shape = shape, shadowElevation = 24.dp)
+    } else {
+        background(MaterialTheme.colorScheme.surface, shape)
+    }
+}
+
+@Composable
+private fun Modifier.profileGroupPanel(shape: RoundedCornerShape = RoundedCornerShape(12.dp)): Modifier {
+    return if (isLiquidGlassTheme()) {
+        liquidGlassPanel(shape = shape, shadowElevation = 6.dp)
+    } else {
+        background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
+    }
+}
 
 internal fun List<String>.updatedCustomSelection(nodeId: String, checked: Boolean): List<String> {
     return if (checked) {
@@ -133,7 +153,7 @@ internal fun ExpandableProfileGroup(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
-            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
+            .profileGroupPanel()
             .animateContentSize(animationSpec = tween(durationMillis = 220))
     ) {
         Row(
@@ -241,7 +261,7 @@ internal fun CustomConfigDialog(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(28.dp))
+                .profileDialogPanel(RoundedCornerShape(28.dp))
                 .padding(24.dp)
         ) {
             Text(
@@ -408,7 +428,7 @@ internal fun ImportLoadingDialog(message: String, onCancel: () -> Unit = {}) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(24.dp))
+                .profileDialogPanel(RoundedCornerShape(24.dp))
                 .padding(24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(16.dp)
@@ -542,7 +562,7 @@ internal fun SubscriptionInputDialog(
             modifier = Modifier
                 .fillMaxWidth()
                 .heightIn(max = 560.dp)
-                .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(28.dp))
+                .profileDialogPanel(RoundedCornerShape(28.dp))
                 .padding(24.dp)
                 .verticalScroll(rememberScrollState())
         ) {

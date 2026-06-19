@@ -31,6 +31,8 @@ import com.kunk.singbox.ui.components.SingleSelectDialog
 import com.kunk.singbox.ui.components.StandardCard
 import com.kunk.singbox.ui.components.StyledTextField
 import androidx.compose.foundation.shape.RoundedCornerShape
+import com.kunk.singbox.ui.theme.liquidGlassDialogContainerColor
+import com.kunk.singbox.ui.theme.liquidGlassDialogPanel
 import com.kunk.singbox.viewmodel.SettingsViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -237,9 +239,10 @@ fun CustomRuleEditorDialog(
     }
 
     AlertDialog(
+        modifier = Modifier.liquidGlassDialogPanel(RoundedCornerShape(24.dp)),
         onDismissRequest = onDismiss,
         shape = RoundedCornerShape(24.dp),
-        containerColor = MaterialTheme.colorScheme.surface,
+        containerColor = liquidGlassDialogContainerColor(),
         title = {
             Text(
                 text = if (initialRule == null) stringResource(R.string.custom_rules_add) else stringResource(R.string.custom_rules_edit),

@@ -20,6 +20,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.kunk.singbox.ui.theme.Neutral500
+import com.kunk.singbox.ui.theme.isLiquidGlassTheme
+import com.kunk.singbox.ui.theme.liquidGlassPanel
 
 @Composable
 fun StatusChip(
@@ -28,14 +30,28 @@ fun StatusChip(
     isActive: Boolean = false,
     onClick: (() -> Unit)? = null
 ) {
+    val useLiquidGlass = isLiquidGlassTheme()
     val backgroundColor = if (isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface
     val borderColor = if (isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
-    val textColor = if (isActive) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+    val textColor = when {
+        useLiquidGlass && isActive -> MaterialTheme.colorScheme.primary
+        isActive -> MaterialTheme.colorScheme.onPrimary
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
 
-    val modifier = Modifier
-        .clip(CircleShape)
-        .background(backgroundColor)
-        .border(1.dp, borderColor, CircleShape)
+    val surfaceModifier = if (useLiquidGlass) {
+        Modifier.liquidGlassPanel(
+            shape = CircleShape,
+            selected = isActive,
+            shadowElevation = 6.dp
+        )
+    } else {
+        Modifier
+            .clip(CircleShape)
+            .background(backgroundColor)
+            .border(1.dp, borderColor, CircleShape)
+    }
+    val modifier = surfaceModifier
         .let {
             if (onClick != null) it.clickable(onClick = onClick) else it
         }

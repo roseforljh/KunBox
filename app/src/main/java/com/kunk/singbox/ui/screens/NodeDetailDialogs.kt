@@ -42,6 +42,17 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import com.kunk.singbox.model.Outbound
 import com.kunk.singbox.model.TlsConfig
+import com.kunk.singbox.ui.theme.isLiquidGlassTheme
+import com.kunk.singbox.ui.theme.liquidGlassPanel
+
+@Composable
+private fun Modifier.nodeDetailDialogPanel(shape: RoundedCornerShape = RoundedCornerShape(28.dp)): Modifier {
+    return if (isLiquidGlassTheme()) {
+        liquidGlassPanel(shape = shape, shadowElevation = 24.dp)
+    } else {
+        background(MaterialTheme.colorScheme.surface, shape)
+    }
+}
 
 @Suppress("LongMethod", "CognitiveComplexMethod", "CyclomaticComplexMethod", "LongParameterList")
 @Composable
@@ -68,7 +79,7 @@ internal fun DetourNodeSelectDialog(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(28.dp))
+                .nodeDetailDialogPanel()
                 .padding(24.dp)
         ) {
             Text(

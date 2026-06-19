@@ -25,6 +25,11 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.kunk.singbox.ui.theme.isLiquidGlassTheme
+import com.kunk.singbox.ui.theme.liquidGlassPanel
+import com.kunk.singbox.ui.theme.liquidGlassTextFieldBorderColor
+import com.kunk.singbox.ui.theme.liquidGlassTextFieldContainerColor
+import com.kunk.singbox.ui.theme.liquidGlassTextFieldPanel
 
 /**
  * A dropdown-style field that clearly indicates it is clickable.
@@ -37,6 +42,21 @@ fun ClickableDropdownField(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val useLiquidGlass = isLiquidGlassTheme()
+    val fieldShape = RoundedCornerShape(16.dp)
+    val fieldSurfaceModifier = if (useLiquidGlass) {
+        Modifier.liquidGlassPanel(shape = fieldShape, shadowElevation = 8.dp)
+    } else {
+        Modifier
+            .clip(fieldShape)
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+            .border(
+                width = 1.dp,
+                color = MaterialTheme.colorScheme.outline,
+                shape = fieldShape
+            )
+    }
+
     Column(
         modifier = modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(6.dp)
@@ -51,13 +71,7 @@ fun ClickableDropdownField(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(16.dp))
-                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
-                .border(
-                    width = 1.dp,
-                    color = MaterialTheme.colorScheme.outline,
-                    shape = RoundedCornerShape(16.dp)
-                )
+                .then(fieldSurfaceModifier)
                 .clickable(onClick = onClick)
                 .padding(horizontal = 16.dp, vertical = 14.dp)
         ) {
@@ -95,6 +109,7 @@ fun StyledTextField(
     placeholder: String = "",
     singleLine: Boolean = true
 ) {
+    val fieldShape = RoundedCornerShape(16.dp)
     Column(
         modifier = modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(6.dp)
@@ -109,21 +124,29 @@ fun StyledTextField(
         androidx.compose.material3.OutlinedTextField(
             value = value,
             onValueChange = onValueChange,
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .liquidGlassTextFieldPanel(shape = fieldShape),
             placeholder = {
                 if (placeholder.isNotEmpty()) {
                     Text(placeholder, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f))
                 }
             },
             singleLine = singleLine,
-            shape = RoundedCornerShape(16.dp),
+            shape = fieldShape,
             colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
                 focusedTextColor = MaterialTheme.colorScheme.onSurface,
                 unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
-                focusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f),
-                unfocusedBorderColor = MaterialTheme.colorScheme.outline,
-                focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                focusedBorderColor = liquidGlassTextFieldBorderColor(
+                    MaterialTheme.colorScheme.primary.copy(alpha = 0.6f)
+                ),
+                unfocusedBorderColor = liquidGlassTextFieldBorderColor(MaterialTheme.colorScheme.outline),
+                focusedContainerColor = liquidGlassTextFieldContainerColor(
+                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                ),
+                unfocusedContainerColor = liquidGlassTextFieldContainerColor(
+                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+                ),
                 cursorColor = MaterialTheme.colorScheme.primary
             )
         )

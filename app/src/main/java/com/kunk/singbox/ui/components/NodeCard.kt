@@ -22,6 +22,23 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.kunk.singbox.ui.theme.*
 
+@Composable
+private fun Modifier.nodeOverflowMenuPanel(): Modifier {
+    val shape = RoundedCornerShape(12.dp)
+    return if (isLiquidGlassTheme()) {
+        width(100.dp)
+            .liquidGlassPanel(shape = shape, shadowElevation = 8.dp)
+    } else {
+        background(MaterialTheme.colorScheme.surfaceVariant, shape)
+            .border(
+                width = 1.dp,
+                color = MaterialTheme.colorScheme.outline,
+                shape = shape
+            )
+            .width(100.dp)
+    }
+}
+
 @Suppress("LongParameterList", "LongMethod", "CognitiveComplexMethod")
 @Composable
 fun NodeCard(
@@ -197,14 +214,7 @@ fun NodeCard(
                         DropdownMenu(
                             expanded = showMenu,
                             onDismissRequest = { showMenu = false },
-                            modifier = Modifier
-                                .background(MaterialTheme.colorScheme.surfaceVariant)
-                                .border(
-                                    width = 1.dp,
-                                    color = MaterialTheme.colorScheme.outline,
-                                    shape = RoundedCornerShape(12.dp)
-                                )
-                                .width(100.dp)
+                            modifier = Modifier.nodeOverflowMenuPanel()
                         ) {
                             DropdownMenuItem(
                                 text = {
@@ -409,14 +419,7 @@ fun NodeGridCard(
                 DropdownMenu(
                     expanded = showMenu,
                     onDismissRequest = { showMenu = false },
-                    modifier = Modifier
-                        .background(MaterialTheme.colorScheme.surfaceVariant)
-                        .border(
-                            width = 1.dp,
-                            color = MaterialTheme.colorScheme.outline,
-                            shape = RoundedCornerShape(12.dp)
-                        )
-                        .width(100.dp)
+                    modifier = Modifier.nodeOverflowMenuPanel()
                 ) {
                     DropdownMenuItem(
                         text = {

@@ -110,8 +110,41 @@ import com.kunk.singbox.ui.components.NodeCard
 import com.kunk.singbox.ui.components.NodeGridCard
 import com.kunk.singbox.ui.navigation.Screen
 import com.kunk.singbox.ui.theme.Neutral500
+import com.kunk.singbox.ui.theme.isLiquidGlassTheme
+import com.kunk.singbox.ui.theme.liquidGlassPanel
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
+
+@Composable
+private fun Modifier.nodesMenuPanel(shape: RoundedCornerShape = RoundedCornerShape(12.dp)): Modifier {
+    return if (isLiquidGlassTheme()) {
+        liquidGlassPanel(shape = shape, shadowElevation = 8.dp)
+    } else {
+        background(MaterialTheme.colorScheme.surfaceVariant, shape)
+            .border(
+                width = 1.dp,
+                color = MaterialTheme.colorScheme.outline,
+                shape = shape
+            )
+    }
+}
+
+@Composable
+private fun Modifier.nodeSearchPanel(): Modifier {
+    val shape = RoundedCornerShape(20.dp)
+    return if (isLiquidGlassTheme()) {
+        liquidGlassPanel(shape = shape, shadowElevation = 8.dp)
+    } else {
+        background(
+            color = MaterialTheme.colorScheme.surface,
+            shape = shape
+        ).border(
+            width = 1.dp,
+            color = Color.White.copy(alpha = 0.2f),
+            shape = shape
+        )
+    }
+}
 
 @Suppress("FunctionNaming", "LongMethod", "CyclomaticComplexMethod", "CognitiveComplexMethod")
 @OptIn(ExperimentalFoundationApi::class)
@@ -487,12 +520,7 @@ fun NodesScreen(
                                     expanded = showMoreMenu,
                                     onDismissRequest = { showMoreMenu = false },
                                     modifier = Modifier
-                                        .background(MaterialTheme.colorScheme.surfaceVariant)
-                                        .border(
-                                            width = 1.dp,
-                                            color = MaterialTheme.colorScheme.outline,
-                                            shape = RoundedCornerShape(12.dp)
-                                        )
+                                        .nodesMenuPanel()
                                 ) {
                                     DropdownMenuItem(
                                         leadingIcon = {
@@ -835,15 +863,7 @@ private fun NodeSearchBar(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(40.dp)
-                    .background(
-                        color = MaterialTheme.colorScheme.surface,
-                        shape = RoundedCornerShape(20.dp)
-                    )
-                    .border(
-                        width = 1.dp,
-                        color = Color.White.copy(alpha = 0.2f),
-                        shape = RoundedCornerShape(20.dp)
-                    ),
+                    .nodeSearchPanel(),
                 contentAlignment = Alignment.CenterStart
             ) {
                 BasicTextField(

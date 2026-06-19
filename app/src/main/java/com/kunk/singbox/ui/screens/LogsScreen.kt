@@ -2,8 +2,10 @@ package com.kunk.singbox.ui.screens
 
 import com.kunk.singbox.R
 import android.content.Intent
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -16,6 +18,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -39,13 +42,17 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
+import com.kunk.singbox.ui.theme.isLiquidGlassTheme
+import com.kunk.singbox.ui.theme.liquidGlassPanel
 import com.kunk.singbox.viewmodel.LogViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -56,6 +63,7 @@ fun LogsScreen(navController: NavController, viewModel: LogViewModel = viewModel
     val selectedCategory by viewModel.selectedCategory.collectAsState()
     val context = LocalContext.current
     val listState = rememberLazyListState()
+    val useLiquidGlass = isLiquidGlassTheme()
 
     Scaffold(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
@@ -116,48 +124,18 @@ fun LogsScreen(navController: NavController, viewModel: LogViewModel = viewModel
                 .fillMaxSize()
                 .padding(padding)
         ) {
-            OutlinedTextField(
-                value = searchKeyword,
-                onValueChange = { viewModel.setSearchKeyword(it) },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 4.dp),
-                placeholder = {
-                    Text(stringResource(R.string.logs_search_hint))
-                },
-                leadingIcon = {
-                    Icon(Icons.Rounded.Search, contentDescription = null)
-                },
-                trailingIcon = {
-                    if (searchKeyword.isNotEmpty()) {
-                        IconButton(onClick = { viewModel.setSearchKeyword("") }) {
-                            Icon(Icons.Rounded.Clear, contentDescription = null)
-                        }
-                    }
-                },
-                singleLine = true,
-                shape = RoundedCornerShape(12.dp),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = MaterialTheme.colorScheme.primary,
-                    unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)
-                )
+            LogsSearchField(
+                searchKeyword = searchKeyword,
+                useLiquidGlass = useLiquidGlass,
+                onSearchKeywordChange = { viewModel.setSearchKeyword(it) }
             )
 
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState())
-                    .padding(horizontal = 16.dp, vertical = 4.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                viewModel.categories.forEach { category ->
-                    FilterChip(
-                        selected = selectedCategory == category,
-                        onClick = { viewModel.setCategory(category) },
-                        label = { Text(category, fontSize = 12.sp) }
-                    )
-                }
-            }
+            LogsCategoryRow(
+                categories = viewModel.categories,
+                selectedCategory = selectedCategory,
+                useLiquidGlass = useLiquidGlass,
+                onCategorySelected = { viewModel.setCategory(it) }
+            )
 
             LazyColumn(
                 state = listState,
@@ -199,5 +177,116 @@ fun LogsScreen(navController: NavController, viewModel: LogViewModel = viewModel
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun LogsSearchField(
+    searchKeyword: String,
+    useLiquidGlass: Boolean,
+    onSearchKeywordChange: (String) -> Unit
+) {
+    val searchShape = RoundedCornerShape(12.dp)
+    OutlinedTextField(
+        value = searchKeyword,
+        onValueChange = onSearchKeywordChange,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 4.dp)
+            .then(
+                if (useLiquidGlass) {
+                    Modifier.liquidGlassPanel(shape = searchShape, shadowElevation = 8.dp)
+                } else {
+                    Modifier
+                }
+            ),
+        placeholder = {
+            Text(stringResource(R.string.logs_search_hint))
+        },
+        leadingIcon = {
+            Icon(Icons.Rounded.Search, contentDescription = null)
+        },
+        trailingIcon = {
+            if (searchKeyword.isNotEmpty()) {
+                IconButton(onClick = { onSearchKeywordChange("") }) {
+                    Icon(Icons.Rounded.Clear, contentDescription = null)
+                }
+            }
+        },
+        singleLine = true,
+        shape = searchShape,
+        colors = OutlinedTextFieldDefaults.colors(
+            focusedBorderColor = if (useLiquidGlass) Color.Transparent else MaterialTheme.colorScheme.primary,
+            unfocusedBorderColor = if (useLiquidGlass) {
+                Color.Transparent
+            } else {
+                MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)
+            },
+            focusedContainerColor = Color.Transparent,
+            unfocusedContainerColor = Color.Transparent
+        )
+    )
+}
+
+@Composable
+private fun LogsCategoryRow(
+    categories: List<String>,
+    selectedCategory: String?,
+    useLiquidGlass: Boolean,
+    onCategorySelected: (String) -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState())
+            .padding(horizontal = 16.dp, vertical = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        categories.forEach { category ->
+            LogCategoryChip(
+                label = category,
+                selected = selectedCategory == category,
+                useLiquidGlass = useLiquidGlass,
+                onClick = { onCategorySelected(category) }
+            )
+        }
+    }
+}
+
+@Composable
+private fun LogCategoryChip(
+    label: String,
+    selected: Boolean,
+    useLiquidGlass: Boolean,
+    onClick: () -> Unit
+) {
+    if (useLiquidGlass) {
+        Box(
+            modifier = Modifier
+                .liquidGlassPanel(
+                    shape = CircleShape,
+                    selected = selected,
+                    shadowElevation = 6.dp
+                )
+                .clickable(onClick = onClick)
+                .padding(horizontal = 12.dp, vertical = 8.dp)
+        ) {
+            Text(
+                text = label,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Medium,
+                color = if (selected) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                }
+            )
+        }
+    } else {
+        FilterChip(
+            selected = selected,
+            onClick = onClick,
+            label = { Text(label, fontSize = 12.sp) }
+        )
     }
 }

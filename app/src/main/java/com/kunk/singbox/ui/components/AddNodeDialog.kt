@@ -33,6 +33,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.kunk.singbox.R
 import com.kunk.singbox.model.ProfileUi
+import com.kunk.singbox.ui.theme.liquidGlassDialogContainerColor
+import com.kunk.singbox.ui.theme.liquidGlassDialogPanel
 
 sealed class AddNodeTarget {
     data class ExistingProfile(val profileId: String) : AddNodeTarget()
@@ -63,6 +65,8 @@ fun AddNodeDialog(
         )
 
     AlertDialog(
+        modifier = Modifier.liquidGlassDialogPanel(),
+        containerColor = liquidGlassDialogContainerColor(),
         onDismissRequest = onDismiss,
         title = {
             Text(

@@ -57,6 +57,26 @@ import kotlinx.coroutines.launch
 import androidx.core.graphics.drawable.toBitmap
 import com.kunk.singbox.model.InstalledApp
 import com.kunk.singbox.repository.InstalledAppsRepository
+import com.kunk.singbox.ui.theme.isLiquidGlassTheme
+import com.kunk.singbox.ui.theme.liquidGlassPanel
+
+@Composable
+private fun Modifier.appSelectDialogPanel(shape: RoundedCornerShape = RoundedCornerShape(28.dp)): Modifier {
+    return if (isLiquidGlassTheme()) {
+        liquidGlassPanel(shape = shape, shadowElevation = 24.dp)
+    } else {
+        background(MaterialTheme.colorScheme.surface, shape)
+    }
+}
+
+@Composable
+private fun Modifier.appSelectActionPanel(shape: RoundedCornerShape = RoundedCornerShape(10.dp)): Modifier {
+    return if (isLiquidGlassTheme()) {
+        liquidGlassPanel(shape = shape, selected = true, shadowElevation = 6.dp)
+    } else {
+        background(MaterialTheme.colorScheme.primary.copy(alpha = 0.1f))
+    }
+}
 
 @Composable
 fun AppMultiSelectDialog(
@@ -166,13 +186,14 @@ fun AppMultiSelectDialog(
 
     val scope = rememberCoroutineScope()
     val isLoading = loadingState is InstalledAppsRepository.LoadingState.Loading
+    val useLiquidGlass = isLiquidGlassTheme()
 
     Dialog(onDismissRequest = onDismiss) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .fillMaxHeight(0.92f)
-                .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(28.dp))
+                .appSelectDialogPanel()
                 .padding(16.dp)
         ) {
             Row(
@@ -324,7 +345,7 @@ fun AppMultiSelectDialog(
                                     addAll(matches)
                                 }
                             }
-                            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.1f))
+                            .appSelectActionPanel()
                             .padding(horizontal = 12.dp, vertical = 6.dp)
                     ) {
                         Text(
@@ -362,6 +383,17 @@ fun AppMultiSelectDialog(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(12.dp))
+                            .then(
+                                if (useLiquidGlass && checked) {
+                                    Modifier.liquidGlassPanel(
+                                        shape = RoundedCornerShape(12.dp),
+                                        selected = true,
+                                        shadowElevation = 4.dp
+                                    )
+                                } else {
+                                    Modifier
+                                }
+                            )
                             .clickable {
                                 tempSelected = tempSelected.toMutableSet().apply {
                                     if (checked) remove(app.packageName) else add(app.packageName)

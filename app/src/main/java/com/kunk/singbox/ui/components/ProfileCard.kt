@@ -53,6 +53,23 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
+@Composable
+private fun Modifier.profileOverflowMenuPanel(): Modifier {
+    val shape = RoundedCornerShape(12.dp)
+    return if (isLiquidGlassTheme()) {
+        width(100.dp)
+            .liquidGlassPanel(shape = shape, shadowElevation = 8.dp)
+    } else {
+        background(MaterialTheme.colorScheme.surfaceVariant, shape)
+            .border(
+                width = 1.dp,
+                color = MaterialTheme.colorScheme.outline,
+                shape = shape
+            )
+            .width(100.dp)
+    }
+}
+
 @Suppress("LongMethod", "CyclomaticComplexMethod", "CognitiveComplexMethod", "LongParameterList")
 @Composable
 fun ProfileCard(
@@ -323,14 +340,7 @@ fun ProfileCard(
                 DropdownMenu(
                     expanded = showMenu,
                     onDismissRequest = { showMenu = false },
-                    modifier = Modifier
-                        .background(MaterialTheme.colorScheme.surfaceVariant)
-                        .border(
-                            width = 1.dp,
-                            color = MaterialTheme.colorScheme.outline,
-                            shape = RoundedCornerShape(12.dp)
-                        )
-                        .width(100.dp)
+                    modifier = Modifier.profileOverflowMenuPanel()
                 ) {
                     DropdownMenuItem(
                         text = {

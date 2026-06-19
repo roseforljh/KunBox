@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Save
@@ -39,8 +40,19 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.kunk.singbox.repository.ConfigRepository
 import com.kunk.singbox.ui.components.AppNotificationManager
+import com.kunk.singbox.ui.theme.isLiquidGlassTheme
+import com.kunk.singbox.ui.theme.liquidGlassPanel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
+
+@Composable
+private fun Modifier.profileEditorPanel(): Modifier {
+    return if (isLiquidGlassTheme()) {
+        liquidGlassPanel(shape = RoundedCornerShape(16.dp), shadowElevation = 8.dp)
+    } else {
+        background(MaterialTheme.colorScheme.background)
+    }
+}
 
 private class ProfileEditorViewModel : ViewModel() {
     var content by mutableStateOf("")
@@ -227,7 +239,7 @@ private fun ProfileEditorContent(
                 cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(MaterialTheme.colorScheme.background)
+                    .profileEditorPanel()
             )
         }
     }

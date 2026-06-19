@@ -66,6 +66,48 @@ import com.kunk.singbox.model.FilterMode
 import com.kunk.singbox.model.NodeFilter
 import com.kunk.singbox.model.NodeUi
 import com.kunk.singbox.model.ProfileUi
+import com.kunk.singbox.ui.theme.isLiquidGlassTheme
+import com.kunk.singbox.ui.theme.liquidGlassPanel
+
+@Composable
+private fun Modifier.nodeSelectionDialogPanel(shape: RoundedCornerShape = RoundedCornerShape(28.dp)): Modifier {
+    return if (isLiquidGlassTheme()) {
+        liquidGlassPanel(shape = shape, shadowElevation = 24.dp)
+    } else {
+        background(MaterialTheme.colorScheme.surface, shape)
+    }
+}
+
+@Composable
+private fun Modifier.nodeSelectionGroupPanel(shape: RoundedCornerShape = RoundedCornerShape(12.dp)): Modifier {
+    return if (isLiquidGlassTheme()) {
+        liquidGlassPanel(shape = shape, shadowElevation = 6.dp)
+    } else {
+        background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
+    }
+}
+
+@Composable
+private fun Modifier.nodeSelectionItemPanel(isSelected: Boolean): Modifier {
+    val shape = RoundedCornerShape(12.dp)
+    val borderColor = if (isSelected) MaterialTheme.colorScheme.primary else Color.Transparent
+    val backgroundColor = if (isSelected) {
+        MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)
+    } else {
+        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+    }
+
+    return if (isLiquidGlassTheme()) {
+        liquidGlassPanel(shape = shape, selected = isSelected, shadowElevation = 6.dp)
+    } else {
+        background(backgroundColor, shape)
+            .border(
+                width = if (isSelected) 1.5.dp else 0.dp,
+                color = borderColor,
+                shape = shape
+            )
+    }
+}
 
 @Composable
 fun ProfileNodeSelectDialog(
@@ -90,7 +132,7 @@ fun ProfileNodeSelectDialog(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(28.dp))
+                .nodeSelectionDialogPanel()
                 .padding(24.dp)
         ) {
             Text(
@@ -117,7 +159,7 @@ fun ProfileNodeSelectDialog(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clip(RoundedCornerShape(12.dp))
-                                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
+                                .nodeSelectionGroupPanel()
                                 .animateContentSize(animationSpec = tween(durationMillis = 220))
                         ) {
                             Row(
@@ -215,7 +257,7 @@ fun ProfileNodeSelectDialog(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clip(RoundedCornerShape(12.dp))
-                                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
+                                .nodeSelectionGroupPanel()
                                 .animateContentSize(animationSpec = tween(durationMillis = 220))
                         ) {
                             Row(
@@ -370,7 +412,7 @@ fun AboutDialog(onDismiss: () -> Unit) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(28.dp))
+                .nodeSelectionDialogPanel()
                 .padding(24.dp)
         ) {
             Text(
@@ -434,7 +476,7 @@ fun NodeFilterDialog(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(28.dp))
+                .nodeSelectionDialogPanel()
                 .padding(24.dp)
         ) {
             Text(
@@ -653,7 +695,7 @@ fun NodeSelectorDialog(
             modifier = Modifier
                 .fillMaxWidth()
                 .fillMaxHeight(0.75f)
-                .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(28.dp))
+                .nodeSelectionDialogPanel()
                 .padding(24.dp)
         ) {
             Text(
@@ -722,22 +764,10 @@ internal fun NodeSelectorItem(
     isTesting: Boolean,
     onClick: () -> Unit
 ) {
-    val borderColor = if (isSelected) MaterialTheme.colorScheme.primary else Color.Transparent
-    val backgroundColor = if (isSelected) {
-        MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)
-    } else {
-        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
-    }
-
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(backgroundColor, RoundedCornerShape(12.dp))
-            .border(
-                width = if (isSelected) 1.5.dp else 0.dp,
-                color = borderColor,
-                shape = RoundedCornerShape(12.dp)
-            )
+            .nodeSelectionItemPanel(isSelected)
             .clickable(onClick = onClick)
             .padding(12.dp),
         verticalAlignment = Alignment.CenterVertically

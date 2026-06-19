@@ -52,6 +52,57 @@ fun Modifier.liquidGlassPanel(
 }
 
 @Composable
+fun Modifier.liquidGlassDialogPanel(
+    shape: Shape = RoundedCornerShape(28.dp),
+    shadowElevation: Dp = 24.dp
+): Modifier {
+    return if (isLiquidGlassTheme()) {
+        liquidGlassPanel(shape = shape, shadowElevation = shadowElevation)
+    } else {
+        this
+    }
+}
+
+@Composable
+fun liquidGlassDialogContainerColor(): Color {
+    return if (isLiquidGlassTheme()) {
+        Color.Transparent
+    } else {
+        MaterialTheme.colorScheme.surface
+    }
+}
+
+@Composable
+fun Modifier.liquidGlassTextFieldPanel(
+    shape: Shape = RoundedCornerShape(16.dp),
+    shadowElevation: Dp = 8.dp
+): Modifier {
+    return if (isLiquidGlassTheme()) {
+        liquidGlassPanel(shape = shape, shadowElevation = shadowElevation)
+    } else {
+        this
+    }
+}
+
+@Composable
+fun liquidGlassTextFieldContainerColor(defaultColor: Color): Color {
+    return if (isLiquidGlassTheme()) {
+        Color.Transparent
+    } else {
+        defaultColor
+    }
+}
+
+@Composable
+fun liquidGlassTextFieldBorderColor(defaultColor: Color): Color {
+    return if (isLiquidGlassTheme()) {
+        Color.Transparent
+    } else {
+        defaultColor
+    }
+}
+
+@Composable
 fun liquidGlassPanelBrush(selected: Boolean = false): Brush {
     val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
     val surface = MaterialTheme.colorScheme.surface
