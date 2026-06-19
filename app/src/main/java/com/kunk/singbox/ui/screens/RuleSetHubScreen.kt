@@ -71,6 +71,22 @@ private fun RuleSetBadge(
     }
 }
 
+@Composable
+private fun Modifier.ruleSetHubItemPanel(): Modifier {
+    val shape = RoundedCornerShape(12.dp)
+    return if (isLiquidGlassTheme()) {
+        fillMaxWidth()
+            .liquidGlassPanel(shape = shape, shadowElevation = 8.dp)
+    } else {
+        fillMaxWidth()
+    }
+}
+
+@Composable
+private fun ruleSetHubItemContainerColor(defaultColor: Color): Color {
+    return if (isLiquidGlassTheme()) Color.Transparent else defaultColor
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun RuleSetHubScreen(
@@ -278,25 +294,13 @@ fun HubRuleSetItem(
     isDownloaded: Boolean
 ) {
     val shape = RoundedCornerShape(12.dp)
-    val useLiquidGlass = isLiquidGlassTheme()
-    val cardModifier = if (useLiquidGlass) {
-        Modifier
-            .fillMaxWidth()
-            .liquidGlassPanel(shape = shape, shadowElevation = 8.dp)
-    } else {
-        Modifier.fillMaxWidth()
-    }
 
     Card(
         colors = CardDefaults.cardColors(
-            containerColor = if (useLiquidGlass) {
-                Color.Transparent
-            } else {
-                MaterialTheme.colorScheme.surface
-            }
+            containerColor = ruleSetHubItemContainerColor(MaterialTheme.colorScheme.surface)
         ),
         shape = shape,
-        modifier = cardModifier
+        modifier = Modifier.ruleSetHubItemPanel()
     ) {
         Column(
             modifier = Modifier.padding(16.dp)

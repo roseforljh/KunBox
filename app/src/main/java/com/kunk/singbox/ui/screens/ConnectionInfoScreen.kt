@@ -144,6 +144,24 @@ private fun Modifier.connectionCloseButtonPanel(): Modifier {
 }
 
 @Composable
+private fun Modifier.connectionOverviewPanel(): Modifier {
+    return if (isLiquidGlassTheme()) {
+        liquidGlassPanel(
+            shape = RoundedCornerShape(16.dp),
+            selected = true,
+            shadowElevation = 10.dp
+        )
+    } else {
+        this
+    }
+}
+
+@Composable
+private fun connectionItemContainerColor(defaultColor: Color): Color {
+    return if (isLiquidGlassTheme()) Color.Transparent else defaultColor
+}
+
+@Composable
 private fun ConnectionCloseButton(
     useLiquidGlass: Boolean,
     onClose: () -> Unit
@@ -481,7 +499,7 @@ private fun OverviewCard(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp, vertical = 6.dp)
-                .liquidGlassPanel(shape = shape, selected = true, shadowElevation = 10.dp)
+                .connectionOverviewPanel()
         ) {
             OverviewCardContent(
                 totalConnections = totalConnections,
@@ -635,11 +653,9 @@ private fun ConnectionItemCard(
         modifier = cardModifier,
         shape = shape,
         colors = CardDefaults.cardColors(
-            containerColor = if (useLiquidGlass) {
-                Color.Transparent
-            } else {
+            containerColor = connectionItemContainerColor(
                 MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.15f)
-            }
+            )
         )
     ) {
         Column(

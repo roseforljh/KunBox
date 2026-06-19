@@ -1,9 +1,13 @@
 ﻿package com.kunk.singbox.ui.scanner
 
 import android.app.Activity
+import android.content.res.ColorStateList
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Color
+import android.graphics.drawable.GradientDrawable
+import android.graphics.drawable.StateListDrawable
 import android.net.Uri
 import android.os.Bundle
 import android.util.Log
@@ -19,7 +23,9 @@ import com.google.zxing.common.HybridBinarizer
 import com.journeyapps.barcodescanner.CaptureManager
 import com.journeyapps.barcodescanner.DecoratedBarcodeView
 import com.kunk.singbox.R
+import com.kunk.singbox.model.AppThemeStyle
 import com.kunk.singbox.ui.components.AppNotificationManager
+import com.kunk.singbox.repository.SettingsRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -63,7 +69,64 @@ class QrScannerActivity : AppCompatActivity() {
             toggleFlash()
         }
 
+        applyLiquidGlassScannerControls()
+
         barcodeScannerView.setStatusText("")
+    }
+
+    private fun applyLiquidGlassScannerControls() {
+        val appThemeStyle = SettingsRepository.getInstance(this).settings.value.appThemeStyle
+        if (appThemeStyle != AppThemeStyle.LIQUID_GLASS) return
+
+        listOf(R.id.btn_back, R.id.btn_gallery, R.id.btn_flash).forEach { buttonId ->
+            val button = findViewById<ImageButton>(buttonId)
+            button.background = liquidGlassScannerButtonBackground()
+            button.imageTintList = ColorStateList.valueOf(Color.WHITE)
+            button.elevation = dpToPx(SCANNER_BUTTON_ELEVATION_DP)
+            button.clipToOutline = true
+        }
+    }
+
+    private fun liquidGlassScannerButtonBackground(): StateListDrawable {
+        return StateListDrawable().apply {
+            addState(
+                intArrayOf(android.R.attr.state_pressed),
+                liquidGlassScannerButtonDrawable(
+                    fillColor = Color.argb(78, 255, 255, 255),
+                    strokeColor = Color.argb(170, 255, 255, 255)
+                )
+            )
+            addState(
+                intArrayOf(android.R.attr.state_selected),
+                liquidGlassScannerButtonDrawable(
+                    fillColor = Color.argb(84, 255, 255, 255),
+                    strokeColor = Color.argb(190, 255, 255, 255)
+                )
+            )
+            addState(
+                intArrayOf(),
+                liquidGlassScannerButtonDrawable(
+                    fillColor = Color.argb(46, 255, 255, 255),
+                    strokeColor = Color.argb(118, 255, 255, 255)
+                )
+            )
+        }
+    }
+
+    private fun liquidGlassScannerButtonDrawable(
+        fillColor: Int,
+        strokeColor: Int
+    ): GradientDrawable {
+        return GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            cornerRadius = dpToPx(SCANNER_BUTTON_RADIUS_DP)
+            setColor(fillColor)
+            setStroke(dpToPx(SCANNER_BUTTON_STROKE_DP).toInt().coerceAtLeast(1), strokeColor)
+        }
+    }
+
+    private fun dpToPx(value: Float): Float {
+        return value * resources.displayMetrics.density
     }
 
     private fun parseQrCodeFromUri(uri: Uri) {
@@ -199,6 +262,9 @@ class QrScannerActivity : AppCompatActivity() {
     companion object {
         private const val TAG = "QrScannerActivity"
         private const val MAX_QR_IMAGE_PIXELS = 12_000_000L
+        private const val SCANNER_BUTTON_RADIUS_DP = 24f
+        private const val SCANNER_BUTTON_STROKE_DP = 1f
+        private const val SCANNER_BUTTON_ELEVATION_DP = 8f
         const val EXTRA_RESULT = "scan_result"
 
         fun createIntent(activity: Activity): Intent {

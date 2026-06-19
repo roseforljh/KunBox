@@ -34,6 +34,13 @@ import com.kunk.singbox.viewmodel.ImportState
 import java.text.SimpleDateFormat
 import java.util.*
 
+private fun exportImportCardContainerColor(
+    useLiquidGlass: Boolean,
+    defaultColor: Color
+): Color {
+    return if (useLiquidGlass) Color.Transparent else defaultColor
+}
+
 @Suppress("FunctionNaming")
 @Composable
 private fun ExportImportCard(
@@ -56,7 +63,7 @@ private fun ExportImportCard(
         },
         shape = shape,
         colors = CardDefaults.cardColors(
-            containerColor = if (useLiquidGlass) Color.Transparent else containerColor
+            containerColor = exportImportCardContainerColor(useLiquidGlass, containerColor)
         ),
         content = content
     )

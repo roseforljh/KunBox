@@ -128,6 +128,46 @@ class LiquidGlassControlCoverageTest {
         assertTrue(appRouting.contains("liquidGlassTabIndicatorColor("))
     }
 
+    @Test
+    fun cardBasedSurfacesUseNamedLiquidGlassHelpers() {
+        val connectionInfo = File("src/main/java/com/kunk/singbox/ui/screens/ConnectionInfoScreen.kt").readText()
+        val ruleSetHub = File("src/main/java/com/kunk/singbox/ui/screens/RuleSetHubScreen.kt").readText()
+        val exportImport = File("src/main/java/com/kunk/singbox/ui/components/ExportImportDialogs.kt")
+            .readText()
+
+        assertTrue(connectionInfo.contains("private fun Modifier.connectionOverviewPanel()"))
+        assertTrue(connectionInfo.contains("private fun connectionItemContainerColor("))
+        assertTrue(ruleSetHub.contains("private fun Modifier.ruleSetHubItemPanel("))
+        assertTrue(ruleSetHub.contains("private fun ruleSetHubItemContainerColor("))
+        assertTrue(exportImport.contains("private fun exportImportCardContainerColor("))
+    }
+
+    @Test
+    fun qrScannerNativeControlsUseLiquidGlassButtonsOnlyForLiquidTheme() {
+        val scannerActivity = File("src/main/java/com/kunk/singbox/ui/scanner/QrScannerActivity.kt").readText()
+        val scannerLayout = File("src/main/res/layout/activity_qr_scanner.xml").readText()
+
+        assertTrue(scannerActivity.contains("SettingsRepository.getInstance(this).settings.value.appThemeStyle"))
+        assertTrue(scannerActivity.contains("AppThemeStyle.LIQUID_GLASS"))
+        assertTrue(scannerActivity.contains("private fun applyLiquidGlassScannerControls()"))
+        assertTrue(scannerActivity.contains("private fun liquidGlassScannerButtonBackground()"))
+        assertTrue(scannerActivity.contains("StateListDrawable()"))
+        assertTrue(scannerActivity.contains("GradientDrawable()"))
+        assertTrue(scannerLayout.contains("?android:attr/selectableItemBackgroundBorderless"))
+    }
+
+    @Test
+    fun qrScannerViewFinderUsesLiquidGlassFrameColorsOnlyForLiquidTheme() {
+        val viewFinder = File("src/main/java/com/kunk/singbox/ui/scanner/SquareViewFinderView.kt").readText()
+
+        assertTrue(viewFinder.contains("SettingsRepository.getInstance(context).settings.value.appThemeStyle"))
+        assertTrue(viewFinder.contains("AppThemeStyle.LIQUID_GLASS"))
+        assertTrue(viewFinder.contains("private fun scannerFrameColor("))
+        assertTrue(viewFinder.contains("private fun scannerMaskColor("))
+        assertTrue(viewFinder.contains("ContextCompat.getColor(context, defaultColorRes)"))
+        assertTrue(viewFinder.contains("Color.argb("))
+    }
+
     private fun liquidControlSources(): String {
         val controls = File("src/main/java/com/kunk/singbox/ui/theme/LiquidGlassControls.kt").readText()
         val selections = File("src/main/java/com/kunk/singbox/ui/theme/LiquidGlassSelectionControls.kt")
