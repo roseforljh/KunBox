@@ -1,9 +1,13 @@
 package com.kunk.singbox.ui.components
 
 import com.kunk.singbox.R
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -42,6 +46,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.material3.CircularProgressIndicator
@@ -92,6 +97,36 @@ private fun Modifier.profileSelectedIndicatorPanel(): Modifier {
     } else {
         background(MaterialTheme.colorScheme.primary, CircleShape)
     }
+}
+
+@Composable
+private fun Modifier.profileCardPressFeedback(
+    useLiquidGlass: Boolean,
+    isEnabled: Boolean,
+    onClick: () -> Unit
+): Modifier {
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (useLiquidGlass && isEnabled && isPressed) 0.98f else 1f,
+        animationSpec = spring(stiffness = 520f, dampingRatio = 0.72f),
+        label = "liquid_glass_profile_card_scale"
+    )
+    val clickModifier = if (useLiquidGlass) {
+        Modifier.clickable(
+            enabled = isEnabled,
+            interactionSource = interactionSource,
+            indication = null,
+            onClick = onClick
+        )
+    } else {
+        Modifier.clickable(enabled = isEnabled, onClick = onClick)
+    }
+
+    return graphicsLayer {
+        scaleX = scale
+        scaleY = scale
+    }.then(clickModifier)
 }
 
 @Suppress("LongMethod", "CyclomaticComplexMethod", "CognitiveComplexMethod", "LongParameterList")
@@ -151,8 +186,12 @@ fun ProfileCard(
     val cardModifier = if (useLiquidGlass) {
         modifier
             .fillMaxWidth()
+            .profileCardPressFeedback(
+                useLiquidGlass = useLiquidGlass,
+                isEnabled = isEnabled,
+                onClick = onClick
+            )
             .liquidGlassPanel(shape = shape, selected = isSelected, enabled = isEnabled)
-            .clickable(enabled = isEnabled, onClick = onClick)
             .padding(16.dp)
     } else {
         modifier
@@ -164,7 +203,11 @@ fun ProfileCard(
                 color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
                 shape = shape
             )
-            .clickable(enabled = isEnabled, onClick = onClick)
+            .profileCardPressFeedback(
+                useLiquidGlass = useLiquidGlass,
+                isEnabled = isEnabled,
+                onClick = onClick
+            )
             .padding(16.dp)
             .alpha(if (isEnabled) 1f else 0.5f)
     }

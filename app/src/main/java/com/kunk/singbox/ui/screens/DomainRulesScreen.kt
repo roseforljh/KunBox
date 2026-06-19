@@ -1,8 +1,12 @@
 package com.kunk.singbox.ui.screens
 
 import com.kunk.singbox.R
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.foundation.layout.Arrangement
@@ -50,6 +54,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -94,6 +99,32 @@ private fun Modifier.domainRuleSelectorPanel(): Modifier {
 }
 
 @Composable
+private fun Modifier.domainRuleItemPressFeedback(onClick: () -> Unit): Modifier {
+    val useLiquidGlass = isLiquidGlassTheme()
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (useLiquidGlass && isPressed) 0.98f else 1f,
+        animationSpec = spring(stiffness = 520f, dampingRatio = 0.72f),
+        label = "liquid_glass_domain_rule_item_scale"
+    )
+    val clickModifier = if (useLiquidGlass) {
+        Modifier.clickable(
+            interactionSource = interactionSource,
+            indication = null,
+            onClick = onClick
+        )
+    } else {
+        Modifier.clickable(onClick = onClick)
+    }
+
+    return graphicsLayer {
+        scaleX = scale
+        scaleY = scale
+    }.then(clickModifier)
+}
+
+@Composable
 private fun resolveOutboundText(
     mode: RuleSetOutboundMode,
     value: String?,
@@ -127,7 +158,7 @@ private fun DomainRuleItem(rule: CustomRule, outboundText: String, onClick: () -
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .clickable(onClick = onClick)
+                .domainRuleItemPressFeedback(onClick = onClick)
                 .padding(16.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {

@@ -1,11 +1,15 @@
 package com.kunk.singbox.ui.components
 
 import com.kunk.singbox.R
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -17,6 +21,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -70,6 +75,58 @@ private fun NodeSelectedIndicator(useLiquidGlass: Boolean) {
     }
 }
 
+@Composable
+private fun liquidGlassNodeCardScale(
+    useLiquidGlass: Boolean,
+    isPressed: Boolean,
+    label: String
+): Float {
+    val scale by animateFloatAsState(
+        targetValue = if (useLiquidGlass && isPressed) 0.98f else 1f,
+        animationSpec = spring(stiffness = 520f, dampingRatio = 0.72f),
+        label = label
+    )
+    return scale
+}
+
+private fun liquidGlassNodeCardClickModifier(
+    useLiquidGlass: Boolean,
+    interactionSource: MutableInteractionSource,
+    onClick: () -> Unit
+): Modifier {
+    return if (useLiquidGlass) {
+        Modifier.clickable(
+            interactionSource = interactionSource,
+            indication = null,
+            onClick = onClick
+        )
+    } else {
+        Modifier.clickable(onClick = onClick)
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+private fun liquidGlassNodeCardCombinedClickModifier(
+    useLiquidGlass: Boolean,
+    interactionSource: MutableInteractionSource,
+    onClick: () -> Unit,
+    onLongClick: () -> Unit
+): Modifier {
+    return if (useLiquidGlass) {
+        Modifier.combinedClickable(
+            interactionSource = interactionSource,
+            indication = null,
+            onClick = onClick,
+            onLongClick = onLongClick
+        )
+    } else {
+        Modifier.combinedClickable(
+            onClick = onClick,
+            onLongClick = onLongClick
+        )
+    }
+}
+
 @Suppress("LongParameterList", "LongMethod", "CognitiveComplexMethod")
 @Composable
 fun NodeCard(
@@ -87,6 +144,8 @@ fun NodeCard(
     modifier: Modifier = Modifier
 ) {
     var showMenu by remember { mutableStateOf(false) }
+    val listInteractionSource = remember { MutableInteractionSource() }
+    val isListPressed by listInteractionSource.collectIsPressedAsState()
 
     fun formatTraffic(bytes: Long): String {
         if (bytes <= 0) return ""
@@ -114,10 +173,24 @@ fun NodeCard(
             .background(MaterialTheme.colorScheme.surface, shape)
             .border(borderWidth, borderColor, shape)
     }
+    val scale = liquidGlassNodeCardScale(
+        useLiquidGlass = useLiquidGlass,
+        isPressed = isListPressed,
+        label = "liquid_glass_node_card_scale"
+    )
+    val clickModifier = liquidGlassNodeCardClickModifier(
+        useLiquidGlass = useLiquidGlass,
+        interactionSource = listInteractionSource,
+        onClick = onClick
+    )
 
     Box(
         modifier = cardModifier
-            .clickable(onClick = onClick)
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+            }
+            .then(clickModifier)
             .padding(16.dp)
     ) {
         Row(
@@ -335,6 +408,8 @@ fun NodeGridCard(
     modifier: Modifier = Modifier
 ) {
     var showMenu by remember { mutableStateOf(false) }
+    val gridInteractionSource = remember { MutableInteractionSource() }
+    val isGridPressed by gridInteractionSource.collectIsPressedAsState()
 
     val shape = RoundedCornerShape(12.dp)
     val useLiquidGlass = isLiquidGlassTheme()
@@ -356,13 +431,25 @@ fun NodeGridCard(
             .background(MaterialTheme.colorScheme.surface, shape)
             .border(borderWidth, borderColor, shape)
     }
+    val scale = liquidGlassNodeCardScale(
+        useLiquidGlass = useLiquidGlass,
+        isPressed = isGridPressed,
+        label = "liquid_glass_node_grid_card_scale"
+    )
+    val clickModifier = liquidGlassNodeCardCombinedClickModifier(
+        useLiquidGlass = useLiquidGlass,
+        interactionSource = gridInteractionSource,
+        onClick = onClick,
+        onLongClick = { showMenu = true }
+    )
 
     Box(
         modifier = cardModifier
-            .combinedClickable(
-                onClick = onClick,
-                onLongClick = { showMenu = true }
-            )
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+            }
+            .then(clickModifier)
             .padding(10.dp)
     ) {
         Column(

@@ -83,6 +83,138 @@ class LiquidGlassMaterialCallCoverageTest {
     }
 
     @Test
+    fun standardCardLiquidBranchUsesPressedFeedbackWithoutMaterialRipple() {
+        val standardCard = File("src/main/java/com/kunk/singbox/ui/components/StandardCard.kt").readText()
+
+        assertTrue(standardCard.contains("if (isLiquidGlassTheme())"))
+        assertTrue(standardCard.contains("MutableInteractionSource"))
+        assertTrue(standardCard.contains("collectIsPressedAsState"))
+        assertTrue(standardCard.contains("animateFloatAsState"))
+        assertTrue(standardCard.contains("graphicsLayer"))
+        assertTrue(standardCard.contains("indication = null"))
+    }
+
+    @Test
+    fun nodeCardsLiquidBranchesUsePressedFeedbackWithoutMaterialRipple() {
+        val nodeCard = File("src/main/java/com/kunk/singbox/ui/components/NodeCard.kt").readText()
+
+        assertTrue(nodeCard.contains("val listInteractionSource = remember { MutableInteractionSource() }"))
+        assertTrue(nodeCard.contains("val gridInteractionSource = remember { MutableInteractionSource() }"))
+        assertTrue(nodeCard.contains("collectIsPressedAsState"))
+        assertTrue(nodeCard.contains("animateFloatAsState"))
+        assertTrue(nodeCard.contains("graphicsLayer"))
+        assertTrue(nodeCard.contains("indication = null"))
+        assertTrue(nodeCard.contains("liquidGlassNodeCardScale"))
+    }
+
+    @Test
+    fun statusChipLiquidBranchUsesPressedFeedbackWithoutMaterialRipple() {
+        val statusChip = File("src/main/java/com/kunk/singbox/ui/components/StatusChip.kt").readText()
+
+        assertTrue(statusChip.contains("MutableInteractionSource"))
+        assertTrue(statusChip.contains("collectIsPressedAsState"))
+        assertTrue(statusChip.contains("animateFloatAsState"))
+        assertTrue(statusChip.contains("graphicsLayer"))
+        assertTrue(statusChip.contains("indication = null"))
+    }
+
+    @Test
+    fun clickableDropdownFieldLiquidBranchUsesPressedFeedbackWithoutMaterialRipple() {
+        val dropdownField = File("src/main/java/com/kunk/singbox/ui/components/ClickableDropdownField.kt").readText()
+
+        assertTrue(dropdownField.contains("MutableInteractionSource"))
+        assertTrue(dropdownField.contains("collectIsPressedAsState"))
+        assertTrue(dropdownField.contains("animateFloatAsState"))
+        assertTrue(dropdownField.contains("graphicsLayer"))
+        assertTrue(dropdownField.contains("indication = null"))
+    }
+
+    @Test
+    fun nodeSelectorItemUsesPressedFeedbackWithoutMaterialRipple() {
+        val nodeSelectionDialogs = File(
+            "src/main/java/com/kunk/singbox/ui/components/NodeSelectionDialogs.kt"
+        ).readText()
+
+        assertTrue(nodeSelectionDialogs.contains("nodeSelectorItemPressFeedback"))
+        assertTrue(nodeSelectionDialogs.contains("MutableInteractionSource"))
+        assertTrue(nodeSelectionDialogs.contains("collectIsPressedAsState"))
+        assertTrue(nodeSelectionDialogs.contains("animateFloatAsState"))
+        assertTrue(nodeSelectionDialogs.contains("graphicsLayer"))
+        assertTrue(nodeSelectionDialogs.contains("indication = null"))
+    }
+
+    @Test
+    fun appRoutingItemsUsePressedFeedbackWithoutMaterialRipple() {
+        val appRoutingComponents = File(
+            "src/main/java/com/kunk/singbox/ui/screens/AppRoutingComponents.kt"
+        ).readText()
+
+        assertTrue(appRoutingComponents.contains("routingItemPressFeedback"))
+        assertTrue(appRoutingComponents.contains("MutableInteractionSource"))
+        assertTrue(appRoutingComponents.contains("collectIsPressedAsState"))
+        assertTrue(appRoutingComponents.contains("animateFloatAsState"))
+        assertTrue(appRoutingComponents.contains("graphicsLayer"))
+        assertTrue(appRoutingComponents.contains("indication = null"))
+        assertTrue(appRoutingComponents.countOccurrences(".routingItemPressFeedback(") >= 2)
+        assertTrue(appRoutingComponents.countOccurrences("StandardCard(onClick = onClick)") >= 2)
+    }
+
+    @Test
+    fun ruleItemsUsePressedFeedbackWithoutMaterialRipple() {
+        val ruleFiles = mapOf(
+            "src/main/java/com/kunk/singbox/ui/screens/CustomRulesScreen.kt" to "customRuleItemPressFeedback",
+            "src/main/java/com/kunk/singbox/ui/screens/DomainRulesScreen.kt" to "domainRuleItemPressFeedback",
+            "src/main/java/com/kunk/singbox/ui/screens/RuleSetsDialogs.kt" to "ruleSetItemPressFeedback"
+        )
+
+        ruleFiles.forEach { (filePath, marker) ->
+            val source = File(filePath).readText()
+            assertTrue(source.contains(marker))
+            assertTrue(source.contains("MutableInteractionSource"))
+            assertTrue(source.contains("collectIsPressedAsState"))
+            assertTrue(source.contains("animateFloatAsState"))
+            assertTrue(source.contains("graphicsLayer"))
+            assertTrue(source.contains("indication = null"))
+        }
+    }
+
+    @Test
+    fun settingItemUsesPressedFeedbackWithoutMaterialRipple() {
+        val settingItem = File("src/main/java/com/kunk/singbox/ui/components/SettingItem.kt").readText()
+
+        assertTrue(settingItem.contains("settingItemPressFeedback"))
+        assertTrue(settingItem.contains("MutableInteractionSource"))
+        assertTrue(settingItem.contains("collectIsPressedAsState"))
+        assertTrue(settingItem.contains("animateFloatAsState"))
+        assertTrue(settingItem.contains("graphicsLayer"))
+        assertTrue(settingItem.contains("indication = null"))
+    }
+
+    @Test
+    fun profileCardUsesPressedFeedbackWithoutMaterialRipple() {
+        val profileCard = File("src/main/java/com/kunk/singbox/ui/components/ProfileCard.kt").readText()
+
+        assertTrue(profileCard.contains("profileCardPressFeedback"))
+        assertTrue(profileCard.contains("MutableInteractionSource"))
+        assertTrue(profileCard.contains("collectIsPressedAsState"))
+        assertTrue(profileCard.contains("animateFloatAsState"))
+        assertTrue(profileCard.contains("graphicsLayer"))
+        assertTrue(profileCard.contains("indication = null"))
+    }
+
+    @Test
+    fun infoCardUsesPressedFeedbackWithoutMaterialRipple() {
+        val infoCard = File("src/main/java/com/kunk/singbox/ui/components/InfoCard.kt").readText()
+
+        assertTrue(infoCard.contains("infoCardPingPressFeedback"))
+        assertTrue(infoCard.contains("MutableInteractionSource"))
+        assertTrue(infoCard.contains("collectIsPressedAsState"))
+        assertTrue(infoCard.contains("animateFloatAsState"))
+        assertTrue(infoCard.contains("graphicsLayer"))
+        assertTrue(infoCard.contains("indication = null"))
+    }
+
+    @Test
     fun uiFilesWithoutLiquidGlassMarkersStayInPassThroughAllowList() {
         val uiDir = File("src/main/java/com/kunk/singbox/ui")
         val filesWithoutLiquidGlassMarkers = uiDir.walkTopDown()
@@ -299,6 +431,10 @@ class LiquidGlassMaterialCallCoverageTest {
         return substring(0, offset).count { it == '\n' } + 1
     }
 
+    private fun String.countOccurrences(pattern: String): Int {
+        return split(pattern).size - 1
+    }
+
     private fun List<String>.assertScreenSourcesContain(pattern: String) {
         forEach { fileName ->
             val source = File("src/main/java/com/kunk/singbox/ui/screens/$fileName").readText()
@@ -362,8 +498,8 @@ class LiquidGlassMaterialCallCoverageTest {
             "ui/components/AppNavBar.kt:111:NavigationBar:NavigationBar(",
             "ui/components/AppNavBar.kt:164:NavigationBarItem:NavigationBarItem(",
             "ui/components/ExportImportDialogs.kt:54:Card:Card(",
-            "ui/components/StandardCard.kt:42:Card:Card(",
-            "ui/components/StandardCard.kt:53:Card:Card(",
+            "ui/components/StandardCard.kt:64:Card:Card(",
+            "ui/components/StandardCard.kt:75:Card:Card(",
             "ui/screens/ConnectionInfoScreen.kt:569:Card:Card(",
             "ui/screens/ConnectionInfoScreen.kt:708:Card:Card(",
             "ui/screens/RuleSetHubScreen.kt:319:Card:Card(",

@@ -8,10 +8,14 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -46,6 +50,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -152,6 +157,34 @@ private fun Modifier.nodeSelectorCheckPanel(): Modifier {
     } else {
         background(MaterialTheme.colorScheme.primary, CircleShape)
     }
+}
+
+@Composable
+private fun Modifier.nodeSelectorItemPressFeedback(
+    useLiquidGlass: Boolean,
+    onClick: () -> Unit
+): Modifier {
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (useLiquidGlass && isPressed) 0.98f else 1f,
+        animationSpec = spring(stiffness = 520f, dampingRatio = 0.72f),
+        label = "liquid_glass_node_selector_item_scale"
+    )
+    val clickModifier = if (useLiquidGlass) {
+        Modifier.clickable(
+            interactionSource = interactionSource,
+            indication = null,
+            onClick = onClick
+        )
+    } else {
+        Modifier.clickable(onClick = onClick)
+    }
+
+    return graphicsLayer {
+        scaleX = scale
+        scaleY = scale
+    }.then(clickModifier)
 }
 
 @Composable
@@ -836,7 +869,7 @@ internal fun NodeSelectorItem(
         modifier = Modifier
             .fillMaxWidth()
             .nodeSelectionItemPanel(isSelected)
-            .clickable(onClick = onClick)
+            .nodeSelectorItemPressFeedback(useLiquidGlass = useLiquidGlass, onClick = onClick)
             .padding(12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {

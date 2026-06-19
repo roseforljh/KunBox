@@ -1,8 +1,12 @@
 package com.kunk.singbox.ui.screens
 
 import com.kunk.singbox.R
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -18,6 +22,7 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -37,7 +42,34 @@ import com.kunk.singbox.ui.theme.liquidGlassEmptyStatePanel
 import com.kunk.singbox.ui.theme.liquidGlassIconButtonPanel
 import com.kunk.singbox.ui.theme.liquidGlassTextButtonPanel
 import com.kunk.singbox.viewmodel.SettingsViewModel
+import com.kunk.singbox.ui.theme.isLiquidGlassTheme
 import com.kunk.singbox.ui.theme.liquidGlassTopAppBarContainerColor
+
+@Composable
+private fun Modifier.customRuleItemPressFeedback(onClick: () -> Unit): Modifier {
+    val useLiquidGlass = isLiquidGlassTheme()
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (useLiquidGlass && isPressed) 0.98f else 1f,
+        animationSpec = spring(stiffness = 520f, dampingRatio = 0.72f),
+        label = "liquid_glass_custom_rule_item_scale"
+    )
+    val clickModifier = if (useLiquidGlass) {
+        Modifier.clickable(
+            interactionSource = interactionSource,
+            indication = null,
+            onClick = onClick
+        )
+    } else {
+        Modifier.clickable(onClick = onClick)
+    }
+
+    return graphicsLayer {
+        scaleX = scale
+        scaleY = scale
+    }.then(clickModifier)
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -154,7 +186,7 @@ fun CustomRuleItem(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .clickable(onClick = onClick)
+                .customRuleItemPressFeedback(onClick = onClick)
                 .padding(16.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
