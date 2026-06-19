@@ -65,6 +65,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.navigation.NavController
@@ -112,9 +113,11 @@ private suspend fun readImportContentSafely(
 }
 
 @Composable
+@Suppress("LongMethod", "CyclomaticComplexMethod", "CognitiveComplexMethod", "SwallowedException")
 fun ProfilesScreen(
     navController: NavController,
-    viewModel: com.kunk.singbox.viewmodel.ProfilesViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
+    viewModel: com.kunk.singbox.viewmodel.ProfilesViewModel = androidx.lifecycle.viewmodel.compose.viewModel(),
+    bottomContentPadding: Dp = 0.dp
 ) {
     val profiles by viewModel.profiles.collectAsState()
     val allNodes by viewModel.allNodes.collectAsState()
@@ -522,287 +525,296 @@ fun ProfilesScreen(
         )
     }
 
-    Scaffold(
-        containerColor = MaterialTheme.colorScheme.background,
-        contentWindowInsets = WindowInsets(0, 0, 0, 0),
-        floatingActionButton = {
-            AnimatedVisibility(
-                visible = isFabVisible,
-                enter = fadeIn(animationSpec = tween(300)),
-                exit = fadeOut(animationSpec = tween(300))
+    Box(modifier = Modifier.fillMaxSize()) {
+        Scaffold(
+            containerColor = MaterialTheme.colorScheme.background,
+            contentWindowInsets = WindowInsets(0, 0, 0, 0)
+        ) { padding ->
+            val statusBarPadding = WindowInsets.statusBars.asPaddingValues()
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .pointerInput(Unit) {
+                        awaitEachGesture {
+                            val down = awaitFirstDown(pass = PointerEventPass.Initial)
+                            lastY = down.position.y
+                            do {
+                                val event = awaitPointerEvent(PointerEventPass.Initial)
+                                val currentY = event.changes.firstOrNull()?.position?.y ?: lastY
+                                val deltaY = currentY - lastY
+                                if (deltaY < -30f) {
+                                    isFabVisible = false
+                                } else if (deltaY > 30f) {
+                                    isFabVisible = true
+                                }
+                                lastY = currentY
+                            } while (event.changes.any { it.pressed })
+                        }
+                    }
+                    .nestedScroll(nestedScrollConnection)
+                    .padding(top = statusBarPadding.calculateTopPadding())
+                    .padding(bottom = padding.calculateBottomPadding())
             ) {
-                FloatingActionButton(
-                    onClick = { showImportSelection = true },
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    contentColor = MaterialTheme.colorScheme.onPrimary
+                // Header
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Icon(Icons.Rounded.Add, contentDescription = "Add Profile")
+                    Text(
+                        text = stringResource(R.string.profiles_title),
+                        style = MaterialTheme.typography.headlineMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onBackground
+                    )
+                    IconButton(onClick = { showSearchDialog = true }) {
+                        Icon(Icons.Rounded.Search, contentDescription = "Search", tint = MaterialTheme.colorScheme.onBackground)
+                    }
+                }
+                // List
+                LazyColumn(
+                    state = listState,
+                    contentPadding = PaddingValues(
+                        start = 16.dp,
+                        top = 16.dp,
+                        end = 16.dp,
+                        bottom = 16.dp + bottomContentPadding
+                    ),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    items(profileList.size, key = { profileList[it].id }) { index ->
+                        val profile = profileList[index]
+                        var visible by remember { mutableStateOf(false) }
+                        androidx.compose.runtime.LaunchedEffect(Unit) {
+                            if (index < 15) {
+                                delay(index * 30L)
+                            }
+                            visible = true
+                        }
+
+                        val alpha by animateFloatAsState(
+                            targetValue = if (visible) 1f else 0f,
+                            animationSpec = tween(durationMillis = 300),
+                            label = "alpha"
+                        )
+
+                        val isDraggingItem = draggingItemIndex == index
+                        val isSettlingItem = settlingItemId == profile.id
+                        val isCurrentlyDragging = isDragging.value
+                        val canDisplace = isCurrentlyDragging &&
+                            draggingItemIndex != null &&
+                            itemHeightPx > 0 &&
+                            !isDraggingItem
+
+                        var translationY = if (visible) 0f else 40f
+                        if (canDisplace) {
+                            val startIdx = draggingItemIndex ?: index
+                            val dragProgress = draggingItemOffset / itemHeightPx
+                            val rawEndProgress = when {
+                                dragProgress > 0f -> kotlin.math.ceil(dragProgress)
+                                dragProgress < 0f -> kotlin.math.floor(dragProgress)
+                                else -> 0.0
+                            }
+                            val clampedStart = startIdx.coerceIn(0, profileList.lastIndex)
+                            val clampedEnd = (startIdx + rawEndProgress.toInt()).coerceIn(0, profileList.lastIndex)
+                            when {
+                                clampedStart < clampedEnd && index > clampedStart && index <= clampedEnd -> {
+                                    val itemSlotOffset = index - startIdx
+                                    translationY = -(dragProgress - (itemSlotOffset - 1)) * itemHeightPx
+                                    translationY = translationY.coerceIn(-itemHeightPx, 0f)
+                                }
+                                clampedStart > clampedEnd && index < clampedStart && index >= clampedEnd -> {
+                                    val itemSlotOffset = startIdx - index
+                                    translationY = (-dragProgress - (itemSlotOffset - 1)) * itemHeightPx
+                                    translationY = translationY.coerceIn(0f, itemHeightPx)
+                                }
+                            }
+                        }
+
+                        val dragScale by animateFloatAsState(
+                            targetValue = when {
+                                isDraggingItem && isCurrentlyDragging -> 1.02f
+                                isSettlingItem -> 1.01f
+                                else -> 1f
+                            },
+                            animationSpec = spring(dampingRatio = 0.8f, stiffness = 260f),
+                            label = "dragScale"
+                        )
+                        val dragShadow by animateFloatAsState(
+                            targetValue = when {
+                                isDraggingItem && isCurrentlyDragging -> 8f
+                                isSettlingItem -> 4f
+                                else -> 2f
+                            },
+                            animationSpec = spring(dampingRatio = 0.82f, stiffness = 260f),
+                            label = "dragShadow"
+                        )
+                        val dragAlpha by animateFloatAsState(
+                            targetValue = when {
+                                isDraggingItem && isCurrentlyDragging -> 0.94f
+                                isSettlingItem -> 0.98f
+                                else -> 1f
+                            },
+                            animationSpec = spring(dampingRatio = 0.85f, stiffness = 280f),
+                            label = "dragAlpha"
+                        )
+
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .zIndex(if (isDraggingItem && isCurrentlyDragging) 1f else 0f)
+                                .onGloballyPositioned { coordinates ->
+                                    if (itemHeightPx == 0f) {
+                                        val spacingPx = with(density) { 12.dp.toPx() }
+                                        itemHeightPx = coordinates.size.height.toFloat() + spacingPx
+                                    }
+                                }
+                                .graphicsLayer {
+                                    this.translationY = if (isDraggingItem) draggingItemOffset else translationY
+                                    this.alpha = alpha * dragAlpha
+                                    scaleX = dragScale
+                                    scaleY = dragScale
+                                    shadowElevation = dragShadow
+                                }
+                                .then(
+                                    if (!enablePlacementAnimation || suppressPlacementAnimation) {
+                                        Modifier
+                                    } else {
+                                        Modifier.animateItem()
+                                    }
+                                )
+                                .clickable(enabled = !isDraggingItem || !isCurrentlyDragging) {
+                                    viewModel.setActiveProfile(profile.id)
+                                }
+                                .pointerInput(index) {
+                                    detectDragGesturesAfterLongPress(
+                                        onDragStart = {
+                                            draggingItemIndex = index
+                                            draggingItemId = profile.id
+                                            draggingItemOffset = 0f
+                                            isDragging.value = true
+                                            haptic.performHapticFeedback(
+                                                androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress
+                                            )
+                                        },
+                                        onDragEnd = {
+                                            draggingItemIndex?.let { startIdx ->
+                                                val dist = if (itemHeightPx > 0f) {
+                                                    kotlin.math.round(draggingItemOffset / itemHeightPx).toInt()
+                                                } else {
+                                                    0
+                                                }
+                                                val endIdx = (startIdx + dist).coerceIn(0, profileList.lastIndex)
+
+                                                val settledProfileId = profile.id
+                                                settlingItemId = settledProfileId
+                                                suppressPlacementAnimation = true
+                                                val absScrollBefore = if (itemHeightPx > 0f) {
+                                                    listState.firstVisibleItemIndex * itemHeightPx +
+                                                        listState.firstVisibleItemScrollOffset
+                                                } else {
+                                                    null
+                                                }
+
+                                                if (startIdx != endIdx) {
+                                                    val item = profileList.removeAt(startIdx)
+                                                    profileList.add(endIdx, item)
+                                                    viewModel.reorderProfiles(profileList.toList())
+                                                }
+
+                                                val abs = absScrollBefore
+                                                if (abs != null && itemHeightPx > 0f) {
+                                                    val targetIndex = (abs / itemHeightPx).toInt()
+                                                        .coerceIn(0, profileList.lastIndex)
+                                                    val targetOffset = (abs - targetIndex * itemHeightPx)
+                                                        .toInt()
+                                                        .coerceAtLeast(0)
+                                                    scope.launch {
+                                                        listState.scrollToItem(targetIndex, targetOffset)
+                                                    }
+                                                }
+
+                                                draggingItemIndex = null
+                                                draggingItemOffset = 0f
+                                                draggingItemId = null
+                                                isDragging.value = false
+
+                                                scope.launch {
+                                                    androidx.compose.runtime.withFrameNanos { }
+                                                    suppressPlacementAnimation = false
+                                                }
+                                                scope.launch {
+                                                    delay(220)
+                                                    if (settlingItemId == settledProfileId) {
+                                                        settlingItemId = null
+                                                    }
+                                                }
+                                            }
+                                        },
+                                        onDragCancel = {
+                                            draggingItemIndex = null
+                                            draggingItemId = null
+                                            draggingItemOffset = 0f
+                                            settlingItemId = null
+                                            isDragging.value = false
+                                            suppressPlacementAnimation = false
+                                        },
+                                        onDrag = { change, dragAmount ->
+                                            change.consume()
+                                            draggingItemOffset += dragAmount.y
+                                        }
+                                    )
+                                }
+                        ) {
+                            ProfileCard(
+                                name = profile.name,
+                                type = profile.type.name,
+                                isSelected = profile.id == activeProfileId,
+                                isEnabled = profile.enabled,
+                                isUpdating = profile.updateStatus == UpdateStatus.Updating &&
+                                    profile.updateStage?.isBackground != true,
+                                updateStatus = profile.updateStatus,
+                                updateStage = profile.updateStage,
+                                expireDate = profile.expireDate,
+                                totalTraffic = profile.totalTraffic,
+                                usedTraffic = profile.usedTraffic,
+                                lastUpdated = profile.lastUpdated,
+                                dnsPreResolve = profile.dnsPreResolve,
+                                onClick = { viewModel.setActiveProfile(profile.id) },
+                                onUpdate = { viewModel.updateProfile(profile.id) },
+                                onToggle = { viewModel.toggleProfileEnabled(profile.id) },
+                                onEdit = {
+                                    if (profile.type == com.kunk.singbox.model.ProfileType.Subscription ||
+                                        profile.type == com.kunk.singbox.model.ProfileType.Imported) {
+                                        editingProfile = profile
+                                    } else {
+                                        navController.navigate(Screen.ProfileEditor.createRoute(profile.id))
+                                    }
+                                },
+                                onDelete = { viewModel.deleteProfile(profile.id) }
+                            )
+                        }
+                    }
                 }
             }
         }
-    ) { padding ->
-        val statusBarPadding = WindowInsets.statusBars.asPaddingValues()
-        Column(
+
+        AnimatedVisibility(
+            visible = isFabVisible,
+            enter = fadeIn(animationSpec = tween(300)),
+            exit = fadeOut(animationSpec = tween(300)),
             modifier = Modifier
-                .fillMaxSize()
-                .pointerInput(Unit) {
-                    awaitEachGesture {
-                        val down = awaitFirstDown(pass = PointerEventPass.Initial)
-                        lastY = down.position.y
-                        do {
-                            val event = awaitPointerEvent(PointerEventPass.Initial)
-                            val currentY = event.changes.firstOrNull()?.position?.y ?: lastY
-                            val deltaY = currentY - lastY
-                            if (deltaY < -30f) {
-                                isFabVisible = false
-                            } else if (deltaY > 30f) {
-                                isFabVisible = true
-                            }
-                            lastY = currentY
-                        } while (event.changes.any { it.pressed })
-                    }
-                }
-                .nestedScroll(nestedScrollConnection)
-                .padding(top = statusBarPadding.calculateTopPadding())
-                .padding(bottom = padding.calculateBottomPadding())
+                .align(Alignment.BottomEnd)
+                .padding(end = 16.dp, bottom = 16.dp + bottomContentPadding)
         ) {
-            // Header
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
+            FloatingActionButton(
+                onClick = { showImportSelection = true },
+                containerColor = MaterialTheme.colorScheme.primary,
+                contentColor = MaterialTheme.colorScheme.onPrimary
             ) {
-                Text(
-                    text = stringResource(R.string.profiles_title),
-                    style = MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onBackground
-                )
-                IconButton(onClick = { showSearchDialog = true }) {
-                    Icon(Icons.Rounded.Search, contentDescription = "Search", tint = MaterialTheme.colorScheme.onBackground)
-                }
-            }
-            // List
-            LazyColumn(
-                state = listState,
-                contentPadding = PaddingValues(16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                items(profileList.size, key = { profileList[it].id }) { index ->
-                    val profile = profileList[index]
-                    var visible by remember { mutableStateOf(false) }
-                    androidx.compose.runtime.LaunchedEffect(Unit) {
-                        if (index < 15) {
-                            delay(index * 30L)
-                        }
-                        visible = true
-                    }
-
-                    val alpha by animateFloatAsState(
-                        targetValue = if (visible) 1f else 0f,
-                        animationSpec = tween(durationMillis = 300),
-                        label = "alpha"
-                    )
-
-                    val isDraggingItem = draggingItemIndex == index
-                    val isSettlingItem = settlingItemId == profile.id
-                    val isCurrentlyDragging = isDragging.value
-                    val canDisplace = isCurrentlyDragging &&
-                        draggingItemIndex != null &&
-                        itemHeightPx > 0 &&
-                        !isDraggingItem
-
-                    var translationY = if (visible) 0f else 40f
-                    if (canDisplace) {
-                        val startIdx = draggingItemIndex ?: index
-                        val dragProgress = draggingItemOffset / itemHeightPx
-                        val rawEndProgress = when {
-                            dragProgress > 0f -> kotlin.math.ceil(dragProgress)
-                            dragProgress < 0f -> kotlin.math.floor(dragProgress)
-                            else -> 0.0
-                        }
-                        val clampedStart = startIdx.coerceIn(0, profileList.lastIndex)
-                        val clampedEnd = (startIdx + rawEndProgress.toInt()).coerceIn(0, profileList.lastIndex)
-                        when {
-                            clampedStart < clampedEnd && index > clampedStart && index <= clampedEnd -> {
-                                val itemSlotOffset = index - startIdx
-                                translationY = -(dragProgress - (itemSlotOffset - 1)) * itemHeightPx
-                                translationY = translationY.coerceIn(-itemHeightPx, 0f)
-                            }
-                            clampedStart > clampedEnd && index < clampedStart && index >= clampedEnd -> {
-                                val itemSlotOffset = startIdx - index
-                                translationY = (-dragProgress - (itemSlotOffset - 1)) * itemHeightPx
-                                translationY = translationY.coerceIn(0f, itemHeightPx)
-                            }
-                        }
-                    }
-
-                    val dragScale by animateFloatAsState(
-                        targetValue = when {
-                            isDraggingItem && isCurrentlyDragging -> 1.02f
-                            isSettlingItem -> 1.01f
-                            else -> 1f
-                        },
-                        animationSpec = spring(dampingRatio = 0.8f, stiffness = 260f),
-                        label = "dragScale"
-                    )
-                    val dragShadow by animateFloatAsState(
-                        targetValue = when {
-                            isDraggingItem && isCurrentlyDragging -> 8f
-                            isSettlingItem -> 4f
-                            else -> 2f
-                        },
-                        animationSpec = spring(dampingRatio = 0.82f, stiffness = 260f),
-                        label = "dragShadow"
-                    )
-                    val dragAlpha by animateFloatAsState(
-                        targetValue = when {
-                            isDraggingItem && isCurrentlyDragging -> 0.94f
-                            isSettlingItem -> 0.98f
-                            else -> 1f
-                        },
-                        animationSpec = spring(dampingRatio = 0.85f, stiffness = 280f),
-                        label = "dragAlpha"
-                    )
-
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .zIndex(if (isDraggingItem && isCurrentlyDragging) 1f else 0f)
-                            .onGloballyPositioned { coordinates ->
-                                if (itemHeightPx == 0f) {
-                                    val spacingPx = with(density) { 12.dp.toPx() }
-                                    itemHeightPx = coordinates.size.height.toFloat() + spacingPx
-                                }
-                            }
-                            .graphicsLayer {
-                                this.translationY = if (isDraggingItem) draggingItemOffset else translationY
-                                this.alpha = alpha * dragAlpha
-                                scaleX = dragScale
-                                scaleY = dragScale
-                                shadowElevation = dragShadow
-                            }
-                            .then(
-                                if (!enablePlacementAnimation || suppressPlacementAnimation) {
-                                    Modifier
-                                } else {
-                                    Modifier.animateItem()
-                                }
-                            )
-                            .clickable(enabled = !isDraggingItem || !isCurrentlyDragging) {
-                                viewModel.setActiveProfile(profile.id)
-                            }
-                            .pointerInput(index) {
-                                detectDragGesturesAfterLongPress(
-                                    onDragStart = {
-                                        draggingItemIndex = index
-                                        draggingItemId = profile.id
-                                        draggingItemOffset = 0f
-                                        isDragging.value = true
-                                        haptic.performHapticFeedback(
-                                            androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress
-                                        )
-                                    },
-                                    onDragEnd = {
-                                        draggingItemIndex?.let { startIdx ->
-                                            val dist = if (itemHeightPx > 0f) {
-                                                kotlin.math.round(draggingItemOffset / itemHeightPx).toInt()
-                                            } else {
-                                                0
-                                            }
-                                            val endIdx = (startIdx + dist).coerceIn(0, profileList.lastIndex)
-
-                                            val settledProfileId = profile.id
-                                            settlingItemId = settledProfileId
-                                            suppressPlacementAnimation = true
-                                            val absScrollBefore = if (itemHeightPx > 0f) {
-                                                listState.firstVisibleItemIndex * itemHeightPx +
-                                                    listState.firstVisibleItemScrollOffset
-                                            } else {
-                                                null
-                                            }
-
-                                            if (startIdx != endIdx) {
-                                                val item = profileList.removeAt(startIdx)
-                                                profileList.add(endIdx, item)
-                                                viewModel.reorderProfiles(profileList.toList())
-                                            }
-
-                                            val abs = absScrollBefore
-                                            if (abs != null && itemHeightPx > 0f) {
-                                                val targetIndex = (abs / itemHeightPx).toInt()
-                                                    .coerceIn(0, profileList.lastIndex)
-                                                val targetOffset = (abs - targetIndex * itemHeightPx)
-                                                    .toInt()
-                                                    .coerceAtLeast(0)
-                                                scope.launch {
-                                                    listState.scrollToItem(targetIndex, targetOffset)
-                                                }
-                                            }
-
-                                            draggingItemIndex = null
-                                            draggingItemOffset = 0f
-                                            draggingItemId = null
-                                            isDragging.value = false
-
-                                            scope.launch {
-                                                androidx.compose.runtime.withFrameNanos { }
-                                                suppressPlacementAnimation = false
-                                            }
-                                            scope.launch {
-                                                delay(220)
-                                                if (settlingItemId == settledProfileId) {
-                                                    settlingItemId = null
-                                                }
-                                            }
-                                        }
-                                    },
-                                    onDragCancel = {
-                                        draggingItemIndex = null
-                                        draggingItemId = null
-                                        draggingItemOffset = 0f
-                                        settlingItemId = null
-                                        isDragging.value = false
-                                        suppressPlacementAnimation = false
-                                    },
-                                    onDrag = { change, dragAmount ->
-                                        change.consume()
-                                        draggingItemOffset += dragAmount.y
-                                    }
-                                )
-                            }
-                    ) {
-                        ProfileCard(
-                            name = profile.name,
-                            type = profile.type.name,
-                            isSelected = profile.id == activeProfileId,
-                            isEnabled = profile.enabled,
-                            isUpdating = profile.updateStatus == UpdateStatus.Updating &&
-                                profile.updateStage?.isBackground != true,
-                            updateStatus = profile.updateStatus,
-                            updateStage = profile.updateStage,
-                            expireDate = profile.expireDate,
-                            totalTraffic = profile.totalTraffic,
-                            usedTraffic = profile.usedTraffic,
-                            lastUpdated = profile.lastUpdated,
-                            dnsPreResolve = profile.dnsPreResolve,
-                            onClick = { viewModel.setActiveProfile(profile.id) },
-                            onUpdate = { viewModel.updateProfile(profile.id) },
-                            onToggle = { viewModel.toggleProfileEnabled(profile.id) },
-                            onEdit = {
-                                if (profile.type == com.kunk.singbox.model.ProfileType.Subscription ||
-                                    profile.type == com.kunk.singbox.model.ProfileType.Imported) {
-                                    editingProfile = profile
-                                } else {
-                                    navController.navigate(Screen.ProfileEditor.createRoute(profile.id))
-                                }
-                            },
-                            onDelete = { viewModel.deleteProfile(profile.id) }
-                        )
-                    }
-                }
+                Icon(Icons.Rounded.Add, contentDescription = "Add Profile")
             }
         }
     }

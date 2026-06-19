@@ -21,10 +21,11 @@ class MainActivityAutoConnectSourceTest {
     fun dashboardRouteUsesRootDashboardViewModelInstance() {
         val main = File("src/main/java/com/kunk/singbox/MainActivity.kt").readText()
         val navigation = File("src/main/java/com/kunk/singbox/ui/navigation/AppNavigation.kt").readText()
-
-        assertTrue(main.contains("AppNavigation(navController, dashboardViewModel)"))
+        assertTrue(main.contains("AppNavigation("))
+        assertTrue(main.contains("dashboardViewModel = dashboardViewModel"))
         assertTrue(navigation.contains("fun AppNavigation("))
         assertTrue(navigation.contains("dashboardViewModel: DashboardViewModel"))
-        assertTrue(navigation.contains("DashboardScreen(navController, viewModel = dashboardViewModel)"))
+        assertTrue(navigation.contains("DashboardScreen("))
+        assertTrue(navigation.contains("viewModel = dashboardViewModel"))
     }
 }

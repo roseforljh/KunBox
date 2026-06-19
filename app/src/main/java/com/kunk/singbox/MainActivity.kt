@@ -25,7 +25,9 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
@@ -38,13 +40,16 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.navigation.NavController
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.kunk.singbox.repository.SettingsRepository
 import com.kunk.singbox.viewmodel.DashboardViewModel
 import com.kunk.singbox.model.ConnectionState
+import com.kunk.singbox.model.AppThemeStyle
 import com.kunk.singbox.model.AppLanguage
 import com.kunk.singbox.utils.LocaleHelper
 import com.kunk.singbox.utils.DeepLinkHandler
@@ -282,9 +287,11 @@ fun SingBoxApp() {
     }
 
     val appTheme = settings?.appTheme ?: com.kunk.singbox.model.AppThemeMode.SYSTEM
+    val appThemeStyle = settings?.appThemeStyle ?: AppThemeStyle.DEFAULT
 
     SingBoxTheme(appTheme = appTheme) {
         val navController = rememberNavController()
+        val useLiquidGlassNav = appThemeStyle == AppThemeStyle.LIQUID_GLASS
 
         // Handle pending navigation from App Shortcuts
         LaunchedEffect(pendingNavigation) {
@@ -311,36 +318,82 @@ fun SingBoxApp() {
         Box(modifier = Modifier.fillMaxSize()) {
             Scaffold(
                 bottomBar = {
-                    AnimatedVisibility(
-                        visible = showBottomBar,
-                        enter = slideInVertically(
-                            initialOffsetY = { it },
-                            animationSpec = tween(durationMillis = 400, easing = FastOutSlowInEasing)
-                        ) + expandVertically(
-                            expandFrom = Alignment.Bottom,
-                            animationSpec = tween(durationMillis = 400, easing = FastOutSlowInEasing)
-                        ) + fadeIn(animationSpec = tween(durationMillis = 400)),
-                        exit = slideOutVertically(
-                            targetOffsetY = { it },
-                            animationSpec = tween(durationMillis = 400, easing = FastOutSlowInEasing)
-                        ) + shrinkVertically(
-                            shrinkTowards = Alignment.Bottom,
-                            animationSpec = tween(durationMillis = 400, easing = FastOutSlowInEasing)
-                        ) + fadeOut(animationSpec = tween(durationMillis = 400))
-                    ) {
-                        AppNavBar(navController = navController)
+                    if (!useLiquidGlassNav) {
+                        AnimatedAppNavBar(
+                            visible = showBottomBar,
+                            navController = navController,
+                            themeStyle = appThemeStyle
+                        )
                     }
                 },
+                containerColor = MaterialTheme.colorScheme.surface,
                 contentWindowInsets = WindowInsets(0, 0, 0, 0)
             ) { innerPadding ->
+                val dashboardContentBottomPadding = if (useLiquidGlassNav) {
+                    64.dp
+                } else {
+                    0.dp
+                }
+                val topLevelContentBottomPadding = if (useLiquidGlassNav) {
+                    64.dp
+                } else {
+                    0.dp
+                }
+                val bottomPadding =
+                    if (useLiquidGlassNav) 0.dp else innerPadding.calculateBottomPadding()
+
                 Surface(
                     modifier = Modifier
                         .fillMaxSize()
-                        .padding(bottom = innerPadding.calculateBottomPadding())
+                        .padding(bottom = bottomPadding),
+                    color = MaterialTheme.colorScheme.surface
                 ) {
-                    AppNavigation(navController, dashboardViewModel)
+                    AppNavigation(
+                        navController = navController,
+                        dashboardViewModel = dashboardViewModel,
+                        dashboardBottomContentPadding = dashboardContentBottomPadding,
+                        topLevelBottomContentPadding = topLevelContentBottomPadding
+                    )
                 }
             }
+
+            if (useLiquidGlassNav) {
+                AnimatedAppNavBar(
+                    visible = showBottomBar,
+                    navController = navController,
+                    themeStyle = appThemeStyle,
+                    modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth()
+                )
+            }
         }
+    }
+}
+
+@Composable
+private fun AnimatedAppNavBar(
+    visible: Boolean,
+    navController: NavController,
+    themeStyle: AppThemeStyle,
+    modifier: Modifier = Modifier
+) {
+    AnimatedVisibility(
+        visible = visible,
+        modifier = modifier,
+        enter = slideInVertically(
+            initialOffsetY = { it },
+            animationSpec = tween(durationMillis = 400, easing = FastOutSlowInEasing)
+        ) + expandVertically(
+            expandFrom = Alignment.Bottom,
+            animationSpec = tween(durationMillis = 400, easing = FastOutSlowInEasing)
+        ) + fadeIn(animationSpec = tween(durationMillis = 400)),
+        exit = slideOutVertically(
+            targetOffsetY = { it },
+            animationSpec = tween(durationMillis = 400, easing = FastOutSlowInEasing)
+        ) + shrinkVertically(
+            shrinkTowards = Alignment.Bottom,
+            animationSpec = tween(durationMillis = 400, easing = FastOutSlowInEasing)
+        ) + fadeOut(animationSpec = tween(durationMillis = 400))
+    ) {
+        AppNavBar(navController = navController, themeStyle = themeStyle)
     }
 }

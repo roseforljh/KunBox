@@ -9,7 +9,9 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.dp
 import androidx.navigation.NavBackStackEntry
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
@@ -117,7 +119,9 @@ fun getTabForRoute(route: String?): String {
 @Composable
 fun AppNavigation(
     navController: NavHostController,
-    dashboardViewModel: DashboardViewModel
+    dashboardViewModel: DashboardViewModel,
+    dashboardBottomContentPadding: Dp = 0.dp,
+    topLevelBottomContentPadding: Dp = 0.dp
 ) {
     val slideSpec = tween<IntOffset>(
         durationMillis = NAV_ANIMATION_DURATION,
@@ -202,28 +206,49 @@ fun AppNavigation(
             exitTransition = tabExitTransition,
             popEnterTransition = tabPopEnterTransition,
             popExitTransition = tabExitTransition
-        ) { DashboardScreen(navController, viewModel = dashboardViewModel) }
+        ) {
+            DashboardScreen(
+                navController = navController,
+                viewModel = dashboardViewModel,
+                bottomContentPadding = dashboardBottomContentPadding
+            )
+        }
         composable(
             route = Screen.Nodes.route,
             enterTransition = tabEnterTransition,
             exitTransition = tabExitTransition,
             popEnterTransition = tabPopEnterTransition,
             popExitTransition = tabExitTransition
-        ) { NodesScreen(navController) }
+        ) {
+            NodesScreen(
+                navController = navController,
+                bottomContentPadding = topLevelBottomContentPadding
+            )
+        }
         composable(
             route = Screen.Profiles.route,
             enterTransition = tabEnterTransition,
             exitTransition = tabExitTransition,
             popEnterTransition = tabPopEnterTransition,
             popExitTransition = tabExitTransition
-        ) { ProfilesScreen(navController) }
+        ) {
+            ProfilesScreen(
+                navController = navController,
+                bottomContentPadding = topLevelBottomContentPadding
+            )
+        }
         composable(
             route = Screen.Settings.route,
             enterTransition = tabEnterTransition,
             exitTransition = tabExitTransition,
             popEnterTransition = tabPopEnterTransition,
             popExitTransition = tabExitTransition
-        ) { SettingsScreen(navController) }
+        ) {
+            SettingsScreen(
+                navController = navController,
+                bottomContentPadding = topLevelBottomContentPadding
+            )
+        }
 
         // Sub Screens
         composable(

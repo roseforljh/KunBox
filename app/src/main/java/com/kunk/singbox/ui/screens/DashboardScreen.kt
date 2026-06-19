@@ -44,6 +44,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.res.stringResource
@@ -78,11 +79,13 @@ import androidx.compose.animation.core.tween
 import kotlinx.coroutines.launch
 
 @Composable
+@Suppress("LongMethod", "CyclomaticComplexMethod", "CognitiveComplexMethod", "FunctionNaming")
 fun DashboardScreen(
     navController: NavController,
     viewModel: DashboardViewModel = viewModel(),
     settingsViewModel: SettingsViewModel = viewModel(),
-    nodesViewModel: NodesViewModel = viewModel()
+    nodesViewModel: NodesViewModel = viewModel(),
+    bottomContentPadding: Dp = 0.dp
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -335,7 +338,8 @@ fun DashboardScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(top = statusBarPadding.calculateTopPadding())
-                .padding(24.dp),
+                .padding(24.dp)
+                .padding(bottom = bottomContentPadding),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.SpaceBetween
         ) {
@@ -428,7 +432,8 @@ fun DashboardScreen(
                 modifier = Modifier.weight(1f)
             ) {
                 BigToggle(
-                    isRunning = connectionState == ConnectionState.Connected || connectionState == ConnectionState.Connecting,
+                    isRunning = connectionState == ConnectionState.Connected ||
+                        connectionState == ConnectionState.Connecting,
                     onClick = {
                         viewModel.toggleConnection()
                     }
@@ -476,10 +481,30 @@ fun DashboardScreen(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceEvenly
                 ) {
-                    QuickActionButton(Icons.Rounded.Refresh, stringResource(R.string.dashboard_update_subscription)) { showUpdateDialog = true }
-                    QuickActionButton(Icons.Rounded.Bolt, stringResource(R.string.dashboard_latency_test)) { showTestDialog = true }
-                    QuickActionButton(Icons.Rounded.Terminal, stringResource(R.string.dashboard_logs)) { navController.navigate(Screen.Logs.route) }
-                    QuickActionButton(Icons.Rounded.BugReport, stringResource(R.string.dashboard_diagnostics)) { navController.navigate(Screen.Diagnostics.route) }
+                    QuickActionButton(
+                        Icons.Rounded.Refresh,
+                        stringResource(R.string.dashboard_update_subscription)
+                    ) {
+                        showUpdateDialog = true
+                    }
+                    QuickActionButton(
+                        Icons.Rounded.Bolt,
+                        stringResource(R.string.dashboard_latency_test)
+                    ) {
+                        showTestDialog = true
+                    }
+                    QuickActionButton(
+                        Icons.Rounded.Terminal,
+                        stringResource(R.string.dashboard_logs)
+                    ) {
+                        navController.navigate(Screen.Logs.route)
+                    }
+                    QuickActionButton(
+                        Icons.Rounded.BugReport,
+                        stringResource(R.string.dashboard_diagnostics)
+                    ) {
+                        navController.navigate(Screen.Diagnostics.route)
+                    }
                 }
             }
         }
