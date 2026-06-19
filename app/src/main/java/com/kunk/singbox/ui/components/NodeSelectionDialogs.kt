@@ -68,6 +68,9 @@ import com.kunk.singbox.model.NodeFilter
 import com.kunk.singbox.model.NodeUi
 import com.kunk.singbox.model.ProfileUi
 import com.kunk.singbox.ui.theme.isLiquidGlassTheme
+import com.kunk.singbox.ui.theme.liquidGlassButtonContainerColor
+import com.kunk.singbox.ui.theme.liquidGlassButtonContentColor
+import com.kunk.singbox.ui.theme.liquidGlassButtonPanel
 import com.kunk.singbox.ui.theme.liquidGlassPanel
 import com.kunk.singbox.ui.theme.liquidGlassTextFieldBorderColor
 import com.kunk.singbox.ui.theme.liquidGlassTextFieldContainerColor
@@ -479,17 +482,18 @@ fun AboutDialog(onDismiss: () -> Unit) {
                 onClick = onDismiss,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(50.dp),
+                    .height(50.dp)
+                    .liquidGlassButtonPanel(shape = RoundedCornerShape(25.dp)),
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    contentColor = MaterialTheme.colorScheme.onPrimary
+                    containerColor = liquidGlassButtonContainerColor(MaterialTheme.colorScheme.primary),
+                    contentColor = liquidGlassButtonContentColor(MaterialTheme.colorScheme.onPrimary)
                 ),
                 shape = RoundedCornerShape(25.dp)
             ) {
                 Text(
                     text = stringResource(R.string.common_ok),
                     fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onPrimary
+                    color = liquidGlassButtonContentColor(MaterialTheme.colorScheme.onPrimary)
                 )
             }
         }
@@ -707,14 +711,20 @@ fun NodeFilterDialog(
                             excludeKeywords = excludeKeywords
                         ))
                     },
-                    modifier = Modifier.weight(1f).height(50.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary, contentColor = MaterialTheme.colorScheme.onPrimary),
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(50.dp)
+                        .liquidGlassButtonPanel(shape = RoundedCornerShape(25.dp)),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = liquidGlassButtonContainerColor(MaterialTheme.colorScheme.primary),
+                        contentColor = liquidGlassButtonContentColor(MaterialTheme.colorScheme.onPrimary)
+                    ),
                     shape = RoundedCornerShape(25.dp)
                 ) {
                     Text(
                         text = stringResource(R.string.common_ok),
                         fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onPrimary
+                        color = liquidGlassButtonContentColor(MaterialTheme.colorScheme.onPrimary)
                     )
                 }
             }

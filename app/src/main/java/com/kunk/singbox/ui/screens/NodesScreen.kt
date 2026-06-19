@@ -111,7 +111,11 @@ import com.kunk.singbox.ui.components.NodeGridCard
 import com.kunk.singbox.ui.navigation.Screen
 import com.kunk.singbox.ui.theme.Neutral500
 import com.kunk.singbox.ui.theme.isLiquidGlassTheme
+import com.kunk.singbox.ui.theme.liquidGlassFloatingActionContainerColor
+import com.kunk.singbox.ui.theme.liquidGlassFloatingActionContentColor
+import com.kunk.singbox.ui.theme.liquidGlassFloatingActionPanel
 import com.kunk.singbox.ui.theme.liquidGlassPanel
+import com.kunk.singbox.ui.theme.liquidGlassScreenContainerColor
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 
@@ -308,6 +312,9 @@ fun NodesScreen(
 
     @Composable
     fun NodeActionButtons(modifier: Modifier = Modifier) {
+        val fabContainerColor = liquidGlassFloatingActionContainerColor(MaterialTheme.colorScheme.primary)
+        val fabContentColor = liquidGlassFloatingActionContentColor(MaterialTheme.colorScheme.onPrimary)
+
         AnimatedVisibility(
             visible = isFabVisible,
             enter = fadeIn(),
@@ -338,8 +345,9 @@ fun NodesScreen(
                                     viewModel.clearLatency()
                                     isFabExpanded = false
                                 },
-                                containerColor = MaterialTheme.colorScheme.primary,
-                                contentColor = MaterialTheme.colorScheme.onPrimary
+                                modifier = Modifier.liquidGlassFloatingActionPanel(),
+                                containerColor = fabContainerColor,
+                                contentColor = fabContentColor
                             ) {
                                 Icon(Icons.Rounded.Delete, contentDescription = stringResource(R.string.nodes_clear_latency))
                             }
@@ -358,8 +366,9 @@ fun NodesScreen(
                                     showAddNodeDialog = true
                                     isFabExpanded = false
                                 },
-                                containerColor = MaterialTheme.colorScheme.primary,
-                                contentColor = MaterialTheme.colorScheme.onPrimary
+                                modifier = Modifier.liquidGlassFloatingActionPanel(),
+                                containerColor = fabContainerColor,
+                                contentColor = fabContentColor
                             ) {
                                 Icon(Icons.Rounded.Add, contentDescription = stringResource(R.string.nodes_add))
                             }
@@ -378,8 +387,9 @@ fun NodesScreen(
                                     showProtocolSelectDialog = true
                                     isFabExpanded = false
                                 },
-                                containerColor = MaterialTheme.colorScheme.primary,
-                                contentColor = MaterialTheme.colorScheme.onPrimary
+                                modifier = Modifier.liquidGlassFloatingActionPanel(),
+                                containerColor = fabContainerColor,
+                                contentColor = fabContentColor
                             ) {
                                 Icon(Icons.Rounded.Edit, contentDescription = stringResource(R.string.nodes_manual_create))
                             }
@@ -398,13 +408,14 @@ fun NodesScreen(
                                     viewModel.testAllLatency()
                                     isFabExpanded = false
                                 },
-                                containerColor = MaterialTheme.colorScheme.primary,
-                                contentColor = MaterialTheme.colorScheme.onPrimary
+                                modifier = Modifier.liquidGlassFloatingActionPanel(),
+                                containerColor = fabContainerColor,
+                                contentColor = fabContentColor
                             ) {
                                 if (isTesting) {
                                     CircularProgressIndicator(
                                         modifier = Modifier.size(20.dp),
-                                        color = MaterialTheme.colorScheme.onPrimary,
+                                        color = fabContentColor,
                                         strokeWidth = 2.dp
                                     )
                                 } else {
@@ -417,8 +428,9 @@ fun NodesScreen(
 
                 FloatingActionButton(
                     onClick = { isFabExpanded = !isFabExpanded },
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    contentColor = MaterialTheme.colorScheme.onPrimary
+                    modifier = Modifier.liquidGlassFloatingActionPanel(),
+                    containerColor = fabContainerColor,
+                    contentColor = fabContentColor
                 ) {
                     Icon(
                         imageVector = if (isFabExpanded) Icons.Rounded.Close else Icons.Rounded.Add,
@@ -432,7 +444,7 @@ fun NodesScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
+            .background(liquidGlassScreenContainerColor(MaterialTheme.colorScheme.background))
             .statusBarsPadding()
     ) {
         Scaffold(

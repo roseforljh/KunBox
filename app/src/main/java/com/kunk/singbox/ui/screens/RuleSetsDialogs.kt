@@ -36,6 +36,7 @@ import com.kunk.singbox.ui.theme.isLiquidGlassTheme
 import com.kunk.singbox.ui.theme.liquidGlassPanel
 import com.kunk.singbox.ui.theme.liquidGlassDialogContainerColor
 import com.kunk.singbox.ui.theme.liquidGlassDialogPanel
+import com.kunk.singbox.ui.theme.liquidGlassSwitchColors
 
 @Composable
 private fun Modifier.ruleSetMenuPanel(shape: RoundedCornerShape = RoundedCornerShape(12.dp)): Modifier {
@@ -204,7 +205,8 @@ fun RuleSetItem(
                         onCheckedChange = onToggle,
                         modifier = Modifier
                             .scale(0.8f)
-                            .padding(end = 8.dp)
+                            .padding(end = 8.dp),
+                        colors = liquidGlassSwitchColors()
                     )
                 } else {
                     Box(modifier = Modifier.wrapContentSize(Alignment.TopStart)) {

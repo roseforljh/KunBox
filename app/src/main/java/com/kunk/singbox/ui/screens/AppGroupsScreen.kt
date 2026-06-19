@@ -25,6 +25,7 @@ import com.kunk.singbox.viewmodel.InstalledAppsViewModel
 import com.kunk.singbox.viewmodel.NodesViewModel
 import com.kunk.singbox.viewmodel.ProfilesViewModel
 import com.kunk.singbox.viewmodel.SettingsViewModel
+import com.kunk.singbox.ui.theme.liquidGlassTopAppBarContainerColor
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -113,7 +114,7 @@ fun AppGroupsScreen(
 
     Scaffold(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
-        containerColor = MaterialTheme.colorScheme.background,
+        containerColor = liquidGlassTopAppBarContainerColor(MaterialTheme.colorScheme.background),
         topBar = {
             TopAppBar(
                 title = { Text(stringResource(R.string.app_rules_title), color = MaterialTheme.colorScheme.onBackground) },
@@ -127,7 +128,11 @@ fun AppGroupsScreen(
                         Icon(Icons.Rounded.Add, contentDescription = stringResource(R.string.app_groups_add), tint = MaterialTheme.colorScheme.onBackground)
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = liquidGlassTopAppBarContainerColor(
+                        MaterialTheme.colorScheme.background
+                    )
+                )
             )
         }
     ) { padding ->

@@ -80,6 +80,10 @@ import com.kunk.singbox.ui.components.ConfirmDialog
 import com.kunk.singbox.ui.components.InputDialog
 import com.kunk.singbox.ui.components.ProfileCard
 import com.kunk.singbox.ui.navigation.Screen
+import com.kunk.singbox.ui.theme.liquidGlassFloatingActionContainerColor
+import com.kunk.singbox.ui.theme.liquidGlassFloatingActionContentColor
+import com.kunk.singbox.ui.theme.liquidGlassFloatingActionPanel
+import com.kunk.singbox.ui.theme.liquidGlassScreenContainerColor
 import com.kunk.singbox.utils.DeepLinkHandler
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -527,7 +531,7 @@ fun ProfilesScreen(
 
     Box(modifier = Modifier.fillMaxSize()) {
         Scaffold(
-            containerColor = MaterialTheme.colorScheme.background,
+            containerColor = liquidGlassScreenContainerColor(MaterialTheme.colorScheme.background),
             contentWindowInsets = WindowInsets(0, 0, 0, 0)
         ) { padding ->
             val statusBarPadding = WindowInsets.statusBars.asPaddingValues()
@@ -811,8 +815,9 @@ fun ProfilesScreen(
         ) {
             FloatingActionButton(
                 onClick = { showImportSelection = true },
-                containerColor = MaterialTheme.colorScheme.primary,
-                contentColor = MaterialTheme.colorScheme.onPrimary
+                modifier = Modifier.liquidGlassFloatingActionPanel(),
+                containerColor = liquidGlassFloatingActionContainerColor(MaterialTheme.colorScheme.primary),
+                contentColor = liquidGlassFloatingActionContentColor(MaterialTheme.colorScheme.onPrimary)
             ) {
                 Icon(Icons.Rounded.Add, contentDescription = "Add Profile")
             }

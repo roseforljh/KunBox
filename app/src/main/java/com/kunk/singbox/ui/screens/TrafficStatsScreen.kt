@@ -75,6 +75,7 @@ import com.kunk.singbox.ui.components.StandardCard
 import com.kunk.singbox.ui.theme.isLiquidGlassTheme
 import com.kunk.singbox.ui.theme.liquidGlassPanel
 import com.kunk.singbox.viewmodel.TrafficStatsViewModel
+import com.kunk.singbox.ui.theme.liquidGlassTopAppBarContainerColor
 
 private val chartColors = listOf(
     Color(0xFF6366F1),
@@ -148,7 +149,7 @@ fun TrafficStatsScreen(
 
     Scaffold(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
-        containerColor = MaterialTheme.colorScheme.background,
+        containerColor = liquidGlassTopAppBarContainerColor(MaterialTheme.colorScheme.background),
         topBar = {
             TopAppBar(
                 title = {
@@ -210,7 +211,7 @@ fun TrafficStatsScreen(
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.background
+                    containerColor = liquidGlassTopAppBarContainerColor(MaterialTheme.colorScheme.background)
                 )
             )
         }

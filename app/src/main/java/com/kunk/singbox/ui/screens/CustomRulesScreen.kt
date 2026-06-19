@@ -34,6 +34,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import com.kunk.singbox.ui.theme.liquidGlassDialogContainerColor
 import com.kunk.singbox.ui.theme.liquidGlassDialogPanel
 import com.kunk.singbox.viewmodel.SettingsViewModel
+import com.kunk.singbox.ui.theme.liquidGlassTopAppBarContainerColor
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -73,7 +74,7 @@ fun CustomRulesScreen(
 
     Scaffold(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
-        containerColor = MaterialTheme.colorScheme.background,
+        containerColor = liquidGlassTopAppBarContainerColor(MaterialTheme.colorScheme.background),
         topBar = {
             TopAppBar(
                 title = { Text(stringResource(R.string.custom_rules_title), color = MaterialTheme.colorScheme.onBackground) },
@@ -87,7 +88,11 @@ fun CustomRulesScreen(
                         Icon(Icons.Rounded.Add, contentDescription = stringResource(R.string.common_add), tint = MaterialTheme.colorScheme.onBackground)
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = liquidGlassTopAppBarContainerColor(
+                        MaterialTheme.colorScheme.background
+                    )
+                )
             )
         }
     ) { padding ->

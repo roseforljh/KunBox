@@ -39,9 +39,13 @@ import com.kunk.singbox.ui.components.StyledTextField
 import com.kunk.singbox.ui.theme.Neutral500
 import com.kunk.singbox.ui.theme.Neutral700
 import com.kunk.singbox.ui.theme.isLiquidGlassTheme
+import com.kunk.singbox.ui.theme.liquidGlassButtonContainerColor
+import com.kunk.singbox.ui.theme.liquidGlassButtonContentColor
+import com.kunk.singbox.ui.theme.liquidGlassButtonPanel
 import com.kunk.singbox.ui.theme.liquidGlassPanel
 import com.kunk.singbox.ui.theme.liquidGlassDialogContainerColor
 import com.kunk.singbox.ui.theme.liquidGlassDialogPanel
+import com.kunk.singbox.ui.theme.liquidGlassSwitchColors
 import com.kunk.singbox.ui.theme.liquidGlassTextFieldBorderColor
 import com.kunk.singbox.ui.theme.liquidGlassTextFieldContainerColor
 import com.kunk.singbox.ui.theme.liquidGlassTextFieldPanel
@@ -155,6 +159,35 @@ private fun RoutingStatusBadge(
 }
 
 @Composable
+private fun appRuleEnabledSwitch(
+    checked: Boolean,
+    onToggle: () -> Unit
+) {
+    Switch(
+        checked = checked,
+        onCheckedChange = { onToggle() },
+        colors = liquidGlassSwitchColors(
+            checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
+            checkedTrackColor = MaterialTheme.colorScheme.primary,
+            uncheckedThumbColor = Neutral500,
+            uncheckedTrackColor = Neutral700
+        )
+    )
+}
+
+@Composable
+private fun appRuleDeleteButton(onDelete: () -> Unit) {
+    IconButton(onClick = onDelete, modifier = Modifier.size(36.dp)) {
+        Icon(
+            Icons.Rounded.Delete,
+            contentDescription = stringResource(R.string.common_delete),
+            tint = MaterialTheme.colorScheme.error,
+            modifier = Modifier.size(20.dp)
+        )
+    }
+}
+
+@Composable
 fun AppRuleItem(
     rule: AppRule,
     outboundText: String,
@@ -213,10 +246,11 @@ fun AppRuleItem(
                     maxLines = 1
                 )
             }
-            IconButton(onClick = onDelete, modifier = Modifier.size(36.dp)) {
-                Icon(Icons.Rounded.Delete, contentDescription = stringResource(R.string.common_delete), tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(20.dp))
-            }
-            Switch(checked = rule.enabled, onCheckedChange = { onToggle() }, colors = SwitchDefaults.colors(checkedThumbColor = MaterialTheme.colorScheme.onPrimary, checkedTrackColor = MaterialTheme.colorScheme.primary, uncheckedThumbColor = Neutral500, uncheckedTrackColor = Neutral700))
+            appRuleDeleteButton(onDelete = onDelete)
+            appRuleEnabledSwitch(
+                checked = rule.enabled,
+                onToggle = onToggle
+            )
         }
     }
 }
@@ -599,7 +633,7 @@ fun AppGroupCard(
                 Switch(
                     checked = group.enabled,
                     onCheckedChange = { onToggle() },
-                    colors = SwitchDefaults.colors(
+                    colors = liquidGlassSwitchColors(
                         checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
                         checkedTrackColor = MaterialTheme.colorScheme.primary,
                         uncheckedThumbColor = Neutral500,
@@ -845,13 +879,19 @@ fun MultiAppSelectorDialog(
         confirmButton = {
             Button(
                 onClick = { onConfirm(tempSelectedEntries.toAppInfoSet()) },
+                modifier = Modifier.liquidGlassButtonPanel(shape = RoundedCornerShape(10.dp)),
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    contentColor = MaterialTheme.colorScheme.onPrimary
+                    containerColor = liquidGlassButtonContainerColor(MaterialTheme.colorScheme.primary),
+                    contentColor = liquidGlassButtonContentColor(MaterialTheme.colorScheme.onPrimary)
                 ),
                 shape = RoundedCornerShape(10.dp)
             ) {
-                Text(stringResource(R.string.common_ok) + " (${tempSelected.size})", fontWeight = FontWeight.Medium, fontSize = 13.sp)
+                Text(
+                    text = stringResource(R.string.common_ok) + " (${tempSelected.size})",
+                    fontWeight = FontWeight.Medium,
+                    fontSize = 13.sp,
+                    color = liquidGlassButtonContentColor(MaterialTheme.colorScheme.onPrimary)
+                )
             }
         },
         dismissButton = {
@@ -1110,10 +1150,18 @@ fun AppGroupEditorDialog(
                     onConfirm(group)
                 },
                 enabled = groupName.isNotBlank() && selectedApps.isNotEmpty(),
-                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary, contentColor = MaterialTheme.colorScheme.onPrimary),
+                modifier = Modifier.liquidGlassButtonPanel(shape = RoundedCornerShape(12.dp)),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = liquidGlassButtonContainerColor(MaterialTheme.colorScheme.primary),
+                    contentColor = liquidGlassButtonContentColor(MaterialTheme.colorScheme.onPrimary)
+                ),
                 shape = RoundedCornerShape(12.dp)
             ) {
-                Text(stringResource(R.string.common_save), fontWeight = FontWeight.Bold)
+                Text(
+                    text = stringResource(R.string.common_save),
+                    fontWeight = FontWeight.Bold,
+                    color = liquidGlassButtonContentColor(MaterialTheme.colorScheme.onPrimary)
+                )
             }
         },
         dismissButton = {

@@ -47,6 +47,9 @@ import androidx.compose.material.icons.rounded.RadioButtonUnchecked
 import com.kunk.singbox.ui.theme.Destructive
 import com.kunk.singbox.ui.theme.Neutral500
 import com.kunk.singbox.ui.theme.isLiquidGlassTheme
+import com.kunk.singbox.ui.theme.liquidGlassButtonContainerColor
+import com.kunk.singbox.ui.theme.liquidGlassButtonContentColor
+import com.kunk.singbox.ui.theme.liquidGlassButtonPanel
 import com.kunk.singbox.ui.theme.liquidGlassPanel
 import com.kunk.singbox.ui.theme.liquidGlassTextFieldBorderColor
 import com.kunk.singbox.ui.theme.liquidGlassTextFieldContainerColor
@@ -74,6 +77,40 @@ private fun Modifier.dialogOptionPanel(isSelected: Boolean): Modifier {
                 Color.Transparent
             },
             shape
+        )
+    }
+}
+
+@Composable
+private fun confirmDialogActionButton(
+    confirmText: String,
+    isDestructive: Boolean,
+    onConfirm: () -> Unit
+) {
+    val defaultContainerColor = if (isDestructive) Destructive else MaterialTheme.colorScheme.primary
+    val defaultContentColor = if (isDestructive) Color.White else MaterialTheme.colorScheme.onPrimary
+    val liquidContentColor = if (isDestructive) Destructive else MaterialTheme.colorScheme.primary
+    val contentColor = liquidGlassButtonContentColor(
+        defaultColor = defaultContentColor,
+        liquidColor = liquidContentColor
+    )
+
+    Button(
+        onClick = onConfirm,
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(50.dp)
+            .liquidGlassButtonPanel(shape = RoundedCornerShape(25.dp)),
+        colors = ButtonDefaults.buttonColors(
+            containerColor = liquidGlassButtonContainerColor(defaultContainerColor),
+            contentColor = contentColor
+        ),
+        shape = RoundedCornerShape(25.dp)
+    ) {
+        Text(
+            text = confirmText,
+            fontWeight = FontWeight.Bold,
+            color = contentColor
         )
     }
 }
@@ -108,21 +145,11 @@ fun ConfirmDialog(
             )
             Spacer(modifier = Modifier.height(24.dp))
 
-            Button(
-                onClick = onConfirm,
-                modifier = Modifier.fillMaxWidth().height(50.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = if (isDestructive) Destructive else MaterialTheme.colorScheme.primary,
-                    contentColor = if (isDestructive) Color.White else MaterialTheme.colorScheme.onPrimary
-                ),
-                shape = RoundedCornerShape(25.dp)
-            ) {
-                Text(
-                    text = confirmText,
-                    fontWeight = FontWeight.Bold,
-                    color = if (isDestructive) Color.White else MaterialTheme.colorScheme.onPrimary
-                )
-            }
+            confirmDialogActionButton(
+                confirmText = confirmText,
+                isDestructive = isDestructive,
+                onConfirm = onConfirm
+            )
 
             Spacer(modifier = Modifier.height(8.dp))
 
@@ -235,14 +262,20 @@ fun InputDialog(
 
             Button(
                 onClick = { onConfirm(text) },
-                modifier = Modifier.fillMaxWidth().height(50.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary, contentColor = MaterialTheme.colorScheme.onPrimary),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(50.dp)
+                    .liquidGlassButtonPanel(shape = RoundedCornerShape(25.dp)),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = liquidGlassButtonContainerColor(MaterialTheme.colorScheme.primary),
+                    contentColor = liquidGlassButtonContentColor(MaterialTheme.colorScheme.onPrimary)
+                ),
                 shape = RoundedCornerShape(25.dp)
             ) {
                 Text(
                     text = confirmText,
                     fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onPrimary
+                    color = liquidGlassButtonContentColor(MaterialTheme.colorScheme.onPrimary)
                 )
             }
 
@@ -340,14 +373,20 @@ fun SingleSelectDialog(
             Button(
                 onClick = { if (canConfirm) onSelect(tempSelectedIndex) },
                 enabled = canConfirm,
-                modifier = Modifier.fillMaxWidth().height(50.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary, contentColor = MaterialTheme.colorScheme.onPrimary),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(50.dp)
+                    .liquidGlassButtonPanel(shape = RoundedCornerShape(25.dp)),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = liquidGlassButtonContainerColor(MaterialTheme.colorScheme.primary),
+                    contentColor = liquidGlassButtonContentColor(MaterialTheme.colorScheme.onPrimary)
+                ),
                 shape = RoundedCornerShape(25.dp)
             ) {
                 Text(
                     text = stringResource(R.string.common_ok),
                     fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onPrimary
+                    color = liquidGlassButtonContentColor(MaterialTheme.colorScheme.onPrimary)
                 )
             }
 

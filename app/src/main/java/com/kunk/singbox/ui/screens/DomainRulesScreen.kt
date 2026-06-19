@@ -49,6 +49,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -64,12 +65,17 @@ import com.kunk.singbox.ui.components.SingleSelectDialog
 import com.kunk.singbox.ui.components.StandardCard
 import com.kunk.singbox.ui.components.StyledTextField
 import com.kunk.singbox.ui.theme.isLiquidGlassTheme
+import com.kunk.singbox.ui.theme.liquidGlassButtonContainerColor
+import com.kunk.singbox.ui.theme.liquidGlassButtonContentColor
+import com.kunk.singbox.ui.theme.liquidGlassButtonPanel
 import com.kunk.singbox.ui.theme.liquidGlassDialogContainerColor
 import com.kunk.singbox.ui.theme.liquidGlassDialogPanel
+import com.kunk.singbox.ui.theme.liquidGlassOutlinedButtonBorder
 import com.kunk.singbox.ui.theme.liquidGlassPanel
 import com.kunk.singbox.viewmodel.NodesViewModel
 import com.kunk.singbox.viewmodel.ProfilesViewModel
 import com.kunk.singbox.viewmodel.SettingsViewModel
+import com.kunk.singbox.ui.theme.liquidGlassTopAppBarContainerColor
 
 @Composable
 private fun Modifier.domainRuleSelectorPanel(): Modifier {
@@ -216,7 +222,7 @@ fun DomainRulesScreen(
 
     Scaffold(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
-        containerColor = MaterialTheme.colorScheme.background,
+        containerColor = liquidGlassTopAppBarContainerColor(MaterialTheme.colorScheme.background),
         topBar = {
             TopAppBar(
                 title = { Text(stringResource(R.string.domain_rules_title), color = MaterialTheme.colorScheme.onBackground) },
@@ -230,7 +236,11 @@ fun DomainRulesScreen(
                         Icon(Icons.Rounded.Add, contentDescription = stringResource(R.string.common_add), tint = MaterialTheme.colorScheme.onBackground)
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = liquidGlassTopAppBarContainerColor(
+                        MaterialTheme.colorScheme.background
+                    )
+                )
             )
         }
     ) { padding ->
@@ -574,17 +584,32 @@ private fun DomainRuleEditorDialog(
                     )
                     onConfirm(rule)
                 },
+                modifier = Modifier.liquidGlassButtonPanel(),
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    contentColor = MaterialTheme.colorScheme.onPrimary
+                    containerColor = liquidGlassButtonContainerColor(MaterialTheme.colorScheme.primary),
+                    contentColor = liquidGlassButtonContentColor(MaterialTheme.colorScheme.onPrimary)
                 )
             ) {
-                Text(stringResource(R.string.common_ok))
+                Text(
+                    text = stringResource(R.string.common_ok),
+                    color = liquidGlassButtonContentColor(MaterialTheme.colorScheme.onPrimary)
+                )
             }
         },
         dismissButton = {
-            OutlinedButton(onClick = onDismiss) {
-                Text(stringResource(R.string.common_cancel))
+            OutlinedButton(
+                onClick = onDismiss,
+                modifier = Modifier.liquidGlassButtonPanel(shape = RoundedCornerShape(20.dp)),
+                border = liquidGlassOutlinedButtonBorder(ButtonDefaults.outlinedButtonBorder),
+                colors = ButtonDefaults.outlinedButtonColors(
+                    containerColor = liquidGlassButtonContainerColor(Color.Transparent),
+                    contentColor = liquidGlassButtonContentColor(MaterialTheme.colorScheme.primary)
+                )
+            ) {
+                Text(
+                    text = stringResource(R.string.common_cancel),
+                    color = liquidGlassButtonContentColor(MaterialTheme.colorScheme.primary)
+                )
             }
         }
     )

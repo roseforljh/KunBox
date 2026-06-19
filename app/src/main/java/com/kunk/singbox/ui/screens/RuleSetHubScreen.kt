@@ -30,12 +30,16 @@ import com.kunk.singbox.model.HubRuleSet
 import com.kunk.singbox.ui.components.AppNotificationManager
 import com.kunk.singbox.ui.components.StandardCard
 import com.kunk.singbox.ui.theme.isLiquidGlassTheme
+import com.kunk.singbox.ui.theme.liquidGlassButtonContainerColor
+import com.kunk.singbox.ui.theme.liquidGlassButtonContentColor
+import com.kunk.singbox.ui.theme.liquidGlassButtonPanel
 import com.kunk.singbox.ui.theme.liquidGlassPanel
 import com.kunk.singbox.ui.theme.liquidGlassTextFieldBorderColor
 import com.kunk.singbox.ui.theme.liquidGlassTextFieldContainerColor
 import com.kunk.singbox.ui.theme.liquidGlassTextFieldPanel
 import com.kunk.singbox.viewmodel.RuleSetViewModel
 import com.kunk.singbox.viewmodel.SettingsViewModel
+import com.kunk.singbox.ui.theme.liquidGlassTopAppBarContainerColor
 
 @Composable
 private fun RuleSetBadge(
@@ -98,7 +102,7 @@ fun RuleSetHubScreen(
 
     Scaffold(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
-        containerColor = MaterialTheme.colorScheme.background,
+        containerColor = liquidGlassTopAppBarContainerColor(MaterialTheme.colorScheme.background),
         topBar = {
             TopAppBar(
                 title = {
@@ -121,7 +125,11 @@ fun RuleSetHubScreen(
                         Icon(Icons.Rounded.Refresh, contentDescription = stringResource(R.string.common_refresh), tint = MaterialTheme.colorScheme.onBackground)
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = liquidGlassTopAppBarContainerColor(
+                        MaterialTheme.colorScheme.background
+                    )
+                )
             )
         }
     ) { padding ->
@@ -147,8 +155,18 @@ fun RuleSetHubScreen(
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Text(text = errorMessage, color = MaterialTheme.colorScheme.error)
-                        Button(onClick = { activityRuleSetViewModel.fetchRuleSets() }) {
-                            Text(stringResource(R.string.common_retry))
+                        Button(
+                            onClick = { activityRuleSetViewModel.fetchRuleSets() },
+                            modifier = Modifier.liquidGlassButtonPanel(),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = liquidGlassButtonContainerColor(MaterialTheme.colorScheme.primary),
+                                contentColor = liquidGlassButtonContentColor(MaterialTheme.colorScheme.onPrimary)
+                            )
+                        ) {
+                            Text(
+                                text = stringResource(R.string.common_retry),
+                                color = liquidGlassButtonContentColor(MaterialTheme.colorScheme.onPrimary)
+                            )
                         }
                     }
                 }

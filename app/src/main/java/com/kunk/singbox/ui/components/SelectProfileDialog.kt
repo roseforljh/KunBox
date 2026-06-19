@@ -17,7 +17,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.RadioButton
-import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -36,6 +35,7 @@ import com.kunk.singbox.R
 import com.kunk.singbox.model.ProfileUi
 import com.kunk.singbox.ui.theme.liquidGlassDialogContainerColor
 import com.kunk.singbox.ui.theme.liquidGlassDialogPanel
+import com.kunk.singbox.ui.theme.liquidGlassRadioButtonColors
 import com.kunk.singbox.ui.theme.liquidGlassTextFieldBorderColor
 import com.kunk.singbox.ui.theme.liquidGlassTextFieldContainerColor
 import com.kunk.singbox.ui.theme.liquidGlassTextFieldPanel
@@ -100,7 +100,7 @@ fun SelectProfileDialog(
                                     isCreatingNew = false
                                     selectedProfileId = profile.id
                                 },
-                                colors = RadioButtonDefaults.colors(
+                                colors = liquidGlassRadioButtonColors(
                                     selectedColor = MaterialTheme.colorScheme.primary
                                 )
                             )
@@ -123,7 +123,7 @@ fun SelectProfileDialog(
                             RadioButton(
                                 selected = isCreatingNew,
                                 onClick = { isCreatingNew = true },
-                                colors = RadioButtonDefaults.colors(
+                                colors = liquidGlassRadioButtonColors(
                                     selectedColor = MaterialTheme.colorScheme.primary
                                 )
                             )

@@ -67,7 +67,11 @@ import com.kunk.singbox.repository.ConfigRepository
 import com.kunk.singbox.ui.components.AppNotificationManager
 import com.kunk.singbox.ui.components.StandardCard
 import com.kunk.singbox.ui.theme.isLiquidGlassTheme
+import com.kunk.singbox.ui.theme.liquidGlassButtonContainerColor
+import com.kunk.singbox.ui.theme.liquidGlassButtonContentColor
+import com.kunk.singbox.ui.theme.liquidGlassButtonPanel
 import com.kunk.singbox.ui.theme.liquidGlassPanel
+import com.kunk.singbox.ui.theme.liquidGlassSwitchColors
 import com.kunk.singbox.ui.theme.liquidGlassTextFieldBorderColor
 import com.kunk.singbox.ui.theme.liquidGlassTextFieldContainerColor
 import com.kunk.singbox.ui.theme.liquidGlassTextFieldPanel
@@ -368,17 +372,18 @@ internal fun CustomConfigDialog(
                 enabled = name.isNotBlank() && selectedNodeIds.isNotEmpty(),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(50.dp),
+                    .height(50.dp)
+                    .liquidGlassButtonPanel(shape = RoundedCornerShape(25.dp)),
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    contentColor = MaterialTheme.colorScheme.onPrimary
+                    containerColor = liquidGlassButtonContainerColor(MaterialTheme.colorScheme.primary),
+                    contentColor = liquidGlassButtonContentColor(MaterialTheme.colorScheme.onPrimary)
                 ),
                 shape = RoundedCornerShape(25.dp)
             ) {
                 Text(
                     text = stringResource(R.string.common_ok),
                     fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onPrimary
+                    color = liquidGlassButtonContentColor(MaterialTheme.colorScheme.onPrimary)
                 )
             }
 
@@ -675,7 +680,7 @@ internal fun SubscriptionInputDialog(
                 androidx.compose.material3.Switch(
                     checked = autoUpdateEnabled,
                     onCheckedChange = { autoUpdateEnabled = it },
-                    colors = androidx.compose.material3.SwitchDefaults.colors(
+                    colors = liquidGlassSwitchColors(
                         checkedThumbColor = MaterialTheme.colorScheme.primary,
                         checkedTrackColor = MaterialTheme.colorScheme.primaryContainer
                     )
@@ -759,7 +764,7 @@ internal fun SubscriptionInputDialog(
                 androidx.compose.material3.Switch(
                     checked = dnsPreResolveEnabled,
                     onCheckedChange = { dnsPreResolveEnabled = it },
-                    colors = androidx.compose.material3.SwitchDefaults.colors(
+                    colors = liquidGlassSwitchColors(
                         checkedThumbColor = MaterialTheme.colorScheme.primary,
                         checkedTrackColor = MaterialTheme.colorScheme.primaryContainer
                     )
@@ -882,7 +887,11 @@ internal fun SubscriptionInputDialog(
                 )
                 androidx.compose.material3.Switch(
                     checked = showDnsOverride,
-                    onCheckedChange = { showDnsOverride = it }
+                    onCheckedChange = { showDnsOverride = it },
+                    colors = liquidGlassSwitchColors(
+                        checkedThumbColor = MaterialTheme.colorScheme.primary,
+                        checkedTrackColor = MaterialTheme.colorScheme.primaryContainer
+                    )
                 )
             }
 
@@ -990,11 +999,21 @@ internal fun SubscriptionInputDialog(
                         finalDnsOverride
                     )
                 },
-                modifier = Modifier.fillMaxWidth().height(50.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary, contentColor = MaterialTheme.colorScheme.onPrimary),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(50.dp)
+                    .liquidGlassButtonPanel(shape = RoundedCornerShape(25.dp)),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = liquidGlassButtonContainerColor(MaterialTheme.colorScheme.primary),
+                    contentColor = liquidGlassButtonContentColor(MaterialTheme.colorScheme.onPrimary)
+                ),
                 shape = RoundedCornerShape(25.dp)
             ) {
-                Text(stringResource(R.string.common_ok), fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimary)
+                Text(
+                    text = stringResource(R.string.common_ok),
+                    fontWeight = FontWeight.Bold,
+                    color = liquidGlassButtonContentColor(MaterialTheme.colorScheme.onPrimary)
+                )
             }
 
             Spacer(modifier = Modifier.height(8.dp))

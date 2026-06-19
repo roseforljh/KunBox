@@ -75,6 +75,7 @@ import com.kunk.singbox.ui.components.StandardCard
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import com.kunk.singbox.ui.theme.liquidGlassTopAppBarContainerColor
 
 internal fun resolveTransportHostTextForEditor(transport: TransportConfig): String {
     return transport.host
@@ -254,7 +255,7 @@ fun NodeDetailScreen(
 
     Scaffold(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
-        containerColor = MaterialTheme.colorScheme.background,
+        containerColor = liquidGlassTopAppBarContainerColor(MaterialTheme.colorScheme.background),
         topBar = {
             TopAppBar(
                 title = {
@@ -298,7 +299,11 @@ fun NodeDetailScreen(
                         Icon(Icons.Rounded.Save, contentDescription = stringResource(R.string.common_save), tint = MaterialTheme.colorScheme.onBackground)
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = liquidGlassTopAppBarContainerColor(
+                        MaterialTheme.colorScheme.background
+                    )
+                )
             )
         }
     ) { padding ->

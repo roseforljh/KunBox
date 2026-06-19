@@ -29,7 +29,30 @@ import com.kunk.singbox.ui.theme.AppBackground
 import com.kunk.singbox.ui.theme.Neutral500
 import com.kunk.singbox.ui.theme.Neutral800
 import com.kunk.singbox.ui.theme.PureWhite
+import com.kunk.singbox.ui.theme.isLiquidGlassTheme
 import kotlinx.coroutines.delay
+
+@Composable
+private fun liquidGlassSplashBackgroundBrush(): Brush {
+    return if (isLiquidGlassTheme()) {
+        Brush.radialGradient(
+            colors = listOf(
+                PureWhite.copy(alpha = 0.16f),
+                Neutral800.copy(alpha = 0.22f),
+                AppBackground
+            ),
+            radius = 900f
+        )
+    } else {
+        Brush.radialGradient(
+            colors = listOf(
+                Neutral800.copy(alpha = 0.3f),
+                AppBackground
+            ),
+            radius = 800f
+        )
+    }
+}
 
 @Composable
 fun SplashScreen(
@@ -75,15 +98,7 @@ fun SplashScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(
-                brush = Brush.radialGradient(
-                    colors = listOf(
-                        Neutral800.copy(alpha = 0.3f),
-                        AppBackground
-                    ),
-                    radius = 800f
-                )
-            ),
+            .background(brush = liquidGlassSplashBackgroundBrush()),
         contentAlignment = Alignment.Center
     ) {
         Column(

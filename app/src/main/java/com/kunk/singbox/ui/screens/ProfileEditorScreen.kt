@@ -44,6 +44,7 @@ import com.kunk.singbox.ui.theme.isLiquidGlassTheme
 import com.kunk.singbox.ui.theme.liquidGlassPanel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
+import com.kunk.singbox.ui.theme.liquidGlassTopAppBarContainerColor
 
 @Composable
 private fun Modifier.profileEditorPanel(): Modifier {
@@ -111,7 +112,7 @@ fun ProfileEditorScreen(navController: NavController, profileId: String) {
 
     Scaffold(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
-        containerColor = MaterialTheme.colorScheme.background,
+        containerColor = liquidGlassTopAppBarContainerColor(MaterialTheme.colorScheme.background),
         topBar = {
             ProfileEditorTopBar(
                 saveEnabled = !editorViewModel.isLoading && !editorViewModel.isSaving,
@@ -208,7 +209,11 @@ private fun ProfileEditorTopBar(
                 )
             }
         },
-        colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
+        colors = TopAppBarDefaults.topAppBarColors(
+            containerColor = liquidGlassTopAppBarContainerColor(
+                MaterialTheme.colorScheme.background
+            )
+        )
     )
 }
 

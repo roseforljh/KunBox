@@ -69,6 +69,7 @@ import com.kunk.singbox.ui.components.SingleSelectDialog
 import com.kunk.singbox.ui.components.StandardCard
 import com.kunk.singbox.ui.components.ValidatingDialog
 import com.kunk.singbox.ui.navigation.Screen
+import com.kunk.singbox.ui.theme.liquidGlassScreenContainerColor
 import com.kunk.singbox.viewmodel.ImportState
 import com.kunk.singbox.viewmodel.SettingsViewModel
 import kotlinx.coroutines.launch
@@ -193,7 +194,7 @@ fun SettingsScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
+            .background(liquidGlassScreenContainerColor(MaterialTheme.colorScheme.background))
             .padding(top = statusBarPadding.calculateTopPadding())
             .verticalScroll(scrollState)
             .padding(16.dp)

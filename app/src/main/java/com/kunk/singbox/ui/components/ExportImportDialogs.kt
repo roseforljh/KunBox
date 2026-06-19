@@ -22,6 +22,9 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.kunk.singbox.model.ExportDataSummary
 import com.kunk.singbox.ui.theme.isLiquidGlassTheme
+import com.kunk.singbox.ui.theme.liquidGlassButtonContainerColor
+import com.kunk.singbox.ui.theme.liquidGlassButtonContentColor
+import com.kunk.singbox.ui.theme.liquidGlassButtonPanel
 import com.kunk.singbox.ui.theme.liquidGlassPanel
 import com.kunk.singbox.viewmodel.ExportState
 import com.kunk.singbox.viewmodel.ImportState
@@ -116,8 +119,18 @@ fun ExportProgressDialog(
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         Spacer(modifier = Modifier.height(24.dp))
-                        Button(onClick = onDismiss) {
-                            Text(stringResource(R.string.common_ok))
+                        Button(
+                            onClick = onDismiss,
+                            modifier = Modifier.liquidGlassButtonPanel(),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = liquidGlassButtonContainerColor(MaterialTheme.colorScheme.primary),
+                                contentColor = liquidGlassButtonContentColor(MaterialTheme.colorScheme.onPrimary)
+                            )
+                        ) {
+                            Text(
+                                text = stringResource(R.string.common_ok),
+                                color = liquidGlassButtonContentColor(MaterialTheme.colorScheme.onPrimary)
+                            )
                         }
                     }
                     is ExportState.Error -> {
@@ -141,8 +154,18 @@ fun ExportProgressDialog(
                             textAlign = TextAlign.Center
                         )
                         Spacer(modifier = Modifier.height(24.dp))
-                        Button(onClick = onDismiss) {
-                            Text(stringResource(R.string.common_close))
+                        Button(
+                            onClick = onDismiss,
+                            modifier = Modifier.liquidGlassButtonPanel(),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = liquidGlassButtonContainerColor(MaterialTheme.colorScheme.primary),
+                                contentColor = liquidGlassButtonContentColor(MaterialTheme.colorScheme.onPrimary)
+                            )
+                        ) {
+                            Text(
+                                text = stringResource(R.string.common_close),
+                                color = liquidGlassButtonContentColor(MaterialTheme.colorScheme.onPrimary)
+                            )
                         }
                     }
                     else -> {}
@@ -251,8 +274,18 @@ fun ImportPreviewDialog(
                         Text(stringResource(R.string.common_cancel))
                     }
                     Spacer(modifier = Modifier.width(8.dp))
-                    Button(onClick = onConfirm) {
-                        Text(stringResource(R.string.import_confirm_button))
+                    Button(
+                        onClick = onConfirm,
+                        modifier = Modifier.liquidGlassButtonPanel(),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = liquidGlassButtonContainerColor(MaterialTheme.colorScheme.primary),
+                            contentColor = liquidGlassButtonContentColor(MaterialTheme.colorScheme.onPrimary)
+                        )
+                    ) {
+                        Text(
+                            text = stringResource(R.string.import_confirm_button),
+                            color = liquidGlassButtonContentColor(MaterialTheme.colorScheme.onPrimary)
+                        )
                     }
                 }
             }
@@ -373,8 +406,18 @@ fun ImportProgressDialog(
                             textAlign = TextAlign.Center
                         )
                         Spacer(modifier = Modifier.height(24.dp))
-                        Button(onClick = onDismiss) {
-                            Text(stringResource(R.string.common_ok))
+                        Button(
+                            onClick = onDismiss,
+                            modifier = Modifier.liquidGlassButtonPanel(),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = liquidGlassButtonContainerColor(MaterialTheme.colorScheme.primary),
+                                contentColor = liquidGlassButtonContentColor(MaterialTheme.colorScheme.onPrimary)
+                            )
+                        ) {
+                            Text(
+                                text = stringResource(R.string.common_ok),
+                                color = liquidGlassButtonContentColor(MaterialTheme.colorScheme.onPrimary)
+                            )
                         }
                     }
                     is ImportState.Error -> {
@@ -398,8 +441,18 @@ fun ImportProgressDialog(
                             textAlign = TextAlign.Center
                         )
                         Spacer(modifier = Modifier.height(24.dp))
-                        Button(onClick = onDismiss) {
-                            Text(stringResource(R.string.common_close))
+                        Button(
+                            onClick = onDismiss,
+                            modifier = Modifier.liquidGlassButtonPanel(),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = liquidGlassButtonContainerColor(MaterialTheme.colorScheme.primary),
+                                contentColor = liquidGlassButtonContentColor(MaterialTheme.colorScheme.onPrimary)
+                            )
+                        ) {
+                            Text(
+                                text = stringResource(R.string.common_close),
+                                color = liquidGlassButtonContentColor(MaterialTheme.colorScheme.onPrimary)
+                            )
                         }
                     }
                     else -> {}

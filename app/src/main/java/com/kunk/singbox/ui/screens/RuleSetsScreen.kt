@@ -44,6 +44,7 @@ import com.kunk.singbox.model.NodeUi
 import com.kunk.singbox.ui.theme.liquidGlassDialogContainerColor
 import com.kunk.singbox.ui.theme.liquidGlassDialogPanel
 import kotlinx.coroutines.launch
+import com.kunk.singbox.ui.theme.liquidGlassTopAppBarContainerColor
 
 internal val defaultRuleSetTags = setOf(
     "geosite-cn",
@@ -391,7 +392,7 @@ fun RuleSetsScreen(
 
     Scaffold(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
-        containerColor = MaterialTheme.colorScheme.background,
+        containerColor = liquidGlassTopAppBarContainerColor(MaterialTheme.colorScheme.background),
         topBar = {
             TopAppBar(
                 title = {
@@ -441,7 +442,11 @@ fun RuleSetsScreen(
                         }
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = liquidGlassTopAppBarContainerColor(
+                        MaterialTheme.colorScheme.background
+                    )
+                )
             )
         }
     ) { padding ->

@@ -43,6 +43,9 @@ import androidx.compose.ui.window.Dialog
 import com.kunk.singbox.model.Outbound
 import com.kunk.singbox.model.TlsConfig
 import com.kunk.singbox.ui.theme.isLiquidGlassTheme
+import com.kunk.singbox.ui.theme.liquidGlassButtonContainerColor
+import com.kunk.singbox.ui.theme.liquidGlassButtonContentColor
+import com.kunk.singbox.ui.theme.liquidGlassButtonPanel
 import com.kunk.singbox.ui.theme.liquidGlassPanel
 
 @Composable
@@ -250,16 +253,20 @@ internal fun DetourNodeSelectDialog(
 
                 Button(
                     onClick = onConfirm,
-                    modifier = Modifier.weight(1f).height(50.dp),
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(50.dp)
+                        .liquidGlassButtonPanel(shape = RoundedCornerShape(25.dp)),
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.primary,
-                        contentColor = MaterialTheme.colorScheme.onPrimary
+                        containerColor = liquidGlassButtonContainerColor(MaterialTheme.colorScheme.primary),
+                        contentColor = liquidGlassButtonContentColor(MaterialTheme.colorScheme.onPrimary)
                     ),
                     shape = RoundedCornerShape(25.dp)
                 ) {
                     Text(
                         text = stringResource(R.string.common_ok),
-                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
+                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                        color = liquidGlassButtonContentColor(MaterialTheme.colorScheme.onPrimary)
                     )
                 }
             }

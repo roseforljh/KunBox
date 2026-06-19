@@ -84,6 +84,7 @@ import com.kunk.singbox.ui.theme.liquidGlassDialogContainerColor
 import com.kunk.singbox.ui.theme.liquidGlassDialogPanel
 import com.kunk.singbox.viewmodel.ConnectionInfoViewModel
 import java.util.Locale
+import com.kunk.singbox.ui.theme.liquidGlassTopAppBarContainerColor
 
 @Composable
 private fun Modifier.connectionEmptyIconPanel(): Modifier {
@@ -223,7 +224,7 @@ fun ConnectionInfoScreen(
 
     Scaffold(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
-        containerColor = MaterialTheme.colorScheme.background,
+        containerColor = liquidGlassTopAppBarContainerColor(MaterialTheme.colorScheme.background),
         topBar = {
             TopAppBar(
                 title = {
@@ -287,7 +288,7 @@ fun ConnectionInfoScreen(
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.background
+                    containerColor = liquidGlassTopAppBarContainerColor(MaterialTheme.colorScheme.background)
                 )
             )
         }

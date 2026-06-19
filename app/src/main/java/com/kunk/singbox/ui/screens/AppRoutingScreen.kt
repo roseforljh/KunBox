@@ -26,6 +26,7 @@ import com.kunk.singbox.viewmodel.InstalledAppsViewModel
 import com.kunk.singbox.viewmodel.NodesViewModel
 import com.kunk.singbox.viewmodel.ProfilesViewModel
 import com.kunk.singbox.viewmodel.SettingsViewModel
+import com.kunk.singbox.ui.theme.liquidGlassTopAppBarContainerColor
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -161,7 +162,7 @@ fun AppRoutingScreen(
 
     Scaffold(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
-        containerColor = MaterialTheme.colorScheme.background,
+        containerColor = liquidGlassTopAppBarContainerColor(MaterialTheme.colorScheme.background),
         topBar = {
             Column {
                 TopAppBar(
@@ -179,11 +180,15 @@ fun AppRoutingScreen(
                             Icon(Icons.Rounded.Add, contentDescription = stringResource(R.string.common_add), tint = MaterialTheme.colorScheme.onBackground)
                         }
                     },
-                    colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = liquidGlassTopAppBarContainerColor(
+                            MaterialTheme.colorScheme.background
+                        )
+                    )
                 )
                 TabRow(
                     selectedTabIndex = selectedTab,
-                    containerColor = MaterialTheme.colorScheme.background,
+                    containerColor = liquidGlassTopAppBarContainerColor(MaterialTheme.colorScheme.background),
                     contentColor = MaterialTheme.colorScheme.onBackground,
                     indicator = { tabPositions ->
                         TabRowDefaults.Indicator(

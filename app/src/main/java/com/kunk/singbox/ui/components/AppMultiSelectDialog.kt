@@ -59,6 +59,9 @@ import androidx.core.graphics.drawable.toBitmap
 import com.kunk.singbox.model.InstalledApp
 import com.kunk.singbox.repository.InstalledAppsRepository
 import com.kunk.singbox.ui.theme.isLiquidGlassTheme
+import com.kunk.singbox.ui.theme.liquidGlassButtonContainerColor
+import com.kunk.singbox.ui.theme.liquidGlassButtonContentColor
+import com.kunk.singbox.ui.theme.liquidGlassButtonPanel
 import com.kunk.singbox.ui.theme.liquidGlassPanel
 import com.kunk.singbox.ui.theme.liquidGlassTextFieldBorderColor
 import com.kunk.singbox.ui.theme.liquidGlassTextFieldContainerColor
@@ -496,11 +499,21 @@ fun AppMultiSelectDialog(
                             )
                         )
                     },
-                    modifier = Modifier.weight(1f).height(50.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary, contentColor = MaterialTheme.colorScheme.onPrimary),
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(50.dp)
+                        .liquidGlassButtonPanel(shape = RoundedCornerShape(25.dp)),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = liquidGlassButtonContainerColor(MaterialTheme.colorScheme.primary),
+                        contentColor = liquidGlassButtonContentColor(MaterialTheme.colorScheme.onPrimary)
+                    ),
                     shape = RoundedCornerShape(25.dp)
                 ) {
-                    Text(text = confirmText, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimary)
+                    Text(
+                        text = confirmText,
+                        fontWeight = FontWeight.Bold,
+                        color = liquidGlassButtonContentColor(MaterialTheme.colorScheme.onPrimary)
+                    )
                 }
             }
         }
