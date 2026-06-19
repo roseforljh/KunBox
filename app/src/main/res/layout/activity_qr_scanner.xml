@@ -32,6 +32,7 @@
             android:padding="12dp" />
 
         <TextView
+            android:id="@+id/txt_scanner_title"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
@@ -62,6 +63,7 @@
 
     <!-- 底部提示文字 -->
     <TextView
+        android:id="@+id/txt_scanner_hint"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_gravity="bottom"

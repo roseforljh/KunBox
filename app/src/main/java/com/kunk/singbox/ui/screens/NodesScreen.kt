@@ -167,6 +167,16 @@ private fun Modifier.nodeActiveIndicatorPanel(): Modifier {
     }
 }
 
+@Composable
+private fun Modifier.nodeTestingProgressPanel(): Modifier {
+    return if (isLiquidGlassTheme()) {
+        liquidGlassPanel(shape = RoundedCornerShape(16.dp), shadowElevation = 8.dp)
+            .padding(12.dp)
+    } else {
+        this
+    }
+}
+
 @Suppress("FunctionNaming", "LongMethod", "CyclomaticComplexMethod", "CognitiveComplexMethod")
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -660,6 +670,7 @@ fun NodesScreen(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(horizontal = 16.dp)
+                                .nodeTestingProgressPanel()
                         ) {
                             Row(
                                 modifier = Modifier.fillMaxWidth(),

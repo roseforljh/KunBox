@@ -275,6 +275,7 @@ class ThemeStyleSourceTest {
         assertTrue(connectionInfo.contains("connectionProtocolBadgeTextColor("))
         assertTrue(connectionInfo.contains("connectionMetaBadgeTextColor("))
         assertTrue(connectionInfo.contains("connectionCloseButtonPanel("))
+        assertTrue(connectionInfo.contains("liquidGlassEmptyStatePanel("))
     }
 
     @Test
@@ -296,6 +297,7 @@ class ThemeStyleSourceTest {
 
         assertTrue(nodes.contains("nodeSearchPanel()"))
         assertTrue(nodes.contains("nodeActiveIndicatorPanel()"))
+        assertTrue(nodes.contains("nodeTestingProgressPanel()"))
         assertTrue(connectionInfo.contains("connectionSearchPanel()"))
         assertTrue(ruleSetHub.contains("RuleSetHubSearchField("))
         assertTrue(ruleSetHub.contains("liquidGlassTextFieldPanel("))

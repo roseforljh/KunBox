@@ -2,6 +2,7 @@ package com.kunk.singbox.ui.screens
 
 import com.kunk.singbox.R
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
@@ -27,6 +28,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
@@ -42,6 +44,7 @@ import com.kunk.singbox.repository.ConfigRepository
 import com.kunk.singbox.ui.components.AppNotificationManager
 import com.kunk.singbox.ui.theme.isLiquidGlassTheme
 import com.kunk.singbox.ui.theme.liquidGlassIconButtonPanel
+import com.kunk.singbox.ui.theme.liquidGlassLoadingStatePanel
 import com.kunk.singbox.ui.theme.liquidGlassPanel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
@@ -235,10 +238,7 @@ private fun ProfileEditorContent(
 ) {
     Column(modifier = modifier) {
         if (isLoading) {
-            Text(
-                text = stringResource(R.string.common_loading),
-                color = MaterialTheme.colorScheme.onBackground
-            )
+            ProfileEditorLoadingState()
         } else {
             BasicTextField(
                 value = content,
@@ -255,6 +255,32 @@ private fun ProfileEditorContent(
                     .profileEditorPanel()
             )
         }
+    }
+}
+
+@Composable
+private fun ProfileEditorLoadingState() {
+    val loadingText = stringResource(R.string.common_loading)
+    if (isLiquidGlassTheme()) {
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center
+        ) {
+            Box(
+                modifier = Modifier.liquidGlassLoadingStatePanel(),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = loadingText,
+                    color = MaterialTheme.colorScheme.onBackground
+                )
+            }
+        }
+    } else {
+        Text(
+            text = loadingText,
+            color = MaterialTheme.colorScheme.onBackground
+        )
     }
 }
 

@@ -172,17 +172,33 @@ class LiquidGlassControlCoverageTest {
     @Test
     fun emptyStatesUseLiquidGlassPanels() {
         val liquidControls = liquidControlSources()
+        val componentFiles = listOf("NodeSelectionDialogs.kt")
         val screenFiles = listOf(
             "AppGroupsScreen.kt",
             "AppRoutingScreen.kt",
             "AppRulesScreen.kt",
             "CustomRulesScreen.kt",
             "DomainRulesScreen.kt",
+            "RuleSetHubScreen.kt",
             "RuleSetsScreen.kt"
         )
 
         assertTrue(liquidControls.contains("fun Modifier.liquidGlassEmptyStatePanel("))
+        componentFiles.assertComponentSourcesContain("liquidGlassEmptyStatePanel(")
         screenFiles.assertScreenSourcesContain("liquidGlassEmptyStatePanel(")
+    }
+
+    @Test
+    fun loadingStatesUseLiquidGlassPanels() {
+        val liquidControls = liquidControlSources()
+        val screenFiles = listOf(
+            "AppGroupsScreen.kt",
+            "ProfileEditorScreen.kt",
+            "RuleSetHubScreen.kt"
+        )
+
+        assertTrue(liquidControls.contains("fun Modifier.liquidGlassLoadingStatePanel("))
+        screenFiles.assertScreenSourcesContain("liquidGlassLoadingStatePanel(")
     }
 
     @Test
@@ -207,9 +223,13 @@ class LiquidGlassControlCoverageTest {
         assertTrue(scannerActivity.contains("SettingsRepository.getInstance(this).settings.value.appThemeStyle"))
         assertTrue(scannerActivity.contains("AppThemeStyle.LIQUID_GLASS"))
         assertTrue(scannerActivity.contains("private fun applyLiquidGlassScannerControls()"))
+        assertTrue(scannerActivity.contains("private fun applyLiquidGlassScannerLabels()"))
         assertTrue(scannerActivity.contains("private fun liquidGlassScannerButtonBackground()"))
+        assertTrue(scannerActivity.contains("private fun liquidGlassScannerLabelBackground()"))
         assertTrue(scannerActivity.contains("StateListDrawable()"))
         assertTrue(scannerActivity.contains("GradientDrawable()"))
+        assertTrue(scannerLayout.contains("@+id/txt_scanner_title"))
+        assertTrue(scannerLayout.contains("@+id/txt_scanner_hint"))
         assertTrue(scannerLayout.contains("?android:attr/selectableItemBackgroundBorderless"))
     }
 
@@ -223,6 +243,18 @@ class LiquidGlassControlCoverageTest {
         assertTrue(viewFinder.contains("private fun scannerMaskColor("))
         assertTrue(viewFinder.contains("ContextCompat.getColor(context, defaultColorRes)"))
         assertTrue(viewFinder.contains("Color.argb("))
+    }
+
+    @Test
+    fun appNotificationsUseLiquidGlassToastOnlyForLiquidTheme() {
+        val notificationManager = File("src/main/java/com/kunk/singbox/ui/components/AppNotificationManager.kt")
+            .readText()
+
+        assertTrue(notificationManager.contains("SettingsRepository.getInstance(context).settings.value.appThemeStyle"))
+        assertTrue(notificationManager.contains("AppThemeStyle.LIQUID_GLASS"))
+        assertTrue(notificationManager.contains("private fun showLiquidGlassToast("))
+        assertTrue(notificationManager.contains("private fun liquidGlassToastBackground("))
+        assertTrue(notificationManager.contains("Toast.makeText("))
     }
 
     private fun liquidControlSources(): String {

@@ -80,6 +80,7 @@ import com.kunk.singbox.model.ClashConnection
 import com.kunk.singbox.ui.theme.Neutral500
 import com.kunk.singbox.ui.theme.isLiquidGlassTheme
 import com.kunk.singbox.ui.theme.liquidGlassDividerColor
+import com.kunk.singbox.ui.theme.liquidGlassEmptyStatePanel
 import com.kunk.singbox.ui.theme.liquidGlassPanel
 import com.kunk.singbox.ui.theme.liquidGlassDialogContainerColor
 import com.kunk.singbox.ui.theme.liquidGlassDialogPanel
@@ -141,6 +142,17 @@ private fun Modifier.connectionCloseButtonPanel(): Modifier {
         liquidGlassPanel(shape = CircleShape, selected = true, shadowElevation = 4.dp)
     } else {
         this
+    }
+}
+
+@Composable
+private fun Modifier.connectionEmptyStatePanel(): Modifier {
+    return if (isLiquidGlassTheme()) {
+        fillMaxWidth()
+            .liquidGlassEmptyStatePanel()
+            .padding(28.dp)
+    } else {
+        fillMaxWidth()
     }
 }
 
@@ -850,42 +862,47 @@ private fun ConnectionEmptyState(
     title: String,
     subtitle: String
 ) {
-    Column(
+    Box(
         modifier = Modifier
             .fillMaxSize()
             .padding(32.dp),
-        verticalArrangement = Arrangement.Center,
-        horizontalAlignment = Alignment.CenterHorizontally
+        contentAlignment = Alignment.Center
     ) {
-        Box(
+        Column(
             modifier = Modifier
-                .size(72.dp)
-                .connectionEmptyIconPanel(),
-            contentAlignment = Alignment.Center
+                .connectionEmptyStatePanel(),
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                modifier = Modifier.size(36.dp),
-                tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f)
+            Box(
+                modifier = Modifier
+                    .size(72.dp)
+                    .connectionEmptyIconPanel(),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    modifier = Modifier.size(36.dp),
+                    tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f)
+                )
+            }
+            Spacer(modifier = Modifier.height(16.dp))
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onBackground
+            )
+            Spacer(modifier = Modifier.height(6.dp))
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f),
+                modifier = Modifier.padding(horizontal = 16.dp),
+                lineHeight = 20.sp,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center
             )
         }
-        Spacer(modifier = Modifier.height(16.dp))
-        Text(
-            text = title,
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onBackground
-        )
-        Spacer(modifier = Modifier.height(6.dp))
-        Text(
-            text = subtitle,
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f),
-            modifier = Modifier.padding(horizontal = 16.dp),
-            lineHeight = 20.sp,
-            textAlign = androidx.compose.ui.text.style.TextAlign.Center
-        )
     }
 }
 

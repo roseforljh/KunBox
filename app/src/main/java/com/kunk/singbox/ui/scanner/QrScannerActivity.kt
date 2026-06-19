@@ -12,7 +12,9 @@ import android.net.Uri
 import android.os.Bundle
 import android.util.Log
 import android.view.KeyEvent
+import android.view.ViewGroup
 import android.widget.ImageButton
+import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
@@ -85,6 +87,39 @@ class QrScannerActivity : AppCompatActivity() {
             button.elevation = dpToPx(SCANNER_BUTTON_ELEVATION_DP)
             button.clipToOutline = true
         }
+
+        applyLiquidGlassScannerLabels()
+    }
+
+    private fun applyLiquidGlassScannerLabels() {
+        val title = findViewById<TextView>(R.id.txt_scanner_title)
+        val hint = findViewById<TextView>(R.id.txt_scanner_hint)
+
+        title.background = liquidGlassScannerLabelBackground()
+        title.setTextColor(Color.WHITE)
+        title.elevation = dpToPx(SCANNER_LABEL_ELEVATION_DP)
+        title.setPadding(
+            dpToPx(SCANNER_LABEL_HORIZONTAL_PADDING_DP).toInt(),
+            dpToPx(SCANNER_LABEL_VERTICAL_PADDING_DP).toInt(),
+            dpToPx(SCANNER_LABEL_HORIZONTAL_PADDING_DP).toInt(),
+            dpToPx(SCANNER_LABEL_VERTICAL_PADDING_DP).toInt()
+        )
+
+        hint.background = liquidGlassScannerLabelBackground()
+        hint.setTextColor(Color.argb(226, 255, 255, 255))
+        hint.elevation = dpToPx(SCANNER_LABEL_ELEVATION_DP)
+        hint.setPadding(
+            dpToPx(SCANNER_HINT_HORIZONTAL_PADDING_DP).toInt(),
+            dpToPx(SCANNER_LABEL_VERTICAL_PADDING_DP).toInt(),
+            dpToPx(SCANNER_HINT_HORIZONTAL_PADDING_DP).toInt(),
+            dpToPx(SCANNER_LABEL_VERTICAL_PADDING_DP).toInt()
+        )
+        (hint.layoutParams as? ViewGroup.MarginLayoutParams)?.let { layoutParams ->
+            val horizontalMargin = dpToPx(SCANNER_HINT_HORIZONTAL_MARGIN_DP).toInt()
+            layoutParams.marginStart = horizontalMargin
+            layoutParams.marginEnd = horizontalMargin
+            hint.layoutParams = layoutParams
+        }
     }
 
     private fun liquidGlassScannerButtonBackground(): StateListDrawable {
@@ -109,6 +144,21 @@ class QrScannerActivity : AppCompatActivity() {
                     fillColor = Color.argb(46, 255, 255, 255),
                     strokeColor = Color.argb(118, 255, 255, 255)
                 )
+            )
+        }
+    }
+
+    private fun liquidGlassScannerLabelBackground(): GradientDrawable {
+        return GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(
+            Color.argb(58, 255, 255, 255),
+            Color.argb(34, 255, 255, 255),
+            Color.argb(28, 0, 0, 0)
+        )).apply {
+            shape = GradientDrawable.RECTANGLE
+            cornerRadius = dpToPx(SCANNER_LABEL_RADIUS_DP)
+            setStroke(
+                dpToPx(SCANNER_BUTTON_STROKE_DP).toInt().coerceAtLeast(1),
+                Color.argb(108, 255, 255, 255)
             )
         }
     }
@@ -265,6 +315,12 @@ class QrScannerActivity : AppCompatActivity() {
         private const val SCANNER_BUTTON_RADIUS_DP = 24f
         private const val SCANNER_BUTTON_STROKE_DP = 1f
         private const val SCANNER_BUTTON_ELEVATION_DP = 8f
+        private const val SCANNER_LABEL_RADIUS_DP = 18f
+        private const val SCANNER_LABEL_ELEVATION_DP = 6f
+        private const val SCANNER_LABEL_HORIZONTAL_PADDING_DP = 14f
+        private const val SCANNER_LABEL_VERTICAL_PADDING_DP = 7f
+        private const val SCANNER_HINT_HORIZONTAL_PADDING_DP = 18f
+        private const val SCANNER_HINT_HORIZONTAL_MARGIN_DP = 36f
         const val EXTRA_RESULT = "scan_result"
 
         fun createIntent(activity: Activity): Intent {

@@ -27,6 +27,7 @@ import com.kunk.singbox.viewmodel.ProfilesViewModel
 import com.kunk.singbox.viewmodel.SettingsViewModel
 import com.kunk.singbox.ui.theme.liquidGlassEmptyStatePanel
 import com.kunk.singbox.ui.theme.liquidGlassIconButtonPanel
+import com.kunk.singbox.ui.theme.liquidGlassLoadingStatePanel
 import com.kunk.singbox.ui.theme.liquidGlassProgressColor
 import com.kunk.singbox.ui.theme.liquidGlassTopAppBarContainerColor
 
@@ -150,9 +151,14 @@ fun AppGroupsScreen(
                 modifier = Modifier.fillMaxSize().padding(padding),
                 contentAlignment = Alignment.Center
             ) {
-                CircularProgressIndicator(
-                    color = liquidGlassProgressColor(MaterialTheme.colorScheme.primary)
-                )
+                Box(
+                    modifier = Modifier.liquidGlassLoadingStatePanel(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator(
+                        color = liquidGlassProgressColor(MaterialTheme.colorScheme.primary)
+                    )
+                }
             }
         } else {
             LazyColumn(

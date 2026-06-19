@@ -33,7 +33,9 @@ import com.kunk.singbox.ui.theme.isLiquidGlassTheme
 import com.kunk.singbox.ui.theme.liquidGlassButtonContainerColor
 import com.kunk.singbox.ui.theme.liquidGlassButtonContentColor
 import com.kunk.singbox.ui.theme.liquidGlassButtonPanel
+import com.kunk.singbox.ui.theme.liquidGlassEmptyStatePanel
 import com.kunk.singbox.ui.theme.liquidGlassIconButtonPanel
+import com.kunk.singbox.ui.theme.liquidGlassLoadingStatePanel
 import com.kunk.singbox.ui.theme.liquidGlassPanel
 import com.kunk.singbox.ui.theme.liquidGlassProgressColor
 import com.kunk.singbox.ui.theme.liquidGlassTextFieldBorderColor
@@ -85,6 +87,17 @@ private fun Modifier.ruleSetHubItemPanel(): Modifier {
 @Composable
 private fun ruleSetHubItemContainerColor(defaultColor: Color): Color {
     return if (isLiquidGlassTheme()) Color.Transparent else defaultColor
+}
+
+@Composable
+private fun Modifier.ruleSetHubStatusPanel(): Modifier {
+    return if (isLiquidGlassTheme()) {
+        fillMaxWidth()
+            .liquidGlassEmptyStatePanel()
+            .padding(24.dp)
+    } else {
+        this
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -173,14 +186,22 @@ fun RuleSetHubScreen(
 
             if (isLoading) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator(
-                        color = liquidGlassProgressColor(MaterialTheme.colorScheme.primary)
-                    )
+                    Box(
+                        modifier = Modifier.liquidGlassLoadingStatePanel(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        CircularProgressIndicator(
+                            color = liquidGlassProgressColor(MaterialTheme.colorScheme.primary)
+                        )
+                    }
                 }
             } else if (error != null) {
                 val errorMessage = error.orEmpty()
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Column(
+                        modifier = Modifier.ruleSetHubStatusPanel(),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
                         Text(text = errorMessage, color = MaterialTheme.colorScheme.error)
                         Button(
                             onClick = { activityRuleSetViewModel.fetchRuleSets() },
