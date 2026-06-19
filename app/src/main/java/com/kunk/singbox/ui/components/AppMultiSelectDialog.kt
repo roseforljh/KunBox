@@ -101,6 +101,15 @@ private fun Modifier.appSelectIconPanel(shape: RoundedCornerShape = RoundedCorne
 }
 
 @Composable
+private fun Modifier.appSelectFilterPanel(shape: RoundedCornerShape = RoundedCornerShape(8.dp)): Modifier {
+    return if (isLiquidGlassTheme()) {
+        liquidGlassPanel(shape = shape, shadowElevation = 3.dp)
+    } else {
+        clip(shape)
+    }
+}
+
+@Composable
 fun AppMultiSelectDialog(
     title: String,
     selectedPackages: Set<String>,
@@ -320,7 +329,7 @@ fun AppMultiSelectDialog(
             ) {
                 Row(
                     modifier = Modifier
-                        .clip(RoundedCornerShape(8.dp))
+                        .appSelectFilterPanel()
                         .clickable { showSystemApps = !showSystemApps }
                         .padding(4.dp),
                     verticalAlignment = Alignment.CenterVertically
@@ -339,7 +348,7 @@ fun AppMultiSelectDialog(
 
                 Row(
                     modifier = Modifier
-                        .clip(RoundedCornerShape(8.dp))
+                        .appSelectFilterPanel()
                         .clickable { showNoLauncherApps = !showNoLauncherApps }
                         .padding(4.dp),
                     verticalAlignment = Alignment.CenterVertically

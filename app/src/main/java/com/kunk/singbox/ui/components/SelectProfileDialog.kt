@@ -33,6 +33,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.kunk.singbox.R
 import com.kunk.singbox.model.ProfileUi
+import com.kunk.singbox.ui.theme.isLiquidGlassTheme
+import com.kunk.singbox.ui.theme.liquidGlassPanel
 import com.kunk.singbox.ui.theme.liquidGlassDialogContainerColor
 import com.kunk.singbox.ui.theme.liquidGlassDialogPanel
 import com.kunk.singbox.ui.theme.liquidGlassRadioButtonColors
@@ -44,6 +46,19 @@ import com.kunk.singbox.ui.theme.liquidGlassTextButtonPanel
 sealed class SelectProfileTarget {
     data class ExistingProfile(val profileId: String) : SelectProfileTarget()
     data class NewProfile(val profileName: String) : SelectProfileTarget()
+}
+
+@Composable
+private fun Modifier.selectProfileTargetOptionPanel(isSelected: Boolean): Modifier {
+    return if (isLiquidGlassTheme()) {
+        liquidGlassPanel(
+            shape = RoundedCornerShape(10.dp),
+            selected = isSelected,
+            shadowElevation = 4.dp
+        )
+    } else {
+        this
+    }
 }
 
 @Suppress("CognitiveComplexMethod", "LongMethod")
@@ -85,9 +100,11 @@ fun SelectProfileDialog(
                         .heightIn(max = 250.dp)
                 ) {
                     items(profiles, key = { it.id }) { profile ->
+                        val isSelected = !isCreatingNew && selectedProfileId == profile.id
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
+                                .selectProfileTargetOptionPanel(isSelected)
                                 .clickable {
                                     isCreatingNew = false
                                     selectedProfileId = profile.id
@@ -96,7 +113,7 @@ fun SelectProfileDialog(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             RadioButton(
-                                selected = !isCreatingNew && selectedProfileId == profile.id,
+                                selected = isSelected,
                                 onClick = {
                                     isCreatingNew = false
                                     selectedProfileId = profile.id
@@ -114,15 +131,17 @@ fun SelectProfileDialog(
                     }
 
                     item {
+                        val isSelected = isCreatingNew
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
+                                .selectProfileTargetOptionPanel(isSelected)
                                 .clickable { isCreatingNew = true }
                                 .padding(vertical = 4.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             RadioButton(
-                                selected = isCreatingNew,
+                                selected = isSelected,
                                 onClick = { isCreatingNew = true },
                                 colors = liquidGlassRadioButtonColors(
                                     selectedColor = MaterialTheme.colorScheme.primary

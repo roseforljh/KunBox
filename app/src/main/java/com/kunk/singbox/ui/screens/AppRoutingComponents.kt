@@ -93,6 +93,24 @@ private fun Modifier.routingIconPanel(shape: RoundedCornerShape): Modifier {
 }
 
 @Composable
+private fun Modifier.routingAppListItemPanel(shape: RoundedCornerShape): Modifier {
+    return if (isLiquidGlassTheme()) {
+        liquidGlassPanel(shape = shape, shadowElevation = 4.dp)
+    } else {
+        clip(shape)
+    }
+}
+
+@Composable
+private fun Modifier.routingFilterTogglePanel(shape: RoundedCornerShape): Modifier {
+    return if (isLiquidGlassTheme()) {
+        liquidGlassPanel(shape = shape, shadowElevation = 3.dp)
+    } else {
+        clip(shape)
+    }
+}
+
+@Composable
 private fun Modifier.routingEmptySelectionPanel(): Modifier {
     val shape = RoundedCornerShape(12.dp)
     return if (isLiquidGlassTheme()) {
@@ -515,7 +533,7 @@ fun AppPickerDialog(apps: List<InstalledApp>, existingPackages: Set<String>, onS
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier
-                            .clip(RoundedCornerShape(8.dp))
+                            .routingFilterTogglePanel(RoundedCornerShape(8.dp))
                             .clickable { showSystemApps = !showSystemApps }
                             .padding(4.dp)
                     ) {
@@ -560,6 +578,7 @@ fun AppPickerDialog(apps: List<InstalledApp>, existingPackages: Set<String>, onS
 @Composable
 fun AppListItem(app: InstalledApp, onClick: () -> Unit) {
     val context = LocalContext.current
+    val itemShape = RoundedCornerShape(8.dp)
     val appIcon = remember(app.packageName) {
         try {
             context.packageManager.getApplicationIcon(app.packageName).toBitmap(96, 96).asImageBitmap()
@@ -569,7 +588,7 @@ fun AppListItem(app: InstalledApp, onClick: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(8.dp))
+            .routingAppListItemPanel(itemShape)
             .clickable(onClick = onClick)
             .padding(horizontal = 8.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically
@@ -855,7 +874,7 @@ fun MultiAppSelectorDialog(
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier
-                            .clip(RoundedCornerShape(6.dp))
+                            .routingFilterTogglePanel(RoundedCornerShape(6.dp))
                             .clickable { showSystemApps = !showSystemApps }
                             .padding(4.dp)
                     ) {

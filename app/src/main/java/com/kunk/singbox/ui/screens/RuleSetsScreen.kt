@@ -41,11 +41,13 @@ import com.kunk.singbox.viewmodel.ProfilesViewModel
 import com.kunk.singbox.viewmodel.SettingsViewModel
 import com.kunk.singbox.model.RuleSetOutboundMode
 import com.kunk.singbox.model.NodeUi
+import com.kunk.singbox.ui.theme.isLiquidGlassTheme
 import com.kunk.singbox.ui.theme.liquidGlassCheckboxColors
 import com.kunk.singbox.ui.theme.liquidGlassDialogContainerColor
 import com.kunk.singbox.ui.theme.liquidGlassDialogPanel
 import com.kunk.singbox.ui.theme.liquidGlassEmptyStatePanel
 import com.kunk.singbox.ui.theme.liquidGlassIconButtonPanel
+import com.kunk.singbox.ui.theme.liquidGlassPanel
 import com.kunk.singbox.ui.theme.liquidGlassTextButtonPanel
 import kotlinx.coroutines.launch
 import com.kunk.singbox.ui.theme.liquidGlassTopAppBarContainerColor
@@ -57,6 +59,19 @@ internal val defaultRuleSetTags = setOf(
     "geosite-category-ads-all",
     "geosite-private"
 )
+
+@Composable
+private fun Modifier.ruleSetInboundOptionPanel(isSelected: Boolean): Modifier {
+    return if (isLiquidGlassTheme()) {
+        liquidGlassPanel(
+            shape = RoundedCornerShape(10.dp),
+            selected = isSelected,
+            shadowElevation = 4.dp
+        )
+    } else {
+        this
+    }
+}
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -341,12 +356,15 @@ fun RuleSetsScreen(
             text = {
                 Column {
                     availableInbounds.forEach { inbound ->
+                        val ruleSet = outboundEditingRuleSet ?: currentRuleSet
+                        val inboundList = ruleSet.inbounds ?: emptyList()
+                        val isSelected = inboundList.contains(inbound)
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
+                                .ruleSetInboundOptionPanel(isSelected)
                                 .clickable {
-                                    val ruleSet = outboundEditingRuleSet ?: currentRuleSet
-                                    val currentInbounds = (ruleSet.inbounds ?: emptyList()).toMutableList()
+                                    val currentInbounds = inboundList.toMutableList()
                                     if (currentInbounds.contains(inbound)) {
                                         currentInbounds.remove(inbound)
                                     } else {
@@ -357,10 +375,8 @@ fun RuleSetsScreen(
                                 .padding(vertical = 12.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            val ruleSet = outboundEditingRuleSet ?: currentRuleSet
-                            val inboundList = ruleSet.inbounds ?: emptyList()
                             Checkbox(
-                                checked = inboundList.contains(inbound),
+                                checked = isSelected,
                                 onCheckedChange = null,
                                 colors = liquidGlassCheckboxColors()
                             )

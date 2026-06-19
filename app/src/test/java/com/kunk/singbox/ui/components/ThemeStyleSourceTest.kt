@@ -113,6 +113,7 @@ class ThemeStyleSourceTest {
         assertTrue(commonDialogs.contains("dialogOptionPanel(isSelected: Boolean)"))
         assertTrue(commonDialogs.contains("liquidGlassPanel(shape = shape, selected = isSelected"))
         assertTrue(appMultiSelect.contains("appSelectIconPanel("))
+        assertTrue(appMultiSelect.contains("appSelectFilterPanel("))
         assertTrue(appMultiSelect.contains("if (useLiquidGlass)"))
         assertTrue(appMultiSelect.contains("selected = checked"))
         assertTrue(nodeSelection.contains("nodeSelectionListItemPanel("))
@@ -195,6 +196,8 @@ class ThemeStyleSourceTest {
         assertTrue(source.contains("routingMoreCountPanel("))
         assertTrue(source.contains("routingStatusBadgePanel("))
         assertTrue(source.contains("routingGroupIconPanel("))
+        assertTrue(source.contains("routingAppListItemPanel("))
+        assertTrue(source.contains("routingFilterTogglePanel("))
         assertTrue(source.contains("routingSelectablePanel(isSelected: Boolean)"))
         assertFalse(source.contains("isLiquidGlassTheme() && isSelected"))
     }
@@ -438,6 +441,10 @@ class ThemeStyleSourceTest {
                 "$fileName should use liquid glass radio colors",
                 source.contains("liquidGlassRadioButtonColors(")
             )
+            assertTrue(
+                "$fileName should use liquid glass radio option panels",
+                source.contains("TargetOptionPanel(")
+            )
         }
         switchComponentFiles.forEach { fileName ->
             val source = File("src/main/java/com/kunk/singbox/ui/components/$fileName").readText()
@@ -453,6 +460,11 @@ class ThemeStyleSourceTest {
                 source.contains("liquidGlassSwitchColors(")
             )
         }
+        assertTrue(
+            File("src/main/java/com/kunk/singbox/ui/screens/RuleSetsScreen.kt")
+                .readText()
+                .contains("ruleSetInboundOptionPanel(")
+        )
     }
 
     @Test
