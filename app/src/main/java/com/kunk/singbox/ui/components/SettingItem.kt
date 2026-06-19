@@ -37,6 +37,10 @@ import com.kunk.singbox.ui.theme.isLiquidGlassTheme
 import com.kunk.singbox.ui.theme.liquidGlassPanelBorderColor
 import com.kunk.singbox.ui.theme.liquidGlassSwitchColors
 
+private fun shouldDrawSettingSubtitleFade(useLiquidGlass: Boolean, scrollMaxValue: Int): Boolean {
+    return !useLiquidGlass && scrollMaxValue > 0
+}
+
 @Suppress("LongMethod", "CognitiveComplexMethod")
 @Composable
 fun SettingItem(
@@ -101,7 +105,7 @@ fun SettingItem(
                 Spacer(modifier = Modifier.height(2.dp))
                 val surfaceColor = MaterialTheme.colorScheme.surface
                 val scrollState = rememberScrollState()
-                val needsFade = scrollState.maxValue > 0
+                val needsFade = shouldDrawSettingSubtitleFade(useLiquidGlass, scrollState.maxValue)
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()

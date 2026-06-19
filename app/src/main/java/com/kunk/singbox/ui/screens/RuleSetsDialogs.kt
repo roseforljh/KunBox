@@ -32,6 +32,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import com.kunk.singbox.viewmodel.DefaultRuleSetDownloadState
 import com.kunk.singbox.model.RuleSetOutboundMode
 import androidx.compose.ui.draw.scale
+import com.kunk.singbox.ui.theme.LiquidGlassDropdownMenu
 import com.kunk.singbox.ui.theme.isLiquidGlassTheme
 import com.kunk.singbox.ui.theme.liquidGlassCheckboxColors
 import com.kunk.singbox.ui.theme.liquidGlassIconButtonPanel
@@ -229,7 +230,7 @@ fun RuleSetItem(
                         MaterialTheme(
                             shapes = MaterialTheme.shapes.copy(extraSmall = RoundedCornerShape(12.dp))
                         ) {
-                            DropdownMenu(
+                            LiquidGlassDropdownMenu(
                                 expanded = showMenu,
                                 onDismissRequest = { showMenu = false },
                                 modifier = Modifier

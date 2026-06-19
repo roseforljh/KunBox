@@ -519,6 +519,11 @@ class ThemeStyleSourceTest {
 
         assertTrue(source.contains("val useLiquidGlassNav = appThemeStyle == AppThemeStyle.LIQUID_GLASS"))
         assertTrue(source.contains("if (!useLiquidGlassNav)"))
+        assertTrue(source.contains("val rootContainerColor = if (useLiquidGlassNav)"))
+        assertTrue(source.contains("MaterialTheme.colorScheme.background"))
+        assertTrue(source.contains("MaterialTheme.colorScheme.surface"))
+        assertTrue(source.contains("containerColor = rootContainerColor"))
+        assertTrue(source.contains("color = rootContainerColor"))
         assertTrue(source.contains("val dashboardContentBottomPadding = if (useLiquidGlassNav)"))
         assertTrue(source.contains("64.dp"))
         assertTrue(source.contains("val topLevelContentBottomPadding = if (useLiquidGlassNav)"))

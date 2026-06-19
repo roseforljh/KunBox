@@ -118,14 +118,53 @@ class LiquidGlassControlCoverageTest {
         val liquidControls = liquidControlSources()
         val exportImport = File("src/main/java/com/kunk/singbox/ui/components/ExportImportDialogs.kt")
             .readText()
+        val appMultiSelect = File("src/main/java/com/kunk/singbox/ui/components/AppMultiSelectDialog.kt")
+            .readText()
+        val connectionInfo = File("src/main/java/com/kunk/singbox/ui/screens/ConnectionInfoScreen.kt")
+            .readText()
         val appRouting = File("src/main/java/com/kunk/singbox/ui/screens/AppRoutingScreen.kt").readText()
 
         assertTrue(liquidControls.contains("fun liquidGlassDividerColor("))
         assertTrue(liquidControls.contains("fun Modifier.liquidGlassTabRowPanel("))
         assertTrue(liquidControls.contains("fun liquidGlassTabIndicatorColor("))
         assertTrue(exportImport.contains("liquidGlassDividerColor("))
+        assertTrue(appMultiSelect.contains("liquidGlassDividerColor("))
+        assertTrue(connectionInfo.contains("private fun connectionOverviewDividerBrush()"))
+        assertTrue(connectionInfo.contains("liquidGlassDividerColor("))
         assertTrue(appRouting.contains("liquidGlassTabRowPanel("))
         assertTrue(appRouting.contains("liquidGlassTabIndicatorColor("))
+    }
+
+    @Test
+    fun dropdownMenusUseLiquidGlassWrapper() {
+        val liquidControls = liquidControlSources()
+        val componentFiles = listOf("NodeCard.kt", "ProfileCard.kt")
+        val screenFiles = listOf("NodesScreen.kt", "RuleSetsDialogs.kt")
+
+        assertTrue(liquidControls.contains("fun LiquidGlassDropdownMenu("))
+        assertTrue(liquidControls.contains("containerColor = Color.Transparent"))
+        componentFiles.assertComponentSourcesContain("LiquidGlassDropdownMenu(")
+        screenFiles.assertScreenSourcesContain("LiquidGlassDropdownMenu(")
+    }
+
+    @Test
+    fun screenScaffoldsUseLiquidGlassContainerColors() {
+        val screenDir = File("src/main/java/com/kunk/singbox/ui/screens")
+        val failures = mutableListOf<String>()
+
+        screenDir.listFiles { file -> file.extension == "kt" }.orEmpty().forEach { file ->
+            val lines = file.readLines()
+            lines.forEachIndexed { index, line ->
+                if (line.contains("Scaffold(")) {
+                    val scaffoldHeader = lines.drop(index).take(14).joinToString("\n")
+                    if (!scaffoldHeader.contains("containerColor = liquidGlass")) {
+                        failures += "${file.name}:${index + 1}"
+                    }
+                }
+            }
+        }
+
+        assertTrue("Scaffold should use liquid glass container colors: $failures", failures.isEmpty())
     }
 
     @Test

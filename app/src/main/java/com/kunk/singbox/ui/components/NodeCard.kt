@@ -233,7 +233,7 @@ fun NodeCard(
                     MaterialTheme(
                         shapes = MaterialTheme.shapes.copy(extraSmall = RoundedCornerShape(12.dp))
                     ) {
-                        DropdownMenu(
+                        LiquidGlassDropdownMenu(
                             expanded = showMenu,
                             onDismissRequest = { showMenu = false },
                             modifier = Modifier.nodeOverflowMenuPanel()
@@ -440,7 +440,7 @@ fun NodeGridCard(
             MaterialTheme(
                 shapes = MaterialTheme.shapes.copy(extraSmall = RoundedCornerShape(12.dp))
             ) {
-                DropdownMenu(
+                LiquidGlassDropdownMenu(
                     expanded = showMenu,
                     onDismissRequest = { showMenu = false },
                     modifier = Modifier.nodeOverflowMenuPanel()

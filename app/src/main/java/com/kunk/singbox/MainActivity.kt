@@ -314,6 +314,11 @@ fun SingBoxApp() {
         val showBottomBar = currentRoute in listOf(
             "dashboard", "nodes", "profiles", "settings"
         )
+        val rootContainerColor = if (useLiquidGlassNav) {
+            MaterialTheme.colorScheme.background
+        } else {
+            MaterialTheme.colorScheme.surface
+        }
 
         Box(modifier = Modifier.fillMaxSize()) {
             Scaffold(
@@ -326,7 +331,7 @@ fun SingBoxApp() {
                         )
                     }
                 },
-                containerColor = MaterialTheme.colorScheme.surface,
+                containerColor = rootContainerColor,
                 contentWindowInsets = WindowInsets(0, 0, 0, 0)
             ) { innerPadding ->
                 val dashboardContentBottomPadding = if (useLiquidGlassNav) {
@@ -346,7 +351,7 @@ fun SingBoxApp() {
                     modifier = Modifier
                         .fillMaxSize()
                         .padding(bottom = bottomPadding),
-                    color = MaterialTheme.colorScheme.surface
+                    color = rootContainerColor
                 ) {
                     AppNavigation(
                         navController = navController,

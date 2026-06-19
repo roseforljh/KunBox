@@ -27,7 +27,6 @@ import androidx.compose.material.icons.rounded.ImportExport
 import androidx.compose.material.icons.rounded.MoreVert
 import com.kunk.singbox.model.SubscriptionUpdateStage
 import com.kunk.singbox.model.UpdateStatus
-import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -47,6 +46,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.ui.draw.alpha
+import com.kunk.singbox.ui.theme.LiquidGlassDropdownMenu
 import com.kunk.singbox.ui.theme.isLiquidGlassTheme
 import com.kunk.singbox.ui.theme.liquidGlassIconButtonPanel
 import com.kunk.singbox.ui.theme.liquidGlassPanel
@@ -364,7 +364,7 @@ fun ProfileCard(
             MaterialTheme(
                 shapes = MaterialTheme.shapes.copy(extraSmall = RoundedCornerShape(12.dp))
             ) {
-                DropdownMenu(
+                LiquidGlassDropdownMenu(
                     expanded = showMenu,
                     onDismissRequest = { showMenu = false },
                     modifier = Modifier.profileOverflowMenuPanel()

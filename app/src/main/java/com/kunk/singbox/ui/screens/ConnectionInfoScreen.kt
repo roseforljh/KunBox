@@ -79,6 +79,7 @@ import com.kunk.singbox.R
 import com.kunk.singbox.model.ClashConnection
 import com.kunk.singbox.ui.theme.Neutral500
 import com.kunk.singbox.ui.theme.isLiquidGlassTheme
+import com.kunk.singbox.ui.theme.liquidGlassDividerColor
 import com.kunk.singbox.ui.theme.liquidGlassPanel
 import com.kunk.singbox.ui.theme.liquidGlassDialogContainerColor
 import com.kunk.singbox.ui.theme.liquidGlassDialogPanel
@@ -159,6 +160,18 @@ private fun Modifier.connectionOverviewPanel(): Modifier {
 @Composable
 private fun connectionItemContainerColor(defaultColor: Color): Color {
     return if (isLiquidGlassTheme()) Color.Transparent else defaultColor
+}
+
+@Composable
+private fun connectionOverviewDividerBrush(): Brush {
+    val dividerColor = liquidGlassDividerColor(MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.4f))
+    return Brush.verticalGradient(
+        colors = listOf(
+            Color.Transparent,
+            dividerColor,
+            Color.Transparent
+        )
+    )
 }
 
 @Composable
@@ -485,13 +498,7 @@ private fun OverviewCard(
     uploadTotal: Long,
     downloadTotal: Long
 ) {
-    val dividerGradient = Brush.verticalGradient(
-        colors = listOf(
-            Color.Transparent,
-            MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.4f),
-            Color.Transparent
-        )
-    )
+    val dividerGradient = connectionOverviewDividerBrush()
     val shape = RoundedCornerShape(16.dp)
 
     if (isLiquidGlassTheme()) {

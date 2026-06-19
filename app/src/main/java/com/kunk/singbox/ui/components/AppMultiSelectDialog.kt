@@ -63,6 +63,7 @@ import com.kunk.singbox.ui.theme.liquidGlassButtonContainerColor
 import com.kunk.singbox.ui.theme.liquidGlassButtonContentColor
 import com.kunk.singbox.ui.theme.liquidGlassButtonPanel
 import com.kunk.singbox.ui.theme.liquidGlassCheckboxColors
+import com.kunk.singbox.ui.theme.liquidGlassDividerColor
 import com.kunk.singbox.ui.theme.liquidGlassIconButtonPanel
 import com.kunk.singbox.ui.theme.liquidGlassPanel
 import com.kunk.singbox.ui.theme.liquidGlassProgressColor
@@ -389,7 +390,7 @@ fun AppMultiSelectDialog(
             }
 
             Spacer(modifier = Modifier.height(8.dp))
-            Divider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
+            Divider(color = liquidGlassDividerColor(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)))
             Spacer(modifier = Modifier.height(8.dp))
 
             LazyColumn(

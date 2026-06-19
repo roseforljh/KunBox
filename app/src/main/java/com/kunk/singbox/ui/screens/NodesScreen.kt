@@ -53,7 +53,6 @@ import androidx.compose.material.icons.rounded.ViewCompact
 import androidx.compose.material.icons.rounded.ViewList
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
@@ -109,6 +108,7 @@ import com.kunk.singbox.ui.components.SingleSelectDialog
 import com.kunk.singbox.ui.components.NodeCard
 import com.kunk.singbox.ui.components.NodeGridCard
 import com.kunk.singbox.ui.navigation.Screen
+import com.kunk.singbox.ui.theme.LiquidGlassDropdownMenu
 import com.kunk.singbox.ui.theme.Neutral500
 import com.kunk.singbox.ui.theme.isLiquidGlassTheme
 import com.kunk.singbox.ui.theme.liquidGlassFloatingActionContainerColor
@@ -452,6 +452,7 @@ fun NodesScreen(
     ) {
         Scaffold(
             modifier = Modifier.fillMaxSize(),
+            containerColor = liquidGlassScreenContainerColor(MaterialTheme.colorScheme.background),
             contentWindowInsets = WindowInsets(0, 0, 0, 0)
         ) { padding ->
             Column(
@@ -535,7 +536,7 @@ fun NodesScreen(
                             MaterialTheme(
                                 shapes = MaterialTheme.shapes.copy(extraSmall = RoundedCornerShape(12.dp))
                             ) {
-                                DropdownMenu(
+                                LiquidGlassDropdownMenu(
                                     expanded = showMoreMenu,
                                     onDismissRequest = { showMoreMenu = false },
                                     modifier = Modifier
