@@ -52,6 +52,7 @@ import com.kunk.singbox.ui.theme.liquidGlassPanel
 import com.kunk.singbox.ui.theme.liquidGlassDialogContainerColor
 import com.kunk.singbox.ui.theme.liquidGlassDialogPanel
 import com.kunk.singbox.ui.theme.liquidGlassIconButtonPanel
+import com.kunk.singbox.ui.theme.liquidGlassMutedContentColor
 import com.kunk.singbox.ui.theme.liquidGlassSwitchColors
 import com.kunk.singbox.ui.theme.liquidGlassPressFeedback
 import com.kunk.singbox.ui.theme.liquidGlassTextFieldBorderColor
@@ -249,7 +250,7 @@ private fun appRuleEnabledSwitch(
         colors = liquidGlassSwitchColors(
             checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
             checkedTrackColor = MaterialTheme.colorScheme.primary,
-            uncheckedThumbColor = Neutral500,
+            uncheckedThumbColor = liquidGlassMutedContentColor(Neutral500),
             uncheckedTrackColor = Neutral700
         )
     )
@@ -272,6 +273,7 @@ private fun appRuleDeleteButton(onDelete: () -> Unit) {
     }
 }
 
+@Suppress("LongMethod")
 @Composable
 fun AppRuleItem(
     rule: AppRule,
@@ -310,7 +312,12 @@ fun AppRuleItem(
                             .routingIconPanel(RoundedCornerShape(10.dp)),
                         contentAlignment = Alignment.Center
                     ) {
-                        Icon(Icons.Rounded.Apps, contentDescription = null, tint = Neutral500, modifier = Modifier.size(24.dp))
+                        Icon(
+                            Icons.Rounded.Apps,
+                            contentDescription = null,
+                            tint = liquidGlassMutedContentColor(Neutral500),
+                            modifier = Modifier.size(24.dp)
+                        )
                     }
                 }
                 RoutingStatusBadge(
@@ -524,7 +531,7 @@ fun AppRuleEditorDialog(
                     color = if (selectedApp != null) {
                         liquidGlassTextButtonContentColor(MaterialTheme.colorScheme.primary)
                     } else {
-                        Neutral500
+                        liquidGlassMutedContentColor(Neutral500)
                     }
                 )
             }
@@ -585,8 +592,21 @@ fun AppPickerDialog(apps: List<InstalledApp>, existingPackages: Set<String>, onS
                         modifier = Modifier
                             .weight(1f)
                             .liquidGlassTextFieldPanel(shape = searchFieldShape),
-                        placeholder = { Text(stringResource(R.string.common_search), color = Neutral500, fontSize = 14.sp) },
-                        leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null, tint = Neutral500, modifier = Modifier.size(20.dp)) },
+                        placeholder = {
+                            Text(
+                                stringResource(R.string.common_search),
+                                color = liquidGlassMutedContentColor(Neutral500),
+                                fontSize = 14.sp
+                            )
+                        },
+                        leadingIcon = {
+                            Icon(
+                                Icons.Rounded.Search,
+                                contentDescription = null,
+                                tint = liquidGlassMutedContentColor(Neutral500),
+                                modifier = Modifier.size(20.dp)
+                            )
+                        },
                         singleLine = true,
                         shape = searchFieldShape,
                         colors = OutlinedTextFieldDefaults.colors(
@@ -621,7 +641,7 @@ fun AppPickerDialog(apps: List<InstalledApp>, existingPackages: Set<String>, onS
                             modifier = Modifier.size(20.dp),
                             colors = liquidGlassCheckboxColors(
                                 checkedColor = MaterialTheme.colorScheme.primary,
-                                uncheckedColor = Neutral500
+                                uncheckedColor = liquidGlassMutedContentColor(Neutral500)
                             )
                         )
                         Spacer(modifier = Modifier.width(4.dp))
@@ -692,16 +712,31 @@ fun AppListItem(app: InstalledApp, onClick: () -> Unit) {
                     .routingIconPanel(RoundedCornerShape(8.dp)),
                 contentAlignment = Alignment.Center
             ) {
-                Icon(Icons.Rounded.Apps, contentDescription = null, tint = Neutral500, modifier = Modifier.size(20.dp))
+                Icon(
+                    Icons.Rounded.Apps,
+                    contentDescription = null,
+                    tint = liquidGlassMutedContentColor(Neutral500),
+                    modifier = Modifier.size(20.dp)
+                )
             }
         }
         Spacer(modifier = Modifier.width(10.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(text = app.appName, fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(text = app.packageName, fontSize = 11.sp, color = Neutral500, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(
+                text = app.packageName,
+                fontSize = 11.sp,
+                color = liquidGlassMutedContentColor(Neutral500),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
         }
         if (app.isSystemApp) {
-            Text(stringResource(R.string.common_system), fontSize = 10.sp, color = Neutral500)
+            Text(
+                stringResource(R.string.common_system),
+                fontSize = 10.sp,
+                color = liquidGlassMutedContentColor(Neutral500)
+            )
         }
     }
 }
@@ -728,7 +763,12 @@ fun AppIconSmall(packageName: String) {
                 .routingIconPanel(RoundedCornerShape(8.dp)),
             contentAlignment = Alignment.Center
         ) {
-            Icon(Icons.Rounded.Apps, contentDescription = null, tint = Neutral500, modifier = Modifier.size(16.dp))
+            Icon(
+                Icons.Rounded.Apps,
+                contentDescription = null,
+                tint = liquidGlassMutedContentColor(Neutral500),
+                modifier = Modifier.size(16.dp)
+            )
         }
     }
 }
@@ -794,7 +834,7 @@ fun AppGroupCard(
                     colors = liquidGlassSwitchColors(
                         checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
                         checkedTrackColor = MaterialTheme.colorScheme.primary,
-                        uncheckedThumbColor = Neutral500,
+                        uncheckedThumbColor = liquidGlassMutedContentColor(Neutral500),
                         uncheckedTrackColor = Neutral700
                     )
                 )
@@ -850,7 +890,7 @@ fun SelectedAppChip(app: AppInfo, onRemove: () -> Unit) {
         Icon(
             Icons.Rounded.Close,
             contentDescription = stringResource(R.string.app_groups_remove),
-            tint = Neutral500,
+            tint = liquidGlassMutedContentColor(Neutral500),
             modifier = Modifier
                 .size(16.dp)
                 .selectedAppRemovePressFeedback(onClick = onRemove)
@@ -858,6 +898,7 @@ fun SelectedAppChip(app: AppInfo, onRemove: () -> Unit) {
     }
 }
 
+@Suppress("LongMethod")
 @Composable
 fun SelectableAppItem(
     app: InstalledApp,
@@ -885,7 +926,7 @@ fun SelectableAppItem(
             modifier = Modifier.size(20.dp),
             colors = liquidGlassCheckboxColors(
                 checkedColor = MaterialTheme.colorScheme.primary,
-                uncheckedColor = Neutral500,
+                uncheckedColor = liquidGlassMutedContentColor(Neutral500),
                 checkmarkColor = MaterialTheme.colorScheme.onPrimary
             )
         )
@@ -899,16 +940,31 @@ fun SelectableAppItem(
                     .routingIconPanel(RoundedCornerShape(6.dp)),
                 contentAlignment = Alignment.Center
             ) {
-                Icon(Icons.Rounded.Apps, contentDescription = null, tint = Neutral500, modifier = Modifier.size(18.dp))
+                Icon(
+                    Icons.Rounded.Apps,
+                    contentDescription = null,
+                    tint = liquidGlassMutedContentColor(Neutral500),
+                    modifier = Modifier.size(18.dp)
+                )
             }
         }
         Spacer(modifier = Modifier.width(8.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(text = app.appName, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(text = app.packageName, fontSize = 10.sp, color = Neutral500, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(
+                text = app.packageName,
+                fontSize = 10.sp,
+                color = liquidGlassMutedContentColor(Neutral500),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
         }
         if (app.isSystemApp) {
-            Text(stringResource(R.string.common_system), fontSize = 9.sp, color = Neutral500)
+            Text(
+                stringResource(R.string.common_system),
+                fontSize = 9.sp,
+                color = liquidGlassMutedContentColor(Neutral500)
+            )
         }
     }
 }
@@ -979,7 +1035,7 @@ fun MultiAppSelectorDialog(
                             modifier = Modifier.size(18.dp),
                             colors = liquidGlassCheckboxColors(
                                 checkedColor = MaterialTheme.colorScheme.primary,
-                                uncheckedColor = Neutral500
+                                uncheckedColor = liquidGlassMutedContentColor(Neutral500)
                             )
                         )
                         Spacer(modifier = Modifier.width(4.dp))
@@ -996,8 +1052,21 @@ fun MultiAppSelectorDialog(
                     modifier = Modifier
                         .fillMaxWidth()
                         .liquidGlassTextFieldPanel(shape = searchFieldShape),
-                    placeholder = { Text(stringResource(R.string.common_search), color = Neutral500, fontSize = 13.sp) },
-                    leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null, tint = Neutral500, modifier = Modifier.size(18.dp)) },
+                    placeholder = {
+                        Text(
+                            stringResource(R.string.common_search),
+                            color = liquidGlassMutedContentColor(Neutral500),
+                            fontSize = 13.sp
+                        )
+                    },
+                    leadingIcon = {
+                        Icon(
+                            Icons.Rounded.Search,
+                            contentDescription = null,
+                            tint = liquidGlassMutedContentColor(Neutral500),
+                            modifier = Modifier.size(18.dp)
+                        )
+                    },
                     singleLine = true,
                     shape = searchFieldShape,
                     colors = OutlinedTextFieldDefaults.colors(
@@ -1302,7 +1371,11 @@ fun AppGroupEditorDialog(
                                 .routingEmptySelectionPanel(),
                             contentAlignment = Alignment.Center
                         ) {
-                            Text(stringResource(R.string.app_groups_click_to_add), color = Neutral500, fontSize = 13.sp)
+                            Text(
+                                stringResource(R.string.app_groups_click_to_add),
+                                color = liquidGlassMutedContentColor(Neutral500),
+                                fontSize = 13.sp
+                            )
                         }
                     } else {
                         LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

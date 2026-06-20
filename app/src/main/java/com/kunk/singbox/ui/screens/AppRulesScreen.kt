@@ -32,6 +32,7 @@ import com.kunk.singbox.ui.theme.Neutral500
 import com.kunk.singbox.ui.theme.isLiquidGlassTheme
 import com.kunk.singbox.ui.theme.liquidGlassEmptyStatePanel
 import com.kunk.singbox.ui.theme.liquidGlassIconButtonPanel
+import com.kunk.singbox.ui.theme.liquidGlassMutedContentColor
 import com.kunk.singbox.ui.theme.liquidGlassPanel
 import com.kunk.singbox.viewmodel.NodesViewModel
 import com.kunk.singbox.viewmodel.ProfilesViewModel
@@ -202,11 +203,20 @@ fun AppRulesScreen(
                         contentAlignment = Alignment.Center
                     ) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Icon(Icons.Rounded.Apps, contentDescription = null, tint = Neutral500, modifier = Modifier.size(48.dp))
+                            Icon(
+                                Icons.Rounded.Apps,
+                                contentDescription = null,
+                                tint = liquidGlassMutedContentColor(Neutral500),
+                                modifier = Modifier.size(48.dp)
+                            )
                             Spacer(modifier = Modifier.height(16.dp))
                             Text(stringResource(R.string.app_rules_empty), color = MaterialTheme.colorScheme.onSurfaceVariant)
                             Spacer(modifier = Modifier.height(8.dp))
-                            Text(stringResource(R.string.app_rules_empty_individual_hint), color = Neutral500, fontSize = 12.sp)
+                            Text(
+                                stringResource(R.string.app_rules_empty_individual_hint),
+                                color = liquidGlassMutedContentColor(Neutral500),
+                                fontSize = 12.sp
+                            )
                         }
                     }
                 }

@@ -284,7 +284,7 @@ fun NodeCard(
                         text = formatTraffic(trafficUsed),
                         style = MaterialTheme.typography.labelSmall,
                         fontWeight = FontWeight.Medium,
-                        color = Color(0xFF9575CD)
+                        color = liquidGlassMutedContentColor(Color(0xFF9575CD))
                     )
                     Spacer(modifier = Modifier.width(4.dp))
                 }

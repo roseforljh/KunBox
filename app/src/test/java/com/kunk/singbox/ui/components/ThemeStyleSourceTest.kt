@@ -160,6 +160,15 @@ class ThemeStyleSourceTest {
     }
 
     @Test
+    fun nodeTrafficAndDashboardIdleIndicatorUseLiquidGlassMutedColor() {
+        val nodeCard = File("src/main/java/com/kunk/singbox/ui/components/NodeCard.kt").readText()
+        val dashboard = File("src/main/java/com/kunk/singbox/ui/screens/DashboardScreen.kt").readText()
+
+        assertTrue(nodeCard.contains("liquidGlassMutedContentColor(Color(0xFF9575CD))"))
+        assertTrue(dashboard.contains("liquidGlassMutedContentColor(Neutral500)"))
+    }
+
+    @Test
     fun trafficAndDetailSurfacesUseSharedLiquidGlassPanel() {
         val screenFiles = listOf(
             "TrafficStatsScreen.kt",
@@ -454,6 +463,7 @@ class ThemeStyleSourceTest {
 
         assertTrue(liquidControls.contains("fun liquidGlassRadioButtonColors("))
         assertTrue(liquidControls.contains("fun liquidGlassSwitchColors("))
+        assertTrue(liquidControls.contains("MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.22f)"))
         radioFiles.forEach { fileName ->
             val source = File("src/main/java/com/kunk/singbox/ui/components/$fileName").readText()
             assertTrue(
@@ -566,6 +576,31 @@ class ThemeStyleSourceTest {
         assertTrue(profileDialogs.contains("profileDnsOptionPanel("))
         assertTrue(nodeDetailDialogs.contains("nodeDetailSelectionPanel("))
         assertTrue(nodeDetailDialogs.contains("nodeDetailGroupPanel("))
+    }
+
+    @Test
+    fun fixedNeutralContentUsesLiquidGlassMutedColor() {
+        val liquidControls = File("src/main/java/com/kunk/singbox/ui/theme/LiquidGlassTheme.kt").readText()
+        val sourceFiles = listOf(
+            "src/main/java/com/kunk/singbox/ui/components/CommonDialogs.kt",
+            "src/main/java/com/kunk/singbox/ui/screens/AppGroupsScreen.kt",
+            "src/main/java/com/kunk/singbox/ui/screens/AppRulesScreen.kt",
+            "src/main/java/com/kunk/singbox/ui/screens/AppRoutingComponents.kt",
+            "src/main/java/com/kunk/singbox/ui/screens/AppRoutingScreen.kt",
+            "src/main/java/com/kunk/singbox/ui/screens/ConnectionInfoScreen.kt",
+            "src/main/java/com/kunk/singbox/ui/screens/NodesScreen.kt",
+            "src/main/java/com/kunk/singbox/ui/screens/RoutingSettingsScreen.kt",
+            "src/main/java/com/kunk/singbox/ui/screens/SplashScreen.kt"
+        )
+
+        assertTrue(liquidControls.contains("fun liquidGlassMutedContentColor("))
+        sourceFiles.forEach { filePath ->
+            val source = File(filePath).readText()
+            assertTrue(
+                "$filePath should use liquid glass muted content color",
+                source.contains("liquidGlassMutedContentColor(")
+            )
+        }
     }
 
     @Test

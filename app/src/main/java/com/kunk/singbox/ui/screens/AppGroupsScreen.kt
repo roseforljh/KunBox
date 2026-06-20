@@ -29,6 +29,7 @@ import com.kunk.singbox.viewmodel.SettingsViewModel
 import com.kunk.singbox.ui.theme.liquidGlassEmptyStatePanel
 import com.kunk.singbox.ui.theme.liquidGlassIconButtonPanel
 import com.kunk.singbox.ui.theme.liquidGlassLoadingStatePanel
+import com.kunk.singbox.ui.theme.liquidGlassMutedContentColor
 import com.kunk.singbox.ui.theme.liquidGlassProgressColor
 import com.kunk.singbox.ui.theme.liquidGlassProgressTrackColor
 import com.kunk.singbox.ui.theme.liquidGlassTopAppBarContainerColor
@@ -201,13 +202,17 @@ fun AppGroupsScreen(
                                 Icon(
                                     Icons.Rounded.Folder,
                                     contentDescription = null,
-                                    tint = Neutral500,
+                                    tint = liquidGlassMutedContentColor(Neutral500),
                                     modifier = Modifier.size(48.dp)
                                 )
                                 Spacer(modifier = Modifier.height(16.dp))
                                 Text(stringResource(R.string.app_groups_empty), color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 Spacer(modifier = Modifier.height(8.dp))
-                                Text(stringResource(R.string.app_rules_empty_groups_hint), color = Neutral500, fontSize = 12.sp)
+                                Text(
+                                    stringResource(R.string.app_rules_empty_groups_hint),
+                                    color = liquidGlassMutedContentColor(Neutral500),
+                                    fontSize = 12.sp
+                                )
                             }
                         }
                     }

@@ -30,6 +30,7 @@ import com.kunk.singbox.ui.theme.Neutral500
 import com.kunk.singbox.ui.theme.Neutral800
 import com.kunk.singbox.ui.theme.PureWhite
 import com.kunk.singbox.ui.theme.isLiquidGlassTheme
+import com.kunk.singbox.ui.theme.liquidGlassMutedContentColor
 import kotlinx.coroutines.delay
 
 @Composable
@@ -160,7 +161,7 @@ fun SplashScreen(
             Text(
                 text = stringResource(R.string.splash_tagline),
                 fontSize = 14.sp,
-                color = Neutral500,
+                color = liquidGlassMutedContentColor(Neutral500),
                 modifier = Modifier.alpha(textAlpha.value),
                 letterSpacing = 4.sp
             )
@@ -171,7 +172,7 @@ fun SplashScreen(
             Text(
                 text = "v1.0.0",
                 fontSize = 12.sp,
-                color = Neutral500.copy(alpha = 0.6f),
+                color = liquidGlassMutedContentColor(Neutral500).copy(alpha = 0.6f),
                 modifier = Modifier.alpha(textAlpha.value)
             )
         }

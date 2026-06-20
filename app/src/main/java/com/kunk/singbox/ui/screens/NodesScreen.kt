@@ -119,6 +119,7 @@ import com.kunk.singbox.ui.theme.liquidGlassIconButtonPanel
 import com.kunk.singbox.ui.theme.liquidGlassPanel
 import com.kunk.singbox.ui.theme.liquidGlassProgressColor
 import com.kunk.singbox.ui.theme.liquidGlassProgressTrackColor
+import com.kunk.singbox.ui.theme.liquidGlassMutedContentColor
 import com.kunk.singbox.ui.theme.liquidGlassScreenContainerColor
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
@@ -840,7 +841,7 @@ private fun NodeSearchBar(
             Icon(
                 imageVector = if (isExpanded) Icons.Rounded.Close else Icons.Rounded.Search,
                 contentDescription = null,
-                tint = if (isExpanded) MaterialTheme.colorScheme.primary else Neutral500,
+                tint = if (isExpanded) MaterialTheme.colorScheme.primary else liquidGlassMutedContentColor(Neutral500),
                 modifier = Modifier.size(24.dp)
             )
         }
@@ -866,7 +867,7 @@ private fun NodeSearchBar(
                         "$totalCount ${stringResource(R.string.nodes_count_suffix)}"
                     },
                     style = MaterialTheme.typography.bodyMedium,
-                    color = Neutral500
+                    color = liquidGlassMutedContentColor(Neutral500)
                 )
 
                 if (activeNodeName != null) {
@@ -950,7 +951,7 @@ private fun NodeSearchBar(
                             if (query.isEmpty() && !isFocused) {
                                 Text(
                                     text = stringResource(R.string.common_search),
-                                    color = Neutral500,
+                                    color = liquidGlassMutedContentColor(Neutral500),
                                     style = MaterialTheme.typography.bodyMedium
                                 )
                             }
@@ -970,7 +971,7 @@ private fun NodeSearchBar(
                         Icon(
                             imageVector = Icons.Rounded.Close,
                             contentDescription = stringResource(R.string.common_clear),
-                            tint = Neutral500,
+                            tint = liquidGlassMutedContentColor(Neutral500),
                             modifier = Modifier.size(16.dp)
                         )
                     }

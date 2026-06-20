@@ -50,6 +50,7 @@ import com.kunk.singbox.ui.navigation.Screen
 import com.kunk.singbox.ui.theme.Neutral500
 import com.kunk.singbox.viewmodel.SettingsViewModel
 import com.kunk.singbox.ui.theme.liquidGlassIconButtonPanel
+import com.kunk.singbox.ui.theme.liquidGlassMutedContentColor
 import com.kunk.singbox.ui.theme.liquidGlassTopAppBarContainerColor
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -205,7 +206,7 @@ fun RoutingSettingsScreen(
                             Icon(
                                 imageVector = Icons.Rounded.ChevronRight,
                                 contentDescription = null,
-                                tint = Neutral500
+                                tint = liquidGlassMutedContentColor(Neutral500)
                             )
                         }
                     }

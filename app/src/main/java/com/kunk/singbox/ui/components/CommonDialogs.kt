@@ -49,6 +49,7 @@ import com.kunk.singbox.ui.theme.isLiquidGlassTheme
 import com.kunk.singbox.ui.theme.liquidGlassButtonContainerColor
 import com.kunk.singbox.ui.theme.liquidGlassButtonContentColor
 import com.kunk.singbox.ui.theme.liquidGlassButtonPanel
+import com.kunk.singbox.ui.theme.liquidGlassMutedContentColor
 import com.kunk.singbox.ui.theme.liquidGlassPanel
 import com.kunk.singbox.ui.theme.liquidGlassPressFeedback
 import com.kunk.singbox.ui.theme.liquidGlassTextFieldBorderColor
@@ -164,7 +165,7 @@ fun ConfirmDialog(
                 colors = ButtonDefaults.textButtonColors(
                     contentColor = liquidGlassTextButtonContentColor(
                         defaultColor = Neutral500,
-                        liquidColor = Neutral500
+                        liquidColor = liquidGlassMutedContentColor(Neutral500)
                     )
                 )
             ) {
@@ -300,7 +301,7 @@ fun InputDialog(
                 colors = ButtonDefaults.textButtonColors(
                     contentColor = liquidGlassTextButtonContentColor(
                         defaultColor = Neutral500,
-                        liquidColor = Neutral500
+                        liquidColor = liquidGlassMutedContentColor(Neutral500)
                     )
                 )
             ) {

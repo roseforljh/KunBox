@@ -35,6 +35,7 @@ import com.kunk.singbox.viewmodel.ProfilesViewModel
 import com.kunk.singbox.viewmodel.SettingsViewModel
 import com.kunk.singbox.ui.theme.isLiquidGlassTheme
 import com.kunk.singbox.ui.theme.liquidGlassEmptyStatePanel
+import com.kunk.singbox.ui.theme.liquidGlassMutedContentColor
 import com.kunk.singbox.ui.theme.liquidGlassPanel
 import com.kunk.singbox.ui.theme.liquidGlassTopAppBarContainerColor
 import com.kunk.singbox.ui.theme.liquidGlassIconButtonPanel
@@ -367,7 +368,12 @@ fun EmptyState(icon: ImageVector, title: String, subtitle: String) {
         contentAlignment = Alignment.Center
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Icon(icon, contentDescription = null, tint = Neutral500, modifier = Modifier.size(48.dp))
+            Icon(
+                icon,
+                contentDescription = null,
+                tint = liquidGlassMutedContentColor(Neutral500),
+                modifier = Modifier.size(48.dp)
+            )
             Spacer(modifier = Modifier.height(16.dp))
             Text(title, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(modifier = Modifier.height(8.dp))

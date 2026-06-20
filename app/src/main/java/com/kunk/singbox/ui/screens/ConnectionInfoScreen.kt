@@ -86,6 +86,7 @@ import com.kunk.singbox.ui.theme.liquidGlassPanel
 import com.kunk.singbox.ui.theme.liquidGlassDialogContainerColor
 import com.kunk.singbox.ui.theme.liquidGlassDialogPanel
 import com.kunk.singbox.ui.theme.liquidGlassIconButtonPanel
+import com.kunk.singbox.ui.theme.liquidGlassMutedContentColor
 import com.kunk.singbox.ui.theme.liquidGlassTextButtonContentColor
 import com.kunk.singbox.ui.theme.liquidGlassTextButtonPanel
 import com.kunk.singbox.viewmodel.ConnectionInfoViewModel
@@ -528,7 +529,7 @@ private fun ConnectionSearchBar(
                     if (query.isEmpty() && !isFocused) {
                         Text(
                             text = stringResource(R.string.common_search),
-                            color = Neutral500,
+                            color = liquidGlassMutedContentColor(Neutral500),
                             style = MaterialTheme.typography.bodyMedium
                         )
                     }
@@ -548,7 +549,7 @@ private fun ConnectionSearchBar(
                 Icon(
                     imageVector = Icons.Rounded.Close,
                     contentDescription = stringResource(R.string.common_clear),
-                    tint = Neutral500,
+                    tint = liquidGlassMutedContentColor(Neutral500),
                     modifier = Modifier.size(16.dp)
                 )
             }

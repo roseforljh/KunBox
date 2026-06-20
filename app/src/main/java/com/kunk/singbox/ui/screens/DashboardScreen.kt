@@ -77,6 +77,7 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import com.kunk.singbox.ui.theme.liquidGlassIconButtonPanel
+import com.kunk.singbox.ui.theme.liquidGlassMutedContentColor
 import kotlinx.coroutines.launch
 
 @Composable
@@ -388,7 +389,7 @@ fun DashboardScreen(
                     val indicatorColor = when (connectionState) {
                         ConnectionState.Connected -> Color(0xFF4CAF50) // Green
                         ConnectionState.Error -> Color(0xFFF44336) // Red
-                        else -> Neutral500 // Grey
+                        else -> liquidGlassMutedContentColor(Neutral500)
                     }
 
                     ModeChip(
