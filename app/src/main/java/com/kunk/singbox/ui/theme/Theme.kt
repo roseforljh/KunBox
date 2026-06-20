@@ -4,7 +4,10 @@ import android.app.Activity
 import android.graphics.Color
 import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.LocalRippleConfiguration
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.RippleConfiguration
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
@@ -50,6 +53,7 @@ private val LightColorScheme = lightColorScheme(
 )
 
 @Suppress("FunctionNaming")
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SingBoxTheme(
     appTheme: AppThemeMode = AppThemeMode.SYSTEM,
@@ -64,6 +68,11 @@ fun SingBoxTheme(
     }
 
     val colorScheme = if (useDarkTheme) OLEDColorScheme else LightColorScheme
+    val rippleConfiguration = if (appThemeStyle == AppThemeStyle.LIQUID_GLASS) {
+        null
+    } else {
+        RippleConfiguration()
+    }
     val view = LocalView.current
     if (!view.isInEditMode) {
         SideEffect {
@@ -84,7 +93,10 @@ fun SingBoxTheme(
         }
     }
 
-    CompositionLocalProvider(LocalAppThemeStyle provides appThemeStyle) {
+    CompositionLocalProvider(
+        LocalAppThemeStyle provides appThemeStyle,
+        LocalRippleConfiguration provides rippleConfiguration
+    ) {
         MaterialTheme(
             colorScheme = colorScheme,
             typography = Typography,

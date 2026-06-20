@@ -47,7 +47,15 @@ class LiquidGlassMaterialCallCoverageTest {
                 "NavigationBar",
                 "NavigationBarItem",
                 "DropdownMenu",
-                "FilterChip"
+                "FilterChip",
+                "Tab",
+                "SearchBar",
+                "ModalBottomSheet",
+                "ListItem",
+                "Slider",
+                "SegmentedButton",
+                "OutlinedCard",
+                "ElevatedCard"
             )
         )
 
@@ -212,6 +220,42 @@ class LiquidGlassMaterialCallCoverageTest {
         assertTrue(infoCard.contains("animateFloatAsState"))
         assertTrue(infoCard.contains("graphicsLayer"))
         assertTrue(infoCard.contains("indication = null"))
+    }
+
+    @Test
+    fun trafficStatsRefreshActionUsesPressedFeedbackWithoutMaterialRipple() {
+        val trafficStats = File("src/main/java/com/kunk/singbox/ui/screens/TrafficStatsScreen.kt").readText()
+
+        assertTrue(trafficStats.contains("trafficRefreshPressFeedback"))
+        assertTrue(trafficStats.contains("MutableInteractionSource"))
+        assertTrue(trafficStats.contains("collectIsPressedAsState"))
+        assertTrue(trafficStats.contains("animateFloatAsState"))
+        assertTrue(trafficStats.contains("graphicsLayer"))
+        assertTrue(trafficStats.contains("indication = null"))
+    }
+
+    @Test
+    fun appRoutingTabsUseLiquidGlassTabWrapper() {
+        val appRoutingScreen = File("src/main/java/com/kunk/singbox/ui/screens/AppRoutingScreen.kt").readText()
+
+        assertTrue(appRoutingScreen.contains("LiquidGlassTab("))
+        assertTrue(appRoutingScreen.contains("MutableInteractionSource"))
+        assertTrue(appRoutingScreen.contains("collectIsPressedAsState"))
+        assertTrue(appRoutingScreen.contains("animateFloatAsState"))
+        assertTrue(appRoutingScreen.contains("graphicsLayer"))
+        assertTrue(appRoutingScreen.contains("indication = null"))
+    }
+
+    @Test
+    fun appRoutingTabsAvoidMaterialUnderlineInLiquidTheme() {
+        val appRoutingScreen = File("src/main/java/com/kunk/singbox/ui/screens/AppRoutingScreen.kt").readText()
+        val liquidIndicatorBranch = "indicator = { tabPositions ->\n                        if (useLiquidGlass) {"
+        val defaultIndicatorBranch = "} else {\n                            TabRowDefaults.Indicator("
+
+        assertTrue(appRoutingScreen.contains("val useLiquidGlass = isLiquidGlassTheme()"))
+        assertTrue(appRoutingScreen.contains(liquidIndicatorBranch))
+        assertTrue(appRoutingScreen.contains("Box {}"))
+        assertTrue(appRoutingScreen.contains(defaultIndicatorBranch))
     }
 
     @Test
@@ -596,6 +640,7 @@ class LiquidGlassMaterialCallCoverageTest {
             "ui/components/ExportImportDialogs.kt:66:Card:Card(",
             "ui/components/StandardCard.kt:64:Card:Card(",
             "ui/components/StandardCard.kt:75:Card:Card(",
+            "ui/screens/AppRoutingScreen.kt:51:Tab:Tab(",
             "ui/screens/ConnectionInfoScreen.kt:569:Card:Card(",
             "ui/screens/ConnectionInfoScreen.kt:697:Card:Card(",
             "ui/screens/RuleSetHubScreen.kt:336:Card:Card(",

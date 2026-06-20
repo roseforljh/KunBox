@@ -50,11 +50,23 @@ class ThemeStyleSourceTest {
         val main = File("src/main/java/com/kunk/singbox/MainActivity.kt").readText()
 
         assertTrue(theme.contains("appThemeStyle: AppThemeStyle = AppThemeStyle.DEFAULT"))
-        assertTrue(theme.contains("CompositionLocalProvider(LocalAppThemeStyle provides appThemeStyle)"))
+        assertTrue(theme.contains("CompositionLocalProvider("))
+        assertTrue(theme.contains("LocalAppThemeStyle provides appThemeStyle"))
         assertTrue(liquidTheme.contains("val LocalAppThemeStyle"))
         assertTrue(liquidTheme.contains("fun isLiquidGlassTheme()"))
         assertTrue(liquidTheme.contains("fun Modifier.liquidGlassPanel("))
         assertTrue(main.contains("SingBoxTheme(appTheme = appTheme, appThemeStyle = appThemeStyle)"))
+    }
+
+    @Test
+    fun liquidGlassThemeDisablesMaterialRippleOnlyForLiquidStyle() {
+        val theme = File("src/main/java/com/kunk/singbox/ui/theme/Theme.kt").readText()
+
+        assertTrue(theme.contains("LocalRippleConfiguration"))
+        assertTrue(theme.contains("RippleConfiguration"))
+        assertTrue(theme.contains("val rippleConfiguration = if (appThemeStyle == AppThemeStyle.LIQUID_GLASS)"))
+        assertTrue(theme.contains("null\n    } else {\n        RippleConfiguration()"))
+        assertTrue(theme.contains("LocalRippleConfiguration provides rippleConfiguration"))
     }
 
     @Test

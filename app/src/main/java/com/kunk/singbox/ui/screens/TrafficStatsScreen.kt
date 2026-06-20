@@ -57,6 +57,7 @@ import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
@@ -123,6 +124,29 @@ private fun Modifier.trafficLegendMarkerPanel(defaultColor: Color): Modifier {
     }
 }
 
+@Composable
+private fun Modifier.trafficRefreshPressFeedback(
+    useLiquidGlass: Boolean,
+    isPressed: Boolean,
+    interactionSource: MutableInteractionSource,
+    onClick: () -> Unit
+): Modifier {
+    val scale by animateFloatAsState(
+        targetValue = if (useLiquidGlass && isPressed) 0.96f else 1f,
+        animationSpec = tween(durationMillis = 150),
+        label = "liquid_glass_traffic_refresh_scale"
+    )
+
+    return graphicsLayer {
+        scaleX = scale
+        scaleY = scale
+    }.clickable(
+        interactionSource = interactionSource,
+        indication = null,
+        onClick = onClick
+    )
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 @Suppress("LongMethod", "CognitiveComplexMethod")
@@ -133,6 +157,7 @@ fun TrafficStatsScreen(
     val scrollState = rememberScrollState()
     val uiState by viewModel.uiState.collectAsState()
     var showClearDialog by remember { mutableStateOf(false) }
+    val useLiquidGlass = isLiquidGlassTheme()
 
     // Refresh button interaction
     val refreshInteractionSource = remember { MutableInteractionSource() }
@@ -194,18 +219,18 @@ fun TrafficStatsScreen(
                             )
                             .clip(CircleShape)
                             .background(
-                                if (!isLiquidGlassTheme() && (isRefreshPressed || uiState.isLoading)) {
+                                if (!useLiquidGlass && (isRefreshPressed || uiState.isLoading)) {
                                     MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)
                                 } else {
                                     Color.Transparent
                                 }
                             )
-                            .clickable(
+                            .trafficRefreshPressFeedback(
+                                useLiquidGlass = useLiquidGlass,
+                                isPressed = isRefreshPressed,
                                 interactionSource = refreshInteractionSource,
-                                indication = null
-                            ) {
-                                viewModel.refresh()
-                            },
+                                onClick = viewModel::refresh
+                            ),
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(

@@ -1,9 +1,15 @@
 package com.kunk.singbox.ui.screens
 
 import com.kunk.singbox.R
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 
 import androidx.compose.material.icons.rounded.*
@@ -13,6 +19,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -26,11 +33,83 @@ import com.kunk.singbox.viewmodel.InstalledAppsViewModel
 import com.kunk.singbox.viewmodel.NodesViewModel
 import com.kunk.singbox.viewmodel.ProfilesViewModel
 import com.kunk.singbox.viewmodel.SettingsViewModel
+import com.kunk.singbox.ui.theme.isLiquidGlassTheme
 import com.kunk.singbox.ui.theme.liquidGlassEmptyStatePanel
+import com.kunk.singbox.ui.theme.liquidGlassPanel
 import com.kunk.singbox.ui.theme.liquidGlassTopAppBarContainerColor
 import com.kunk.singbox.ui.theme.liquidGlassIconButtonPanel
 import com.kunk.singbox.ui.theme.liquidGlassTabIndicatorColor
 import com.kunk.singbox.ui.theme.liquidGlassTabRowPanel
+
+@Composable
+private fun LiquidGlassTab(
+    selected: Boolean,
+    title: String,
+    onClick: () -> Unit
+) {
+    if (!isLiquidGlassTheme()) {
+        Tab(
+            selected = selected,
+            onClick = onClick,
+            text = {
+                AppRoutingTabLabel(selected = selected, title = title)
+            }
+        )
+        return
+    }
+
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (isPressed) 0.96f else 1f,
+        animationSpec = spring(stiffness = 520f, dampingRatio = 0.72f),
+        label = "liquid_glass_app_routing_tab_scale"
+    )
+    val selectedModifier = if (selected) {
+        Modifier.liquidGlassPanel(
+            shape = RoundedCornerShape(18.dp),
+            selected = true,
+            shadowElevation = 4.dp
+        )
+    } else {
+        Modifier
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(48.dp)
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+            }
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                onClick = onClick
+            ),
+        contentAlignment = Alignment.Center
+    ) {
+        Box(
+            modifier = selectedModifier.padding(horizontal = 16.dp, vertical = 8.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            AppRoutingTabLabel(selected = selected, title = title)
+        }
+    }
+}
+
+@Composable
+private fun AppRoutingTabLabel(
+    selected: Boolean,
+    title: String
+) {
+    Text(
+        title,
+        color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+        fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal
+    )
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -43,6 +122,7 @@ fun AppRoutingScreen(
 ) {
     val settings by settingsViewModel.settings.collectAsState()
     var selectedTab by remember { mutableStateOf(0) }
+    val useLiquidGlass = isLiquidGlassTheme()
     val tabs =
         listOf(stringResource(R.string.app_rules_tabs_groups), stringResource(R.string.app_rules_tabs_individual))
 
@@ -202,24 +282,22 @@ fun AppRoutingScreen(
                     containerColor = liquidGlassTopAppBarContainerColor(MaterialTheme.colorScheme.background),
                     contentColor = MaterialTheme.colorScheme.onBackground,
                     indicator = { tabPositions ->
-                        TabRowDefaults.Indicator(
-                            Modifier.tabIndicatorOffset(tabPositions[selectedTab]),
-                            color = liquidGlassTabIndicatorColor(MaterialTheme.colorScheme.primary)
-                        )
+                        if (useLiquidGlass) {
+                            Box {}
+                        } else {
+                            TabRowDefaults.Indicator(
+                                Modifier.tabIndicatorOffset(tabPositions[selectedTab]),
+                                color = liquidGlassTabIndicatorColor(MaterialTheme.colorScheme.primary)
+                            )
+                        }
                     },
                     divider = {}
                 ) {
                     tabs.forEachIndexed { index, title ->
-                        Tab(
+                        LiquidGlassTab(
                             selected = selectedTab == index,
                             onClick = { selectedTab = index },
-                            text = {
-                                Text(
-                                    title,
-                                    color = if (selectedTab == index) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                    fontWeight = if (selectedTab == index) FontWeight.Bold else FontWeight.Normal
-                                )
-                            }
+                            title = title
                         )
                     }
                 }
