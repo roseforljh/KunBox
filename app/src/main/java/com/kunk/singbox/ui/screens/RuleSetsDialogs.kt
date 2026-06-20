@@ -48,6 +48,7 @@ import com.kunk.singbox.ui.theme.liquidGlassDialogPanel
 import com.kunk.singbox.ui.theme.liquidGlassProgressColor
 import com.kunk.singbox.ui.theme.liquidGlassProgressTrackColor
 import com.kunk.singbox.ui.theme.liquidGlassSwitchColors
+import com.kunk.singbox.ui.theme.liquidGlassTextButtonContentColor
 import com.kunk.singbox.ui.theme.liquidGlassTextButtonPanel
 
 @Composable
@@ -176,7 +177,8 @@ fun RuleSetItem(
                         CircularProgressIndicator(
                             modifier = Modifier.size(14.dp),
                             strokeWidth = 2.dp,
-                            color = liquidGlassProgressColor(MaterialTheme.colorScheme.primary)
+                            color = liquidGlassProgressColor(MaterialTheme.colorScheme.primary),
+                            trackColor = liquidGlassProgressTrackColor(Color.Transparent)
                         )
                         Spacer(modifier = Modifier.width(4.dp))
                         Text(
@@ -452,6 +454,9 @@ fun RuleSetEditorDialog(
         confirmButton = {
             TextButton(
                 modifier = Modifier.liquidGlassTextButtonPanel(enabled = tag.isNotBlank()),
+                colors = ButtonDefaults.textButtonColors(
+                    contentColor = liquidGlassTextButtonContentColor(MaterialTheme.colorScheme.primary)
+                ),
                 onClick = {
                     val newRuleSet = initialRuleSet?.copy(
                         tag = tag.trim(),
@@ -485,6 +490,12 @@ fun RuleSetEditorDialog(
                 }
                 TextButton(
                     modifier = Modifier.liquidGlassTextButtonPanel(),
+                    colors = ButtonDefaults.textButtonColors(
+                        contentColor = liquidGlassTextButtonContentColor(
+                            defaultColor = MaterialTheme.colorScheme.primary,
+                            liquidColor = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    ),
                     onClick = onDismiss
                 ) {
                     Text(stringResource(R.string.common_cancel))
@@ -542,6 +553,12 @@ fun DefaultRuleSetProgressDialog(
         dismissButton = {
             TextButton(
                 modifier = Modifier.liquidGlassTextButtonPanel(),
+                colors = ButtonDefaults.textButtonColors(
+                    contentColor = liquidGlassTextButtonContentColor(
+                        defaultColor = MaterialTheme.colorScheme.primary,
+                        liquidColor = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                ),
                 onClick = onCancel
             ) {
                 Text(stringResource(R.string.common_cancel))

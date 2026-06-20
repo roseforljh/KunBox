@@ -57,6 +57,7 @@ import com.kunk.singbox.ui.theme.liquidGlassDropdownMenuItemColors
 import com.kunk.singbox.ui.theme.liquidGlassIconButtonPanel
 import com.kunk.singbox.ui.theme.liquidGlassPanel
 import com.kunk.singbox.ui.theme.liquidGlassProgressColor
+import com.kunk.singbox.ui.theme.liquidGlassProgressTrackColor
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -270,7 +271,8 @@ fun ProfileCard(
                             CircularProgressIndicator(
                                 modifier = Modifier.size(16.dp),
                                 color = liquidGlassProgressColor(MaterialTheme.colorScheme.onSurface),
-                                strokeWidth = 2.dp
+                                strokeWidth = 2.dp,
+                                trackColor = liquidGlassProgressTrackColor(Color.Transparent)
                             )
                         }
                         updateStatus == UpdateStatus.Success -> {

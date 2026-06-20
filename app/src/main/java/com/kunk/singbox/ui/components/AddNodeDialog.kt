@@ -12,6 +12,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
@@ -41,6 +42,7 @@ import com.kunk.singbox.ui.theme.liquidGlassRadioButtonColors
 import com.kunk.singbox.ui.theme.liquidGlassTextFieldBorderColor
 import com.kunk.singbox.ui.theme.liquidGlassTextFieldContainerColor
 import com.kunk.singbox.ui.theme.liquidGlassTextFieldPanel
+import com.kunk.singbox.ui.theme.liquidGlassTextButtonContentColor
 import com.kunk.singbox.ui.theme.liquidGlassTextButtonPanel
 
 sealed class AddNodeTarget {
@@ -228,6 +230,9 @@ fun AddNodeDialog(
         confirmButton = {
             TextButton(
                 modifier = Modifier.liquidGlassTextButtonPanel(enabled = isValid),
+                colors = ButtonDefaults.textButtonColors(
+                    contentColor = liquidGlassTextButtonContentColor(MaterialTheme.colorScheme.primary)
+                ),
                 onClick = {
                     val target = if (isCreatingNew) {
                         AddNodeTarget.NewProfile(newProfileName.trim())
@@ -245,6 +250,12 @@ fun AddNodeDialog(
         dismissButton = {
             TextButton(
                 modifier = Modifier.liquidGlassTextButtonPanel(),
+                colors = ButtonDefaults.textButtonColors(
+                    contentColor = liquidGlassTextButtonContentColor(
+                        defaultColor = MaterialTheme.colorScheme.primary,
+                        liquidColor = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                ),
                 onClick = onDismiss
             ) {
                 Text(stringResource(R.string.common_cancel))

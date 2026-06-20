@@ -576,23 +576,26 @@ internal fun ImportSelectionDialog(
 }
 
 @Composable
-internal fun ImportLoadingDialog(message: String, onCancel: () -> Unit = {}) {
-    var displayMessage = message
-    val progress = remember(message) {
-        val regex = Regex(".*?\\((\\d+)/(\\d+)\\).*")
-        val match = regex.find(message)
-        if (match != null) {
-            val (current, total) = match.destructured
-            val totalFloat = total.toFloat()
-            if (totalFloat > 0) {
-                current.toFloat() / totalFloat
-            } else {
-                null
-            }
-        } else {
-            null
-        }
+private fun ImportLoadingProgress(progress: Float?) {
+    if (progress != null) {
+        androidx.compose.material3.LinearProgressIndicator(
+            progress = progress,
+            modifier = Modifier.fillMaxWidth().height(8.dp),
+            color = liquidGlassProgressColor(MaterialTheme.colorScheme.primary),
+            trackColor = liquidGlassProgressTrackColor(MaterialTheme.colorScheme.outline),
+            strokeCap = androidx.compose.ui.graphics.StrokeCap.Round
+        )
+    } else {
+        androidx.compose.material3.CircularProgressIndicator(
+            color = liquidGlassProgressColor(MaterialTheme.colorScheme.primary),
+            trackColor = liquidGlassProgressTrackColor(Color.Transparent)
+        )
     }
+}
+
+@Composable
+internal fun ImportLoadingDialog(message: String, onCancel: () -> Unit = {}) {
+    val progress = remember(message) { importLoadingProgress(message) }
 
     androidx.compose.ui.window.Dialog(onDismissRequest = {}) {
         Column(
@@ -603,19 +606,7 @@ internal fun ImportLoadingDialog(message: String, onCancel: () -> Unit = {}) {
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            if (progress != null) {
-                androidx.compose.material3.LinearProgressIndicator(
-                    progress = progress,
-                    modifier = Modifier.fillMaxWidth().height(8.dp),
-                    color = liquidGlassProgressColor(MaterialTheme.colorScheme.primary),
-                    trackColor = liquidGlassProgressTrackColor(MaterialTheme.colorScheme.outline),
-                    strokeCap = androidx.compose.ui.graphics.StrokeCap.Round
-                )
-            } else {
-                androidx.compose.material3.CircularProgressIndicator(
-                    color = liquidGlassProgressColor(MaterialTheme.colorScheme.primary)
-                )
-            }
+            ImportLoadingProgress(progress = progress)
             Text(
                 text = message,
                 style = MaterialTheme.typography.bodyLarge,
@@ -635,6 +626,14 @@ internal fun ImportLoadingDialog(message: String, onCancel: () -> Unit = {}) {
             }
         }
     }
+}
+
+private fun importLoadingProgress(message: String): Float? {
+    val regex = Regex(".*?\\((\\d+)/(\\d+)\\).*")
+    val match = regex.find(message) ?: return null
+    val (current, total) = match.destructured
+    val totalFloat = total.toFloat()
+    return if (totalFloat > 0) current.toFloat() / totalFloat else null
 }
 
 @Composable

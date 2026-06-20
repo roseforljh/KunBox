@@ -237,7 +237,8 @@ fun NodeCard(
                                 color = liquidGlassProgressColor(
                                     MaterialTheme.colorScheme.primary.copy(alpha = 0.7f)
                                 ),
-                                strokeWidth = 2.dp
+                                strokeWidth = 2.dp,
+                                trackColor = liquidGlassProgressTrackColor(Color.Transparent)
                             )
                         } else {
                             val placeholderColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
@@ -492,7 +493,8 @@ fun NodeGridCard(
                         color = liquidGlassProgressColor(
                             MaterialTheme.colorScheme.primary.copy(alpha = 0.7f)
                         ),
-                        strokeWidth = 1.5.dp
+                        strokeWidth = 1.5.dp,
+                        trackColor = liquidGlassProgressTrackColor(Color.Transparent)
                     )
                 } else {
                     val placeholderColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)

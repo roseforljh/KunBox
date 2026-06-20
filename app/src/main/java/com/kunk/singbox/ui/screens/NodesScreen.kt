@@ -444,7 +444,8 @@ fun NodesScreen(
                                     CircularProgressIndicator(
                                         modifier = Modifier.size(20.dp),
                                         color = liquidGlassProgressColor(fabContentColor),
-                                        strokeWidth = 2.dp
+                                        strokeWidth = 2.dp,
+                                        trackColor = liquidGlassProgressTrackColor(Color.Transparent)
                                     )
                                 } else {
                                     Icon(Icons.Rounded.Bolt, contentDescription = stringResource(R.string.nodes_test_latency))

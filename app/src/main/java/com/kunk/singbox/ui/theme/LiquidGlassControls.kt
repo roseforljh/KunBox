@@ -77,6 +77,18 @@ fun Modifier.liquidGlassTextButtonPanel(
 }
 
 @Composable
+fun liquidGlassTextButtonContentColor(
+    defaultColor: Color,
+    liquidColor: Color = defaultColor
+): Color {
+    return if (isLiquidGlassTheme()) {
+        liquidColor
+    } else {
+        defaultColor
+    }
+}
+
+@Composable
 fun Modifier.liquidGlassIconButtonPanel(
     shape: Shape = CircleShape,
     selected: Boolean = false,

@@ -28,6 +28,7 @@ import com.kunk.singbox.ui.theme.liquidGlassButtonPanel
 import com.kunk.singbox.ui.theme.liquidGlassDividerColor
 import com.kunk.singbox.ui.theme.liquidGlassPanel
 import com.kunk.singbox.ui.theme.liquidGlassProgressColor
+import com.kunk.singbox.ui.theme.liquidGlassProgressTrackColor
 import com.kunk.singbox.ui.theme.liquidGlassTextButtonPanel
 import com.kunk.singbox.viewmodel.ExportState
 import com.kunk.singbox.viewmodel.ImportState
@@ -106,7 +107,8 @@ fun ExportProgressDialog(
                     is ExportState.Exporting -> {
                         CircularProgressIndicator(
                             modifier = Modifier.size(48.dp),
-                            color = liquidGlassProgressColor(MaterialTheme.colorScheme.primary)
+                            color = liquidGlassProgressColor(MaterialTheme.colorScheme.primary),
+                            trackColor = liquidGlassProgressTrackColor(Color.Transparent)
                         )
                         Spacer(modifier = Modifier.height(16.dp))
                         Text(
@@ -379,7 +381,8 @@ fun ImportProgressDialog(
                     is ImportState.Importing -> {
                         CircularProgressIndicator(
                             modifier = Modifier.size(48.dp),
-                            color = liquidGlassProgressColor(MaterialTheme.colorScheme.primary)
+                            color = liquidGlassProgressColor(MaterialTheme.colorScheme.primary),
+                            trackColor = liquidGlassProgressTrackColor(Color.Transparent)
                         )
                         Spacer(modifier = Modifier.height(16.dp))
                         Text(
@@ -509,7 +512,8 @@ fun ValidatingDialog() {
             ) {
                 CircularProgressIndicator(
                     modifier = Modifier.size(48.dp),
-                    color = liquidGlassProgressColor(MaterialTheme.colorScheme.primary)
+                    color = liquidGlassProgressColor(MaterialTheme.colorScheme.primary),
+                    trackColor = liquidGlassProgressTrackColor(Color.Transparent)
                 )
                 Spacer(modifier = Modifier.height(16.dp))
                 Text(

@@ -48,6 +48,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.Dp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -70,6 +71,7 @@ import com.kunk.singbox.ui.components.StandardCard
 import com.kunk.singbox.ui.components.ValidatingDialog
 import com.kunk.singbox.ui.navigation.Screen
 import com.kunk.singbox.ui.theme.liquidGlassProgressColor
+import com.kunk.singbox.ui.theme.liquidGlassProgressTrackColor
 import com.kunk.singbox.ui.theme.liquidGlassScreenContainerColor
 import com.kunk.singbox.viewmodel.ImportState
 import com.kunk.singbox.viewmodel.SettingsViewModel
@@ -296,7 +298,8 @@ fun SettingsScreen(
                         CircularProgressIndicator(
                             modifier = Modifier.size(18.dp).padding(end = 8.dp),
                             color = liquidGlassProgressColor(MaterialTheme.colorScheme.primary),
-                            strokeWidth = 2.dp
+                            strokeWidth = 2.dp,
+                            trackColor = liquidGlassProgressTrackColor(Color.Transparent)
                         )
                     }
                 },

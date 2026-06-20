@@ -288,6 +288,8 @@ class LiquidGlassControlCoverageTest {
         assertTrue(liquidTheme.contains("fun liquidGlassTextFieldBorderColor(defaultColor: Color): Color"))
         assertTrue(controls.contains("fun liquidGlassOutlinedButtonBorder(defaultBorder: BorderStroke): BorderStroke"))
         assertTrue(controls.contains("else {\n        defaultBorder"))
+        assertTrue(controls.contains("fun liquidGlassTextButtonContentColor("))
+        assertTrue(controls.contains("liquidColor: Color = defaultColor"))
         assertTrue(controls.contains("private fun liquidGlassTransparentContainerColor(defaultColor: Color): Color"))
         assertTrue(controls.contains("else {\n        defaultColor"))
         assertTrue(controls.contains("private fun liquidGlassPrimaryContentColor(defaultColor: Color): Color"))
@@ -306,6 +308,27 @@ class LiquidGlassControlCoverageTest {
         assertTrue(selections.contains("fun liquidGlassProgressColor(defaultColor: Color): Color"))
         assertTrue(selections.contains("fun liquidGlassDividerColor(defaultColor: Color): Color"))
         assertTrue(selections.contains("fun liquidGlassTabIndicatorColor(defaultColor: Color): Color"))
+    }
+
+    @Test
+    fun sharedProfileTargetDialogsUseLiquidTextButtonContentColors() {
+        val files = listOf(
+            "src/main/java/com/kunk/singbox/ui/components/AddNodeDialog.kt",
+            "src/main/java/com/kunk/singbox/ui/components/SelectProfileDialog.kt",
+            "src/main/java/com/kunk/singbox/ui/screens/RuleSetsDialogs.kt"
+        )
+
+        files.forEach { filePath ->
+            val source = File(filePath).readText()
+            assertTrue(
+                "$filePath should use liquid glass text button colors",
+                source.contains("liquidGlassTextButtonContentColor(")
+            )
+            assertTrue(
+                "$filePath should keep TextButton colors explicit",
+                source.contains("ButtonDefaults.textButtonColors(")
+            )
+        }
     }
 
     @Test

@@ -11,6 +11,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -29,6 +30,7 @@ import com.kunk.singbox.ui.theme.liquidGlassEmptyStatePanel
 import com.kunk.singbox.ui.theme.liquidGlassIconButtonPanel
 import com.kunk.singbox.ui.theme.liquidGlassLoadingStatePanel
 import com.kunk.singbox.ui.theme.liquidGlassProgressColor
+import com.kunk.singbox.ui.theme.liquidGlassProgressTrackColor
 import com.kunk.singbox.ui.theme.liquidGlassTopAppBarContainerColor
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -156,7 +158,8 @@ fun AppGroupsScreen(
                     contentAlignment = Alignment.Center
                 ) {
                     CircularProgressIndicator(
-                        color = liquidGlassProgressColor(MaterialTheme.colorScheme.primary)
+                        color = liquidGlassProgressColor(MaterialTheme.colorScheme.primary),
+                        trackColor = liquidGlassProgressTrackColor(Color.Transparent)
                     )
                 }
             }

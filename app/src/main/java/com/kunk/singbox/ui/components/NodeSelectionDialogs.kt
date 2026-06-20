@@ -80,6 +80,7 @@ import com.kunk.singbox.ui.theme.liquidGlassEmptyStatePanel
 import com.kunk.singbox.ui.theme.liquidGlassPanel
 import com.kunk.singbox.ui.theme.liquidGlassPressFeedback
 import com.kunk.singbox.ui.theme.liquidGlassProgressColor
+import com.kunk.singbox.ui.theme.liquidGlassProgressTrackColor
 import com.kunk.singbox.ui.theme.liquidGlassTextFieldBorderColor
 import com.kunk.singbox.ui.theme.liquidGlassTextFieldContainerColor
 import com.kunk.singbox.ui.theme.liquidGlassTextFieldPanel
@@ -1014,7 +1015,8 @@ internal fun NodeSelectorItem(
                         color = liquidGlassProgressColor(
                             MaterialTheme.colorScheme.primary.copy(alpha = 0.7f)
                         ),
-                        strokeWidth = 1.5.dp
+                        strokeWidth = 1.5.dp,
+                        trackColor = liquidGlassProgressTrackColor(Color.Transparent)
                     )
                 } else {
                     val latency = node.latencyMs

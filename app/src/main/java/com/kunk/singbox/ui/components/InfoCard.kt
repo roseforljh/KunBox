@@ -29,6 +29,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
@@ -38,6 +39,7 @@ import com.kunk.singbox.R
 import com.kunk.singbox.ui.theme.isLiquidGlassTheme
 import com.kunk.singbox.ui.theme.liquidGlassPanel
 import com.kunk.singbox.ui.theme.liquidGlassProgressColor
+import com.kunk.singbox.ui.theme.liquidGlassProgressTrackColor
 
 @Composable
 private fun Modifier.infoCardPingPressFeedback(
@@ -152,7 +154,8 @@ private fun InfoItem(
                 CircularProgressIndicator(
                     modifier = Modifier.size(16.dp),
                     color = liquidGlassProgressColor(MaterialTheme.colorScheme.onSurface),
-                    strokeWidth = 2.dp
+                    strokeWidth = 2.dp,
+                    trackColor = liquidGlassProgressTrackColor(Color.Transparent)
                 )
             } else {
                 Text(

@@ -319,6 +319,17 @@ class LiquidGlassMaterialCallCoverageTest {
     }
 
     @Test
+    fun basicTextFieldsStayInsideLiquidGlassPanels() {
+        val uiDir = File("src/main/java/com/kunk/singbox/ui")
+        val failures = uiDir.walkTopDown()
+            .filter { file -> file.extension == "kt" }
+            .flatMap { file -> basicTextFieldPanelFailures(file = file, uiDir = uiDir) }
+            .toList()
+
+        assertTrue("BasicTextField should stay inside liquid glass panels: $failures", failures.isEmpty())
+    }
+
+    @Test
     fun ruleSetHubItemAvoidsMaterialCardInLiquidBranch() {
         val source = File("src/main/java/com/kunk/singbox/ui/screens/RuleSetHubScreen.kt").readText()
 
@@ -447,30 +458,48 @@ class LiquidGlassMaterialCallCoverageTest {
     }
 
     private fun materialCallRules(): List<MaterialCallRule> {
+        return dialogAndButtonRules() + selectionAndInputRules() + progressAndLayoutRules()
+    }
+
+    private fun dialogAndButtonRules(): List<MaterialCallRule> {
         return listOf(
             materialCallRule(
                 "AlertDialog",
                 listOf("liquidGlassDialogPanel"),
                 listOf("liquidGlassDialogContainerColor")
             ),
-            materialCallRule("Button", listOf("liquidGlassButtonPanel")),
+            materialCallRule(
+                "Button",
+                listOf("liquidGlassButtonPanel"),
+                listOf("liquidGlassButtonContainerColor"),
+                listOf("liquidGlassButtonContentColor", "contentColor = contentColor")
+            ),
             materialCallRule(
                 "OutlinedButton",
                 listOf("liquidGlassButtonPanel"),
-                listOf("liquidGlassOutlinedButtonBorder")
+                listOf("liquidGlassOutlinedButtonBorder"),
+                listOf("liquidGlassButtonContainerColor"),
+                listOf("liquidGlassButtonContentColor")
             ),
             materialCallRule("TextButton", listOf("liquidGlassTextButtonPanel")),
             materialCallRule("IconButton", listOf("liquidGlassIconButtonPanel", "connectionCloseButtonPanel")),
             materialCallRule(
                 "FloatingActionButton",
                 listOf("liquidGlassFloatingActionPanel"),
-                listOf("liquidGlassFloatingActionContainerColor", "fabContainerColor")
+                listOf("liquidGlassFloatingActionContainerColor", "fabContainerColor"),
+                listOf("liquidGlassFloatingActionContentColor", "fabContentColor")
             ),
             materialCallRule(
                 "SmallFloatingActionButton",
                 listOf("liquidGlassFloatingActionPanel"),
-                listOf("liquidGlassFloatingActionContainerColor", "fabContainerColor")
-            ),
+                listOf("liquidGlassFloatingActionContainerColor", "fabContainerColor"),
+                listOf("liquidGlassFloatingActionContentColor", "fabContentColor")
+            )
+        )
+    }
+
+    private fun selectionAndInputRules(): List<MaterialCallRule> {
+        return listOf(
             materialCallRule("Switch", listOf("liquidGlassSwitchColors")),
             materialCallRule("Checkbox", listOf("liquidGlassCheckboxColors")),
             materialCallRule("RadioButton", listOf("liquidGlassRadioButtonColors")),
@@ -480,9 +509,22 @@ class LiquidGlassMaterialCallCoverageTest {
                 listOf("liquidGlassTextFieldContainerColor"),
                 listOf("liquidGlassTextFieldBorderColor")
             ),
-            materialCallRule("DropdownMenuItem", listOf("liquidGlassDropdownMenuItemColors")),
-            materialCallRule("LinearProgressIndicator", listOf("liquidGlassProgressColor")),
-            materialCallRule("CircularProgressIndicator", listOf("liquidGlassProgressColor")),
+            materialCallRule("DropdownMenuItem", listOf("liquidGlassDropdownMenuItemColors"))
+        )
+    }
+
+    private fun progressAndLayoutRules(): List<MaterialCallRule> {
+        return listOf(
+            materialCallRule(
+                "LinearProgressIndicator",
+                listOf("liquidGlassProgressColor"),
+                listOf("liquidGlassProgressTrackColor")
+            ),
+            materialCallRule(
+                "CircularProgressIndicator",
+                listOf("liquidGlassProgressColor"),
+                listOf("liquidGlassProgressTrackColor")
+            ),
             materialCallRule("HorizontalDivider", listOf("liquidGlassDividerColor")),
             materialCallRule("Divider", listOf("liquidGlassDividerColor")),
             materialCallRule(
@@ -522,6 +564,20 @@ class LiquidGlassMaterialCallCoverageTest {
                     }
             }
             .toList()
+    }
+
+    private fun basicTextFieldPanelFailures(
+        file: File,
+        uiDir: File
+    ): Sequence<String> {
+        val lines = file.readLines()
+        return lines.asSequence()
+            .mapIndexedNotNull { index, line ->
+                if (!line.contains("BasicTextField(")) return@mapIndexedNotNull null
+                val context = lines.contextAround(index)
+                if (basicTextFieldPanelMarkers.any(context::contains)) return@mapIndexedNotNull null
+                "${file.relativeTo(uiDir).invariantSeparatorsPath}:${index + 1}:${line.trim()}"
+            }
     }
 
     private fun materialCallFailure(
@@ -575,6 +631,12 @@ class LiquidGlassMaterialCallCoverageTest {
         return split(pattern).size - 1
     }
 
+    private fun List<String>.contextAround(index: Int): String {
+        val start = (index - SOURCE_CONTEXT_BEFORE).coerceAtLeast(0)
+        val end = (index + SOURCE_CONTEXT_AFTER).coerceAtMost(lastIndex)
+        return subList(start, end + 1).joinToString("\n")
+    }
+
     private fun List<String>.assertScreenSourcesContain(pattern: String) {
         forEach { fileName ->
             val source = File("src/main/java/com/kunk/singbox/ui/screens/$fileName").readText()
@@ -600,6 +662,9 @@ class LiquidGlassMaterialCallCoverageTest {
     )
 
     private companion object {
+        const val SOURCE_CONTEXT_BEFORE = 32
+        const val SOURCE_CONTEXT_AFTER = 80
+
         val liquidGlassMarkerPatterns = listOf(
             "liquidGlass",
             "LiquidGlass",
@@ -637,16 +702,23 @@ class LiquidGlassMaterialCallCoverageTest {
             "MainActivity.kt:367:Surface:Surface(",
             "ui/components/AppNavBar.kt:111:NavigationBar:NavigationBar(",
             "ui/components/AppNavBar.kt:164:NavigationBarItem:NavigationBarItem(",
-            "ui/components/ExportImportDialogs.kt:66:Card:Card(",
+            "ui/components/ExportImportDialogs.kt:67:Card:Card(",
             "ui/components/StandardCard.kt:64:Card:Card(",
             "ui/components/StandardCard.kt:75:Card:Card(",
             "ui/screens/AppRoutingScreen.kt:51:Tab:Tab(",
             "ui/screens/ConnectionInfoScreen.kt:569:Card:Card(",
             "ui/screens/ConnectionInfoScreen.kt:697:Card:Card(",
-            "ui/screens/RuleSetHubScreen.kt:336:Card:Card(",
+            "ui/screens/RuleSetHubScreen.kt:338:Card:Card(",
             "ui/theme/LiquidGlassChipControls.kt:75:FilterChip:FilterChip(",
             "ui/theme/LiquidGlassMenuControls.kt:21:DropdownMenu:DropdownMenu(",
             "ui/theme/LiquidGlassMenuControls.kt:31:DropdownMenu:DropdownMenu("
+        )
+
+        val basicTextFieldPanelMarkers = listOf(
+            "liquidGlassTextFieldPanel",
+            "nodeSearchPanel",
+            "connectionSearchPanel",
+            "profileEditorPanel"
         )
     }
 }

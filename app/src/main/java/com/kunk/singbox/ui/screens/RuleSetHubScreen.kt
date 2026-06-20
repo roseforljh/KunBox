@@ -38,6 +38,7 @@ import com.kunk.singbox.ui.theme.liquidGlassIconButtonPanel
 import com.kunk.singbox.ui.theme.liquidGlassLoadingStatePanel
 import com.kunk.singbox.ui.theme.liquidGlassPanel
 import com.kunk.singbox.ui.theme.liquidGlassProgressColor
+import com.kunk.singbox.ui.theme.liquidGlassProgressTrackColor
 import com.kunk.singbox.ui.theme.liquidGlassTextFieldBorderColor
 import com.kunk.singbox.ui.theme.liquidGlassTextFieldContainerColor
 import com.kunk.singbox.ui.theme.liquidGlassTextFieldPanel
@@ -191,7 +192,8 @@ fun RuleSetHubScreen(
                         contentAlignment = Alignment.Center
                     ) {
                         CircularProgressIndicator(
-                            color = liquidGlassProgressColor(MaterialTheme.colorScheme.primary)
+                            color = liquidGlassProgressColor(MaterialTheme.colorScheme.primary),
+                            trackColor = liquidGlassProgressTrackColor(Color.Transparent)
                         )
                     }
                 }
@@ -414,7 +416,8 @@ private fun HubRuleSetItemHeader(
                 CircularProgressIndicator(
                     modifier = Modifier.size(14.dp),
                     strokeWidth = 2.dp,
-                    color = liquidGlassProgressColor(MaterialTheme.colorScheme.primary)
+                    color = liquidGlassProgressColor(MaterialTheme.colorScheme.primary),
+                    trackColor = liquidGlassProgressTrackColor(Color.Transparent)
                 )
             } else if (isDownloaded) {
                 Spacer(modifier = Modifier.width(8.dp))
