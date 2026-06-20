@@ -79,6 +79,7 @@ import com.kunk.singbox.ui.theme.liquidGlassEmptyStatePanel
 import com.kunk.singbox.ui.theme.liquidGlassIconButtonPanel
 import com.kunk.singbox.ui.theme.liquidGlassOutlinedButtonBorder
 import com.kunk.singbox.ui.theme.liquidGlassPanel
+import com.kunk.singbox.ui.theme.liquidGlassPressFeedback
 import com.kunk.singbox.ui.theme.liquidGlassTextButtonPanel
 import com.kunk.singbox.viewmodel.NodesViewModel
 import com.kunk.singbox.viewmodel.ProfilesViewModel
@@ -523,7 +524,11 @@ private fun DomainRuleEditorDialog(
                     modifier = Modifier
                         .fillMaxWidth()
                         .domainRuleSelectorPanel()
-                        .clickable { showOutboundDialog = true }
+                        .liquidGlassPressFeedback(
+                            label = "liquid_glass_domain_rule_outbound_selector_scale"
+                        ) {
+                            showOutboundDialog = true
+                        }
                         .padding(horizontal = 12.dp, vertical = 12.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
@@ -547,7 +552,9 @@ private fun DomainRuleEditorDialog(
                         modifier = Modifier
                             .fillMaxWidth()
                             .domainRuleSelectorPanel()
-                            .clickable {
+                            .liquidGlassPressFeedback(
+                                label = "liquid_glass_domain_rule_target_selector_scale"
+                            ) {
                                 when (outboundMode) {
                                     RuleSetOutboundMode.NODE -> {
                                         showNodeSelectionDialog = true

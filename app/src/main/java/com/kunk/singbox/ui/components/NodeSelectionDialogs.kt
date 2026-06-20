@@ -78,6 +78,7 @@ import com.kunk.singbox.ui.theme.liquidGlassButtonContentColor
 import com.kunk.singbox.ui.theme.liquidGlassButtonPanel
 import com.kunk.singbox.ui.theme.liquidGlassEmptyStatePanel
 import com.kunk.singbox.ui.theme.liquidGlassPanel
+import com.kunk.singbox.ui.theme.liquidGlassPressFeedback
 import com.kunk.singbox.ui.theme.liquidGlassProgressColor
 import com.kunk.singbox.ui.theme.liquidGlassTextFieldBorderColor
 import com.kunk.singbox.ui.theme.liquidGlassTextFieldContainerColor
@@ -188,6 +189,67 @@ private fun Modifier.nodeSelectorItemPressFeedback(
 }
 
 @Composable
+private fun Modifier.nodeSelectionGroupPressFeedback(
+    useLiquidGlass: Boolean,
+    enabled: Boolean,
+    onClick: () -> Unit
+): Modifier {
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (useLiquidGlass && enabled && isPressed) 0.98f else 1f,
+        animationSpec = spring(stiffness = 520f, dampingRatio = 0.72f),
+        label = "liquid_glass_node_selection_group_scale"
+    )
+    val clickModifier = if (useLiquidGlass) {
+        Modifier.clickable(
+            enabled = enabled,
+            interactionSource = interactionSource,
+            indication = null,
+            onClick = onClick
+        )
+    } else {
+        Modifier.clickable(
+            enabled = enabled,
+            onClick = onClick
+        )
+    }
+
+    return graphicsLayer {
+        scaleX = scale
+        scaleY = scale
+    }.then(clickModifier)
+}
+
+@Composable
+private fun Modifier.nodeSelectionRouteItemPressFeedback(
+    useLiquidGlass: Boolean,
+    onClick: () -> Unit
+): Modifier {
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (useLiquidGlass && isPressed) 0.98f else 1f,
+        animationSpec = spring(stiffness = 520f, dampingRatio = 0.72f),
+        label = "liquid_glass_node_selection_route_item_scale"
+    )
+    val clickModifier = if (useLiquidGlass) {
+        Modifier.clickable(
+            interactionSource = interactionSource,
+            indication = null,
+            onClick = onClick
+        )
+    } else {
+        Modifier.clickable(onClick = onClick)
+    }
+
+    return graphicsLayer {
+        scaleX = scale
+        scaleY = scale
+    }.then(clickModifier)
+}
+
+@Composable
 fun ProfileNodeSelectDialog(
     title: String,
     profiles: List<ProfileUi>,
@@ -205,6 +267,7 @@ fun ProfileNodeSelectDialog(
     val knownProfileIds = remember(profiles) { profiles.map { it.id }.toSet() }
 
     var expandedProfileId by remember { mutableStateOf<String?>(null) }
+    val useLiquidGlass = isLiquidGlassTheme()
 
     Dialog(onDismissRequest = onDismiss) {
         Column(
@@ -243,7 +306,10 @@ fun ProfileNodeSelectDialog(
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .clickable(enabled = enabled) {
+                                    .nodeSelectionGroupPressFeedback(
+                                        useLiquidGlass = useLiquidGlass,
+                                        enabled = enabled
+                                    ) {
                                         expandedProfileId = if (isExpanded) null else profile.id
                                     }
                                     .padding(vertical = 12.dp, horizontal = 12.dp),
@@ -286,7 +352,9 @@ fun ProfileNodeSelectDialog(
                                             modifier = Modifier
                                                 .fillMaxWidth()
                                                 .nodeSelectionListItemPanel(selected)
-                                                .clickable {
+                                                .nodeSelectionRouteItemPressFeedback(
+                                                    useLiquidGlass = useLiquidGlass
+                                                ) {
                                                     onSelect(ref)
                                                     onDismiss()
                                                 }
@@ -341,7 +409,10 @@ fun ProfileNodeSelectDialog(
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .clickable(enabled = enabled) {
+                                    .nodeSelectionGroupPressFeedback(
+                                        useLiquidGlass = useLiquidGlass,
+                                        enabled = enabled
+                                    ) {
                                         expandedProfileId = if (isExpanded) null else profileId
                                     }
                                     .padding(vertical = 12.dp, horizontal = 12.dp),
@@ -384,7 +455,9 @@ fun ProfileNodeSelectDialog(
                                             modifier = Modifier
                                                 .fillMaxWidth()
                                                 .nodeSelectionListItemPanel(selected)
-                                                .clickable {
+                                                .nodeSelectionRouteItemPressFeedback(
+                                                    useLiquidGlass = useLiquidGlass
+                                                ) {
                                                     onSelect(ref)
                                                     onDismiss()
                                                 }
@@ -582,7 +655,11 @@ fun NodeFilterDialog(
                 modifier = Modifier
                     .fillMaxWidth()
                     .nodeFilterModePanel(filterMode == FilterMode.NONE)
-                    .clickable { filterMode = FilterMode.NONE }
+                    .liquidGlassPressFeedback(
+                        label = "liquid_glass_node_filter_none_scale"
+                    ) {
+                        filterMode = FilterMode.NONE
+                    }
                     .padding(vertical = 12.dp, horizontal = 8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -604,7 +681,11 @@ fun NodeFilterDialog(
                 modifier = Modifier
                     .fillMaxWidth()
                     .nodeFilterModePanel(filterMode == FilterMode.INCLUDE)
-                    .clickable { filterMode = FilterMode.INCLUDE }
+                    .liquidGlassPressFeedback(
+                        label = "liquid_glass_node_filter_include_scale"
+                    ) {
+                        filterMode = FilterMode.INCLUDE
+                    }
                     .padding(vertical = 12.dp, horizontal = 8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -626,7 +707,11 @@ fun NodeFilterDialog(
                 modifier = Modifier
                     .fillMaxWidth()
                     .nodeFilterModePanel(filterMode == FilterMode.EXCLUDE)
-                    .clickable { filterMode = FilterMode.EXCLUDE }
+                    .liquidGlassPressFeedback(
+                        label = "liquid_glass_node_filter_exclude_scale"
+                    ) {
+                        filterMode = FilterMode.EXCLUDE
+                    }
                     .padding(vertical = 12.dp, horizontal = 8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {

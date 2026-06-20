@@ -22,6 +22,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
@@ -347,18 +348,33 @@ fun SingBoxApp() {
                 val bottomPadding =
                     if (useLiquidGlassNav) 0.dp else innerPadding.calculateBottomPadding()
 
-                Surface(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(bottom = bottomPadding),
-                    color = rootContainerColor
-                ) {
-                    AppNavigation(
-                        navController = navController,
-                        dashboardViewModel = dashboardViewModel,
-                        dashboardBottomContentPadding = dashboardContentBottomPadding,
-                        topLevelBottomContentPadding = topLevelContentBottomPadding
-                    )
+                val contentModifier = Modifier
+                    .fillMaxSize()
+                    .padding(bottom = bottomPadding)
+
+                if (useLiquidGlassNav) {
+                    Box(
+                        modifier = contentModifier.background(rootContainerColor)
+                    ) {
+                        AppNavigation(
+                            navController = navController,
+                            dashboardViewModel = dashboardViewModel,
+                            dashboardBottomContentPadding = dashboardContentBottomPadding,
+                            topLevelBottomContentPadding = topLevelContentBottomPadding
+                        )
+                    }
+                } else {
+                    Surface(
+                        modifier = contentModifier,
+                        color = rootContainerColor
+                    ) {
+                        AppNavigation(
+                            navController = navController,
+                            dashboardViewModel = dashboardViewModel,
+                            dashboardBottomContentPadding = dashboardContentBottomPadding,
+                            topLevelBottomContentPadding = topLevelContentBottomPadding
+                        )
+                    }
                 }
             }
 

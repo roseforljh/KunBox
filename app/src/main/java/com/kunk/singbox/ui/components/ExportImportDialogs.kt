@@ -51,16 +51,20 @@ private fun ExportImportCard(
     content: @Composable ColumnScope.() -> Unit
 ) {
     val useLiquidGlass = isLiquidGlassTheme()
-    Card(
-        modifier = if (useLiquidGlass) {
-            modifier.liquidGlassPanel(
+    if (useLiquidGlass) {
+        Column(
+            modifier = modifier.liquidGlassPanel(
                 shape = shape,
                 selected = selected,
                 shadowElevation = 20.dp
-            )
-        } else {
-            modifier
-        },
+            ),
+            content = content
+        )
+        return
+    }
+
+    Card(
+        modifier = modifier,
         shape = shape,
         colors = CardDefaults.cardColors(
             containerColor = exportImportCardContainerColor(useLiquidGlass, containerColor)

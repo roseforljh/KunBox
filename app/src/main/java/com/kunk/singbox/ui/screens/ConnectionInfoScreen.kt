@@ -669,20 +669,6 @@ private fun ConnectionItemCard(
     connection: ClashConnection,
     onClose: () -> Unit
 ) {
-    val isUdp = connection.metadata.network.lowercase() == "udp"
-    val badgeBg = if (isUdp)
-        MaterialTheme.colorScheme.tertiaryContainer
-    else
-        MaterialTheme.colorScheme.primaryContainer
-    val badgeTextColor = if (isUdp)
-        MaterialTheme.colorScheme.onTertiaryContainer
-    else
-        MaterialTheme.colorScheme.onPrimaryContainer
-    val protocolBadgeTextColor = connectionProtocolBadgeTextColor(badgeTextColor)
-
-    val hostStr = connection.metadata.host.ifBlank { connection.metadata.destinationIP }
-    val portStr = connection.metadata.destinationPort
-
     val isDark = isSystemInDarkTheme()
     val borderColor = if (isDark) {
         Color.White.copy(alpha = 0.25f)
@@ -691,22 +677,31 @@ private fun ConnectionItemCard(
     }
     val shape = RoundedCornerShape(16.dp)
     val useLiquidGlass = isLiquidGlassTheme()
-    val cardModifier = if (useLiquidGlass) {
-        Modifier
-            .fillMaxWidth()
-            .liquidGlassPanel(shape = shape, shadowElevation = 8.dp)
-    } else {
-        Modifier
+
+    if (useLiquidGlass) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .liquidGlassPanel(shape = shape, shadowElevation = 8.dp)
+                .padding(12.dp)
+        ) {
+            ConnectionItemCardContent(
+                connection = connection,
+                useLiquidGlass = useLiquidGlass,
+                onClose = onClose
+            )
+        }
+        return
+    }
+
+    Card(
+        modifier = Modifier
             .fillMaxWidth()
             .border(
                 1.dp,
                 borderColor,
                 shape
-            )
-    }
-
-    Card(
-        modifier = cardModifier,
+            ),
         shape = shape,
         colors = CardDefaults.cardColors(
             containerColor = connectionItemContainerColor(
@@ -717,141 +712,171 @@ private fun ConnectionItemCard(
         Column(
             modifier = Modifier.padding(12.dp)
         ) {
-            // 目标及删除按钮
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                // 协议药丸
+            ConnectionItemCardContent(
+                connection = connection,
+                useLiquidGlass = useLiquidGlass,
+                onClose = onClose
+            )
+        }
+    }
+}
+
+@Suppress("LongMethod", "CognitiveComplexMethod")
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun ConnectionItemCardContent(
+    connection: ClashConnection,
+    useLiquidGlass: Boolean,
+    onClose: () -> Unit
+) {
+    val isUdp = connection.metadata.network.lowercase() == "udp"
+    val badgeBg = if (isUdp) {
+        MaterialTheme.colorScheme.tertiaryContainer
+    } else {
+        MaterialTheme.colorScheme.primaryContainer
+    }
+    val badgeTextColor = if (isUdp) {
+        MaterialTheme.colorScheme.onTertiaryContainer
+    } else {
+        MaterialTheme.colorScheme.onPrimaryContainer
+    }
+    val protocolBadgeTextColor = connectionProtocolBadgeTextColor(badgeTextColor)
+    val hostStr = connection.metadata.host.ifBlank { connection.metadata.destinationIP }
+    val portStr = connection.metadata.destinationPort
+
+    // 目标及删除按钮
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        // 协议药丸
+        Box(
+            modifier = Modifier
+                .connectionProtocolBadgePanel(badgeBg)
+                .padding(horizontal = 6.dp, vertical = 2.dp)
+        ) {
+            Text(
+                text = connection.metadata.network.uppercase(),
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Bold,
+                color = protocolBadgeTextColor
+            )
+        }
+
+        Spacer(modifier = Modifier.width(6.dp))
+
+        // 地址
+        Text(
+            text = "$hostStr:$portStr",
+            modifier = Modifier.weight(1f),
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onSurface,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+
+        ConnectionCloseButton(
+            useLiquidGlass = useLiquidGlass,
+            onClose = onClose
+        )
+    }
+
+    // 额外的目的IP显示（如果host不为空）
+    if (connection.metadata.host.isNotBlank() && connection.metadata.destinationIP.isNotBlank()) {
+        Text(
+            text = "IP: ${connection.metadata.destinationIP}",
+            fontSize = 11.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+            modifier = Modifier.padding(top = 2.dp)
+        )
+    }
+
+    Spacer(modifier = Modifier.height(6.dp))
+
+    // 代理链与规则
+    if (connection.chains.isNotEmpty() || connection.rule.isNotBlank()) {
+        FlowRow(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.Start,
+            verticalArrangement = Arrangement.Center
+        ) {
+            // 规则
+            if (connection.rule.isNotBlank()) {
+                val payload = if (connection.rulePayload.isNotBlank()) "(${connection.rulePayload})" else ""
                 Box(
                     modifier = Modifier
-                        .connectionProtocolBadgePanel(badgeBg)
+                        .padding(end = 6.dp, bottom = 4.dp)
+                        .connectionMetaBadgePanel(
+                            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                        )
                         .padding(horizontal = 6.dp, vertical = 2.dp)
                 ) {
                     Text(
-                        text = connection.metadata.network.uppercase(),
+                        text = "Rule: ${connection.rule}$payload",
                         fontSize = 10.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = protocolBadgeTextColor
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-
-                Spacer(modifier = Modifier.width(6.dp))
-
-                // 地址
-                Text(
-                    text = "$hostStr:$portStr",
-                    modifier = Modifier.weight(1f),
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-
-                ConnectionCloseButton(
-                    useLiquidGlass = useLiquidGlass,
-                    onClose = onClose
-                )
             }
 
-            // 额外的目的IP显示（如果host不为空）
-            if (connection.metadata.host.isNotBlank() && connection.metadata.destinationIP.isNotBlank()) {
-                Text(
-                    text = "IP: ${connection.metadata.destinationIP}",
-                    fontSize = 11.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                    modifier = Modifier.padding(top = 2.dp)
-                )
-            }
-
-            Spacer(modifier = Modifier.height(6.dp))
-
-            // 代理链与规则
-            if (connection.chains.isNotEmpty() || connection.rule.isNotBlank()) {
-                FlowRow(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.Start,
-                    verticalArrangement = Arrangement.Center
+            // 节点链路
+            if (connection.chains.isNotEmpty()) {
+                val chainText = connection.chains.joinToString(" → ")
+                Box(
+                    modifier = Modifier
+                        .padding(bottom = 4.dp)
+                        .connectionMetaBadgePanel(
+                            MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.3f)
+                        )
+                        .padding(horizontal = 6.dp, vertical = 2.dp)
                 ) {
-                    // 规则
-                    if (connection.rule.isNotBlank()) {
-                        val payload = if (connection.rulePayload.isNotBlank()) "(${connection.rulePayload})" else ""
-                        Box(
-                            modifier = Modifier
-                                .padding(end = 6.dp, bottom = 4.dp)
-                                .connectionMetaBadgePanel(
-                                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-                                )
-                                .padding(horizontal = 6.dp, vertical = 2.dp)
-                        ) {
-                            Text(
-                                text = "Rule: ${connection.rule}$payload",
-                                fontSize = 10.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-
-                    // 节点链路
-                    if (connection.chains.isNotEmpty()) {
-                        val chainText = connection.chains.joinToString(" → ")
-                        Box(
-                            modifier = Modifier
-                                .padding(bottom = 4.dp)
-                                .connectionMetaBadgePanel(
-                                    MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.3f)
-                                )
-                                .padding(horizontal = 6.dp, vertical = 2.dp)
-                        ) {
-                            Text(
-                                text = chainText,
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Medium,
-                                color = connectionMetaBadgeTextColor(
-                                    MaterialTheme.colorScheme.onSecondaryContainer
-                                )
-                            )
-                        }
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(4.dp))
-
-            // 流量统计及已连接时长
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        text = "↑ ${formatTraffic(connection.upload)}",
-                        fontSize = 11.sp,
+                        text = chainText,
+                        fontSize = 10.sp,
                         fontWeight = FontWeight.Medium,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                    Spacer(modifier = Modifier.width(12.dp))
-                    Text(
-                        text = "↓ ${formatTraffic(connection.download)}",
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = MaterialTheme.colorScheme.secondary
-                    )
-                }
-
-                // 持续时间
-                val duration = formatDuration(connection.start)
-                if (duration.isNotBlank()) {
-                    Text(
-                        text = duration,
-                        fontSize = 11.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                        color = connectionMetaBadgeTextColor(
+                            MaterialTheme.colorScheme.onSecondaryContainer
+                        )
                     )
                 }
             }
+        }
+    }
+
+    Spacer(modifier = Modifier.height(4.dp))
+
+    // 流量统计及已连接时长
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = "↑ ${formatTraffic(connection.upload)}",
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.primary
+            )
+            Spacer(modifier = Modifier.width(12.dp))
+            Text(
+                text = "↓ ${formatTraffic(connection.download)}",
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.secondary
+            )
+        }
+
+        // 持续时间
+        val duration = formatDuration(connection.start)
+        if (duration.isNotBlank()) {
+            Text(
+                text = duration,
+                fontSize = 11.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+            )
         }
     }
 }

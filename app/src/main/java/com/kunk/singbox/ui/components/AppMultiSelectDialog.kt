@@ -4,7 +4,6 @@ import androidx.compose.ui.res.stringResource
 import com.kunk.singbox.R
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -66,6 +65,7 @@ import com.kunk.singbox.ui.theme.liquidGlassCheckboxColors
 import com.kunk.singbox.ui.theme.liquidGlassDividerColor
 import com.kunk.singbox.ui.theme.liquidGlassIconButtonPanel
 import com.kunk.singbox.ui.theme.liquidGlassPanel
+import com.kunk.singbox.ui.theme.liquidGlassPressFeedback
 import com.kunk.singbox.ui.theme.liquidGlassProgressColor
 import com.kunk.singbox.ui.theme.liquidGlassProgressTrackColor
 import com.kunk.singbox.ui.theme.liquidGlassTextFieldBorderColor
@@ -330,7 +330,11 @@ fun AppMultiSelectDialog(
                 Row(
                     modifier = Modifier
                         .appSelectFilterPanel()
-                        .clickable { showSystemApps = !showSystemApps }
+                        .liquidGlassPressFeedback(
+                            label = "liquid_glass_app_select_system_filter_scale"
+                        ) {
+                            showSystemApps = !showSystemApps
+                        }
                         .padding(4.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -349,7 +353,11 @@ fun AppMultiSelectDialog(
                 Row(
                     modifier = Modifier
                         .appSelectFilterPanel()
-                        .clickable { showNoLauncherApps = !showNoLauncherApps }
+                        .liquidGlassPressFeedback(
+                            label = "liquid_glass_app_select_no_launcher_filter_scale"
+                        ) {
+                            showNoLauncherApps = !showNoLauncherApps
+                        }
                         .padding(4.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -370,7 +378,10 @@ fun AppMultiSelectDialog(
                         modifier = Modifier
                             .padding(end = 2.dp)
                             .clip(RoundedCornerShape(10.dp))
-                            .clickable {
+                            .appSelectActionPanel()
+                            .liquidGlassPressFeedback(
+                                label = "liquid_glass_app_select_quick_select_scale"
+                            ) {
                                 val matches = if (quickSelectExcludeCommonApps) {
                                     allApps
                                         .asSequence()
@@ -385,7 +396,6 @@ fun AppMultiSelectDialog(
                                     addAll(matches)
                                 }
                             }
-                            .appSelectActionPanel()
                             .padding(horizontal = 12.dp, vertical = 6.dp)
                     ) {
                         Text(
@@ -434,7 +444,9 @@ fun AppMultiSelectDialog(
                                     Modifier
                                 }
                             )
-                            .clickable {
+                            .liquidGlassPressFeedback(
+                                label = "liquid_glass_app_select_item_scale"
+                            ) {
                                 tempSelected = tempSelected.toMutableSet().apply {
                                     if (checked) remove(app.packageName) else add(app.packageName)
                                 }

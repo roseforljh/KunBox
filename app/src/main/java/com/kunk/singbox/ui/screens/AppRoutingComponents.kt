@@ -53,6 +53,7 @@ import com.kunk.singbox.ui.theme.liquidGlassDialogContainerColor
 import com.kunk.singbox.ui.theme.liquidGlassDialogPanel
 import com.kunk.singbox.ui.theme.liquidGlassIconButtonPanel
 import com.kunk.singbox.ui.theme.liquidGlassSwitchColors
+import com.kunk.singbox.ui.theme.liquidGlassPressFeedback
 import com.kunk.singbox.ui.theme.liquidGlassTextFieldBorderColor
 import com.kunk.singbox.ui.theme.liquidGlassTextFieldContainerColor
 import com.kunk.singbox.ui.theme.liquidGlassTextFieldPanel
@@ -172,6 +173,32 @@ private fun Modifier.routingItemPressFeedback(onClick: () -> Unit): Modifier {
         targetValue = if (useLiquidGlass && isPressed) 0.98f else 1f,
         animationSpec = spring(stiffness = 520f, dampingRatio = 0.72f),
         label = "liquid_glass_routing_item_scale"
+    )
+    val clickModifier = if (useLiquidGlass) {
+        Modifier.clickable(
+            interactionSource = interactionSource,
+            indication = null,
+            onClick = onClick
+        )
+    } else {
+        Modifier.clickable(onClick = onClick)
+    }
+
+    return graphicsLayer {
+        scaleX = scale
+        scaleY = scale
+    }.then(clickModifier)
+}
+
+@Composable
+private fun Modifier.selectedAppRemovePressFeedback(onClick: () -> Unit): Modifier {
+    val useLiquidGlass = isLiquidGlassTheme()
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (useLiquidGlass && isPressed) 0.9f else 1f,
+        animationSpec = spring(stiffness = 520f, dampingRatio = 0.72f),
+        label = "liquid_glass_selected_app_remove_scale"
     )
     val clickModifier = if (useLiquidGlass) {
         Modifier.clickable(
@@ -564,7 +591,11 @@ fun AppPickerDialog(apps: List<InstalledApp>, existingPackages: Set<String>, onS
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier
                             .routingFilterTogglePanel(RoundedCornerShape(8.dp))
-                            .clickable { showSystemApps = !showSystemApps }
+                            .liquidGlassPressFeedback(
+                                label = "liquid_glass_routing_system_filter_scale"
+                            ) {
+                                showSystemApps = !showSystemApps
+                            }
                             .padding(4.dp)
                     ) {
                         Checkbox(
@@ -791,7 +822,9 @@ fun SelectedAppChip(app: AppInfo, onRemove: () -> Unit) {
             Icons.Rounded.Close,
             contentDescription = stringResource(R.string.app_groups_remove),
             tint = Neutral500,
-            modifier = Modifier.size(16.dp).clickable(onClick = onRemove)
+            modifier = Modifier
+                .size(16.dp)
+                .selectedAppRemovePressFeedback(onClick = onRemove)
         )
     }
 }
@@ -904,7 +937,11 @@ fun MultiAppSelectorDialog(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier
                             .routingFilterTogglePanel(RoundedCornerShape(6.dp))
-                            .clickable { showSystemApps = !showSystemApps }
+                            .liquidGlassPressFeedback(
+                                label = "liquid_glass_routing_selected_system_filter_scale"
+                            ) {
+                                showSystemApps = !showSystemApps
+                            }
                             .padding(4.dp)
                     ) {
                         Checkbox(

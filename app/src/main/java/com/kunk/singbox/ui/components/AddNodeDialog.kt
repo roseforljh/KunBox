@@ -1,6 +1,5 @@
 package com.kunk.singbox.ui.components
 
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -37,6 +36,7 @@ import com.kunk.singbox.ui.theme.isLiquidGlassTheme
 import com.kunk.singbox.ui.theme.liquidGlassPanel
 import com.kunk.singbox.ui.theme.liquidGlassDialogContainerColor
 import com.kunk.singbox.ui.theme.liquidGlassDialogPanel
+import com.kunk.singbox.ui.theme.liquidGlassPressFeedback
 import com.kunk.singbox.ui.theme.liquidGlassRadioButtonColors
 import com.kunk.singbox.ui.theme.liquidGlassTextFieldBorderColor
 import com.kunk.singbox.ui.theme.liquidGlassTextFieldContainerColor
@@ -142,7 +142,9 @@ fun AddNodeDialog(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .addNodeTargetOptionPanel(isSelected)
-                                .clickable {
+                                .liquidGlassPressFeedback(
+                                    label = "liquid_glass_add_node_target_option_scale"
+                                ) {
                                     isCreatingNew = false
                                     selectedProfileId = profile.id
                                 }
@@ -173,7 +175,11 @@ fun AddNodeDialog(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .addNodeTargetOptionPanel(isSelected)
-                                .clickable { isCreatingNew = true }
+                                .liquidGlassPressFeedback(
+                                    label = "liquid_glass_add_node_new_profile_scale"
+                                ) {
+                                    isCreatingNew = true
+                                }
                                 .padding(vertical = 4.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {

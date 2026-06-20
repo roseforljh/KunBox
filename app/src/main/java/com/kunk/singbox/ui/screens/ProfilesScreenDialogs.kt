@@ -3,6 +3,8 @@ package com.kunk.singbox.ui.screens
 import com.kunk.singbox.R
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -23,6 +25,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -47,6 +51,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.res.stringResource
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -136,6 +141,117 @@ private fun Modifier.profileCustomNodePanel(isSelected: Boolean): Modifier {
     }
 }
 
+@Composable
+private fun Modifier.profileGroupPressFeedback(
+    enabled: Boolean,
+    onClick: () -> Unit
+): Modifier {
+    val useLiquidGlass = isLiquidGlassTheme()
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (useLiquidGlass && enabled && isPressed) 0.98f else 1f,
+        animationSpec = spring(stiffness = 520f, dampingRatio = 0.72f),
+        label = "liquid_glass_profile_group_scale"
+    )
+    val clickModifier = if (useLiquidGlass) {
+        Modifier.clickable(
+            enabled = enabled,
+            interactionSource = interactionSource,
+            indication = null,
+            onClick = onClick
+        )
+    } else {
+        Modifier.clickable(
+            enabled = enabled,
+            onClick = onClick
+        )
+    }
+
+    return graphicsLayer {
+        scaleX = scale
+        scaleY = scale
+    }.then(clickModifier)
+}
+
+@Composable
+private fun Modifier.profileCustomNodePressFeedback(onClick: () -> Unit): Modifier {
+    val useLiquidGlass = isLiquidGlassTheme()
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (useLiquidGlass && isPressed) 0.98f else 1f,
+        animationSpec = spring(stiffness = 520f, dampingRatio = 0.72f),
+        label = "liquid_glass_profile_custom_node_scale"
+    )
+    val clickModifier = if (useLiquidGlass) {
+        Modifier.clickable(
+            interactionSource = interactionSource,
+            indication = null,
+            onClick = onClick
+        )
+    } else {
+        Modifier.clickable(onClick = onClick)
+    }
+
+    return graphicsLayer {
+        scaleX = scale
+        scaleY = scale
+    }.then(clickModifier)
+}
+
+@Composable
+private fun Modifier.profileDnsDropdownPressFeedback(onClick: () -> Unit): Modifier {
+    val useLiquidGlass = isLiquidGlassTheme()
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (useLiquidGlass && isPressed) 0.98f else 1f,
+        animationSpec = spring(stiffness = 520f, dampingRatio = 0.72f),
+        label = "liquid_glass_profile_dns_dropdown_scale"
+    )
+    val clickModifier = if (useLiquidGlass) {
+        Modifier.clickable(
+            interactionSource = interactionSource,
+            indication = null,
+            onClick = onClick
+        )
+    } else {
+        Modifier.clickable(onClick = onClick)
+    }
+
+    return graphicsLayer {
+        scaleX = scale
+        scaleY = scale
+    }.then(clickModifier)
+}
+
+@Composable
+private fun Modifier.profileDnsOptionPressFeedback(onClick: () -> Unit): Modifier {
+    val useLiquidGlass = isLiquidGlassTheme()
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (useLiquidGlass && isPressed) 0.98f else 1f,
+        animationSpec = spring(stiffness = 520f, dampingRatio = 0.72f),
+        label = "liquid_glass_profile_dns_option_scale"
+    )
+    val clickModifier = if (useLiquidGlass) {
+        Modifier.clickable(
+            interactionSource = interactionSource,
+            indication = null,
+            onClick = onClick
+        )
+    } else {
+        Modifier.clickable(onClick = onClick)
+    }
+
+    return graphicsLayer {
+        scaleX = scale
+        scaleY = scale
+    }.then(clickModifier)
+}
+
 internal fun List<String>.updatedCustomSelection(nodeId: String, checked: Boolean): List<String> {
     return if (checked) {
         if (contains(nodeId)) {
@@ -208,7 +324,10 @@ internal fun ExpandableProfileGroup(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .clickable(enabled = nodes.isNotEmpty(), onClick = onToggle)
+                .profileGroupPressFeedback(
+                    enabled = nodes.isNotEmpty(),
+                    onClick = onToggle
+                )
                 .padding(vertical = 12.dp, horizontal = 12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -256,7 +375,7 @@ internal fun ExpandableProfileGroup(
                         modifier = Modifier
                             .fillMaxWidth()
                             .profileCustomNodePanel(isSelected)
-                            .clickable {
+                            .profileCustomNodePressFeedback {
                                 onSelectionChange(node.id, !isSelected)
                             }
                             .padding(vertical = 10.dp, horizontal = 12.dp),
@@ -812,7 +931,9 @@ internal fun SubscriptionInputDialog(
                         modifier = Modifier
                             .fillMaxWidth()
                             .liquidGlassTextFieldPanel(shape = dnsFieldShape)
-                            .clickable { dnsDropdownExpanded = true },
+                            .profileDnsDropdownPressFeedback {
+                                dnsDropdownExpanded = true
+                            },
                         shape = dnsFieldShape,
                         colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
                             disabledTextColor = MaterialTheme.colorScheme.onSurface,
@@ -850,11 +971,11 @@ internal fun SubscriptionInputDialog(
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .clickable {
+                                    .profileDnsOptionPanel(isSelected)
+                                    .profileDnsOptionPressFeedback {
                                         selectedDnsServer = url
                                         dnsDropdownExpanded = false
                                     }
-                                    .profileDnsOptionPanel(isSelected)
                                     .padding(horizontal = 24.dp, vertical = 14.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.SpaceBetween

@@ -3,7 +3,6 @@
 import androidx.compose.ui.res.stringResource
 import com.kunk.singbox.R
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.Row
@@ -51,6 +50,7 @@ import com.kunk.singbox.ui.theme.liquidGlassButtonContainerColor
 import com.kunk.singbox.ui.theme.liquidGlassButtonContentColor
 import com.kunk.singbox.ui.theme.liquidGlassButtonPanel
 import com.kunk.singbox.ui.theme.liquidGlassPanel
+import com.kunk.singbox.ui.theme.liquidGlassPressFeedback
 import com.kunk.singbox.ui.theme.liquidGlassTextFieldBorderColor
 import com.kunk.singbox.ui.theme.liquidGlassTextFieldContainerColor
 import com.kunk.singbox.ui.theme.liquidGlassTextFieldPanel
@@ -355,7 +355,11 @@ fun SingleSelectDialog(
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(12.dp))
                             .dialogOptionPanel(isSelected)
-                            .clickable { tempSelectedIndex = index }
+                            .liquidGlassPressFeedback(
+                                label = "liquid_glass_dialog_option_scale"
+                            ) {
+                                tempSelectedIndex = index
+                            }
                             .padding(vertical = 12.dp, horizontal = 8.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {

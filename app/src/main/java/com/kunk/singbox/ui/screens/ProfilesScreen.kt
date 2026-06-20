@@ -36,6 +36,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -80,6 +82,7 @@ import com.kunk.singbox.ui.components.ConfirmDialog
 import com.kunk.singbox.ui.components.InputDialog
 import com.kunk.singbox.ui.components.ProfileCard
 import com.kunk.singbox.ui.navigation.Screen
+import com.kunk.singbox.ui.theme.isLiquidGlassTheme
 import com.kunk.singbox.ui.theme.liquidGlassFloatingActionContainerColor
 import com.kunk.singbox.ui.theme.liquidGlassFloatingActionContentColor
 import com.kunk.singbox.ui.theme.liquidGlassFloatingActionPanel
@@ -92,6 +95,39 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.ByteArrayOutputStream
+
+@Composable
+private fun Modifier.profileSortItemPressFeedback(
+    enabled: Boolean,
+    onClick: () -> Unit
+): Modifier {
+    val useLiquidGlass = isLiquidGlassTheme()
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (useLiquidGlass && enabled && isPressed) 0.98f else 1f,
+        animationSpec = spring(stiffness = 520f, dampingRatio = 0.72f),
+        label = "liquid_glass_profile_sort_item_scale"
+    )
+    val clickModifier = if (useLiquidGlass) {
+        Modifier.clickable(
+            enabled = enabled,
+            interactionSource = interactionSource,
+            indication = null,
+            onClick = onClick
+        )
+    } else {
+        Modifier.clickable(
+            enabled = enabled,
+            onClick = onClick
+        )
+    }
+
+    return graphicsLayer {
+        scaleX = scale
+        scaleY = scale
+    }.then(clickModifier)
+}
 
 private suspend fun readImportContentSafely(
     context: android.content.Context,
@@ -693,7 +729,9 @@ fun ProfilesScreen(
                                         Modifier.animateItem()
                                     }
                                 )
-                                .clickable(enabled = !isDraggingItem || !isCurrentlyDragging) {
+                                .profileSortItemPressFeedback(
+                                    enabled = !isDraggingItem || !isCurrentlyDragging
+                                ) {
                                     viewModel.setActiveProfile(profile.id)
                                 }
                                 .pointerInput(index) {

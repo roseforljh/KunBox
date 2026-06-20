@@ -1,10 +1,14 @@
 package com.kunk.singbox.ui.screens
 
 import com.kunk.singbox.R
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -48,6 +52,7 @@ import com.kunk.singbox.ui.theme.liquidGlassDialogPanel
 import com.kunk.singbox.ui.theme.liquidGlassEmptyStatePanel
 import com.kunk.singbox.ui.theme.liquidGlassIconButtonPanel
 import com.kunk.singbox.ui.theme.liquidGlassPanel
+import com.kunk.singbox.ui.theme.liquidGlassPressFeedback
 import com.kunk.singbox.ui.theme.liquidGlassTextButtonPanel
 import kotlinx.coroutines.launch
 import com.kunk.singbox.ui.theme.liquidGlassTopAppBarContainerColor
@@ -71,6 +76,39 @@ private fun Modifier.ruleSetInboundOptionPanel(isSelected: Boolean): Modifier {
     } else {
         this
     }
+}
+
+@Composable
+private fun Modifier.ruleSetSortItemPressFeedback(
+    enabled: Boolean,
+    onClick: () -> Unit
+): Modifier {
+    val useLiquidGlass = isLiquidGlassTheme()
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (useLiquidGlass && enabled && isPressed) 0.98f else 1f,
+        animationSpec = spring(stiffness = 520f, dampingRatio = 0.72f),
+        label = "liquid_glass_rule_set_sort_item_scale"
+    )
+    val clickModifier = if (useLiquidGlass) {
+        Modifier.clickable(
+            enabled = enabled,
+            interactionSource = interactionSource,
+            indication = null,
+            onClick = onClick
+        )
+    } else {
+        Modifier.clickable(
+            enabled = enabled,
+            onClick = onClick
+        )
+    }
+
+    return graphicsLayer {
+        scaleX = scale
+        scaleY = scale
+    }.then(clickModifier)
 }
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
@@ -363,7 +401,9 @@ fun RuleSetsScreen(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .ruleSetInboundOptionPanel(isSelected)
-                                .clickable {
+                                .liquidGlassPressFeedback(
+                                    label = "liquid_glass_rule_set_inbound_option_scale"
+                                ) {
                                     val currentInbounds = inboundList.toMutableList()
                                     if (currentInbounds.contains(inbound)) {
                                         currentInbounds.remove(inbound)
@@ -611,7 +651,9 @@ fun RuleSetsScreen(
                                 Modifier.animateItem()
                             }
                         )
-                        .clickable(enabled = !isDraggingItem || !isCurrentlyDragging) {
+                        .ruleSetSortItemPressFeedback(
+                            enabled = !isDraggingItem || !isCurrentlyDragging
+                        ) {
                             if (isSelectionMode) {
                                 toggleSelection(ruleSet.id)
                             }

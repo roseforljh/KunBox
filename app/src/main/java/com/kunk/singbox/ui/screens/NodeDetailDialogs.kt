@@ -7,7 +7,6 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -47,6 +46,7 @@ import com.kunk.singbox.ui.theme.liquidGlassButtonContainerColor
 import com.kunk.singbox.ui.theme.liquidGlassButtonContentColor
 import com.kunk.singbox.ui.theme.liquidGlassButtonPanel
 import com.kunk.singbox.ui.theme.liquidGlassPanel
+import com.kunk.singbox.ui.theme.liquidGlassPressFeedback
 import com.kunk.singbox.ui.theme.liquidGlassTextButtonPanel
 
 @Composable
@@ -127,8 +127,12 @@ internal fun DetourNodeSelectDialog(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable { onSelect(null) }
                             .nodeDetailSelectionPanel(isNoneSelected)
+                            .liquidGlassPressFeedback(
+                                label = "liquid_glass_detour_none_option_scale"
+                            ) {
+                                onSelect(null)
+                            }
                             .padding(horizontal = 12.dp, vertical = 10.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
@@ -168,7 +172,9 @@ internal fun DetourNodeSelectDialog(
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .clickable {
+                                    .liquidGlassPressFeedback(
+                                        label = "liquid_glass_detour_group_scale"
+                                    ) {
                                         expandedProfileId = if (isExpanded) null else profileId
                                     }
                                     .padding(vertical = 10.dp, horizontal = 10.dp),
@@ -207,8 +213,12 @@ internal fun DetourNodeSelectDialog(
                                         Row(
                                             modifier = Modifier
                                                 .fillMaxWidth()
-                                                .clickable { onSelect(ref) }
                                                 .nodeDetailSelectionPanel(selected)
+                                                .liquidGlassPressFeedback(
+                                                    label = "liquid_glass_detour_node_option_scale"
+                                                ) {
+                                                    onSelect(ref)
+                                                }
                                                 .padding(horizontal = 12.dp, vertical = 10.dp),
                                             verticalAlignment = Alignment.CenterVertically
                                         ) {

@@ -316,6 +316,23 @@ fun HubRuleSetItem(
 ) {
     val shape = RoundedCornerShape(12.dp)
 
+    if (isLiquidGlassTheme()) {
+        Column(
+            modifier = Modifier
+                .ruleSetHubItemPanel()
+                .padding(16.dp)
+        ) {
+            HubRuleSetItemContent(
+                ruleSet = ruleSet,
+                isDownloading = isDownloading,
+                onAddSource = onAddSource,
+                onAddBinary = onAddBinary,
+                isDownloaded = isDownloaded
+            )
+        }
+        return
+    }
+
     Card(
         colors = CardDefaults.cardColors(
             containerColor = ruleSetHubItemContainerColor(MaterialTheme.colorScheme.surface)
@@ -326,89 +343,134 @@ fun HubRuleSetItem(
         Column(
             modifier = Modifier.padding(16.dp)
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(
-                    modifier = Modifier.weight(1f),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = ruleSet.name,
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.weight(1f, fill = false)
-                    )
-                    if (isDownloading) {
-                        Spacer(modifier = Modifier.width(8.dp))
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(14.dp),
-                            strokeWidth = 2.dp,
-                            color = liquidGlassProgressColor(MaterialTheme.colorScheme.primary)
-                        )
-                    } else if (isDownloaded) {
-                        Spacer(modifier = Modifier.width(8.dp))
-                        RuleSetBadge(
-                            text = stringResource(R.string.common_downloaded),
-                            backgroundColor = Color(0xFF2E7D32),
-                            contentColor = Color.White
-                        )
-                    }
-                }
+            HubRuleSetItemContent(
+                ruleSet = ruleSet,
+                isDownloading = isDownloading,
+                onAddSource = onAddSource,
+                onAddBinary = onAddBinary,
+                isDownloaded = isDownloaded
+            )
+        }
+    }
+}
 
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    ruleSet.tags.forEach { tag ->
-                        RuleSetBadge(
-                            text = tag,
-                            backgroundColor = MaterialTheme.colorScheme.secondary,
-                            contentColor = MaterialTheme.colorScheme.onSecondary,
-                            modifier = Modifier.padding(start = 4.dp)
-                        )
-                    }
-                }
-            }
+@Composable
+private fun HubRuleSetItemContent(
+    ruleSet: HubRuleSet,
+    isDownloading: Boolean,
+    onAddSource: () -> Unit,
+    onAddBinary: () -> Unit,
+    isDownloaded: Boolean
+) {
+    HubRuleSetItemHeader(
+        ruleSet = ruleSet,
+        isDownloading = isDownloading,
+        isDownloaded = isDownloaded
+    )
+    Spacer(modifier = Modifier.height(8.dp))
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.End,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            imageVector = Icons.Rounded.Visibility,
+            contentDescription = stringResource(R.string.common_view),
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(16.dp)
+        )
+    }
+    Spacer(modifier = Modifier.height(12.dp))
+    HubRuleSetItemActions(
+        onAddSource = onAddSource,
+        onAddBinary = onAddBinary
+    )
+}
 
-            Spacer(modifier = Modifier.height(8.dp))
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.End,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(
-                    imageVector = Icons.Rounded.Visibility,
-                    contentDescription = stringResource(R.string.common_view),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(16.dp)
+@Composable
+private fun HubRuleSetItemHeader(
+    ruleSet: HubRuleSet,
+    isDownloading: Boolean,
+    isDownloaded: Boolean
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Row(
+            modifier = Modifier.weight(1f),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = ruleSet.name,
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.weight(1f, fill = false)
+            )
+            if (isDownloading) {
+                Spacer(modifier = Modifier.width(8.dp))
+                CircularProgressIndicator(
+                    modifier = Modifier.size(14.dp),
+                    strokeWidth = 2.dp,
+                    color = liquidGlassProgressColor(MaterialTheme.colorScheme.primary)
+                )
+            } else if (isDownloaded) {
+                Spacer(modifier = Modifier.width(8.dp))
+                RuleSetBadge(
+                    text = stringResource(R.string.common_downloaded),
+                    backgroundColor = Color(0xFF2E7D32),
+                    contentColor = Color.White
                 )
             }
+        }
 
-            Spacer(modifier = Modifier.height(12.dp))
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.End,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                TextButton(
-                    modifier = Modifier.liquidGlassTextButtonPanel(),
-                    onClick = onAddSource,
-                    contentPadding = PaddingValues(horizontal = 8.dp)
-                ) {
-                    Text(stringResource(R.string.common_add) + " Source", fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
-                }
-
-                TextButton(
-                    modifier = Modifier.liquidGlassTextButtonPanel(),
-                    onClick = onAddBinary,
-                    contentPadding = PaddingValues(horizontal = 8.dp)
-                ) {
-                    Text(stringResource(R.string.common_add) + " Binary", fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
-                }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            ruleSet.tags.forEach { tag ->
+                RuleSetBadge(
+                    text = tag,
+                    backgroundColor = MaterialTheme.colorScheme.secondary,
+                    contentColor = MaterialTheme.colorScheme.onSecondary,
+                    modifier = Modifier.padding(start = 4.dp)
+                )
             }
+        }
+    }
+}
+
+@Composable
+private fun HubRuleSetItemActions(
+    onAddSource: () -> Unit,
+    onAddBinary: () -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.End,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        TextButton(
+            modifier = Modifier.liquidGlassTextButtonPanel(),
+            onClick = onAddSource,
+            contentPadding = PaddingValues(horizontal = 8.dp)
+        ) {
+            Text(
+                stringResource(R.string.common_add) + " Source",
+                fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.primary
+            )
+        }
+
+        TextButton(
+            modifier = Modifier.liquidGlassTextButtonPanel(),
+            onClick = onAddBinary,
+            contentPadding = PaddingValues(horizontal = 8.dp)
+        ) {
+            Text(
+                stringResource(R.string.common_add) + " Binary",
+                fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.primary
+            )
         }
     }
 }
