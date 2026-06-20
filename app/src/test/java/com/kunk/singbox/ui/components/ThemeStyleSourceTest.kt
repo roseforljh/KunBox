@@ -169,6 +169,16 @@ class ThemeStyleSourceTest {
     }
 
     @Test
+    fun loadingDialogsUseLiquidGlassContentColors() {
+        val liquidTheme = File("src/main/java/com/kunk/singbox/ui/theme/LiquidGlassTheme.kt").readText()
+        val loadingDialog = File("src/main/java/com/kunk/singbox/ui/components/AppListLoadingDialog.kt").readText()
+
+        assertTrue(liquidTheme.contains("fun liquidGlassStrongContentColor("))
+        assertTrue(loadingDialog.contains("liquidGlassStrongContentColor(TextPrimary)"))
+        assertTrue(loadingDialog.contains("liquidGlassMutedContentColor(TextSecondary)"))
+    }
+
+    @Test
     fun trafficAndDetailSurfacesUseSharedLiquidGlassPanel() {
         val screenFiles = listOf(
             "TrafficStatsScreen.kt",
@@ -411,6 +421,7 @@ class ThemeStyleSourceTest {
     @Test
     fun primaryButtonsUseLiquidGlassPanels() {
         val liquidControls = File("src/main/java/com/kunk/singbox/ui/theme/LiquidGlassControls.kt").readText()
+        val liquidButtonColors = File("src/main/java/com/kunk/singbox/ui/theme/LiquidGlassButtonColors.kt").readText()
         val componentFiles = listOf(
             "AppMultiSelectDialog.kt",
             "CommonDialogs.kt",
@@ -426,22 +437,24 @@ class ThemeStyleSourceTest {
         )
 
         assertTrue(liquidControls.contains("fun Modifier.liquidGlassButtonPanel("))
+        assertTrue(liquidButtonColors.contains("fun liquidGlassButtonColors("))
+        assertTrue(liquidButtonColors.contains("disabledContainerColor = Color.Transparent"))
         assertTrue(liquidControls.contains("fun liquidGlassButtonContainerColor("))
         assertTrue(liquidControls.contains("fun liquidGlassButtonContentColor("))
         componentFiles.forEach { fileName ->
             val source = File("src/main/java/com/kunk/singbox/ui/components/$fileName").readText()
             assertTrue("$fileName should apply liquid glass button panel", source.contains("liquidGlassButtonPanel("))
             assertTrue(
-                "$fileName should use liquid glass button container",
-                source.contains("liquidGlassButtonContainerColor(")
+                "$fileName should use liquid glass button colors",
+                source.contains("liquidGlassButtonColors(")
             )
         }
         screenFiles.forEach { fileName ->
             val source = File("src/main/java/com/kunk/singbox/ui/screens/$fileName").readText()
             assertTrue("$fileName should apply liquid glass button panel", source.contains("liquidGlassButtonPanel("))
             assertTrue(
-                "$fileName should use liquid glass button container",
-                source.contains("liquidGlassButtonContainerColor(")
+                "$fileName should use liquid glass button colors",
+                source.contains("liquidGlassButtonColors(")
             )
         }
     }

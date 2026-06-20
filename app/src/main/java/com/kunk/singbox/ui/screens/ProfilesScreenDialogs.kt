@@ -72,7 +72,7 @@ import com.kunk.singbox.repository.ConfigRepository
 import com.kunk.singbox.ui.components.AppNotificationManager
 import com.kunk.singbox.ui.components.StandardCard
 import com.kunk.singbox.ui.theme.isLiquidGlassTheme
-import com.kunk.singbox.ui.theme.liquidGlassButtonContainerColor
+import com.kunk.singbox.ui.theme.liquidGlassButtonColors
 import com.kunk.singbox.ui.theme.liquidGlassButtonContentColor
 import com.kunk.singbox.ui.theme.liquidGlassButtonPanel
 import com.kunk.singbox.ui.theme.liquidGlassCheckboxColors
@@ -499,9 +499,9 @@ internal fun CustomConfigDialog(
                     .fillMaxWidth()
                     .height(50.dp)
                     .liquidGlassButtonPanel(shape = RoundedCornerShape(25.dp)),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = liquidGlassButtonContainerColor(MaterialTheme.colorScheme.primary),
-                    contentColor = liquidGlassButtonContentColor(MaterialTheme.colorScheme.onPrimary)
+                colors = liquidGlassButtonColors(
+                    defaultContainerColor = MaterialTheme.colorScheme.primary,
+                    defaultContentColor = MaterialTheme.colorScheme.onPrimary
                 ),
                 shape = RoundedCornerShape(25.dp)
             ) {
@@ -1144,9 +1144,9 @@ internal fun SubscriptionInputDialog(
                     .fillMaxWidth()
                     .height(50.dp)
                     .liquidGlassButtonPanel(shape = RoundedCornerShape(25.dp)),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = liquidGlassButtonContainerColor(MaterialTheme.colorScheme.primary),
-                    contentColor = liquidGlassButtonContentColor(MaterialTheme.colorScheme.onPrimary)
+                colors = liquidGlassButtonColors(
+                    defaultContainerColor = MaterialTheme.colorScheme.primary,
+                    defaultContentColor = MaterialTheme.colorScheme.onPrimary
                 ),
                 shape = RoundedCornerShape(25.dp)
             ) {

@@ -71,6 +71,7 @@ import com.kunk.singbox.ui.components.StandardCard
 import com.kunk.singbox.ui.components.StyledTextField
 import com.kunk.singbox.ui.theme.isLiquidGlassTheme
 import com.kunk.singbox.ui.theme.liquidGlassButtonContainerColor
+import com.kunk.singbox.ui.theme.liquidGlassButtonColors
 import com.kunk.singbox.ui.theme.liquidGlassButtonContentColor
 import com.kunk.singbox.ui.theme.liquidGlassButtonPanel
 import com.kunk.singbox.ui.theme.liquidGlassDialogContainerColor
@@ -640,9 +641,9 @@ private fun DomainRuleEditorDialog(
                     onConfirm(rule)
                 },
                 modifier = Modifier.liquidGlassButtonPanel(),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = liquidGlassButtonContainerColor(MaterialTheme.colorScheme.primary),
-                    contentColor = liquidGlassButtonContentColor(MaterialTheme.colorScheme.onPrimary)
+                colors = liquidGlassButtonColors(
+                    defaultContainerColor = MaterialTheme.colorScheme.primary,
+                    defaultContentColor = MaterialTheme.colorScheme.onPrimary
                 )
             ) {
                 Text(

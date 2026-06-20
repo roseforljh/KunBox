@@ -46,7 +46,7 @@ import androidx.compose.material.icons.rounded.RadioButtonUnchecked
 import com.kunk.singbox.ui.theme.Destructive
 import com.kunk.singbox.ui.theme.Neutral500
 import com.kunk.singbox.ui.theme.isLiquidGlassTheme
-import com.kunk.singbox.ui.theme.liquidGlassButtonContainerColor
+import com.kunk.singbox.ui.theme.liquidGlassButtonColors
 import com.kunk.singbox.ui.theme.liquidGlassButtonContentColor
 import com.kunk.singbox.ui.theme.liquidGlassButtonPanel
 import com.kunk.singbox.ui.theme.liquidGlassMutedContentColor
@@ -104,9 +104,10 @@ private fun confirmDialogActionButton(
             .fillMaxWidth()
             .height(50.dp)
             .liquidGlassButtonPanel(shape = RoundedCornerShape(25.dp)),
-        colors = ButtonDefaults.buttonColors(
-            containerColor = liquidGlassButtonContainerColor(defaultContainerColor),
-            contentColor = contentColor
+        colors = liquidGlassButtonColors(
+            defaultContainerColor = defaultContainerColor,
+            defaultContentColor = defaultContentColor,
+            liquidContentColor = liquidContentColor
         ),
         shape = RoundedCornerShape(25.dp)
     ) {
@@ -277,9 +278,9 @@ fun InputDialog(
                     .fillMaxWidth()
                     .height(50.dp)
                     .liquidGlassButtonPanel(shape = RoundedCornerShape(25.dp)),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = liquidGlassButtonContainerColor(MaterialTheme.colorScheme.primary),
-                    contentColor = liquidGlassButtonContentColor(MaterialTheme.colorScheme.onPrimary)
+                colors = liquidGlassButtonColors(
+                    defaultContainerColor = MaterialTheme.colorScheme.primary,
+                    defaultContentColor = MaterialTheme.colorScheme.onPrimary
                 ),
                 shape = RoundedCornerShape(25.dp)
             ) {
@@ -400,9 +401,9 @@ fun SingleSelectDialog(
                     .fillMaxWidth()
                     .height(50.dp)
                     .liquidGlassButtonPanel(shape = RoundedCornerShape(25.dp)),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = liquidGlassButtonContainerColor(MaterialTheme.colorScheme.primary),
-                    contentColor = liquidGlassButtonContentColor(MaterialTheme.colorScheme.onPrimary)
+                colors = liquidGlassButtonColors(
+                    defaultContainerColor = MaterialTheme.colorScheme.primary,
+                    defaultContentColor = MaterialTheme.colorScheme.onPrimary
                 ),
                 shape = RoundedCornerShape(25.dp)
             ) {

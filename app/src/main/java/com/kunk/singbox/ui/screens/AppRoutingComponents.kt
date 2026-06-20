@@ -44,7 +44,7 @@ import com.kunk.singbox.ui.components.StyledTextField
 import com.kunk.singbox.ui.theme.Neutral500
 import com.kunk.singbox.ui.theme.Neutral700
 import com.kunk.singbox.ui.theme.isLiquidGlassTheme
-import com.kunk.singbox.ui.theme.liquidGlassButtonContainerColor
+import com.kunk.singbox.ui.theme.liquidGlassButtonColors
 import com.kunk.singbox.ui.theme.liquidGlassButtonContentColor
 import com.kunk.singbox.ui.theme.liquidGlassButtonPanel
 import com.kunk.singbox.ui.theme.liquidGlassCheckboxColors
@@ -1113,9 +1113,9 @@ fun MultiAppSelectorDialog(
             Button(
                 onClick = { onConfirm(tempSelectedEntries.toAppInfoSet()) },
                 modifier = Modifier.liquidGlassButtonPanel(shape = RoundedCornerShape(10.dp)),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = liquidGlassButtonContainerColor(MaterialTheme.colorScheme.primary),
-                    contentColor = liquidGlassButtonContentColor(MaterialTheme.colorScheme.onPrimary)
+                colors = liquidGlassButtonColors(
+                    defaultContainerColor = MaterialTheme.colorScheme.primary,
+                    defaultContentColor = MaterialTheme.colorScheme.onPrimary
                 ),
                 shape = RoundedCornerShape(10.dp)
             ) {
@@ -1412,9 +1412,9 @@ fun AppGroupEditorDialog(
                 },
                 enabled = groupName.isNotBlank() && selectedApps.isNotEmpty(),
                 modifier = Modifier.liquidGlassButtonPanel(shape = RoundedCornerShape(12.dp)),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = liquidGlassButtonContainerColor(MaterialTheme.colorScheme.primary),
-                    contentColor = liquidGlassButtonContentColor(MaterialTheme.colorScheme.onPrimary)
+                colors = liquidGlassButtonColors(
+                    defaultContainerColor = MaterialTheme.colorScheme.primary,
+                    defaultContentColor = MaterialTheme.colorScheme.onPrimary
                 ),
                 shape = RoundedCornerShape(12.dp)
             ) {

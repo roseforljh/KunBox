@@ -481,8 +481,7 @@ class LiquidGlassMaterialCallCoverageTest {
             materialCallRule(
                 "Button",
                 listOf("liquidGlassButtonPanel"),
-                listOf("liquidGlassButtonContainerColor"),
-                listOf("liquidGlassButtonContentColor", "contentColor = contentColor")
+                listOf("liquidGlassButtonColors")
             ),
             materialCallRule(
                 "OutlinedButton",

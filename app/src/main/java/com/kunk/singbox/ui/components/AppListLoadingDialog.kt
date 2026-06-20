@@ -28,9 +28,11 @@ import com.kunk.singbox.ui.theme.SurfaceCard
 import com.kunk.singbox.ui.theme.TextPrimary
 import com.kunk.singbox.ui.theme.TextSecondary
 import com.kunk.singbox.ui.theme.isLiquidGlassTheme
+import com.kunk.singbox.ui.theme.liquidGlassMutedContentColor
 import com.kunk.singbox.ui.theme.liquidGlassPanel
 import com.kunk.singbox.ui.theme.liquidGlassProgressColor
 import com.kunk.singbox.ui.theme.liquidGlassProgressTrackColor
+import com.kunk.singbox.ui.theme.liquidGlassStrongContentColor
 
 @Composable
 private fun Modifier.loadingDialogPanel(shape: RoundedCornerShape = RoundedCornerShape(28.dp)): Modifier {
@@ -78,7 +80,7 @@ fun AppListLoadingDialog(
             Text(
                 text = stringResource(R.string.app_list_loading),
                 style = MaterialTheme.typography.titleMedium,
-                color = TextPrimary
+                color = liquidGlassStrongContentColor(TextPrimary)
             )
 
             Spacer(modifier = Modifier.height(8.dp))
@@ -86,7 +88,7 @@ fun AppListLoadingDialog(
             Text(
                 text = stringResource(R.string.app_list_loaded, loadingState.current, loadingState.total),
                 style = MaterialTheme.typography.bodyMedium,
-                color = TextSecondary
+                color = liquidGlassMutedContentColor(TextSecondary)
             )
 
             Spacer(modifier = Modifier.height(20.dp))
@@ -138,7 +140,7 @@ fun SimpleLoadingDialog(
             Text(
                 text = message,
                 style = MaterialTheme.typography.titleMedium,
-                color = TextPrimary
+                color = liquidGlassStrongContentColor(TextPrimary)
             )
         }
     }

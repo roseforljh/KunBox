@@ -36,6 +36,15 @@ fun liquidGlassMutedContentColor(defaultColor: Color): Color {
 }
 
 @Composable
+fun liquidGlassStrongContentColor(defaultColor: Color): Color {
+    return if (isLiquidGlassTheme()) {
+        MaterialTheme.colorScheme.onSurface
+    } else {
+        defaultColor
+    }
+}
+
+@Composable
 fun Modifier.liquidGlassPanel(
     shape: Shape = RoundedCornerShape(16.dp),
     selected: Boolean = false,
