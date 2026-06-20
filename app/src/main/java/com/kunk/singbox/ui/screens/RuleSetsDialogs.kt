@@ -87,6 +87,11 @@ private fun Modifier.ruleSetItemPressFeedback(onClick: () -> Unit): Modifier {
 }
 
 @Composable
+private fun ruleSetBadgeContentColor(defaultColor: Color): Color {
+    return if (isLiquidGlassTheme()) MaterialTheme.colorScheme.primary else defaultColor
+}
+
+@Composable
 private fun RuleSetBadge(
     text: String,
     backgroundColor: Color,
@@ -106,7 +111,7 @@ private fun RuleSetBadge(
     ) {
         Text(
             text = text,
-            color = contentColor,
+            color = ruleSetBadgeContentColor(contentColor),
             style = MaterialTheme.typography.labelSmall
         )
     }
@@ -483,9 +488,21 @@ fun RuleSetEditorDialog(
                 if (initialRuleSet != null && onDelete != null) {
                     TextButton(
                         modifier = Modifier.liquidGlassTextButtonPanel(),
+                        colors = ButtonDefaults.textButtonColors(
+                            contentColor = liquidGlassTextButtonContentColor(
+                                defaultColor = MaterialTheme.colorScheme.error,
+                                liquidColor = MaterialTheme.colorScheme.error
+                            )
+                        ),
                         onClick = { showDeleteConfirm = true }
                     ) {
-                        Text(stringResource(R.string.common_delete), color = MaterialTheme.colorScheme.error)
+                        Text(
+                            stringResource(R.string.common_delete),
+                            color = liquidGlassTextButtonContentColor(
+                                defaultColor = MaterialTheme.colorScheme.error,
+                                liquidColor = MaterialTheme.colorScheme.error
+                            )
+                        )
                     }
                 }
                 TextButton(

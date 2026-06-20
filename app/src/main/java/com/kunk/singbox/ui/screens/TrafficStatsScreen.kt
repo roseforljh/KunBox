@@ -113,6 +113,17 @@ private fun Modifier.trafficRankPanel(defaultColor: Color): Modifier {
 }
 
 @Composable
+private fun trafficRankTextColor(rank: Int): Color {
+    return if (isLiquidGlassTheme()) {
+        MaterialTheme.colorScheme.primary
+    } else if (rank <= 3) {
+        Color.White
+    } else {
+        MaterialTheme.colorScheme.onSurfaceVariant
+    }
+}
+
+@Composable
 private fun Modifier.trafficLegendMarkerPanel(defaultColor: Color): Modifier {
     return if (isLiquidGlassTheme()) {
         size(14.dp)
@@ -649,7 +660,7 @@ private fun NodeRankingItem(
                     text = rank.toString(),
                     style = MaterialTheme.typography.labelMedium,
                     fontWeight = FontWeight.Bold,
-                    color = if (rank <= 3) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
+                    color = trafficRankTextColor(rank)
                 )
             }
 

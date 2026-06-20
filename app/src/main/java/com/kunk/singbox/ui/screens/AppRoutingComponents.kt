@@ -57,6 +57,7 @@ import com.kunk.singbox.ui.theme.liquidGlassPressFeedback
 import com.kunk.singbox.ui.theme.liquidGlassTextFieldBorderColor
 import com.kunk.singbox.ui.theme.liquidGlassTextFieldContainerColor
 import com.kunk.singbox.ui.theme.liquidGlassTextFieldPanel
+import com.kunk.singbox.ui.theme.liquidGlassTextButtonContentColor
 import com.kunk.singbox.ui.theme.liquidGlassTextButtonPanel
 
 private const val APP_INFO_SEPARATOR = "\t"
@@ -497,6 +498,9 @@ fun AppRuleEditorDialog(
         confirmButton = {
             TextButton(
                 modifier = Modifier.liquidGlassTextButtonPanel(enabled = selectedApp != null),
+                colors = ButtonDefaults.textButtonColors(
+                    contentColor = liquidGlassTextButtonContentColor(MaterialTheme.colorScheme.primary)
+                ),
                 onClick = {
                     selectedApp?.let { app ->
                         val rule = initialRule?.copy(
@@ -517,18 +521,31 @@ fun AppRuleEditorDialog(
             ) {
                 Text(
                     stringResource(R.string.common_save),
-                    color = if (selectedApp != null) MaterialTheme.colorScheme.primary else Neutral500
+                    color = if (selectedApp != null) {
+                        liquidGlassTextButtonContentColor(MaterialTheme.colorScheme.primary)
+                    } else {
+                        Neutral500
+                    }
                 )
             }
         },
         dismissButton = {
             TextButton(
                 modifier = Modifier.liquidGlassTextButtonPanel(),
+                colors = ButtonDefaults.textButtonColors(
+                    contentColor = liquidGlassTextButtonContentColor(
+                        defaultColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                        liquidColor = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                ),
                 onClick = onDismiss
             ) {
                 Text(
                     stringResource(R.string.common_cancel),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = liquidGlassTextButtonContentColor(
+                        defaultColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                        liquidColor = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 )
             }
         }
@@ -628,9 +645,21 @@ fun AppPickerDialog(apps: List<InstalledApp>, existingPackages: Set<String>, onS
         dismissButton = {
             TextButton(
                 modifier = Modifier.liquidGlassTextButtonPanel(),
+                colors = ButtonDefaults.textButtonColors(
+                    contentColor = liquidGlassTextButtonContentColor(
+                        defaultColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                        liquidColor = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                ),
                 onClick = onDismiss
             ) {
-                Text(stringResource(R.string.common_cancel), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(
+                    stringResource(R.string.common_cancel),
+                    color = liquidGlassTextButtonContentColor(
+                        defaultColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                        liquidColor = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                )
             }
         }
     )
@@ -1032,11 +1061,20 @@ fun MultiAppSelectorDialog(
         dismissButton = {
             TextButton(
                 modifier = Modifier.liquidGlassTextButtonPanel(),
+                colors = ButtonDefaults.textButtonColors(
+                    contentColor = liquidGlassTextButtonContentColor(
+                        defaultColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                        liquidColor = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                ),
                 onClick = onDismiss
             ) {
                 Text(
                     stringResource(R.string.common_cancel),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = liquidGlassTextButtonContentColor(
+                        defaultColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                        liquidColor = MaterialTheme.colorScheme.onSurfaceVariant
+                    ),
                     fontSize = 13.sp
                 )
             }
@@ -1245,6 +1283,9 @@ fun AppGroupEditorDialog(
                         Text(stringResource(R.string.app_rules_tabs_individual) + " (${selectedApps.size})", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.Medium)
                         TextButton(
                             modifier = Modifier.liquidGlassTextButtonPanel(),
+                            colors = ButtonDefaults.textButtonColors(
+                                contentColor = liquidGlassTextButtonContentColor(MaterialTheme.colorScheme.primary)
+                            ),
                             onClick = { showAppSelector = true }
                         ) {
                             Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(16.dp))
@@ -1314,9 +1355,21 @@ fun AppGroupEditorDialog(
         dismissButton = {
             TextButton(
                 modifier = Modifier.liquidGlassTextButtonPanel(),
+                colors = ButtonDefaults.textButtonColors(
+                    contentColor = liquidGlassTextButtonContentColor(
+                        defaultColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                        liquidColor = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                ),
                 onClick = onDismiss
             ) {
-                Text(stringResource(R.string.common_cancel), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(
+                    stringResource(R.string.common_cancel),
+                    color = liquidGlassTextButtonContentColor(
+                        defaultColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                        liquidColor = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                )
             }
         }
     )

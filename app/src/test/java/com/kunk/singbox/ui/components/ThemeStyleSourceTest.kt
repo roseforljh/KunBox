@@ -145,6 +145,7 @@ class ThemeStyleSourceTest {
         val profileCard = File("src/main/java/com/kunk/singbox/ui/components/ProfileCard.kt").readText()
 
         assertTrue(profileCard.contains("profileBadgePanel("))
+        assertTrue(profileCard.contains("profileBadgeContentColor("))
     }
 
     @Test
@@ -228,6 +229,7 @@ class ThemeStyleSourceTest {
 
         assertTrue(source.contains("trafficStatIconPanel("))
         assertTrue(source.contains("trafficRankPanel("))
+        assertTrue(source.contains("trafficRankTextColor("))
         assertTrue(source.contains("trafficLegendMarkerPanel("))
     }
 
@@ -283,7 +285,9 @@ class ThemeStyleSourceTest {
         val connectionInfo = File("src/main/java/com/kunk/singbox/ui/screens/ConnectionInfoScreen.kt").readText()
 
         assertTrue(ruleSetHub.contains("RuleSetBadge("))
+        assertTrue(ruleSetHub.contains("ruleSetBadgeContentColor("))
         assertTrue(ruleSetsDialogs.contains("RuleSetBadge("))
+        assertTrue(ruleSetsDialogs.contains("ruleSetBadgeContentColor("))
         assertTrue(connectionInfo.contains("connectionEmptyIconPanel()"))
         assertTrue(connectionInfo.contains("connectionMetaBadgePanel("))
         assertTrue(connectionInfo.contains("connectionProtocolBadgePanel("))

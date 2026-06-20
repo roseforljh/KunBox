@@ -83,6 +83,7 @@ import com.kunk.singbox.ui.theme.liquidGlassSwitchColors
 import com.kunk.singbox.ui.theme.liquidGlassTextFieldBorderColor
 import com.kunk.singbox.ui.theme.liquidGlassTextFieldContainerColor
 import com.kunk.singbox.ui.theme.liquidGlassTextFieldPanel
+import com.kunk.singbox.ui.theme.liquidGlassTextButtonContentColor
 import com.kunk.singbox.ui.theme.liquidGlassTextButtonPanel
 
 @Composable
@@ -520,7 +521,10 @@ internal fun CustomConfigDialog(
                     .height(50.dp)
                     .liquidGlassTextButtonPanel(shape = RoundedCornerShape(25.dp)),
                 colors = ButtonDefaults.textButtonColors(
-                    contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                    contentColor = liquidGlassTextButtonContentColor(
+                        defaultColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                        liquidColor = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 )
             ) {
                 Text(stringResource(R.string.common_cancel))
@@ -615,13 +619,22 @@ internal fun ImportLoadingDialog(message: String, onCancel: () -> Unit = {}) {
             )
             TextButton(
                 onClick = onCancel,
+                colors = ButtonDefaults.textButtonColors(
+                    contentColor = liquidGlassTextButtonContentColor(
+                        defaultColor = MaterialTheme.colorScheme.error,
+                        liquidColor = MaterialTheme.colorScheme.error
+                    )
+                ),
                 modifier = Modifier
                     .align(Alignment.End)
                     .liquidGlassTextButtonPanel()
             ) {
                 Text(
                     text = stringResource(R.string.common_cancel),
-                    color = MaterialTheme.colorScheme.error
+                    color = liquidGlassTextButtonContentColor(
+                        defaultColor = MaterialTheme.colorScheme.error,
+                        liquidColor = MaterialTheme.colorScheme.error
+                    )
                 )
             }
         }
@@ -1152,7 +1165,12 @@ internal fun SubscriptionInputDialog(
                     .fillMaxWidth()
                     .height(50.dp)
                     .liquidGlassTextButtonPanel(shape = RoundedCornerShape(25.dp)),
-                colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.onSurfaceVariant)
+                colors = ButtonDefaults.textButtonColors(
+                    contentColor = liquidGlassTextButtonContentColor(
+                        defaultColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                        liquidColor = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                )
             ) {
                 Text(stringResource(R.string.common_cancel))
             }

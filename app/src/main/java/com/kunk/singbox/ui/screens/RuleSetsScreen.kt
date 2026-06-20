@@ -53,6 +53,7 @@ import com.kunk.singbox.ui.theme.liquidGlassEmptyStatePanel
 import com.kunk.singbox.ui.theme.liquidGlassIconButtonPanel
 import com.kunk.singbox.ui.theme.liquidGlassPanel
 import com.kunk.singbox.ui.theme.liquidGlassPressFeedback
+import com.kunk.singbox.ui.theme.liquidGlassTextButtonContentColor
 import com.kunk.singbox.ui.theme.liquidGlassTextButtonPanel
 import kotlinx.coroutines.launch
 import com.kunk.singbox.ui.theme.liquidGlassTopAppBarContainerColor
@@ -429,6 +430,9 @@ fun RuleSetsScreen(
             confirmButton = {
                 TextButton(
                     modifier = Modifier.liquidGlassTextButtonPanel(),
+                    colors = ButtonDefaults.textButtonColors(
+                        contentColor = liquidGlassTextButtonContentColor(MaterialTheme.colorScheme.primary)
+                    ),
                     onClick = {
                         val ruleSet = outboundEditingRuleSet ?: currentRuleSet
                         settingsViewModel.updateRuleSet(ruleSet)
@@ -442,6 +446,12 @@ fun RuleSetsScreen(
             dismissButton = {
                 TextButton(
                     modifier = Modifier.liquidGlassTextButtonPanel(),
+                    colors = ButtonDefaults.textButtonColors(
+                        contentColor = liquidGlassTextButtonContentColor(
+                            defaultColor = MaterialTheme.colorScheme.primary,
+                            liquidColor = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    ),
                     onClick = {
                         showInboundDialog = false
                         outboundEditingRuleSet = null

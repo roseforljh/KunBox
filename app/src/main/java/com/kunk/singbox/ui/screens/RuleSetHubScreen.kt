@@ -42,10 +42,16 @@ import com.kunk.singbox.ui.theme.liquidGlassProgressTrackColor
 import com.kunk.singbox.ui.theme.liquidGlassTextFieldBorderColor
 import com.kunk.singbox.ui.theme.liquidGlassTextFieldContainerColor
 import com.kunk.singbox.ui.theme.liquidGlassTextFieldPanel
+import com.kunk.singbox.ui.theme.liquidGlassTextButtonContentColor
 import com.kunk.singbox.ui.theme.liquidGlassTextButtonPanel
 import com.kunk.singbox.viewmodel.RuleSetViewModel
 import com.kunk.singbox.viewmodel.SettingsViewModel
 import com.kunk.singbox.ui.theme.liquidGlassTopAppBarContainerColor
+
+@Composable
+private fun ruleSetBadgeContentColor(defaultColor: Color): Color {
+    return if (isLiquidGlassTheme()) MaterialTheme.colorScheme.primary else defaultColor
+}
 
 @Composable
 private fun RuleSetBadge(
@@ -68,7 +74,7 @@ private fun RuleSetBadge(
     ) {
         Text(
             text = text,
-            color = contentColor,
+            color = ruleSetBadgeContentColor(contentColor),
             style = MaterialTheme.typography.labelSmall
         )
     }
@@ -454,25 +460,31 @@ private fun HubRuleSetItemActions(
     ) {
         TextButton(
             modifier = Modifier.liquidGlassTextButtonPanel(),
+            colors = ButtonDefaults.textButtonColors(
+                contentColor = liquidGlassTextButtonContentColor(MaterialTheme.colorScheme.primary)
+            ),
             onClick = onAddSource,
             contentPadding = PaddingValues(horizontal = 8.dp)
         ) {
             Text(
                 stringResource(R.string.common_add) + " Source",
                 fontSize = 12.sp,
-                color = MaterialTheme.colorScheme.primary
+                color = liquidGlassTextButtonContentColor(MaterialTheme.colorScheme.primary)
             )
         }
 
         TextButton(
             modifier = Modifier.liquidGlassTextButtonPanel(),
+            colors = ButtonDefaults.textButtonColors(
+                contentColor = liquidGlassTextButtonContentColor(MaterialTheme.colorScheme.primary)
+            ),
             onClick = onAddBinary,
             contentPadding = PaddingValues(horizontal = 8.dp)
         ) {
             Text(
                 stringResource(R.string.common_add) + " Binary",
                 fontSize = 12.sp,
-                color = MaterialTheme.colorScheme.primary
+                color = liquidGlassTextButtonContentColor(MaterialTheme.colorScheme.primary)
             )
         }
     }

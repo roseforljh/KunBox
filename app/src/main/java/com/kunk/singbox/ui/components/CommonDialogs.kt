@@ -54,6 +54,7 @@ import com.kunk.singbox.ui.theme.liquidGlassPressFeedback
 import com.kunk.singbox.ui.theme.liquidGlassTextFieldBorderColor
 import com.kunk.singbox.ui.theme.liquidGlassTextFieldContainerColor
 import com.kunk.singbox.ui.theme.liquidGlassTextFieldPanel
+import com.kunk.singbox.ui.theme.liquidGlassTextButtonContentColor
 import com.kunk.singbox.ui.theme.liquidGlassTextButtonPanel
 
 @Composable
@@ -160,7 +161,12 @@ fun ConfirmDialog(
                     .fillMaxWidth()
                     .height(50.dp)
                     .liquidGlassTextButtonPanel(shape = RoundedCornerShape(25.dp)),
-                colors = ButtonDefaults.textButtonColors(contentColor = Neutral500)
+                colors = ButtonDefaults.textButtonColors(
+                    contentColor = liquidGlassTextButtonContentColor(
+                        defaultColor = Neutral500,
+                        liquidColor = Neutral500
+                    )
+                )
             ) {
                 Text(stringResource(R.string.common_cancel))
             }
@@ -291,7 +297,12 @@ fun InputDialog(
                     .fillMaxWidth()
                     .height(50.dp)
                     .liquidGlassTextButtonPanel(shape = RoundedCornerShape(25.dp)),
-                colors = ButtonDefaults.textButtonColors(contentColor = Neutral500)
+                colors = ButtonDefaults.textButtonColors(
+                    contentColor = liquidGlassTextButtonContentColor(
+                        defaultColor = Neutral500,
+                        liquidColor = Neutral500
+                    )
+                )
             ) {
                 Text(stringResource(R.string.common_cancel))
             }
@@ -409,7 +420,12 @@ fun SingleSelectDialog(
                     .fillMaxWidth()
                     .height(50.dp)
                     .liquidGlassTextButtonPanel(shape = RoundedCornerShape(25.dp)),
-                colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.onSurfaceVariant)
+                colors = ButtonDefaults.textButtonColors(
+                    contentColor = liquidGlassTextButtonContentColor(
+                        defaultColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                        liquidColor = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                )
             ) {
                 Text(stringResource(R.string.common_cancel))
             }

@@ -357,6 +357,16 @@ class LiquidGlassMaterialCallCoverageTest {
     }
 
     @Test
+    fun connectionOverviewAvoidsMaterialCardInLiquidBranch() {
+        val source = File("src/main/java/com/kunk/singbox/ui/screens/ConnectionInfoScreen.kt").readText()
+
+        assertTrue(source.contains("private fun OverviewCardContent("))
+        assertTrue(source.contains("if (isLiquidGlassTheme()) {\n        Column("))
+        assertTrue(source.contains(".connectionOverviewPanel()"))
+        assertTrue(source.contains("OverviewCardContent("))
+    }
+
+    @Test
     fun mainActivityAvoidsMaterialSurfaceInLiquidBranch() {
         val source = File("src/main/java/com/kunk/singbox/MainActivity.kt").readText()
 
@@ -481,7 +491,12 @@ class LiquidGlassMaterialCallCoverageTest {
                 listOf("liquidGlassButtonContainerColor"),
                 listOf("liquidGlassButtonContentColor")
             ),
-            materialCallRule("TextButton", listOf("liquidGlassTextButtonPanel")),
+            materialCallRule(
+                "TextButton",
+                listOf("liquidGlassTextButtonPanel"),
+                listOf("ButtonDefaults.textButtonColors"),
+                listOf("liquidGlassTextButtonContentColor")
+            ),
             materialCallRule("IconButton", listOf("liquidGlassIconButtonPanel", "connectionCloseButtonPanel")),
             materialCallRule(
                 "FloatingActionButton",
@@ -702,13 +717,13 @@ class LiquidGlassMaterialCallCoverageTest {
             "MainActivity.kt:367:Surface:Surface(",
             "ui/components/AppNavBar.kt:111:NavigationBar:NavigationBar(",
             "ui/components/AppNavBar.kt:164:NavigationBarItem:NavigationBarItem(",
-            "ui/components/ExportImportDialogs.kt:67:Card:Card(",
+            "ui/components/ExportImportDialogs.kt:68:Card:Card(",
             "ui/components/StandardCard.kt:64:Card:Card(",
             "ui/components/StandardCard.kt:75:Card:Card(",
             "ui/screens/AppRoutingScreen.kt:51:Tab:Tab(",
-            "ui/screens/ConnectionInfoScreen.kt:569:Card:Card(",
-            "ui/screens/ConnectionInfoScreen.kt:697:Card:Card(",
-            "ui/screens/RuleSetHubScreen.kt:338:Card:Card(",
+            "ui/screens/ConnectionInfoScreen.kt:586:Card:Card(",
+            "ui/screens/ConnectionInfoScreen.kt:714:Card:Card(",
+            "ui/screens/RuleSetHubScreen.kt:344:Card:Card(",
             "ui/theme/LiquidGlassChipControls.kt:75:FilterChip:FilterChip(",
             "ui/theme/LiquidGlassMenuControls.kt:21:DropdownMenu:DropdownMenu(",
             "ui/theme/LiquidGlassMenuControls.kt:31:DropdownMenu:DropdownMenu("

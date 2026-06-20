@@ -92,6 +92,11 @@ private fun Modifier.profileBadgePanel(
 }
 
 @Composable
+private fun profileBadgeContentColor(defaultColor: Color): Color {
+    return if (isLiquidGlassTheme()) MaterialTheme.colorScheme.primary else defaultColor
+}
+
+@Composable
 private fun Modifier.profileSelectedIndicatorPanel(): Modifier {
     return if (isLiquidGlassTheme()) {
         liquidGlassPanel(shape = CircleShape, selected = true, shadowElevation = 4.dp)
@@ -177,11 +182,13 @@ fun ProfileCard(
     } else {
         MaterialTheme.colorScheme.primaryContainer
     }
-    val stageTextColor = if (updateStage?.isBackground == true) {
-        MaterialTheme.colorScheme.onSecondaryContainer
-    } else {
-        MaterialTheme.colorScheme.primary
-    }
+    val stageTextColor = profileBadgeContentColor(
+        if (updateStage?.isBackground == true) {
+            MaterialTheme.colorScheme.onSecondaryContainer
+        } else {
+            MaterialTheme.colorScheme.primary
+        }
+    )
     val shape = RoundedCornerShape(16.dp)
     val useLiquidGlass = isLiquidGlassTheme()
     val cardModifier = if (useLiquidGlass) {
@@ -316,7 +323,7 @@ fun ProfileCard(
                         Text(
                             text = "DNS",
                             style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.primary,
+                            color = profileBadgeContentColor(MaterialTheme.colorScheme.primary),
                             modifier = Modifier
                                 .profileBadgePanel(
                                     defaultColor = MaterialTheme.colorScheme.primaryContainer,

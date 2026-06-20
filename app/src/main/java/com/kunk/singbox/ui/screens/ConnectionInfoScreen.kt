@@ -41,6 +41,7 @@ import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -85,6 +86,7 @@ import com.kunk.singbox.ui.theme.liquidGlassPanel
 import com.kunk.singbox.ui.theme.liquidGlassDialogContainerColor
 import com.kunk.singbox.ui.theme.liquidGlassDialogPanel
 import com.kunk.singbox.ui.theme.liquidGlassIconButtonPanel
+import com.kunk.singbox.ui.theme.liquidGlassTextButtonContentColor
 import com.kunk.singbox.ui.theme.liquidGlassTextButtonPanel
 import com.kunk.singbox.viewmodel.ConnectionInfoViewModel
 import java.util.Locale
@@ -285,6 +287,12 @@ fun ConnectionInfoScreen(
             confirmButton = {
                 TextButton(
                     modifier = Modifier.liquidGlassTextButtonPanel(),
+                    colors = ButtonDefaults.textButtonColors(
+                        contentColor = liquidGlassTextButtonContentColor(
+                            defaultColor = MaterialTheme.colorScheme.error,
+                            liquidColor = MaterialTheme.colorScheme.error
+                        )
+                    ),
                     onClick = {
                         viewModel.closeAllConnections()
                         showConfirmDeleteAll = false
@@ -292,13 +300,22 @@ fun ConnectionInfoScreen(
                 ) {
                     Text(
                         stringResource(R.string.traffic_stats_clear_button),
-                        color = MaterialTheme.colorScheme.error
+                        color = liquidGlassTextButtonContentColor(
+                            defaultColor = MaterialTheme.colorScheme.error,
+                            liquidColor = MaterialTheme.colorScheme.error
+                        )
                     )
                 }
             },
             dismissButton = {
                 TextButton(
                     modifier = Modifier.liquidGlassTextButtonPanel(),
+                    colors = ButtonDefaults.textButtonColors(
+                        contentColor = liquidGlassTextButtonContentColor(
+                            defaultColor = MaterialTheme.colorScheme.primary,
+                            liquidColor = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    ),
                     onClick = { showConfirmDeleteAll = false }
                 ) {
                     Text(stringResource(R.string.common_cancel))

@@ -40,6 +40,7 @@ import com.kunk.singbox.ui.theme.liquidGlassDialogContainerColor
 import com.kunk.singbox.ui.theme.liquidGlassDialogPanel
 import com.kunk.singbox.ui.theme.liquidGlassEmptyStatePanel
 import com.kunk.singbox.ui.theme.liquidGlassIconButtonPanel
+import com.kunk.singbox.ui.theme.liquidGlassTextButtonContentColor
 import com.kunk.singbox.ui.theme.liquidGlassTextButtonPanel
 import com.kunk.singbox.viewmodel.SettingsViewModel
 import com.kunk.singbox.ui.theme.isLiquidGlassTheme
@@ -342,6 +343,9 @@ fun CustomRuleEditorDialog(
                 modifier = Modifier.liquidGlassTextButtonPanel(
                     enabled = name.isNotBlank() && value.isNotBlank()
                 ),
+                colors = ButtonDefaults.textButtonColors(
+                    contentColor = liquidGlassTextButtonContentColor(MaterialTheme.colorScheme.primary)
+                ),
                 onClick = {
                     val newRule = initialRule?.copy(
                         name = name.trim(),
@@ -366,16 +370,40 @@ fun CustomRuleEditorDialog(
                 if (initialRule != null && onDelete != null) {
                     TextButton(
                         modifier = Modifier.liquidGlassTextButtonPanel(),
+                        colors = ButtonDefaults.textButtonColors(
+                            contentColor = liquidGlassTextButtonContentColor(
+                                defaultColor = MaterialTheme.colorScheme.error,
+                                liquidColor = MaterialTheme.colorScheme.error
+                            )
+                        ),
                         onClick = { showDeleteConfirm = true }
                     ) {
-                        Text(stringResource(R.string.common_delete), color = MaterialTheme.colorScheme.error)
+                        Text(
+                            stringResource(R.string.common_delete),
+                            color = liquidGlassTextButtonContentColor(
+                                defaultColor = MaterialTheme.colorScheme.error,
+                                liquidColor = MaterialTheme.colorScheme.error
+                            )
+                        )
                     }
                 }
                 TextButton(
                     modifier = Modifier.liquidGlassTextButtonPanel(),
+                    colors = ButtonDefaults.textButtonColors(
+                        contentColor = liquidGlassTextButtonContentColor(
+                            defaultColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                            liquidColor = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    ),
                     onClick = onDismiss
                 ) {
-                    Text(stringResource(R.string.common_cancel), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(
+                        stringResource(R.string.common_cancel),
+                        color = liquidGlassTextButtonContentColor(
+                            defaultColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                            liquidColor = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    )
                 }
             }
         }

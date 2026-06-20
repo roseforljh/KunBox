@@ -47,6 +47,7 @@ import com.kunk.singbox.ui.theme.liquidGlassButtonContentColor
 import com.kunk.singbox.ui.theme.liquidGlassButtonPanel
 import com.kunk.singbox.ui.theme.liquidGlassPanel
 import com.kunk.singbox.ui.theme.liquidGlassPressFeedback
+import com.kunk.singbox.ui.theme.liquidGlassTextButtonContentColor
 import com.kunk.singbox.ui.theme.liquidGlassTextButtonPanel
 
 @Composable
@@ -258,7 +259,12 @@ internal fun DetourNodeSelectDialog(
                         .weight(1f)
                         .height(50.dp)
                         .liquidGlassTextButtonPanel(shape = RoundedCornerShape(25.dp)),
-                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.onSurfaceVariant)
+                    colors = ButtonDefaults.textButtonColors(
+                        contentColor = liquidGlassTextButtonContentColor(
+                            defaultColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                            liquidColor = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    )
                 ) {
                     Text(stringResource(R.string.common_cancel))
                 }

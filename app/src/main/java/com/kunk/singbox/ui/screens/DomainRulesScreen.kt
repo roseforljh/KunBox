@@ -80,6 +80,7 @@ import com.kunk.singbox.ui.theme.liquidGlassIconButtonPanel
 import com.kunk.singbox.ui.theme.liquidGlassOutlinedButtonBorder
 import com.kunk.singbox.ui.theme.liquidGlassPanel
 import com.kunk.singbox.ui.theme.liquidGlassPressFeedback
+import com.kunk.singbox.ui.theme.liquidGlassTextButtonContentColor
 import com.kunk.singbox.ui.theme.liquidGlassTextButtonPanel
 import com.kunk.singbox.viewmodel.NodesViewModel
 import com.kunk.singbox.viewmodel.ProfilesViewModel
@@ -591,7 +592,12 @@ private fun DomainRuleEditorDialog(
                     TextButton(
                         modifier = Modifier.liquidGlassTextButtonPanel(),
                         onClick = { showDeleteConfirm = true },
-                        colors = ButtonDefaults.textButtonColors(contentColor = Destructive)
+                        colors = ButtonDefaults.textButtonColors(
+                            contentColor = liquidGlassTextButtonContentColor(
+                                defaultColor = Destructive,
+                                liquidColor = Destructive
+                            )
+                        )
                     ) {
                         Text(stringResource(R.string.common_delete))
                     }
