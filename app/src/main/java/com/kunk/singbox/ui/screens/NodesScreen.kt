@@ -714,7 +714,12 @@ fun NodesScreen(
                     LazyVerticalGrid(
                         columns = GridCells.Fixed(nodeColumnCount),
                         state = gridState,
-                        contentPadding = PaddingValues(bottom = 88.dp, top = 12.dp, start = 16.dp, end = 16.dp),
+                        contentPadding = PaddingValues(
+                            bottom = 16.dp + bottomContentPadding,
+                            top = 12.dp,
+                            start = 16.dp,
+                            end = 16.dp
+                        ),
                         horizontalArrangement = Arrangement.spacedBy(12.dp),
                         verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {

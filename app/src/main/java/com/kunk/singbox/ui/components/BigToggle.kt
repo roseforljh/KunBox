@@ -1,4 +1,4 @@
-﻿package com.kunk.singbox.ui.components
+package com.kunk.singbox.ui.components
 
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.SizeTransform
@@ -151,21 +151,10 @@ fun BigToggle(
 
     // Color animations
 
-    val backgroundColor = Color.Transparent
-    val touchSurfaceModifier = if (isLiquidGlassTheme()) {
-        Modifier
-            .size(200.dp)
-            .liquidGlassPanel(
-                shape = CircleShape,
-                selected = isRunning,
-                shadowElevation = 18.dp
-            )
-    } else {
-        Modifier
-            .size(200.dp)
-            .clip(CircleShape)
-            .background(backgroundColor)
-    }
+    val touchSurfaceModifier = Modifier
+        .size(200.dp)
+        .clip(CircleShape)
+        .background(Color.Transparent)
 
     Box(
         contentAlignment = Alignment.Center,

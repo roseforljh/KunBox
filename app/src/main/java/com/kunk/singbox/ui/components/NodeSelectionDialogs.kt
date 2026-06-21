@@ -86,6 +86,7 @@ import com.kunk.singbox.ui.theme.liquidGlassTextFieldPanel
 import com.kunk.singbox.ui.theme.liquidGlassTextButtonColors
 import com.kunk.singbox.ui.theme.liquidGlassTextButtonContentColor
 import com.kunk.singbox.ui.theme.liquidGlassTextButtonPanel
+import com.kunk.singbox.ui.theme.LiquidGlassDialogEffect
 
 @Composable
 private fun Modifier.nodeSelectionDialogPanel(shape: RoundedCornerShape = RoundedCornerShape(28.dp)): Modifier {
@@ -570,6 +571,7 @@ fun AboutDialog(onDismiss: () -> Unit) {
     }
 
     Dialog(onDismissRequest = onDismiss) {
+        LiquidGlassDialogEffect()
         Column(
             modifier = Modifier
                 .fillMaxWidth()

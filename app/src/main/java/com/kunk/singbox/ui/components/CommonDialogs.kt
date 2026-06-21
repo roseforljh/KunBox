@@ -5,6 +5,10 @@ import com.kunk.singbox.R
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Column
 import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.layout.Box
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -35,6 +39,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.boundsInParent
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -51,6 +58,8 @@ import com.kunk.singbox.ui.theme.liquidGlassButtonPanel
 import com.kunk.singbox.ui.theme.liquidGlassMutedContentColor
 import com.kunk.singbox.ui.theme.liquidGlassOutlinedTextFieldColors
 import com.kunk.singbox.ui.theme.liquidGlassPanel
+import com.kunk.singbox.ui.theme.liquidGlassDialogPanel
+import com.kunk.singbox.ui.theme.LiquidGlassDialogEffect
 import com.kunk.singbox.ui.theme.liquidGlassPressFeedback
 import com.kunk.singbox.ui.theme.liquidGlassTextFieldBorderColor
 import com.kunk.singbox.ui.theme.liquidGlassTextFieldContainerColor
@@ -61,18 +70,19 @@ import com.kunk.singbox.ui.theme.liquidGlassTextButtonPanel
 
 @Composable
 private fun Modifier.dialogPanel(shape: RoundedCornerShape = RoundedCornerShape(28.dp)): Modifier {
-    return if (isLiquidGlassTheme()) {
-        liquidGlassPanel(shape = shape, shadowElevation = 22.dp)
-    } else {
-        background(MaterialTheme.colorScheme.surface, shape)
-    }
+    return this.liquidGlassDialogPanel(shape = shape, shadowElevation = 22.dp)
+        .then(if (!isLiquidGlassTheme()) Modifier.background(MaterialTheme.colorScheme.surface, shape) else Modifier)
 }
 
 @Composable
 private fun Modifier.dialogOptionPanel(isSelected: Boolean): Modifier {
     val shape = RoundedCornerShape(12.dp)
     return if (isLiquidGlassTheme()) {
-        liquidGlassPanel(shape = shape, selected = isSelected, shadowElevation = 4.dp)
+        if (isSelected) {
+            this.liquidGlassPanel(shape = shape, selected = true, shadowElevation = 4.dp)
+        } else {
+            this.clip(shape)
+        }
     } else {
         background(
             if (isSelected) {
@@ -130,6 +140,7 @@ fun ConfirmDialog(
     onDismiss: () -> Unit
 ) {
     Dialog(onDismissRequest = onDismiss) {
+        LiquidGlassDialogEffect()
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -196,6 +207,7 @@ fun InputDialog(
     val textFieldShape = RoundedCornerShape(16.dp)
 
     Dialog(onDismissRequest = onDismiss) {
+        LiquidGlassDialogEffect()
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -337,6 +349,7 @@ fun SingleSelectDialog(
     val canConfirm = tempSelectedIndex in options.indices
 
     Dialog(onDismissRequest = onDismiss) {
+        LiquidGlassDialogEffect()
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -351,44 +364,74 @@ fun SingleSelectDialog(
             )
             Spacer(modifier = Modifier.height(16.dp))
 
-            Column(
+            Box(
                 modifier = Modifier
                     .then(
                         if (optionsHeight != null) {
                             Modifier.height(optionsHeight)
                         } else {
-                            Modifier.weight(weight = 1f, fill = false) // Allow flexible height but constrained by screen
+                            Modifier.weight(weight = 1f, fill = false)
                         }
                     )
-                    .verticalScroll(rememberScrollState())
             ) {
-                options.forEachIndexed { index, option ->
-                    val isSelected = index == tempSelectedIndex
-                    Row(
+                val itemPositions = remember { androidx.compose.runtime.mutableStateMapOf<Int, androidx.compose.ui.geometry.Rect>() }
+                val selectedBounds = itemPositions[tempSelectedIndex]
+                val targetY = selectedBounds?.top ?: 0f
+                val targetHeight = selectedBounds?.height ?: 0f
+
+                val animatedY by animateFloatAsState(
+                    targetValue = targetY,
+                    animationSpec = spring(stiffness = androidx.compose.animation.core.Spring.StiffnessMediumLow),
+                    label = "dialog_highlight_y"
+                )
+                val animatedHeight by animateFloatAsState(
+                    targetValue = targetHeight,
+                    animationSpec = spring(stiffness = androidx.compose.animation.core.Spring.StiffnessMediumLow),
+                    label = "dialog_highlight_height"
+                )
+
+                if (targetHeight > 0) {
+                    Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clip(RoundedCornerShape(12.dp))
-                            .dialogOptionPanel(isSelected)
-                            .liquidGlassPressFeedback(
-                                label = "liquid_glass_dialog_option_scale"
-                            ) {
-                                tempSelectedIndex = index
-                            }
-                            .padding(vertical = 12.dp, horizontal = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            imageVector = if (isSelected) Icons.Rounded.RadioButtonChecked else Icons.Rounded.RadioButtonUnchecked,
-                            contentDescription = null,
-                            tint = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(24.dp)
-                        )
-                        Spacer(modifier = Modifier.width(16.dp))
-                        Text(
-                            text = option,
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
-                        )
+                            .graphicsLayer { translationY = animatedY }
+                            .height(with(androidx.compose.ui.platform.LocalDensity.current) { animatedHeight.toDp() })
+                            .dialogOptionPanel(isSelected = true)
+                    )
+                }
+
+                Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                    options.forEachIndexed { index, option ->
+                        val isSelected = index == tempSelectedIndex
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .onGloballyPositioned { coordinates ->
+                                    itemPositions[index] = coordinates.boundsInParent()
+                                }
+                                .clip(RoundedCornerShape(12.dp))
+                                .dialogOptionPanel(isSelected = false) // Ensures it gets the unselected transparent clip
+                                .liquidGlassPressFeedback(
+                                    label = "liquid_glass_dialog_option_scale"
+                                ) {
+                                    tempSelectedIndex = index
+                                }
+                                .padding(vertical = 12.dp, horizontal = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = if (isSelected) Icons.Rounded.RadioButtonChecked else Icons.Rounded.RadioButtonUnchecked,
+                                contentDescription = null,
+                                tint = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(24.dp)
+                            )
+                            Spacer(modifier = Modifier.width(16.dp))
+                            Text(
+                                text = option,
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                            )
+                        }
                     }
                 }
             }

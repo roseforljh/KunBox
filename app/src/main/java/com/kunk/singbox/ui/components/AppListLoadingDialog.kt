@@ -1,4 +1,4 @@
-﻿package com.kunk.singbox.ui.components
+package com.kunk.singbox.ui.components
 
 import com.kunk.singbox.R
 import androidx.compose.foundation.background
@@ -33,14 +33,14 @@ import com.kunk.singbox.ui.theme.liquidGlassPanel
 import com.kunk.singbox.ui.theme.liquidGlassProgressColor
 import com.kunk.singbox.ui.theme.liquidGlassProgressTrackColor
 import com.kunk.singbox.ui.theme.liquidGlassStrongContentColor
+import com.kunk.singbox.ui.theme.LiquidGlassDialogEffect
+
+import com.kunk.singbox.ui.theme.liquidGlassDialogPanel
 
 @Composable
 private fun Modifier.loadingDialogPanel(shape: RoundedCornerShape = RoundedCornerShape(28.dp)): Modifier {
-    return if (isLiquidGlassTheme()) {
-        liquidGlassPanel(shape = shape, shadowElevation = 24.dp)
-    } else {
-        background(SurfaceCard, shape)
-    }
+    return this.liquidGlassDialogPanel(shape = shape, shadowElevation = 24.dp)
+        .then(if (!isLiquidGlassTheme()) Modifier.background(SurfaceCard, shape) else Modifier)
 }
 
 /**
@@ -59,6 +59,7 @@ fun AppListLoadingDialog(
             dismissOnClickOutside = false
         )
     ) {
+        LiquidGlassDialogEffect()
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -121,6 +122,7 @@ fun SimpleLoadingDialog(
             dismissOnClickOutside = false
         )
     ) {
+        LiquidGlassDialogEffect()
         Column(
             modifier = Modifier
                 .fillMaxWidth()

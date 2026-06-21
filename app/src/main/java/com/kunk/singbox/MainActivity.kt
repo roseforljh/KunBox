@@ -25,6 +25,8 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -335,13 +337,16 @@ fun SingBoxApp() {
                 containerColor = rootContainerColor,
                 contentWindowInsets = WindowInsets(0, 0, 0, 0)
             ) { innerPadding ->
+                val navigationBarPadding = WindowInsets.navigationBars
+                    .asPaddingValues()
+                    .calculateBottomPadding()
                 val dashboardContentBottomPadding = if (useLiquidGlassNav) {
-                    64.dp
+                    68.dp + navigationBarPadding
                 } else {
                     0.dp
                 }
                 val topLevelContentBottomPadding = if (useLiquidGlassNav) {
-                    64.dp
+                    68.dp + navigationBarPadding
                 } else {
                     0.dp
                 }

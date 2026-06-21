@@ -25,6 +25,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -44,6 +45,7 @@ import com.kunk.singbox.ui.theme.liquidGlassTextFieldPanel
 import com.kunk.singbox.ui.theme.liquidGlassTextButtonColors
 import com.kunk.singbox.ui.theme.liquidGlassTextButtonContentColor
 import com.kunk.singbox.ui.theme.liquidGlassTextButtonPanel
+import com.kunk.singbox.ui.theme.LiquidGlassDialogEffect
 
 sealed class AddNodeTarget {
     data class ExistingProfile(val profileId: String) : AddNodeTarget()
@@ -53,11 +55,15 @@ sealed class AddNodeTarget {
 @Composable
 private fun Modifier.addNodeTargetOptionPanel(isSelected: Boolean): Modifier {
     return if (isLiquidGlassTheme()) {
-        liquidGlassPanel(
-            shape = RoundedCornerShape(10.dp),
-            selected = isSelected,
-            shadowElevation = 4.dp
-        )
+        if (isSelected) {
+            this.liquidGlassPanel(
+                shape = RoundedCornerShape(10.dp),
+                selected = true,
+                shadowElevation = 4.dp
+            )
+        } else {
+            this.clip(RoundedCornerShape(10.dp))
+        }
     } else {
         this
     }
@@ -92,6 +98,7 @@ fun AddNodeDialog(
         containerColor = liquidGlassDialogContainerColor(),
         onDismissRequest = onDismiss,
         title = {
+            LiquidGlassDialogEffect()
             Text(
                 text = stringResource(R.string.nodes_add),
                 fontWeight = FontWeight.Bold

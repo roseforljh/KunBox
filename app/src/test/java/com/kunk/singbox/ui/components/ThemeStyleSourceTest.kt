@@ -619,7 +619,7 @@ class ThemeStyleSourceTest {
         assertTrue(source.contains("containerColor = rootContainerColor"))
         assertTrue(source.contains("color = rootContainerColor"))
         assertTrue(source.contains("val dashboardContentBottomPadding = if (useLiquidGlassNav)"))
-        assertTrue(source.contains("64.dp"))
+        assertTrue(source.contains("68.dp"))
         assertTrue(source.contains("val topLevelContentBottomPadding = if (useLiquidGlassNav)"))
         assertTrue(source.contains("dashboardBottomContentPadding = dashboardContentBottomPadding"))
         assertTrue(source.contains("topLevelBottomContentPadding = topLevelContentBottomPadding"))

@@ -711,7 +711,7 @@ class LiquidGlassMaterialCallCoverageTest {
         )
 
         val directMaterialSurfaceAllowList = listOf(
-            "MainActivity.kt:367:Surface:Surface(",
+            "MainActivity.kt:372:Surface:Surface(",
             "ui/components/AppNavBar.kt:111:NavigationBar:NavigationBar(",
             "ui/components/AppNavBar.kt:164:NavigationBarItem:NavigationBarItem(",
             "ui/components/ExportImportDialogs.kt:69:Card:Card(",

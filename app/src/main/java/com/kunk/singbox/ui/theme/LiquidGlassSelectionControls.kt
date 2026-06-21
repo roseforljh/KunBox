@@ -73,11 +73,15 @@ fun liquidGlassSwitchColors(
             uncheckedThumbColor
         },
         uncheckedTrackColor = if (isLiquidGlassTheme()) {
-            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.22f)
+            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f)
         } else {
             uncheckedTrackColor
         },
-        uncheckedBorderColor = if (isLiquidGlassTheme()) Color.Transparent else uncheckedBorderColor
+        uncheckedBorderColor = if (isLiquidGlassTheme()) {
+            MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
+        } else {
+            uncheckedBorderColor
+        }
     )
 }
 

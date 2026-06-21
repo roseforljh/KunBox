@@ -39,6 +39,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
@@ -74,13 +75,13 @@ import com.kunk.singbox.ui.theme.liquidGlassTextButtonColors
 import com.kunk.singbox.ui.theme.liquidGlassTextButtonContentColor
 import com.kunk.singbox.ui.theme.liquidGlassTextButtonPanel
 
+import com.kunk.singbox.ui.theme.liquidGlassDialogPanel
+import com.kunk.singbox.ui.theme.LiquidGlassDialogEffect
+
 @Composable
 private fun Modifier.appSelectDialogPanel(shape: RoundedCornerShape = RoundedCornerShape(28.dp)): Modifier {
-    return if (isLiquidGlassTheme()) {
-        liquidGlassPanel(shape = shape, shadowElevation = 24.dp)
-    } else {
-        background(MaterialTheme.colorScheme.surface, shape)
-    }
+    return this.liquidGlassDialogPanel(shape = shape, shadowElevation = 24.dp)
+        .then(if (!isLiquidGlassTheme()) Modifier.background(MaterialTheme.colorScheme.surface, shape) else Modifier)
 }
 
 @Composable
@@ -221,6 +222,7 @@ fun AppMultiSelectDialog(
     val useLiquidGlass = isLiquidGlassTheme()
 
     Dialog(onDismissRequest = onDismiss) {
+        LiquidGlassDialogEffect()
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -436,11 +438,15 @@ fun AppMultiSelectDialog(
                             .clip(RoundedCornerShape(12.dp))
                             .then(
                                 if (useLiquidGlass) {
-                                    Modifier.liquidGlassPanel(
-                                        shape = RoundedCornerShape(12.dp),
-                                        selected = checked,
-                                        shadowElevation = 4.dp
-                                    )
+                                    if (checked) {
+                                        Modifier.liquidGlassPanel(
+                                            shape = RoundedCornerShape(12.dp),
+                                            selected = true,
+                                            shadowElevation = 4.dp
+                                        )
+                                    } else {
+                                        Modifier.clip(RoundedCornerShape(12.dp))
+                                    }
                                 } else {
                                     Modifier
                                 }

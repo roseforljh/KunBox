@@ -29,6 +29,12 @@ class LiquidGlassTextFieldSourceTest {
         assertTrue(liquidTextFieldColors.contains("OutlinedTextFieldDefaults.colors("))
         assertTrue(liquidTextFieldColors.contains("liquidGlassTextFieldContainerColor("))
         assertTrue(liquidTextFieldColors.contains("liquidGlassTextFieldBorderColor("))
+        assertTrue(liquidTextFieldColors.contains("errorBorderColor: Color = Color.Unspecified"))
+        assertTrue(liquidTextFieldColors.contains("errorContainerColor: Color = Color.Unspecified"))
+        val errorBorderColorMapping = "errorBorderColor = liquidGlassTextFieldBorderColor(errorBorderColor)"
+        val errorContainerColorMapping = "errorContainerColor = liquidGlassTextFieldContainerColor(errorContainerColor)"
+        assertTrue(liquidTextFieldColors.contains(errorBorderColorMapping))
+        assertTrue(liquidTextFieldColors.contains(errorContainerColorMapping))
         componentFiles.forEach { fileName ->
             val source = File("src/main/java/com/kunk/singbox/ui/components/$fileName").readText()
             assertTrue(
