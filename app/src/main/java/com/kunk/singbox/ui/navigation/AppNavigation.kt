@@ -8,6 +8,8 @@ import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
@@ -133,16 +135,16 @@ fun AppNavigation(
     )
 
     val enterTransition: AnimatedContentTransitionScope<NavBackStackEntry>.() -> EnterTransition = {
-        slideInHorizontally(initialOffsetX = { it }, animationSpec = slideSpec)
+        slideInHorizontally(initialOffsetX = { it / 8 }, animationSpec = slideSpec) + fadeIn(animationSpec = fadeSpec)
     }
     val exitTransition: AnimatedContentTransitionScope<NavBackStackEntry>.() -> ExitTransition = {
-        ExitTransition.None
+        fadeOut(animationSpec = fadeSpec)
     }
     val popEnterTransition: AnimatedContentTransitionScope<NavBackStackEntry>.() -> EnterTransition = {
-        EnterTransition.None
+        fadeIn(animationSpec = fadeSpec)
     }
     val popExitTransition: AnimatedContentTransitionScope<NavBackStackEntry>.() -> ExitTransition = {
-        slideOutHorizontally(targetOffsetX = { it }, animationSpec = slideSpec)
+        slideOutHorizontally(targetOffsetX = { it / 8 }, animationSpec = slideSpec) + fadeOut(animationSpec = fadeSpec)
     }
 
     val tabEnterTransition: AnimatedContentTransitionScope<NavBackStackEntry>.() -> EnterTransition = {
@@ -151,9 +153,9 @@ fun AppNavigation(
         val fromIndex = tabIndex(fromRoute)
         val toIndex = tabIndex(toRoute)
         if (toIndex > fromIndex) {
-            slideInHorizontally(initialOffsetX = { it }, animationSpec = slideSpec)
+            slideInHorizontally(initialOffsetX = { it / 8 }, animationSpec = slideSpec) + fadeIn(animationSpec = fadeSpec)
         } else {
-            slideInHorizontally(initialOffsetX = { -it }, animationSpec = slideSpec)
+            slideInHorizontally(initialOffsetX = { -it / 8 }, animationSpec = slideSpec) + fadeIn(animationSpec = fadeSpec)
         }
     }
 
@@ -164,14 +166,14 @@ fun AppNavigation(
         val toTab = getTabForRoute(toRoute)
 
         if (fromTab == toTab) {
-            ExitTransition.None
+            fadeOut(animationSpec = fadeSpec)
         } else {
             val fromIndex = tabIndex(fromRoute)
             val toIndex = tabIndex(toRoute)
             if (toIndex > fromIndex) {
-                slideOutHorizontally(targetOffsetX = { -it }, animationSpec = slideSpec)
+                slideOutHorizontally(targetOffsetX = { -it / 8 }, animationSpec = slideSpec) + fadeOut(animationSpec = fadeSpec)
             } else {
-                slideOutHorizontally(targetOffsetX = { it }, animationSpec = slideSpec)
+                slideOutHorizontally(targetOffsetX = { it / 8 }, animationSpec = slideSpec) + fadeOut(animationSpec = fadeSpec)
             }
         }
     }
@@ -183,14 +185,14 @@ fun AppNavigation(
         val toTab = getTabForRoute(toRoute)
 
         if (fromTab == toTab) {
-            EnterTransition.None
+            fadeIn(animationSpec = fadeSpec)
         } else {
             val fromIndex = tabIndex(fromRoute)
             val toIndex = tabIndex(toRoute)
             if (toIndex > fromIndex) {
-                slideInHorizontally(initialOffsetX = { it }, animationSpec = slideSpec)
+                slideInHorizontally(initialOffsetX = { it / 8 }, animationSpec = slideSpec) + fadeIn(animationSpec = fadeSpec)
             } else {
-                slideInHorizontally(initialOffsetX = { -it }, animationSpec = slideSpec)
+                slideInHorizontally(initialOffsetX = { -it / 8 }, animationSpec = slideSpec) + fadeIn(animationSpec = fadeSpec)
             }
         }
     }
