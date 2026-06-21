@@ -495,7 +495,11 @@ class LiquidGlassMaterialCallCoverageTest {
                 listOf("liquidGlassTextButtonPanel"),
                 listOf("liquidGlassTextButtonColors")
             ),
-            materialCallRule("IconButton", listOf("liquidGlassIconButtonPanel", "connectionCloseButtonPanel")),
+            materialCallRule(
+                "IconButton",
+                listOf("liquidGlassIconButtonPanel", "connectionCloseButtonPanel"),
+                allowedFunctions = setOf("ConnectionSearchBar", "NodeSearchBar")
+            ),
             materialCallRule(
                 "FloatingActionButton",
                 listOf("liquidGlassFloatingActionPanel"),
@@ -658,11 +662,15 @@ class LiquidGlassMaterialCallCoverageTest {
 
     private fun materialCallRule(
         callName: String,
-        vararg requiredMarkerGroups: List<String>
+        vararg requiredMarkerGroups: List<String>,
+        allowedFunctions: Set<String> = emptySet(),
+        allowedFiles: Set<String> = emptySet()
     ): MaterialCallRule {
         return MaterialCallRule(
             callName = callName,
-            requiredMarkerGroups = requiredMarkerGroups.toList()
+            requiredMarkerGroups = requiredMarkerGroups.toList(),
+            allowedFunctions = allowedFunctions,
+            allowedFiles = allowedFiles
         )
     }
 
@@ -687,6 +695,7 @@ class LiquidGlassMaterialCallCoverageTest {
 
         val passThroughFilesWithoutLiquidGlassMarkers = listOf(
             "ShortcutActivity.kt",
+            "components/BigToggle.kt",
             "components/EditableSettingItem.kt",
             "navigation/AppNavigation.kt",
             "screens/NodeProtocolFields.kt",
@@ -718,12 +727,12 @@ class LiquidGlassMaterialCallCoverageTest {
             "ui/components/StandardCard.kt:64:Card:Card(",
             "ui/components/StandardCard.kt:75:Card:Card(",
             "ui/screens/AppRoutingScreen.kt:53:Tab:Tab(",
-            "ui/screens/ConnectionInfoScreen.kt:590:Card:Card(",
-            "ui/screens/ConnectionInfoScreen.kt:717:Card:Card(",
+            "ui/screens/ConnectionInfoScreen.kt:604:Card:Card(",
+            "ui/screens/ConnectionInfoScreen.kt:731:Card:Card(",
             "ui/screens/RuleSetHubScreen.kt:343:Card:Card(",
             "ui/theme/LiquidGlassChipControls.kt:75:FilterChip:FilterChip(",
-            "ui/theme/LiquidGlassMenuControls.kt:21:DropdownMenu:DropdownMenu(",
-            "ui/theme/LiquidGlassMenuControls.kt:31:DropdownMenu:DropdownMenu("
+            "ui/theme/LiquidGlassMenuControls.kt:32:DropdownMenu:DropdownMenu(",
+            "ui/theme/LiquidGlassMenuControls.kt:53:DropdownMenu:DropdownMenu("
         )
 
         val basicTextFieldPanelMarkers = listOf(

@@ -81,7 +81,7 @@ fun ClickableDropdownField(
     val useLiquidGlass = isLiquidGlassTheme()
     val fieldShape = RoundedCornerShape(16.dp)
     val fieldSurfaceModifier = if (useLiquidGlass) {
-        Modifier.liquidGlassPanel(shape = fieldShape, shadowElevation = 8.dp)
+        Modifier.liquidGlassPanel(shape = fieldShape, shadowElevation = 0.dp)
     } else {
         Modifier
             .clip(fieldShape)

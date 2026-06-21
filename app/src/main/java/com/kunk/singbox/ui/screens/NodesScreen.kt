@@ -14,10 +14,13 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentSize
@@ -29,16 +32,14 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.core.spring
-import androidx.compose.animation.core.Spring
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.expandHorizontally
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkHorizontally
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
@@ -57,11 +58,9 @@ import androidx.compose.material.icons.rounded.ViewList
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
-import androidx.compose.material3.SmallFloatingActionButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -82,12 +81,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.PointerEventPass
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
@@ -112,13 +111,12 @@ import com.kunk.singbox.ui.components.NodeCard
 import com.kunk.singbox.ui.components.NodeGridCard
 import com.kunk.singbox.ui.navigation.Screen
 import com.kunk.singbox.ui.theme.LiquidGlassDropdownMenu
+import com.kunk.singbox.ui.theme.LiquidGlassFloatingActionButton
+import com.kunk.singbox.ui.theme.LiquidGlassSmallFloatingActionButton
 import com.kunk.singbox.ui.theme.Neutral500
 import com.kunk.singbox.ui.theme.isLiquidGlassTheme
 import com.kunk.singbox.ui.theme.liquidGlassFloatingActionContainerColor
 import com.kunk.singbox.ui.theme.liquidGlassFloatingActionContentColor
-import com.kunk.singbox.ui.theme.liquidGlassFloatingActionPanel
-import com.kunk.singbox.ui.theme.liquidGlassFloatingActionShape
-import com.kunk.singbox.ui.theme.liquidGlassFloatingActionElevation
 import com.kunk.singbox.ui.theme.liquidGlassDropdownMenuItemColors
 import com.kunk.singbox.ui.theme.liquidGlassIconButtonPanel
 import com.kunk.singbox.ui.theme.liquidGlassPanel
@@ -132,7 +130,7 @@ import kotlinx.coroutines.launch
 @Composable
 private fun Modifier.nodesMenuPanel(shape: RoundedCornerShape = RoundedCornerShape(12.dp)): Modifier {
     return if (isLiquidGlassTheme()) {
-        liquidGlassPanel(shape = shape, shadowElevation = 8.dp)
+        this // 交给 LiquidGlassDropdownMenu 去绘制玻璃面板
     } else {
         background(MaterialTheme.colorScheme.surfaceVariant, shape)
             .border(
@@ -354,11 +352,6 @@ fun NodesScreen(
             animationSpec = tween(durationMillis = 300),
             label = "fabAlpha"
         )
-        val expandedProgress by animateFloatAsState(
-            targetValue = if (isFabExpanded) 1f else 0f,
-            animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
-            label = "expandedProgress"
-        )
 
         if (fabAlpha > 0f) {
             Column(
@@ -370,17 +363,20 @@ fun NodesScreen(
                     },
                 horizontalAlignment = Alignment.End
             ) {
-                if (expandedProgress > 0f) {
+                AnimatedVisibility(
+                    visible = isFabExpanded,
+                    enter = fadeIn(animationSpec = tween(durationMillis = 120)) +
+                        slideInVertically(initialOffsetY = { it / 5 }) +
+                        scaleIn(initialScale = 0.92f, transformOrigin = TransformOrigin(1f, 1f)),
+                    exit = fadeOut(animationSpec = tween(durationMillis = 90)) +
+                        slideOutVertically(targetOffsetY = { it / 5 }) +
+                        scaleOut(targetScale = 0.88f, transformOrigin = TransformOrigin(1f, 1f))
+                ) {
                     Column(
                         horizontalAlignment = Alignment.End,
                         verticalArrangement = Arrangement.spacedBy(16.dp),
                         modifier = Modifier
                             .padding(bottom = 16.dp)
-                            .graphicsLayer {
-                                alpha = expandedProgress
-                                translationY = (1f - expandedProgress) * 15.dp.toPx()
-                                compositingStrategy = CompositingStrategy.ModulateAlpha
-                            }
                     ) {
                         // Clear Latency
                         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -390,16 +386,13 @@ fun NodesScreen(
                                 modifier = Modifier.padding(end = 8.dp),
                                 style = MaterialTheme.typography.labelMedium
                             )
-                            SmallFloatingActionButton(
+                            LiquidGlassSmallFloatingActionButton(
                                 onClick = {
                                     viewModel.clearLatency()
                                     isFabExpanded = false
                                 },
-                                modifier = Modifier.liquidGlassFloatingActionPanel(),
                                 containerColor = fabContainerColor,
-                                contentColor = fabContentColor,
-                                shape = liquidGlassFloatingActionShape(),
-                                elevation = liquidGlassFloatingActionElevation()
+                                contentColor = fabContentColor
                             ) {
                                 Icon(Icons.Rounded.Delete, contentDescription = stringResource(R.string.nodes_clear_latency))
                             }
@@ -413,16 +406,13 @@ fun NodesScreen(
                                 modifier = Modifier.padding(end = 8.dp),
                                 style = MaterialTheme.typography.labelMedium
                             )
-                            SmallFloatingActionButton(
+                            LiquidGlassSmallFloatingActionButton(
                                 onClick = {
                                     showAddNodeDialog = true
                                     isFabExpanded = false
                                 },
-                                modifier = Modifier.liquidGlassFloatingActionPanel(),
                                 containerColor = fabContainerColor,
-                                contentColor = fabContentColor,
-                                shape = liquidGlassFloatingActionShape(),
-                                elevation = liquidGlassFloatingActionElevation()
+                                contentColor = fabContentColor
                             ) {
                                 Icon(Icons.Rounded.Add, contentDescription = stringResource(R.string.nodes_add))
                             }
@@ -436,16 +426,13 @@ fun NodesScreen(
                                 modifier = Modifier.padding(end = 8.dp),
                                 style = MaterialTheme.typography.labelMedium
                             )
-                            SmallFloatingActionButton(
+                            LiquidGlassSmallFloatingActionButton(
                                 onClick = {
                                     showProtocolSelectDialog = true
                                     isFabExpanded = false
                                 },
-                                modifier = Modifier.liquidGlassFloatingActionPanel(),
                                 containerColor = fabContainerColor,
-                                contentColor = fabContentColor,
-                                shape = liquidGlassFloatingActionShape(),
-                                elevation = liquidGlassFloatingActionElevation()
+                                contentColor = fabContentColor
                             ) {
                                 Icon(Icons.Rounded.Edit, contentDescription = stringResource(R.string.nodes_manual_create))
                             }
@@ -459,16 +446,13 @@ fun NodesScreen(
                                 modifier = Modifier.padding(end = 8.dp),
                                 style = MaterialTheme.typography.labelMedium
                             )
-                            SmallFloatingActionButton(
+                            LiquidGlassSmallFloatingActionButton(
                                 onClick = {
                                     viewModel.testAllLatency()
                                     isFabExpanded = false
                                 },
-                                modifier = Modifier.liquidGlassFloatingActionPanel(),
                                 containerColor = fabContainerColor,
-                                contentColor = fabContentColor,
-                                shape = liquidGlassFloatingActionShape(),
-                                elevation = liquidGlassFloatingActionElevation()
+                                contentColor = fabContentColor
                             ) {
                                 if (isTesting) {
                                     CircularProgressIndicator(
@@ -485,13 +469,10 @@ fun NodesScreen(
                     }
                 }
 
-                FloatingActionButton(
+                LiquidGlassFloatingActionButton(
                     onClick = { isFabExpanded = !isFabExpanded },
-                    modifier = Modifier.liquidGlassFloatingActionPanel(),
                     containerColor = fabContainerColor,
-                    contentColor = fabContentColor,
-                    shape = liquidGlassFloatingActionShape(),
-                    elevation = liquidGlassFloatingActionElevation()
+                    contentColor = fabContentColor
                 ) {
                     Icon(
                         imageVector = if (isFabExpanded) Icons.Rounded.Close else Icons.Rounded.Add,
@@ -503,16 +484,14 @@ fun NodesScreen(
     }
 
     Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(liquidGlassScreenContainerColor(MaterialTheme.colorScheme.background))
-            .statusBarsPadding()
+        modifier = Modifier.fillMaxSize()
     ) {
         Scaffold(
             modifier = Modifier.fillMaxSize(),
             containerColor = liquidGlassScreenContainerColor(MaterialTheme.colorScheme.background),
             contentWindowInsets = WindowInsets(0, 0, 0, 0)
         ) { padding ->
+            val statusBarPadding = WindowInsets.statusBars.asPaddingValues()
             Column(
                 modifier = Modifier
                     .fillMaxSize()
@@ -534,6 +513,7 @@ fun NodesScreen(
                         }
                     }
                     .nestedScroll(nestedScrollConnection)
+                    .padding(top = statusBarPadding.calculateTopPadding())
                     .padding(bottom = padding.calculateBottomPadding())
             ) {
                 // 1. Top Bar
@@ -847,6 +827,22 @@ fun NodesScreen(
             }
         }
 
+        androidx.compose.animation.AnimatedVisibility(
+            visible = isFabExpanded,
+            enter = androidx.compose.animation.fadeIn(),
+            exit = androidx.compose.animation.fadeOut(),
+            modifier = Modifier.fillMaxSize()
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.3f))
+                    .pointerInput(Unit) {
+                        detectTapGestures(onTap = { isFabExpanded = false })
+                    }
+            )
+        }
+
         NodeActionButtons(
             modifier = Modifier
                 .align(Alignment.BottomEnd)
@@ -1012,8 +1008,8 @@ private fun NodeSearchBar(
                         onClick = { onQueryChange("") },
                         modifier = Modifier
                             .align(Alignment.CenterEnd)
-                            .size(32.dp)
-                            .liquidGlassIconButtonPanel(shadowElevation = 3.dp)
+                            .padding(end = 6.dp)
+                            .size(28.dp)
                     ) {
                         Icon(
                             imageVector = Icons.Rounded.Close,

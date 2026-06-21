@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -54,6 +55,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.compose.foundation.text.ClickableText
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Check
@@ -87,11 +89,12 @@ import com.kunk.singbox.ui.theme.liquidGlassTextButtonColors
 import com.kunk.singbox.ui.theme.liquidGlassTextButtonContentColor
 import com.kunk.singbox.ui.theme.liquidGlassTextButtonPanel
 import com.kunk.singbox.ui.theme.LiquidGlassDialogEffect
+import com.kunk.singbox.ui.theme.liquidGlassDialogPanel
 
 @Composable
 private fun Modifier.nodeSelectionDialogPanel(shape: RoundedCornerShape = RoundedCornerShape(28.dp)): Modifier {
     return if (isLiquidGlassTheme()) {
-        liquidGlassPanel(shape = shape, shadowElevation = 24.dp)
+        liquidGlassDialogPanel(shape = shape, shadowElevation = 24.dp)
     } else {
         background(MaterialTheme.colorScheme.surface, shape)
     }
@@ -100,7 +103,7 @@ private fun Modifier.nodeSelectionDialogPanel(shape: RoundedCornerShape = Rounde
 @Composable
 private fun Modifier.nodeSelectionGroupPanel(shape: RoundedCornerShape = RoundedCornerShape(12.dp)): Modifier {
     return if (isLiquidGlassTheme()) {
-        liquidGlassPanel(shape = shape, shadowElevation = 6.dp)
+        liquidGlassPanel(shape = shape, shadowElevation = 0.dp)
     } else {
         background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
     }
@@ -117,7 +120,7 @@ private fun Modifier.nodeSelectionItemPanel(isSelected: Boolean): Modifier {
     }
 
     return if (isLiquidGlassTheme()) {
-        liquidGlassPanel(shape = shape, selected = isSelected, shadowElevation = 6.dp)
+        liquidGlassPanel(shape = shape, selected = isSelected, shadowElevation = 0.dp)
     } else {
         background(backgroundColor, shape)
             .border(
@@ -132,7 +135,7 @@ private fun Modifier.nodeSelectionItemPanel(isSelected: Boolean): Modifier {
 private fun Modifier.nodeSelectionListItemPanel(isSelected: Boolean): Modifier {
     val shape = RoundedCornerShape(10.dp)
     return if (isLiquidGlassTheme()) {
-        liquidGlassPanel(shape = shape, selected = isSelected, shadowElevation = 4.dp)
+        liquidGlassPanel(shape = shape, selected = isSelected, shadowElevation = 0.dp)
     } else {
         background(
             if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.1f) else Color.Transparent,
@@ -272,27 +275,36 @@ fun ProfileNodeSelectDialog(
     var expandedProfileId by remember { mutableStateOf<String?>(null) }
     val useLiquidGlass = isLiquidGlassTheme()
 
-    Dialog(onDismissRequest = onDismiss) {
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(
+            usePlatformDefaultWidth = false,
+            decorFitsSystemWindows = false
+        )
+    ) {
+        LiquidGlassDialogEffect()
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .nodeSelectionDialogPanel()
                 .padding(24.dp)
+                .nodeSelectionDialogPanel()
         ) {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-
-            Spacer(modifier = Modifier.height(16.dp))
-
             LazyColumn(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .fillMaxHeight(0.72f)
+                    .fillMaxHeight(0.85f),
+                contentPadding = PaddingValues(24.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
+                item {
+                    Text(
+                        text = title,
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                }
                 profileOrder.forEach { profile ->
                     val itemsForProfile = nodesByProfile[profile.id].orEmpty()
                     val isExpanded = expandedProfileId == profile.id
@@ -346,7 +358,8 @@ fun ProfileNodeSelectDialog(
                                 LazyColumn(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .heightIn(max = 260.dp)
+                                        .heightIn(max = 260.dp),
+                                    verticalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
                                     items(itemsForProfile, key = { it.id }) { node ->
                                         val ref = toNodeRef(node)
@@ -449,7 +462,8 @@ fun ProfileNodeSelectDialog(
                                 LazyColumn(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .heightIn(max = 260.dp)
+                                        .heightIn(max = 260.dp),
+                                    verticalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
                                     items(itemsForProfile, key = { it.id }) { node ->
                                         val ref = toNodeRef(node)
@@ -493,28 +507,29 @@ fun ProfileNodeSelectDialog(
                             }
                         }
                     }
+                } // End of unknownProfiles
+
+                item {
+                    Spacer(modifier = Modifier.height(16.dp))
+                    TextButton(
+                        onClick = onDismiss,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(50.dp)
+                            .liquidGlassTextButtonPanel(shape = RoundedCornerShape(25.dp)),
+                        colors = liquidGlassTextButtonColors(
+                            contentColor = liquidGlassTextButtonContentColor(
+                                defaultColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                liquidColor = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        )
+                    ) {
+                        Text(stringResource(R.string.common_cancel))
+                    }
                 }
-            }
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            TextButton(
-                onClick = onDismiss,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(50.dp)
-                    .liquidGlassTextButtonPanel(shape = RoundedCornerShape(25.dp)),
-                colors = liquidGlassTextButtonColors(
-                    contentColor = liquidGlassTextButtonContentColor(
-                        defaultColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                        liquidColor = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                )
-            ) {
-                Text(stringResource(R.string.common_cancel))
-            }
-        }
-    }
+            } // End of LazyColumn
+        } // End of Column
+    } // End of Dialog
 }
 
 @Composable
@@ -636,10 +651,18 @@ fun NodeFilterDialog(
         mutableStateOf(currentFilter.effectiveExcludeKeywords.joinToString(", "))
     }
 
-    Dialog(onDismissRequest = onDismiss) {
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(
+            usePlatformDefaultWidth = false,
+            decorFitsSystemWindows = false
+        )
+    ) {
+        LiquidGlassDialogEffect()
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .padding(24.dp)
                 .nodeSelectionDialogPanel()
                 .padding(24.dp)
         ) {
@@ -890,28 +913,26 @@ fun NodeSelectorDialog(
     onSelect: (String) -> Unit,
     onDismiss: () -> Unit
 ) {
-    Dialog(onDismissRequest = onDismiss) {
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(
+            usePlatformDefaultWidth = false,
+            decorFitsSystemWindows = false
+        )
+    ) {
+        LiquidGlassDialogEffect()
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .fillMaxHeight(0.75f)
-                .nodeSelectionDialogPanel()
                 .padding(24.dp)
+                .nodeSelectionDialogPanel()
         ) {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-
-            Spacer(modifier = Modifier.height(16.dp))
-
             if (nodes.isEmpty()) {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
                         .weight(1f)
+                        .padding(top = 24.dp, start = 24.dp, end = 24.dp)
                         .liquidGlassEmptyStatePanel(),
                     contentAlignment = Alignment.Center
                 ) {
@@ -921,13 +942,40 @@ fun NodeSelectorDialog(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
+                Spacer(modifier = Modifier.height(16.dp))
+                TextButton(
+                    onClick = onDismiss,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = 24.dp, end = 24.dp, bottom = 24.dp)
+                        .height(50.dp)
+                        .liquidGlassTextButtonPanel(shape = RoundedCornerShape(25.dp)),
+                    colors = liquidGlassTextButtonColors(
+                        contentColor = liquidGlassTextButtonContentColor(
+                            defaultColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                            liquidColor = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    )
+                ) {
+                    Text(stringResource(R.string.common_cancel))
+                }
             } else {
                 LazyColumn(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                        .fillMaxHeight(0.85f),
+                    contentPadding = PaddingValues(24.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
+                    item {
+                        Text(
+                            text = title,
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                    }
                     items(nodes, key = { it.id }) { node ->
                         val isSelected = node.id == selectedNodeId
                         val isTesting = testingNodeIds.contains(node.id)
@@ -942,25 +990,25 @@ fun NodeSelectorDialog(
                             }
                         )
                     }
+                    item {
+                        Spacer(modifier = Modifier.height(16.dp))
+                        TextButton(
+                            onClick = onDismiss,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(50.dp)
+                                .liquidGlassTextButtonPanel(shape = RoundedCornerShape(25.dp)),
+                            colors = liquidGlassTextButtonColors(
+                                contentColor = liquidGlassTextButtonContentColor(
+                                    defaultColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    liquidColor = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            )
+                        ) {
+                            Text(stringResource(R.string.common_cancel))
+                        }
+                    }
                 }
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            TextButton(
-                onClick = onDismiss,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(50.dp)
-                    .liquidGlassTextButtonPanel(shape = RoundedCornerShape(25.dp)),
-                colors = liquidGlassTextButtonColors(
-                    contentColor = liquidGlassTextButtonContentColor(
-                        defaultColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                        liquidColor = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                )
-            ) {
-                Text(stringResource(R.string.common_cancel))
             }
         }
     }

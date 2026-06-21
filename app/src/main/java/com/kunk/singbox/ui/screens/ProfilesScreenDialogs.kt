@@ -15,6 +15,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import com.kunk.singbox.ui.theme.LiquidGlassDialogEffect
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -423,6 +424,7 @@ internal fun CustomConfigDialog(
     var selectedNodeIds by rememberSaveable { mutableStateOf(emptyList<String>()) }
 
     androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss) {
+        LiquidGlassDialogEffect()
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -542,6 +544,7 @@ internal fun ImportSelectionDialog(
     onTypeSelected: (ProfileImportType) -> Unit
 ) {
     androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss) {
+        LiquidGlassDialogEffect()
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -617,6 +620,7 @@ internal fun ImportLoadingDialog(message: String, onCancel: () -> Unit = {}) {
     val progress = remember(message) { importLoadingProgress(message) }
 
     androidx.compose.ui.window.Dialog(onDismissRequest = {}) {
+        LiquidGlassDialogEffect()
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -757,6 +761,7 @@ internal fun SubscriptionInputDialog(
     )
 
     androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss) {
+        LiquidGlassDialogEffect()
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -977,6 +982,7 @@ internal fun SubscriptionInputDialog(
                 androidx.compose.ui.window.Dialog(
                     onDismissRequest = { dnsDropdownExpanded = false }
                 ) {
+                    LiquidGlassDialogEffect()
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()

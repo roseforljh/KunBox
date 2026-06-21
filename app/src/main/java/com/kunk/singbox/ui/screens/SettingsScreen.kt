@@ -1,4 +1,4 @@
-﻿package com.kunk.singbox.ui.screens
+package com.kunk.singbox.ui.screens
 
 import com.kunk.singbox.R
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -198,9 +198,13 @@ fun SettingsScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(liquidGlassScreenContainerColor(MaterialTheme.colorScheme.background))
-            .padding(top = statusBarPadding.calculateTopPadding())
             .verticalScroll(scrollState)
-            .padding(16.dp)
+            .padding(
+                top = statusBarPadding.calculateTopPadding() + 16.dp,
+                start = 16.dp,
+                end = 16.dp,
+                bottom = 16.dp
+            )
     ) {
         Text(
             text = stringResource(R.string.settings_title),

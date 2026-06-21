@@ -39,7 +39,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
@@ -418,7 +417,8 @@ fun AppMultiSelectDialog(
             LazyColumn(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .weight(1f)
+                    .weight(1f),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 items(filteredApps, key = { it.packageName }) { app ->
                     val checked = tempSelected.contains(app.packageName)
@@ -438,15 +438,11 @@ fun AppMultiSelectDialog(
                             .clip(RoundedCornerShape(12.dp))
                             .then(
                                 if (useLiquidGlass) {
-                                    if (checked) {
-                                        Modifier.liquidGlassPanel(
-                                            shape = RoundedCornerShape(12.dp),
-                                            selected = true,
-                                            shadowElevation = 4.dp
-                                        )
-                                    } else {
-                                        Modifier.clip(RoundedCornerShape(12.dp))
-                                    }
+                                    Modifier.liquidGlassPanel(
+                                        shape = RoundedCornerShape(12.dp),
+                                        selected = checked,
+                                        shadowElevation = 0.dp
+                                    )
                                 } else {
                                     Modifier
                                 }
@@ -514,7 +510,7 @@ fun AppMultiSelectDialog(
                 }
             }
 
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(16.dp))
 
             Row(
                 modifier = Modifier.fillMaxWidth(),

@@ -88,7 +88,7 @@ private fun List<String>.toAppInfoSet(): Set<AppInfo> {
 @Composable
 private fun Modifier.routingChipPanel(shape: RoundedCornerShape): Modifier {
     return if (isLiquidGlassTheme()) {
-        liquidGlassPanel(shape = shape, shadowElevation = 6.dp)
+        liquidGlassPanel(shape = shape, shadowElevation = 0.dp)
     } else {
         background(Neutral700, shape)
     }
@@ -1358,7 +1358,7 @@ fun AppGroupEditorDialog(
                     ) {
                         Text(stringResource(R.string.app_rules_tabs_individual) + " (${selectedApps.size})", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.Medium)
                         TextButton(
-                            modifier = Modifier.liquidGlassTextButtonPanel(),
+                            modifier = Modifier.liquidGlassTextButtonPanel(shadowElevation = 0.dp),
                             colors = liquidGlassTextButtonColors(
                                 contentColor = liquidGlassTextButtonContentColor(MaterialTheme.colorScheme.primary)
                             ),
@@ -1369,6 +1369,8 @@ fun AppGroupEditorDialog(
                             Text(stringResource(R.string.app_groups_select_apps))
                         }
                     }
+
+                    Spacer(modifier = Modifier.height(16.dp))
 
                     if (selectedApps.isEmpty()) {
                         Box(
@@ -1399,6 +1401,7 @@ fun AppGroupEditorDialog(
                         }
                     }
                 }
+                Spacer(modifier = Modifier.height(16.dp))
             }
         },
         confirmButton = {

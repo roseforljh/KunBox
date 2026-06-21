@@ -1,10 +1,5 @@
 package com.kunk.singbox.ui.screens
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -565,8 +560,8 @@ private fun ConnectionSearchBar(
                 onClick = { onQueryChange("") },
                 modifier = Modifier
                     .align(Alignment.CenterEnd)
-                    .size(32.dp)
-                    .liquidGlassIconButtonPanel(shadowElevation = 3.dp)
+                    .padding(end = 6.dp)
+                    .size(28.dp)
             ) {
                 Icon(
                     imageVector = Icons.Rounded.Close,

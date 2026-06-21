@@ -309,7 +309,8 @@ class LiquidGlassControlCoverageTest {
         )
         assertTrue(
             selections.contains(
-                "uncheckedBorderColor = if (isLiquidGlassTheme()) Color.Transparent else uncheckedBorderColor"
+                "uncheckedBorderColor = if (isLiquidGlassTheme()) {\n" +
+                    "            MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)"
             )
         )
         assertTrue(selections.contains("fun liquidGlassProgressColor(defaultColor: Color): Color"))
@@ -648,7 +649,8 @@ class LiquidGlassControlCoverageTest {
             "routingStatusBadgePanel",
             "routingSelectablePanel",
             "RuleSetBadge",
-            "modeChipIndicatorPanel"
+            "modeChipIndicatorPanel",
+            "touchSurfaceModifier"
         )
     }
 }

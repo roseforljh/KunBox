@@ -1,12 +1,23 @@
+@file:Suppress("TooManyFunctions")
+
 package com.kunk.singbox.ui.theme
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.LocalContentColor
+import androidx.compose.material3.SmallFloatingActionButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.luminance
@@ -30,6 +41,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.material3.FloatingActionButtonDefaults
 import androidx.compose.material3.FloatingActionButtonElevation
+import androidx.compose.ui.semantics.Role
 
 fun Modifier.liquidGlassPressBounceEffect(): Modifier = composed {
     if (!isLiquidGlassTheme()) return@composed this
@@ -70,29 +82,29 @@ fun Modifier.liquidGlassFloatingActionPanel(
     }
 
     val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
-    val shadowAlpha = if (isDark) 0.4f else 0.18f
 
     // 高亮液态玻璃笔刷，增强边缘和高光的折射质感
     val fabBrush = Brush.verticalGradient(
         colors = listOf(
-            Color.White.copy(alpha = if (isDark) 0.20f else 0.70f),
-            MaterialTheme.colorScheme.surface.copy(alpha = if (isDark) 0.40f else 0.55f),
-            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = if (isDark) 0.18f else 0.30f)
+            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = if (isDark) 0.18f else 0.26f),
+            MaterialTheme.colorScheme.primary.copy(alpha = if (isDark) 0.12f else 0.08f),
+            MaterialTheme.colorScheme.surface.copy(alpha = if (isDark) 0.26f else 0.14f)
         )
     )
 
     // 亮暗折射的边框渐变，呈现高级实体玻璃边缘
     val borderBrush = Brush.verticalGradient(
         colors = listOf(
-            Color.White.copy(alpha = if (isDark) 0.35f else 0.85f),
-            Color.White.copy(alpha = if (isDark) 0.10f else 0.30f)
+            Color.White.copy(alpha = if (isDark) 0.35f else 0.42f),
+            MaterialTheme.colorScheme.primary.copy(alpha = if (isDark) 0.10f else 0.18f)
         )
     )
 
     return this
         .hollowShadow(
             shape = shape,
-            alpha = shadowAlpha,
+            color = MaterialTheme.colorScheme.primary,
+            alpha = if (isDark) 0.32f else 0.14f,
             blurRadius = shadowElevation,
             offsetY = shadowElevation / 2
         )
@@ -103,6 +115,103 @@ fun Modifier.liquidGlassFloatingActionPanel(
             shape = shape
         )
         .liquidGlassPressBounceEffect()
+}
+
+private data class LiquidGlassFloatingActionSurfaceSpec(
+    val size: Dp,
+    val shadowElevation: Dp
+)
+
+@Composable
+private fun LiquidGlassFloatingActionSurface(
+    onClick: () -> Unit,
+    modifier: Modifier,
+    spec: LiquidGlassFloatingActionSurfaceSpec,
+    contentColor: Color,
+    content: @Composable () -> Unit
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+
+    Box(
+        modifier = modifier
+            .size(spec.size)
+            .liquidGlassFloatingActionPanel(shadowElevation = spec.shadowElevation)
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                role = Role.Button,
+                onClick = onClick
+            ),
+        contentAlignment = Alignment.Center
+    ) {
+        CompositionLocalProvider(LocalContentColor provides contentColor) {
+            content()
+        }
+    }
+}
+
+@Composable
+fun LiquidGlassFloatingActionButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    containerColor: Color = MaterialTheme.colorScheme.primary,
+    contentColor: Color = MaterialTheme.colorScheme.onPrimary,
+    content: @Composable () -> Unit
+) {
+    if (isLiquidGlassTheme()) {
+        LiquidGlassFloatingActionSurface(
+            onClick = onClick,
+            modifier = modifier,
+            spec = LiquidGlassFloatingActionSurfaceSpec(
+                size = 56.dp,
+                shadowElevation = 12.dp
+            ),
+            contentColor = liquidGlassFloatingActionContentColor(contentColor),
+            content = content
+        )
+    } else {
+        FloatingActionButton(
+            onClick = onClick,
+            modifier = modifier.liquidGlassFloatingActionPanel(),
+            containerColor = liquidGlassFloatingActionContainerColor(containerColor),
+            contentColor = liquidGlassFloatingActionContentColor(contentColor),
+            shape = liquidGlassFloatingActionShape(),
+            elevation = liquidGlassFloatingActionElevation(),
+            content = content
+        )
+    }
+}
+
+@Composable
+fun LiquidGlassSmallFloatingActionButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    containerColor: Color = MaterialTheme.colorScheme.primary,
+    contentColor: Color = MaterialTheme.colorScheme.onPrimary,
+    content: @Composable () -> Unit
+) {
+    if (isLiquidGlassTheme()) {
+        LiquidGlassFloatingActionSurface(
+            onClick = onClick,
+            modifier = modifier,
+            spec = LiquidGlassFloatingActionSurfaceSpec(
+                size = 40.dp,
+                shadowElevation = 8.dp
+            ),
+            contentColor = liquidGlassFloatingActionContentColor(contentColor),
+            content = content
+        )
+    } else {
+        SmallFloatingActionButton(
+            onClick = onClick,
+            modifier = modifier.liquidGlassFloatingActionPanel(),
+            containerColor = liquidGlassFloatingActionContainerColor(containerColor),
+            contentColor = liquidGlassFloatingActionContentColor(contentColor),
+            shape = liquidGlassFloatingActionShape(),
+            elevation = liquidGlassFloatingActionElevation(),
+            content = content
+        )
+    }
 }
 
 @Composable

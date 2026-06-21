@@ -36,8 +36,6 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import com.kunk.singbox.R
-import com.kunk.singbox.ui.theme.isLiquidGlassTheme
-import com.kunk.singbox.ui.theme.liquidGlassPanel
 import kotlinx.coroutines.launch
 import kotlin.random.Random
 

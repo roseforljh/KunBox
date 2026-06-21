@@ -35,8 +35,9 @@ import com.kunk.singbox.ui.theme.liquidGlassPanel
 private fun Modifier.modeChipIndicatorPanel(indicatorColor: Color): Modifier {
     return if (isLiquidGlassTheme()) {
         size(10.dp)
-            .border(androidx.compose.foundation.BorderStroke(0.8.dp, indicatorColor.copy(alpha = 0.45f)), CircleShape)
+            .liquidGlassPanel(shape = CircleShape, selected = true, shadowElevation = 2.dp)
             .background(indicatorColor.copy(alpha = 0.12f), CircleShape)
+            .border(androidx.compose.foundation.BorderStroke(0.8.dp, indicatorColor.copy(alpha = 0.45f)), CircleShape)
     } else {
         size(8.dp)
             .background(indicatorColor, CircleShape)

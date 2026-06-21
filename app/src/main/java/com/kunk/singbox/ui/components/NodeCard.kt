@@ -31,8 +31,7 @@ import com.kunk.singbox.ui.theme.*
 private fun Modifier.nodeOverflowMenuPanel(): Modifier {
     val shape = RoundedCornerShape(12.dp)
     return if (isLiquidGlassTheme()) {
-        width(100.dp)
-            .liquidGlassPanel(shape = shape, shadowElevation = 8.dp)
+        width(100.dp) // 交给 LiquidGlassDropdownMenu 去绘制玻璃面板，这里只控制宽度
     } else {
         background(MaterialTheme.colorScheme.surfaceVariant, shape)
             .border(

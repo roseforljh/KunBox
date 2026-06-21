@@ -29,7 +29,6 @@ import com.kunk.singbox.ui.theme.TextPrimary
 import com.kunk.singbox.ui.theme.TextSecondary
 import com.kunk.singbox.ui.theme.isLiquidGlassTheme
 import com.kunk.singbox.ui.theme.liquidGlassMutedContentColor
-import com.kunk.singbox.ui.theme.liquidGlassPanel
 import com.kunk.singbox.ui.theme.liquidGlassProgressColor
 import com.kunk.singbox.ui.theme.liquidGlassProgressTrackColor
 import com.kunk.singbox.ui.theme.liquidGlassStrongContentColor

@@ -153,9 +153,15 @@ fun AppNavigation(
         val fromIndex = tabIndex(fromRoute)
         val toIndex = tabIndex(toRoute)
         if (toIndex > fromIndex) {
-            slideInHorizontally(initialOffsetX = { it / 8 }, animationSpec = slideSpec) + fadeIn(animationSpec = fadeSpec)
+            slideInHorizontally(
+                initialOffsetX = { it / 8 },
+                animationSpec = slideSpec
+            ) + fadeIn(animationSpec = fadeSpec)
         } else {
-            slideInHorizontally(initialOffsetX = { -it / 8 }, animationSpec = slideSpec) + fadeIn(animationSpec = fadeSpec)
+            slideInHorizontally(
+                initialOffsetX = { -it / 8 },
+                animationSpec = slideSpec
+            ) + fadeIn(animationSpec = fadeSpec)
         }
     }
 
@@ -171,9 +177,15 @@ fun AppNavigation(
             val fromIndex = tabIndex(fromRoute)
             val toIndex = tabIndex(toRoute)
             if (toIndex > fromIndex) {
-                slideOutHorizontally(targetOffsetX = { -it / 8 }, animationSpec = slideSpec) + fadeOut(animationSpec = fadeSpec)
+                slideOutHorizontally(
+                    targetOffsetX = { -it / 8 },
+                    animationSpec = slideSpec
+                ) + fadeOut(animationSpec = fadeSpec)
             } else {
-                slideOutHorizontally(targetOffsetX = { it / 8 }, animationSpec = slideSpec) + fadeOut(animationSpec = fadeSpec)
+                slideOutHorizontally(
+                    targetOffsetX = { it / 8 },
+                    animationSpec = slideSpec
+                ) + fadeOut(animationSpec = fadeSpec)
             }
         }
     }
@@ -190,9 +202,15 @@ fun AppNavigation(
             val fromIndex = tabIndex(fromRoute)
             val toIndex = tabIndex(toRoute)
             if (toIndex > fromIndex) {
-                slideInHorizontally(initialOffsetX = { it / 8 }, animationSpec = slideSpec) + fadeIn(animationSpec = fadeSpec)
+                slideInHorizontally(
+                    initialOffsetX = { it / 8 },
+                    animationSpec = slideSpec
+                ) + fadeIn(animationSpec = fadeSpec)
             } else {
-                slideInHorizontally(initialOffsetX = { -it / 8 }, animationSpec = slideSpec) + fadeIn(animationSpec = fadeSpec)
+                slideInHorizontally(
+                    initialOffsetX = { -it / 8 },
+                    animationSpec = slideSpec
+                ) + fadeIn(animationSpec = fadeSpec)
             }
         }
     }

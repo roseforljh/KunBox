@@ -3,12 +3,10 @@ package com.kunk.singbox.ui.components
 import androidx.compose.ui.res.stringResource
 import com.kunk.singbox.R
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.Box
-import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -39,9 +37,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.layout.boundsInParent
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -78,11 +73,7 @@ private fun Modifier.dialogPanel(shape: RoundedCornerShape = RoundedCornerShape(
 private fun Modifier.dialogOptionPanel(isSelected: Boolean): Modifier {
     val shape = RoundedCornerShape(12.dp)
     return if (isLiquidGlassTheme()) {
-        if (isSelected) {
-            this.liquidGlassPanel(shape = shape, selected = true, shadowElevation = 4.dp)
-        } else {
-            this.clip(shape)
-        }
+        this.liquidGlassPanel(shape = shape, selected = isSelected, shadowElevation = 4.dp)
     } else {
         background(
             if (isSelected) {
@@ -344,7 +335,7 @@ fun SingleSelectDialog(
     onSelect: (Int) -> Unit,
     onDismiss: () -> Unit
 ) {
-    // Use selectedIndex as the initial value, but update it when selectedIndex changes
+    // 以 selectedIndex 作为初始值，并在外部选中项变化时同步。
     var tempSelectedIndex by remember(selectedIndex) { mutableStateOf(selectedIndex) }
     val canConfirm = tempSelectedIndex in options.indices
 
@@ -374,49 +365,23 @@ fun SingleSelectDialog(
                         }
                     )
             ) {
-                val itemPositions = remember { androidx.compose.runtime.mutableStateMapOf<Int, androidx.compose.ui.geometry.Rect>() }
-                val selectedBounds = itemPositions[tempSelectedIndex]
-                val targetY = selectedBounds?.top ?: 0f
-                val targetHeight = selectedBounds?.height ?: 0f
-
-                val animatedY by animateFloatAsState(
-                    targetValue = targetY,
-                    animationSpec = spring(stiffness = androidx.compose.animation.core.Spring.StiffnessMediumLow),
-                    label = "dialog_highlight_y"
-                )
-                val animatedHeight by animateFloatAsState(
-                    targetValue = targetHeight,
-                    animationSpec = spring(stiffness = androidx.compose.animation.core.Spring.StiffnessMediumLow),
-                    label = "dialog_highlight_height"
-                )
-
-                if (targetHeight > 0) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .graphicsLayer { translationY = animatedY }
-                            .height(with(androidx.compose.ui.platform.LocalDensity.current) { animatedHeight.toDp() })
-                            .dialogOptionPanel(isSelected = true)
-                    )
-                }
-
-                Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                Column(
+                    modifier = Modifier.verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
                     options.forEachIndexed { index, option ->
                         val isSelected = index == tempSelectedIndex
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .onGloballyPositioned { coordinates ->
-                                    itemPositions[index] = coordinates.boundsInParent()
-                                }
                                 .clip(RoundedCornerShape(12.dp))
-                                .dialogOptionPanel(isSelected = false) // Ensures it gets the unselected transparent clip
+                                .dialogOptionPanel(isSelected = isSelected)
                                 .liquidGlassPressFeedback(
                                     label = "liquid_glass_dialog_option_scale"
                                 ) {
                                     tempSelectedIndex = index
                                 }
-                                .padding(vertical = 12.dp, horizontal = 8.dp),
+                                .padding(vertical = 14.dp, horizontal = 14.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Icon(

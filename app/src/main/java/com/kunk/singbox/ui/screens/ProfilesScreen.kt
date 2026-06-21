@@ -6,12 +6,9 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -44,7 +41,6 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Search
-import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -83,12 +79,10 @@ import com.kunk.singbox.ui.components.ConfirmDialog
 import com.kunk.singbox.ui.components.InputDialog
 import com.kunk.singbox.ui.components.ProfileCard
 import com.kunk.singbox.ui.navigation.Screen
+import com.kunk.singbox.ui.theme.LiquidGlassFloatingActionButton
 import com.kunk.singbox.ui.theme.isLiquidGlassTheme
 import com.kunk.singbox.ui.theme.liquidGlassFloatingActionContainerColor
 import com.kunk.singbox.ui.theme.liquidGlassFloatingActionContentColor
-import com.kunk.singbox.ui.theme.liquidGlassFloatingActionPanel
-import com.kunk.singbox.ui.theme.liquidGlassFloatingActionShape
-import com.kunk.singbox.ui.theme.liquidGlassFloatingActionElevation
 import com.kunk.singbox.ui.theme.liquidGlassIconButtonPanel
 import com.kunk.singbox.ui.theme.liquidGlassScreenContainerColor
 import com.kunk.singbox.utils.DeepLinkHandler
@@ -858,7 +852,7 @@ fun ProfilesScreen(
         )
 
         if (fabAlpha > 0f) {
-            FloatingActionButton(
+            LiquidGlassFloatingActionButton(
                 onClick = { showImportSelection = true },
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
@@ -867,12 +861,9 @@ fun ProfilesScreen(
                         alpha = fabAlpha
                         translationY = (1f - fabAlpha) * 15.dp.toPx()
                         compositingStrategy = CompositingStrategy.ModulateAlpha
-                    }
-                    .liquidGlassFloatingActionPanel(),
+                    },
                 containerColor = liquidGlassFloatingActionContainerColor(MaterialTheme.colorScheme.primary),
-                contentColor = liquidGlassFloatingActionContentColor(MaterialTheme.colorScheme.onPrimary),
-                shape = liquidGlassFloatingActionShape(),
-                elevation = liquidGlassFloatingActionElevation()
+                contentColor = liquidGlassFloatingActionContentColor(MaterialTheme.colorScheme.onPrimary)
             ) {
                 Icon(Icons.Rounded.Add, contentDescription = "Add Profile")
             }

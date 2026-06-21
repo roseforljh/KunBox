@@ -5,6 +5,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Test
 import java.io.File
 
+@Suppress("LargeClass")
 class ThemeStyleSourceTest {
 
     @Test
@@ -81,8 +82,7 @@ class ThemeStyleSourceTest {
             "NodeSelectionDialogs.kt",
             "AppMultiSelectDialog.kt",
             "NodeCard.kt",
-            "ProfileCard.kt",
-            "BigToggle.kt"
+            "ProfileCard.kt"
         )
 
         componentFiles.forEach { fileName ->
@@ -179,6 +179,98 @@ class ThemeStyleSourceTest {
     }
 
     @Test
+    fun liquidGlassPanelBrushAvoidsOpaqueWhiteStopsInLightTheme() {
+        val liquidTheme = File("src/main/java/com/kunk/singbox/ui/theme/LiquidGlassTheme.kt").readText()
+        val brushBody = liquidTheme
+            .substringAfter("fun liquidGlassPanelBrush(")
+            .substringBefore("fun liquidGlassPanelBorderBrush(")
+        val whiteAlphas = Regex("""Color\.White\.copy\(alpha = (0\.\d+)f\)""")
+            .findAll(brushBody)
+            .map { it.groupValues[1].toFloat() }
+            .toList()
+
+        assertTrue("liquidGlassPanelBrush should define white alpha stops", whiteAlphas.isNotEmpty())
+        assertTrue(
+            "liquidGlassPanelBrush white stops must stay translucent to avoid white blocks in light mode",
+            whiteAlphas.all { it <= 0.32f }
+        )
+    }
+
+    @Test
+    fun liquidGlassPanelUsesHollowShadowToAvoidRectangularLayerFill() {
+        val liquidTheme = File("src/main/java/com/kunk/singbox/ui/theme/LiquidGlassTheme.kt").readText()
+        val panelBody = liquidTheme
+            .substringAfter("fun Modifier.liquidGlassPanel(")
+            .substringBefore("fun Modifier.hollowShadow(")
+
+        assertTrue(liquidTheme.contains("fun Modifier.hollowShadow("))
+        assertTrue(panelBody.contains(".hollowShadow("))
+        assertFalse(panelBody.contains(".shadow(elevation = shadowElevation"))
+    }
+
+    @Test
+    fun liquidGlassFloatingActionAvoidsOpaqueWhiteBlocks() {
+        val controls = File("src/main/java/com/kunk/singbox/ui/theme/LiquidGlassControls.kt").readText()
+        val fabBody = controls
+            .substringAfter("fun Modifier.liquidGlassFloatingActionPanel(")
+            .substringBefore("@Composable\nfun liquidGlassFloatingActionContainerColor(")
+
+        assertTrue(fabBody.contains(".hollowShadow("))
+        assertFalse(fabBody.contains(".shadow("))
+        assertFalse(
+            "Floating actions must not use opaque white stops in light mode",
+            Regex("""else 0\.(5|6|7|8|9)\d*f""").containsMatchIn(fabBody)
+        )
+    }
+
+    @Test
+    fun liquidGlassFloatingActionButtonsBypassMaterialSurfaceInLiquidBranch() {
+        val controls = File("src/main/java/com/kunk/singbox/ui/theme/LiquidGlassControls.kt").readText()
+        val liquidSurfaceBody = controls
+            .substringAfter("private fun LiquidGlassFloatingActionSurface(")
+            .substringBefore("@Composable\nfun LiquidGlassFloatingActionButton(")
+        val nodes = File("src/main/java/com/kunk/singbox/ui/screens/NodesScreen.kt").readText()
+        val profiles = File("src/main/java/com/kunk/singbox/ui/screens/ProfilesScreen.kt").readText()
+
+        assertTrue(controls.contains("fun LiquidGlassFloatingActionButton("))
+        assertTrue(controls.contains("fun LiquidGlassSmallFloatingActionButton("))
+        assertTrue(liquidSurfaceBody.contains("Box("))
+        assertTrue(liquidSurfaceBody.contains(".liquidGlassFloatingActionPanel("))
+        assertFalse(liquidSurfaceBody.contains("FloatingActionButton("))
+        assertFalse(liquidSurfaceBody.contains("SmallFloatingActionButton("))
+        assertTrue(nodes.contains("LiquidGlassFloatingActionButton("))
+        assertTrue(nodes.contains("LiquidGlassSmallFloatingActionButton("))
+        assertTrue(profiles.contains("LiquidGlassFloatingActionButton("))
+    }
+
+    @Test
+    fun nodeFloatingActionMenuUsesTightExitAnimationWithoutGhostProgress() {
+        val nodes = File("src/main/java/com/kunk/singbox/ui/screens/NodesScreen.kt").readText()
+        val actionButtonsBody = nodes
+            .substringAfter("fun NodeActionButtons(modifier: Modifier = Modifier) {")
+            .substringBefore("Box(\n        modifier = Modifier.fillMaxSize()")
+
+        assertTrue(actionButtonsBody.contains("AnimatedVisibility("))
+        assertTrue(actionButtonsBody.contains("fadeOut(animationSpec = tween(durationMillis = 90))"))
+        assertTrue(actionButtonsBody.contains("scaleOut("))
+        assertFalse(actionButtonsBody.contains("expandedProgress > 0f"))
+        assertFalse(actionButtonsBody.contains("label = \"expandedProgress\""))
+    }
+
+    @Test
+    fun singleSelectDialogOptionsAreSeparatedCards() {
+        val commonDialogs = File("src/main/java/com/kunk/singbox/ui/components/CommonDialogs.kt").readText()
+        val dialogBody = commonDialogs
+            .substringAfter("fun SingleSelectDialog(")
+            .substringBefore("Button(\n                onClick = { if (canConfirm) onSelect(tempSelectedIndex) }")
+
+        assertTrue(dialogBody.contains("verticalArrangement = Arrangement.spacedBy(8.dp)"))
+        assertTrue(dialogBody.contains(".dialogOptionPanel(isSelected = isSelected)"))
+        assertFalse(dialogBody.contains("dialog_highlight_y"))
+        assertFalse(dialogBody.contains("dialog_highlight_height"))
+    }
+
+    @Test
     fun trafficAndDetailSurfacesUseSharedLiquidGlassPanel() {
         val screenFiles = listOf(
             "TrafficStatsScreen.kt",
@@ -197,9 +289,9 @@ class ThemeStyleSourceTest {
 
     @Test
     fun importRuleAndRoutingSurfacesUseSharedLiquidGlassPanel() {
-        val componentFiles = listOf(
-            "ExportImportDialogs.kt",
-            "AppListLoadingDialog.kt"
+        val componentFiles = mapOf(
+            "ExportImportDialogs.kt" to "liquidGlassPanel",
+            "AppListLoadingDialog.kt" to "liquidGlassDialogPanel"
         )
         val screenFiles = listOf(
             "RuleSetsDialogs.kt",
@@ -207,10 +299,10 @@ class ThemeStyleSourceTest {
             "NodesScreen.kt"
         )
 
-        componentFiles.forEach { fileName ->
+        componentFiles.forEach { fileName, expectedPanel ->
             val source = File("src/main/java/com/kunk/singbox/ui/components/$fileName").readText()
             assertTrue("$fileName should read liquid glass theme state", source.contains("isLiquidGlassTheme"))
-            assertTrue("$fileName should use shared liquid glass panel", source.contains("liquidGlassPanel"))
+            assertTrue("$fileName should use shared liquid glass panel", source.contains(expectedPanel))
         }
         screenFiles.forEach { fileName ->
             val source = File("src/main/java/com/kunk/singbox/ui/screens/$fileName").readText()
@@ -353,12 +445,15 @@ class ThemeStyleSourceTest {
         val profiles = File("src/main/java/com/kunk/singbox/ui/screens/ProfilesScreen.kt").readText()
 
         assertTrue(liquidControls.contains("fun Modifier.liquidGlassFloatingActionPanel("))
+        assertTrue(liquidControls.contains("fun LiquidGlassFloatingActionButton("))
+        assertTrue(liquidControls.contains("fun LiquidGlassSmallFloatingActionButton("))
         assertTrue(liquidControls.contains("fun liquidGlassFloatingActionContainerColor("))
         assertTrue(liquidControls.contains("fun liquidGlassFloatingActionContentColor("))
-        assertTrue(nodes.contains("liquidGlassFloatingActionPanel("))
+        assertTrue(nodes.contains("LiquidGlassFloatingActionButton("))
+        assertTrue(nodes.contains("LiquidGlassSmallFloatingActionButton("))
         assertTrue(nodes.contains("liquidGlassFloatingActionContainerColor("))
         assertTrue(nodes.contains("liquidGlassFloatingActionContentColor("))
-        assertTrue(profiles.contains("liquidGlassFloatingActionPanel("))
+        assertTrue(profiles.contains("LiquidGlassFloatingActionButton("))
         assertTrue(profiles.contains("liquidGlassFloatingActionContainerColor("))
         assertTrue(profiles.contains("liquidGlassFloatingActionContentColor("))
     }
