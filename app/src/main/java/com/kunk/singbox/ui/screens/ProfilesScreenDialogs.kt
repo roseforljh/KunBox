@@ -43,7 +43,6 @@ import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.Link
 import androidx.compose.material.icons.rounded.QrCodeScanner
 import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -80,10 +79,12 @@ import com.kunk.singbox.ui.theme.liquidGlassPanel
 import com.kunk.singbox.ui.theme.liquidGlassProgressColor
 import com.kunk.singbox.ui.theme.liquidGlassProgressTrackColor
 import com.kunk.singbox.ui.theme.liquidGlassSwitchColors
+import com.kunk.singbox.ui.theme.liquidGlassOutlinedTextFieldColors
 import com.kunk.singbox.ui.theme.liquidGlassTextFieldBorderColor
 import com.kunk.singbox.ui.theme.liquidGlassTextFieldContainerColor
 import com.kunk.singbox.ui.theme.liquidGlassTextFieldPanel
 import com.kunk.singbox.ui.theme.liquidGlassTextButtonContentColor
+import com.kunk.singbox.ui.theme.liquidGlassTextButtonColors
 import com.kunk.singbox.ui.theme.liquidGlassTextButtonPanel
 
 @Composable
@@ -452,7 +453,7 @@ internal fun CustomConfigDialog(
                     )
                 },
                 shape = nameFieldShape,
-                colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
+                colors = liquidGlassOutlinedTextFieldColors(
                     focusedTextColor = MaterialTheme.colorScheme.onSurface,
                     unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
                     focusedBorderColor = liquidGlassTextFieldBorderColor(MaterialTheme.colorScheme.primary),
@@ -520,7 +521,7 @@ internal fun CustomConfigDialog(
                     .fillMaxWidth()
                     .height(50.dp)
                     .liquidGlassTextButtonPanel(shape = RoundedCornerShape(25.dp)),
-                colors = ButtonDefaults.textButtonColors(
+                colors = liquidGlassTextButtonColors(
                     contentColor = liquidGlassTextButtonContentColor(
                         defaultColor = MaterialTheme.colorScheme.onSurfaceVariant,
                         liquidColor = MaterialTheme.colorScheme.onSurfaceVariant
@@ -619,7 +620,7 @@ internal fun ImportLoadingDialog(message: String, onCancel: () -> Unit = {}) {
             )
             TextButton(
                 onClick = onCancel,
-                colors = ButtonDefaults.textButtonColors(
+                colors = liquidGlassTextButtonColors(
                     contentColor = liquidGlassTextButtonContentColor(
                         defaultColor = MaterialTheme.colorScheme.error,
                         liquidColor = MaterialTheme.colorScheme.error
@@ -768,7 +769,7 @@ internal fun SubscriptionInputDialog(
                     .liquidGlassTextFieldPanel(shape = nameFieldShape),
                 singleLine = true,
                 shape = nameFieldShape,
-                colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
+                colors = liquidGlassOutlinedTextFieldColors(
                     focusedTextColor = MaterialTheme.colorScheme.onSurface,
                     unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
                     focusedBorderColor = liquidGlassTextFieldBorderColor(MaterialTheme.colorScheme.primary),
@@ -792,7 +793,7 @@ internal fun SubscriptionInputDialog(
                     .liquidGlassTextFieldPanel(shape = urlFieldShape),
                 singleLine = true,
                 shape = urlFieldShape,
-                colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
+                colors = liquidGlassOutlinedTextFieldColors(
                     focusedTextColor = MaterialTheme.colorScheme.onSurface,
                     unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
                     focusedBorderColor = liquidGlassTextFieldBorderColor(MaterialTheme.colorScheme.primary),
@@ -867,7 +868,7 @@ internal fun SubscriptionInputDialog(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         },
-                        colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
+                        colors = liquidGlassOutlinedTextFieldColors(
                             focusedTextColor = MaterialTheme.colorScheme.onSurface,
                             unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
                             focusedBorderColor = liquidGlassTextFieldBorderColor(MaterialTheme.colorScheme.primary),
@@ -947,7 +948,7 @@ internal fun SubscriptionInputDialog(
                                 dnsDropdownExpanded = true
                             },
                         shape = dnsFieldShape,
-                        colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
+                        colors = liquidGlassOutlinedTextFieldColors(
                             disabledTextColor = MaterialTheme.colorScheme.onSurface,
                             disabledBorderColor = liquidGlassTextFieldBorderColor(MaterialTheme.colorScheme.outline),
                             disabledContainerColor = liquidGlassTextFieldContainerColor(Color.Transparent),
@@ -1059,7 +1060,7 @@ internal fun SubscriptionInputDialog(
                             fontSize = 12.sp
                         ),
                         shape = dnsOverrideFieldShape,
-                        colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
+                        colors = liquidGlassOutlinedTextFieldColors(
                             focusedTextColor = MaterialTheme.colorScheme.onSurface,
                             unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
                             focusedBorderColor = liquidGlassTextFieldBorderColor(MaterialTheme.colorScheme.primary),
@@ -1165,7 +1166,7 @@ internal fun SubscriptionInputDialog(
                     .fillMaxWidth()
                     .height(50.dp)
                     .liquidGlassTextButtonPanel(shape = RoundedCornerShape(25.dp)),
-                colors = ButtonDefaults.textButtonColors(
+                colors = liquidGlassTextButtonColors(
                     contentColor = liquidGlassTextButtonContentColor(
                         defaultColor = MaterialTheme.colorScheme.onSurfaceVariant,
                         liquidColor = MaterialTheme.colorScheme.onSurfaceVariant

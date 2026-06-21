@@ -36,6 +36,7 @@ import com.kunk.singbox.ui.theme.liquidGlassButtonPanel
 import com.kunk.singbox.ui.theme.liquidGlassEmptyStatePanel
 import com.kunk.singbox.ui.theme.liquidGlassIconButtonPanel
 import com.kunk.singbox.ui.theme.liquidGlassLoadingStatePanel
+import com.kunk.singbox.ui.theme.liquidGlassOutlinedTextFieldColors
 import com.kunk.singbox.ui.theme.liquidGlassPanel
 import com.kunk.singbox.ui.theme.liquidGlassProgressColor
 import com.kunk.singbox.ui.theme.liquidGlassProgressTrackColor
@@ -43,10 +44,12 @@ import com.kunk.singbox.ui.theme.liquidGlassTextFieldBorderColor
 import com.kunk.singbox.ui.theme.liquidGlassTextFieldContainerColor
 import com.kunk.singbox.ui.theme.liquidGlassTextFieldPanel
 import com.kunk.singbox.ui.theme.liquidGlassTextButtonContentColor
+import com.kunk.singbox.ui.theme.liquidGlassTextButtonColors
 import com.kunk.singbox.ui.theme.liquidGlassTextButtonPanel
 import com.kunk.singbox.viewmodel.RuleSetViewModel
 import com.kunk.singbox.viewmodel.SettingsViewModel
 import com.kunk.singbox.ui.theme.liquidGlassTopAppBarContainerColor
+import com.kunk.singbox.ui.theme.liquidGlassTopAppBarColors
 
 @Composable
 private fun ruleSetBadgeContentColor(defaultColor: Color): Color {
@@ -170,11 +173,7 @@ fun RuleSetHubScreen(
                         Icon(Icons.Rounded.Refresh, contentDescription = stringResource(R.string.common_refresh), tint = MaterialTheme.colorScheme.onBackground)
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = liquidGlassTopAppBarContainerColor(
-                        MaterialTheme.colorScheme.background
-                    )
-                )
+                colors = liquidGlassTopAppBarColors(defaultContainerColor = MaterialTheme.colorScheme.background)
             )
         }
     ) { padding ->
@@ -302,7 +301,7 @@ private fun RuleSetHubSearchField(
             .liquidGlassTextFieldPanel(shape = searchFieldShape),
         singleLine = true,
         shape = searchFieldShape,
-        colors = OutlinedTextFieldDefaults.colors(
+        colors = liquidGlassOutlinedTextFieldColors(
             focusedContainerColor = liquidGlassTextFieldContainerColor(Color.Transparent),
             unfocusedContainerColor = liquidGlassTextFieldContainerColor(Color.Transparent),
             focusedBorderColor = liquidGlassTextFieldBorderColor(Color.Transparent),
@@ -460,7 +459,7 @@ private fun HubRuleSetItemActions(
     ) {
         TextButton(
             modifier = Modifier.liquidGlassTextButtonPanel(),
-            colors = ButtonDefaults.textButtonColors(
+            colors = liquidGlassTextButtonColors(
                 contentColor = liquidGlassTextButtonContentColor(MaterialTheme.colorScheme.primary)
             ),
             onClick = onAddSource,
@@ -475,7 +474,7 @@ private fun HubRuleSetItemActions(
 
         TextButton(
             modifier = Modifier.liquidGlassTextButtonPanel(),
-            colors = ButtonDefaults.textButtonColors(
+            colors = liquidGlassTextButtonColors(
                 contentColor = liquidGlassTextButtonContentColor(MaterialTheme.colorScheme.primary)
             ),
             onClick = onAddBinary,

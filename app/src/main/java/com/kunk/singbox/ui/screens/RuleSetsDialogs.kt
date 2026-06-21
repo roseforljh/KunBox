@@ -49,6 +49,7 @@ import com.kunk.singbox.ui.theme.liquidGlassProgressColor
 import com.kunk.singbox.ui.theme.liquidGlassProgressTrackColor
 import com.kunk.singbox.ui.theme.liquidGlassSwitchColors
 import com.kunk.singbox.ui.theme.liquidGlassTextButtonContentColor
+import com.kunk.singbox.ui.theme.liquidGlassTextButtonColors
 import com.kunk.singbox.ui.theme.liquidGlassTextButtonPanel
 
 @Composable
@@ -459,7 +460,7 @@ fun RuleSetEditorDialog(
         confirmButton = {
             TextButton(
                 modifier = Modifier.liquidGlassTextButtonPanel(enabled = tag.isNotBlank()),
-                colors = ButtonDefaults.textButtonColors(
+                colors = liquidGlassTextButtonColors(
                     contentColor = liquidGlassTextButtonContentColor(MaterialTheme.colorScheme.primary)
                 ),
                 onClick = {
@@ -488,7 +489,7 @@ fun RuleSetEditorDialog(
                 if (initialRuleSet != null && onDelete != null) {
                     TextButton(
                         modifier = Modifier.liquidGlassTextButtonPanel(),
-                        colors = ButtonDefaults.textButtonColors(
+                        colors = liquidGlassTextButtonColors(
                             contentColor = liquidGlassTextButtonContentColor(
                                 defaultColor = MaterialTheme.colorScheme.error,
                                 liquidColor = MaterialTheme.colorScheme.error
@@ -507,7 +508,7 @@ fun RuleSetEditorDialog(
                 }
                 TextButton(
                     modifier = Modifier.liquidGlassTextButtonPanel(),
-                    colors = ButtonDefaults.textButtonColors(
+                    colors = liquidGlassTextButtonColors(
                         contentColor = liquidGlassTextButtonContentColor(
                             defaultColor = MaterialTheme.colorScheme.primary,
                             liquidColor = MaterialTheme.colorScheme.onSurfaceVariant
@@ -570,7 +571,7 @@ fun DefaultRuleSetProgressDialog(
         dismissButton = {
             TextButton(
                 modifier = Modifier.liquidGlassTextButtonPanel(),
-                colors = ButtonDefaults.textButtonColors(
+                colors = liquidGlassTextButtonColors(
                     contentColor = liquidGlassTextButtonContentColor(
                         defaultColor = MaterialTheme.colorScheme.primary,
                         liquidColor = MaterialTheme.colorScheme.onSurfaceVariant

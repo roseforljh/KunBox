@@ -26,3 +26,24 @@ fun liquidGlassButtonColors(
         )
     }
 }
+
+@Composable
+fun liquidGlassOutlinedButtonColors(
+    defaultContainerColor: Color,
+    defaultContentColor: Color,
+    liquidContentColor: Color = MaterialTheme.colorScheme.primary
+): ButtonColors {
+    return if (isLiquidGlassTheme()) {
+        ButtonDefaults.outlinedButtonColors(
+            containerColor = Color.Transparent,
+            contentColor = liquidContentColor,
+            disabledContainerColor = Color.Transparent,
+            disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.42f)
+        )
+    } else {
+        ButtonDefaults.outlinedButtonColors(
+            containerColor = defaultContainerColor,
+            contentColor = defaultContentColor
+        )
+    }
+}

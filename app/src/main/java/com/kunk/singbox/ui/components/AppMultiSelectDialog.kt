@@ -1,4 +1,4 @@
-﻿package com.kunk.singbox.ui.components
+package com.kunk.singbox.ui.components
 
 import androidx.compose.ui.res.stringResource
 import com.kunk.singbox.R
@@ -21,14 +21,12 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.Divider
@@ -68,9 +66,11 @@ import com.kunk.singbox.ui.theme.liquidGlassPanel
 import com.kunk.singbox.ui.theme.liquidGlassPressFeedback
 import com.kunk.singbox.ui.theme.liquidGlassProgressColor
 import com.kunk.singbox.ui.theme.liquidGlassProgressTrackColor
+import com.kunk.singbox.ui.theme.liquidGlassOutlinedTextFieldColors
 import com.kunk.singbox.ui.theme.liquidGlassTextFieldBorderColor
 import com.kunk.singbox.ui.theme.liquidGlassTextFieldContainerColor
 import com.kunk.singbox.ui.theme.liquidGlassTextFieldPanel
+import com.kunk.singbox.ui.theme.liquidGlassTextButtonColors
 import com.kunk.singbox.ui.theme.liquidGlassTextButtonContentColor
 import com.kunk.singbox.ui.theme.liquidGlassTextButtonPanel
 
@@ -308,7 +308,7 @@ fun AppMultiSelectDialog(
                     .liquidGlassTextFieldPanel(shape = searchFieldShape),
                 singleLine = true,
                 textStyle = MaterialTheme.typography.bodyMedium,
-                colors = OutlinedTextFieldDefaults.colors(
+                colors = liquidGlassOutlinedTextFieldColors(
                     focusedTextColor = MaterialTheme.colorScheme.onSurface,
                     unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
                     focusedBorderColor = liquidGlassTextFieldBorderColor(MaterialTheme.colorScheme.primary),
@@ -520,7 +520,7 @@ fun AppMultiSelectDialog(
                         .weight(1f)
                         .height(50.dp)
                         .liquidGlassTextButtonPanel(shape = RoundedCornerShape(25.dp)),
-                    colors = ButtonDefaults.textButtonColors(
+                    colors = liquidGlassTextButtonColors(
                         contentColor = liquidGlassTextButtonContentColor(
                             defaultColor = MaterialTheme.colorScheme.onSurfaceVariant,
                             liquidColor = MaterialTheme.colorScheme.onSurfaceVariant

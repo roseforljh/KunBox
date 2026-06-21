@@ -1,4 +1,4 @@
-﻿package com.kunk.singbox.ui.components
+package com.kunk.singbox.ui.components
 
 import com.kunk.singbox.R
 import androidx.compose.foundation.layout.*
@@ -30,6 +30,7 @@ import com.kunk.singbox.ui.theme.liquidGlassPanel
 import com.kunk.singbox.ui.theme.liquidGlassProgressColor
 import com.kunk.singbox.ui.theme.liquidGlassProgressTrackColor
 import com.kunk.singbox.ui.theme.liquidGlassTextButtonContentColor
+import com.kunk.singbox.ui.theme.liquidGlassTextButtonColors
 import com.kunk.singbox.ui.theme.liquidGlassTextButtonPanel
 import com.kunk.singbox.viewmodel.ExportState
 import com.kunk.singbox.viewmodel.ImportState
@@ -296,7 +297,7 @@ fun ImportPreviewDialog(
                 ) {
                     TextButton(
                         modifier = Modifier.liquidGlassTextButtonPanel(),
-                        colors = ButtonDefaults.textButtonColors(
+                        colors = liquidGlassTextButtonColors(
                             contentColor = liquidGlassTextButtonContentColor(
                                 defaultColor = MaterialTheme.colorScheme.primary,
                                 liquidColor = MaterialTheme.colorScheme.onSurfaceVariant

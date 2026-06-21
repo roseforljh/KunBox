@@ -373,39 +373,6 @@ class ThemeStyleSourceTest {
     }
 
     @Test
-    fun topAppBarsUseLiquidGlassTransparentContainerColor() {
-        val liquidControls = File("src/main/java/com/kunk/singbox/ui/theme/LiquidGlassControls.kt").readText()
-        val topAppBarFiles = listOf(
-            "AppGroupsScreen.kt",
-            "AppRoutingScreen.kt",
-            "AppRulesScreen.kt",
-            "ConnectionInfoScreen.kt",
-            "ConnectionSettingsScreen.kt",
-            "CustomRulesScreen.kt",
-            "DiagnosticsScreen.kt",
-            "DnsSettingsScreen.kt",
-            "DomainRulesScreen.kt",
-            "LogsScreen.kt",
-            "NodeDetailScreen.kt",
-            "ProfileEditorScreen.kt",
-            "RoutingSettingsScreen.kt",
-            "RuleSetHubScreen.kt",
-            "RuleSetsScreen.kt",
-            "TrafficStatsScreen.kt",
-            "TunSettingsScreen.kt"
-        )
-
-        assertTrue(liquidControls.contains("fun liquidGlassTopAppBarContainerColor("))
-        topAppBarFiles.forEach { fileName ->
-            val source = File("src/main/java/com/kunk/singbox/ui/screens/$fileName").readText()
-            assertTrue(
-                "$fileName should make liquid glass top app bar transparent",
-                source.contains("liquidGlassTopAppBarContainerColor(")
-            )
-        }
-    }
-
-    @Test
     fun topLevelScreenRootsUseLiquidGlassTransparentContainerColor() {
         val liquidControls = File("src/main/java/com/kunk/singbox/ui/theme/LiquidGlassControls.kt").readText()
         val nodes = File("src/main/java/com/kunk/singbox/ui/screens/NodesScreen.kt").readText()
@@ -512,12 +479,15 @@ class ThemeStyleSourceTest {
     @Test
     fun outlinedButtonsUseLiquidGlassPanels() {
         val liquidControls = File("src/main/java/com/kunk/singbox/ui/theme/LiquidGlassControls.kt").readText()
+        val liquidButtonColors = File("src/main/java/com/kunk/singbox/ui/theme/LiquidGlassButtonColors.kt").readText()
         val domainRules = File("src/main/java/com/kunk/singbox/ui/screens/DomainRulesScreen.kt").readText()
 
         assertTrue(liquidControls.contains("fun liquidGlassOutlinedButtonBorder("))
+        assertTrue(liquidButtonColors.contains("fun liquidGlassOutlinedButtonColors("))
+        assertTrue(liquidButtonColors.contains("disabledContainerColor = Color.Transparent"))
         assertTrue(domainRules.contains("liquidGlassButtonPanel("))
         assertTrue(domainRules.contains("liquidGlassOutlinedButtonBorder("))
-        assertTrue(domainRules.contains("liquidGlassButtonContainerColor("))
+        assertTrue(domainRules.contains("liquidGlassOutlinedButtonColors("))
     }
 
     @Test

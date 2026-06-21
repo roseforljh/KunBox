@@ -43,7 +43,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -80,6 +79,7 @@ import com.kunk.singbox.ui.theme.liquidGlassProgressColor
 import com.kunk.singbox.ui.theme.liquidGlassProgressTrackColor
 import com.kunk.singbox.viewmodel.TrafficStatsViewModel
 import com.kunk.singbox.ui.theme.liquidGlassTopAppBarContainerColor
+import com.kunk.singbox.ui.theme.liquidGlassTopAppBarColors
 
 private val chartColors = listOf(
     Color(0xFF6366F1),
@@ -270,9 +270,7 @@ fun TrafficStatsScreen(
                         )
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = liquidGlassTopAppBarContainerColor(MaterialTheme.colorScheme.background)
-                )
+                colors = liquidGlassTopAppBarColors(defaultContainerColor = MaterialTheme.colorScheme.background)
             )
         }
     ) { innerPadding ->

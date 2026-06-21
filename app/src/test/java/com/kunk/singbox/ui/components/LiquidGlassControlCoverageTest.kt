@@ -26,6 +26,9 @@ class LiquidGlassControlCoverageTest {
     @Test
     fun iconButtonsUseLiquidGlassPanels() {
         val liquidControls = liquidControlSources()
+        val liquidIconButtonColors = File("src/main/java/com/kunk/singbox/ui/theme/LiquidGlassIconButtonColors.kt")
+            .readText()
+        val connectionInfo = File("src/main/java/com/kunk/singbox/ui/screens/ConnectionInfoScreen.kt").readText()
         val componentFiles = listOf(
             "AppMultiSelectDialog.kt",
             "NodeCard.kt",
@@ -56,6 +59,9 @@ class LiquidGlassControlCoverageTest {
         )
 
         assertTrue(liquidControls.contains("fun Modifier.liquidGlassIconButtonPanel("))
+        assertTrue(liquidIconButtonColors.contains("fun liquidGlassIconButtonColors("))
+        assertTrue(liquidIconButtonColors.contains("disabledContainerColor = Color.Transparent"))
+        assertTrue(connectionInfo.contains("liquidGlassIconButtonColors("))
         componentFiles.assertComponentSourcesContain("liquidGlassIconButtonPanel(")
         screenFiles.assertScreenSourcesContain("liquidGlassIconButtonPanel(")
     }
@@ -224,6 +230,7 @@ class LiquidGlassControlCoverageTest {
             .readText()
 
         assertTrue(connectionInfo.contains("private fun Modifier.connectionOverviewPanel()"))
+        assertTrue(connectionInfo.contains("private fun Modifier.connectionItemPanel()"))
         assertTrue(connectionInfo.contains("private fun connectionItemContainerColor("))
         assertTrue(ruleSetHub.contains("private fun Modifier.ruleSetHubItemPanel("))
         assertTrue(ruleSetHub.contains("private fun ruleSetHubItemContainerColor("))
@@ -326,7 +333,7 @@ class LiquidGlassControlCoverageTest {
             )
             assertTrue(
                 "$filePath should keep TextButton colors explicit",
-                source.contains("ButtonDefaults.textButtonColors(")
+                source.contains("liquidGlassTextButtonColors(")
             )
         }
     }
@@ -626,6 +633,7 @@ class LiquidGlassControlCoverageTest {
             "rootContainerColor",
             "selectedIndicator",
             "connectionItemContainerColor",
+            "connectionItemPanel",
             "connectionOverviewPanel",
             "ruleSetHubItemPanel",
             "ruleSetHubItemContainerColor",

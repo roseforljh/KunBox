@@ -40,7 +40,6 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.ui.res.stringResource
 import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -77,6 +76,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import com.kunk.singbox.ui.theme.liquidGlassIconButtonPanel
 import com.kunk.singbox.ui.theme.liquidGlassTopAppBarContainerColor
+import com.kunk.singbox.ui.theme.liquidGlassTopAppBarColors
 
 internal fun resolveTransportHostTextForEditor(transport: TransportConfig): String {
     return transport.host
@@ -308,11 +308,7 @@ fun NodeDetailScreen(
                         Icon(Icons.Rounded.Save, contentDescription = stringResource(R.string.common_save), tint = MaterialTheme.colorScheme.onBackground)
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = liquidGlassTopAppBarContainerColor(
-                        MaterialTheme.colorScheme.background
-                    )
-                )
+                colors = liquidGlassTopAppBarColors(defaultContainerColor = MaterialTheme.colorScheme.background)
             )
         }
     ) { padding ->

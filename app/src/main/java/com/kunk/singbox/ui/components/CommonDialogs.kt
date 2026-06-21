@@ -1,4 +1,4 @@
-﻿package com.kunk.singbox.ui.components
+package com.kunk.singbox.ui.components
 
 import androidx.compose.ui.res.stringResource
 import com.kunk.singbox.R
@@ -21,7 +21,6 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -50,12 +49,14 @@ import com.kunk.singbox.ui.theme.liquidGlassButtonColors
 import com.kunk.singbox.ui.theme.liquidGlassButtonContentColor
 import com.kunk.singbox.ui.theme.liquidGlassButtonPanel
 import com.kunk.singbox.ui.theme.liquidGlassMutedContentColor
+import com.kunk.singbox.ui.theme.liquidGlassOutlinedTextFieldColors
 import com.kunk.singbox.ui.theme.liquidGlassPanel
 import com.kunk.singbox.ui.theme.liquidGlassPressFeedback
 import com.kunk.singbox.ui.theme.liquidGlassTextFieldBorderColor
 import com.kunk.singbox.ui.theme.liquidGlassTextFieldContainerColor
 import com.kunk.singbox.ui.theme.liquidGlassTextFieldPanel
 import com.kunk.singbox.ui.theme.liquidGlassTextButtonContentColor
+import com.kunk.singbox.ui.theme.liquidGlassTextButtonColors
 import com.kunk.singbox.ui.theme.liquidGlassTextButtonPanel
 
 @Composable
@@ -163,7 +164,7 @@ fun ConfirmDialog(
                     .fillMaxWidth()
                     .height(50.dp)
                     .liquidGlassTextButtonPanel(shape = RoundedCornerShape(25.dp)),
-                colors = ButtonDefaults.textButtonColors(
+                colors = liquidGlassTextButtonColors(
                     contentColor = liquidGlassTextButtonContentColor(
                         defaultColor = Neutral500,
                         liquidColor = liquidGlassMutedContentColor(Neutral500)
@@ -238,7 +239,7 @@ fun InputDialog(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
                             )
                         },
-                        colors = OutlinedTextFieldDefaults.colors(
+                        colors = liquidGlassOutlinedTextFieldColors(
                             focusedTextColor = MaterialTheme.colorScheme.onSurface,
                             unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
                             focusedBorderColor = liquidGlassTextFieldBorderColor(MaterialTheme.colorScheme.primary),
@@ -253,7 +254,7 @@ fun InputDialog(
                                 enabled = true,
                                 isError = false,
                                 interactionSource = interactionSource,
-                                colors = OutlinedTextFieldDefaults.colors(
+                                colors = liquidGlassOutlinedTextFieldColors(
                                     focusedBorderColor = liquidGlassTextFieldBorderColor(
                                         MaterialTheme.colorScheme.primary
                                     ),
@@ -299,7 +300,7 @@ fun InputDialog(
                     .fillMaxWidth()
                     .height(50.dp)
                     .liquidGlassTextButtonPanel(shape = RoundedCornerShape(25.dp)),
-                colors = ButtonDefaults.textButtonColors(
+                colors = liquidGlassTextButtonColors(
                     contentColor = liquidGlassTextButtonContentColor(
                         defaultColor = Neutral500,
                         liquidColor = liquidGlassMutedContentColor(Neutral500)
@@ -422,7 +423,7 @@ fun SingleSelectDialog(
                     .fillMaxWidth()
                     .height(50.dp)
                     .liquidGlassTextButtonPanel(shape = RoundedCornerShape(25.dp)),
-                colors = ButtonDefaults.textButtonColors(
+                colors = liquidGlassTextButtonColors(
                     contentColor = liquidGlassTextButtonContentColor(
                         defaultColor = MaterialTheme.colorScheme.onSurfaceVariant,
                         liquidColor = MaterialTheme.colorScheme.onSurfaceVariant

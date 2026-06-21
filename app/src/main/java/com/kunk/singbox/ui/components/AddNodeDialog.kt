@@ -12,10 +12,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -39,9 +37,11 @@ import com.kunk.singbox.ui.theme.liquidGlassDialogContainerColor
 import com.kunk.singbox.ui.theme.liquidGlassDialogPanel
 import com.kunk.singbox.ui.theme.liquidGlassPressFeedback
 import com.kunk.singbox.ui.theme.liquidGlassRadioButtonColors
+import com.kunk.singbox.ui.theme.liquidGlassOutlinedTextFieldColors
 import com.kunk.singbox.ui.theme.liquidGlassTextFieldBorderColor
 import com.kunk.singbox.ui.theme.liquidGlassTextFieldContainerColor
 import com.kunk.singbox.ui.theme.liquidGlassTextFieldPanel
+import com.kunk.singbox.ui.theme.liquidGlassTextButtonColors
 import com.kunk.singbox.ui.theme.liquidGlassTextButtonContentColor
 import com.kunk.singbox.ui.theme.liquidGlassTextButtonPanel
 
@@ -114,7 +114,7 @@ fun AddNodeDialog(
                     singleLine = false,
                     minLines = 2,
                     maxLines = 4,
-                    colors = OutlinedTextFieldDefaults.colors(
+                    colors = liquidGlassOutlinedTextFieldColors(
                         focusedBorderColor = liquidGlassTextFieldBorderColor(MaterialTheme.colorScheme.primary),
                         unfocusedBorderColor = liquidGlassTextFieldBorderColor(MaterialTheme.colorScheme.outline),
                         focusedContainerColor = liquidGlassTextFieldContainerColor(Color.Transparent),
@@ -216,7 +216,7 @@ fun AddNodeDialog(
                             .fillMaxWidth()
                             .liquidGlassTextFieldPanel(shape = textFieldShape),
                         singleLine = true,
-                        colors = OutlinedTextFieldDefaults.colors(
+                        colors = liquidGlassOutlinedTextFieldColors(
                             focusedBorderColor = liquidGlassTextFieldBorderColor(MaterialTheme.colorScheme.primary),
                             unfocusedBorderColor = liquidGlassTextFieldBorderColor(MaterialTheme.colorScheme.outline),
                             focusedContainerColor = liquidGlassTextFieldContainerColor(Color.Transparent),
@@ -230,7 +230,7 @@ fun AddNodeDialog(
         confirmButton = {
             TextButton(
                 modifier = Modifier.liquidGlassTextButtonPanel(enabled = isValid),
-                colors = ButtonDefaults.textButtonColors(
+                colors = liquidGlassTextButtonColors(
                     contentColor = liquidGlassTextButtonContentColor(MaterialTheme.colorScheme.primary)
                 ),
                 onClick = {
@@ -250,7 +250,7 @@ fun AddNodeDialog(
         dismissButton = {
             TextButton(
                 modifier = Modifier.liquidGlassTextButtonPanel(),
-                colors = ButtonDefaults.textButtonColors(
+                colors = liquidGlassTextButtonColors(
                     contentColor = liquidGlassTextButtonContentColor(
                         defaultColor = MaterialTheme.colorScheme.primary,
                         liquidColor = MaterialTheme.colorScheme.onSurfaceVariant

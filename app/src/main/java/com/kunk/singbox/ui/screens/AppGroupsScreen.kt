@@ -33,6 +33,7 @@ import com.kunk.singbox.ui.theme.liquidGlassMutedContentColor
 import com.kunk.singbox.ui.theme.liquidGlassProgressColor
 import com.kunk.singbox.ui.theme.liquidGlassProgressTrackColor
 import com.kunk.singbox.ui.theme.liquidGlassTopAppBarContainerColor
+import com.kunk.singbox.ui.theme.liquidGlassTopAppBarColors
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -141,11 +142,7 @@ fun AppGroupsScreen(
                         Icon(Icons.Rounded.Add, contentDescription = stringResource(R.string.app_groups_add), tint = MaterialTheme.colorScheme.onBackground)
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = liquidGlassTopAppBarContainerColor(
-                        MaterialTheme.colorScheme.background
-                    )
-                )
+                colors = liquidGlassTopAppBarColors(defaultContainerColor = MaterialTheme.colorScheme.background)
             )
         }
     ) { padding ->

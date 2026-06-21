@@ -54,9 +54,11 @@ import com.kunk.singbox.ui.theme.liquidGlassIconButtonPanel
 import com.kunk.singbox.ui.theme.liquidGlassPanel
 import com.kunk.singbox.ui.theme.liquidGlassPressFeedback
 import com.kunk.singbox.ui.theme.liquidGlassTextButtonContentColor
+import com.kunk.singbox.ui.theme.liquidGlassTextButtonColors
 import com.kunk.singbox.ui.theme.liquidGlassTextButtonPanel
 import kotlinx.coroutines.launch
 import com.kunk.singbox.ui.theme.liquidGlassTopAppBarContainerColor
+import com.kunk.singbox.ui.theme.liquidGlassTopAppBarColors
 
 internal val defaultRuleSetTags = setOf(
     "geosite-cn",
@@ -430,7 +432,7 @@ fun RuleSetsScreen(
             confirmButton = {
                 TextButton(
                     modifier = Modifier.liquidGlassTextButtonPanel(),
-                    colors = ButtonDefaults.textButtonColors(
+                    colors = liquidGlassTextButtonColors(
                         contentColor = liquidGlassTextButtonContentColor(MaterialTheme.colorScheme.primary)
                     ),
                     onClick = {
@@ -446,7 +448,7 @@ fun RuleSetsScreen(
             dismissButton = {
                 TextButton(
                     modifier = Modifier.liquidGlassTextButtonPanel(),
-                    colors = ButtonDefaults.textButtonColors(
+                    colors = liquidGlassTextButtonColors(
                         contentColor = liquidGlassTextButtonContentColor(
                             defaultColor = MaterialTheme.colorScheme.primary,
                             liquidColor = MaterialTheme.colorScheme.onSurfaceVariant
@@ -528,11 +530,7 @@ fun RuleSetsScreen(
                         }
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = liquidGlassTopAppBarContainerColor(
-                        MaterialTheme.colorScheme.background
-                    )
-                )
+                colors = liquidGlassTopAppBarColors(defaultContainerColor = MaterialTheme.colorScheme.background)
             )
         }
     ) { padding ->

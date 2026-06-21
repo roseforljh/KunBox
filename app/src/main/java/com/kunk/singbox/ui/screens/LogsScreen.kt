@@ -29,11 +29,9 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -47,12 +45,14 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
+import com.kunk.singbox.ui.theme.liquidGlassOutlinedTextFieldColors
 import com.kunk.singbox.ui.theme.liquidGlassTextFieldBorderColor
 import com.kunk.singbox.ui.theme.liquidGlassTextFieldContainerColor
 import com.kunk.singbox.ui.theme.liquidGlassTextFieldPanel
 import com.kunk.singbox.ui.theme.liquidGlassIconButtonPanel
 import com.kunk.singbox.viewmodel.LogViewModel
 import com.kunk.singbox.ui.theme.LiquidGlassFilterChip
+import com.kunk.singbox.ui.theme.liquidGlassTopAppBarColors
 import com.kunk.singbox.ui.theme.liquidGlassTopAppBarContainerColor
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -121,8 +121,8 @@ fun LogsScreen(navController: NavController, viewModel: LogViewModel = viewModel
                         )
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = liquidGlassTopAppBarContainerColor(MaterialTheme.colorScheme.background)
+                colors = liquidGlassTopAppBarColors(
+                    defaultContainerColor = liquidGlassTopAppBarContainerColor(MaterialTheme.colorScheme.background)
                 )
             )
         }
@@ -217,7 +217,7 @@ private fun LogsSearchField(
         },
         singleLine = true,
         shape = searchShape,
-        colors = OutlinedTextFieldDefaults.colors(
+        colors = liquidGlassOutlinedTextFieldColors(
             focusedBorderColor = liquidGlassTextFieldBorderColor(MaterialTheme.colorScheme.primary),
             unfocusedBorderColor = liquidGlassTextFieldBorderColor(
                 MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)

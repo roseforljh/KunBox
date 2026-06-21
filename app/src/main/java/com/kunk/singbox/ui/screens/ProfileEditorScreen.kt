@@ -21,7 +21,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.res.stringResource
 import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -49,6 +48,7 @@ import com.kunk.singbox.ui.theme.liquidGlassPanel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import com.kunk.singbox.ui.theme.liquidGlassTopAppBarContainerColor
+import com.kunk.singbox.ui.theme.liquidGlassTopAppBarColors
 
 @Composable
 private fun Modifier.profileEditorPanel(): Modifier {
@@ -220,11 +220,7 @@ private fun ProfileEditorTopBar(
                 )
             }
         },
-        colors = TopAppBarDefaults.topAppBarColors(
-            containerColor = liquidGlassTopAppBarContainerColor(
-                MaterialTheme.colorScheme.background
-            )
-        )
+        colors = liquidGlassTopAppBarColors(defaultContainerColor = MaterialTheme.colorScheme.background)
     )
 }
 

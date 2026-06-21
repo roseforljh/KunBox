@@ -41,10 +41,12 @@ import com.kunk.singbox.ui.theme.liquidGlassDialogPanel
 import com.kunk.singbox.ui.theme.liquidGlassEmptyStatePanel
 import com.kunk.singbox.ui.theme.liquidGlassIconButtonPanel
 import com.kunk.singbox.ui.theme.liquidGlassTextButtonContentColor
+import com.kunk.singbox.ui.theme.liquidGlassTextButtonColors
 import com.kunk.singbox.ui.theme.liquidGlassTextButtonPanel
 import com.kunk.singbox.viewmodel.SettingsViewModel
 import com.kunk.singbox.ui.theme.isLiquidGlassTheme
 import com.kunk.singbox.ui.theme.liquidGlassTopAppBarContainerColor
+import com.kunk.singbox.ui.theme.liquidGlassTopAppBarColors
 
 @Composable
 private fun Modifier.customRuleItemPressFeedback(onClick: () -> Unit): Modifier {
@@ -130,11 +132,7 @@ fun CustomRulesScreen(
                         Icon(Icons.Rounded.Add, contentDescription = stringResource(R.string.common_add), tint = MaterialTheme.colorScheme.onBackground)
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = liquidGlassTopAppBarContainerColor(
-                        MaterialTheme.colorScheme.background
-                    )
-                )
+                colors = liquidGlassTopAppBarColors(defaultContainerColor = MaterialTheme.colorScheme.background)
             )
         }
     ) { padding ->
@@ -343,7 +341,7 @@ fun CustomRuleEditorDialog(
                 modifier = Modifier.liquidGlassTextButtonPanel(
                     enabled = name.isNotBlank() && value.isNotBlank()
                 ),
-                colors = ButtonDefaults.textButtonColors(
+                colors = liquidGlassTextButtonColors(
                     contentColor = liquidGlassTextButtonContentColor(MaterialTheme.colorScheme.primary)
                 ),
                 onClick = {
@@ -370,7 +368,7 @@ fun CustomRuleEditorDialog(
                 if (initialRule != null && onDelete != null) {
                     TextButton(
                         modifier = Modifier.liquidGlassTextButtonPanel(),
-                        colors = ButtonDefaults.textButtonColors(
+                        colors = liquidGlassTextButtonColors(
                             contentColor = liquidGlassTextButtonContentColor(
                                 defaultColor = MaterialTheme.colorScheme.error,
                                 liquidColor = MaterialTheme.colorScheme.error
@@ -389,7 +387,7 @@ fun CustomRuleEditorDialog(
                 }
                 TextButton(
                     modifier = Modifier.liquidGlassTextButtonPanel(),
-                    colors = ButtonDefaults.textButtonColors(
+                    colors = liquidGlassTextButtonColors(
                         contentColor = liquidGlassTextButtonContentColor(
                             defaultColor = MaterialTheme.colorScheme.onSurfaceVariant,
                             liquidColor = MaterialTheme.colorScheme.onSurfaceVariant

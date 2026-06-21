@@ -38,6 +38,7 @@ import com.kunk.singbox.ui.theme.liquidGlassEmptyStatePanel
 import com.kunk.singbox.ui.theme.liquidGlassMutedContentColor
 import com.kunk.singbox.ui.theme.liquidGlassPanel
 import com.kunk.singbox.ui.theme.liquidGlassTopAppBarContainerColor
+import com.kunk.singbox.ui.theme.liquidGlassTopAppBarColors
 import com.kunk.singbox.ui.theme.liquidGlassIconButtonPanel
 import com.kunk.singbox.ui.theme.liquidGlassTabIndicatorColor
 import com.kunk.singbox.ui.theme.liquidGlassTabRowPanel
@@ -271,11 +272,7 @@ fun AppRoutingScreen(
                             Icon(Icons.Rounded.Add, contentDescription = stringResource(R.string.common_add), tint = MaterialTheme.colorScheme.onBackground)
                         }
                     },
-                    colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = liquidGlassTopAppBarContainerColor(
-                            MaterialTheme.colorScheme.background
-                        )
-                    )
+                    colors = liquidGlassTopAppBarColors(defaultContainerColor = MaterialTheme.colorScheme.background)
                 )
                 TabRow(
                     modifier = Modifier.liquidGlassTabRowPanel(),

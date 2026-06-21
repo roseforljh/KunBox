@@ -24,7 +24,6 @@ import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.RadioButtonChecked
 import androidx.compose.material.icons.rounded.RadioButtonUnchecked
 import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -48,6 +47,7 @@ import com.kunk.singbox.ui.theme.liquidGlassButtonPanel
 import com.kunk.singbox.ui.theme.liquidGlassPanel
 import com.kunk.singbox.ui.theme.liquidGlassPressFeedback
 import com.kunk.singbox.ui.theme.liquidGlassTextButtonContentColor
+import com.kunk.singbox.ui.theme.liquidGlassTextButtonColors
 import com.kunk.singbox.ui.theme.liquidGlassTextButtonPanel
 
 @Composable
@@ -259,7 +259,7 @@ internal fun DetourNodeSelectDialog(
                         .weight(1f)
                         .height(50.dp)
                         .liquidGlassTextButtonPanel(shape = RoundedCornerShape(25.dp)),
-                    colors = ButtonDefaults.textButtonColors(
+                    colors = liquidGlassTextButtonColors(
                         contentColor = liquidGlassTextButtonContentColor(
                             defaultColor = MaterialTheme.colorScheme.onSurfaceVariant,
                             liquidColor = MaterialTheme.colorScheme.onSurfaceVariant

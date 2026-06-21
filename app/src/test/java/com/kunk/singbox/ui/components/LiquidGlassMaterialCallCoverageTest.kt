@@ -353,6 +353,7 @@ class LiquidGlassMaterialCallCoverageTest {
 
         assertTrue(source.contains("private fun ConnectionItemCardContent("))
         assertTrue(source.contains("if (useLiquidGlass) {\n        Column("))
+        assertTrue(source.contains(".connectionItemPanel()"))
         assertTrue(source.contains("ConnectionItemCardContent("))
     }
 
@@ -487,14 +488,12 @@ class LiquidGlassMaterialCallCoverageTest {
                 "OutlinedButton",
                 listOf("liquidGlassButtonPanel"),
                 listOf("liquidGlassOutlinedButtonBorder"),
-                listOf("liquidGlassButtonContainerColor"),
-                listOf("liquidGlassButtonContentColor")
+                listOf("liquidGlassOutlinedButtonColors")
             ),
             materialCallRule(
                 "TextButton",
                 listOf("liquidGlassTextButtonPanel"),
-                listOf("ButtonDefaults.textButtonColors"),
-                listOf("liquidGlassTextButtonContentColor")
+                listOf("liquidGlassTextButtonColors")
             ),
             materialCallRule("IconButton", listOf("liquidGlassIconButtonPanel", "connectionCloseButtonPanel")),
             materialCallRule(
@@ -520,8 +519,7 @@ class LiquidGlassMaterialCallCoverageTest {
             materialCallRule(
                 "OutlinedTextField",
                 listOf("liquidGlassTextFieldPanel"),
-                listOf("liquidGlassTextFieldContainerColor"),
-                listOf("liquidGlassTextFieldBorderColor")
+                listOf("liquidGlassOutlinedTextFieldColors")
             ),
             materialCallRule("DropdownMenuItem", listOf("liquidGlassDropdownMenuItemColors"))
         )
@@ -550,7 +548,7 @@ class LiquidGlassMaterialCallCoverageTest {
                 "Scaffold",
                 listOf("liquidGlassTopAppBarContainerColor", "liquidGlassScreenContainerColor")
             ),
-            materialCallRule("TopAppBar", listOf("liquidGlassTopAppBarContainerColor"))
+            materialCallRule("TopAppBar", listOf("liquidGlassTopAppBarColors"))
         )
     }
 
@@ -716,13 +714,13 @@ class LiquidGlassMaterialCallCoverageTest {
             "MainActivity.kt:367:Surface:Surface(",
             "ui/components/AppNavBar.kt:111:NavigationBar:NavigationBar(",
             "ui/components/AppNavBar.kt:164:NavigationBarItem:NavigationBarItem(",
-            "ui/components/ExportImportDialogs.kt:68:Card:Card(",
+            "ui/components/ExportImportDialogs.kt:69:Card:Card(",
             "ui/components/StandardCard.kt:64:Card:Card(",
             "ui/components/StandardCard.kt:75:Card:Card(",
-            "ui/screens/AppRoutingScreen.kt:52:Tab:Tab(",
-            "ui/screens/ConnectionInfoScreen.kt:587:Card:Card(",
-            "ui/screens/ConnectionInfoScreen.kt:715:Card:Card(",
-            "ui/screens/RuleSetHubScreen.kt:344:Card:Card(",
+            "ui/screens/AppRoutingScreen.kt:53:Tab:Tab(",
+            "ui/screens/ConnectionInfoScreen.kt:590:Card:Card(",
+            "ui/screens/ConnectionInfoScreen.kt:717:Card:Card(",
+            "ui/screens/RuleSetHubScreen.kt:343:Card:Card(",
             "ui/theme/LiquidGlassChipControls.kt:75:FilterChip:FilterChip(",
             "ui/theme/LiquidGlassMenuControls.kt:21:DropdownMenu:DropdownMenu(",
             "ui/theme/LiquidGlassMenuControls.kt:31:DropdownMenu:DropdownMenu("

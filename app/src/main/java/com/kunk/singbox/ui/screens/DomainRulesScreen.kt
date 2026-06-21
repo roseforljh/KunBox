@@ -42,7 +42,6 @@ import androidx.compose.material3.Text
 import androidx.compose.ui.res.stringResource
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -70,7 +69,6 @@ import com.kunk.singbox.ui.components.SingleSelectDialog
 import com.kunk.singbox.ui.components.StandardCard
 import com.kunk.singbox.ui.components.StyledTextField
 import com.kunk.singbox.ui.theme.isLiquidGlassTheme
-import com.kunk.singbox.ui.theme.liquidGlassButtonContainerColor
 import com.kunk.singbox.ui.theme.liquidGlassButtonColors
 import com.kunk.singbox.ui.theme.liquidGlassButtonContentColor
 import com.kunk.singbox.ui.theme.liquidGlassButtonPanel
@@ -79,14 +77,17 @@ import com.kunk.singbox.ui.theme.liquidGlassDialogPanel
 import com.kunk.singbox.ui.theme.liquidGlassEmptyStatePanel
 import com.kunk.singbox.ui.theme.liquidGlassIconButtonPanel
 import com.kunk.singbox.ui.theme.liquidGlassOutlinedButtonBorder
+import com.kunk.singbox.ui.theme.liquidGlassOutlinedButtonColors
 import com.kunk.singbox.ui.theme.liquidGlassPanel
 import com.kunk.singbox.ui.theme.liquidGlassPressFeedback
 import com.kunk.singbox.ui.theme.liquidGlassTextButtonContentColor
+import com.kunk.singbox.ui.theme.liquidGlassTextButtonColors
 import com.kunk.singbox.ui.theme.liquidGlassTextButtonPanel
 import com.kunk.singbox.viewmodel.NodesViewModel
 import com.kunk.singbox.viewmodel.ProfilesViewModel
 import com.kunk.singbox.viewmodel.SettingsViewModel
 import com.kunk.singbox.ui.theme.liquidGlassTopAppBarContainerColor
+import com.kunk.singbox.ui.theme.liquidGlassTopAppBarColors
 
 @Composable
 private fun Modifier.domainRuleSelectorPanel(): Modifier {
@@ -279,11 +280,7 @@ fun DomainRulesScreen(
                         Icon(Icons.Rounded.Add, contentDescription = stringResource(R.string.common_add), tint = MaterialTheme.colorScheme.onBackground)
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = liquidGlassTopAppBarContainerColor(
-                        MaterialTheme.colorScheme.background
-                    )
-                )
+                colors = liquidGlassTopAppBarColors(defaultContainerColor = MaterialTheme.colorScheme.background)
             )
         }
     ) { padding ->
@@ -593,7 +590,7 @@ private fun DomainRuleEditorDialog(
                     TextButton(
                         modifier = Modifier.liquidGlassTextButtonPanel(),
                         onClick = { showDeleteConfirm = true },
-                        colors = ButtonDefaults.textButtonColors(
+                        colors = liquidGlassTextButtonColors(
                             contentColor = liquidGlassTextButtonContentColor(
                                 defaultColor = Destructive,
                                 liquidColor = Destructive
@@ -657,9 +654,9 @@ private fun DomainRuleEditorDialog(
                 onClick = onDismiss,
                 modifier = Modifier.liquidGlassButtonPanel(shape = RoundedCornerShape(20.dp)),
                 border = liquidGlassOutlinedButtonBorder(ButtonDefaults.outlinedButtonBorder),
-                colors = ButtonDefaults.outlinedButtonColors(
-                    containerColor = liquidGlassButtonContainerColor(Color.Transparent),
-                    contentColor = liquidGlassButtonContentColor(MaterialTheme.colorScheme.primary)
+                colors = liquidGlassOutlinedButtonColors(
+                    defaultContainerColor = Color.Transparent,
+                    defaultContentColor = MaterialTheme.colorScheme.primary
                 )
             ) {
                 Text(

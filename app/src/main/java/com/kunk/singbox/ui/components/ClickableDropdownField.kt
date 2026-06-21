@@ -33,6 +33,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.kunk.singbox.ui.theme.isLiquidGlassTheme
+import com.kunk.singbox.ui.theme.liquidGlassOutlinedTextFieldColors
 import com.kunk.singbox.ui.theme.liquidGlassPanel
 import com.kunk.singbox.ui.theme.liquidGlassTextFieldBorderColor
 import com.kunk.singbox.ui.theme.liquidGlassTextFieldContainerColor
@@ -169,7 +170,7 @@ fun StyledTextField(
             },
             singleLine = singleLine,
             shape = fieldShape,
-            colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
+            colors = liquidGlassOutlinedTextFieldColors(
                 focusedTextColor = MaterialTheme.colorScheme.onSurface,
                 unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
                 focusedBorderColor = liquidGlassTextFieldBorderColor(

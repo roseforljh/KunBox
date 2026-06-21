@@ -41,19 +41,16 @@ import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -85,13 +82,16 @@ import com.kunk.singbox.ui.theme.liquidGlassEmptyStatePanel
 import com.kunk.singbox.ui.theme.liquidGlassPanel
 import com.kunk.singbox.ui.theme.liquidGlassDialogContainerColor
 import com.kunk.singbox.ui.theme.liquidGlassDialogPanel
+import com.kunk.singbox.ui.theme.liquidGlassIconButtonColors
 import com.kunk.singbox.ui.theme.liquidGlassIconButtonPanel
 import com.kunk.singbox.ui.theme.liquidGlassMutedContentColor
 import com.kunk.singbox.ui.theme.liquidGlassTextButtonContentColor
+import com.kunk.singbox.ui.theme.liquidGlassTextButtonColors
 import com.kunk.singbox.ui.theme.liquidGlassTextButtonPanel
 import com.kunk.singbox.viewmodel.ConnectionInfoViewModel
 import java.util.Locale
 import com.kunk.singbox.ui.theme.liquidGlassTopAppBarContainerColor
+import com.kunk.singbox.ui.theme.liquidGlassTopAppBarColors
 
 @Composable
 private fun Modifier.connectionEmptyIconPanel(): Modifier {
@@ -173,6 +173,15 @@ private fun Modifier.connectionOverviewPanel(): Modifier {
 }
 
 @Composable
+private fun Modifier.connectionItemPanel(): Modifier {
+    return if (isLiquidGlassTheme()) {
+        liquidGlassPanel(shape = RoundedCornerShape(16.dp), shadowElevation = 8.dp)
+    } else {
+        this
+    }
+}
+
+@Composable
 private fun connectionItemContainerColor(defaultColor: Color): Color {
     return if (isLiquidGlassTheme()) Color.Transparent else defaultColor
 }
@@ -226,8 +235,7 @@ private fun connectionMetaBadgeTextColor(defaultColor: Color): Color {
 }
 
 @Composable
-private fun ConnectionCloseButton(
-    useLiquidGlass: Boolean,
+private fun ConnectionCloseControl(
     onClose: () -> Unit
 ) {
     IconButton(
@@ -235,13 +243,10 @@ private fun ConnectionCloseButton(
         modifier = Modifier
             .size(26.dp)
             .connectionCloseButtonPanel(),
-        colors = IconButtonDefaults.iconButtonColors(
-            containerColor = if (useLiquidGlass) {
-                Color.Transparent
-            } else {
-                MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.2f)
-            },
-            contentColor = MaterialTheme.colorScheme.error
+        colors = liquidGlassIconButtonColors(
+            defaultContainerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.2f),
+            defaultContentColor = MaterialTheme.colorScheme.error,
+            liquidContentColor = MaterialTheme.colorScheme.error
         )
     ) {
         Icon(
@@ -288,7 +293,7 @@ fun ConnectionInfoScreen(
             confirmButton = {
                 TextButton(
                     modifier = Modifier.liquidGlassTextButtonPanel(),
-                    colors = ButtonDefaults.textButtonColors(
+                    colors = liquidGlassTextButtonColors(
                         contentColor = liquidGlassTextButtonContentColor(
                             defaultColor = MaterialTheme.colorScheme.error,
                             liquidColor = MaterialTheme.colorScheme.error
@@ -311,7 +316,7 @@ fun ConnectionInfoScreen(
             dismissButton = {
                 TextButton(
                     modifier = Modifier.liquidGlassTextButtonPanel(),
-                    colors = ButtonDefaults.textButtonColors(
+                    colors = liquidGlassTextButtonColors(
                         contentColor = liquidGlassTextButtonContentColor(
                             defaultColor = MaterialTheme.colorScheme.primary,
                             liquidColor = MaterialTheme.colorScheme.onSurfaceVariant
@@ -400,9 +405,7 @@ fun ConnectionInfoScreen(
                         )
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = liquidGlassTopAppBarContainerColor(MaterialTheme.colorScheme.background)
-                )
+                colors = liquidGlassTopAppBarColors(defaultContainerColor = MaterialTheme.colorScheme.background)
             )
         }
     ) { padding ->
@@ -700,12 +703,11 @@ private fun ConnectionItemCard(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .liquidGlassPanel(shape = shape, shadowElevation = 8.dp)
+                .connectionItemPanel()
                 .padding(12.dp)
         ) {
             ConnectionItemCardContent(
                 connection = connection,
-                useLiquidGlass = useLiquidGlass,
                 onClose = onClose
             )
         }
@@ -732,7 +734,6 @@ private fun ConnectionItemCard(
         ) {
             ConnectionItemCardContent(
                 connection = connection,
-                useLiquidGlass = useLiquidGlass,
                 onClose = onClose
             )
         }
@@ -744,7 +745,6 @@ private fun ConnectionItemCard(
 @Composable
 private fun ConnectionItemCardContent(
     connection: ClashConnection,
-    useLiquidGlass: Boolean,
     onClose: () -> Unit
 ) {
     val isUdp = connection.metadata.network.lowercase() == "udp"
@@ -795,10 +795,7 @@ private fun ConnectionItemCardContent(
             overflow = TextOverflow.Ellipsis
         )
 
-        ConnectionCloseButton(
-            useLiquidGlass = useLiquidGlass,
-            onClose = onClose
-        )
+        ConnectionCloseControl(onClose = onClose)
     }
 
     // 额外的目的IP显示（如果host不为空）

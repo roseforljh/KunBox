@@ -53,12 +53,14 @@ import com.kunk.singbox.ui.theme.liquidGlassDialogContainerColor
 import com.kunk.singbox.ui.theme.liquidGlassDialogPanel
 import com.kunk.singbox.ui.theme.liquidGlassIconButtonPanel
 import com.kunk.singbox.ui.theme.liquidGlassMutedContentColor
+import com.kunk.singbox.ui.theme.liquidGlassOutlinedTextFieldColors
 import com.kunk.singbox.ui.theme.liquidGlassSwitchColors
 import com.kunk.singbox.ui.theme.liquidGlassPressFeedback
 import com.kunk.singbox.ui.theme.liquidGlassTextFieldBorderColor
 import com.kunk.singbox.ui.theme.liquidGlassTextFieldContainerColor
 import com.kunk.singbox.ui.theme.liquidGlassTextFieldPanel
 import com.kunk.singbox.ui.theme.liquidGlassTextButtonContentColor
+import com.kunk.singbox.ui.theme.liquidGlassTextButtonColors
 import com.kunk.singbox.ui.theme.liquidGlassTextButtonPanel
 
 private const val APP_INFO_SEPARATOR = "\t"
@@ -505,7 +507,7 @@ fun AppRuleEditorDialog(
         confirmButton = {
             TextButton(
                 modifier = Modifier.liquidGlassTextButtonPanel(enabled = selectedApp != null),
-                colors = ButtonDefaults.textButtonColors(
+                colors = liquidGlassTextButtonColors(
                     contentColor = liquidGlassTextButtonContentColor(MaterialTheme.colorScheme.primary)
                 ),
                 onClick = {
@@ -539,7 +541,7 @@ fun AppRuleEditorDialog(
         dismissButton = {
             TextButton(
                 modifier = Modifier.liquidGlassTextButtonPanel(),
-                colors = ButtonDefaults.textButtonColors(
+                colors = liquidGlassTextButtonColors(
                     contentColor = liquidGlassTextButtonContentColor(
                         defaultColor = MaterialTheme.colorScheme.onSurfaceVariant,
                         liquidColor = MaterialTheme.colorScheme.onSurfaceVariant
@@ -609,7 +611,7 @@ fun AppPickerDialog(apps: List<InstalledApp>, existingPackages: Set<String>, onS
                         },
                         singleLine = true,
                         shape = searchFieldShape,
-                        colors = OutlinedTextFieldDefaults.colors(
+                        colors = liquidGlassOutlinedTextFieldColors(
                             focusedTextColor = MaterialTheme.colorScheme.onSurface,
                             unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
                             focusedBorderColor = liquidGlassTextFieldBorderColor(
@@ -665,7 +667,7 @@ fun AppPickerDialog(apps: List<InstalledApp>, existingPackages: Set<String>, onS
         dismissButton = {
             TextButton(
                 modifier = Modifier.liquidGlassTextButtonPanel(),
-                colors = ButtonDefaults.textButtonColors(
+                colors = liquidGlassTextButtonColors(
                     contentColor = liquidGlassTextButtonContentColor(
                         defaultColor = MaterialTheme.colorScheme.onSurfaceVariant,
                         liquidColor = MaterialTheme.colorScheme.onSurfaceVariant
@@ -1069,7 +1071,7 @@ fun MultiAppSelectorDialog(
                     },
                     singleLine = true,
                     shape = searchFieldShape,
-                    colors = OutlinedTextFieldDefaults.colors(
+                    colors = liquidGlassOutlinedTextFieldColors(
                         focusedTextColor = MaterialTheme.colorScheme.onSurface,
                         unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
                         focusedBorderColor = liquidGlassTextFieldBorderColor(
@@ -1130,7 +1132,7 @@ fun MultiAppSelectorDialog(
         dismissButton = {
             TextButton(
                 modifier = Modifier.liquidGlassTextButtonPanel(),
-                colors = ButtonDefaults.textButtonColors(
+                colors = liquidGlassTextButtonColors(
                     contentColor = liquidGlassTextButtonContentColor(
                         defaultColor = MaterialTheme.colorScheme.onSurfaceVariant,
                         liquidColor = MaterialTheme.colorScheme.onSurfaceVariant
@@ -1352,7 +1354,7 @@ fun AppGroupEditorDialog(
                         Text(stringResource(R.string.app_rules_tabs_individual) + " (${selectedApps.size})", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.Medium)
                         TextButton(
                             modifier = Modifier.liquidGlassTextButtonPanel(),
-                            colors = ButtonDefaults.textButtonColors(
+                            colors = liquidGlassTextButtonColors(
                                 contentColor = liquidGlassTextButtonContentColor(MaterialTheme.colorScheme.primary)
                             ),
                             onClick = { showAppSelector = true }
@@ -1428,7 +1430,7 @@ fun AppGroupEditorDialog(
         dismissButton = {
             TextButton(
                 modifier = Modifier.liquidGlassTextButtonPanel(),
-                colors = ButtonDefaults.textButtonColors(
+                colors = liquidGlassTextButtonColors(
                     contentColor = liquidGlassTextButtonContentColor(
                         defaultColor = MaterialTheme.colorScheme.onSurfaceVariant,
                         liquidColor = MaterialTheme.colorScheme.onSurfaceVariant

@@ -38,6 +38,7 @@ import com.kunk.singbox.viewmodel.NodesViewModel
 import com.kunk.singbox.viewmodel.ProfilesViewModel
 import com.kunk.singbox.viewmodel.SettingsViewModel
 import com.kunk.singbox.ui.theme.liquidGlassTopAppBarContainerColor
+import com.kunk.singbox.ui.theme.liquidGlassTopAppBarColors
 
 @Composable
 private fun Modifier.outboundChipPanel(): Modifier {
@@ -160,11 +161,7 @@ fun AppRulesScreen(
                         Icon(Icons.Rounded.Add, contentDescription = stringResource(R.string.common_add), tint = MaterialTheme.colorScheme.onBackground)
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = liquidGlassTopAppBarContainerColor(
-                        MaterialTheme.colorScheme.background
-                    )
-                )
+                colors = liquidGlassTopAppBarColors(defaultContainerColor = MaterialTheme.colorScheme.background)
             )
         }
     ) { padding ->
