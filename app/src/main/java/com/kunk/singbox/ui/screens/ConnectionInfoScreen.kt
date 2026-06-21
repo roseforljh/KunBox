@@ -31,6 +31,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Close
@@ -65,6 +67,8 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -355,54 +359,60 @@ fun ConnectionInfoScreen(
                     }
                 },
                 actions = {
-                    // 搜索按钮
-                    IconButton(
-                        modifier = Modifier.liquidGlassIconButtonPanel(selected = isSearchExpanded),
-                        onClick = {
-                            isSearchExpanded = !isSearchExpanded
-                            if (!isSearchExpanded) searchQuery = ""
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(end = 8.dp)
+                    ) {
+                        // 搜索按钮
+                        IconButton(
+                            modifier = Modifier.liquidGlassIconButtonPanel(selected = false),
+                            onClick = {
+                                isSearchExpanded = !isSearchExpanded
+                                if (!isSearchExpanded) searchQuery = ""
+                            }
+                        ) {
+                            Icon(
+                                Icons.Rounded.Search,
+                                contentDescription = null,
+                                tint = if (isSearchExpanded)
+                                    MaterialTheme.colorScheme.primary
+                                else
+                                    MaterialTheme.colorScheme.onBackground
+                            )
                         }
-                    ) {
-                        Icon(
-                            Icons.Rounded.Search,
-                            contentDescription = null,
-                            tint = if (isSearchExpanded)
-                                MaterialTheme.colorScheme.primary
-                            else
-                                MaterialTheme.colorScheme.onBackground
-                        )
-                    }
-                    IconButton(
-                        modifier = Modifier.liquidGlassIconButtonPanel(selected = isRefreshing),
-                        onClick = { viewModel.setRefreshing(!isRefreshing) }
-                    ) {
-                        Icon(
-                            if (isRefreshing) Icons.Rounded.Pause
-                            else Icons.Rounded.PlayArrow,
-                            contentDescription = stringResource(
-                                if (isRefreshing) R.string.connection_info_pause
-                                else R.string.connection_info_resume
-                            ),
-                            tint = MaterialTheme.colorScheme.onBackground
-                        )
-                    }
-                    IconButton(
-                        modifier = Modifier.liquidGlassIconButtonPanel(enabled = canCloseAll),
-                        onClick = { showConfirmDeleteAll = true },
-                        enabled = canCloseAll
-                    ) {
-                        Icon(
-                            Icons.Rounded.Delete,
-                            contentDescription = stringResource(
-                                R.string.connection_info_close_all
-                            ),
-                            tint = if (canCloseAll)
-                                MaterialTheme.colorScheme.error
-                            else
-                                MaterialTheme.colorScheme.onBackground.copy(
-                                    alpha = 0.4f
-                                )
-                        )
+                        IconButton(
+                            modifier = Modifier.liquidGlassIconButtonPanel(selected = false),
+                            onClick = { viewModel.setRefreshing(!isRefreshing) }
+                        ) {
+                            Icon(
+                                if (isRefreshing) Icons.Rounded.Pause
+                                else Icons.Rounded.PlayArrow,
+                                contentDescription = stringResource(
+                                    if (isRefreshing) R.string.connection_info_pause
+                                    else R.string.connection_info_resume
+                                ),
+                                tint = MaterialTheme.colorScheme.onBackground
+                            )
+                        }
+                        IconButton(
+                            modifier = Modifier.liquidGlassIconButtonPanel(enabled = canCloseAll),
+                            onClick = { showConfirmDeleteAll = true },
+                            enabled = canCloseAll
+                        ) {
+                            Icon(
+                                Icons.Rounded.Delete,
+                                contentDescription = stringResource(
+                                    R.string.connection_info_close_all
+                                ),
+                                tint = if (canCloseAll)
+                                    MaterialTheme.colorScheme.error
+                                else
+                                    MaterialTheme.colorScheme.onBackground.copy(
+                                        alpha = 0.4f
+                                    )
+                            )
+                        }
                     }
                 },
                 colors = liquidGlassTopAppBarColors(defaultContainerColor = MaterialTheme.colorScheme.background)
@@ -415,15 +425,24 @@ fun ConnectionInfoScreen(
                 .padding(padding)
         ) {
             // 可展开搜索栏（与节点页面一致的样式）
-            AnimatedVisibility(
-                visible = isSearchExpanded,
-                enter = expandVertically() + fadeIn(),
-                exit = shrinkVertically() + fadeOut()
-            ) {
+            val searchAlpha by animateFloatAsState(
+                targetValue = if (isSearchExpanded) 1f else 0f,
+                animationSpec = tween(durationMillis = 300),
+                label = "searchAlpha"
+            )
+
+            if (searchAlpha > 0f) {
                 ConnectionSearchBar(
                     query = searchQuery,
                     onQueryChange = { searchQuery = it },
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)
+                    modifier = Modifier
+                        .graphicsLayer {
+                            alpha = searchAlpha
+                            scaleY = 0.96f + 0.04f * searchAlpha
+                            translationY = (1f - searchAlpha) * (-10.dp.toPx())
+                            compositingStrategy = CompositingStrategy.ModulateAlpha
+                        }
+                        .padding(horizontal = 16.dp, vertical = 6.dp)
                 )
             }
 

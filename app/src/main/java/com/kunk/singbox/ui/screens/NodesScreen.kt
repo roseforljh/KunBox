@@ -29,7 +29,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.Spring
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandHorizontally
 import androidx.compose.animation.expandVertically
@@ -114,6 +117,8 @@ import com.kunk.singbox.ui.theme.isLiquidGlassTheme
 import com.kunk.singbox.ui.theme.liquidGlassFloatingActionContainerColor
 import com.kunk.singbox.ui.theme.liquidGlassFloatingActionContentColor
 import com.kunk.singbox.ui.theme.liquidGlassFloatingActionPanel
+import com.kunk.singbox.ui.theme.liquidGlassFloatingActionShape
+import com.kunk.singbox.ui.theme.liquidGlassFloatingActionElevation
 import com.kunk.singbox.ui.theme.liquidGlassDropdownMenuItemColors
 import com.kunk.singbox.ui.theme.liquidGlassIconButtonPanel
 import com.kunk.singbox.ui.theme.liquidGlassPanel
@@ -344,22 +349,38 @@ fun NodesScreen(
         val fabContainerColor = liquidGlassFloatingActionContainerColor(MaterialTheme.colorScheme.primary)
         val fabContentColor = liquidGlassFloatingActionContentColor(MaterialTheme.colorScheme.onPrimary)
 
-        AnimatedVisibility(
-            visible = isFabVisible,
-            enter = fadeIn(),
-            exit = fadeOut(),
-            modifier = modifier
-        ) {
-            Column(horizontalAlignment = Alignment.End) {
-                AnimatedVisibility(
-                    visible = isFabExpanded,
-                    enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
-                    exit = slideOutVertically(targetOffsetY = { it }) + fadeOut()
-                ) {
+        val fabAlpha by animateFloatAsState(
+            targetValue = if (isFabVisible) 1f else 0f,
+            animationSpec = tween(durationMillis = 300),
+            label = "fabAlpha"
+        )
+        val expandedProgress by animateFloatAsState(
+            targetValue = if (isFabExpanded) 1f else 0f,
+            animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
+            label = "expandedProgress"
+        )
+
+        if (fabAlpha > 0f) {
+            Column(
+                modifier = modifier
+                    .graphicsLayer {
+                        alpha = fabAlpha
+                        translationY = (1f - fabAlpha) * 15.dp.toPx()
+                        compositingStrategy = CompositingStrategy.ModulateAlpha
+                    },
+                horizontalAlignment = Alignment.End
+            ) {
+                if (expandedProgress > 0f) {
                     Column(
                         horizontalAlignment = Alignment.End,
                         verticalArrangement = Arrangement.spacedBy(16.dp),
-                        modifier = Modifier.padding(bottom = 16.dp)
+                        modifier = Modifier
+                            .padding(bottom = 16.dp)
+                            .graphicsLayer {
+                                alpha = expandedProgress
+                                translationY = (1f - expandedProgress) * 15.dp.toPx()
+                                compositingStrategy = CompositingStrategy.ModulateAlpha
+                            }
                     ) {
                         // Clear Latency
                         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -376,7 +397,9 @@ fun NodesScreen(
                                 },
                                 modifier = Modifier.liquidGlassFloatingActionPanel(),
                                 containerColor = fabContainerColor,
-                                contentColor = fabContentColor
+                                contentColor = fabContentColor,
+                                shape = liquidGlassFloatingActionShape(),
+                                elevation = liquidGlassFloatingActionElevation()
                             ) {
                                 Icon(Icons.Rounded.Delete, contentDescription = stringResource(R.string.nodes_clear_latency))
                             }
@@ -397,7 +420,9 @@ fun NodesScreen(
                                 },
                                 modifier = Modifier.liquidGlassFloatingActionPanel(),
                                 containerColor = fabContainerColor,
-                                contentColor = fabContentColor
+                                contentColor = fabContentColor,
+                                shape = liquidGlassFloatingActionShape(),
+                                elevation = liquidGlassFloatingActionElevation()
                             ) {
                                 Icon(Icons.Rounded.Add, contentDescription = stringResource(R.string.nodes_add))
                             }
@@ -418,7 +443,9 @@ fun NodesScreen(
                                 },
                                 modifier = Modifier.liquidGlassFloatingActionPanel(),
                                 containerColor = fabContainerColor,
-                                contentColor = fabContentColor
+                                contentColor = fabContentColor,
+                                shape = liquidGlassFloatingActionShape(),
+                                elevation = liquidGlassFloatingActionElevation()
                             ) {
                                 Icon(Icons.Rounded.Edit, contentDescription = stringResource(R.string.nodes_manual_create))
                             }
@@ -439,7 +466,9 @@ fun NodesScreen(
                                 },
                                 modifier = Modifier.liquidGlassFloatingActionPanel(),
                                 containerColor = fabContainerColor,
-                                contentColor = fabContentColor
+                                contentColor = fabContentColor,
+                                shape = liquidGlassFloatingActionShape(),
+                                elevation = liquidGlassFloatingActionElevation()
                             ) {
                                 if (isTesting) {
                                     CircularProgressIndicator(
@@ -460,7 +489,9 @@ fun NodesScreen(
                     onClick = { isFabExpanded = !isFabExpanded },
                     modifier = Modifier.liquidGlassFloatingActionPanel(),
                     containerColor = fabContainerColor,
-                    contentColor = fabContentColor
+                    contentColor = fabContentColor,
+                    shape = liquidGlassFloatingActionShape(),
+                    elevation = liquidGlassFloatingActionElevation()
                 ) {
                     Icon(
                         imageVector = if (isFabExpanded) Icons.Rounded.Close else Icons.Rounded.Add,
@@ -520,7 +551,10 @@ fun NodesScreen(
                         color = MaterialTheme.colorScheme.onBackground
                     )
 
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
                         val activeIndex = remember(filteredNodes, activeNodeId) {
                             filteredNodes.indexOfFirst { it.id == activeNodeId }
                         }
@@ -780,10 +814,11 @@ fun NodesScreen(
                                     onDelete = onDelete,
                                     modifier = Modifier
                                         .animateItemPlacement()
-                                        .graphicsLayer(
-                                            alpha = alpha,
-                                            translationY = translateY
-                                        )
+                                        .graphicsLayer {
+                                            this.alpha = alpha
+                                            this.translationY = translateY
+                                            this.compositingStrategy = CompositingStrategy.ModulateAlpha
+                                        }
                                 )
                             } else {
                                 NodeGridCard(
@@ -799,10 +834,11 @@ fun NodesScreen(
                                     onDelete = onDelete,
                                     modifier = Modifier
                                         .animateItemPlacement()
-                                        .graphicsLayer(
-                                            alpha = alpha,
-                                            translationY = translateY
-                                        )
+                                        .graphicsLayer {
+                                            this.alpha = alpha
+                                            this.translationY = translateY
+                                            this.compositingStrategy = CompositingStrategy.ModulateAlpha
+                                        }
                                 )
                             }
                         }
@@ -841,7 +877,7 @@ private fun NodeSearchBar(
             onClick = onToggle,
             modifier = Modifier
                 .size(40.dp)
-                .liquidGlassIconButtonPanel(selected = isExpanded)
+                .liquidGlassIconButtonPanel(selected = false)
         ) {
             Icon(
                 imageVector = if (isExpanded) Icons.Rounded.Close else Icons.Rounded.Search,
@@ -910,14 +946,13 @@ private fun NodeSearchBar(
             }
         }
 
-        AnimatedVisibility(
-            visible = isExpanded,
-            enter = expandHorizontally(expandFrom = Alignment.Start) + fadeIn(),
-            exit = shrinkHorizontally(shrinkTowards = Alignment.Start) + fadeOut(),
-            modifier = Modifier
-                .padding(start = 52.dp)
-                .height(40.dp)
-        ) {
+        val searchAlpha by animateFloatAsState(
+            targetValue = if (isExpanded) 1f else 0f,
+            animationSpec = tween(durationMillis = 300),
+            label = "searchAlpha"
+        )
+
+        if (searchAlpha > 0f) {
             var isFocused by remember { mutableStateOf(false) }
             val focusRequester = remember { FocusRequester() }
 
@@ -929,8 +964,15 @@ private fun NodeSearchBar(
 
             Box(
                 modifier = Modifier
+                    .padding(start = 52.dp)
                     .fillMaxWidth()
                     .height(40.dp)
+                    .graphicsLayer {
+                        alpha = searchAlpha
+                        translationX = (1f - searchAlpha) * (-15.dp.toPx())
+                        scaleX = 0.96f + 0.04f * searchAlpha
+                        compositingStrategy = CompositingStrategy.ModulateAlpha
+                    }
                     .nodeSearchPanel(),
                 contentAlignment = Alignment.CenterStart
             ) {

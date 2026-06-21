@@ -1,4 +1,4 @@
-﻿package com.kunk.singbox.ui.screens
+package com.kunk.singbox.ui.screens
 
 import android.text.format.Formatter
 import androidx.compose.foundation.layout.Arrangement
@@ -43,6 +43,7 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -59,6 +60,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.kunk.singbox.ui.components.BigToggle
 import com.kunk.singbox.ui.components.ConfirmDialog
 import com.kunk.singbox.ui.components.InfoCard
+import com.kunk.singbox.ui.components.StandardCard
 import com.kunk.singbox.ui.components.ModeChip
 import com.kunk.singbox.ui.components.NodeSelectorDialog
 import com.kunk.singbox.ui.components.SingleSelectDialog
@@ -78,6 +80,8 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import com.kunk.singbox.ui.theme.liquidGlassIconButtonPanel
 import com.kunk.singbox.ui.theme.liquidGlassMutedContentColor
+import com.kunk.singbox.ui.theme.liquidGlassStrongContentColor
+import com.kunk.singbox.ui.theme.isLiquidGlassTheme
 import kotlinx.coroutines.launch
 
 @Composable
@@ -283,6 +287,9 @@ fun DashboardScreen(
     )
 
     val defaultBaseColor = MaterialTheme.colorScheme.onSurface
+    val useLiquidGlass = isLiquidGlassTheme()
+    val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
+    val primaryColor = MaterialTheme.colorScheme.primary
 
     Box(modifier = Modifier.fillMaxSize()) {
         // Background Decoration - 3D Box Cage (Back Face & Connections)
@@ -291,7 +298,11 @@ fun DashboardScreen(
             val baseSize = size.minDimension * 0.55f * pulseScale
 
             val baseAlpha = if (isRunning) pulseAlpha * 0.5f else 0.15f
-            val color = defaultBaseColor.copy(alpha = baseAlpha)
+            val color = if (useLiquidGlass) {
+                primaryColor.copy(alpha = if (isDark) baseAlpha * 1.5f else baseAlpha * 1.6f)
+            } else {
+                defaultBaseColor.copy(alpha = baseAlpha)
+            }
             val strokeWidth = if (isRunning) 2.dp.toPx() else 1.dp.toPx()
 
             val rotationX = Math.toRadians(15.0).toFloat()
@@ -478,34 +489,39 @@ fun DashboardScreen(
 
                 Spacer(modifier = Modifier.height(24.dp))
 
-                // Quick Actions
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceEvenly
-                ) {
-                    QuickActionButton(
-                        Icons.Rounded.Refresh,
-                        stringResource(R.string.dashboard_update_subscription)
+                // Quick Actions Card
+                StandardCard(modifier = Modifier.fillMaxWidth()) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 16.dp, horizontal = 8.dp),
+                        horizontalArrangement = Arrangement.SpaceEvenly,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        showUpdateDialog = true
-                    }
-                    QuickActionButton(
-                        Icons.Rounded.Bolt,
-                        stringResource(R.string.dashboard_latency_test)
-                    ) {
-                        showTestDialog = true
-                    }
-                    QuickActionButton(
-                        Icons.Rounded.Terminal,
-                        stringResource(R.string.dashboard_logs)
-                    ) {
-                        navController.navigate(Screen.Logs.route)
-                    }
-                    QuickActionButton(
-                        Icons.Rounded.BugReport,
-                        stringResource(R.string.dashboard_diagnostics)
-                    ) {
-                        navController.navigate(Screen.Diagnostics.route)
+                        QuickActionButton(
+                            Icons.Rounded.Refresh,
+                            stringResource(R.string.dashboard_update_subscription)
+                        ) {
+                            showUpdateDialog = true
+                        }
+                        QuickActionButton(
+                            Icons.Rounded.Bolt,
+                            stringResource(R.string.dashboard_latency_test)
+                        ) {
+                            showTestDialog = true
+                        }
+                        QuickActionButton(
+                            Icons.Rounded.Terminal,
+                            stringResource(R.string.dashboard_logs)
+                        ) {
+                            navController.navigate(Screen.Logs.route)
+                        }
+                        QuickActionButton(
+                            Icons.Rounded.BugReport,
+                            stringResource(R.string.dashboard_diagnostics)
+                        ) {
+                            navController.navigate(Screen.Diagnostics.route)
+                        }
                     }
                 }
             }
@@ -518,7 +534,11 @@ fun DashboardScreen(
             val baseSize = size.minDimension * 0.55f * pulseScale
 
             val baseAlpha = if (isRunning) pulseAlpha * 0.5f else 0.15f
-            val color = defaultBaseColor.copy(alpha = baseAlpha)
+            val color = if (useLiquidGlass) {
+                primaryColor.copy(alpha = if (isDark) baseAlpha * 1.5f else baseAlpha * 1.6f)
+            } else {
+                defaultBaseColor.copy(alpha = baseAlpha)
+            }
             val strokeWidth = if (isRunning) 2.dp.toPx() else 1.dp.toPx()
 
             val rotationX = Math.toRadians(15.0).toFloat()
@@ -573,10 +593,11 @@ fun QuickActionButton(
                 tint = MaterialTheme.colorScheme.onBackground
             )
         }
+        Spacer(modifier = Modifier.height(8.dp))
         Text(
             text = label,
             style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            color = liquidGlassStrongContentColor(MaterialTheme.colorScheme.onSurfaceVariant)
         )
     }
 }

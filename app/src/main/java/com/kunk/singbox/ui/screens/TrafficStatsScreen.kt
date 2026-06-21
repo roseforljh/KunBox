@@ -222,52 +222,58 @@ fun TrafficStatsScreen(
                     }
                 },
                 actions = {
-                    Box(
-                        modifier = Modifier
-                            .size(48.dp)
-                            .liquidGlassIconButtonPanel(
-                                selected = isRefreshPressed || uiState.isLoading
-                            )
-                            .clip(CircleShape)
-                            .background(
-                                if (!useLiquidGlass && (isRefreshPressed || uiState.isLoading)) {
-                                    MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(end = 8.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(48.dp)
+                                .liquidGlassIconButtonPanel(
+                                    selected = isRefreshPressed || uiState.isLoading
+                                )
+                                .clip(CircleShape)
+                                .background(
+                                    if (!useLiquidGlass && (isRefreshPressed || uiState.isLoading)) {
+                                        MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)
+                                    } else {
+                                        Color.Transparent
+                                    }
+                                )
+                                .trafficRefreshPressFeedback(
+                                    useLiquidGlass = useLiquidGlass,
+                                    isPressed = isRefreshPressed,
+                                    interactionSource = refreshInteractionSource,
+                                    onClick = viewModel::refresh
+                                ),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                Icons.Rounded.Refresh,
+                                contentDescription = stringResource(R.string.common_refresh),
+                                tint = if (uiState.isLoading) {
+                                    MaterialTheme.colorScheme.primary
                                 } else {
-                                    Color.Transparent
+                                    MaterialTheme.colorScheme.onBackground
+                                },
+                                modifier = if (uiState.isLoading) {
+                                    Modifier.rotate(refreshRotation)
+                                } else {
+                                    Modifier
                                 }
                             )
-                            .trafficRefreshPressFeedback(
-                                useLiquidGlass = useLiquidGlass,
-                                isPressed = isRefreshPressed,
-                                interactionSource = refreshInteractionSource,
-                                onClick = viewModel::refresh
-                            ),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            Icons.Rounded.Refresh,
-                            contentDescription = stringResource(R.string.common_refresh),
-                            tint = if (uiState.isLoading) {
-                                MaterialTheme.colorScheme.primary
-                            } else {
-                                MaterialTheme.colorScheme.onBackground
-                            },
-                            modifier = if (uiState.isLoading) {
-                                Modifier.rotate(refreshRotation)
-                            } else {
-                                Modifier
-                            }
-                        )
-                    }
-                    IconButton(
-                        modifier = Modifier.liquidGlassIconButtonPanel(),
-                        onClick = { showClearDialog = true }
-                    ) {
-                        Icon(
-                            Icons.Rounded.Delete,
-                            contentDescription = stringResource(R.string.traffic_stats_clear_title),
-                            tint = MaterialTheme.colorScheme.onBackground
-                        )
+                        }
+                        IconButton(
+                            modifier = Modifier.liquidGlassIconButtonPanel(),
+                            onClick = { showClearDialog = true }
+                        ) {
+                            Icon(
+                                Icons.Rounded.Delete,
+                                contentDescription = stringResource(R.string.traffic_stats_clear_title),
+                                tint = MaterialTheme.colorScheme.onBackground
+                            )
+                        }
                     }
                 },
                 colors = liquidGlassTopAppBarColors(defaultContainerColor = MaterialTheme.colorScheme.background)

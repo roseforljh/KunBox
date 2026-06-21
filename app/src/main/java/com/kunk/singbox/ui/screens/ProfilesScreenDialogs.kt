@@ -543,39 +543,53 @@ internal fun ImportSelectionDialog(
 ) {
     androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss) {
         Column(
-            modifier = Modifier.fillMaxWidth(),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+            modifier = Modifier
+                .fillMaxWidth()
+                .profileDialogPanel(RoundedCornerShape(28.dp))
+                .padding(24.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            ImportOptionCard(
-                icon = Icons.Rounded.Link,
-                title = stringResource(R.string.profiles_subscription_link),
-                subtitle = stringResource(R.string.common_import),
-                onClick = { onTypeSelected(ProfileImportType.Subscription) }
+            Text(
+                text = "添加配置",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface
             )
-            ImportOptionCard(
-                icon = Icons.Rounded.Description,
-                title = stringResource(R.string.profiles_local_file),
-                subtitle = stringResource(R.string.profiles_local_file_subtitle),
-                onClick = { onTypeSelected(ProfileImportType.File) }
-            )
-            ImportOptionCard(
-                icon = Icons.Rounded.ContentPaste,
-                title = stringResource(R.string.profiles_clipboard),
-                subtitle = stringResource(R.string.profiles_clipboard_subtitle),
-                onClick = { onTypeSelected(ProfileImportType.Clipboard) }
-            )
-            ImportOptionCard(
-                icon = Icons.Rounded.QrCodeScanner,
-                title = stringResource(R.string.profiles_scan_qrcode),
-                subtitle = stringResource(R.string.profiles_scan_qrcode_subtitle),
-                onClick = { onTypeSelected(ProfileImportType.QRCode) }
-            )
-            ImportOptionCard(
-                icon = Icons.Rounded.DashboardCustomize,
-                title = "自定义配置",
-                subtitle = "从现有订阅选择节点组合",
-                onClick = { onTypeSelected(ProfileImportType.Custom) }
-            )
+
+            Column(
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                ImportOptionCard(
+                    icon = Icons.Rounded.Link,
+                    title = stringResource(R.string.profiles_subscription_link),
+                    subtitle = stringResource(R.string.common_import),
+                    onClick = { onTypeSelected(ProfileImportType.Subscription) }
+                )
+                ImportOptionCard(
+                    icon = Icons.Rounded.Description,
+                    title = stringResource(R.string.profiles_local_file),
+                    subtitle = stringResource(R.string.profiles_local_file_subtitle),
+                    onClick = { onTypeSelected(ProfileImportType.File) }
+                )
+                ImportOptionCard(
+                    icon = Icons.Rounded.ContentPaste,
+                    title = stringResource(R.string.profiles_clipboard),
+                    subtitle = stringResource(R.string.profiles_clipboard_subtitle),
+                    onClick = { onTypeSelected(ProfileImportType.Clipboard) }
+                )
+                ImportOptionCard(
+                    icon = Icons.Rounded.QrCodeScanner,
+                    title = stringResource(R.string.profiles_scan_qrcode),
+                    subtitle = stringResource(R.string.profiles_scan_qrcode_subtitle),
+                    onClick = { onTypeSelected(ProfileImportType.QRCode) }
+                )
+                ImportOptionCard(
+                    icon = Icons.Rounded.DashboardCustomize,
+                    title = "自定义配置",
+                    subtitle = "从现有订阅选择节点组合",
+                    onClick = { onTypeSelected(ProfileImportType.Custom) }
+                )
+            }
         }
     }
 }

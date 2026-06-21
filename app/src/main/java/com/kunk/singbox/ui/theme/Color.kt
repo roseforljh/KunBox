@@ -20,7 +20,7 @@ val LightSurface = Color(0xFFFFFFFF)
 val LightSurfaceVariant = Color(0xFFF0F0F2)
 val LightDivider = Color(0xFFE5E5E5)
 val LightTextPrimary = Color(0xFF1D1D1F)
-val LightTextSecondary = Color(0xFF86868B)
+val LightTextSecondary = Color(0xFF222222) // Almost black to ensure maximum legibility and remove faint gray feeling
 
 val Red500 = Color(0xFFEF4444) // Destructive
 val Primary = Color(0xFF3B82F6) // Blue 500

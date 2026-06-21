@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -33,8 +34,9 @@ import com.kunk.singbox.ui.theme.liquidGlassPanel
 @Composable
 private fun Modifier.modeChipIndicatorPanel(indicatorColor: Color): Modifier {
     return if (isLiquidGlassTheme()) {
-        size(14.dp)
-            .liquidGlassPanel(shape = CircleShape, selected = true, shadowElevation = 3.dp)
+        size(10.dp)
+            .border(androidx.compose.foundation.BorderStroke(0.8.dp, indicatorColor.copy(alpha = 0.45f)), CircleShape)
+            .background(indicatorColor.copy(alpha = 0.12f), CircleShape)
     } else {
         size(8.dp)
             .background(indicatorColor, CircleShape)
@@ -82,12 +84,13 @@ fun StatusChip(
     val textColor = when {
         useLiquidGlass && isActive -> MaterialTheme.colorScheme.primary
         isActive -> MaterialTheme.colorScheme.onPrimary
+        useLiquidGlass -> MaterialTheme.colorScheme.onSurface
         else -> MaterialTheme.colorScheme.onSurfaceVariant
     }
 
     val surfaceModifier = if (useLiquidGlass) {
         Modifier.liquidGlassPanel(
-            shape = CircleShape,
+            shape = RoundedCornerShape(20.dp),
             selected = isActive,
             shadowElevation = 6.dp
         )

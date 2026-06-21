@@ -35,6 +35,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -88,37 +89,43 @@ fun LogsScreen(navController: NavController, viewModel: LogViewModel = viewModel
                     }
                 },
                 actions = {
-                    val exportSubject = "KunBox " + stringResource(R.string.logs_title)
-                    val exportTitle = stringResource(R.string.logs_export)
-                    IconButton(
-                        modifier = Modifier.liquidGlassIconButtonPanel(),
-                        onClick = {
-                            val logsText = viewModel.getLogsForExport()
-                            val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                                type = "text/plain"
-                                putExtra(Intent.EXTRA_SUBJECT, exportSubject)
-                                putExtra(Intent.EXTRA_TEXT, logsText)
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(end = 8.dp)
+                    ) {
+                        val exportSubject = "KunBox " + stringResource(R.string.logs_title)
+                        val exportTitle = stringResource(R.string.logs_export)
+                        IconButton(
+                            modifier = Modifier.liquidGlassIconButtonPanel(),
+                            onClick = {
+                                val logsText = viewModel.getLogsForExport()
+                                val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                    type = "text/plain"
+                                    putExtra(Intent.EXTRA_SUBJECT, exportSubject)
+                                    putExtra(Intent.EXTRA_TEXT, logsText)
+                                }
+                                context.startActivity(
+                                    Intent.createChooser(shareIntent, exportTitle)
+                                )
                             }
-                            context.startActivity(
-                                Intent.createChooser(shareIntent, exportTitle)
+                        ) {
+                            Icon(
+                                Icons.Rounded.Share,
+                                contentDescription = stringResource(R.string.logs_export),
+                                tint = MaterialTheme.colorScheme.onBackground
                             )
                         }
-                    ) {
-                        Icon(
-                            Icons.Rounded.Share,
-                            contentDescription = stringResource(R.string.logs_export),
-                            tint = MaterialTheme.colorScheme.onBackground
-                        )
-                    }
-                    IconButton(
-                        modifier = Modifier.liquidGlassIconButtonPanel(),
-                        onClick = { viewModel.clearLogs() }
-                    ) {
-                        Icon(
-                            Icons.Rounded.Delete,
-                            contentDescription = stringResource(R.string.logs_clear),
-                            tint = MaterialTheme.colorScheme.onBackground
-                        )
+                        IconButton(
+                            modifier = Modifier.liquidGlassIconButtonPanel(),
+                            onClick = { viewModel.clearLogs() }
+                        ) {
+                            Icon(
+                                Icons.Rounded.Delete,
+                                contentDescription = stringResource(R.string.logs_clear),
+                                tint = MaterialTheme.colorScheme.onBackground
+                            )
+                        }
                     }
                 },
                 colors = liquidGlassTopAppBarColors(

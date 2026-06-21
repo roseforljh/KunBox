@@ -43,6 +43,7 @@ import com.kunk.singbox.ui.components.StandardCard
 import com.kunk.singbox.ui.components.StyledTextField
 import com.kunk.singbox.ui.theme.Neutral500
 import com.kunk.singbox.ui.theme.Neutral700
+import com.kunk.singbox.ui.theme.LiquidGlassDialogEffect
 import com.kunk.singbox.ui.theme.isLiquidGlassTheme
 import com.kunk.singbox.ui.theme.liquidGlassButtonColors
 import com.kunk.singbox.ui.theme.liquidGlassButtonContentColor
@@ -469,6 +470,7 @@ fun AppRuleEditorDialog(
         containerColor = liquidGlassDialogContainerColor(),
         title = { Text(text = if (initialRule == null) stringResource(R.string.app_rules_add) else stringResource(R.string.app_rules_edit), fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface) },
         text = {
+            LiquidGlassDialogEffect()
             Column(modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(20.dp)) {
                 ClickableDropdownField(label = stringResource(R.string.app_rules_select_app), value = selectedApp?.appName ?: stringResource(R.string.app_rules_click_to_select), onClick = { showAppPicker = true })
                 ClickableDropdownField(label = stringResource(R.string.common_outbound), value = stringResource(outboundMode.displayNameRes), onClick = { showOutboundModeDialog = true })
@@ -582,6 +584,7 @@ fun AppPickerDialog(apps: List<InstalledApp>, existingPackages: Set<String>, onS
         containerColor = liquidGlassDialogContainerColor(),
         title = null,
         text = {
+            LiquidGlassDialogEffect()
             Column(modifier = Modifier.fillMaxWidth().fillMaxHeight(0.8f)) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -1008,6 +1011,7 @@ fun MultiAppSelectorDialog(
         containerColor = liquidGlassDialogContainerColor(),
         title = null,
         text = {
+            LiquidGlassDialogEffect()
             Column(modifier = Modifier.fillMaxWidth().fillMaxHeight(0.8f)) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -1294,6 +1298,7 @@ fun AppGroupEditorDialog(
             )
         },
         text = {
+            LiquidGlassDialogEffect()
             Column(
                 modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(16.dp)

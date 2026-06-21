@@ -29,7 +29,7 @@ fun StandardCard(
     onClick: (() -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit
 ) {
-    val shape = RoundedCornerShape(16.dp)
+    val shape = RoundedCornerShape(20.dp)
     if (isLiquidGlassTheme()) {
         val interactionSource = remember { MutableInteractionSource() }
         val isPressed by interactionSource.collectIsPressedAsState()
@@ -53,7 +53,7 @@ fun StandardCard(
                     scaleX = scale
                     scaleY = scale
                 }
-                .liquidGlassPanel(shape = shape)
+                .liquidGlassPanel(shape = shape, shadowElevation = 6.dp)
                 .then(clickableModifier),
             content = content
         )

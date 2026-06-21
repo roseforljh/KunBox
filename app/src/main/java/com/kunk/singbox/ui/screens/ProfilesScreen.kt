@@ -64,6 +64,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -86,6 +87,8 @@ import com.kunk.singbox.ui.theme.isLiquidGlassTheme
 import com.kunk.singbox.ui.theme.liquidGlassFloatingActionContainerColor
 import com.kunk.singbox.ui.theme.liquidGlassFloatingActionContentColor
 import com.kunk.singbox.ui.theme.liquidGlassFloatingActionPanel
+import com.kunk.singbox.ui.theme.liquidGlassFloatingActionShape
+import com.kunk.singbox.ui.theme.liquidGlassFloatingActionElevation
 import com.kunk.singbox.ui.theme.liquidGlassIconButtonPanel
 import com.kunk.singbox.ui.theme.liquidGlassScreenContainerColor
 import com.kunk.singbox.utils.DeepLinkHandler
@@ -721,6 +724,7 @@ fun ProfilesScreen(
                                     scaleX = dragScale
                                     scaleY = dragScale
                                     shadowElevation = dragShadow
+                                    compositingStrategy = CompositingStrategy.ModulateAlpha
                                 }
                                 .then(
                                     if (!enablePlacementAnimation || suppressPlacementAnimation) {
@@ -847,19 +851,28 @@ fun ProfilesScreen(
             }
         }
 
-        AnimatedVisibility(
-            visible = isFabVisible,
-            enter = fadeIn(animationSpec = tween(300)),
-            exit = fadeOut(animationSpec = tween(300)),
-            modifier = Modifier
-                .align(Alignment.BottomEnd)
-                .padding(end = 16.dp, bottom = 16.dp + bottomContentPadding)
-        ) {
+        val fabAlpha by animateFloatAsState(
+            targetValue = if (isFabVisible) 1f else 0f,
+            animationSpec = tween(durationMillis = 300),
+            label = "fabAlpha"
+        )
+
+        if (fabAlpha > 0f) {
             FloatingActionButton(
                 onClick = { showImportSelection = true },
-                modifier = Modifier.liquidGlassFloatingActionPanel(),
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(end = 16.dp, bottom = 16.dp + bottomContentPadding)
+                    .graphicsLayer {
+                        alpha = fabAlpha
+                        translationY = (1f - fabAlpha) * 15.dp.toPx()
+                        compositingStrategy = CompositingStrategy.ModulateAlpha
+                    }
+                    .liquidGlassFloatingActionPanel(),
                 containerColor = liquidGlassFloatingActionContainerColor(MaterialTheme.colorScheme.primary),
-                contentColor = liquidGlassFloatingActionContentColor(MaterialTheme.colorScheme.onPrimary)
+                contentColor = liquidGlassFloatingActionContentColor(MaterialTheme.colorScheme.onPrimary),
+                shape = liquidGlassFloatingActionShape(),
+                elevation = liquidGlassFloatingActionElevation()
             ) {
                 Icon(Icons.Rounded.Add, contentDescription = "Add Profile")
             }

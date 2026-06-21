@@ -15,6 +15,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.zIndex
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -499,34 +500,40 @@ fun RuleSetsScreen(
                     }
                 },
                 actions = {
-                    if (isSelectionMode) {
-                        val selectedCount = selectedItems.count { it.value }
-                        IconButton(
-                            modifier = Modifier.liquidGlassIconButtonPanel(
-                                selected = selectedCount > 0,
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(end = 8.dp)
+                    ) {
+                        if (isSelectionMode) {
+                            val selectedCount = selectedItems.count { it.value }
+                            IconButton(
+                                modifier = Modifier.liquidGlassIconButtonPanel(
+                                    selected = selectedCount > 0,
+                                    enabled = selectedCount > 0
+                                ),
+                                onClick = { showDeleteConfirmDialog = true },
                                 enabled = selectedCount > 0
-                            ),
-                            onClick = { showDeleteConfirmDialog = true },
-                            enabled = selectedCount > 0
-                        ) {
-                            Icon(
-                                Icons.Rounded.Delete,
-                                contentDescription = "Delete",
-                                tint = if (selectedCount > 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    } else {
-                        IconButton(
-                            modifier = Modifier.liquidGlassIconButtonPanel(),
-                            onClick = { navController.navigate(Screen.RuleSetHub.route) }
-                        ) {
-                            Icon(Icons.Rounded.CloudDownload, contentDescription = "Download", tint = MaterialTheme.colorScheme.onBackground)
-                        }
-                        IconButton(
-                            modifier = Modifier.liquidGlassIconButtonPanel(),
-                            onClick = { showAddDialog = true }
-                        ) {
-                            Icon(Icons.Rounded.Add, contentDescription = "Add", tint = MaterialTheme.colorScheme.onBackground)
+                            ) {
+                                Icon(
+                                    Icons.Rounded.Delete,
+                                    contentDescription = "Delete",
+                                    tint = if (selectedCount > 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        } else {
+                            IconButton(
+                                modifier = Modifier.liquidGlassIconButtonPanel(),
+                                onClick = { navController.navigate(Screen.RuleSetHub.route) }
+                            ) {
+                                Icon(Icons.Rounded.CloudDownload, contentDescription = "Download", tint = MaterialTheme.colorScheme.onBackground)
+                            }
+                            IconButton(
+                                modifier = Modifier.liquidGlassIconButtonPanel(),
+                                onClick = { showAddDialog = true }
+                            ) {
+                                Icon(Icons.Rounded.Add, contentDescription = "Add", tint = MaterialTheme.colorScheme.onBackground)
+                            }
                         }
                     }
                 },
@@ -651,6 +658,7 @@ fun RuleSetsScreen(
                             scaleY = dragScale
                             shadowElevation = dragShadow
                             alpha = dragAlpha
+                            compositingStrategy = CompositingStrategy.ModulateAlpha
                         }
                         .then(
                             if (!enablePlacementAnimation || suppressPlacementAnimation) {
