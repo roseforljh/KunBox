@@ -27,6 +27,7 @@ import com.kunk.singbox.ui.theme.liquidGlassPanel
 fun StandardCard(
     modifier: Modifier = Modifier,
     onClick: (() -> Unit)? = null,
+    border: BorderStroke? = BorderStroke(2.dp, MaterialTheme.colorScheme.onSurfaceVariant),
     content: @Composable ColumnScope.() -> Unit
 ) {
     val shape = RoundedCornerShape(20.dp)
@@ -68,7 +69,7 @@ fun StandardCard(
             colors = CardDefaults.cardColors(
                 containerColor = MaterialTheme.colorScheme.surface
             ),
-            border = BorderStroke(2.dp, MaterialTheme.colorScheme.onSurfaceVariant),
+            border = border,
             content = content
         )
     } else {
@@ -78,7 +79,7 @@ fun StandardCard(
             colors = CardDefaults.cardColors(
                 containerColor = MaterialTheme.colorScheme.surface
             ),
-            border = BorderStroke(2.dp, MaterialTheme.colorScheme.onSurfaceVariant),
+            border = border,
             content = content
         )
     }

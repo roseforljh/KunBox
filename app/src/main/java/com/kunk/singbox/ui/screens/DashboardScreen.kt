@@ -490,7 +490,7 @@ fun DashboardScreen(
                 Spacer(modifier = Modifier.height(24.dp))
 
                 // Quick Actions Card
-                StandardCard(modifier = Modifier.fillMaxWidth()) {
+                StandardCard(modifier = Modifier.fillMaxWidth(), border = null) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()

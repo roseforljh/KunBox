@@ -61,15 +61,8 @@ import com.kunk.singbox.ui.theme.liquidGlassTextFieldPanel
 import com.kunk.singbox.ui.theme.liquidGlassTextButtonContentColor
 import com.kunk.singbox.ui.theme.liquidGlassTextButtonColors
 import com.kunk.singbox.ui.theme.liquidGlassTextButtonPanel
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
-import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.composed
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.border
-import androidx.compose.ui.graphics.luminance
-import com.kunk.singbox.ui.theme.hollowShadow
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
 
 @Composable
 private fun Modifier.dialogPanel(shape: RoundedCornerShape = RoundedCornerShape(28.dp)): Modifier {
@@ -77,69 +70,11 @@ private fun Modifier.dialogPanel(shape: RoundedCornerShape = RoundedCornerShape(
         .then(if (!isLiquidGlassTheme()) Modifier.background(MaterialTheme.colorScheme.surface, shape) else Modifier)
 }
 
-@Suppress("LongMethod", "CognitiveComplexMethod")
 @Composable
 private fun Modifier.dialogOptionPanel(isSelected: Boolean): Modifier {
     val shape = RoundedCornerShape(12.dp)
     if (isLiquidGlassTheme()) {
-        val selectedAlpha by animateFloatAsState(
-            targetValue = if (isSelected) 1f else 0f,
-            animationSpec = spring(stiffness = 380f, dampingRatio = 0.78f),
-            label = "dialog_option_selected_alpha"
-        )
-        val selectedScale by animateFloatAsState(
-            targetValue = if (isSelected) 1f else 0.96f,
-            animationSpec = spring(stiffness = 400f, dampingRatio = 0.75f),
-            label = "dialog_option_selected_scale"
-        )
-        return this.graphicsLayer {
-            scaleX = if (isSelected) selectedScale else 1f
-            scaleY = if (isSelected) selectedScale else 1f
-        }.composed {
-            val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
-            val primary = MaterialTheme.colorScheme.primary
-            val borderBrush = if (isDark) {
-                SolidColor(primary.copy(alpha = 0.35f * selectedAlpha + 0.05f))
-            } else {
-                Brush.linearGradient(
-                    listOf(
-                        Color.White.copy(alpha = 0.90f * (1f - selectedAlpha) + 0.1f),
-                        primary.copy(alpha = 0.55f * selectedAlpha + 0.12f)
-                    )
-                )
-            }
-            val bgBrush = if (isDark) {
-                Brush.linearGradient(
-                    listOf(
-                        Color.White.copy(alpha = 0.04f + 0.08f * selectedAlpha),
-                        MaterialTheme.colorScheme.surface.copy(alpha = 0.22f + 0.22f * selectedAlpha)
-                    )
-                )
-            } else {
-                Brush.linearGradient(
-                    listOf(
-                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.12f + 0.14f * selectedAlpha),
-                        primary.copy(alpha = 0.02f + 0.08f * selectedAlpha)
-                    )
-                )
-            }
-            this.hollowShadow(
-                shape = shape,
-                color = if (isSelected) primary else Color.Black,
-                alpha = if (isSelected) 0.14f * selectedAlpha else 0.03f,
-                blurRadius = if (isSelected) 8.dp else 2.dp,
-                offsetY = if (isSelected) 4.dp else 1.dp
-            )
-                .clip(shape)
-                .background(bgBrush)
-                .border(
-                    BorderStroke(
-                        width = if (isSelected) 1.dp else 0.5.dp,
-                        brush = borderBrush
-                    ),
-                    shape = shape
-                )
-        }
+        return this
     } else {
         return background(
             if (isSelected) {
@@ -437,6 +372,24 @@ fun SingleSelectDialog(
                 ) {
                     options.forEachIndexed { index, option ->
                         val isSelected = index == tempSelectedIndex
+                        val textColorState = animateColorAsState(
+                            targetValue = if (isSelected) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.onSurface
+                            },
+                            animationSpec = tween(220),
+                            label = "dialog_option_text_color"
+                        )
+                        val iconTintState = animateColorAsState(
+                            targetValue = if (isSelected) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            },
+                            animationSpec = tween(220),
+                            label = "dialog_option_icon_tint"
+                        )
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -453,14 +406,14 @@ fun SingleSelectDialog(
                             Icon(
                                 imageVector = if (isSelected) Icons.Rounded.RadioButtonChecked else Icons.Rounded.RadioButtonUnchecked,
                                 contentDescription = null,
-                                tint = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                tint = iconTintState.value,
                                 modifier = Modifier.size(24.dp)
                             )
                             Spacer(modifier = Modifier.width(16.dp))
                             Text(
                                 text = option,
                                 style = MaterialTheme.typography.bodyLarge,
-                                color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                                color = textColorState.value
                             )
                         }
                     }
