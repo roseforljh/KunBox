@@ -1,5 +1,50 @@
 # Changelog
 
+## [2.18.0](https://github.com/roseforljh/KunBox/compare/v2.17.0...v2.18.0) (2026-06-21)
+
+
+### Features
+
+* add connection info screen ([3385e17](https://github.com/roseforljh/KunBox/commit/3385e17d9bd87ff163b512ec37247c118bd64234))
+* add liquid glass bottom navigation ([9ed1c67](https://github.com/roseforljh/KunBox/commit/9ed1c67ab1bbb6f1179a31702842e3ce040b19fc))
+* add theme style setting ([d4430ab](https://github.com/roseforljh/KunBox/commit/d4430ab59ae5e339683ab0694ee7dc2b1fa14333))
+* extend liquid glass theme styling ([35c3aed](https://github.com/roseforljh/KunBox/commit/35c3aedc551eff7189843bf678f07065865792ce))
+* support configurable grid column count for node list view ([e74b4ae](https://github.com/roseforljh/KunBox/commit/e74b4aebab38d6d04fa84570ca3c110040fbc9f5))
+* support parsing subscription name from content disposition or profile title headers and qr code url hashes ([6114b05](https://github.com/roseforljh/KunBox/commit/6114b0588a10c693bfbfd99e3add5f6f91c39962))
+* 优化液态玻璃主题视觉体验，全局修复弹窗模糊失效及亮色模式文字对比度过低问题 ([14a7e08](https://github.com/roseforljh/KunBox/commit/14a7e08ca687fc015fc31bd0167b8fe868d32963))
+
+
+### Bug Fixes
+
+* block liquid glass nav click-through ([1828f2f](https://github.com/roseforljh/KunBox/commit/1828f2f0deaeebb5300a3fae3ac014322e2c1e06))
+* cover connection info policy ([ea2ab48](https://github.com/roseforljh/KunBox/commit/ea2ab482f0f8593033f4a6332df8fa7116f86408))
+* optimize liquid glass button colors ([1dcf5f3](https://github.com/roseforljh/KunBox/commit/1dcf5f3a4817ca09a9f0c6e6bca14b34935e0f6e))
+* polish liquid glass components ([748f4d9](https://github.com/roseforljh/KunBox/commit/748f4d92670d5b64bffb943b46d5a99a213d06b9))
+* resolve detekt warnings ([c4587f8](https://github.com/roseforljh/KunBox/commit/c4587f82fc1aaa7b2a66d61291bc791307c5396b))
+* resolve import file size limit exceeds 2048K https://github.com/roseforljh/KunBox/issues/97 ([f3e607c](https://github.com/roseforljh/KunBox/commit/f3e607c4f80e42e3fe05b3ebbe49738f404e2350))
+* 优化对话框动画效果及液态玻璃主题样式细节 ([c00da02](https://github.com/roseforljh/KunBox/commit/c00da020381d3503480df46960627c8117d33bd5))
+* 优化液态玻璃主题样式 ([3f1f50b](https://github.com/roseforljh/KunBox/commit/3f1f50bd8e7a15ff55751b2ca2bca0e0dd2f8cbf))
+* 优化液态玻璃点击反馈 ([93f1f27](https://github.com/roseforljh/KunBox/commit/93f1f27bf3dab782a116277acb99ca8850e0733d))
+* 优化液态玻璃筛选芯片反馈 ([68c6bfe](https://github.com/roseforljh/KunBox/commit/68c6bfebe3fe181fbb114e81a9fea830b000ca0e))
+* 优化液态玻璃组件交互样式 ([36d5c41](https://github.com/roseforljh/KunBox/commit/36d5c41bd19d7d066b3f503bec83e4d019a41d52))
+* 优化页面切换过渡动画（引入交叉淡入淡出与微距平移） ([b47b2a6](https://github.com/roseforljh/KunBox/commit/b47b2a6e670265cd4bb5ef895e8726dfe718fd5f))
+* 修复液态玻璃白块问题 ([9c42cdd](https://github.com/roseforljh/KunBox/commit/9c42cdd957bc058c6a169c4d05eebb921ebb3e98))
+* 增加液态玻璃覆盖测试 ([72f15e4](https://github.com/roseforljh/KunBox/commit/72f15e4e1f4f62858f5b163d586893ddbbb9b713))
+* 完善液态玻璃主题控件样式 ([dbd82db](https://github.com/roseforljh/KunBox/commit/dbd82db70f0d5901c607d8d526892dd250d89757))
+* 完善液态玻璃主题控件样式 ([5aa2192](https://github.com/roseforljh/KunBox/commit/5aa2192c59cdcadeec22498ec4798a4940cf04f9))
+* 完善液态玻璃主题组件样式 ([8610881](https://github.com/roseforljh/KunBox/commit/8610881dc4b027d0f66dd42b0e13ed3ed55986ac))
+* 完善液态玻璃主题组件样式 ([c27b7ec](https://github.com/roseforljh/KunBox/commit/c27b7ec81106fab8ebe7785a896f8f205557c144))
+* 完善液态玻璃主题组件样式 ([8cd50b9](https://github.com/roseforljh/KunBox/commit/8cd50b99acec54f329f3f992aa1f36c3021f8e56))
+* 完善液态玻璃主题组件覆盖 ([9a5567d](https://github.com/roseforljh/KunBox/commit/9a5567d258da2c2512386b14b6c4b34d46a57836))
+* 完善液态玻璃主题菜单样式 ([cb7ac26](https://github.com/roseforljh/KunBox/commit/cb7ac268453689ec9652d893529b973259249770))
+* 完善液态玻璃主题覆盖 ([6b2d336](https://github.com/roseforljh/KunBox/commit/6b2d33640d8f998d496eb7734e0cdf6071a0b31d))
+* 完善液态玻璃小表面覆盖 ([c1a694f](https://github.com/roseforljh/KunBox/commit/c1a694f5f89606a936b37a31212d6743b0cda04d))
+* 完善液态玻璃扫码和卡片样式 ([f6f84c1](https://github.com/roseforljh/KunBox/commit/f6f84c179a4ed3ba22389c317fa680ecb48c9304))
+* 完善液态玻璃筛选芯片样式 ([ac853a1](https://github.com/roseforljh/KunBox/commit/ac853a1c63e8bb2a3f873b490d9d057fffb1c5ac))
+* 扩展液态玻璃主题覆盖 ([ee2bb78](https://github.com/roseforljh/KunBox/commit/ee2bb788837f92219982b6a156ec54b970ce084f))
+* 扩展液态玻璃组件覆盖 ([64e8a48](https://github.com/roseforljh/KunBox/commit/64e8a48095f86fc21e88372c3596c62a6f3d15cd))
+* 补齐液态玻璃主题组件色彩 ([c126bd0](https://github.com/roseforljh/KunBox/commit/c126bd03278e6f6f4858b3cb0cdb6634c4ca3248))
+
 ## [2.17.0](https://github.com/roseforljh/KunBox/compare/v2.16.2...v2.17.0) (2026-06-13)
 
 
