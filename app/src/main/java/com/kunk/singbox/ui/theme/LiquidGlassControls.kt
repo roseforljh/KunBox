@@ -303,6 +303,7 @@ fun liquidGlassTextButtonContentColor(
     }
 }
 
+@Suppress("CognitiveComplexMethod")
 @Composable
 fun Modifier.liquidGlassIconButtonPanel(
     shape: Shape = CircleShape,
@@ -318,7 +319,15 @@ fun Modifier.liquidGlassIconButtonPanel(
             shadowElevation = shadowElevation
         ).liquidGlassPressBounceEffect()
     } else {
-        this
+        val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
+        val bgAlpha = if (selected) { if (isDark) 0.14f else 0.10f } else { if (isDark) 0.06f else 0.04f }
+        val borderAlpha = if (selected) { if (isDark) 0.22f else 0.16f } else { if (isDark) 0.10f else 0.08f }
+        val bgColor = if (isDark) Color.White.copy(alpha = bgAlpha) else Color.Black.copy(alpha = bgAlpha)
+        val borderColor = if (isDark) Color.White.copy(alpha = borderAlpha) else Color.Black.copy(alpha = borderAlpha)
+
+        this.clip(shape)
+            .background(bgColor)
+            .border(BorderStroke(0.5.dp, borderColor), shape)
     }
 }
 

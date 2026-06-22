@@ -81,6 +81,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
@@ -833,10 +834,16 @@ fun NodesScreen(
             exit = androidx.compose.animation.fadeOut(),
             modifier = Modifier.fillMaxSize()
         ) {
+            val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
+            val scrimColor = if (isDark) {
+                Color.Black.copy(alpha = 0.65f)
+            } else {
+                Color.White.copy(alpha = 0.78f)
+            }
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(Color.Black.copy(alpha = 0.3f))
+                    .background(scrimColor)
                     .pointerInput(Unit) {
                         detectTapGestures(onTap = { isFabExpanded = false })
                     }
