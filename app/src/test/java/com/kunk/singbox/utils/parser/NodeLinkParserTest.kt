@@ -633,7 +633,7 @@ class NodeLinkParserTest : NodeLinkParserProxyAndEdgeTest() {
 
     @Test
     fun testParseHysteria2Basic() {
-        val link = "hysteria2://password@hy2.example.com:443?sni=hy2.example.com#Hy2Node"
+        val link = "hysteria2://password@hy2.example.com:443?sni=hy2.example.com&pinSHA256=abcdef123456#Hy2Node"
         val outbound = parser.parse(link)
 
         assertNotNull(outbound)
@@ -642,6 +642,7 @@ class NodeLinkParserTest : NodeLinkParserProxyAndEdgeTest() {
         assertEquals("hy2.example.com", outbound?.server)
         assertEquals(443, outbound?.serverPort)
         assertEquals("password", outbound?.password)
+        assertEquals(listOf("abcdef123456"), outbound?.tls?.certificatePublicKeySha256)
     }
 
     @Test

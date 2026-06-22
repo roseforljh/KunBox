@@ -309,7 +309,8 @@ data class TlsConfig(
     @SerializedName("certificate") val certificate: String? = null,
     @SerializedName("certificate_path") val certificatePath: String? = null,
     @SerializedName("key") val key: String? = null,
-    @SerializedName("key_path") val keyPath: String? = null
+    @SerializedName("key_path") val keyPath: String? = null,
+    @SerializedName("certificate_public_key_sha256") val certificatePublicKeySha256: List<String>? = null
 )
 
 @Keep

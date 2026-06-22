@@ -26,10 +26,11 @@ class SubscriptionFetcher(
         private const val TAG = "SubscriptionFetcher"
 
         private val USER_AGENTS = listOf(
+            "v2rayN/6.23",
+            "sing-box/1.12.0",
             "clash-verge/v1.3.8",
             "ClashforWindows/0.20.39",
             "Clash/1.18.0",
-            "v2rayN/6.23",
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
         )
 
@@ -41,6 +42,7 @@ class SubscriptionFetcher(
     /**
      *
      */
+    @Suppress("LongMethod", "CyclomaticComplexMethod", "CognitiveComplexMethod", "NestedBlockDepth", "ThrowsCount")
     fun fetch(
         url: String,
         onProgress: (String) -> Unit = {}
@@ -83,10 +85,22 @@ class SubscriptionFetcher(
                     onProgress("Parsing subscription response...")
 
                     val config = subscriptionManager.parse(responseBody)
-                    if (config != null && !config.outbounds.isNullOrEmpty()) {
+                    val isWarning = config?.outbounds?.let { outbounds ->
+                        outbounds.size <= 5 && outbounds.any {
+                            val tag = it.tag ?: ""
+                            tag.contains("不支持") || tag.contains("更换") ||
+                                (tag.contains("客户端") && (tag.contains("Clash") || tag.contains("v2rayN")))
+                        }
+                    } == true
+
+                    if (config != null && !config.outbounds.isNullOrEmpty() && !isWarning) {
                         parsedConfig = config
                     } else {
-                        Log.w(TAG, "Failed to parse response with UA '$userAgent'")
+                        if (isWarning) {
+                            Log.w(TAG, "Response contains client warning tags with UA '$userAgent', ignoring.")
+                        } else {
+                            Log.w(TAG, "Failed to parse response with UA '$userAgent'")
+                        }
                     }
                 }
 

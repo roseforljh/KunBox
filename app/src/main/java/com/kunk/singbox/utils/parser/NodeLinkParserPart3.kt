@@ -1,4 +1,4 @@
-﻿package com.kunk.singbox.utils.parser
+package com.kunk.singbox.utils.parser
 
 import com.kunk.singbox.model.Outbound
 import com.kunk.singbox.model.TlsConfig
@@ -602,7 +602,8 @@ abstract class NodeLinkParserPart3(gson: Gson) : NodeLinkParserPart2(gson) {
                     insecure = parseBooleanQueryParam(
                         params["insecure"] ?: params["allowInsecure"] ?: params["skip-cert-verify"]
                     ),
-                    alpn = parseCsvQueryParam(params["alpn"])
+                    alpn = parseCsvQueryParam(params["alpn"]),
+                    certificatePublicKeySha256 = params["pinSHA256"]?.let { listOf(it) }
                 ),
                 obfs = params["obfs"]?.let { ObfsConfig(type = it, password = params["obfs-password"]) },
                 serverPorts = parseServerPorts(params["mport"])
