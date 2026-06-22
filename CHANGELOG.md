@@ -1,5 +1,19 @@
 # Changelog
 
+## [2.18.1](https://github.com/roseforljh/KunBox/compare/v2.18.0...v2.18.1) (2026-06-22)
+
+
+### Bug Fixes
+
+* adjust bottom nav bar spacing and routing chips styling ([edd3a06](https://github.com/roseforljh/KunBox/commit/edd3a065a49bf4b389a20aed95bee7d1a2d1f264))
+* adjust switch colors in default theme mode ([07ec2a6](https://github.com/roseforljh/KunBox/commit/07ec2a634d0975658ece008300fc7dc812609ddd))
+* enhance liquid glass dialog option animation and fab menu scrim blur ([781ba8b](https://github.com/roseforljh/KunBox/commit/781ba8b24b87cf6e78e2309e5516414d8b26a106))
+* ignore and remove graphify-out ([19c84cb](https://github.com/roseforljh/KunBox/commit/19c84cb802f5e9bd47960d69d88abce37b2c8042))
+* keep standard liquid glass panel style for dialog options while disabling selection animations ([c3769bd](https://github.com/roseforljh/KunBox/commit/c3769bd2377b3e321868452e6698c034996e0f8d))
+* prevent overlap between delete button and switch in app routing items ([586b872](https://github.com/roseforljh/KunBox/commit/586b872c29642958faeed55bda17eb38cb99f99c))
+* remove dashboard card border and simplify liquid glass dialog option selection styling ([9baa6e3](https://github.com/roseforljh/KunBox/commit/9baa6e3f7495d39eca20f972eb883dc8aeb43629))
+* support pinSHA256 for Hysteria2 and fix subscription UA block ([2927481](https://github.com/roseforljh/KunBox/commit/292748149000c383ee2a9d822df205a4ef7424ef))
+
 ## [2.18.0](https://github.com/roseforljh/KunBox/compare/v2.17.0...v2.18.0) (2026-06-21)
 
 
