@@ -52,36 +52,30 @@ fun liquidGlassCheckboxColors(
     )
 }
 
+@Suppress("UnusedParameter")
 @Composable
 fun liquidGlassSwitchColors(
-    checkedThumbColor: Color = MaterialTheme.colorScheme.primary,
+    checkedThumbColor: Color = MaterialTheme.colorScheme.onPrimary,
     checkedTrackColor: Color = MaterialTheme.colorScheme.primary,
     uncheckedThumbColor: Color = MaterialTheme.colorScheme.onSurfaceVariant,
     uncheckedTrackColor: Color = MaterialTheme.colorScheme.outline,
     uncheckedBorderColor: Color = Color.Transparent
 ): SwitchColors {
+    if (!isLiquidGlassTheme()) {
+        return SwitchDefaults.colors(
+            checkedThumbColor = checkedThumbColor,
+            checkedTrackColor = MaterialTheme.colorScheme.primary,
+            uncheckedThumbColor = uncheckedThumbColor,
+            uncheckedTrackColor = uncheckedTrackColor,
+            uncheckedBorderColor = uncheckedBorderColor
+        )
+    }
     return SwitchDefaults.colors(
-        checkedThumbColor = if (isLiquidGlassTheme()) checkedTrackColor else checkedThumbColor,
-        checkedTrackColor = if (isLiquidGlassTheme()) {
-            checkedTrackColor.copy(alpha = 0.24f)
-        } else {
-            checkedTrackColor
-        },
-        uncheckedThumbColor = if (isLiquidGlassTheme()) {
-            uncheckedThumbColor.copy(alpha = 0.82f)
-        } else {
-            uncheckedThumbColor
-        },
-        uncheckedTrackColor = if (isLiquidGlassTheme()) {
-            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.22f)
-        } else {
-            uncheckedTrackColor
-        },
-        uncheckedBorderColor = if (isLiquidGlassTheme()) {
-            MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
-        } else {
-            uncheckedBorderColor
-        }
+        checkedThumbColor = checkedTrackColor,
+        checkedTrackColor = checkedTrackColor.copy(alpha = 0.24f),
+        uncheckedThumbColor = uncheckedThumbColor.copy(alpha = 0.82f),
+        uncheckedTrackColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.22f),
+        uncheckedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
     )
 }
 
