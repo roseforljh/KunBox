@@ -341,6 +341,7 @@ fun AppRuleItem(
                 )
             }
             appRuleDeleteButton(onDelete = onDelete)
+            Spacer(modifier = Modifier.width(8.dp))
             appRuleEnabledSwitch(
                 checked = rule.enabled,
                 onToggle = onToggle
@@ -833,6 +834,7 @@ fun AppGroupCard(
                 ) {
                     Icon(Icons.Rounded.Delete, contentDescription = stringResource(R.string.common_delete), tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(18.dp))
                 }
+                Spacer(modifier = Modifier.width(8.dp))
                 Switch(
                     checked = group.enabled,
                     onCheckedChange = { onToggle() },
