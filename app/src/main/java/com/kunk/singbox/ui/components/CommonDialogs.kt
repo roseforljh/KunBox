@@ -53,6 +53,7 @@ import com.kunk.singbox.ui.theme.liquidGlassButtonPanel
 import com.kunk.singbox.ui.theme.liquidGlassMutedContentColor
 import com.kunk.singbox.ui.theme.liquidGlassOutlinedTextFieldColors
 import com.kunk.singbox.ui.theme.liquidGlassDialogPanel
+import com.kunk.singbox.ui.theme.liquidGlassPanel
 import com.kunk.singbox.ui.theme.LiquidGlassDialogEffect
 import com.kunk.singbox.ui.theme.liquidGlassPressFeedback
 import com.kunk.singbox.ui.theme.liquidGlassTextFieldBorderColor
@@ -74,7 +75,7 @@ private fun Modifier.dialogPanel(shape: RoundedCornerShape = RoundedCornerShape(
 private fun Modifier.dialogOptionPanel(isSelected: Boolean): Modifier {
     val shape = RoundedCornerShape(12.dp)
     if (isLiquidGlassTheme()) {
-        return this
+        return this.liquidGlassPanel(shape = shape, selected = false, shadowElevation = 4.dp)
     } else {
         return background(
             if (isSelected) {
