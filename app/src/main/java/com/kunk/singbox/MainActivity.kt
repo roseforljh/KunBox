@@ -337,16 +337,18 @@ fun SingBoxApp() {
                 containerColor = rootContainerColor,
                 contentWindowInsets = WindowInsets(0, 0, 0, 0)
             ) { innerPadding ->
-                val navigationBarPadding = WindowInsets.navigationBars
+                val rawPadding = WindowInsets.navigationBars
                     .asPaddingValues()
                     .calculateBottomPadding()
+                val safeBottomPadding = if (rawPadding < 12.dp) 12.dp else rawPadding
+
                 val dashboardContentBottomPadding = if (useLiquidGlassNav) {
-                    68.dp + navigationBarPadding
+                    68.dp + safeBottomPadding
                 } else {
                     0.dp
                 }
                 val topLevelContentBottomPadding = if (useLiquidGlassNav) {
-                    68.dp + navigationBarPadding
+                    68.dp + safeBottomPadding
                 } else {
                     0.dp
                 }

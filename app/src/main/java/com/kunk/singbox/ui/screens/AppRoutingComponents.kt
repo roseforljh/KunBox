@@ -90,7 +90,7 @@ private fun Modifier.routingChipPanel(shape: RoundedCornerShape): Modifier {
     return if (isLiquidGlassTheme()) {
         liquidGlassPanel(shape = shape, shadowElevation = 0.dp)
     } else {
-        background(Neutral700, shape)
+        background(MaterialTheme.colorScheme.surfaceVariant, shape)
     }
 }
 
@@ -99,7 +99,7 @@ private fun Modifier.routingIconPanel(shape: RoundedCornerShape): Modifier {
     return if (isLiquidGlassTheme()) {
         liquidGlassPanel(shape = shape, shadowElevation = 6.dp)
     } else {
-        background(Neutral700, shape)
+        background(MaterialTheme.colorScheme.surfaceVariant, shape)
     }
 }
 
@@ -892,7 +892,18 @@ fun SelectedAppChip(app: AppInfo, onRemove: () -> Unit) {
             Image(bitmap = appIcon, contentDescription = null, modifier = Modifier.size(24.dp).clip(CircleShape))
         }
         Spacer(modifier = Modifier.width(6.dp))
-        Text(app.appName, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.widthIn(max = 80.dp))
+        Text(
+            text = app.appName,
+            fontSize = 12.sp,
+            color = if (isLiquidGlassTheme()) {
+                MaterialTheme.colorScheme.onSurface
+            } else {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            },
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.widthIn(max = 80.dp)
+        )
         Spacer(modifier = Modifier.width(4.dp))
         Icon(
             Icons.Rounded.Close,

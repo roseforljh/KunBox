@@ -104,8 +104,10 @@ private fun DefaultAppNavBar(
     items: List<Screen>
 ) {
     val gradientColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f)
+    val rawPadding = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+    val safeBottomPadding = if (rawPadding < 12.dp) 0.dp else (rawPadding - 12.dp).coerceAtLeast(0.dp)
 
-    Column {
+    Column(modifier = Modifier.background(MaterialTheme.colorScheme.background)) {
         DefaultNavDivider(gradientColor = gradientColor)
 
         NavigationBar(
@@ -131,6 +133,12 @@ private fun DefaultAppNavBar(
                 )
             }
         }
+
+        androidx.compose.foundation.layout.Spacer(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(safeBottomPadding)
+        )
     }
 }
 
@@ -194,14 +202,15 @@ private fun LiquidGlassAppNavBar(
     val currentRoute = navBackStackEntry?.destination?.route
     val selectedRoute = getTabForRoute(currentRoute)
     val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
-    val navigationBarPadding = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+    val rawPadding = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+    val safeBottomPadding = if (rawPadding < 12.dp) 12.dp else rawPadding
     val selectedIndex = items.indexOfFirst { screen -> selectedRoute == screen.route }.coerceAtLeast(0)
 
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(68.dp + navigationBarPadding)
-            .padding(start = 28.dp, top = 6.dp, end = 28.dp, bottom = 2.dp + navigationBarPadding),
+            .height(68.dp + safeBottomPadding)
+            .padding(start = 28.dp, top = 6.dp, end = 28.dp, bottom = 2.dp + safeBottomPadding),
         contentAlignment = Alignment.BottomCenter
     ) {
         LiquidGlassCapsule(

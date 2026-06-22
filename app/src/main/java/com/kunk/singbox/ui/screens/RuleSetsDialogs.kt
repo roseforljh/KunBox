@@ -166,19 +166,19 @@ fun RuleSetItem(
                 )
             }
             Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = ruleSet.tag,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(modifier = Modifier.height(4.dp))
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier
                         .fillMaxWidth()
                         .horizontalScroll(rememberScrollState())
                 ) {
-                    Text(
-                        text = ruleSet.tag,
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
                     if (isDownloading) {
                         CircularProgressIndicator(
                             modifier = Modifier.size(14.dp),
@@ -216,7 +216,11 @@ fun RuleSetItem(
                     )
                     Spacer(modifier = Modifier.width(6.dp))
                     val inbounds = ruleSet.inbounds ?: emptyList()
-                    val inboundText = if (inbounds.isEmpty()) stringResource(R.string.common_all) else inbounds.joinToString(",")
+                    val inboundText = if (inbounds.isEmpty()) {
+                        stringResource(R.string.common_all)
+                    } else {
+                        inbounds.joinToString(",")
+                    }
                     RuleSetBadge(
                         text = inboundText,
                         backgroundColor = Color(0xFFFF8F00).copy(alpha = 0.8f),
