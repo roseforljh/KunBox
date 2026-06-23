@@ -9,6 +9,7 @@ import com.kunk.singbox.model.DomainResolveConfig
 import com.kunk.singbox.model.Outbound
 import com.kunk.singbox.model.OutboundTag
 import com.kunk.singbox.model.RuleSet
+import com.kunk.singbox.model.RuleSetConfig
 import com.kunk.singbox.model.RuleSetOutboundMode
 import com.kunk.singbox.model.RuleSetType
 import com.kunk.singbox.model.RuleType
@@ -520,6 +521,54 @@ abstract class ConfigRepositoryTestPart7 : ConfigRepositoryTestPart6() {
     }
 
     @Test
+    override fun testGoogleConnectivityDnsRulesUseProxyBeforeCountryRules() {
+        val proxyServerTag = ConfigRepository.buildDynamicDnsServerTag("PROXY")
+        val googleRules = ConfigRepository.buildGoogleConnectivityDnsRulesForTest(
+            fakeDnsEnabled = false,
+            proxyServerTag = proxyServerTag
+        )
+        val directCountryRule = ConfigRepository.buildDnsRouteToDirectForTest(
+            DnsRule(ruleSet = listOf("geosite-cn"))
+        )
+
+        assertEquals(1, googleRules.size)
+        assertEquals(ConfigRepository.googleConnectivityCheckDomains, googleRules.first().domain)
+        assertEquals(proxyServerTag, googleRules.first().server)
+        assertEquals("local", directCountryRule.server)
+    }
+
+    @Test
+    override fun testGoogleConnectivityRouteRulePrecedesDirectCountryRule() {
+        val rules = ConfigRepository.buildRunRouteRulesForTest(
+            settings = AppSettings(
+                ruleSets = listOf(
+                    RuleSet(
+                        tag = "geosite-cn",
+                        type = RuleSetType.REMOTE,
+                        outboundMode = RuleSetOutboundMode.DIRECT,
+                        enabled = true
+                    )
+                )
+            ),
+            selectorTag = "PROXY",
+            outbounds = listOf(Outbound(type = "selector", tag = "PROXY")),
+            profiles = emptyList(),
+            validRuleSets = listOf(RuleSetConfig(tag = "geosite-cn"))
+        )
+
+        val googleIndex = rules.indexOfFirst {
+            it.domain == ConfigRepository.googleConnectivityCheckDomains && it.outbound == "PROXY"
+        }
+        val countryIndex = rules.indexOfFirst {
+            it.ruleSet == listOf("geosite-cn") && it.outbound == "direct"
+        }
+
+        assertTrue(googleIndex >= 0)
+        assertTrue(countryIndex >= 0)
+        assertTrue(googleIndex < countryIndex)
+    }
+
+    @Test
     override fun testDnsServerTagForFallbackProxyUsesProxyServer() {
         val serverTag = ConfigRepository.dnsServerTagForSemanticForTest(
             semantic = ConfigRepository.OutboundSemantic.FallbackProxy("PROXY"),
@@ -591,7 +640,7 @@ abstract class ConfigRepositoryTestPart7 : ConfigRepositoryTestPart6() {
     @Test
     override fun testResolveOutboundSemanticDirect() {
         val semantic = ConfigRepository.resolveOutboundSemanticForTest(
-            ConfigRepositoryCompanionBase.OutboundSemanticTestInput(
+            ConfigRepository.OutboundSemanticTestInput(
                 mode = RuleSetOutboundMode.DIRECT,
                 value = null,
                 selectorTag = "PROXY",
@@ -607,7 +656,7 @@ abstract class ConfigRepositoryTestPart7 : ConfigRepositoryTestPart6() {
     @Test
     override fun testResolveOutboundSemanticBlock() {
         val semantic = ConfigRepository.resolveOutboundSemanticForTest(
-            ConfigRepositoryCompanionBase.OutboundSemanticTestInput(
+            ConfigRepository.OutboundSemanticTestInput(
                 mode = RuleSetOutboundMode.BLOCK,
                 value = null,
                 selectorTag = "PROXY",
@@ -623,7 +672,7 @@ abstract class ConfigRepositoryTestPart7 : ConfigRepositoryTestPart6() {
     @Test
     override fun testResolveOutboundSemanticProxy() {
         val semantic = ConfigRepository.resolveOutboundSemanticForTest(
-            ConfigRepositoryCompanionBase.OutboundSemanticTestInput(
+            ConfigRepository.OutboundSemanticTestInput(
                 mode = RuleSetOutboundMode.PROXY,
                 value = null,
                 selectorTag = "PROXY",
@@ -639,7 +688,7 @@ abstract class ConfigRepositoryTestPart7 : ConfigRepositoryTestPart6() {
     @Test
     override fun testResolveOutboundSemanticNodeValid() {
         val semantic = ConfigRepository.resolveOutboundSemanticForTest(
-            ConfigRepositoryCompanionBase.OutboundSemanticTestInput(
+            ConfigRepository.OutboundSemanticTestInput(
                 mode = RuleSetOutboundMode.NODE,
                 value = "node-id-1",
                 selectorTag = "PROXY",
@@ -655,7 +704,7 @@ abstract class ConfigRepositoryTestPart7 : ConfigRepositoryTestPart6() {
     @Test
     override fun testResolveOutboundSemanticNodeInvalid() {
         val semantic = ConfigRepository.resolveOutboundSemanticForTest(
-            ConfigRepositoryCompanionBase.OutboundSemanticTestInput(
+            ConfigRepository.OutboundSemanticTestInput(
                 mode = RuleSetOutboundMode.NODE,
                 value = "missing-node",
                 selectorTag = "PROXY",
@@ -671,7 +720,7 @@ abstract class ConfigRepositoryTestPart7 : ConfigRepositoryTestPart6() {
     @Test
     override fun testResolveOutboundSemanticProfileValid() {
         val semantic = ConfigRepository.resolveOutboundSemanticForTest(
-            ConfigRepositoryCompanionBase.OutboundSemanticTestInput(
+            ConfigRepository.OutboundSemanticTestInput(
                 mode = RuleSetOutboundMode.PROFILE,
                 value = "profile-1",
                 selectorTag = "PROXY",
@@ -696,7 +745,7 @@ abstract class ConfigRepositoryTestPart7 : ConfigRepositoryTestPart6() {
     @Test
     override fun testResolveOutboundSemanticProfileInvalid() {
         val semantic = ConfigRepository.resolveOutboundSemanticForTest(
-            ConfigRepositoryCompanionBase.OutboundSemanticTestInput(
+            ConfigRepository.OutboundSemanticTestInput(
                 mode = RuleSetOutboundMode.PROFILE,
                 value = "missing-profile",
                 selectorTag = "PROXY",

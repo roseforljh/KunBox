@@ -271,6 +271,10 @@ abstract class ConfigRepositoryTestBase {
 
     abstract fun testRuleSetDnsPriorityKeepsProxySpecificRulesBeforeDirectCountryRules()
 
+    abstract fun testGoogleConnectivityDnsRulesUseProxyBeforeCountryRules()
+
+    abstract fun testGoogleConnectivityRouteRulePrecedesDirectCountryRule()
+
     abstract fun testDnsServerTagForFallbackProxyUsesProxyServer()
 
     abstract fun testDnsServerTagForFallbackProxyUsesDynamicServerWhenFakeDnsEnabled()

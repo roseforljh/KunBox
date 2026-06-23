@@ -6,6 +6,8 @@ import io.nekohasekai.libbox.Libbox
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import com.kunk.singbox.repository.SettingsRepository
+import com.kunk.singbox.utils.PreciseLatencyTester
 
 object BoxWrapperManager {
     private const val TAG = "BoxWrapperManager"
@@ -259,6 +261,7 @@ object BoxWrapperManager {
         return executeNuclearLevel(source, startTime, selectiveResult.closedConnections)
     }
 
+    @Suppress("ReturnCount")
     private suspend fun executeProbeLevel(
         context: android.content.Context,
         source: String,
@@ -268,6 +271,10 @@ object BoxWrapperManager {
         val probeResult = ProbeManager.probeFirstSuccessViaVpnDetailed(context, timeoutMs = 1500L)
 
         if (probeResult.firstSuccess != null) {
+            if (!probeTunnelViaLocalProxy(context)) {
+                Log.w(TAG, "[$source] PROBE physical network ok, but tunnel check failed. Escalating to SELECTIVE")
+                return null
+            }
             val elapsed = System.currentTimeMillis() - startTime
             Log.i(TAG, "[$source] PROBE success (${probeResult.firstSuccess.latencyMs}ms), total: ${elapsed}ms")
             return SmartRecoveryResult(
@@ -287,6 +294,7 @@ object BoxWrapperManager {
         return null
     }
 
+    @Suppress("LongMethod")
     private suspend fun executeSelectiveLevel(
         context: android.content.Context,
         source: String,
@@ -326,18 +334,32 @@ object BoxWrapperManager {
         val verifyResult = ProbeManager.probeFirstSuccessViaVpnDetailed(context, timeoutMs = 1500L)
 
         val result = if (verifyResult.firstSuccess != null) {
-            val elapsed = System.currentTimeMillis() - startTime
-            Log.i(
-                TAG,
-                "[$source] SELECTIVE success, verify=${verifyResult.firstSuccess.latencyMs}ms, total: ${elapsed}ms"
-            )
-            SmartRecoveryResult(
-                RecoveryLevel.SELECTIVE,
-                true,
-                "SELECTIVE succeeded",
-                closedConnections = closedCount,
-                probeLatencyMs = verifyResult.firstSuccess.latencyMs
-            )
+            // 物理网络探测成功后，再验证隧道是否真正可用
+            if (!probeTunnelViaLocalProxy(context)) {
+                Log.w(
+                    TAG,
+                    "[$source] SELECTIVE physical verify ok, but tunnel still dead. Escalating to NUCLEAR"
+                )
+                SmartRecoveryResult(
+                    RecoveryLevel.SELECTIVE,
+                    false,
+                    "tunnel verify failed",
+                    closedConnections = closedCount
+                )
+            } else {
+                val elapsed = System.currentTimeMillis() - startTime
+                Log.i(
+                    TAG,
+                    "[$source] SELECTIVE success, verify=${verifyResult.firstSuccess.latencyMs}ms, total: ${elapsed}ms"
+                )
+                SmartRecoveryResult(
+                    RecoveryLevel.SELECTIVE,
+                    true,
+                    "SELECTIVE succeeded",
+                    closedConnections = closedCount,
+                    probeLatencyMs = verifyResult.firstSuccess.latencyMs
+                )
+            }
         } else if (verifyResult.allFailedByBindPermission) {
             val elapsed = System.currentTimeMillis() - startTime
             Log.w(
@@ -364,7 +386,13 @@ object BoxWrapperManager {
         resetNetwork()
         val elapsed = System.currentTimeMillis() - startTime
         Log.i(TAG, "[$source] NUCLEAR completed, total: ${elapsed}ms")
-        return SmartRecoveryResult(RecoveryLevel.NUCLEAR, true, "NUCLEAR completed", closedCount)
+        return SmartRecoveryResult(
+            level = RecoveryLevel.NUCLEAR,
+            success = true,
+            reason = "NUCLEAR completed",
+            closedConnections = closedCount,
+            needsKernelRestart = true
+        )
     }
 
     /** 智能恢复等级 */
@@ -376,8 +404,44 @@ object BoxWrapperManager {
         val success: Boolean,
         val reason: String,
         val closedConnections: Int = 0,
-        val probeLatencyMs: Long? = null
+        val probeLatencyMs: Long? = null,
+        val needsKernelRestart: Boolean = false
     )
+
+    /**
+     * 通过本地代理端口探测 VPN 隧道是否真正可用
+     */
+    suspend fun probeTunnelViaLocalProxy(context: android.content.Context, timeoutMs: Long = 3000L): Boolean {
+        if (!isAvailable()) {
+            Log.d(TAG, "probeTunnelViaLocalProxy: Kernel is not available, skip")
+            return false
+        }
+        return try {
+            val settings = SettingsRepository.getInstance(context).settings.value
+            val proxyPort = settings.proxyPort
+            if (proxyPort <= 0) {
+                Log.d(TAG, "probeTunnelViaLocalProxy: Proxy port is invalid ($proxyPort), skip tunnel probe")
+                return true
+            }
+            val probeUrl = settings.latencyTestUrl.ifBlank { "https://www.google.com/generate_204" }
+            val realTimeout = if (timeoutMs > 0) timeoutMs.toInt() else settings.latencyTestTimeout
+            val result = PreciseLatencyTester.test(
+                proxyPort = proxyPort,
+                url = probeUrl,
+                timeoutMs = realTimeout,
+                warmup = false
+            )
+            Log.d(
+                TAG,
+                "probeTunnelViaLocalProxy: url=$probeUrl, " +
+                    "latency=${result.latencyMs}ms, isSuccess=${result.isSuccess}"
+            )
+            result.isSuccess
+        } catch (e: Exception) {
+            Log.w(TAG, "probeTunnelViaLocalProxy failed with exception", e)
+            false
+        }
+    }
 
     internal fun shouldSkipProbeLevel(source: String): Boolean {
         return source.equals("network_type_changed", ignoreCase = true)

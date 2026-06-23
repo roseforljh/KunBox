@@ -16,9 +16,9 @@ class TrafficMonitor(
         private const val TAG = "TrafficMonitor"
         private const val SAMPLE_INTERVAL_MS = 3000L
 
-        private const val STALL_CHECK_INTERVAL_MS = 60_000L
+        private const val STALL_CHECK_INTERVAL_MS = 30_000L
         private const val STALL_MIN_BYTES_DELTA = 5120L
-        private const val STALL_MIN_SAMPLES = 5
+        private const val STALL_MIN_SAMPLES = 3
         private const val PROXY_IDLE_THRESHOLD_MS = 120_000L
     }
 
