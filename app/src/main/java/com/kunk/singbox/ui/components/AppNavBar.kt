@@ -15,7 +15,9 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.offset
@@ -61,7 +63,6 @@ import com.kunk.singbox.ui.navigation.Screen
 import com.kunk.singbox.ui.navigation.getTabForRoute
 
 private val liquidGlassButtonShape = RoundedCornerShape(percent = 50)
-private val liquidGlassSelectedIndicatorSize = 44.dp
 
 private data class LiquidGlassNavColors(
     val capsuleBorderColor: Color,
@@ -255,6 +256,7 @@ private fun LiquidGlassCapsule(
     content: @Composable () -> Unit
 ) {
     val colors = liquidGlassNavColors(isDark = isDark)
+    val capsuleCornerPercent = 50
 
     BoxWithConstraints(
         modifier = Modifier
@@ -264,15 +266,15 @@ private fun LiquidGlassCapsule(
             .clip(liquidGlassButtonShape)
             .background(brush = liquidGlassCapsuleBrush(isDark = isDark))
             .border(BorderStroke(1.dp, colors.capsuleBorderColor), liquidGlassButtonShape)
-            .consumeUnclaimedClicks()
-            .padding(horizontal = 6.dp, vertical = 2.dp),
+            .consumeUnclaimedClicks(),
         contentAlignment = Alignment.Center
     ) {
         LiquidGlassSelectedIndicator(
             isDark = isDark,
             selectedIndex = selectedIndex,
             itemCount = itemCount,
-            maxWidth = maxWidth
+            maxWidth = maxWidth,
+            capsuleCornerPercent = capsuleCornerPercent
         )
         content()
     }
@@ -298,25 +300,30 @@ private fun BoxScope.LiquidGlassSelectedIndicator(
     isDark: Boolean,
     selectedIndex: Int,
     itemCount: Int,
-    maxWidth: Dp
+    maxWidth: Dp,
+    capsuleCornerPercent: Int = 50
 ) {
-    val targetOffset = liquidGlassSelectedIndicatorOffset(
-        selectedIndex = selectedIndex,
-        itemCount = itemCount,
-        maxWidth = maxWidth
-    )
+    if (itemCount <= 0) return
+    val clampedIndex = selectedIndex.coerceIn(0, itemCount - 1)
+    val slotWidth = maxWidth / itemCount.toFloat()
+    val targetOffset = slotWidth * clampedIndex.toFloat()
     val indicatorOffset by animateDpAsState(
         targetValue = targetOffset,
         animationSpec = spring(stiffness = 430f, dampingRatio = 0.82f),
         label = "liquid_glass_nav_selected_offset"
     )
 
+    // Dynamic shape: match capsule corners at edges, subtle rounding in middle
+    val indicatorShape = RoundedCornerShape(percent = capsuleCornerPercent)
+
     Box(
         modifier = Modifier
             .align(Alignment.CenterStart)
             .offset(x = indicatorOffset)
-            .size(liquidGlassSelectedIndicatorSize)
-            .clip(liquidGlassButtonShape)
+            .width(slotWidth)
+            .fillMaxHeight()
+            .padding(4.dp)
+            .clip(indicatorShape)
             .background(brush = liquidGlassSelectedButtonBrush(isDark = isDark))
     )
 }
@@ -385,18 +392,7 @@ private fun rememberLiquidGlassNavMetrics(
     )
 }
 
-private fun liquidGlassSelectedIndicatorOffset(
-    selectedIndex: Int,
-    itemCount: Int,
-    maxWidth: Dp
-): Dp {
-    if (itemCount <= 0) {
-        return 0.dp
-    }
-    val selectedSlotIndex = selectedIndex.coerceIn(0, itemCount - 1)
-    val slotWidth = maxWidth / itemCount.toFloat()
-    return (slotWidth * selectedSlotIndex.toFloat()) + ((slotWidth - liquidGlassSelectedIndicatorSize) / 2f)
-}
+
 
 private fun liquidGlassScaleTarget(isSelected: Boolean, isPressed: Boolean): Float {
     return when {
