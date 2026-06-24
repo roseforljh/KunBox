@@ -209,8 +209,8 @@ private fun LiquidGlassAppNavBar(
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(68.dp + safeBottomPadding)
-            .padding(start = 28.dp, top = 6.dp, end = 28.dp, bottom = 2.dp + safeBottomPadding),
+            .height(78.dp + safeBottomPadding)
+            .padding(start = 28.dp, top = 6.dp, end = 28.dp, bottom = 12.dp + safeBottomPadding),
         contentAlignment = Alignment.BottomCenter
     ) {
         LiquidGlassCapsule(
