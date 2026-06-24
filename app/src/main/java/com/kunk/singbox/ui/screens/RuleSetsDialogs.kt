@@ -45,6 +45,7 @@ import com.kunk.singbox.ui.theme.liquidGlassIconButtonPanel
 import com.kunk.singbox.ui.theme.liquidGlassPanel
 import com.kunk.singbox.ui.theme.liquidGlassDialogContainerColor
 import com.kunk.singbox.ui.theme.liquidGlassDialogPanel
+import com.kunk.singbox.ui.theme.LiquidGlassDialogEffect
 import com.kunk.singbox.ui.theme.liquidGlassProgressColor
 import com.kunk.singbox.ui.theme.liquidGlassProgressTrackColor
 import com.kunk.singbox.ui.theme.liquidGlassSwitchColors
@@ -419,6 +420,7 @@ fun RuleSetEditorDialog(
             )
         },
         text = {
+            LiquidGlassDialogEffect()
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -544,6 +546,7 @@ fun DefaultRuleSetProgressDialog(
             )
         },
         text = {
+            LiquidGlassDialogEffect()
             Column(
                 modifier = Modifier.fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(16.dp)

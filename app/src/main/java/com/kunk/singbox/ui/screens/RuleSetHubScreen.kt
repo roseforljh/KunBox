@@ -298,7 +298,9 @@ private fun RuleSetHubSearchField(
         modifier = Modifier
             .fillMaxWidth()
             .padding(4.dp)
-            .liquidGlassTextFieldPanel(shape = searchFieldShape),
+            .then(
+                if (isLiquidGlassTheme()) Modifier else Modifier.liquidGlassTextFieldPanel(shape = searchFieldShape)
+            ),
         singleLine = true,
         shape = searchFieldShape,
         colors = liquidGlassOutlinedTextFieldColors(
@@ -439,7 +441,7 @@ private fun HubRuleSetItemHeader(
                 RuleSetBadge(
                     text = tag,
                     backgroundColor = MaterialTheme.colorScheme.secondary,
-                    contentColor = MaterialTheme.colorScheme.onSecondary,
+                    contentColor = Color.White,
                     modifier = Modifier.padding(start = 4.dp)
                 )
             }
