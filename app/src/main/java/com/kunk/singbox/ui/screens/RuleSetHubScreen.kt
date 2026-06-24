@@ -436,10 +436,16 @@ private fun HubRuleSetItemHeader(
 
         Row(verticalAlignment = Alignment.CenterVertically) {
             ruleSet.tags.forEach { tag ->
+                val isDark = MaterialTheme.colorScheme.background.red < 0.5f
+                val (bgColor, txtColor) = if (isDark) {
+                    MaterialTheme.colorScheme.secondary to MaterialTheme.colorScheme.onSecondary
+                } else {
+                    MaterialTheme.colorScheme.surfaceVariant to MaterialTheme.colorScheme.onSurfaceVariant
+                }
                 RuleSetBadge(
                     text = tag,
-                    backgroundColor = MaterialTheme.colorScheme.secondary,
-                    contentColor = MaterialTheme.colorScheme.onSecondary,
+                    backgroundColor = bgColor,
+                    contentColor = txtColor,
                     modifier = Modifier.padding(start = 4.dp)
                 )
             }
