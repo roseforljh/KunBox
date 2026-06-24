@@ -2980,12 +2980,27 @@ class ConfigRepository(protected val context: Context) {
             }
             val configFile = File(context.filesDir, "running_config.json")
             ConfigRepository.writeTextFileAtomically(configFile, gson.toJson(stripInternalMetadata(runConfig)))
+            logRunningConfigPath(configFile, resolvedTag, allTags.size)
 
             ConfigRepository.ConfigGenerationResult(configFile.absolutePath, resolvedTag, allTags)
         } catch (e: Exception) {
             Log.e(ConfigRepository.TAG, "Failed to generate config file", e)
             null
         }
+    }
+
+    private fun logRunningConfigPath(configFile: File, activeNodeTag: String?, outboundCount: Int) {
+        val logRepo = LogRepository.getInstance()
+        if (!logRepo.isEnabled()) return
+
+        val exportDir = context.getExternalFilesDir(null)?.let { File(it, "exports").absolutePath }
+            ?: "(unavailable)"
+        logRepo.addLog(
+            "INFO [CFG] running_config.json generated: path=${configFile.absolutePath}, " +
+                "size=${configFile.length()} bytes, activeNodeTag=${activeNodeTag ?: "(none)"}, " +
+                "outbounds=$outboundCount"
+        )
+        logRepo.addLog("INFO [CFG] running_config export dir: $exportDir")
     }
 
     protected fun buildOutboundForRuntime(outbound: Outbound): Outbound? =

@@ -1,24 +1,24 @@
 ﻿package com.kunk.singbox.repository
 
 import android.content.Context
+import android.os.Build
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.ArrayDeque
 import java.util.Date
 import java.util.Locale
 import java.util.concurrent.atomic.AtomicBoolean
-import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicInteger
-import android.os.Build
+import java.util.concurrent.atomic.AtomicLong
 
 class LogRepository private constructor() {
     private val _logs = MutableStateFlow<List<String>>(emptyList())
@@ -47,7 +47,9 @@ class LogRepository private constructor() {
     fun setEnabled(value: Boolean) {
         if (enabled == value) return
         enabled = value
-        if (!value) {
+        if (value) {
+            addDebugModeEnabledLog()
+        } else {
             logUiActiveCount.set(0)
             clearLogs()
             stopFileSyncLoop()
@@ -214,6 +216,7 @@ class LogRepository private constructor() {
             appendLine("Export Time: ${exportDateFormat.format(Date())}")
             appendLine("Device: ${Build.MANUFACTURER} ${Build.MODEL}")
             appendLine("Android Version: ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})")
+            buildDebugPathLines().forEach { appendLine(it) }
             appendLine("========================")
             appendLine()
         }
@@ -226,6 +229,10 @@ class LogRepository private constructor() {
     }
 
     companion object {
+        private const val RUNNING_LOG_FILE = "running.log"
+        private const val RUNNING_CONFIG_FILE = "running_config.json"
+        private const val EXPORTS_DIR = "exports"
+
         @Volatile
         private var instance: LogRepository? = null
 
@@ -245,7 +252,25 @@ class LogRepository private constructor() {
 
     private fun getLogFile(): File? {
         val ctx = appContext ?: return null
-        return File(ctx.filesDir, "running.log")
+        return File(ctx.filesDir, RUNNING_LOG_FILE)
+    }
+
+    private fun addDebugModeEnabledLog() {
+        addLog("INFO [DBG] Debug logging enabled")
+        buildDebugPathLines().forEach { line ->
+            addLog("INFO [DBG] $line")
+        }
+    }
+
+    private fun buildDebugPathLines(): List<String> {
+        val ctx = appContext ?: return emptyList()
+        val exportDir = ctx.getExternalFilesDir(null)?.let { File(it, EXPORTS_DIR).absolutePath }
+            ?: "(unavailable)"
+        return listOf(
+            "Log File: ${File(ctx.filesDir, RUNNING_LOG_FILE).absolutePath}",
+            "Running Config: ${File(ctx.filesDir, RUNNING_CONFIG_FILE).absolutePath}",
+            "Running Config Export Dir: $exportDir"
+        )
     }
 
     private fun writeToFileBestEffort(line: String, rewriteAll: Boolean) {

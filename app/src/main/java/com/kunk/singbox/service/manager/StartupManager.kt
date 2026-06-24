@@ -362,7 +362,7 @@ class StartupManager(
         val configContent = patchConfig(rawConfigContent, settings, prewarmedDomainIps)
         log("[parallelInit] patchConfig: ${SystemClock.elapsedRealtime() - stepStart}ms")
 
-        dumpDebugOutbounds(configContent, settings.debugLoggingEnabled)
+        dumpDebugOutbounds(configPath, configContent, settings.debugLoggingEnabled)
 
         val network = networkDeferred.await()
         val ruleSetReady = ruleSetDeferred.await()
@@ -378,10 +378,15 @@ class StartupManager(
         )
     }
 
-    private fun dumpDebugOutbounds(configContent: String, debugEnabled: Boolean) {
+    private fun dumpDebugOutbounds(configPath: String, configContent: String, debugEnabled: Boolean) {
         if (!debugEnabled) return
 
         try {
+            val configFile = File(configPath)
+            logDebug(
+                "[DEBUG] running_config path=${configFile.absolutePath}, " +
+                    "exists=${configFile.exists()}, size=${configFile.length()} bytes"
+            )
             val debugConfig = gson.fromJson(configContent, SingBoxConfig::class.java)
             debugConfig.outbounds?.forEach { outbound ->
                 logTransportDebug(outbound)
@@ -390,22 +395,25 @@ class StartupManager(
             }
             logRouteDebug(debugConfig)
         } catch (e: Exception) {
-            Log.d(TAG, "[DEBUG] Failed to dump config: ${e.message}")
+            logDebug("[DEBUG] Failed to dump config: ${e.message}")
         }
+    }
+
+    private fun logDebug(message: String) {
+        Log.d(TAG, message)
+        logRepo.addLog("INFO [DBG] [Startup] $message")
     }
 
     private fun logTransportDebug(outbound: com.kunk.singbox.model.Outbound) {
         if (outbound.transport == null) return
-        Log.d(
-            TAG,
+        logDebug(
             "[DEBUG] Outbound '${outbound.tag}' type=${outbound.type} transport=${gson.toJson(outbound.transport)}"
         )
     }
 
     private fun logVlessDebug(outbound: com.kunk.singbox.model.Outbound) {
         if (outbound.type != "vless") return
-        Log.d(
-            TAG,
+        logDebug(
             "[DEBUG] VLESS outbound '${outbound.tag}': server=${outbound.server}:${outbound.serverPort}, " +
                 "flow=${outbound.flow}, tls=${outbound.tls != null}, packet_encoding=${outbound.packetEncoding}, " +
                 "transport_type=${outbound.transport?.type}, transport_mode=${outbound.transport?.mode}"
@@ -415,8 +423,7 @@ class StartupManager(
     private fun logNaiveDebug(outbound: com.kunk.singbox.model.Outbound) {
         if (outbound.type != "naive") return
         val host = outbound.headers?.get("Host") ?: outbound.extraHeaders?.get("Host")
-        Log.d(
-            TAG,
+        logDebug(
             "[DEBUG] NAIVE outbound '${outbound.tag}': server=${outbound.server}:${outbound.serverPort}, " +
                 "network=${outbound.network}, quic=${outbound.quic}, uot=${outbound.udpOverTcp?.enabled}, " +
                 "resolver=${outbound.domainResolver?.server}, sni=${outbound.tls?.serverName}, " +
@@ -430,16 +437,14 @@ class StartupManager(
             ?.filter { !it.ruleSet.isNullOrEmpty() || !it.packageName.isNullOrEmpty() }
             .orEmpty()
 
-        Log.d(
-            TAG,
+        logDebug(
             "[DEBUG] Route final=${route.finalOutbound}, " +
                 "rule_set_count=${route.ruleSet?.size ?: 0}, " +
                 "interesting_rules=${interestingRules.size}"
         )
 
         interestingRules.take(12).forEach { rule ->
-            Log.d(
-                TAG,
+            logDebug(
                 "[DEBUG] Route rule: rule_set=${rule.ruleSet}, " +
                     "package=${rule.packageName}, " +
                     "outbound=${rule.outbound}, action=${rule.action}"
