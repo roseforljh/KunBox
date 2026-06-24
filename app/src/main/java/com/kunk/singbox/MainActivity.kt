@@ -314,7 +314,7 @@ fun SingBoxApp() {
         // Get current destination
         val navBackStackEntry = navController.currentBackStackEntryAsState()
         val currentRoute = navBackStackEntry.value?.destination?.route
-        val showBottomBar = currentRoute in listOf(
+        val showBottomBar = currentRoute == null || currentRoute in listOf(
             "dashboard", "nodes", "profiles", "settings"
         )
         val rootContainerColor = if (useLiquidGlassNav) {
