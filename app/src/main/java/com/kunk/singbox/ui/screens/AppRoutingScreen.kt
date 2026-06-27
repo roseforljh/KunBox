@@ -3,7 +3,6 @@ package com.kunk.singbox.ui.screens
 import com.kunk.singbox.R
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.animateDpAsState
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -16,7 +15,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -30,7 +28,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -56,50 +53,53 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
-import androidx.compose.ui.unit.Dp
 
 @Composable
-private fun LiquidGlassTab(
-    selected: Boolean,
-    title: String,
-    onClick: () -> Unit
+private fun CapsuleSlidingIndicator(
+    indicatorOffset: androidx.compose.ui.unit.Dp,
+    slotWidth: androidx.compose.ui.unit.Dp,
+    selectedBrush: Brush
 ) {
-    if (!isLiquidGlassTheme()) {
-        Tab(
-            selected = selected,
-            onClick = onClick,
-            text = {
-                AppRoutingTabLabel(selected = selected, title = title)
-            }
-        )
-        return
-    }
-
-    // In liquid glass mode, just render a clickable label (the indicator is drawn separately)
-    val interactionSource = remember { MutableInteractionSource() }
-    val isPressed by interactionSource.collectIsPressedAsState()
-    val scale by animateFloatAsState(
-        targetValue = if (isPressed) 0.96f else 1f,
-        animationSpec = spring(stiffness = 520f, dampingRatio = 0.72f),
-        label = "liquid_glass_app_routing_tab_scale"
-    )
-
+    val indicatorShape = RoundedCornerShape(percent = 50)
     Box(
         modifier = Modifier
-            .fillMaxWidth()
-            .height(48.dp)
-            .graphicsLayer {
-                scaleX = scale
-                scaleY = scale
-            }
-            .clickable(
-                interactionSource = interactionSource,
-                indication = null,
-                onClick = onClick
-            ),
-        contentAlignment = Alignment.Center
+            .offset(x = indicatorOffset)
+            .width(slotWidth)
+            .fillMaxHeight()
+            .padding(4.dp)
+            .clip(indicatorShape)
+            .background(brush = selectedBrush)
+    )
+}
+
+@Composable
+private fun CapsuleTabLabels(
+    tabs: List<String>,
+    selectedIndex: Int,
+    onTabSelected: (Int) -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        AppRoutingTabLabel(selected = selected, title = title)
+        tabs.forEachIndexed { index, title ->
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight()
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClick = { onTabSelected(index) }
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
+                AppRoutingTabLabel(
+                    selected = selectedIndex == index,
+                    title = title
+                )
+            }
+        }
     }
 }
 
@@ -139,7 +139,7 @@ private fun LiquidGlassTabCapsule(
             .clip(capsuleShape)
             .background(brush = capsuleBrush)
             .border(BorderStroke(1.dp, capsuleBorderColor), capsuleShape),
-        contentAlignment = Alignment.Center
+        contentAlignment = Alignment.CenterStart
     ) {
         val slotWidth = maxWidth / itemCount.toFloat()
         val clampedIndex = selectedIndex.coerceIn(0, itemCount - 1)
@@ -150,44 +150,17 @@ private fun LiquidGlassTabCapsule(
             label = "liquid_glass_tab_indicator_offset"
         )
 
-        val indicatorShape = RoundedCornerShape(percent = 50)
-
-        // Sliding indicator
-        Box(
-            modifier = Modifier
-                .align(Alignment.CenterStart)
-                .offset(x = indicatorOffset)
-                .width(slotWidth)
-                .fillMaxHeight()
-                .padding(4.dp)
-                .clip(indicatorShape)
-                .background(brush = selectedBrush)
+        CapsuleSlidingIndicator(
+            indicatorOffset = indicatorOffset,
+            slotWidth = slotWidth,
+            selectedBrush = selectedBrush
         )
 
-        // Tab labels
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            tabs.forEachIndexed { index, title ->
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxHeight()
-                        .clickable(
-                            interactionSource = remember { MutableInteractionSource() },
-                            indication = null,
-                            onClick = { onTabSelected(index) }
-                        ),
-                    contentAlignment = Alignment.Center
-                ) {
-                    AppRoutingTabLabel(
-                        selected = selectedIndex == index,
-                        title = title
-                    )
-                }
-            }
-        }
+        CapsuleTabLabels(
+            tabs = tabs,
+            selectedIndex = selectedIndex,
+            onTabSelected = onTabSelected
+        )
     }
 }
 
@@ -203,6 +176,7 @@ private fun AppRoutingTabLabel(
     )
 }
 
+@Suppress("LongMethod", "CyclomaticComplexMethod", "CognitiveComplexMethod")
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AppRoutingScreen(
