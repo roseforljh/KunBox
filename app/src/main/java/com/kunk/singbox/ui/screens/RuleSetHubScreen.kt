@@ -298,9 +298,7 @@ private fun RuleSetHubSearchField(
         modifier = Modifier
             .fillMaxWidth()
             .padding(4.dp)
-            .then(
-                if (isLiquidGlassTheme()) Modifier else Modifier.liquidGlassTextFieldPanel(shape = searchFieldShape)
-            ),
+            .liquidGlassTextFieldPanel(shape = searchFieldShape),
         singleLine = true,
         shape = searchFieldShape,
         colors = liquidGlassOutlinedTextFieldColors(
@@ -438,10 +436,16 @@ private fun HubRuleSetItemHeader(
 
         Row(verticalAlignment = Alignment.CenterVertically) {
             ruleSet.tags.forEach { tag ->
+                val isDark = MaterialTheme.colorScheme.background.red < 0.5f
+                val (bgColor, txtColor) = if (isDark) {
+                    MaterialTheme.colorScheme.secondary to MaterialTheme.colorScheme.onSecondary
+                } else {
+                    MaterialTheme.colorScheme.surfaceVariant to MaterialTheme.colorScheme.onSurfaceVariant
+                }
                 RuleSetBadge(
                     text = tag,
-                    backgroundColor = MaterialTheme.colorScheme.secondary,
-                    contentColor = Color.White,
+                    backgroundColor = bgColor,
+                    contentColor = txtColor,
                     modifier = Modifier.padding(start = 4.dp)
                 )
             }
