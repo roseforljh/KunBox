@@ -337,6 +337,15 @@ class SingBoxCore private constructor(private val context: Context) {
         }
     }
 
+    private fun latencyStandardForMethod(method: LatencyTestMethod): PreciseLatencyTester.Standard {
+        return when (method) {
+            LatencyTestMethod.HANDSHAKE -> PreciseLatencyTester.Standard.HANDSHAKE
+            LatencyTestMethod.URL_TEST -> PreciseLatencyTester.Standard.TOTAL
+            LatencyTestMethod.TCP,
+            LatencyTestMethod.REAL_RTT -> PreciseLatencyTester.Standard.RTT
+        }
+    }
+
     private suspend fun testWithLocalHttpProxy(
         outbound: Outbound,
         targetUrl: String,
@@ -471,7 +480,7 @@ class SingBoxCore private constructor(private val context: Context) {
                     proxyPort = port,
                     url = targetUrl,
                     timeoutMs = timeoutMs,
-                    standard = PreciseLatencyTester.Standard.RTT,
+                    standard = latencyStandardForMethod(settings.latencyTestMethod),
                     warmup = false
                 )
                 if (result.isSuccess && result.latencyMs <= timeoutMs) {
@@ -558,7 +567,6 @@ class SingBoxCore private constructor(private val context: Context) {
         outbounds: List<Outbound>,
         targetUrl: String,
         timeoutMs: Int,
-        method: LatencyTestMethod,
         dnsConfig: DnsConfig? = null,
         onResult: (tag: String, latency: Long) -> Unit
     ) = withContext(Dispatchers.IO) {
@@ -566,11 +574,10 @@ class SingBoxCore private constructor(private val context: Context) {
         val batchSize = 50
 
         val settings = SettingsRepository.getInstance(context).settings.first()
-        val concurrency = settings.latencyTestConcurrency
 
         outbounds.chunked(batchSize).forEach { batch ->
 
-            testOutboundsLatencyBatchInternal(batch, targetUrl, timeoutMs, concurrency, settings, dnsConfig, onResult)
+            testOutboundsLatencyBatchInternal(batch, targetUrl, timeoutMs, settings, dnsConfig, onResult)
         }
     }
     @Suppress("CognitiveComplexMethod", "LongMethod", "LongParameterList")
@@ -578,7 +585,6 @@ class SingBoxCore private constructor(private val context: Context) {
         batchOutbounds: List<Outbound>,
         targetUrl: String,
         timeoutMs: Int,
-        concurrency: Int,
         settings: AppSettings,
         dnsConfig: DnsConfig? = null,
         onResult: (tag: String, latency: Long) -> Unit
@@ -628,7 +634,7 @@ class SingBoxCore private constructor(private val context: Context) {
                 return
             }
 
-            runPreciseLatencyTests(portToTagMap, targetUrl, timeoutMs, concurrency, onResult)
+            runPreciseLatencyTests(portToTagMap, targetUrl, timeoutMs, settings, onResult)
         } catch (e: Exception) {
             Log.e(TAG, "Batch test failed", e)
             batchOutbounds.forEach { onResult(it.tag, -1L) }
@@ -772,10 +778,11 @@ class SingBoxCore private constructor(private val context: Context) {
         portToTagMap: Map<Int, String>,
         targetUrl: String,
         timeoutMs: Int,
-        concurrency: Int,
+        settings: AppSettings,
         onResult: (tag: String, latency: Long) -> Unit
     ) {
-        val semaphore = Semaphore(concurrency)
+        val semaphore = Semaphore(settings.latencyTestConcurrency)
+        val standard = latencyStandardForMethod(settings.latencyTestMethod)
         coroutineScope {
             val jobs = portToTagMap.map { (port, originalTag) ->
                 async {
@@ -784,7 +791,7 @@ class SingBoxCore private constructor(private val context: Context) {
                             proxyPort = port,
                             url = targetUrl,
                             timeoutMs = timeoutMs,
-                            standard = PreciseLatencyTester.Standard.RTT,
+                            standard = standard,
                             warmup = false
                         )
                         val latency = if (result.isSuccess && result.latencyMs <= timeoutMs) {
@@ -848,7 +855,6 @@ class SingBoxCore private constructor(private val context: Context) {
             outbounds,
             url,
             timeoutMs,
-            settings.latencyTestMethod,
             dnsConfig,
             onResult
         )
