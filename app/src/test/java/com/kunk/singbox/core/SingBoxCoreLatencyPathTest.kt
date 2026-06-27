@@ -155,6 +155,16 @@ class SingBoxCoreLatencyPathTest {
         assertFalse(batchBody.contains("ports.zip(batchOutbounds.map { it.tag }).toMap()"))
     }
 
+    @Test
+    fun testLatencyTemporaryConfigsStripInternalEchMetadataBeforeJson() {
+        val source = readSingBoxCoreSource()
+        val singleNodeBody = extractFunctionBody(source, "testWithLocalHttpProxyInternal")
+        val batchBody = extractFunctionBody(source, "testOutboundsLatencyBatchInternal")
+
+        assertTrue(singleNodeBody.contains("gson.toJson(stripLatencyRuntimeMetadata(config))"))
+        assertTrue(batchBody.contains("gson.toJson(stripLatencyRuntimeMetadata(config))"))
+    }
+
     private fun readSingBoxCoreSource(): String {
         val candidates = listOf(
             File("src/main/java/com/kunk/singbox/core/SingBoxCore.kt"),

@@ -440,7 +440,7 @@ class SingBoxCore private constructor(private val context: Context) {
                 )
             )
 
-            val configJson = gson.toJson(config)
+            val configJson = gson.toJson(stripLatencyRuntimeMetadata(config))
             var commandServer: io.nekohasekai.libbox.CommandServer? = null
             try {
                 ensureLibboxSetup(context)
@@ -504,6 +504,20 @@ class SingBoxCore private constructor(private val context: Context) {
 
     private fun prepareLatencyTestOutbound(outbound: Outbound): Outbound? {
         return OutboundFixer.buildForRuntime(context, outbound)?.let { applyLatencyBootstrapDomainResolver(it) }
+    }
+
+    private fun stripLatencyRuntimeMetadata(config: SingBoxConfig): SingBoxConfig {
+        return config.copy(
+            outbounds = config.outbounds?.map { stripLatencyRuntimeMetadata(it) },
+            proxies = config.proxies?.map { stripLatencyRuntimeMetadata(it) }
+        )
+    }
+
+    private fun stripLatencyRuntimeMetadata(outbound: Outbound): Outbound {
+        val tls = outbound.tls ?: return outbound
+        val ech = tls.ech ?: return outbound
+        if (ech.dnsServer == null) return outbound
+        return outbound.copy(tls = tls.copy(ech = ech.copy(dnsServer = null)))
     }
 
     private fun resolveLatencyTestNetwork(connectivityManager: ConnectivityManager): Network? {
@@ -591,7 +605,7 @@ class SingBoxCore private constructor(private val context: Context) {
 
         val portToTagMap = ports.zip(fixedOutbounds.map { it.tag }).toMap()
         val config = buildBatchTestConfig(fixedOutbounds, ports, settings, dnsConfig)
-        val configJson = gson.toJson(config)
+        val configJson = gson.toJson(stripLatencyRuntimeMetadata(config))
         val batchTestDbPath = config.experimental?.cacheFile?.path
 
         var commandServer: CommandServer? = null
