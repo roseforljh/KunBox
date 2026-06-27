@@ -34,17 +34,16 @@ class SingBoxCoreLatencyPathTest {
     }
 
     @Test
-    fun testLatencyOutboundDomainResolverUsesLocalDnsForNodeDomain() {
+    fun testLatencyOutboundDomainResolverUsesBootstrapDnsForNodeDomain() {
         val outbound = Outbound(
             type = "vless",
             tag = "airport-node",
-            server = "fly-nnca.bestvmr.com",
-            domainResolver = DomainResolveConfig(server = "dns-bootstrap")
+            server = "fly-nnca.bestvmr.com"
         )
 
-        val actual = SingBoxCore.applyLatencyLocalDomainResolverForTest(outbound)
+        val actual = SingBoxCore.applyLatencyBootstrapDomainResolverForTest(outbound)
 
-        assertEquals("local", actual.domainResolver?.server)
+        assertEquals(ConfigRepository.DEFAULT_ROUTE_DOMAIN_RESOLVER_TAG, actual.domainResolver?.server)
     }
 
     @Test
@@ -56,7 +55,7 @@ class SingBoxCoreLatencyPathTest {
             domainResolver = DomainResolveConfig(server = "airport-dns")
         )
 
-        val actual = SingBoxCore.applyLatencyLocalDomainResolverForTest(outbound)
+        val actual = SingBoxCore.applyLatencyBootstrapDomainResolverForTest(outbound)
 
         assertEquals("airport-dns", actual.domainResolver?.server)
     }

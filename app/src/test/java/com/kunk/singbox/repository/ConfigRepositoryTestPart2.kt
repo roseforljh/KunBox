@@ -245,7 +245,7 @@ abstract class ConfigRepositoryTestPart2 : ConfigRepositoryTestPart1() {
         val outbounds = ConfigRepository.applyDnsOverrideDomainResolversForTest(
             ConfigRepository.applyDefaultOutboundDomainResolverForTest(
                 outbounds = listOf(bestvmrNodeOutbound()),
-                defaultResolverTag = "local",
+                defaultResolverTag = ConfigRepository.DEFAULT_ROUTE_DOMAIN_RESOLVER_TAG,
                 defaultResolverStrategy = "prefer_ipv4"
             ),
             override
@@ -364,7 +364,7 @@ abstract class ConfigRepositoryTestPart2 : ConfigRepositoryTestPart1() {
     }
 
     @Test
-    override fun testDefaultDomainResolverUsesLocalDnsForNodeDomains() {
+    override fun testDefaultDomainResolverUsesBootstrapDnsForNodeDomains() {
         val outbounds = ConfigRepository.applyDefaultOutboundDomainResolverForTest(
             outbounds = listOf(
                 Outbound(
@@ -385,16 +385,16 @@ abstract class ConfigRepositoryTestPart2 : ConfigRepositoryTestPart1() {
                     domainResolver = DomainResolveConfig(server = "custom-dns")
                 )
             ),
-            defaultResolverTag = "local"
+            defaultResolverTag = ConfigRepository.DEFAULT_ROUTE_DOMAIN_RESOLVER_TAG
         )
 
-        assertEquals("local", outbounds[0].domainResolver?.server)
-        assertEquals("local", outbounds[1].domainResolver?.server)
+        assertEquals(ConfigRepository.DEFAULT_ROUTE_DOMAIN_RESOLVER_TAG, outbounds[0].domainResolver?.server)
+        assertEquals(ConfigRepository.DEFAULT_ROUTE_DOMAIN_RESOLVER_TAG, outbounds[1].domainResolver?.server)
         assertEquals("custom-dns", outbounds[2].domainResolver?.server)
     }
 
     @Test
-    override fun testDnsOverrideWinsOverLocalDefaultDomainResolver() {
+    override fun testDnsOverrideWinsOverBootstrapDefaultDomainResolver() {
         val outbounds = ConfigRepository.applyDefaultOutboundDomainResolverForTest(
             outbounds = listOf(
                 Outbound(
@@ -404,7 +404,7 @@ abstract class ConfigRepositoryTestPart2 : ConfigRepositoryTestPart1() {
                     domainResolver = DomainResolveConfig(server = "dns-bootstrap")
                 )
             ),
-            defaultResolverTag = "local"
+            defaultResolverTag = ConfigRepository.DEFAULT_ROUTE_DOMAIN_RESOLVER_TAG
         )
         val override = DnsConfig(
             servers = listOf(DnsServer(tag = "airport-dns", type = "https", server = "dns.example.com")),
@@ -426,11 +426,11 @@ abstract class ConfigRepositoryTestPart2 : ConfigRepositoryTestPart1() {
                     server = "34.kuz7.com"
                 )
             ),
-            defaultResolverTag = "local",
+            defaultResolverTag = ConfigRepository.DEFAULT_ROUTE_DOMAIN_RESOLVER_TAG,
             defaultResolverStrategy = "prefer_ipv4"
         )
 
-        assertEquals("local", outbounds.first().domainResolver?.server)
+        assertEquals(ConfigRepository.DEFAULT_ROUTE_DOMAIN_RESOLVER_TAG, outbounds.first().domainResolver?.server)
         assertEquals("prefer_ipv4", outbounds.first().domainResolver?.strategy)
     }
 
@@ -444,7 +444,7 @@ abstract class ConfigRepositoryTestPart2 : ConfigRepositoryTestPart1() {
                     server = "fly-nnca.bestvmr.com"
                 )
             ),
-            defaultResolverTag = "local",
+            defaultResolverTag = ConfigRepository.DEFAULT_ROUTE_DOMAIN_RESOLVER_TAG,
             defaultResolverStrategy = "prefer_ipv4"
         )
         val override = DnsConfig(
@@ -459,7 +459,7 @@ abstract class ConfigRepositoryTestPart2 : ConfigRepositoryTestPart1() {
     }
 
     @Test
-    override fun testDnsOverrideCatchAllRuleWinsOverLocalDefaultDomainResolver() {
+    override fun testDnsOverrideCatchAllRuleWinsOverBootstrapDefaultDomainResolver() {
         val outbounds = ConfigRepository.applyDefaultOutboundDomainResolverForTest(
             outbounds = listOf(
                 Outbound(
@@ -468,7 +468,7 @@ abstract class ConfigRepositoryTestPart2 : ConfigRepositoryTestPart1() {
                     server = "fly-nnca.bestvmr.com"
                 )
             ),
-            defaultResolverTag = "local"
+            defaultResolverTag = ConfigRepository.DEFAULT_ROUTE_DOMAIN_RESOLVER_TAG
         )
         val override = DnsConfig(
             servers = listOf(DnsServer(tag = "airport-dns", type = "https", server = "dns.example.com")),
@@ -481,7 +481,7 @@ abstract class ConfigRepositoryTestPart2 : ConfigRepositoryTestPart1() {
     }
 
     @Test
-    override fun testDnsOverrideOutboundAnyRuleWinsOverLocalDefaultDomainResolver() {
+    override fun testDnsOverrideOutboundAnyRuleWinsOverBootstrapDefaultDomainResolver() {
         val outbounds = ConfigRepository.applyDefaultOutboundDomainResolverForTest(
             outbounds = listOf(
                 Outbound(
@@ -490,7 +490,7 @@ abstract class ConfigRepositoryTestPart2 : ConfigRepositoryTestPart1() {
                     server = "fly-nnca.bestvmr.com"
                 )
             ),
-            defaultResolverTag = "local"
+            defaultResolverTag = ConfigRepository.DEFAULT_ROUTE_DOMAIN_RESOLVER_TAG
         )
         val override = DnsConfig(
             servers = listOf(DnsServer(tag = "airport-dns", type = "https", server = "dns.example.com")),
@@ -517,7 +517,7 @@ abstract class ConfigRepositoryTestPart2 : ConfigRepositoryTestPart1() {
                     server = "other.example.com"
                 )
             ),
-            defaultResolverTag = "local"
+            defaultResolverTag = ConfigRepository.DEFAULT_ROUTE_DOMAIN_RESOLVER_TAG
         )
         val override = DnsConfig(
             servers = listOf(DnsServer(tag = "airport-dns", type = "https", server = "dns.example.com")),
@@ -527,7 +527,7 @@ abstract class ConfigRepositoryTestPart2 : ConfigRepositoryTestPart1() {
         val actual = ConfigRepository.applyDnsOverrideDomainResolversForTest(outbounds, override)
 
         assertEquals("airport-dns", actual[0].domainResolver?.server)
-        assertEquals("local", actual[1].domainResolver?.server)
+        assertEquals(ConfigRepository.DEFAULT_ROUTE_DOMAIN_RESOLVER_TAG, actual[1].domainResolver?.server)
     }
 
     @Test

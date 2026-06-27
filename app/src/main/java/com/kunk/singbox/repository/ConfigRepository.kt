@@ -826,15 +826,7 @@ class ConfigRepository(protected val context: Context) {
     }
 
     protected suspend fun tcpLatencyFallback(outbound: Outbound): Long {
-        if (!LatencyProbePolicy.shouldUseTcpFallback(outbound)) return -1L
-        val host = outbound.server?.trim().orEmpty()
-        if (host.isBlank()) return -1L
-        val port = outbound.serverPort ?: 443
-        val timeout = settingsRepository.settings.first().latencyTestTimeout
-        return TcpPing.connect(host = host, port = port, timeout = timeout)
-    }
-
-    protected suspend fun ipv6TcpLatencyFallback(outbound: Outbound): Long {
+        if (!LatencyProbePolicy.shouldUseTcpFallbackAfterProtocolFailure(outbound)) return -1L
         val host = outbound.server?.trim().orEmpty()
         if (host.isBlank()) return -1L
         val port = outbound.serverPort ?: 443
@@ -919,7 +911,7 @@ class ConfigRepository(protected val context: Context) {
         val serverAddressStrategy = resolveDnsStrategy(settings.serverAddressStrategy, settings.ipVersionMode)
         val defaultResolverOutbounds = ConfigRepository.applyDefaultOutboundDomainResolver(
             rawOutbounds,
-            "local",
+            ConfigRepository.DEFAULT_ROUTE_DOMAIN_RESOLVER_TAG,
             serverAddressStrategy
         )
         val runtimeOutbounds = if (dnsOverrideConfig != null) {
@@ -993,7 +985,7 @@ class ConfigRepository(protected val context: Context) {
                         val finalLatency = if (latency > 0L) {
                             latency
                         } else {
-                            val fallback = ipv6TcpLatencyFallback(probeOutbound)
+                            val fallback = tcpLatencyFallback(probeOutbound)
                             if (fallback > 0L) fallback else resolveIpv6OnlyStatus(probeOutbound, latency)
                         }
                         applyLatencyResult(info, finalLatency, onNodeComplete)
@@ -2566,7 +2558,7 @@ class ConfigRepository(protected val context: Context) {
                         val finalLatency = if (latency > 0) {
                             latency
                         } else {
-                            val fallback = ipv6TcpLatencyFallback(probeOutbound)
+                            val fallback = tcpLatencyFallback(probeOutbound)
                             if (fallback > 0) {
                                 fallback
                             } else {
@@ -2918,7 +2910,7 @@ class ConfigRepository(protected val context: Context) {
             )
             val defaultResolverOutbounds = ConfigRepository.applyDefaultOutboundDomainResolver(
                 rawOutboundsContext.outbounds,
-                "local",
+                ConfigRepository.DEFAULT_ROUTE_DOMAIN_RESOLVER_TAG,
                 serverAddressStrategy
             )
             val outboundsContext = rawOutboundsContext.copy(

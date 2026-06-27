@@ -163,17 +163,17 @@ abstract class ConfigRepositoryTestBase {
 
     abstract fun testOutboundDomainResolverDnsRulesSkipIpAndFakeIpResolver()
 
-    abstract fun testDefaultDomainResolverUsesLocalDnsForNodeDomains()
+    abstract fun testDefaultDomainResolverUsesBootstrapDnsForNodeDomains()
 
-    abstract fun testDnsOverrideWinsOverLocalDefaultDomainResolver()
+    abstract fun testDnsOverrideWinsOverBootstrapDefaultDomainResolver()
 
     abstract fun testDefaultOutboundDomainResolverAppliesServerAddressStrategy()
 
     abstract fun testDnsOverrideDomainResolverKeepsServerAddressStrategyWhenRuleHasNoStrategy()
 
-    abstract fun testDnsOverrideCatchAllRuleWinsOverLocalDefaultDomainResolver()
+    abstract fun testDnsOverrideCatchAllRuleWinsOverBootstrapDefaultDomainResolver()
 
-    abstract fun testDnsOverrideOutboundAnyRuleWinsOverLocalDefaultDomainResolver()
+    abstract fun testDnsOverrideOutboundAnyRuleWinsOverBootstrapDefaultDomainResolver()
 
     abstract fun testDnsOverrideSpecificOutboundRuleOnlyAppliesMatchingOutbound()
 

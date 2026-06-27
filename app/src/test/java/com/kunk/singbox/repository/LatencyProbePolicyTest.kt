@@ -20,6 +20,17 @@ class LatencyProbePolicyTest {
     }
 
     @Test
+    fun shouldUseTcpFallbackAfterProtocolFailure_returnsTrueForXhttpPacketUp() {
+        val outbound = Outbound(
+            type = "vless",
+            tag = "xhttp-packet-up",
+            transport = TransportConfig(type = "xhttp", mode = "packet-up")
+        )
+
+        assertTrue(LatencyProbePolicy.shouldUseTcpFallbackAfterProtocolFailure(outbound))
+    }
+
+    @Test
     fun shouldUseTcpFallback_returnsFalseForXhttpNonPacketUp() {
         val outbound = Outbound(
             type = "vless",
@@ -39,5 +50,17 @@ class LatencyProbePolicyTest {
         )
 
         assertFalse(LatencyProbePolicy.shouldUseTcpFallback(outbound))
+    }
+
+    @Test
+    fun shouldUseTcpFallbackAfterProtocolFailure_returnsFalseForAnyTls() {
+        val outbound = Outbound(
+            type = "anytls",
+            tag = "anytls-open-port",
+            server = "204.136.11.104",
+            serverPort = 31424
+        )
+
+        assertFalse(LatencyProbePolicy.shouldUseTcpFallbackAfterProtocolFailure(outbound))
     }
 }

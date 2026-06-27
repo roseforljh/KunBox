@@ -8,4 +8,8 @@ object LatencyProbePolicy {
         val mode = outbound.transport?.mode?.trim()?.lowercase()
         return transportType == "xhttp" && mode == "packet-up"
     }
+
+    fun shouldUseTcpFallbackAfterProtocolFailure(outbound: Outbound): Boolean {
+        return shouldUseTcpFallback(outbound)
+    }
 }

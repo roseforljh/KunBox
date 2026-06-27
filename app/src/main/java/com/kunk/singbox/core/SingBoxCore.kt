@@ -98,8 +98,8 @@ class SingBoxCore private constructor(private val context: Context) {
             return buildLatencyTestDnsConfig(settings, outbounds, dnsOverride, sanitizeDnsServer)
         }
 
-        internal fun applyLatencyLocalDomainResolverForTest(outbound: Outbound): Outbound {
-            return applyLatencyLocalDomainResolver(outbound)
+        internal fun applyLatencyBootstrapDomainResolverForTest(outbound: Outbound): Outbound {
+            return applyLatencyBootstrapDomainResolver(outbound)
         }
 
         private fun buildLatencyTestDnsConfig(
@@ -118,7 +118,7 @@ class SingBoxCore private constructor(private val context: Context) {
             )
             val servers = mutableListOf(
                 DnsServer(
-                    tag = "dns-bootstrap",
+                    tag = ConfigRepository.DEFAULT_ROUTE_DOMAIN_RESOLVER_TAG,
                     type = "udp",
                     server = "223.5.5.5",
                     serverPort = 53
@@ -167,17 +167,22 @@ class SingBoxCore private constructor(private val context: Context) {
             return rule.copy(action = "route")
         }
 
-        private fun applyLatencyLocalDomainResolver(outbound: Outbound): Outbound {
+        private fun applyLatencyBootstrapDomainResolver(outbound: Outbound): Outbound {
             val server = outbound.server?.trim().orEmpty()
             if (server.isBlank() || isIpLiteral(server)) return outbound
 
             val existingResolver = outbound.domainResolver
             val existingResolverServer = existingResolver?.server?.trim().orEmpty()
-            if (existingResolverServer.isNotBlank() && existingResolverServer != "dns-bootstrap") {
+            if (
+                existingResolverServer.isNotBlank() &&
+                existingResolverServer != ConfigRepository.DEFAULT_ROUTE_DOMAIN_RESOLVER_TAG
+            ) {
                 return outbound
             }
             return outbound.copy(
-                domainResolver = (existingResolver ?: DomainResolveConfig()).copy(server = LATENCY_LOCAL_DNS_TAG)
+                domainResolver = (existingResolver ?: DomainResolveConfig()).copy(
+                    server = ConfigRepository.DEFAULT_ROUTE_DOMAIN_RESOLVER_TAG
+                )
             )
         }
 
@@ -498,7 +503,7 @@ class SingBoxCore private constructor(private val context: Context) {
     }
 
     private fun prepareLatencyTestOutbound(outbound: Outbound): Outbound? {
-        return OutboundFixer.buildForRuntime(context, outbound)?.let { applyLatencyLocalDomainResolver(it) }
+        return OutboundFixer.buildForRuntime(context, outbound)?.let { applyLatencyBootstrapDomainResolver(it) }
     }
 
     private fun resolveLatencyTestNetwork(connectivityManager: ConnectivityManager): Network? {
