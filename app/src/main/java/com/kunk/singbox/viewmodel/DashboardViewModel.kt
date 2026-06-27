@@ -878,6 +878,8 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         _connectionState.value = ConnectionState.Idle
         _connectedAtElapsedMs.value = null
         _statsBase.value = ConnectionStats(0, 0, 0, 0, 0)
+        VpnTileService.persistVpnPending(context, "stopping")
+        VpnTileService.persistVpnState(context, false)
 
         when (VpnStateStore.getMode()) {
             VpnStateStore.CoreMode.PROXY -> {
@@ -899,6 +901,9 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                 })
             }
         }
+        context.startService(Intent(context, VpnTileService::class.java).apply {
+            action = VpnTileService.ACTION_REFRESH_TILE
+        })
     }
 
     private fun startPingTest() {

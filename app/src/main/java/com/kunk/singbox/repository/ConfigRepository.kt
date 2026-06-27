@@ -4589,18 +4589,17 @@ class ConfigRepository(protected val context: Context) {
                 }
             }
 
-            setActiveProfile(profileId)
             scope.launch {
                 val nodes = extractNodesFromConfig(newConfig, profileId)
                 profileNodes[profileId] = nodes
-                if (_activeProfileId.value == profileId) {
-                    _nodes.value = nodes
+                val addedNode = nodes.find { it.name == finalTag }
+                if (ConfigRepository.shouldActivateCreatedNode(_activeProfileId.value)) {
+                    _activeProfileId.value = profileId
+                    applyActiveProfileNodes(profileId, nodes, addedNode?.id)
+                } else if (_activeProfileId.value == profileId) {
+                    applyActiveProfileNodes(profileId, nodes)
                 }
                 updateAllNodesAndGroups()
-                val addedNode = nodes.find { it.name == finalTag }
-                if (addedNode != null) {
-                    _activeNodeId.value = addedNode.id
-                }
 
                 saveProfiles()
                 Log.i(ConfigRepository.TAG, "Created node: $finalTag in profile $profileId")
@@ -4751,13 +4750,14 @@ class ConfigRepository(protected val context: Context) {
                 }
             }
 
-            updateAllNodesAndGroups()
-
-            setActiveProfile(profileId)
             val addedNode = nodes.find { it.name == finalTag }
-            if (addedNode != null) {
-                _activeNodeId.value = addedNode.id
+            if (ConfigRepository.shouldActivateCreatedNode(_activeProfileId.value)) {
+                _activeProfileId.value = profileId
+                applyActiveProfileNodes(profileId, nodes, addedNode?.id)
+            } else if (_activeProfileId.value == profileId) {
+                applyActiveProfileNodes(profileId, nodes)
             }
+            updateAllNodesAndGroups()
 
             saveProfiles()
 
@@ -5067,6 +5067,14 @@ class ConfigRepository(protected val context: Context) {
         )
 
         internal val DEFAULT_ROUTE_DOMAIN_RESOLVER_TAG = "dns-bootstrap"
+
+        internal fun shouldActivateCreatedNodeForTest(activeProfileId: String?): Boolean {
+            return shouldActivateCreatedNode(activeProfileId)
+        }
+
+        internal fun shouldActivateCreatedNode(activeProfileId: String?): Boolean {
+            return activeProfileId == null
+        }
 
         internal val CLOUDFLARE_DOH_IPS = setOf(
             "1.1.1.1",
