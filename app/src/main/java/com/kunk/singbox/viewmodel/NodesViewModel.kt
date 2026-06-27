@@ -219,9 +219,6 @@ class NodesViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun setActiveNode(nodeId: String) {
-
-        configRepository.setActiveNodeIdOnly(nodeId)
-
         viewModelScope.launch {
 
             val node = configRepository.getNodeById(nodeId)

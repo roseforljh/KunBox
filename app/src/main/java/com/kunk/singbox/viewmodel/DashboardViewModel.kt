@@ -127,9 +127,6 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     fun setActiveNode(nodeId: String) {
-        // 2025-fix: 先同步更新 activeNodeId，避免竞态条件
-        configRepository.setActiveNodeIdOnly(nodeId)
-
         viewModelScope.launch {
             val node = nodes.value.find { it.id == nodeId }
             val result = configRepository.setActiveNodeWithResult(nodeId)

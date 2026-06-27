@@ -53,7 +53,6 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledExecutorService
 import java.util.concurrent.TimeUnit
-import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.*
@@ -213,7 +212,7 @@ class ConfigRepository(protected val context: Context) {
     @Volatile protected var lastRunOutboundTags: Set<String>? = null
     @Volatile protected var lastRunProfileId: String? = null
 
-    protected val nodeSwitchInFlight = AtomicBoolean(false)
+    private val nodeSwitchGate = NodeSwitchGate()
 
     protected val profileLastSelectedNode = ConcurrentHashMap<String, String>()
 
@@ -2195,12 +2194,7 @@ class ConfigRepository(protected val context: Context) {
     }
 
     suspend fun setActiveNodeWithResult(nodeId: String): ConfigRepository.NodeSwitchResult {
-        if (!nodeSwitchInFlight.compareAndSet(false, true)) {
-            Log.i(ConfigRepository.TAG, "setActiveNodeWithResult: switch already in-flight, skip duplicate request for $nodeId")
-            return ConfigRepository.NodeSwitchResult.Success
-        }
-
-        try {
+        return nodeSwitchGate.run {
             val allNodesSnapshot = _allNodes.value.takeIf { it.isNotEmpty() } ?: loadAllNodesSnapshot()
 
             // Check for cross-profile switch
@@ -2229,16 +2223,19 @@ class ConfigRepository(protected val context: Context) {
             }
 
             _activeNodeId.value = nodeId
+            _activeProfileId.value?.let { profileId ->
+                saveProfileNodeMemory(profileId, nodeId)
+            }
             nodeDisplayName(nodeId, allNodesSnapshot)?.let { VpnStateStore.setSelectedNodeLabel(it) }
             saveProfilesImmediate()
 
             val remoteRunning = SingBoxRemote.isRunning.value || SingBoxRemote.isStarting.value
             if (!remoteRunning) {
                 Log.i(ConfigRepository.TAG, "setActiveNodeWithResult: VPN not running, skip hot switch")
-                return ConfigRepository.NodeSwitchResult.NotRunning
+                return@run ConfigRepository.NodeSwitchResult.NotRunning
             }
 
-            return withContext(Dispatchers.IO) {
+            withContext(Dispatchers.IO) {
                 var node = _nodes.value.find { it.id == nodeId }
                 if (node == null) {
                     node = allNodesSnapshot.find { it.id == nodeId }
@@ -2368,8 +2365,6 @@ class ConfigRepository(protected val context: Context) {
                     ConfigRepository.NodeSwitchResult.Failed(msg)
                 }
             }
-        } finally {
-            nodeSwitchInFlight.set(false)
         }
     }
 
