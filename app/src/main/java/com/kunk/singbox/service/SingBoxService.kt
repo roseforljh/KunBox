@@ -2260,23 +2260,17 @@ class SingBoxService : VpnService() {
         }
 
         try {
-            // 停止当前服务 (不停止 Service 本身)
-            stopVpn(stopService = false)
-
-            // 等待完全停止
-            var waitCount = 0
-            while (isStopping && waitCount < 50) {
-                delay(100)
-                waitCount++
+            synchronized(this@SingBoxService) {
+                pendingStartConfigPath = configPath
+                stopSelfRequested = false
+                SingBoxService.lastConfigPath = configPath
             }
 
-            // 短暂延迟确保资源完全释放
-            delay(500)
-
-            // 重新启动
-            startVpn(configPath)
-
-            L.result("Restart", true, "VPN restarted")
+            // 停止当前服务，清理完成后由 ShutdownManager 接续启动
+            stopVpn(stopService = false)
+            L.result("Restart", true, "VPN restart queued")
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             L.error("Restart", "Failed to restart VPN", e)
             SingBoxService.setLastError("Failed to restart VPN: ${e.message}")
