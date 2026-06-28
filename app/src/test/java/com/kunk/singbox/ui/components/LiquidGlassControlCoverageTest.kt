@@ -27,8 +27,9 @@ class LiquidGlassControlCoverageTest {
     fun iconButtonsUseLiquidGlassPanels() {
         val liquidControls = liquidControlSources()
         val liquidIconButtonColors = File("src/main/java/com/kunk/singbox/ui/theme/LiquidGlassIconButtonColors.kt")
-            .readText()
-        val connectionInfo = File("src/main/java/com/kunk/singbox/ui/screens/ConnectionInfoScreen.kt").readText()
+            .readNormalizedText()
+        val connectionInfo = File("src/main/java/com/kunk/singbox/ui/screens/ConnectionInfoScreen.kt")
+            .readNormalizedText()
         val componentFiles = listOf(
             "AppMultiSelectDialog.kt",
             "NodeCard.kt",
@@ -124,12 +125,12 @@ class LiquidGlassControlCoverageTest {
     fun dividersAndTabsUseLiquidGlassStyling() {
         val liquidControls = liquidControlSources()
         val exportImport = File("src/main/java/com/kunk/singbox/ui/components/ExportImportDialogs.kt")
-            .readText()
+            .readNormalizedText()
         val appMultiSelect = File("src/main/java/com/kunk/singbox/ui/components/AppMultiSelectDialog.kt")
-            .readText()
+            .readNormalizedText()
         val connectionInfo = File("src/main/java/com/kunk/singbox/ui/screens/ConnectionInfoScreen.kt")
-            .readText()
-        val appRouting = File("src/main/java/com/kunk/singbox/ui/screens/AppRoutingScreen.kt").readText()
+            .readNormalizedText()
+        val appRouting = File("src/main/java/com/kunk/singbox/ui/screens/AppRoutingScreen.kt").readNormalizedText()
 
         assertTrue(liquidControls.contains("fun liquidGlassDividerColor("))
         assertTrue(liquidControls.contains("fun Modifier.liquidGlassTabRowPanel("))
@@ -140,7 +141,7 @@ class LiquidGlassControlCoverageTest {
         assertTrue(connectionInfo.contains("private fun connectionOverviewLabelColor()"))
         assertTrue(connectionInfo.contains("private fun connectionOverviewValueColor()"))
         assertTrue(connectionInfo.contains("liquidGlassDividerColor("))
-        assertTrue(appRouting.contains("liquidGlassTabRowPanel("))
+        assertTrue(appRouting.contains("LiquidGlassTabCapsule("))
         assertTrue(appRouting.contains("liquidGlassTabIndicatorColor("))
     }
 
@@ -224,10 +225,12 @@ class LiquidGlassControlCoverageTest {
 
     @Test
     fun cardBasedSurfacesUseNamedLiquidGlassHelpers() {
-        val connectionInfo = File("src/main/java/com/kunk/singbox/ui/screens/ConnectionInfoScreen.kt").readText()
-        val ruleSetHub = File("src/main/java/com/kunk/singbox/ui/screens/RuleSetHubScreen.kt").readText()
+        val connectionInfo = File("src/main/java/com/kunk/singbox/ui/screens/ConnectionInfoScreen.kt")
+            .readNormalizedText()
+        val ruleSetHub = File("src/main/java/com/kunk/singbox/ui/screens/RuleSetHubScreen.kt")
+            .readNormalizedText()
         val exportImport = File("src/main/java/com/kunk/singbox/ui/components/ExportImportDialogs.kt")
-            .readText()
+            .readNormalizedText()
 
         assertTrue(connectionInfo.contains("private fun Modifier.connectionOverviewPanel()"))
         assertTrue(connectionInfo.contains("private fun Modifier.connectionItemPanel()"))
@@ -239,8 +242,9 @@ class LiquidGlassControlCoverageTest {
 
     @Test
     fun qrScannerNativeControlsUseLiquidGlassButtonsOnlyForLiquidTheme() {
-        val scannerActivity = File("src/main/java/com/kunk/singbox/ui/scanner/QrScannerActivity.kt").readText()
-        val scannerLayout = File("src/main/res/layout/activity_qr_scanner.xml").readText()
+        val scannerActivity = File("src/main/java/com/kunk/singbox/ui/scanner/QrScannerActivity.kt")
+            .readNormalizedText()
+        val scannerLayout = File("src/main/res/layout/activity_qr_scanner.xml").readNormalizedText()
 
         assertTrue(scannerActivity.contains("SettingsRepository.getInstance(this).settings.value.appThemeStyle"))
         assertTrue(scannerActivity.contains("AppThemeStyle.LIQUID_GLASS"))
@@ -257,7 +261,7 @@ class LiquidGlassControlCoverageTest {
 
     @Test
     fun qrScannerViewFinderUsesLiquidGlassFrameColorsOnlyForLiquidTheme() {
-        val viewFinder = File("src/main/java/com/kunk/singbox/ui/scanner/SquareViewFinderView.kt").readText()
+        val viewFinder = File("src/main/java/com/kunk/singbox/ui/scanner/SquareViewFinderView.kt").readNormalizedText()
 
         assertTrue(viewFinder.contains("SettingsRepository.getInstance(context).settings.value.appThemeStyle"))
         assertTrue(viewFinder.contains("AppThemeStyle.LIQUID_GLASS"))
@@ -270,7 +274,7 @@ class LiquidGlassControlCoverageTest {
     @Test
     fun appNotificationsUseLiquidGlassToastOnlyForLiquidTheme() {
         val notificationManager = File("src/main/java/com/kunk/singbox/ui/components/AppNotificationManager.kt")
-            .readText()
+            .readNormalizedText()
 
         assertTrue(notificationManager.contains("SettingsRepository.getInstance(context).settings.value.appThemeStyle"))
         assertTrue(notificationManager.contains("AppThemeStyle.LIQUID_GLASS"))
@@ -281,11 +285,14 @@ class LiquidGlassControlCoverageTest {
 
     @Test
     fun liquidGlassHelpersPreserveDefaultThemeBranches() {
-        val liquidTheme = File("src/main/java/com/kunk/singbox/ui/theme/LiquidGlassTheme.kt").readText()
-        val controls = File("src/main/java/com/kunk/singbox/ui/theme/LiquidGlassControls.kt").readText()
-        val menuControls = File("src/main/java/com/kunk/singbox/ui/theme/LiquidGlassMenuControls.kt").readText()
+        val liquidTheme = File("src/main/java/com/kunk/singbox/ui/theme/LiquidGlassTheme.kt")
+            .readNormalizedText()
+        val controls = File("src/main/java/com/kunk/singbox/ui/theme/LiquidGlassControls.kt")
+            .readNormalizedText()
+        val menuControls = File("src/main/java/com/kunk/singbox/ui/theme/LiquidGlassMenuControls.kt")
+            .readNormalizedText()
         val selections = File("src/main/java/com/kunk/singbox/ui/theme/LiquidGlassSelectionControls.kt")
-            .readText()
+            .readNormalizedText()
 
         assertTrue(liquidTheme.contains("val LocalAppThemeStyle = staticCompositionLocalOf { AppThemeStyle.DEFAULT }"))
         assertTrue(liquidTheme.contains("if (!isLiquidGlassTheme()) {\n        return this"))
@@ -302,17 +309,10 @@ class LiquidGlassControlCoverageTest {
         assertTrue(controls.contains("private fun liquidGlassPrimaryContentColor(defaultColor: Color): Color"))
         assertTrue(menuControls.contains("else {\n        DropdownMenu("))
         assertTrue(selections.contains("unselectedColor = if (isLiquidGlassTheme())"))
-        assertTrue(
-            selections.contains(
-                "checkedThumbColor = if (isLiquidGlassTheme()) checkedTrackColor else checkedThumbColor"
-            )
-        )
-        assertTrue(
-            selections.contains(
-                "uncheckedBorderColor = if (isLiquidGlassTheme()) {\n" +
-                    "            MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)"
-            )
-        )
+        assertTrue(selections.contains("if (!isLiquidGlassTheme()) {\n        return SwitchDefaults.colors("))
+        assertTrue(selections.contains("checkedThumbColor = checkedTrackColor"))
+        assertTrue(selections.contains("uncheckedBorderColor = uncheckedBorderColor"))
+        assertTrue(selections.contains("uncheckedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)"))
         assertTrue(selections.contains("fun liquidGlassProgressColor(defaultColor: Color): Color"))
         assertTrue(selections.contains("fun liquidGlassDividerColor(defaultColor: Color): Color"))
         assertTrue(selections.contains("fun liquidGlassTabIndicatorColor(defaultColor: Color): Color"))
@@ -327,7 +327,7 @@ class LiquidGlassControlCoverageTest {
         )
 
         files.forEach { filePath ->
-            val source = File(filePath).readText()
+            val source = File(filePath).readNormalizedText()
             assertTrue(
                 "$filePath should use liquid glass text button colors",
                 source.contains("liquidGlassTextButtonContentColor(")
@@ -364,11 +364,11 @@ class LiquidGlassControlCoverageTest {
         val failures = uiDir.walkTopDown()
             .filter { file -> file.extension == "kt" }
             .filter { file ->
-                val source = file.readText()
+                val source = file.readNormalizedText()
                 source.contains("Dialog(") || source.contains("AlertDialog(")
             }
             .filterNot { file ->
-                val source = file.readText()
+                val source = file.readNormalizedText()
                 allowedDialogSurfaceMarkers.any(source::contains)
             }
             .map { file -> file.relativeTo(uiDir).invariantSeparatorsPath }
@@ -394,7 +394,7 @@ class LiquidGlassControlCoverageTest {
         val directToastFiles = mainDir.walkTopDown()
             .filter { file -> file.extension == "kt" }
             .filter { file ->
-                val source = file.readText()
+                val source = file.readNormalizedText()
                 source.contains("Toast.makeText(") || source.contains("Toast(context)")
             }
             .map { file -> file.name }
@@ -422,11 +422,11 @@ class LiquidGlassControlCoverageTest {
 
     @Test
     fun nativeXmlEntrypointsKeepLiquidGlassReadySurfaces() {
-        val manifest = File("src/main/AndroidManifest.xml").readText()
-        val scannerLayout = File("src/main/res/layout/activity_qr_scanner.xml").readText()
-        val scannerContent = File("src/main/res/layout/custom_barcode_scanner.xml").readText()
-        val shortcutLayout = File("src/main/res/layout/activity_none.xml").readText()
-        val themes = File("src/main/res/values/themes.xml").readText()
+        val manifest = File("src/main/AndroidManifest.xml").readNormalizedText()
+        val scannerLayout = File("src/main/res/layout/activity_qr_scanner.xml").readNormalizedText()
+        val scannerContent = File("src/main/res/layout/custom_barcode_scanner.xml").readNormalizedText()
+        val shortcutLayout = File("src/main/res/layout/activity_none.xml").readNormalizedText()
+        val themes = File("src/main/res/values/themes.xml").readNormalizedText()
 
         assertTrue(manifest.contains("android:name=\".ui.scanner.QrScannerActivity\""))
         assertTrue(manifest.contains("android:theme=\"@style/Theme.AppCompat.NoActionBar\""))
@@ -449,10 +449,10 @@ class LiquidGlassControlCoverageTest {
     }
 
     private fun liquidControlSources(): String {
-        val controls = File("src/main/java/com/kunk/singbox/ui/theme/LiquidGlassControls.kt").readText()
-        val menus = File("src/main/java/com/kunk/singbox/ui/theme/LiquidGlassMenuControls.kt").readText()
+        val controls = File("src/main/java/com/kunk/singbox/ui/theme/LiquidGlassControls.kt").readNormalizedText()
+        val menus = File("src/main/java/com/kunk/singbox/ui/theme/LiquidGlassMenuControls.kt").readNormalizedText()
         val selections = File("src/main/java/com/kunk/singbox/ui/theme/LiquidGlassSelectionControls.kt")
-            .readText()
+            .readNormalizedText()
         return controls + menus + selections
     }
 
@@ -567,14 +567,14 @@ class LiquidGlassControlCoverageTest {
 
     private fun List<String>.assertComponentSourcesContain(pattern: String) {
         forEach { fileName ->
-            val source = File("src/main/java/com/kunk/singbox/ui/components/$fileName").readText()
+            val source = File("src/main/java/com/kunk/singbox/ui/components/$fileName").readNormalizedText()
             assertTrue("$fileName should contain $pattern", source.contains(pattern))
         }
     }
 
     private fun List<String>.assertScreenSourcesContain(pattern: String) {
         forEach { fileName ->
-            val source = File("src/main/java/com/kunk/singbox/ui/screens/$fileName").readText()
+            val source = File("src/main/java/com/kunk/singbox/ui/screens/$fileName").readNormalizedText()
             assertTrue("$fileName should contain $pattern", source.contains(pattern))
         }
     }
@@ -654,3 +654,4 @@ class LiquidGlassControlCoverageTest {
         )
     }
 }
+private fun File.readNormalizedText(): String = readText().replace("\r\n", "\n")

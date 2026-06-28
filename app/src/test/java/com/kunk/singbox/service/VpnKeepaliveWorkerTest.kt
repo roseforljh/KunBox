@@ -162,4 +162,15 @@ class VpnKeepaliveWorkerTest {
         assertFalse(source.contains("private fun isBackgroundProcessAlive"))
         assertFalse(source.contains("bgProcessName"))
     }
+
+    @Test
+    fun keepaliveScheduleRequiresConnectedNetworkAndBatteryNotLow() {
+        val source = java.io.File("src/main/java/com/kunk/singbox/service/VpnKeepaliveWorker.kt")
+            .readText(Charsets.UTF_8)
+
+        assertTrue(source.contains("val constraints = Constraints.Builder()"))
+        assertTrue(source.contains(".setRequiredNetworkType(NetworkType.CONNECTED)"))
+        assertTrue(source.contains(".setRequiresBatteryNotLow(true)"))
+        assertTrue(source.contains(".setConstraints(constraints)"))
+    }
 }

@@ -154,6 +154,7 @@
     <string name="connection_settings_proxy_port_subtitle">Local mixed proxy port</string>
     <string name="connection_settings_allow_lan">Allow LAN Connections</string>
     <string name="connection_settings_allow_lan_subtitle">When enabled, other devices on LAN can use this proxy</string>
+    <string name="connection_settings_local_network_permission_denied">Local network permission is required to allow LAN connections</string>
     <string name="connection_settings_append_http_proxy">Append HTTP Proxy to VPN</string>
     <string name="connection_settings_append_http_proxy_subtitle">Set local HTTP proxy as system proxy (Android 10+)</string>
     <string name="connection_settings_latency_concurrency">Latency Test Concurrency</string>
@@ -798,5 +799,23 @@
     <string name="info_card_upload">Upload</string>
     <string name="info_card_download">Download</string>
     <string name="info_card_ping">Ping</string>
+
+    <!-- Connection Info -->
+    <string name="settings_connection_info">Connection Info</string>
+    <string name="settings_connection_info_subtitle">View current active network connection details</string>
+    <string name="connection_info_title">Connection Info</string>
+    <string name="connection_info_no_connections">No active connections</string>
+    <string name="connection_info_vpn_not_running">VPN service is not running</string>
+    <string name="connection_info_close_all">Close All Connections</string>
+    <string name="connection_info_close_all_confirm">Disconnect all current connections?</string>
+    <string name="connection_info_pause">Pause Refresh</string>
+    <string name="connection_info_resume">Resume Refresh</string>
+    <string name="connection_info_total_upload">Total Upload</string>
+    <string name="connection_info_total_download">Total Download</string>
+    <string name="connection_info_active_count">Active Connections</string>
+    <string name="connection_info_no_match_title">No Matching Connections</string>
+    <string name="connection_info_no_match">No connections match this keyword</string>
+    <string name="connection_info_no_active">There are no active network connections</string>
+    <string name="connection_info_close_connection">Close Connection</string>
 
 </resources>

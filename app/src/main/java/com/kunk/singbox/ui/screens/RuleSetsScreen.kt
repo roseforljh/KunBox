@@ -39,6 +39,7 @@ import com.kunk.singbox.ui.components.AppNotificationManager
 import com.kunk.singbox.ui.components.ConfirmDialog
 import com.kunk.singbox.ui.components.ProfileNodeSelectDialog
 import com.kunk.singbox.ui.components.SingleSelectDialog
+import com.kunk.singbox.ui.components.rememberLocalNetworkPermissionRequest
 import com.kunk.singbox.ui.navigation.Screen
 import androidx.compose.foundation.shape.RoundedCornerShape
 import com.kunk.singbox.viewmodel.NodesViewModel
@@ -60,6 +61,7 @@ import com.kunk.singbox.ui.theme.liquidGlassTextButtonPanel
 import kotlinx.coroutines.launch
 import com.kunk.singbox.ui.theme.liquidGlassTopAppBarContainerColor
 import com.kunk.singbox.ui.theme.liquidGlassTopAppBarColors
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
 internal val defaultRuleSetTags = setOf(
     "geosite-cn",
@@ -123,13 +125,14 @@ fun RuleSetsScreen(
     nodesViewModel: NodesViewModel = viewModel(),
     profilesViewModel: ProfilesViewModel = viewModel()
 ) {
-    val settings by settingsViewModel.settings.collectAsState()
-    val downloadingRuleSets by settingsViewModel.downloadingRuleSets.collectAsState()
-    val defaultRuleSetDownloadState by settingsViewModel.defaultRuleSetDownloadState.collectAsState()
-    val allNodes by nodesViewModel.allNodes.collectAsState()
-    val nodesForSelection by nodesViewModel.filteredAllNodes.collectAsState()
-    val profiles by profilesViewModel.profiles.collectAsState()
+    val settings by settingsViewModel.settings.collectAsStateWithLifecycle()
+    val downloadingRuleSets by settingsViewModel.downloadingRuleSets.collectAsStateWithLifecycle()
+    val defaultRuleSetDownloadState by settingsViewModel.defaultRuleSetDownloadState.collectAsStateWithLifecycle()
+    val allNodes by nodesViewModel.allNodes.collectAsStateWithLifecycle()
+    val nodesForSelection by nodesViewModel.filteredAllNodes.collectAsStateWithLifecycle()
+    val profiles by profilesViewModel.profiles.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
+    val requestLocalNetworkPermission = rememberLocalNetworkPermissionRequest()
 
     DisposableEffect(Unit) {
         nodesViewModel.setAllNodesUiActive(true)
@@ -326,6 +329,12 @@ fun RuleSetsScreen(
                     if (selectedMode != RuleSetOutboundMode.NODE) {
                         showTargetSelectionDialog = true
                     }
+                } else if (selectedMode == RuleSetOutboundMode.DIRECT) {
+                    requestLocalNetworkPermission {
+                        settingsViewModel.updateRuleSet(updatedRuleSet)
+                    }
+                    outboundEditingRuleSet = null
+                    showOutboundModeDialog = false
                 } else {
                     settingsViewModel.updateRuleSet(updatedRuleSet)
                     outboundEditingRuleSet = null
@@ -754,7 +763,13 @@ fun RuleSetsScreen(
                             }
                         },
                         onToggle = { enabled ->
-                            settingsViewModel.updateRuleSet(ruleSet.copy(enabled = enabled))
+                            if (enabled && ruleSet.outboundMode == RuleSetOutboundMode.DIRECT) {
+                                requestLocalNetworkPermission {
+                                    settingsViewModel.updateRuleSet(ruleSet.copy(enabled = true))
+                                }
+                            } else {
+                                settingsViewModel.updateRuleSet(ruleSet.copy(enabled = enabled))
+                            }
                         },
                         onEditClick = { editingRuleSet = ruleSet },
                         onDeleteClick = { settingsViewModel.deleteRuleSet(ruleSet.id) },

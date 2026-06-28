@@ -50,6 +50,7 @@ import com.kunk.singbox.service.notification.VpnNotificationManager
 import com.kunk.singbox.ui.components.AppNotificationManager
 import com.kunk.singbox.utils.KernelHttpClient
 import com.kunk.singbox.utils.L
+import com.kunk.singbox.utils.LocalNetworkPermission
 import com.kunk.singbox.utils.NetworkClient
 import io.nekohasekai.libbox.*
 import java.io.File
@@ -3081,6 +3082,35 @@ class SingBoxService : VpnService() {
      * 失败时 Toast 报错并关闭 VPN，让用户手动重新打开
      */
 
+    protected fun prepareRuntimeConfigForLocalNetwork(configContent: String, settings: AppSettings): String {
+        if (!LocalNetworkPermission.canApplySettings(applicationContext, settings)) {
+            throw IllegalStateException(LocalNetworkPermission.MISSING_PERMISSION_ERROR)
+        }
+        if (!LocalNetworkPermission.shouldRestrictLanListen(applicationContext)) return configContent
+
+        return runCatching {
+            val config = gson.fromJson(configContent, SingBoxConfig::class.java)
+            val inbounds = config.inbounds ?: return configContent
+            var changed = false
+            val restrictedInbounds = inbounds.map { inbound ->
+                val restrictedInbound = LocalNetworkPermission.restrictInboundListen(inbound)
+                if (restrictedInbound != inbound) {
+                    changed = true
+                }
+                restrictedInbound
+            }
+            if (changed) {
+                Log.i(SingBoxService.TAG, "Restricted hot reload inbound listen to loopback")
+                gson.toJson(config.copy(inbounds = restrictedInbounds))
+            } else {
+                configContent
+            }
+        }.getOrElse { e ->
+            Log.w(SingBoxService.TAG, "Failed to restrict hot reload local network listen: ${e.message}")
+            configContent
+        }
+    }
+
     protected fun performHotReload(configContent: String) {
         if (!SingBoxService.isRunning) {
             Log.w(SingBoxService.TAG, "performHotReload: VPN not running, skip")
@@ -3092,10 +3122,13 @@ class SingBoxService : VpnService() {
                 Log.i(SingBoxService.TAG, "[HotReload] Starting kernel-level hot reload...")
 
                 // 更新 CoreManager 的设置，确保后续操作使用最新设置
-                val settings = SettingsRepository.getInstance(applicationContext).settings.first()
+                val settingsRepository = SettingsRepository.getInstance(applicationContext)
+                settingsRepository.reloadFromStorage()
+                val settings = settingsRepository.settings.first()
                 coreManager.setCurrentSettings(settings)
+                val runtimeConfigContent = prepareRuntimeConfigForLocalNetwork(configContent, settings)
 
-                val result = coreManager.hotReloadConfig(configContent, preserveSelector = true)
+                val result = coreManager.hotReloadConfig(runtimeConfigContent, preserveSelector = true)
 
                 result.onSuccess { success ->
                     if (success) {
@@ -3194,10 +3227,13 @@ class SingBoxService : VpnService() {
             kotlinx.coroutines.runBlocking(kotlinx.coroutines.Dispatchers.IO) {
                 Log.i(SingBoxService.TAG, "[HotReload-Sync] Starting kernel-level hot reload...")
 
-                val settings = SettingsRepository.getInstance(applicationContext).settings.first()
+                val settingsRepository = SettingsRepository.getInstance(applicationContext)
+                settingsRepository.reloadFromStorage()
+                val settings = settingsRepository.settings.first()
                 coreManager.setCurrentSettings(settings)
+                val runtimeConfigContent = prepareRuntimeConfigForLocalNetwork(configContent, settings)
 
-                val result = coreManager.hotReloadConfig(configContent, preserveSelector = true)
+                val result = coreManager.hotReloadConfig(runtimeConfigContent, preserveSelector = true)
 
                 result.getOrNull() == true && result.isSuccess.also { success ->
                     if (success && result.getOrNull() == true) {

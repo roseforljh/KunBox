@@ -32,7 +32,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.Divider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -132,8 +132,8 @@ fun AppMultiSelectDialog(
     val pm = context.packageManager
 
     val repository = remember { InstalledAppsRepository.getInstance(context) }
-    val installedApps by repository.installedApps.collectAsState()
-    val loadingState by repository.loadingState.collectAsState()
+    val installedApps by repository.installedApps.collectAsStateWithLifecycle()
+    val loadingState by repository.loadingState.collectAsStateWithLifecycle()
 
     LaunchedEffect(Unit) {
         repository.refreshApps()

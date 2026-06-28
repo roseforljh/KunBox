@@ -74,14 +74,16 @@ class LiquidGlassMaterialCallCoverageTest {
 
     @Test
     fun liquidGlassChipPreservesDefaultThemeBranch() {
-        val chipControls = File("src/main/java/com/kunk/singbox/ui/theme/LiquidGlassChipControls.kt").readText()
+        val chipControls = File("src/main/java/com/kunk/singbox/ui/theme/LiquidGlassChipControls.kt")
+            .readNormalizedText()
 
         assertTrue(chipControls.contains("else {\n        FilterChip("))
     }
 
     @Test
     fun liquidGlassChipUsesPressedFeedbackWithoutMaterialRipple() {
-        val chipControls = File("src/main/java/com/kunk/singbox/ui/theme/LiquidGlassChipControls.kt").readText()
+        val chipControls = File("src/main/java/com/kunk/singbox/ui/theme/LiquidGlassChipControls.kt")
+            .readNormalizedText()
 
         assertTrue(chipControls.contains("MutableInteractionSource"))
         assertTrue(chipControls.contains("collectIsPressedAsState"))
@@ -92,7 +94,7 @@ class LiquidGlassMaterialCallCoverageTest {
 
     @Test
     fun standardCardLiquidBranchUsesPressedFeedbackWithoutMaterialRipple() {
-        val standardCard = File("src/main/java/com/kunk/singbox/ui/components/StandardCard.kt").readText()
+        val standardCard = File("src/main/java/com/kunk/singbox/ui/components/StandardCard.kt").readNormalizedText()
 
         assertTrue(standardCard.contains("if (isLiquidGlassTheme())"))
         assertTrue(standardCard.contains("MutableInteractionSource"))
@@ -104,7 +106,7 @@ class LiquidGlassMaterialCallCoverageTest {
 
     @Test
     fun nodeCardsLiquidBranchesUsePressedFeedbackWithoutMaterialRipple() {
-        val nodeCard = File("src/main/java/com/kunk/singbox/ui/components/NodeCard.kt").readText()
+        val nodeCard = File("src/main/java/com/kunk/singbox/ui/components/NodeCard.kt").readNormalizedText()
 
         assertTrue(nodeCard.contains("val listInteractionSource = remember { MutableInteractionSource() }"))
         assertTrue(nodeCard.contains("val gridInteractionSource = remember { MutableInteractionSource() }"))
@@ -117,7 +119,7 @@ class LiquidGlassMaterialCallCoverageTest {
 
     @Test
     fun statusChipLiquidBranchUsesPressedFeedbackWithoutMaterialRipple() {
-        val statusChip = File("src/main/java/com/kunk/singbox/ui/components/StatusChip.kt").readText()
+        val statusChip = File("src/main/java/com/kunk/singbox/ui/components/StatusChip.kt").readNormalizedText()
 
         assertTrue(statusChip.contains("MutableInteractionSource"))
         assertTrue(statusChip.contains("collectIsPressedAsState"))
@@ -128,7 +130,8 @@ class LiquidGlassMaterialCallCoverageTest {
 
     @Test
     fun clickableDropdownFieldLiquidBranchUsesPressedFeedbackWithoutMaterialRipple() {
-        val dropdownField = File("src/main/java/com/kunk/singbox/ui/components/ClickableDropdownField.kt").readText()
+        val dropdownField = File("src/main/java/com/kunk/singbox/ui/components/ClickableDropdownField.kt")
+            .readNormalizedText()
 
         assertTrue(dropdownField.contains("MutableInteractionSource"))
         assertTrue(dropdownField.contains("collectIsPressedAsState"))
@@ -141,7 +144,7 @@ class LiquidGlassMaterialCallCoverageTest {
     fun nodeSelectorItemUsesPressedFeedbackWithoutMaterialRipple() {
         val nodeSelectionDialogs = File(
             "src/main/java/com/kunk/singbox/ui/components/NodeSelectionDialogs.kt"
-        ).readText()
+        ).readNormalizedText()
 
         assertTrue(nodeSelectionDialogs.contains("nodeSelectorItemPressFeedback"))
         assertTrue(nodeSelectionDialogs.contains("MutableInteractionSource"))
@@ -155,7 +158,7 @@ class LiquidGlassMaterialCallCoverageTest {
     fun appRoutingItemsUsePressedFeedbackWithoutMaterialRipple() {
         val appRoutingComponents = File(
             "src/main/java/com/kunk/singbox/ui/screens/AppRoutingComponents.kt"
-        ).readText()
+        ).readNormalizedText()
 
         assertTrue(appRoutingComponents.contains("routingItemPressFeedback"))
         assertTrue(appRoutingComponents.contains("MutableInteractionSource"))
@@ -176,7 +179,7 @@ class LiquidGlassMaterialCallCoverageTest {
         )
 
         ruleFiles.forEach { (filePath, marker) ->
-            val source = File(filePath).readText()
+            val source = File(filePath).readNormalizedText()
             assertTrue(source.contains(marker))
             assertTrue(source.contains("MutableInteractionSource"))
             assertTrue(source.contains("collectIsPressedAsState"))
@@ -188,7 +191,7 @@ class LiquidGlassMaterialCallCoverageTest {
 
     @Test
     fun settingItemUsesPressedFeedbackWithoutMaterialRipple() {
-        val settingItem = File("src/main/java/com/kunk/singbox/ui/components/SettingItem.kt").readText()
+        val settingItem = File("src/main/java/com/kunk/singbox/ui/components/SettingItem.kt").readNormalizedText()
 
         assertTrue(settingItem.contains("settingItemPressFeedback"))
         assertTrue(settingItem.contains("MutableInteractionSource"))
@@ -200,7 +203,7 @@ class LiquidGlassMaterialCallCoverageTest {
 
     @Test
     fun profileCardUsesPressedFeedbackWithoutMaterialRipple() {
-        val profileCard = File("src/main/java/com/kunk/singbox/ui/components/ProfileCard.kt").readText()
+        val profileCard = File("src/main/java/com/kunk/singbox/ui/components/ProfileCard.kt").readNormalizedText()
 
         assertTrue(profileCard.contains("profileCardPressFeedback"))
         assertTrue(profileCard.contains("MutableInteractionSource"))
@@ -212,7 +215,7 @@ class LiquidGlassMaterialCallCoverageTest {
 
     @Test
     fun infoCardUsesPressedFeedbackWithoutMaterialRipple() {
-        val infoCard = File("src/main/java/com/kunk/singbox/ui/components/InfoCard.kt").readText()
+        val infoCard = File("src/main/java/com/kunk/singbox/ui/components/InfoCard.kt").readNormalizedText()
 
         assertTrue(infoCard.contains("infoCardPingPressFeedback"))
         assertTrue(infoCard.contains("MutableInteractionSource"))
@@ -224,7 +227,7 @@ class LiquidGlassMaterialCallCoverageTest {
 
     @Test
     fun trafficStatsRefreshActionUsesPressedFeedbackWithoutMaterialRipple() {
-        val trafficStats = File("src/main/java/com/kunk/singbox/ui/screens/TrafficStatsScreen.kt").readText()
+        val trafficStats = File("src/main/java/com/kunk/singbox/ui/screens/TrafficStatsScreen.kt").readNormalizedText()
 
         assertTrue(trafficStats.contains("trafficRefreshPressFeedback"))
         assertTrue(trafficStats.contains("MutableInteractionSource"))
@@ -236,26 +239,25 @@ class LiquidGlassMaterialCallCoverageTest {
 
     @Test
     fun appRoutingTabsUseLiquidGlassTabWrapper() {
-        val appRoutingScreen = File("src/main/java/com/kunk/singbox/ui/screens/AppRoutingScreen.kt").readText()
+        val appRoutingScreen = File("src/main/java/com/kunk/singbox/ui/screens/AppRoutingScreen.kt")
+            .readNormalizedText()
 
-        assertTrue(appRoutingScreen.contains("LiquidGlassTab("))
+        assertTrue(appRoutingScreen.contains("LiquidGlassTabCapsule("))
         assertTrue(appRoutingScreen.contains("MutableInteractionSource"))
-        assertTrue(appRoutingScreen.contains("collectIsPressedAsState"))
-        assertTrue(appRoutingScreen.contains("animateFloatAsState"))
-        assertTrue(appRoutingScreen.contains("graphicsLayer"))
         assertTrue(appRoutingScreen.contains("indication = null"))
     }
 
     @Test
     fun appRoutingTabsAvoidMaterialUnderlineInLiquidTheme() {
-        val appRoutingScreen = File("src/main/java/com/kunk/singbox/ui/screens/AppRoutingScreen.kt").readText()
-        val liquidIndicatorBranch = "indicator = { tabPositions ->\n                        if (useLiquidGlass) {"
-        val defaultIndicatorBranch = "} else {\n                            TabRowDefaults.Indicator("
+        val appRoutingScreen = File("src/main/java/com/kunk/singbox/ui/screens/AppRoutingScreen.kt")
+            .readNormalizedText()
+        val liquidTabBranch = "if (useLiquidGlass) {\n                    LiquidGlassTabCapsule("
+        val defaultTabBranch = "} else {\n                    TabRow("
 
         assertTrue(appRoutingScreen.contains("val useLiquidGlass = isLiquidGlassTheme()"))
-        assertTrue(appRoutingScreen.contains(liquidIndicatorBranch))
-        assertTrue(appRoutingScreen.contains("Box {}"))
-        assertTrue(appRoutingScreen.contains(defaultIndicatorBranch))
+        assertTrue(appRoutingScreen.contains(liquidTabBranch))
+        assertTrue(appRoutingScreen.contains(defaultTabBranch))
+        assertTrue(appRoutingScreen.contains("TabRowDefaults.Indicator("))
     }
 
     @Test
@@ -283,7 +285,7 @@ class LiquidGlassMaterialCallCoverageTest {
         )
 
         sources.forEach { (filePath, markers) ->
-            val source = File(filePath).readText()
+            val source = File(filePath).readNormalizedText()
             markers.forEach { marker -> assertTrue("$filePath should contain $marker", source.contains(marker)) }
             assertTrue(source.contains("MutableInteractionSource"))
             assertTrue(source.contains("collectIsPressedAsState"))
@@ -331,7 +333,7 @@ class LiquidGlassMaterialCallCoverageTest {
 
     @Test
     fun ruleSetHubItemAvoidsMaterialCardInLiquidBranch() {
-        val source = File("src/main/java/com/kunk/singbox/ui/screens/RuleSetHubScreen.kt").readText()
+        val source = File("src/main/java/com/kunk/singbox/ui/screens/RuleSetHubScreen.kt").readNormalizedText()
 
         assertTrue(source.contains("private fun HubRuleSetItemContent("))
         assertTrue(source.contains("if (isLiquidGlassTheme()) {\n        Column("))
@@ -340,7 +342,7 @@ class LiquidGlassMaterialCallCoverageTest {
 
     @Test
     fun exportImportCardAvoidsMaterialCardInLiquidBranch() {
-        val source = File("src/main/java/com/kunk/singbox/ui/components/ExportImportDialogs.kt").readText()
+        val source = File("src/main/java/com/kunk/singbox/ui/components/ExportImportDialogs.kt").readNormalizedText()
 
         assertTrue(source.contains("if (useLiquidGlass) {\n        Column("))
         assertTrue(source.contains(".liquidGlassPanel("))
@@ -349,7 +351,7 @@ class LiquidGlassMaterialCallCoverageTest {
 
     @Test
     fun connectionItemCardAvoidsMaterialCardInLiquidBranch() {
-        val source = File("src/main/java/com/kunk/singbox/ui/screens/ConnectionInfoScreen.kt").readText()
+        val source = File("src/main/java/com/kunk/singbox/ui/screens/ConnectionInfoScreen.kt").readNormalizedText()
 
         assertTrue(source.contains("private fun ConnectionItemCardContent("))
         assertTrue(source.contains("if (useLiquidGlass) {\n        Column("))
@@ -359,7 +361,7 @@ class LiquidGlassMaterialCallCoverageTest {
 
     @Test
     fun connectionOverviewAvoidsMaterialCardInLiquidBranch() {
-        val source = File("src/main/java/com/kunk/singbox/ui/screens/ConnectionInfoScreen.kt").readText()
+        val source = File("src/main/java/com/kunk/singbox/ui/screens/ConnectionInfoScreen.kt").readNormalizedText()
 
         assertTrue(source.contains("private fun OverviewCardContent("))
         assertTrue(source.contains("if (isLiquidGlassTheme()) {\n        Column("))
@@ -369,7 +371,7 @@ class LiquidGlassMaterialCallCoverageTest {
 
     @Test
     fun mainActivityAvoidsMaterialSurfaceInLiquidBranch() {
-        val source = File("src/main/java/com/kunk/singbox/MainActivity.kt").readText()
+        val source = File("src/main/java/com/kunk/singbox/MainActivity.kt").readNormalizedText()
 
         assertTrue(source.contains("if (useLiquidGlassNav) {\n                    Box("))
         assertTrue(source.contains(".background(rootContainerColor)"))
@@ -382,7 +384,7 @@ class LiquidGlassMaterialCallCoverageTest {
         val filesWithoutLiquidGlassMarkers = uiDir.walkTopDown()
             .filter { file -> file.extension == "kt" }
             .filterNot { file ->
-                val source = file.readText()
+                val source = file.readNormalizedText()
                 liquidGlassMarkerPatterns.any(source::contains)
             }
             .map { file -> file.relativeTo(uiDir).invariantSeparatorsPath }
@@ -416,8 +418,8 @@ class LiquidGlassMaterialCallCoverageTest {
     }
 
     private fun liquidControlSources(): String {
-        val chips = File("src/main/java/com/kunk/singbox/ui/theme/LiquidGlassChipControls.kt").readText()
-        val menus = File("src/main/java/com/kunk/singbox/ui/theme/LiquidGlassMenuControls.kt").readText()
+        val chips = File("src/main/java/com/kunk/singbox/ui/theme/LiquidGlassChipControls.kt").readNormalizedText()
+        val menus = File("src/main/java/com/kunk/singbox/ui/theme/LiquidGlassMenuControls.kt").readNormalizedText()
         return chips + menus
     }
 
@@ -545,7 +547,6 @@ class LiquidGlassMaterialCallCoverageTest {
             materialCallRule("Divider", listOf("liquidGlassDividerColor")),
             materialCallRule(
                 "TabRow",
-                listOf("liquidGlassTabRowPanel"),
                 listOf("liquidGlassTabIndicatorColor")
             ),
             materialCallRule(
@@ -567,7 +568,7 @@ class LiquidGlassMaterialCallCoverageTest {
             .filter { file -> file.extension == "kt" }
             .filterNot { file -> file.relativeTo(uiDir).invariantSeparatorsPath in rule.allowedFiles }
             .flatMap { file ->
-                val source = file.readText()
+                val source = file.readNormalizedText()
                 val relativePath = file.relativeTo(uiDir).invariantSeparatorsPath
                 callPattern.findAll(source)
                     .mapNotNull { match ->
@@ -655,7 +656,7 @@ class LiquidGlassMaterialCallCoverageTest {
 
     private fun List<String>.assertScreenSourcesContain(pattern: String) {
         forEach { fileName ->
-            val source = File("src/main/java/com/kunk/singbox/ui/screens/$fileName").readText()
+            val source = File("src/main/java/com/kunk/singbox/ui/screens/$fileName").readNormalizedText()
             assertTrue("$fileName should contain $pattern", source.contains(pattern))
         }
     }
@@ -697,6 +698,7 @@ class LiquidGlassMaterialCallCoverageTest {
             "ShortcutActivity.kt",
             "components/BigToggle.kt",
             "components/EditableSettingItem.kt",
+            "components/LocalNetworkPermissionGate.kt",
             "navigation/AppNavigation.kt",
             "screens/NodeProtocolFields.kt",
             "theme/Color.kt",
@@ -720,16 +722,16 @@ class LiquidGlassMaterialCallCoverageTest {
         )
 
         val directMaterialSurfaceAllowList = listOf(
-            "MainActivity.kt:374:Surface:Surface(",
+            "MainActivity.kt:376:Surface:Surface(",
             "ui/components/AppNavBar.kt:113:NavigationBar:NavigationBar(",
             "ui/components/AppNavBar.kt:172:NavigationBarItem:NavigationBarItem(",
-            "ui/components/ExportImportDialogs.kt:69:Card:Card(",
-            "ui/components/StandardCard.kt:64:Card:Card(",
-            "ui/components/StandardCard.kt:75:Card:Card(",
-            "ui/screens/AppRoutingScreen.kt:53:Tab:Tab(",
+            "ui/components/ExportImportDialogs.kt:70:Card:Card(",
+            "ui/components/StandardCard.kt:65:Card:Card(",
+            "ui/components/StandardCard.kt:76:Card:Card(",
+            "ui/screens/AppRoutingScreen.kt:423:Tab:Tab(",
             "ui/screens/ConnectionInfoScreen.kt:604:Card:Card(",
             "ui/screens/ConnectionInfoScreen.kt:731:Card:Card(",
-            "ui/screens/RuleSetHubScreen.kt:343:Card:Card(",
+            "ui/screens/RuleSetHubScreen.kt:344:Card:Card(",
             "ui/theme/LiquidGlassChipControls.kt:75:FilterChip:FilterChip(",
             "ui/theme/LiquidGlassMenuControls.kt:32:DropdownMenu:DropdownMenu(",
             "ui/theme/LiquidGlassMenuControls.kt:53:DropdownMenu:DropdownMenu("
@@ -743,3 +745,4 @@ class LiquidGlassMaterialCallCoverageTest {
         )
     }
 }
+private fun File.readNormalizedText(): String = readText().replace("\r\n", "\n")

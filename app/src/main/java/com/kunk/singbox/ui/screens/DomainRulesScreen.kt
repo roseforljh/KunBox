@@ -8,7 +8,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -43,7 +42,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.mutableStateOf
@@ -59,6 +58,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.kunk.singbox.ui.theme.Destructive
 import androidx.navigation.NavController
+import com.kunk.singbox.model.AppSettings
 import com.kunk.singbox.model.CustomRule
 import com.kunk.singbox.model.OutboundTag
 import com.kunk.singbox.model.RuleType
@@ -68,6 +68,7 @@ import com.kunk.singbox.ui.components.ProfileNodeSelectDialog
 import com.kunk.singbox.ui.components.SingleSelectDialog
 import com.kunk.singbox.ui.components.StandardCard
 import com.kunk.singbox.ui.components.StyledTextField
+import com.kunk.singbox.ui.components.rememberLocalNetworkPermissionRequest
 import com.kunk.singbox.ui.theme.isLiquidGlassTheme
 import com.kunk.singbox.ui.theme.liquidGlassButtonColors
 import com.kunk.singbox.ui.theme.liquidGlassButtonContentColor
@@ -89,6 +90,7 @@ import com.kunk.singbox.viewmodel.ProfilesViewModel
 import com.kunk.singbox.viewmodel.SettingsViewModel
 import com.kunk.singbox.ui.theme.liquidGlassTopAppBarContainerColor
 import com.kunk.singbox.ui.theme.liquidGlassTopAppBarColors
+import com.kunk.singbox.utils.LocalNetworkPermission
 
 @Composable
 private fun Modifier.domainRuleSelectorPanel(): Modifier {
@@ -206,10 +208,10 @@ fun DomainRulesScreen(
     nodesViewModel: NodesViewModel = viewModel(),
     profilesViewModel: ProfilesViewModel = viewModel()
 ) {
-    val settings by settingsViewModel.settings.collectAsState()
-    val allNodes by nodesViewModel.allNodes.collectAsState()
-    val nodesForSelection by nodesViewModel.filteredAllNodes.collectAsState()
-    val profiles by profilesViewModel.profiles.collectAsState()
+    val settings by settingsViewModel.settings.collectAsStateWithLifecycle()
+    val allNodes by nodesViewModel.allNodes.collectAsStateWithLifecycle()
+    val nodesForSelection by nodesViewModel.filteredAllNodes.collectAsStateWithLifecycle()
+    val profiles by profilesViewModel.profiles.collectAsStateWithLifecycle()
 
     DisposableEffect(Unit) {
         nodesViewModel.setAllNodesUiActive(true)
@@ -341,7 +343,10 @@ private fun DomainRuleEditorDialog(
     var value by rememberSaveable(initialRule?.value) {
         mutableStateOf(initialRule?.value ?: "")
     }
-    val context = LocalContext.current
+    val exactTypeHint = stringResource(R.string.domain_rules_type_exact)
+    val keywordTypeHint = stringResource(R.string.domain_rules_type_keyword)
+    val suffixTypeHint = stringResource(R.string.domain_rules_type_suffix)
+    val selectProfileTitle = stringResource(R.string.rulesets_select_profile)
 
     fun generateRuleNameFromValue(raw: String): String {
         val first = raw
@@ -379,9 +384,9 @@ private fun DomainRuleEditorDialog(
     fun getSmartTypeHint(input: String): String {
         val trimmed = input.trim()
         return when {
-            trimmed.startsWith("=") -> context.getString(R.string.domain_rules_type_exact)
-            trimmed.contains("*") -> context.getString(R.string.domain_rules_type_keyword)
-            trimmed.isNotEmpty() -> context.getString(R.string.domain_rules_type_suffix)
+            trimmed.startsWith("=") -> exactTypeHint
+            trimmed.contains("*") -> keywordTypeHint
+            trimmed.isNotEmpty() -> suffixTypeHint
             else -> ""
         }
     }
@@ -397,6 +402,7 @@ private fun DomainRuleEditorDialog(
     var showTargetSelectionDialog by remember { mutableStateOf(false) }
     var showNodeSelectionDialog by remember { mutableStateOf(false) }
     var showDeleteConfirm by remember { mutableStateOf(false) }
+    val requestLocalNetworkPermission = rememberLocalNetworkPermissionRequest()
 
     var targetSelectionTitle by remember { mutableStateOf("") }
     var targetOptions by remember { mutableStateOf<List<Pair<String, String>>>(emptyList()) }
@@ -437,7 +443,7 @@ private fun DomainRuleEditorDialog(
                             showNodeSelectionDialog = true
                         }
                         RuleSetOutboundMode.PROFILE -> {
-                            targetSelectionTitle = context.getString(R.string.rulesets_select_profile)
+                            targetSelectionTitle = selectProfileTitle
                             targetOptions = profiles.map { it.name to it.id }
                         }
                         else -> {}
@@ -561,7 +567,7 @@ private fun DomainRuleEditorDialog(
                                         showNodeSelectionDialog = true
                                     }
                                     RuleSetOutboundMode.PROFILE -> {
-                                        targetSelectionTitle = context.getString(R.string.rulesets_select_profile)
+                                        targetSelectionTitle = selectProfileTitle
                                         targetOptions = profiles.map { it.name to it.id }
                                     }
                                     else -> {}
@@ -637,7 +643,14 @@ private fun DomainRuleEditorDialog(
                         outboundValue = outboundValue,
                         enabled = initialRule?.enabled ?: true
                     )
-                    onConfirm(rule)
+                    if (LocalNetworkPermission.requiresLocalNetworkAccess(
+                            AppSettings(bypassLan = false, customRules = listOf(rule))
+                        )
+                    ) {
+                        requestLocalNetworkPermission { onConfirm(rule) }
+                    } else {
+                        onConfirm(rule)
+                    }
                 },
                 modifier = Modifier.liquidGlassButtonPanel(),
                 colors = liquidGlassButtonColors(

@@ -4,6 +4,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.File
 
 class RuleSetRepositoryTest {
 
@@ -184,5 +185,25 @@ class RuleSetRepositoryTest {
         assertTrue(first.name.endsWith(".tmp"))
         assertTrue(second.name.endsWith(".tmp"))
         assertFalse(first.name == second.name)
+    }
+
+    @Test
+    fun ruleSetDownloadsUseCancellableOkHttpCall() {
+        val source = File("src/main/java/com/kunk/singbox/repository/RuleSetRepository.kt").readText(Charsets.UTF_8)
+
+        assertTrue(source.contains("NetworkClient.executeCancellable(client, request) { response ->"))
+        assertFalse(source.contains("client.newCall(request).execute().use { response ->"))
+    }
+
+    @Test
+    fun ruleSetDownloadFallbackDoesNotSwallowCancellation() {
+        val source = File("src/main/java/com/kunk/singbox/repository/RuleSetRepository.kt").readText(Charsets.UTF_8)
+
+        assertTrue(source.contains("import kotlinx.coroutines.CancellationException"))
+        assertTrue(source.countOccurrences("if (e is CancellationException) throw e") >= 2)
+    }
+
+    private fun String.countOccurrences(pattern: String): Int {
+        return split(pattern).size - 1
     }
 }

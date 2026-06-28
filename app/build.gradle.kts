@@ -7,11 +7,12 @@ plugins {
     id("com.google.devtools.ksp")
     id("io.gitlab.arturbosch.detekt")
     id("org.jetbrains.kotlin.plugin.compose")
+    id("androidx.room")
 }
 
 val libboxInputAar = file("libs/libbox.aar")
 val libboxStrippedAar = layout.buildDirectory.file("stripped-libs/libbox-stripped.aar")
-val composeBomVersion = "2024.11.00"
+val composeBomVersion = "2026.06.00"
 
 fun gitOutput(vararg args: String): String? = runCatching {
     providers.exec {
@@ -246,7 +247,7 @@ val stripLibboxAar = tasks.register("stripLibboxAar") {
 
 configure<ApplicationExtension> {
     namespace = "com.kunk.singbox"
-    compileSdk = 36
+    compileSdk = 37
 
     ndkVersion = providers.gradleProperty("ndkVersion").orNull ?: "29.0.14206865"
 
@@ -256,7 +257,7 @@ configure<ApplicationExtension> {
     defaultConfig {
         applicationId = "com.kunk.singbox"
         minSdk = 24
-        targetSdk = 36
+        targetSdk = 37
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         
         // Dynamic versioning
@@ -339,8 +340,8 @@ configure<ApplicationExtension> {
     }
     
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_1_8
-        targetCompatibility = JavaVersion.VERSION_1_8
+        sourceCompatibility = JavaVersion.VERSION_11
+        targetCompatibility = JavaVersion.VERSION_11
     }
 
     buildFeatures {
@@ -379,14 +380,13 @@ configure<ApplicationExtension> {
 // JVM Target Configuration for Kotlin
 tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
     compilerOptions {
-        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_1_8)
-        freeCompilerArgs.add("-Xannotation-default-target=param-property")
+        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_11)
         suppressWarnings.set(true)
     }
 }
 
-ksp {
-    arg("room.schemaLocation", "$projectDir/schemas")
+room {
+    schemaDirectory("$projectDir/schemas")
 }
 
 // 如果 libbox.aar 已经是精简版（只包含目标架构），可以跳过 strip 任务
@@ -405,44 +405,45 @@ dependencies {
     } else {
         implementation(files(libboxStrippedAar))
     }
-    implementation("androidx.core:core-ktx:1.13.1")
-    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
-    implementation("androidx.appcompat:appcompat:1.7.0")
-    implementation("androidx.activity:activity-compose:1.9.3")
+    implementation("androidx.core:core-ktx:1.19.0")
+    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.11.0")
+    implementation("androidx.appcompat:appcompat:1.7.1")
+    implementation("androidx.activity:activity-compose:1.13.0")
     implementation(platform("androidx.compose:compose-bom:$composeBomVersion"))
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-graphics")
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.compose.material3:material3")
-    implementation("androidx.navigation:navigation-compose:2.8.0")
+    implementation("androidx.navigation:navigation-compose:2.9.8")
     
     implementation("androidx.compose.material:material-icons-extended")
-    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
-    implementation("androidx.lifecycle:lifecycle-process:2.8.7")
-    implementation("com.squareup.okhttp3:okhttp:4.12.0")
-    implementation("com.google.code.gson:gson:2.11.0")
-    implementation("org.yaml:snakeyaml:2.2")
-    implementation("com.tencent:mmkv:1.3.2")
+    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.11.0")
+    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.11.0")
+    implementation("androidx.lifecycle:lifecycle-process:2.11.0")
+    implementation("com.squareup.okhttp3:okhttp:5.4.0")
+    implementation("com.google.code.gson:gson:2.14.0")
+    implementation("org.yaml:snakeyaml:2.6")
+    implementation("com.tencent:mmkv:2.4.0")
     implementation("com.journeyapps:zxing-android-embedded:4.3.0")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
-    implementation("androidx.work:work-runtime-ktx:2.9.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0")
+    implementation("androidx.work:work-runtime-ktx:2.11.2")
 
-    val roomVersion = "2.7.2"
+    val roomVersion = "2.8.4"
     implementation("androidx.room:room-runtime:$roomVersion")
     implementation("androidx.room:room-ktx:$roomVersion")
     ksp("androidx.room:room-compiler:$roomVersion")
 
     testImplementation("junit:junit:4.13.2")
-    androidTestImplementation("androidx.test:core:1.5.0")
-    androidTestImplementation("androidx.test.ext:junit:1.1.5")
-    androidTestImplementation("androidx.test.espresso:espresso-core:3.5.1")
-    androidTestImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
+    androidTestImplementation("androidx.test:core:1.7.0")
+    androidTestImplementation("androidx.test.ext:junit:1.3.0")
+    androidTestImplementation("androidx.test.espresso:espresso-core:3.7.0")
+    androidTestImplementation("com.squareup.okhttp3:mockwebserver:5.4.0")
     androidTestImplementation(platform("androidx.compose:compose-bom:$composeBomVersion"))
     androidTestImplementation("androidx.compose.ui:ui-test-junit4")
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
     
-    detektPlugins("io.gitlab.arturbosch.detekt:detekt-formatting:1.23.7")
+    detektPlugins("io.gitlab.arturbosch.detekt:detekt-formatting:1.23.8")
 }
 
 detekt {

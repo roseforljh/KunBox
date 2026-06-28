@@ -50,6 +50,7 @@ import com.kunk.singbox.viewmodel.RuleSetViewModel
 import com.kunk.singbox.viewmodel.SettingsViewModel
 import com.kunk.singbox.ui.theme.liquidGlassTopAppBarContainerColor
 import com.kunk.singbox.ui.theme.liquidGlassTopAppBarColors
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
 @Composable
 private fun ruleSetBadgeContentColor(defaultColor: Color): Color {
@@ -124,12 +125,12 @@ fun RuleSetHubScreen(
     )
 
     var searchQuery by remember { mutableStateOf("") }
-    val ruleSets by activityRuleSetViewModel.ruleSets.collectAsState()
-    val isLoading by activityRuleSetViewModel.isLoading.collectAsState()
-    val error by activityRuleSetViewModel.error.collectAsState()
-    val downloadingRuleSets by settingsViewModel.downloadingRuleSets.collectAsState()
+    val ruleSets by activityRuleSetViewModel.ruleSets.collectAsStateWithLifecycle()
+    val isLoading by activityRuleSetViewModel.isLoading.collectAsStateWithLifecycle()
+    val error by activityRuleSetViewModel.error.collectAsStateWithLifecycle()
+    val downloadingRuleSets by settingsViewModel.downloadingRuleSets.collectAsStateWithLifecycle()
 
-    val ruleSetSettings by activityRuleSetViewModel.settings.collectAsState()
+    val ruleSetSettings by activityRuleSetViewModel.settings.collectAsStateWithLifecycle()
 
     val addedRuleSetTags = remember(ruleSetSettings.ruleSets) {
         ruleSetSettings.ruleSets.map { it.tag }.toSet()

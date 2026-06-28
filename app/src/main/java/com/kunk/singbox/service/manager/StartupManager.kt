@@ -19,6 +19,7 @@ import com.kunk.singbox.repository.LogRepository
 import com.kunk.singbox.repository.RuleSetRepository
 import com.kunk.singbox.repository.SettingsRepository
 import com.kunk.singbox.service.notification.VpnNotificationManager
+import com.kunk.singbox.utils.LocalNetworkPermission
 import com.kunk.singbox.utils.dns.DnsResolver
 import com.kunk.singbox.utils.perf.DnsPrewarmer
 import com.kunk.singbox.utils.perf.PerfTracer
@@ -357,6 +358,7 @@ class StartupManager(
 
         stepStart = SystemClock.elapsedRealtime()
         val settings = settingsDeferred.await()
+        ensureLocalNetworkPermission(settings)
         val dnsResult = dnsPrewarmDeferred.await()
         val prewarmedDomainIps = DnsPrewarmer.snapshotResolvedDomains(rawConfigContent)
         val configContent = patchConfig(rawConfigContent, settings, prewarmedDomainIps)
@@ -488,6 +490,12 @@ class StartupManager(
         return result
     }
 
+    private fun ensureLocalNetworkPermission(settings: AppSettings) {
+        if (!LocalNetworkPermission.canApplySettings(context, settings)) {
+            throw IllegalStateException(LocalNetworkPermission.MISSING_PERMISSION_ERROR)
+        }
+    }
+
     private fun patchConfig(
         rawConfigContent: String,
         settings: AppSettings,
@@ -504,16 +512,17 @@ class StartupManager(
 
             var newConfig = configObj.copy(log = logConfig)
             newConfig = applyPrewarmedDomainIps(newConfig, prewarmedDomainIps)
+            val restrictLanListen = LocalNetworkPermission.shouldRestrictLanListen(context)
 
             if (newConfig.inbounds != null) {
                 val newInbounds = newConfig.inbounds.orEmpty().map { inbound ->
-                    if (inbound.type == "tun") {
-                        inbound.copy(
+                    when {
+                        inbound.type == "tun" -> inbound.copy(
                             autoRoute = settings.autoRoute,
                             strictRoute = settings.strictRoute
                         )
-                    } else {
-                        inbound
+                        restrictLanListen -> LocalNetworkPermission.restrictInboundListen(inbound)
+                        else -> inbound
                     }
                 }
                 newConfig = newConfig.copy(inbounds = newInbounds)
@@ -542,7 +551,7 @@ class StartupManager(
                 TAG,
                 "Patched config: auto_route=${settings.autoRoute}, " +
                     "log_level=$logLevel, connect_timeout=$defaultConnectTimeout, " +
-                    "prewarmed_domains=${prewarmedDomainIps.size}"
+                    "prewarmed_domains=${prewarmedDomainIps.size}, restrict_lan_listen=$restrictLanListen"
             )
         } catch (e: Exception) {
             Log.w(TAG, "Failed to patch config: ${e.message}")
@@ -588,6 +597,9 @@ class StartupManager(
             msg.contains("VPN lockdown enabled by", ignoreCase = true) -> {
                 val lockedBy = msg.substringAfter("VPN lockdown enabled by ").trim().ifBlank { "unknown" }
                 "Start failed: system lockdown VPN enabled ($lockedBy)"
+            }
+            msg.contains(LocalNetworkPermission.MISSING_PERMISSION_ERROR, ignoreCase = true) -> {
+                "Start failed: ${LocalNetworkPermission.MISSING_PERMISSION_ERROR}"
             }
             msg.contains("VPN interface establish failed", ignoreCase = true) ||
                 msg.contains("configure tun interface", ignoreCase = true) ||

@@ -28,6 +28,7 @@ import com.kunk.singbox.R
 import com.kunk.singbox.model.*
 import com.kunk.singbox.ui.components.ConfirmDialog
 import com.kunk.singbox.ui.components.StandardCard
+import com.kunk.singbox.ui.components.rememberLocalNetworkPermissionRequest
 import com.kunk.singbox.ui.theme.Neutral500
 import com.kunk.singbox.ui.theme.isLiquidGlassTheme
 import com.kunk.singbox.ui.theme.liquidGlassEmptyStatePanel
@@ -39,6 +40,8 @@ import com.kunk.singbox.viewmodel.ProfilesViewModel
 import com.kunk.singbox.viewmodel.SettingsViewModel
 import com.kunk.singbox.ui.theme.liquidGlassTopAppBarContainerColor
 import com.kunk.singbox.ui.theme.liquidGlassTopAppBarColors
+import com.kunk.singbox.utils.LocalNetworkPermission
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
 @Composable
 private fun Modifier.outboundChipPanel(): Modifier {
@@ -58,15 +61,41 @@ fun AppRulesScreen(
     nodesViewModel: NodesViewModel = viewModel(),
     profilesViewModel: ProfilesViewModel = viewModel()
 ) {
-    val settings by settingsViewModel.settings.collectAsState()
+    val settings by settingsViewModel.settings.collectAsStateWithLifecycle()
     val context = LocalContext.current
     var showAddDialog by remember { mutableStateOf(false) }
     var editingRule by remember { mutableStateOf<AppRule?>(null) }
     var showDeleteConfirm by remember { mutableStateOf<AppRule?>(null) }
+    val requestLocalNetworkPermission = rememberLocalNetworkPermissionRequest()
 
-    val allNodes by nodesViewModel.allNodes.collectAsState()
-    val nodesForSelection by nodesViewModel.filteredAllNodes.collectAsState()
-    val profiles by profilesViewModel.profiles.collectAsState()
+    fun saveRuleWithPermissionCheck(rule: AppRule, save: () -> Unit) {
+        if (LocalNetworkPermission.requiresLocalNetworkAccess(
+                AppSettings(bypassLan = false, appRules = listOf(rule))
+            )
+        ) {
+            requestLocalNetworkPermission(save)
+        } else {
+            save()
+        }
+    }
+
+    fun toggleRuleWithPermissionCheck(rule: AppRule) {
+        val toggle = { settingsViewModel.toggleAppRuleEnabled(rule.id) }
+        if (
+            !rule.enabled &&
+            LocalNetworkPermission.requiresLocalNetworkAccess(
+                AppSettings(bypassLan = false, appRules = listOf(rule.copy(enabled = true)))
+            )
+        ) {
+            requestLocalNetworkPermission(toggle)
+        } else {
+            toggle()
+        }
+    }
+
+    val allNodes by nodesViewModel.allNodes.collectAsStateWithLifecycle()
+    val nodesForSelection by nodesViewModel.filteredAllNodes.collectAsStateWithLifecycle()
+    val profiles by profilesViewModel.profiles.collectAsStateWithLifecycle()
 
     DisposableEffect(Unit) {
         nodesViewModel.setAllNodesUiActive(true)
@@ -103,8 +132,10 @@ fun AppRulesScreen(
             profiles = profiles,
             onDismiss = { showAddDialog = false },
             onConfirm = { rule ->
-                settingsViewModel.addAppRule(rule)
-                showAddDialog = false
+                saveRuleWithPermissionCheck(rule) {
+                    settingsViewModel.addAppRule(rule)
+                    showAddDialog = false
+                }
             }
         )
     }
@@ -119,8 +150,10 @@ fun AppRulesScreen(
             profiles = profiles,
             onDismiss = { editingRule = null },
             onConfirm = { rule ->
-                settingsViewModel.updateAppRule(rule)
-                editingRule = null
+                saveRuleWithPermissionCheck(rule) {
+                    settingsViewModel.updateAppRule(rule)
+                    editingRule = null
+                }
             }
         )
     }
@@ -243,7 +276,7 @@ fun AppRulesScreen(
                         rule = rule,
                         outboundText = "${stringResource(mode.displayNameRes)} -> $outboundText",
                         onClick = { editingRule = rule },
-                        onToggle = { settingsViewModel.toggleAppRuleEnabled(rule.id) },
+                        onToggle = { toggleRuleWithPermissionCheck(rule) },
                         onDelete = { showDeleteConfirm = rule }
                     )
                 }

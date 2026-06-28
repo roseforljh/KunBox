@@ -21,7 +21,7 @@ import androidx.compose.material3.Text
 import androidx.compose.ui.res.stringResource
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -48,7 +48,7 @@ fun DnsSettingsScreen(
     settingsViewModel: SettingsViewModel = viewModel()
 ) {
     val scrollState = rememberScrollState()
-    val settings by settingsViewModel.settings.collectAsState()
+    val settings by settingsViewModel.settings.collectAsStateWithLifecycle()
 
     // State for Dialogs
     var showLocalDnsDialog by remember { mutableStateOf(false) }

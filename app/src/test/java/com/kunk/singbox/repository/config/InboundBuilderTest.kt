@@ -91,6 +91,34 @@ class InboundBuilderTest {
     }
 
     @Test
+    fun buildMixedInboundUsesLoopbackWhenLanIsDisabled() {
+        val inbound = InboundBuilder.build(
+            settings = AppSettings(
+                tunEnabled = false,
+                proxyPort = 7890,
+                allowLan = false
+            ),
+            effectiveTunStack = TunStack.SYSTEM
+        ).single()
+
+        assertEquals("127.0.0.1", inbound.listen)
+    }
+
+    @Test
+    fun buildMixedInboundUsesAnyAddressWhenLanIsEnabled() {
+        val inbound = InboundBuilder.build(
+            settings = AppSettings(
+                tunEnabled = false,
+                proxyPort = 7890,
+                allowLan = true
+            ),
+            effectiveTunStack = TunStack.SYSTEM
+        ).single()
+
+        assertEquals("0.0.0.0", inbound.listen)
+    }
+
+    @Test
     fun buildTunInboundRespectsAutoRouteAndStrictRouteSettings() {
         val inbound = InboundBuilder.build(
             settings = AppSettings(

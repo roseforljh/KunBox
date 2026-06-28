@@ -22,7 +22,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -45,6 +45,7 @@ import com.kunk.singbox.ui.components.SettingItem
 import com.kunk.singbox.ui.components.SettingSwitchItem
 import com.kunk.singbox.ui.components.SingleSelectDialog
 import com.kunk.singbox.ui.components.StandardCard
+import com.kunk.singbox.ui.components.rememberLocalNetworkPermissionRequest
 import com.kunk.singbox.ui.navigation.Screen
 import com.kunk.singbox.ui.theme.Neutral500
 import com.kunk.singbox.viewmodel.SettingsViewModel
@@ -53,6 +54,50 @@ import com.kunk.singbox.ui.theme.liquidGlassMutedContentColor
 import com.kunk.singbox.ui.theme.liquidGlassTopAppBarContainerColor
 import com.kunk.singbox.ui.theme.liquidGlassTopAppBarColors
 
+private typealias RequestLocalNetworkPermission = ((() -> Unit) -> Unit)
+
+private fun handleRoutingModeSelect(
+    mode: RoutingMode,
+    settingsViewModel: SettingsViewModel,
+    requestLocalNetworkPermission: RequestLocalNetworkPermission
+) {
+    if (mode == RoutingMode.GLOBAL_DIRECT) {
+        requestLocalNetworkPermission {
+            settingsViewModel.setRoutingMode(mode)
+        }
+    } else {
+        settingsViewModel.setRoutingMode(mode)
+    }
+}
+
+private fun handleDefaultRuleSelect(
+    defaultRule: DefaultRule,
+    settingsViewModel: SettingsViewModel,
+    requestLocalNetworkPermission: RequestLocalNetworkPermission
+) {
+    if (defaultRule == DefaultRule.DIRECT) {
+        requestLocalNetworkPermission {
+            settingsViewModel.setDefaultRule(defaultRule)
+        }
+    } else {
+        settingsViewModel.setDefaultRule(defaultRule)
+    }
+}
+
+private fun handleBypassLanChange(
+    enabled: Boolean,
+    settingsViewModel: SettingsViewModel,
+    requestLocalNetworkPermission: RequestLocalNetworkPermission
+) {
+    if (!enabled) {
+        settingsViewModel.setBypassLan(false)
+    } else {
+        requestLocalNetworkPermission {
+            settingsViewModel.setBypassLan(true)
+        }
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun RoutingSettingsScreen(
@@ -60,7 +105,8 @@ fun RoutingSettingsScreen(
     settingsViewModel: SettingsViewModel = viewModel()
 ) {
     val scrollState = rememberScrollState()
-    val settings by settingsViewModel.settings.collectAsState()
+    val settings by settingsViewModel.settings.collectAsStateWithLifecycle()
+    val requestLocalNetworkPermission = rememberLocalNetworkPermissionRequest()
 
     // Dialog States
     var showModeDialog by remember { mutableStateOf(false) }
@@ -120,7 +166,8 @@ fun RoutingSettingsScreen(
             options = options,
             selectedIndex = RoutingMode.entries.indexOf(settings.routingMode).coerceAtLeast(0),
             onSelect = { index ->
-                settingsViewModel.setRoutingMode(RoutingMode.entries[index])
+                val mode = RoutingMode.entries[index]
+                handleRoutingModeSelect(mode, settingsViewModel, requestLocalNetworkPermission)
                 showModeDialog = false
             },
             onDismiss = { showModeDialog = false }
@@ -134,7 +181,8 @@ fun RoutingSettingsScreen(
             options = options,
             selectedIndex = DefaultRule.entries.indexOf(settings.defaultRule).coerceAtLeast(0),
             onSelect = { index ->
-                settingsViewModel.setDefaultRule(DefaultRule.entries[index])
+                val defaultRule = DefaultRule.entries[index]
+                handleDefaultRuleSelect(defaultRule, settingsViewModel, requestLocalNetworkPermission)
                 showDefaultRuleDialog = false
             },
             onDismiss = { showDefaultRuleDialog = false }
@@ -228,7 +276,9 @@ fun RoutingSettingsScreen(
                     title = stringResource(R.string.routing_settings_bypass_lan),
                     subtitle = stringResource(R.string.routing_settings_bypass_lan_subtitle),
                     checked = settings.bypassLan,
-                    onCheckedChange = { settingsViewModel.setBypassLan(it) }
+                    onCheckedChange = { enabled ->
+                        handleBypassLanChange(enabled, settingsViewModel, requestLocalNetworkPermission)
+                    }
                 )
                 SettingSwitchItem(
                     title = stringResource(R.string.routing_settings_icmp_echo_routing),

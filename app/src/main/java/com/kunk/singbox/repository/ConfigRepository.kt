@@ -2888,6 +2888,7 @@ class ConfigRepository(protected val context: Context) {
 
     suspend fun generateConfigFile(): ConfigRepository.ConfigGenerationResult? = withContext(Dispatchers.IO) {
         try {
+            settingsRepository.reloadFromStorage()
             awaitInitialProfilesLoaded()
             val activeId = _activeProfileId.value
                 ?: activeStateDao.get()?.activeProfileId

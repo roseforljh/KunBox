@@ -154,6 +154,7 @@
     <string name="connection_settings_proxy_port_subtitle">本地混合代理端口 (Mixed Port)</string>
     <string name="connection_settings_allow_lan">允许来自局域网的连接</string>
     <string name="connection_settings_allow_lan_subtitle">开启后，局域网内的其他设备可以通过该端口使用代理</string>
+    <string name="connection_settings_local_network_permission_denied">需要本地网络权限才能允许局域网连接</string>
     <string name="connection_settings_append_http_proxy">追加 HTTP 代理至 VPN</string>
     <string name="connection_settings_append_http_proxy_subtitle">将本地 HTTP 代理设置为系统代理 (Android 10+)</string>
     <string name="connection_settings_latency_concurrency">延迟测试并发数</string>

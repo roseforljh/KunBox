@@ -35,7 +35,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -43,6 +43,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -138,6 +139,7 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun SingBoxApp() {
     val context = LocalContext.current
+    val restartNeededMessage = stringResource(R.string.settings_restart_needed)
 
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission(),
@@ -161,7 +163,7 @@ fun SingBoxApp() {
     }
 
     val settingsRepository = remember { SettingsRepository.getInstance(context) }
-    val settings by settingsRepository.settings.collectAsState(initial = null)
+    val settings by settingsRepository.settings.collectAsStateWithLifecycle(initialValue = null)
     val dashboardViewModel: DashboardViewModel = viewModel()
 
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
@@ -174,7 +176,7 @@ fun SingBoxApp() {
         prefs.edit().putString("app_language_cache", language.name).apply()
     }
 
-    val isVpnRunningForUpdate by SingBoxRemote.isRunning.collectAsState()
+    val isVpnRunningForUpdate by SingBoxRemote.isRunning.collectAsStateWithLifecycle()
     var updateChecked by remember { mutableStateOf(false) }
 
     LaunchedEffect(settings?.autoCheckUpdate, isVpnRunningForUpdate) {
@@ -199,7 +201,7 @@ fun SingBoxApp() {
 
     // Handle App Shortcuts - need navController reference
     var pendingNavigation by remember { mutableStateOf<String?>(null) }
-    val intentEvent by MainIntentEvents.events.collectAsState(initial = null)
+    val intentEvent by MainIntentEvents.events.collectAsStateWithLifecycle(initialValue = null)
 
     LaunchedEffect(intentEvent?.id) {
         val intent = intentEvent?.intent ?: return@LaunchedEffect
@@ -236,10 +238,10 @@ fun SingBoxApp() {
             }
         }
     }
-    val connectionState by dashboardViewModel.connectionState.collectAsState()
-    val isRunning by SingBoxRemote.isRunning.collectAsState()
-    val isStarting by SingBoxRemote.isStarting.collectAsState()
-    val manuallyStopped by SingBoxRemote.manuallyStopped.collectAsState()
+    val connectionState by dashboardViewModel.connectionState.collectAsStateWithLifecycle()
+    val isRunning by SingBoxRemote.isRunning.collectAsStateWithLifecycle()
+    val isStarting by SingBoxRemote.isStarting.collectAsStateWithLifecycle()
+    val manuallyStopped by SingBoxRemote.manuallyStopped.collectAsStateWithLifecycle()
 
     LaunchedEffect(isRunning, isStarting) {
 
@@ -284,7 +286,7 @@ fun SingBoxApp() {
 
             AppNotificationManager.showMessage(
                 context = context,
-                message = context.getString(R.string.settings_restart_needed)
+                message = restartNeededMessage
             )
         }
     }

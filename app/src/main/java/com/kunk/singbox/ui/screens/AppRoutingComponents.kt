@@ -384,6 +384,7 @@ fun AppRuleEditorDialog(
         InstalledApp(packageName = packageName, appName = selectedAppName ?: packageName)
     }
     val context = LocalContext.current
+    val selectProfileTitle = stringResource(R.string.rulesets_select_profile)
 
     val selectionNodes = nodesForSelection ?: nodes
 
@@ -428,7 +429,10 @@ fun AppRuleEditorDialog(
                     RuleSetOutboundMode.NODE -> {
                         showNodeSelectionDialog = true
                     }
-                    RuleSetOutboundMode.PROFILE -> { targetSelectionTitle = context.getString(R.string.rulesets_select_profile); targetOptions = profiles.map { it.name to it.id } }
+                    RuleSetOutboundMode.PROFILE -> {
+                        targetSelectionTitle = selectProfileTitle
+                        targetOptions = profiles.map { it.name to it.id }
+                    }
                     else -> {}
                 }
                 if (selectedMode != RuleSetOutboundMode.NODE) {
@@ -494,7 +498,7 @@ fun AppRuleEditorDialog(
                                     showNodeSelectionDialog = true
                                 }
                                 RuleSetOutboundMode.PROFILE -> {
-                                    targetSelectionTitle = context.getString(R.string.rulesets_select_profile)
+                                    targetSelectionTitle = selectProfileTitle
                                     targetOptions = profiles.map { it.name to it.id }
                                 }
                                 else -> {}
@@ -1205,6 +1209,7 @@ fun AppGroupEditorDialog(
     var targetSelectionTitle by remember { mutableStateOf("") }
     var targetOptions by remember { mutableStateOf<List<Pair<String, String>>>(emptyList()) }
     val context = LocalContext.current
+    val selectProfileTitle = stringResource(R.string.rulesets_select_profile)
 
     val selectionNodes = nodesForSelection ?: nodes
 
@@ -1258,7 +1263,7 @@ fun AppGroupEditorDialog(
                             showNodeSelectionDialog = true
                         }
                         RuleSetOutboundMode.PROFILE -> {
-                            targetSelectionTitle = context.getString(R.string.rulesets_select_profile)
+                            targetSelectionTitle = selectProfileTitle
                             targetOptions = profiles.map { it.name to it.id }
                         }
                         else -> {}
@@ -1351,7 +1356,7 @@ fun AppGroupEditorDialog(
                                     showNodeSelectionDialog = true
                                 }
                                 RuleSetOutboundMode.PROFILE -> {
-                                    targetSelectionTitle = context.getString(R.string.rulesets_select_profile)
+                                    targetSelectionTitle = selectProfileTitle
                                     targetOptions = profiles.map { it.name to it.id }
                                 }
                                 else -> {}

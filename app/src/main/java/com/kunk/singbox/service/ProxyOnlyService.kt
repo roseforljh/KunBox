@@ -3,6 +3,7 @@
 import android.app.NotificationManager
 import android.app.Service
 import android.content.Intent
+import android.content.pm.ServiceInfo
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
@@ -11,15 +12,19 @@ import android.os.Build
 import android.os.IBinder
 import android.os.SystemClock
 import android.util.Log
+import com.google.gson.Gson
 import com.kunk.singbox.core.LibboxCompat
 import com.kunk.singbox.core.SingBoxCore
 import com.kunk.singbox.ipc.SingBoxIpcHub
 import com.kunk.singbox.ipc.VpnStateStore
+import com.kunk.singbox.model.SingBoxConfig
 import com.kunk.singbox.repository.ConfigRepository
 import com.kunk.singbox.repository.LogRepository
-import com.kunk.singbox.utils.NetworkClient
-import com.kunk.singbox.utils.KernelHttpClient
+import com.kunk.singbox.repository.SettingsRepository
 import com.kunk.singbox.repository.RuleSetRepository
+import com.kunk.singbox.utils.KernelHttpClient
+import com.kunk.singbox.utils.LocalNetworkPermission
+import com.kunk.singbox.utils.NetworkClient
 import io.nekohasekai.libbox.CommandServer
 import io.nekohasekai.libbox.CommandServerHandler
 import io.nekohasekai.libbox.ConnectionOwner
@@ -29,8 +34,8 @@ import io.nekohasekai.libbox.OverrideOptions
 import io.nekohasekai.libbox.PlatformInterface
 import io.nekohasekai.libbox.StringIterator
 import io.nekohasekai.libbox.TunOptions
-import io.nekohasekai.libbox.WIFIState
 import io.nekohasekai.libbox.Libbox
+import io.nekohasekai.libbox.WIFIState
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -143,6 +148,7 @@ class ProxyOnlyService : Service() {
     }
 
     private var commandServer: CommandServer? = null
+    private val gson = Gson()
 
     private val notificationUpdateDebounceMs: Long = 900L
     private val lastNotificationUpdateAtMs = java.util.concurrent.atomic.AtomicLong(0L)
@@ -434,6 +440,7 @@ class ProxyOnlyService : Service() {
                     Log.i(TAG, "ACTION_START received without config path, generating config...")
                     serviceScope.launch {
                         try {
+                            SettingsRepository.getInstance(applicationContext).reloadFromStorage()
                             val repo = ConfigRepository.getInstance(applicationContext)
                             val result = repo.generateConfigFile()
                             if (result != null) {
@@ -575,17 +582,27 @@ class ProxyOnlyService : Service() {
                     return@launch
                 }
 
-                val configContent = configFile.readText()
+                val settingsRepository = SettingsRepository.getInstance(this@ProxyOnlyService)
+                settingsRepository.reloadFromStorage()
+                val settings = settingsRepository.settings.first()
+                if (!LocalNetworkPermission.canApplySettings(this@ProxyOnlyService, settings)) {
+                    val reason = LocalNetworkPermission.MISSING_PERMISSION_ERROR
+                    Log.e(TAG, reason)
+                    setLastError(reason)
+                    withContext(Dispatchers.Main) {
+                        clearStartupFailureState()
+                        stopSelf()
+                    }
+                    return@launch
+                }
+
+                val configContent = restrictLocalNetworkListenIfNeeded(configFile.readText())
 
                 runCatching {
                     SingBoxCore.ensureLibboxSetup(this@ProxyOnlyService)
                 }
 
-                val proxyPort = runCatching {
-                    com.kunk.singbox.repository.SettingsRepository
-                        .getInstance(this@ProxyOnlyService)
-                        .settings.first().proxyPort
-                }.getOrDefault(2080)
+                val proxyPort = settings.proxyPort
                 if (proxyPort > 0 && !isPortAvailable(proxyPort)) {
                     Log.i(TAG, "Port $proxyPort in use, waiting for release...")
                     val waitStart = SystemClock.elapsedRealtime()
@@ -658,6 +675,32 @@ class ProxyOnlyService : Service() {
                 isStarting = false
                 startJob = null
             }
+        }
+    }
+
+    private fun restrictLocalNetworkListenIfNeeded(configContent: String): String {
+        if (!LocalNetworkPermission.shouldRestrictLanListen(this)) return configContent
+
+        return runCatching {
+            val config = gson.fromJson(configContent, SingBoxConfig::class.java)
+            val inbounds = config.inbounds ?: return configContent
+            var changed = false
+            val restrictedInbounds = inbounds.map { inbound ->
+                val restrictedInbound = LocalNetworkPermission.restrictInboundListen(inbound)
+                if (restrictedInbound != inbound) {
+                    changed = true
+                }
+                restrictedInbound
+            }
+            if (changed) {
+                Log.i(TAG, "Restricted mixed inbound listen to loopback because local network permission is missing")
+                gson.toJson(config.copy(inbounds = restrictedInbounds))
+            } else {
+                configContent
+            }
+        }.getOrElse { e ->
+            Log.w(TAG, "Failed to restrict local network listen: ${e.message}")
+            configContent
         }
     }
 
@@ -850,7 +893,12 @@ class ProxyOnlyService : Service() {
         if (hasForegroundStarted.get()) return true
 
         return try {
-            startForeground(NOTIFICATION_ID, createProxyOnlyNotification(CHANNEL_ID))
+            val notification = createProxyOnlyNotification(CHANNEL_ID)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
+            } else {
+                startForeground(NOTIFICATION_ID, notification)
+            }
             hasForegroundStarted.set(true)
             true
         } catch (e: Exception) {
@@ -864,7 +912,11 @@ class ProxyOnlyService : Service() {
         val manager = getSystemService(NotificationManager::class.java)
         if (!hasForegroundStarted.get()) {
             runCatching {
-                startForeground(NOTIFICATION_ID, notification)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                    startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
+                } else {
+                    startForeground(NOTIFICATION_ID, notification)
+                }
                 hasForegroundStarted.set(true)
             }.onFailure { e ->
                 Log.w(TAG, "Failed to call startForeground, fallback to notify()", e)

@@ -1,15 +1,21 @@
 ﻿package com.kunk.singbox.utils
 
 import android.util.Log
+import kotlinx.coroutines.suspendCancellableCoroutine
+import okhttp3.Call
 import okhttp3.ConnectionPool
 import okhttp3.Dispatcher
 import okhttp3.Interceptor
 import okhttp3.OkHttpClient
 import okhttp3.Protocol
+import okhttp3.Request
+import okhttp3.Response
 import java.io.IOException
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 
 object NetworkClient {
     private const val TAG = "NetworkClient"
@@ -179,6 +185,36 @@ object NetworkClient {
         connectionPoolHits.set(0)
     }
 
+    suspend fun <T> executeCancellable(
+        call: Call,
+        block: (Response) -> T
+    ): T {
+        return suspendCancellableCoroutine { continuation ->
+            continuation.invokeOnCancellation {
+                call.cancel()
+            }
+
+            try {
+                val result = call.execute().use(block)
+                if (continuation.isActive) {
+                    continuation.resume(result)
+                }
+            } catch (e: IOException) {
+                if (continuation.isActive) {
+                    continuation.resumeWithException(e)
+                }
+            }
+        }
+    }
+
+    suspend fun <T> executeCancellable(
+        client: OkHttpClient,
+        request: Request,
+        block: (Response) -> T
+    ): T {
+        return executeCancellable(client.newCall(request), block)
+    }
+
     /**
      *
      */
@@ -206,12 +242,12 @@ object NetworkClient {
      */
     @Suppress("ReturnCount")
     fun executeWithFallback(
-        request: okhttp3.Request,
+        request: Request,
         proxyPort: Int,
         isVpnActive: Boolean,
         connectTimeoutSeconds: Long = 15,
         readTimeoutSeconds: Long = 30
-    ): okhttp3.Response? {
+    ): Response? {
         if (isVpnActive && proxyPort > 0) {
             try {
                 val proxyClient = createClientWithProxy(

@@ -30,7 +30,7 @@ import androidx.compose.material3.Text
 import androidx.compose.ui.res.stringResource
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -51,19 +51,19 @@ fun DiagnosticsScreen(
     viewModel: DiagnosticsViewModel = viewModel()
 ) {
     val scrollState = rememberScrollState()
-    val showResultDialog by viewModel.showResultDialog.collectAsState()
-    val resultTitle by viewModel.resultTitle.collectAsState()
-    val resultMessage by viewModel.resultMessage.collectAsState()
+    val showResultDialog by viewModel.showResultDialog.collectAsStateWithLifecycle()
+    val resultTitle by viewModel.resultTitle.collectAsStateWithLifecycle()
+    val resultMessage by viewModel.resultMessage.collectAsStateWithLifecycle()
 
-    val isConnectivityLoading by viewModel.isConnectivityLoading.collectAsState()
-    val isPingLoading by viewModel.isPingLoading.collectAsState()
-    val isDnsLoading by viewModel.isDnsLoading.collectAsState()
-    val isDnsLeakCheckLoading by viewModel.isDnsLeakCheckLoading.collectAsState()
-    val isRoutingLoading by viewModel.isRoutingLoading.collectAsState()
-    val isRunConfigLoading by viewModel.isRunConfigLoading.collectAsState()
-    val isAppRoutingDiagLoading by viewModel.isAppRoutingDiagLoading.collectAsState()
-    val isConnOwnerStatsLoading by viewModel.isConnOwnerStatsLoading.collectAsState()
-    val isNodeLineQueryLoading by viewModel.isNodeLineQueryLoading.collectAsState()
+    val isConnectivityLoading by viewModel.isConnectivityLoading.collectAsStateWithLifecycle()
+    val isPingLoading by viewModel.isPingLoading.collectAsStateWithLifecycle()
+    val isDnsLoading by viewModel.isDnsLoading.collectAsStateWithLifecycle()
+    val isDnsLeakCheckLoading by viewModel.isDnsLeakCheckLoading.collectAsStateWithLifecycle()
+    val isRoutingLoading by viewModel.isRoutingLoading.collectAsStateWithLifecycle()
+    val isRunConfigLoading by viewModel.isRunConfigLoading.collectAsStateWithLifecycle()
+    val isAppRoutingDiagLoading by viewModel.isAppRoutingDiagLoading.collectAsStateWithLifecycle()
+    val isConnOwnerStatsLoading by viewModel.isConnOwnerStatsLoading.collectAsStateWithLifecycle()
+    val isNodeLineQueryLoading by viewModel.isNodeLineQueryLoading.collectAsStateWithLifecycle()
 
     if (showResultDialog) {
         ConfirmDialog(
