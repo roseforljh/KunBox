@@ -70,7 +70,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.res.stringResource
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -213,18 +213,18 @@ fun NodesScreen(
 
     var lastY by remember { mutableStateOf(0f) }
 
-    val nodes by viewModel.nodes.collectAsState()
-    val activeNodeId by viewModel.activeNodeId.collectAsState()
-    val testingNodeIds by viewModel.testingNodeIds.collectAsState()
-    val nodeFilter by viewModel.nodeFilter.collectAsState()
-    val sortType by viewModel.sortType.collectAsState()
-    val testProgress by viewModel.testProgress.collectAsState()
-    val profiles by viewModel.profiles.collectAsState()
-    val nodeColumnCount by viewModel.nodeColumnCount.collectAsState()
+    val nodes by viewModel.nodes.collectAsStateWithLifecycle()
+    val activeNodeId by viewModel.activeNodeId.collectAsStateWithLifecycle()
+    val testingNodeIds by viewModel.testingNodeIds.collectAsStateWithLifecycle()
+    val nodeFilter by viewModel.nodeFilter.collectAsStateWithLifecycle()
+    val sortType by viewModel.sortType.collectAsStateWithLifecycle()
+    val testProgress by viewModel.testProgress.collectAsStateWithLifecycle()
+    val profiles by viewModel.profiles.collectAsStateWithLifecycle()
+    val nodeColumnCount by viewModel.nodeColumnCount.collectAsStateWithLifecycle()
 
     var searchQuery by remember { mutableStateOf("") }
     var isSearchExpanded by remember { mutableStateOf(false) }
-    val isTesting by viewModel.isTesting.collectAsState()
+    val isTesting by viewModel.isTesting.collectAsStateWithLifecycle()
 
     LaunchedEffect(Unit) {
         viewModel.toastEvents.collectLatest { message ->

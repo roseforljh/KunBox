@@ -42,7 +42,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.mutableStateOf
@@ -208,10 +208,10 @@ fun DomainRulesScreen(
     nodesViewModel: NodesViewModel = viewModel(),
     profilesViewModel: ProfilesViewModel = viewModel()
 ) {
-    val settings by settingsViewModel.settings.collectAsState()
-    val allNodes by nodesViewModel.allNodes.collectAsState()
-    val nodesForSelection by nodesViewModel.filteredAllNodes.collectAsState()
-    val profiles by profilesViewModel.profiles.collectAsState()
+    val settings by settingsViewModel.settings.collectAsStateWithLifecycle()
+    val allNodes by nodesViewModel.allNodes.collectAsStateWithLifecycle()
+    val nodesForSelection by nodesViewModel.filteredAllNodes.collectAsStateWithLifecycle()
+    val profiles by profilesViewModel.profiles.collectAsStateWithLifecycle()
 
     DisposableEffect(Unit) {
         nodesViewModel.setAllNodesUiActive(true)

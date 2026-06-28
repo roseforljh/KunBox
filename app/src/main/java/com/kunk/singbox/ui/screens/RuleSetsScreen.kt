@@ -61,6 +61,7 @@ import com.kunk.singbox.ui.theme.liquidGlassTextButtonPanel
 import kotlinx.coroutines.launch
 import com.kunk.singbox.ui.theme.liquidGlassTopAppBarContainerColor
 import com.kunk.singbox.ui.theme.liquidGlassTopAppBarColors
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
 internal val defaultRuleSetTags = setOf(
     "geosite-cn",
@@ -124,12 +125,12 @@ fun RuleSetsScreen(
     nodesViewModel: NodesViewModel = viewModel(),
     profilesViewModel: ProfilesViewModel = viewModel()
 ) {
-    val settings by settingsViewModel.settings.collectAsState()
-    val downloadingRuleSets by settingsViewModel.downloadingRuleSets.collectAsState()
-    val defaultRuleSetDownloadState by settingsViewModel.defaultRuleSetDownloadState.collectAsState()
-    val allNodes by nodesViewModel.allNodes.collectAsState()
-    val nodesForSelection by nodesViewModel.filteredAllNodes.collectAsState()
-    val profiles by profilesViewModel.profiles.collectAsState()
+    val settings by settingsViewModel.settings.collectAsStateWithLifecycle()
+    val downloadingRuleSets by settingsViewModel.downloadingRuleSets.collectAsStateWithLifecycle()
+    val defaultRuleSetDownloadState by settingsViewModel.defaultRuleSetDownloadState.collectAsStateWithLifecycle()
+    val allNodes by nodesViewModel.allNodes.collectAsStateWithLifecycle()
+    val nodesForSelection by nodesViewModel.filteredAllNodes.collectAsStateWithLifecycle()
+    val profiles by profilesViewModel.profiles.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
     val requestLocalNetworkPermission = rememberLocalNetworkPermissionRequest()
 

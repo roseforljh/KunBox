@@ -32,7 +32,7 @@ import android.widget.ImageView
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -98,18 +98,18 @@ fun DashboardScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
-    val connectionState by viewModel.connectionState.collectAsState()
-    val stats by viewModel.stats.collectAsState()
-    val profiles by viewModel.profiles.collectAsState()
-    val activeProfileId by viewModel.activeProfileId.collectAsState()
-    val activeNodeId by viewModel.activeNodeId.collectAsState()
-    val activeNodeLatency by viewModel.activeNodeLatency.collectAsState()
-    val isPingTesting by viewModel.isPingTesting.collectAsState()
-    val nodes by viewModel.nodes.collectAsState()
-    val settings by settingsViewModel.settings.collectAsState()
+    val connectionState by viewModel.connectionState.collectAsStateWithLifecycle()
+    val stats by viewModel.stats.collectAsStateWithLifecycle()
+    val profiles by viewModel.profiles.collectAsStateWithLifecycle()
+    val activeProfileId by viewModel.activeProfileId.collectAsStateWithLifecycle()
+    val activeNodeId by viewModel.activeNodeId.collectAsStateWithLifecycle()
+    val activeNodeLatency by viewModel.activeNodeLatency.collectAsStateWithLifecycle()
+    val isPingTesting by viewModel.isPingTesting.collectAsStateWithLifecycle()
+    val nodes by viewModel.nodes.collectAsStateWithLifecycle()
+    val settings by settingsViewModel.settings.collectAsStateWithLifecycle()
 
-    val nodesForSelector by nodesViewModel.nodes.collectAsState()
-    val testingNodeIds by nodesViewModel.testingNodeIds.collectAsState()
+    val nodesForSelector by nodesViewModel.nodes.collectAsStateWithLifecycle()
+    val testingNodeIds by nodesViewModel.testingNodeIds.collectAsStateWithLifecycle()
 
     val activeProfileName by remember {
         derivedStateOf {
@@ -131,10 +131,10 @@ fun DashboardScreen(
     var showNodeDialog by remember { mutableStateOf(false) }
     var lastConnectionState by remember { mutableStateOf<ConnectionState?>(null) }
 
-    val updateStatus by viewModel.updateStatus.collectAsState()
-    val testStatus by viewModel.testStatus.collectAsState()
-    val actionStatus by viewModel.actionStatus.collectAsState()
-    val vpnPermissionNeeded by viewModel.vpnPermissionNeeded.collectAsState()
+    val updateStatus by viewModel.updateStatus.collectAsStateWithLifecycle()
+    val testStatus by viewModel.testStatus.collectAsStateWithLifecycle()
+    val actionStatus by viewModel.actionStatus.collectAsStateWithLifecycle()
+    val vpnPermissionNeeded by viewModel.vpnPermissionNeeded.collectAsStateWithLifecycle()
     val requestLocalNetworkPermission = rememberLocalNetworkPermissionRequest()
 
     val vpnPermissionLauncher = rememberLauncherForActivityResult(

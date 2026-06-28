@@ -49,7 +49,7 @@ import androidx.compose.material3.Text
 import androidx.compose.ui.res.stringResource
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -158,11 +158,11 @@ fun ProfilesScreen(
     viewModel: com.kunk.singbox.viewmodel.ProfilesViewModel = androidx.lifecycle.viewmodel.compose.viewModel(),
     bottomContentPadding: Dp = 0.dp
 ) {
-    val profiles by viewModel.profiles.collectAsState()
-    val allNodes by viewModel.allNodes.collectAsState()
-    val activeProfileId by viewModel.activeProfileId.collectAsState()
-    val importState by viewModel.importState.collectAsState()
-    val updateStatus by viewModel.updateStatus.collectAsState()
+    val profiles by viewModel.profiles.collectAsStateWithLifecycle()
+    val allNodes by viewModel.allNodes.collectAsStateWithLifecycle()
+    val activeProfileId by viewModel.activeProfileId.collectAsStateWithLifecycle()
+    val importState by viewModel.importState.collectAsStateWithLifecycle()
+    val updateStatus by viewModel.updateStatus.collectAsStateWithLifecycle()
 
     var showSearchDialog by remember { mutableStateOf(false) }
     var showImportSelection by remember { mutableStateOf(false) }
@@ -221,7 +221,7 @@ fun ProfilesScreen(
         }
     }
 
-    val pendingImport by DeepLinkHandler.pendingSubscriptionImport.collectAsState()
+    val pendingImport by DeepLinkHandler.pendingSubscriptionImport.collectAsStateWithLifecycle()
 
     pendingImport?.let { data ->
         ConfirmDialog(

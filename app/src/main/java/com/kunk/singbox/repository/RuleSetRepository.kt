@@ -10,6 +10,7 @@ import com.kunk.singbox.model.AppSettings
 import com.kunk.singbox.model.RuleSet
 import com.kunk.singbox.model.RuleSetType
 import com.kunk.singbox.utils.NetworkClient
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
@@ -499,6 +500,7 @@ class RuleSetRepository(private val context: Context) {
                 }
                 success
             } catch (e: Exception) {
+                if (e is CancellationException) throw e
                 Log.w(TAG, "Proxy download error: ${e.message}")
                 false
             }
@@ -514,49 +516,55 @@ class RuleSetRepository(private val context: Context) {
         var tempFile: File? = null
         return try {
             val request = Request.Builder().url(url).build()
-            client.newCall(request).execute().use { response ->
+            NetworkClient.executeCancellable(client, request) { response ->
                 if (!response.isSuccessful) {
                     Log.e(TAG, "Download failed: HTTP ${response.code}")
-                    return false
-                }
-
-                val body = response.body ?: return false
-                tempFile = createDownloadTempFile(targetFile)
-                val downloadTempFile = tempFile ?: return false
-
-                body.byteStream().use { input ->
-                    downloadTempFile.outputStream().use { output ->
-                        input.copyTo(output)
-                    }
-                }
-
-                val isValid = try {
-                    if (!isDownloadedRuleSetFileValid(downloadTempFile, format)) {
-                        Log.e(TAG, "Downloaded file is invalid, discarding: ${targetFile.name}")
+                    false
+                } else {
+                    val body = response.body
+                    if (body == null) {
                         false
                     } else {
-                        true
-                    }
-                } catch (e: Exception) {
-                    Log.w(TAG, "Failed to verify downloaded file", e)
+                        val downloadTempFile = createDownloadTempFile(targetFile)
+                        tempFile = downloadTempFile
 
-                    false
-                }
+                        body.byteStream().use { input ->
+                            downloadTempFile.outputStream().use { output ->
+                                input.copyTo(output)
+                            }
+                        }
 
-                if (isValid) {
-                    if (!replaceRuleSetFile(downloadTempFile, targetFile)) {
-                        Log.e(TAG, "Failed to replace rule set file: ${downloadTempFile.name}")
-                        return false
+                        val isValid = try {
+                            if (!isDownloadedRuleSetFileValid(downloadTempFile, format)) {
+                                Log.e(TAG, "Downloaded file is invalid, discarding: ${targetFile.name}")
+                                false
+                            } else {
+                                true
+                            }
+                        } catch (e: Exception) {
+                            Log.w(TAG, "Failed to verify downloaded file", e)
+
+                            false
+                        }
+
+                        if (isValid) {
+                            if (!replaceRuleSetFile(downloadTempFile, targetFile)) {
+                                Log.e(TAG, "Failed to replace rule set file: ${downloadTempFile.name}")
+                                false
+                            } else {
+                                downloadTempFile.delete()
+                                Log.i(TAG, "Rule set downloaded and verified successfully: ${targetFile.name}")
+                                true
+                            }
+                        } else {
+                            downloadTempFile.delete()
+                            false
+                        }
                     }
-                    downloadTempFile.delete()
-                    Log.i(TAG, "Rule set downloaded and verified successfully: ${targetFile.name}")
-                    return true
-                } else {
-                    downloadTempFile.delete()
-                    return false
                 }
             }
         } catch (e: Exception) {
+            if (e is CancellationException) throw e
             Log.e(TAG, "Download error: ${e.message}", e)
             false
         } finally {

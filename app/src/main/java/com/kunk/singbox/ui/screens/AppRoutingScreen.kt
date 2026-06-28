@@ -55,6 +55,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import com.kunk.singbox.utils.LocalNetworkPermission
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
 @Composable
 private fun CapsuleSlidingIndicator(
@@ -188,7 +189,7 @@ fun AppRoutingScreen(
     profilesViewModel: ProfilesViewModel = viewModel(),
     installedAppsViewModel: InstalledAppsViewModel = viewModel()
 ) {
-    val settings by settingsViewModel.settings.collectAsState()
+    val settings by settingsViewModel.settings.collectAsStateWithLifecycle()
     var selectedTab by remember { mutableStateOf(0) }
     val useLiquidGlass = isLiquidGlassTheme()
     val requestLocalNetworkPermission = rememberLocalNetworkPermissionRequest()
@@ -203,9 +204,9 @@ fun AppRoutingScreen(
     var editingRule by remember { mutableStateOf<AppRule?>(null) }
     var showDeleteRuleConfirm by remember { mutableStateOf<AppRule?>(null) }
 
-    val allNodes by nodesViewModel.allNodes.collectAsState()
-    val nodesForSelection by nodesViewModel.filteredAllNodes.collectAsState()
-    val profiles by profilesViewModel.profiles.collectAsState()
+    val allNodes by nodesViewModel.allNodes.collectAsStateWithLifecycle()
+    val nodesForSelection by nodesViewModel.filteredAllNodes.collectAsStateWithLifecycle()
+    val profiles by profilesViewModel.profiles.collectAsStateWithLifecycle()
 
     DisposableEffect(Unit) {
         nodesViewModel.setAllNodesUiActive(true)
@@ -218,7 +219,7 @@ fun AppRoutingScreen(
         installedAppsViewModel.loadAppsIfNeeded()
     }
 
-    val allInstalledApps by installedAppsViewModel.installedApps.collectAsState()
+    val allInstalledApps by installedAppsViewModel.installedApps.collectAsStateWithLifecycle()
     val installedApps = allInstalledApps
 
     fun saveGroupWithPermissionCheck(group: AppGroup, save: () -> Unit) {

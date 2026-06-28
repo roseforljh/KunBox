@@ -22,7 +22,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -105,7 +105,7 @@ fun RoutingSettingsScreen(
     settingsViewModel: SettingsViewModel = viewModel()
 ) {
     val scrollState = rememberScrollState()
-    val settings by settingsViewModel.settings.collectAsState()
+    val settings by settingsViewModel.settings.collectAsStateWithLifecycle()
     val requestLocalNetworkPermission = rememberLocalNetworkPermissionRequest()
 
     // Dialog States

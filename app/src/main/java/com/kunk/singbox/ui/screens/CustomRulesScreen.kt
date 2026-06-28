@@ -48,6 +48,7 @@ import com.kunk.singbox.viewmodel.SettingsViewModel
 import com.kunk.singbox.ui.theme.isLiquidGlassTheme
 import com.kunk.singbox.ui.theme.liquidGlassTopAppBarContainerColor
 import com.kunk.singbox.ui.theme.liquidGlassTopAppBarColors
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
 @Composable
 private fun Modifier.customRuleItemPressFeedback(onClick: () -> Unit): Modifier {
@@ -81,7 +82,7 @@ fun CustomRulesScreen(
     navController: NavController,
     settingsViewModel: SettingsViewModel = viewModel()
 ) {
-    val settings by settingsViewModel.settings.collectAsState()
+    val settings by settingsViewModel.settings.collectAsStateWithLifecycle()
     var showAddDialog by remember { mutableStateOf(false) }
     var editingRule by remember { mutableStateOf<CustomRule?>(null) }
 

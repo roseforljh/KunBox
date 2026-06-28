@@ -50,7 +50,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -263,10 +263,10 @@ fun ConnectionInfoScreen(
     navController: NavController,
     viewModel: ConnectionInfoViewModel = viewModel()
 ) {
-    val allConnections by viewModel.connections.collectAsState()
-    val response by viewModel.connectionsResponse.collectAsState()
-    val isRefreshing by viewModel.isRefreshing.collectAsState()
-    val vpnActive by viewModel.vpnActive.collectAsState()
+    val allConnections by viewModel.connections.collectAsStateWithLifecycle()
+    val response by viewModel.connectionsResponse.collectAsStateWithLifecycle()
+    val isRefreshing by viewModel.isRefreshing.collectAsStateWithLifecycle()
+    val vpnActive by viewModel.vpnActive.collectAsStateWithLifecycle()
 
     var showConfirmDeleteAll by remember { mutableStateOf(false) }
     var isSearchExpanded by remember { mutableStateOf(false) }

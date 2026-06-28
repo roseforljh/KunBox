@@ -36,6 +36,7 @@ import com.kunk.singbox.ui.theme.liquidGlassProgressTrackColor
 import com.kunk.singbox.ui.theme.liquidGlassTopAppBarContainerColor
 import com.kunk.singbox.ui.theme.liquidGlassTopAppBarColors
 import com.kunk.singbox.utils.LocalNetworkPermission
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -46,7 +47,7 @@ fun AppGroupsScreen(
     profilesViewModel: ProfilesViewModel = viewModel(),
     installedAppsViewModel: InstalledAppsViewModel = viewModel()
 ) {
-    val settings by settingsViewModel.settings.collectAsState()
+    val settings by settingsViewModel.settings.collectAsStateWithLifecycle()
     var showAddDialog by remember { mutableStateOf(false) }
     var editingGroup by remember { mutableStateOf<AppGroup?>(null) }
     var showDeleteConfirm by remember { mutableStateOf<AppGroup?>(null) }
@@ -77,9 +78,9 @@ fun AppGroupsScreen(
         }
     }
 
-    val allNodes by nodesViewModel.allNodes.collectAsState()
-    val nodesForSelection by nodesViewModel.filteredAllNodes.collectAsState()
-    val profiles by profilesViewModel.profiles.collectAsState()
+    val allNodes by nodesViewModel.allNodes.collectAsStateWithLifecycle()
+    val nodesForSelection by nodesViewModel.filteredAllNodes.collectAsStateWithLifecycle()
+    val profiles by profilesViewModel.profiles.collectAsStateWithLifecycle()
 
     DisposableEffect(Unit) {
         nodesViewModel.setAllNodesUiActive(true)
@@ -89,8 +90,8 @@ fun AppGroupsScreen(
     }
 
     // 使用 InstalledAppsViewModel 获取应用列表
-    val installedApps by installedAppsViewModel.installedApps.collectAsState()
-    val loadingState by installedAppsViewModel.loadingState.collectAsState()
+    val installedApps by installedAppsViewModel.installedApps.collectAsStateWithLifecycle()
+    val loadingState by installedAppsViewModel.loadingState.collectAsStateWithLifecycle()
     val isLoading = loadingState !is InstalledAppsRepository.LoadingState.Loaded
 
     // 触发加载

@@ -32,4 +32,14 @@ class SubscriptionAutoUpdateWorkerTest {
         assertTrue(source.contains("if (!profile.enabled)"))
         assertTrue(source.contains("cancel(applicationContext, profileId)"))
     }
+
+    @Test
+    fun subscriptionScheduleRequiresConnectedNetwork() {
+        val source = File("src/main/java/com/kunk/singbox/service/SubscriptionAutoUpdateWorker.kt")
+            .readText(Charsets.UTF_8)
+
+        assertTrue(source.contains("val constraints = Constraints.Builder()"))
+        assertTrue(source.contains(".setRequiredNetworkType(NetworkType.CONNECTED)"))
+        assertTrue(source.contains(".setConstraints(constraints)"))
+    }
 }

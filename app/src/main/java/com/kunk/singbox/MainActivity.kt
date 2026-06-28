@@ -35,7 +35,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -163,7 +163,7 @@ fun SingBoxApp() {
     }
 
     val settingsRepository = remember { SettingsRepository.getInstance(context) }
-    val settings by settingsRepository.settings.collectAsState(initial = null)
+    val settings by settingsRepository.settings.collectAsStateWithLifecycle(initialValue = null)
     val dashboardViewModel: DashboardViewModel = viewModel()
 
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
@@ -176,7 +176,7 @@ fun SingBoxApp() {
         prefs.edit().putString("app_language_cache", language.name).apply()
     }
 
-    val isVpnRunningForUpdate by SingBoxRemote.isRunning.collectAsState()
+    val isVpnRunningForUpdate by SingBoxRemote.isRunning.collectAsStateWithLifecycle()
     var updateChecked by remember { mutableStateOf(false) }
 
     LaunchedEffect(settings?.autoCheckUpdate, isVpnRunningForUpdate) {
@@ -201,7 +201,7 @@ fun SingBoxApp() {
 
     // Handle App Shortcuts - need navController reference
     var pendingNavigation by remember { mutableStateOf<String?>(null) }
-    val intentEvent by MainIntentEvents.events.collectAsState(initial = null)
+    val intentEvent by MainIntentEvents.events.collectAsStateWithLifecycle(initialValue = null)
 
     LaunchedEffect(intentEvent?.id) {
         val intent = intentEvent?.intent ?: return@LaunchedEffect
@@ -238,10 +238,10 @@ fun SingBoxApp() {
             }
         }
     }
-    val connectionState by dashboardViewModel.connectionState.collectAsState()
-    val isRunning by SingBoxRemote.isRunning.collectAsState()
-    val isStarting by SingBoxRemote.isStarting.collectAsState()
-    val manuallyStopped by SingBoxRemote.manuallyStopped.collectAsState()
+    val connectionState by dashboardViewModel.connectionState.collectAsStateWithLifecycle()
+    val isRunning by SingBoxRemote.isRunning.collectAsStateWithLifecycle()
+    val isStarting by SingBoxRemote.isStarting.collectAsStateWithLifecycle()
+    val manuallyStopped by SingBoxRemote.manuallyStopped.collectAsStateWithLifecycle()
 
     LaunchedEffect(isRunning, isStarting) {
 

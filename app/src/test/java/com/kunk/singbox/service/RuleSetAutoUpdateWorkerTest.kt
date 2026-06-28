@@ -1,7 +1,9 @@
 package com.kunk.singbox.service
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.File
 
 class RuleSetAutoUpdateWorkerTest {
 
@@ -21,5 +23,15 @@ class RuleSetAutoUpdateWorkerTest {
     fun normalizeIntervalMinutesKeepsLegalValues() {
         assertEquals(15, RuleSetAutoUpdateWorker.normalizeIntervalMinutes(15))
         assertEquals(60, RuleSetAutoUpdateWorker.normalizeIntervalMinutes(60))
+    }
+
+    @Test
+    fun ruleSetScheduleRequiresConnectedNetwork() {
+        val source = File("src/main/java/com/kunk/singbox/service/RuleSetAutoUpdateWorker.kt")
+            .readText(Charsets.UTF_8)
+
+        assertTrue(source.contains("val constraints = Constraints.Builder()"))
+        assertTrue(source.contains(".setRequiredNetworkType(NetworkType.CONNECTED)"))
+        assertTrue(source.contains(".setConstraints(constraints)"))
     }
 }

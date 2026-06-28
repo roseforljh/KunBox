@@ -33,7 +33,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -59,9 +59,9 @@ import com.kunk.singbox.ui.theme.liquidGlassTopAppBarContainerColor
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LogsScreen(navController: NavController, viewModel: LogViewModel = viewModel()) {
-    val logs by viewModel.filteredLogs.collectAsState()
-    val searchKeyword by viewModel.searchKeyword.collectAsState()
-    val selectedCategory by viewModel.selectedCategory.collectAsState()
+    val logs by viewModel.filteredLogs.collectAsStateWithLifecycle()
+    val searchKeyword by viewModel.searchKeyword.collectAsStateWithLifecycle()
+    val selectedCategory by viewModel.selectedCategory.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val listState = rememberLazyListState()
 

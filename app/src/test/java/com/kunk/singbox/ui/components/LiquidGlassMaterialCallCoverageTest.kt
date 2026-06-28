@@ -728,10 +728,10 @@ class LiquidGlassMaterialCallCoverageTest {
             "ui/components/ExportImportDialogs.kt:70:Card:Card(",
             "ui/components/StandardCard.kt:65:Card:Card(",
             "ui/components/StandardCard.kt:76:Card:Card(",
-            "ui/screens/AppRoutingScreen.kt:422:Tab:Tab(",
+            "ui/screens/AppRoutingScreen.kt:423:Tab:Tab(",
             "ui/screens/ConnectionInfoScreen.kt:604:Card:Card(",
             "ui/screens/ConnectionInfoScreen.kt:731:Card:Card(",
-            "ui/screens/RuleSetHubScreen.kt:343:Card:Card(",
+            "ui/screens/RuleSetHubScreen.kt:344:Card:Card(",
             "ui/theme/LiquidGlassChipControls.kt:75:FilterChip:FilterChip(",
             "ui/theme/LiquidGlassMenuControls.kt:32:DropdownMenu:DropdownMenu(",
             "ui/theme/LiquidGlassMenuControls.kt:53:DropdownMenu:DropdownMenu("

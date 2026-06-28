@@ -23,7 +23,7 @@ import androidx.compose.material3.Text
 import androidx.compose.ui.res.stringResource
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -57,7 +57,7 @@ fun ConnectionSettingsScreen(
 ) {
     val context = LocalContext.current
     val scrollState = rememberScrollState()
-    val settings by settingsViewModel.settings.collectAsState()
+    val settings by settingsViewModel.settings.collectAsStateWithLifecycle()
     var showPowerSavingDelayDialog by remember { mutableStateOf(false) }
     val permissionDeniedMessage = stringResource(R.string.connection_settings_network_auto_switch_permission_denied)
     val localNetworkPermissionDeniedMessage =

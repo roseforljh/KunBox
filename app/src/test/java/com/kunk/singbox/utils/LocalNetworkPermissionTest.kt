@@ -112,6 +112,11 @@ class LocalNetworkPermissionTest {
     }
 
     @Test
+    fun defaultSettingsRequireLocalNetworkAccessBecauseBypassLanIsEnabled() {
+        assertTrue(LocalNetworkPermission.requiresLocalNetworkAccess(AppSettings()))
+    }
+
+    @Test
     fun settingsRequireLocalNetworkAccessForDirectLocalCustomRules() {
         val settings = AppSettings(
             bypassLan = false,
@@ -186,6 +191,82 @@ class LocalNetworkPermissionTest {
                 AppSettings(
                     bypassLan = false,
                     appGroups = listOf(AppGroup(name = "Local Apps", outboundMode = null))
+                )
+            )
+        )
+    }
+
+    @Test
+    fun appRulesRequireLocalNetworkAccessOnlyWhenEnabledAndDirect() {
+        assertTrue(
+            LocalNetworkPermission.requiresLocalNetworkAccess(
+                AppSettings(
+                    bypassLan = false,
+                    appRules = listOf(
+                        AppRule(
+                            packageName = "com.example.local",
+                            appName = "Local",
+                            outboundMode = RuleSetOutboundMode.DIRECT,
+                            enabled = true
+                        )
+                    )
+                )
+            )
+        )
+        assertFalse(
+            LocalNetworkPermission.requiresLocalNetworkAccess(
+                AppSettings(
+                    bypassLan = false,
+                    appRules = listOf(
+                        AppRule(
+                            packageName = "com.example.disabled",
+                            appName = "Disabled",
+                            outboundMode = RuleSetOutboundMode.DIRECT,
+                            enabled = false
+                        )
+                    )
+                )
+            )
+        )
+        assertFalse(
+            LocalNetworkPermission.requiresLocalNetworkAccess(
+                AppSettings(
+                    bypassLan = false,
+                    appRules = listOf(AppRule(packageName = "com.example.proxy", appName = "Proxy"))
+                )
+            )
+        )
+    }
+
+    @Test
+    fun appGroupsRequireLocalNetworkAccessOnlyWhenEnabledAndDirectByDefault() {
+        assertTrue(
+            LocalNetworkPermission.requiresLocalNetworkAccess(
+                AppSettings(
+                    bypassLan = false,
+                    appGroups = listOf(AppGroup(name = "Default Direct"))
+                )
+            )
+        )
+        assertFalse(
+            LocalNetworkPermission.requiresLocalNetworkAccess(
+                AppSettings(
+                    bypassLan = false,
+                    appGroups = listOf(AppGroup(name = "Disabled Direct", enabled = false))
+                )
+            )
+        )
+        assertFalse(
+            LocalNetworkPermission.requiresLocalNetworkAccess(
+                AppSettings(
+                    bypassLan = false,
+                    appGroups = listOf(
+                        AppGroup(
+                            name = "Proxy Group",
+                            outboundMode = RuleSetOutboundMode.PROXY,
+                            enabled = true
+                        )
+                    )
                 )
             )
         )

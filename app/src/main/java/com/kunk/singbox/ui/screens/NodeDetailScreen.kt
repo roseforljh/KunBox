@@ -44,7 +44,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -177,11 +177,11 @@ fun NodeDetailScreen(
         }
     }
 
-    val nodes by configRepository.nodes.collectAsState(initial = emptyList())
-    val allNodes by configRepository.allNodes.collectAsState(initial = emptyList())
-    val activeProfileId by configRepository.activeProfileId.collectAsState(initial = null)
+    val nodes by configRepository.nodes.collectAsStateWithLifecycle(initialValue = emptyList())
+    val allNodes by configRepository.allNodes.collectAsStateWithLifecycle(initialValue = emptyList())
+    val activeProfileId by configRepository.activeProfileId.collectAsStateWithLifecycle(initialValue = null)
     val node = if (!isCreateMode) nodes.find { it.id == nodeId } else null
-    val profiles by configRepository.profiles.collectAsState(initial = emptyList())
+    val profiles by configRepository.profiles.collectAsStateWithLifecycle(initialValue = emptyList())
 
     val editingOutboundState = rememberSaveable(nodeId, createProtocol, saver = outboundEditorStateSaver) {
         mutableStateOf<Outbound?>(null)

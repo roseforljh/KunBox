@@ -7,6 +7,7 @@ plugins {
     id("com.google.devtools.ksp")
     id("io.gitlab.arturbosch.detekt")
     id("org.jetbrains.kotlin.plugin.compose")
+    id("androidx.room")
 }
 
 val libboxInputAar = file("libs/libbox.aar")
@@ -384,8 +385,8 @@ tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach 
     }
 }
 
-ksp {
-    arg("room.schemaLocation", "$projectDir/schemas")
+room {
+    schemaDirectory("$projectDir/schemas")
 }
 
 // 如果 libbox.aar 已经是精简版（只包含目标架构），可以跳过 strip 任务
@@ -417,6 +418,7 @@ dependencies {
     
     implementation("androidx.compose.material:material-icons-extended")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.11.0")
+    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.11.0")
     implementation("androidx.lifecycle:lifecycle-process:2.11.0")
     implementation("com.squareup.okhttp3:okhttp:5.4.0")
     implementation("com.google.code.gson:gson:2.14.0")

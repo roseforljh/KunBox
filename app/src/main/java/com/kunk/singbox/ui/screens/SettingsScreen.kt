@@ -39,7 +39,7 @@ import androidx.compose.material3.Text
 import androidx.compose.ui.res.stringResource
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -91,9 +91,9 @@ fun SettingsScreen(
     val restartNeededMessage = stringResource(R.string.settings_restart_needed)
     val scope = rememberCoroutineScope()
     val scrollState = rememberScrollState()
-    val settings by viewModel.settings.collectAsState()
-    val exportState by viewModel.exportState.collectAsState()
-    val importState by viewModel.importState.collectAsState()
+    val settings by viewModel.settings.collectAsStateWithLifecycle()
+    val exportState by viewModel.exportState.collectAsStateWithLifecycle()
+    val importState by viewModel.importState.collectAsStateWithLifecycle()
 
     var showAboutDialog by remember { mutableStateOf(false) }
     var showThemeDialog by remember { mutableStateOf(false) }

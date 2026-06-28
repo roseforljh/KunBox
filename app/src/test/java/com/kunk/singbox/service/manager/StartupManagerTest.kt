@@ -6,7 +6,9 @@ import com.kunk.singbox.model.SingBoxConfig
 import com.kunk.singbox.model.TlsConfig
 import com.kunk.singbox.model.TransportConfig
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.File
 
 class StartupManagerTest {
 
@@ -127,5 +129,17 @@ class StartupManagerTest {
         )
 
         assertEquals("fly-nnca.bestvmr.com", patched.outbounds?.firstOrNull()?.server)
+    }
+
+    @Test
+    fun startupManagerBlocksLocalNetworkSettingsAndRestrictsWildcardListen() {
+        val source = File("src/main/java/com/kunk/singbox/service/manager/StartupManager.kt")
+            .readText(Charsets.UTF_8)
+
+        assertTrue(source.contains("ensureLocalNetworkPermission(settings)"))
+        assertTrue(source.contains("if (!LocalNetworkPermission.canApplySettings(context, settings))"))
+        assertTrue(source.contains("throw IllegalStateException(LocalNetworkPermission.MISSING_PERMISSION_ERROR)"))
+        assertTrue(source.contains("restrictLanListen -> LocalNetworkPermission.restrictInboundListen(inbound)"))
+        assertTrue(source.contains("Start failed: \${LocalNetworkPermission.MISSING_PERMISSION_ERROR}"))
     }
 }

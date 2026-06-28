@@ -100,4 +100,35 @@ class ProxyOnlyServiceStateTest {
 
         assertFalse(source.contains("killProcess("))
     }
+
+    @Test
+    fun `proxy only service blocks local network settings before core start`() {
+        val source = File("src/main/java/com/kunk/singbox/service/ProxyOnlyService.kt").readText(Charsets.UTF_8)
+
+        assertTrue(source.contains("if (!LocalNetworkPermission.canApplySettings(this@ProxyOnlyService, settings))"))
+        assertTrue(source.contains("val reason = LocalNetworkPermission.MISSING_PERMISSION_ERROR"))
+        assertTrue(source.contains("setLastError(reason)"))
+        assertTrue(source.contains("return@launch"))
+    }
+
+    @Test
+    fun `proxy only service restricts wildcard listeners when local network permission is missing`() {
+        val source = File("src/main/java/com/kunk/singbox/service/ProxyOnlyService.kt").readText(Charsets.UTF_8)
+
+        assertTrue(source.contains("private fun restrictLocalNetworkListenIfNeeded(configContent: String): String"))
+        assertTrue(source.contains("if (!LocalNetworkPermission.shouldRestrictLanListen(this)) return configContent"))
+        assertTrue(source.contains("LocalNetworkPermission.restrictInboundListen(inbound)"))
+    }
+
+    @Test
+    fun `proxy only foreground service uses special use runtime type`() {
+        val source = File("src/main/java/com/kunk/singbox/service/ProxyOnlyService.kt").readText(Charsets.UTF_8)
+
+        assertTrue(source.contains("ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE"))
+        assertTrue(
+            source.contains(
+                "startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)"
+            )
+        )
+    }
 }
