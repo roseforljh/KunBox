@@ -52,11 +52,41 @@ object PreciseLatencyTester {
         url: String,
         timeoutMs: Int,
         standard: Standard = Standard.RTT,
-        warmup: Boolean = true
+        warmup: Boolean = true,
+        headersOnly: Boolean = false
     ): LatencyResult = withContext(Dispatchers.IO) {
         val timingListener = TimingEventListener()
+        val client = buildClient(proxyPort, timeoutMs, standard, timingListener)
 
-        val client = OkHttpClient.Builder()
+        try {
+            val request = buildRequest(url, headersOnly)
+
+            if (warmup) {
+                runWarmup(client, request, timingListener)
+            }
+
+            timingListener.reset()
+            if (!executeProbeRequest(client, request, url, headersOnly, timingListener)) {
+                return@withContext LatencyResult(-1L)
+            }
+
+            buildLatencyResult(resolveLatency(timingListener, standard), timingListener)
+        } catch (e: Exception) {
+            Log.w(TAG, "Latency test failed: ${e.message}")
+            LatencyResult(-1L)
+        } finally {
+            client.connectionPool.evictAll()
+            client.dispatcher.executorService.shutdown()
+        }
+    }
+
+    private fun buildClient(
+        proxyPort: Int,
+        timeoutMs: Int,
+        standard: Standard,
+        timingListener: TimingEventListener
+    ): OkHttpClient {
+        return OkHttpClient.Builder()
             .proxy(Proxy(Proxy.Type.HTTP, InetSocketAddress("127.0.0.1", proxyPort)))
             .connectTimeout(1000L, TimeUnit.MILLISECONDS)
             .readTimeout(timeoutMs.toLong(), TimeUnit.MILLISECONDS)
@@ -65,88 +95,126 @@ object PreciseLatencyTester {
             .eventListener(timingListener)
             .apply {
                 if (standard == Standard.HANDSHAKE) {
-
                     connectionPool(okhttp3.ConnectionPool(0, 1, TimeUnit.MILLISECONDS))
                 }
             }
             .followRedirects(false)
             .build()
+    }
 
+    private fun runWarmup(
+        client: OkHttpClient,
+        request: Request,
+        timingListener: TimingEventListener
+    ) {
         try {
-            val request = Request.Builder()
-                .url(url)
-                .get()
-                .build()
-
-            if (warmup) {
-                try {
-                    timingListener.reset()
-                    client.newCall(request).execute().use { resp ->
-                        resp.body?.close()
-                    }
-                } catch (e: Exception) {
-
-                    Log.d(TAG, "Warmup request failed: ${e.message}")
-                }
-            }
-
             timingListener.reset()
-            val response = client.newCall(request).execute()
-            response.use { resp ->
-                if (resp.code >= 400) {
-                    return@withContext LatencyResult(-1L)
-                }
+            client.newCall(request).execute().use { resp ->
                 resp.body?.close()
             }
-
-            val latency = when (standard) {
-                Standard.RTT -> {
-
-                    val handshakeEnd = timingListener.secureConnectEnd.get()
-                        .takeIf { it > 0 } ?: timingListener.connectEnd.get()
-                    val firstByte = timingListener.responseHeadersStart.get()
-                    if (handshakeEnd > 0 && firstByte > handshakeEnd) {
-                        firstByte - handshakeEnd
-                    } else {
-
-                        timingListener.callEnd.get() - timingListener.callStart.get()
-                    }
-                }
-                Standard.HANDSHAKE -> {
-                    val start = timingListener.secureConnectStart.get()
-                    val end = timingListener.secureConnectEnd.get()
-                    if (start > 0 && end > start) {
-                        end - start
-                    } else {
-
-                        timingListener.connectEnd.get() - timingListener.connectStart.get()
-                    }
-                }
-                Standard.FIRST_BYTE -> {
-
-                    timingListener.responseHeadersStart.get() - timingListener.callStart.get()
-                }
-                Standard.TOTAL -> {
-
-                    timingListener.callEnd.get() - timingListener.callStart.get()
-                }
-            }
-
-            LatencyResult(
-                latencyMs = latency.coerceAtLeast(0),
-                dnsTimeMs = (timingListener.dnsEnd.get() - timingListener.dnsStart.get()).coerceAtLeast(0),
-                connectTimeMs = (timingListener.connectEnd.get() - timingListener.connectStart.get()).coerceAtLeast(0),
-                tlsHandshakeMs = (timingListener.secureConnectEnd.get() - timingListener.secureConnectStart.get()).coerceAtLeast(0),
-                firstByteMs = (timingListener.responseHeadersStart.get() - timingListener.callStart.get()).coerceAtLeast(0),
-                totalMs = (timingListener.callEnd.get() - timingListener.callStart.get()).coerceAtLeast(0)
-            )
         } catch (e: Exception) {
-            Log.w(TAG, "Latency test failed: ${e.message}")
-            LatencyResult(-1L)
-        } finally {
-            client.connectionPool.evictAll()
-            client.dispatcher.executorService.shutdown()
+            Log.d(TAG, "Warmup request failed: ${e.message}")
         }
+    }
+
+    private fun executeProbeRequest(
+        client: OkHttpClient,
+        request: Request,
+        url: String,
+        headersOnly: Boolean,
+        timingListener: TimingEventListener
+    ): Boolean {
+        client.newCall(request).execute().use { response ->
+            return when {
+                headersOnly && response.code == 405 -> executeHeadersOnlyFallback(client, url, timingListener)
+                response.code >= 400 -> false
+                else -> true
+            }
+        }
+    }
+
+    private fun executeHeadersOnlyFallback(
+        client: OkHttpClient,
+        url: String,
+        timingListener: TimingEventListener
+    ): Boolean {
+        timingListener.reset()
+        client.newCall(buildHeadersOnlyFallbackRequest(url)).execute().use { fallback ->
+            return fallback.code < 400
+        }
+    }
+
+    private fun resolveLatency(timingListener: TimingEventListener, standard: Standard): Long {
+        return when (standard) {
+            Standard.RTT -> resolveRttLatency(timingListener)
+            Standard.HANDSHAKE -> resolveHandshakeLatency(timingListener)
+            Standard.FIRST_BYTE -> timingListener.responseHeadersStart.get() - timingListener.callStart.get()
+            Standard.TOTAL -> timingListener.callEnd.get() - timingListener.callStart.get()
+        }
+    }
+
+    private fun resolveRttLatency(timingListener: TimingEventListener): Long {
+        val handshakeEnd = timingListener.secureConnectEnd.get()
+            .takeIf { it > 0 } ?: timingListener.connectEnd.get()
+        val firstByte = timingListener.responseHeadersStart.get()
+        return if (handshakeEnd > 0 && firstByte > handshakeEnd) {
+            firstByte - handshakeEnd
+        } else {
+            timingListener.callEnd.get() - timingListener.callStart.get()
+        }
+    }
+
+    private fun resolveHandshakeLatency(timingListener: TimingEventListener): Long {
+        val start = timingListener.secureConnectStart.get()
+        val end = timingListener.secureConnectEnd.get()
+        return if (start > 0 && end > start) {
+            end - start
+        } else {
+            timingListener.connectEnd.get() - timingListener.connectStart.get()
+        }
+    }
+
+    private fun buildLatencyResult(latency: Long, timingListener: TimingEventListener): LatencyResult {
+        return LatencyResult(
+            latencyMs = latency.coerceAtLeast(0),
+            dnsTimeMs = (timingListener.dnsEnd.get() - timingListener.dnsStart.get()).coerceAtLeast(0),
+            connectTimeMs = (timingListener.connectEnd.get() - timingListener.connectStart.get()).coerceAtLeast(0),
+            tlsHandshakeMs = (
+                timingListener.secureConnectEnd.get() - timingListener.secureConnectStart.get()
+                ).coerceAtLeast(0),
+            firstByteMs = (
+                timingListener.responseHeadersStart.get() - timingListener.callStart.get()
+                ).coerceAtLeast(0),
+            totalMs = (timingListener.callEnd.get() - timingListener.callStart.get()).coerceAtLeast(0)
+        )
+    }
+
+    internal fun buildRequestForTest(url: String, headersOnly: Boolean): Request {
+        return buildRequest(url, headersOnly)
+    }
+
+    internal fun buildHeadersOnlyFallbackRequestForTest(url: String): Request {
+        return buildHeadersOnlyFallbackRequest(url)
+    }
+
+    private fun buildRequest(url: String, headersOnly: Boolean): Request {
+        val builder = Request.Builder().url(url)
+        if (headersOnly) {
+            builder.head()
+                .header("Cache-Control", "no-cache")
+        } else {
+            builder.get()
+        }
+        return builder.build()
+    }
+
+    private fun buildHeadersOnlyFallbackRequest(url: String): Request {
+        return Request.Builder()
+            .url(url)
+            .get()
+            .header("Cache-Control", "no-cache")
+            .header("Range", "bytes=0-0")
+            .build()
     }
 
     /**

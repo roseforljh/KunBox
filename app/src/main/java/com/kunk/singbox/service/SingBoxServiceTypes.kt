@@ -17,6 +17,11 @@ data class SingBoxServiceForegroundFallbackState(
     val outcome: String
 )
 
+data class SingBoxServiceForegroundHardFallbackProbeSignal(
+    val physicalProbeOk: Boolean,
+    val tunnelProbeOk: Boolean
+)
+
 data class SingBoxServiceNetworkTypeChangedFallbackState(
     val shouldSkip: Boolean,
     val event: String,
@@ -26,6 +31,7 @@ data class SingBoxServiceNetworkTypeChangedFallbackState(
 
 data class SingBoxServiceNetworkTypeChangedRecoverySignal(
     val probeSucceeded: Boolean,
+    val tunnelProbeSucceeded: Boolean,
     val networkRecoveryNeeded: Boolean,
     val strongSignal: Boolean
 )

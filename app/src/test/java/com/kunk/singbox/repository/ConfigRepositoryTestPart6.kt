@@ -5,7 +5,9 @@ import com.kunk.singbox.model.DnsConfig
 import com.kunk.singbox.model.DnsFakeIpConfig
 import com.kunk.singbox.model.DnsRule
 import com.kunk.singbox.model.DnsServer
+import com.kunk.singbox.model.DnsStrategy
 import com.kunk.singbox.model.DomainResolveConfig
+import com.kunk.singbox.model.IpVersionMode
 import com.kunk.singbox.model.Outbound
 import com.kunk.singbox.model.RoutingMode
 import org.junit.Assert.assertEquals
@@ -485,6 +487,27 @@ abstract class ConfigRepositoryTestPart6 : ConfigRepositoryTestPart5() {
     }
 
     @Test
+    fun defaultOutboundDomainResolverKeepsDualStackAutoServerStrategy() {
+        val outbounds = ConfigRepository.applyDefaultOutboundDomainResolverForTest(
+            outbounds = listOf(
+                Outbound(
+                    type = "trojan",
+                    tag = "trojan-node",
+                    server = "us-1.tr202613.com"
+                )
+            ),
+            defaultResolverTag = ConfigRepository.DEFAULT_ROUTE_DOMAIN_RESOLVER_TAG,
+            defaultResolverStrategy = ConfigRepository.resolveOutboundServerAddressStrategyForTest(
+                DnsStrategy.AUTO,
+                IpVersionMode.DUAL_STACK
+            )
+        )
+
+        assertEquals(ConfigRepository.DEFAULT_ROUTE_DOMAIN_RESOLVER_TAG, outbounds.first().domainResolver?.server)
+        assertEquals("prefer_ipv4", outbounds.first().domainResolver?.strategy)
+    }
+
+    @Test
     override fun testDnsOverrideDomainResolverKeepsServerAddressStrategyWhenRuleHasNoStrategy() {
         val outbounds = ConfigRepository.applyDefaultOutboundDomainResolverForTest(
             outbounds = listOf(
@@ -506,6 +529,34 @@ abstract class ConfigRepositoryTestPart6 : ConfigRepositoryTestPart5() {
 
         assertEquals("airport-dns", actual.first().domainResolver?.server)
         assertEquals("prefer_ipv4", actual.first().domainResolver?.strategy)
+    }
+
+    @Test
+    fun dnsOverrideStillWinsOverIpv6PreferredBootstrapDefault() {
+        val outbounds = ConfigRepository.applyDefaultOutboundDomainResolverForTest(
+            outbounds = listOf(
+                Outbound(
+                    type = "trojan",
+                    tag = "trojan-node",
+                    server = "us-1.tr202613.com"
+                )
+            ),
+            defaultResolverTag = ConfigRepository.DEFAULT_ROUTE_DOMAIN_RESOLVER_TAG,
+            defaultResolverStrategy = "prefer_ipv6"
+        )
+        val override = DnsConfig(
+            servers = listOf(
+                DnsServer(tag = "airport-dns", type = "https", server = "dns.example.com")
+            ),
+            rules = listOf(
+                DnsRule(outboundRaw = "trojan-node", server = "airport-dns")
+            )
+        )
+
+        val actual = ConfigRepository.applyDnsOverrideDomainResolversForTest(outbounds, override)
+
+        assertEquals("airport-dns", actual.first().domainResolver?.server)
+        assertEquals("prefer_ipv6", actual.first().domainResolver?.strategy)
     }
 
     @Test

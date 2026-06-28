@@ -11,6 +11,13 @@ import com.kunk.singbox.utils.PreciseLatencyTester
 
 object BoxWrapperManager {
     private const val TAG = "BoxWrapperManager"
+    internal const val FOREGROUND_TUNNEL_HEALTH_PROBE_URL = "https://www.gstatic.com/generate_204"
+    internal const val CLOUDFLARE_TUNNEL_HEALTH_PROBE_URL = "https://www.cloudflare.com/cdn-cgi/trace"
+    internal const val META_TUNNEL_HEALTH_PROBE_URL = "https://connect.facebook.net/en_US/sdk.js"
+
+    internal fun resolveGoogleProbeUrlForTest() = FOREGROUND_TUNNEL_HEALTH_PROBE_URL
+    internal fun resolveCloudflareProbeUrlForTest() = CLOUDFLARE_TUNNEL_HEALTH_PROBE_URL
+    internal fun resolveMetaProbeUrlForTest() = META_TUNNEL_HEALTH_PROBE_URL
 
     enum class RecoveryMode {
         SOFT,
@@ -411,7 +418,13 @@ object BoxWrapperManager {
     /**
      * 通过本地代理端口探测 VPN 隧道是否真正可用
      */
-    suspend fun probeTunnelViaLocalProxy(context: android.content.Context, timeoutMs: Long = 3000L): Boolean {
+    suspend fun probeTunnelViaLocalProxy(
+        context: android.content.Context,
+        timeoutMs: Long = 3000L,
+        probeUrlOverride: String? = null,
+        headersOnly: Boolean = false,
+        healthyWhenProxyUnavailable: Boolean = true
+    ): Boolean {
         if (!isAvailable()) {
             Log.d(TAG, "probeTunnelViaLocalProxy: Kernel is not available, skip")
             return false
@@ -421,15 +434,18 @@ object BoxWrapperManager {
             val proxyPort = settings.proxyPort
             if (proxyPort <= 0) {
                 Log.d(TAG, "probeTunnelViaLocalProxy: Proxy port is invalid ($proxyPort), skip tunnel probe")
-                return true
+                return healthyWhenProxyUnavailable
             }
-            val probeUrl = settings.latencyTestUrl.ifBlank { "https://www.google.com/generate_204" }
+            val probeUrl = probeUrlOverride
+                ?.takeIf { it.isNotBlank() }
+                ?: settings.latencyTestUrl.ifBlank { "https://www.google.com/generate_204" }
             val realTimeout = if (timeoutMs > 0) timeoutMs.toInt() else settings.latencyTestTimeout
             val result = PreciseLatencyTester.test(
                 proxyPort = proxyPort,
                 url = probeUrl,
                 timeoutMs = realTimeout,
-                warmup = false
+                warmup = false,
+                headersOnly = headersOnly
             )
             Log.d(
                 TAG,

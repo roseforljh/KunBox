@@ -30,6 +30,29 @@ class CommandManager(
         private const val MAX_LOG_LINES = 300
         private const val PORT_RELEASE_TIMEOUT_MS = 10000L
         private const val PORT_CHECK_INTERVAL_MS = 50L
+
+        internal fun dispatchKernelLogForTest(
+            message: String,
+            uiLogsEnabled: Boolean,
+            observer: ((String) -> Unit)?,
+            addToRepository: (String) -> Unit
+        ) = dispatchKernelLog(message, uiLogsEnabled, observer, addToRepository)
+
+        private fun dispatchKernelLog(
+            message: String,
+            uiLogsEnabled: Boolean,
+            observer: ((String) -> Unit)?,
+            addToRepository: (String) -> Unit
+        ) {
+            observer?.invoke(message)
+            if (uiLogsEnabled) {
+                addToRepository(message)
+            }
+        }
+    }
+
+    fun interface KernelLogObserver {
+        fun onKernelLog(message: String)
     }
 
     // Command Server/Client
@@ -41,6 +64,9 @@ class CommandManager(
 
     @Volatile
     private var clientHandler: CommandClientHandler? = null
+
+    @Volatile
+    private var kernelLogObserver: KernelLogObserver? = null
 
     @Volatile
     private var isNonEssentialSuspended: Boolean = false
@@ -75,6 +101,10 @@ class CommandManager(
 
     fun init(callbacks: Callbacks) {
         this.callbacks = callbacks
+    }
+
+    fun setKernelLogObserver(observer: KernelLogObserver?) {
+        kernelLogObserver = observer
     }
 
     /**
@@ -370,12 +400,19 @@ class CommandManager(
         override fun writeLogs(messageList: LogIterator?) {
             if (messageList == null) return
             val repo = LogRepository.getInstance()
-            if (!repo.isEnabled()) return
             runCatching {
                 while (messageList.hasNext()) {
                     val msg = messageList.next()?.message
                     if (!msg.isNullOrBlank()) {
-                        repo.addLog(msg)
+                        val observer = kernelLogObserver
+                        dispatchKernelLog(
+                            message = msg,
+                            uiLogsEnabled = repo.isEnabled(),
+                            observer = observer?.let { logObserver ->
+                                { line -> logObserver.onKernelLog(line) }
+                            },
+                            addToRepository = { repo.addLog(it) }
+                        )
                     }
                 }
             }

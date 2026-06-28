@@ -413,18 +413,28 @@ class RecoveryLogicTest {
         assertTrue(
             SingBoxService.hasStrongNetworkTypeChangedRecoverySignal(
                 probeSucceeded = true,
+                tunnelProbeSucceeded = true,
                 networkRecoveryNeeded = false
             )
         )
         assertFalse(
             SingBoxService.hasStrongNetworkTypeChangedRecoverySignal(
                 probeSucceeded = false,
+                tunnelProbeSucceeded = true,
                 networkRecoveryNeeded = false
             )
         )
         assertFalse(
             SingBoxService.hasStrongNetworkTypeChangedRecoverySignal(
                 probeSucceeded = true,
+                tunnelProbeSucceeded = false,
+                networkRecoveryNeeded = false
+            )
+        )
+        assertFalse(
+            SingBoxService.hasStrongNetworkTypeChangedRecoverySignal(
+                probeSucceeded = true,
+                tunnelProbeSucceeded = true,
                 networkRecoveryNeeded = true
             )
         )
