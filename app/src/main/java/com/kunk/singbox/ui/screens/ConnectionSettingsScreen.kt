@@ -41,6 +41,7 @@ import com.kunk.singbox.ui.components.SettingItem
 import com.kunk.singbox.ui.components.SettingSwitchItem
 import com.kunk.singbox.ui.components.SingleSelectDialog
 import com.kunk.singbox.ui.components.StandardCard
+import com.kunk.singbox.utils.LocalNetworkPermission
 import com.kunk.singbox.viewmodel.SettingsViewModel
 import com.kunk.singbox.model.BackgroundPowerSavingDelay
 import com.kunk.singbox.ui.theme.liquidGlassIconButtonPanel
@@ -59,6 +60,8 @@ fun ConnectionSettingsScreen(
     val settings by settingsViewModel.settings.collectAsState()
     var showPowerSavingDelayDialog by remember { mutableStateOf(false) }
     val permissionDeniedMessage = stringResource(R.string.connection_settings_network_auto_switch_permission_denied)
+    val localNetworkPermissionDeniedMessage =
+        stringResource(R.string.connection_settings_local_network_permission_denied)
     val wifiPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions()
     ) {
@@ -66,6 +69,16 @@ fun ConnectionSettingsScreen(
             settingsViewModel.setNetworkAutoSwitchEnabled(true)
         } else {
             AppNotificationManager.showMessage(context, permissionDeniedMessage)
+        }
+    }
+    val localNetworkPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions()
+    ) {
+        if (LocalNetworkPermission.hasPermission(context)) {
+            settingsViewModel.updateAllowLan(true)
+        } else {
+            settingsViewModel.updateAllowLan(false)
+            AppNotificationManager.showMessage(context, localNetworkPermissionDeniedMessage)
         }
     }
 
@@ -184,7 +197,15 @@ fun ConnectionSettingsScreen(
                     title = stringResource(R.string.connection_settings_allow_lan),
                     subtitle = stringResource(R.string.connection_settings_allow_lan_subtitle),
                     checked = settings.allowLan,
-                    onCheckedChange = { settingsViewModel.updateAllowLan(it) }
+                    onCheckedChange = { enabled ->
+                        if (!enabled) {
+                            settingsViewModel.updateAllowLan(false)
+                        } else if (LocalNetworkPermission.canExposeLan(context, allowLan = true)) {
+                            settingsViewModel.updateAllowLan(true)
+                        } else {
+                            localNetworkPermissionLauncher.launch(LocalNetworkPermission.requiredPermissions())
+                        }
+                    }
                 )
                 SettingSwitchItem(
                     title = stringResource(R.string.connection_settings_append_http_proxy),

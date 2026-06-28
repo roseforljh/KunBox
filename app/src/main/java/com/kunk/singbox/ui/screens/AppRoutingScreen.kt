@@ -36,6 +36,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import com.kunk.singbox.model.*
 import com.kunk.singbox.ui.components.ConfirmDialog
+import com.kunk.singbox.ui.components.rememberLocalNetworkPermissionRequest
 import com.kunk.singbox.ui.theme.Neutral500
 import com.kunk.singbox.viewmodel.InstalledAppsViewModel
 import com.kunk.singbox.viewmodel.NodesViewModel
@@ -53,6 +54,7 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
+import com.kunk.singbox.utils.LocalNetworkPermission
 
 @Composable
 private fun CapsuleSlidingIndicator(
@@ -189,6 +191,7 @@ fun AppRoutingScreen(
     val settings by settingsViewModel.settings.collectAsState()
     var selectedTab by remember { mutableStateOf(0) }
     val useLiquidGlass = isLiquidGlassTheme()
+    val requestLocalNetworkPermission = rememberLocalNetworkPermissionRequest()
     val tabs =
         listOf(stringResource(R.string.app_rules_tabs_groups), stringResource(R.string.app_rules_tabs_individual))
 
@@ -218,6 +221,56 @@ fun AppRoutingScreen(
     val allInstalledApps by installedAppsViewModel.installedApps.collectAsState()
     val installedApps = allInstalledApps
 
+    fun saveGroupWithPermissionCheck(group: AppGroup, save: () -> Unit) {
+        if (LocalNetworkPermission.requiresLocalNetworkAccess(
+                AppSettings(bypassLan = false, appGroups = listOf(group))
+            )
+        ) {
+            requestLocalNetworkPermission(save)
+        } else {
+            save()
+        }
+    }
+
+    fun saveRuleWithPermissionCheck(rule: AppRule, save: () -> Unit) {
+        if (LocalNetworkPermission.requiresLocalNetworkAccess(
+                AppSettings(bypassLan = false, appRules = listOf(rule))
+            )
+        ) {
+            requestLocalNetworkPermission(save)
+        } else {
+            save()
+        }
+    }
+
+    fun toggleGroupWithPermissionCheck(group: AppGroup) {
+        val toggle = { settingsViewModel.toggleAppGroupEnabled(group.id) }
+        if (
+            !group.enabled &&
+            LocalNetworkPermission.requiresLocalNetworkAccess(
+                AppSettings(bypassLan = false, appGroups = listOf(group.copy(enabled = true)))
+            )
+        ) {
+            requestLocalNetworkPermission(toggle)
+        } else {
+            toggle()
+        }
+    }
+
+    fun toggleRuleWithPermissionCheck(rule: AppRule) {
+        val toggle = { settingsViewModel.toggleAppRuleEnabled(rule.id) }
+        if (
+            !rule.enabled &&
+            LocalNetworkPermission.requiresLocalNetworkAccess(
+                AppSettings(bypassLan = false, appRules = listOf(rule.copy(enabled = true)))
+            )
+        ) {
+            requestLocalNetworkPermission(toggle)
+        } else {
+            toggle()
+        }
+    }
+
     if (showAddGroupDialog) {
         AppGroupEditorDialog(
             installedApps = installedApps,
@@ -226,8 +279,10 @@ fun AppRoutingScreen(
             profiles = profiles,
             onDismiss = { showAddGroupDialog = false },
             onConfirm = { group ->
-                settingsViewModel.addAppGroup(group)
-                showAddGroupDialog = false
+                saveGroupWithPermissionCheck(group) {
+                    settingsViewModel.addAppGroup(group)
+                    showAddGroupDialog = false
+                }
             }
         )
     }
@@ -241,8 +296,10 @@ fun AppRoutingScreen(
             profiles = profiles,
             onDismiss = { editingGroup = null },
             onConfirm = { group ->
-                settingsViewModel.updateAppGroup(group)
-                editingGroup = null
+                saveGroupWithPermissionCheck(group) {
+                    settingsViewModel.updateAppGroup(group)
+                    editingGroup = null
+                }
             }
         )
     }
@@ -274,8 +331,10 @@ fun AppRoutingScreen(
             profiles = profiles,
             onDismiss = { showAddRuleDialog = false },
             onConfirm = { rule ->
-                settingsViewModel.addAppRule(rule)
-                showAddRuleDialog = false
+                saveRuleWithPermissionCheck(rule) {
+                    settingsViewModel.addAppRule(rule)
+                    showAddRuleDialog = false
+                }
             }
         )
     }
@@ -290,8 +349,10 @@ fun AppRoutingScreen(
             profiles = profiles,
             onDismiss = { editingRule = null },
             onConfirm = { rule ->
-                settingsViewModel.updateAppRule(rule)
-                editingRule = null
+                saveRuleWithPermissionCheck(rule) {
+                    settingsViewModel.updateAppRule(rule)
+                    editingRule = null
+                }
             }
         )
     }
@@ -422,7 +483,7 @@ fun AppRoutingScreen(
                                 group = group,
                                 outboundText = "${stringResource(mode.displayNameRes)} -> $outboundText",
                                 onClick = { editingGroup = group },
-                                onToggle = { settingsViewModel.toggleAppGroupEnabled(group.id) },
+                                onToggle = { toggleGroupWithPermissionCheck(group) },
                                 onDelete = { showDeleteGroupConfirm = group }
                             )
                         }
@@ -440,7 +501,7 @@ fun AppRoutingScreen(
                                 rule = rule,
                                 outboundText = "${stringResource(mode.displayNameRes)} -> $outboundText",
                                 onClick = { editingRule = rule },
-                                onToggle = { settingsViewModel.toggleAppRuleEnabled(rule.id) },
+                                onToggle = { toggleRuleWithPermissionCheck(rule) },
                                 onDelete = { showDeleteRuleConfirm = rule }
                             )
                         }

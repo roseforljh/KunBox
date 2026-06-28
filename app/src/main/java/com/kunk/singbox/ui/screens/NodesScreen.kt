@@ -794,7 +794,7 @@ fun NodesScreen(
                                     onLatency = onLatency,
                                     onDelete = onDelete,
                                     modifier = Modifier
-                                        .animateItemPlacement()
+                                        .animateItem()
                                         .graphicsLayer {
                                             this.alpha = alpha
                                             this.translationY = translateY
@@ -814,7 +814,7 @@ fun NodesScreen(
                                     onLatency = onLatency,
                                     onDelete = onDelete,
                                     modifier = Modifier
-                                        .animateItemPlacement()
+                                        .animateItem()
                                         .graphicsLayer {
                                             this.alpha = alpha
                                             this.translationY = translateY

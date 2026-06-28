@@ -88,6 +88,7 @@ fun SettingsScreen(
     bottomContentPadding: Dp = 0.dp
 ) {
     val context = LocalContext.current
+    val restartNeededMessage = stringResource(R.string.settings_restart_needed)
     val scope = rememberCoroutineScope()
     val scrollState = rememberScrollState()
     val settings by viewModel.settings.collectAsState()
@@ -158,7 +159,7 @@ fun SettingsScreen(
                 showLanguageDialog = false
                 AppNotificationManager.showMessage(
                     context = context,
-                    message = context.getString(R.string.settings_restart_needed),
+                    message = restartNeededMessage,
                     duration = androidx.compose.material3.SnackbarDuration.Long
                 )
             },

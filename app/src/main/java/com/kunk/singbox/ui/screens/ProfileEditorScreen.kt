@@ -49,6 +49,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import com.kunk.singbox.ui.theme.liquidGlassTopAppBarContainerColor
 import com.kunk.singbox.ui.theme.liquidGlassTopAppBarColors
+import java.util.Locale
 
 @Composable
 private fun Modifier.profileEditorPanel(): Modifier {
@@ -106,6 +107,7 @@ fun ProfileEditorScreen(navController: NavController, profileId: String) {
     val scope = rememberCoroutineScope()
     val configRepository = remember { ConfigRepository.getInstance(context) }
     val editorViewModel: ProfileEditorViewModel = viewModel(key = profileId)
+    val contentTooLargeMessage = stringResource(R.string.profiles_import_content_too_large)
 
     ProfileEditorLoadEffect(
         profileId = profileId,
@@ -125,7 +127,7 @@ fun ProfileEditorScreen(navController: NavController, profileId: String) {
                     if (isProfileContentTooLarge(editorViewModel.content)) {
                         AppNotificationManager.showMessage(
                             context,
-                            context.getString(R.string.profiles_import_content_too_large)
+                            contentTooLargeMessage
                         )
                         return@ProfileEditorTopBar
                     }
@@ -165,6 +167,7 @@ private fun ProfileEditorLoadEffect(
     editorViewModel: ProfileEditorViewModel
 ) {
     val context = LocalContext.current
+    val importFailedFormat = stringResource(R.string.profiles_import_failed, "%s")
     LaunchedEffect(profileId) {
         if (!editorViewModel.shouldLoad(profileId)) return@LaunchedEffect
 
@@ -176,7 +179,7 @@ private fun ProfileEditorLoadEffect(
                 editorViewModel.failLoading()
                 AppNotificationManager.showMessage(
                     context,
-                    context.getString(R.string.profiles_import_failed, error.message)
+                    String.format(Locale.getDefault(), importFailedFormat, error.message)
                 )
                 navController.popBackStack()
             }

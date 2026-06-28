@@ -92,6 +92,7 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.ByteArrayOutputStream
+import java.util.Locale
 
 @Composable
 private fun Modifier.profileSortItemPressFeedback(
@@ -172,6 +173,14 @@ fun ProfilesScreen(
 
     val context = LocalContext.current
     val clipboardManager = androidx.compose.ui.platform.LocalClipboardManager.current
+    val commonLoadingMessage = stringResource(R.string.common_loading)
+    val importContentTooLargeMessage = stringResource(R.string.profiles_import_content_too_large)
+    val fileImportName = stringResource(R.string.profiles_file_import)
+    val fileEmptyMessage = stringResource(R.string.profiles_file_empty)
+    val readFileFailedFormat = stringResource(R.string.profiles_read_file_failed, "%s")
+    val qrcodeImportName = stringResource(R.string.profiles_qrcode_import)
+    val qrcodeSubscriptionName = stringResource(R.string.profiles_qrcode_subscription)
+    val cameraPermissionRequiredMessage = stringResource(R.string.profiles_camera_permission_required)
 
     // Reordering state
     val profileList = remember { mutableStateListOf<com.kunk.singbox.model.ProfileUi>() }
@@ -232,7 +241,7 @@ fun ProfilesScreen(
                 if (started) {
                     DeepLinkHandler.clearPendingSubscriptionImport()
                 } else {
-                    AppNotificationManager.showMessage(context, context.getString(R.string.common_loading))
+                    AppNotificationManager.showMessage(context, commonLoadingMessage)
                 }
             },
             onDismiss = { DeepLinkHandler.clearPendingSubscriptionImport() }
@@ -246,8 +255,10 @@ fun ProfilesScreen(
         }
     }
 
-    val importSuccessMsg = stringResource(R.string.profiles_import_success)
-    val importFailedMsg = stringResource(R.string.profiles_import_failed)
+    val importSuccessMessage = (importState as? com.kunk.singbox.viewmodel.ProfilesViewModel.ImportState.Success)
+        ?.let { stringResource(R.string.profiles_import_success, it.profile.name) }
+    val importFailedMessage = (importState as? com.kunk.singbox.viewmodel.ProfilesViewModel.ImportState.Error)
+        ?.let { stringResource(R.string.profiles_import_failed, it.message) }
 
     // Handle import state feedback
     androidx.compose.runtime.LaunchedEffect(importState) {
@@ -255,14 +266,14 @@ fun ProfilesScreen(
             is com.kunk.singbox.viewmodel.ProfilesViewModel.ImportState.Success -> {
                 AppNotificationManager.showMessage(
                     context,
-                    context.getString(R.string.profiles_import_success, state.profile.name)
+                    importSuccessMessage.orEmpty()
                 )
                 viewModel.resetImportState()
             }
             is com.kunk.singbox.viewmodel.ProfilesViewModel.ImportState.Error -> {
                 AppNotificationManager.showMessage(
                     context = context,
-                    message = context.getString(R.string.profiles_import_failed, state.message),
+                    message = importFailedMessage.orEmpty(),
                     duration = androidx.compose.material3.SnackbarDuration.Long
                 )
                 viewModel.resetImportState()
@@ -313,7 +324,7 @@ fun ProfilesScreen(
                     if (declaredLength > com.kunk.singbox.viewmodel.ProfilesViewModel.MAX_IMPORT_CONTENT_BYTES) {
                         AppNotificationManager.showMessage(
                             context,
-                            context.getString(R.string.profiles_import_content_too_large)
+                            importContentTooLargeMessage
                         )
                         return@launch
                     }
@@ -332,16 +343,16 @@ fun ProfilesScreen(
                                 .substringAfterLast(":")
                                 .substringBeforeLast(".")
                                 .takeIf { it.isNotBlank() }
-                        } ?: context.getString(R.string.profiles_file_import)
+                        } ?: fileImportName
 
                         viewModel.importFromContent(fileName, content)
                     } else {
-                        AppNotificationManager.showMessage(context, context.getString(R.string.profiles_file_empty))
+                        AppNotificationManager.showMessage(context, fileEmptyMessage)
                     }
                 } catch (e: Exception) {
                     AppNotificationManager.showMessage(
                         context = context,
-                        message = context.getString(R.string.profiles_read_file_failed, e.message),
+                        message = String.format(Locale.getDefault(), readFileFailedFormat, e.message),
                         duration = androidx.compose.material3.SnackbarDuration.Long
                     )
                 }
@@ -370,7 +381,7 @@ fun ProfilesScreen(
 
             when {
                 isNodeLink -> {
-                    viewModel.importFromContent(context.getString(R.string.profiles_qrcode_import), scannedContent)
+                    viewModel.importFromContent(qrcodeImportName, scannedContent)
                 }
                 isSubscriptionUrl -> {
                     val urlParts = scannedContent.split("#")
@@ -383,16 +394,16 @@ fun ProfilesScreen(
                     } else {
                         null
                     }
-                    val name = parsedName ?: context.getString(R.string.profiles_qrcode_subscription)
+                    val name = parsedName ?: qrcodeSubscriptionName
                     viewModel.importSubscription(name, scannedContent, 0)
                 }
                 scannedContent.trim().startsWith("{") || scannedContent.trim().startsWith("proxies:") -> {
 
-                    viewModel.importFromContent(context.getString(R.string.profiles_qrcode_import), scannedContent)
+                    viewModel.importFromContent(qrcodeImportName, scannedContent)
                 }
                 else -> {
 
-                    viewModel.importFromContent(context.getString(R.string.profiles_qrcode_import), scannedContent)
+                    viewModel.importFromContent(qrcodeImportName, scannedContent)
                 }
             }
         }
@@ -416,7 +427,7 @@ fun ProfilesScreen(
         if (isGranted) {
             qrCodeLauncher.launch(createScanOptions())
         } else {
-            AppNotificationManager.showMessage(context, context.getString(R.string.profiles_camera_permission_required))
+            AppNotificationManager.showMessage(context, cameraPermissionRequiredMessage)
         }
     }
 

@@ -74,6 +74,7 @@ import com.kunk.singbox.ui.components.StandardCard
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.util.Locale
 import com.kunk.singbox.ui.theme.liquidGlassIconButtonPanel
 import com.kunk.singbox.ui.theme.liquidGlassTopAppBarContainerColor
 import com.kunk.singbox.ui.theme.liquidGlassTopAppBarColors
@@ -217,6 +218,7 @@ fun NodeDetailScreen(
     fun toNodeRef(sourceProfileId: String, name: String): String = "$sourceProfileId::$name"
 
     val createdMsg = stringResource(R.string.node_created)
+    val importFailedFormat = stringResource(R.string.profiles_import_failed, "%s")
     if (showSelectProfileDialog) {
         SelectProfileDialog(
             profiles = profiles,
@@ -242,7 +244,7 @@ fun NodeDetailScreen(
                         }.onFailure {
                             AppNotificationManager.showMessage(
                                 context,
-                                context.getString(R.string.profiles_import_failed, it.message ?: "")
+                                String.format(Locale.getDefault(), importFailedFormat, it.message ?: "")
                             )
                         }
                     }
@@ -297,7 +299,7 @@ fun NodeDetailScreen(
                                         }.onFailure {
                                             AppNotificationManager.showMessage(
                                                 context,
-                                                context.getString(R.string.profiles_import_failed, it.message ?: "")
+                                                String.format(Locale.getDefault(), importFailedFormat, it.message ?: "")
                                             )
                                         }
                                     }

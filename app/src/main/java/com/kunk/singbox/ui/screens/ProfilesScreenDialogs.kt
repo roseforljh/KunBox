@@ -1097,6 +1097,9 @@ internal fun SubscriptionInputDialog(
             Spacer(modifier = Modifier.height(24.dp))
 
             val context = LocalContext.current
+            val subscriptionNodeWarningMessage = stringResource(R.string.profiles_subscription_node_warning)
+            val invalidNameMessage = stringResource(R.string.profiles_name_invalid)
+            val updateIntervalMinMessage = stringResource(R.string.settings_update_interval_min)
 
             Button(
                 onClick = {
@@ -1114,14 +1117,14 @@ internal fun SubscriptionInputDialog(
                     if (isNodeLink) {
                         AppNotificationManager.showMessage(
                             context = context,
-                            message = context.getString(R.string.profiles_subscription_node_warning),
+                            message = subscriptionNodeWarningMessage,
                             duration = androidx.compose.material3.SnackbarDuration.Long
                         )
                         return@Button
                     }
 
                     if (name.contains("://")) {
-                        AppNotificationManager.showMessage(context, context.getString(R.string.profiles_name_invalid))
+                        AppNotificationManager.showMessage(context, invalidNameMessage)
                         return@Button
                     }
 
@@ -1130,7 +1133,7 @@ internal fun SubscriptionInputDialog(
                         if (minutes < 15) {
                             AppNotificationManager.showMessage(
                                 context,
-                                context.getString(R.string.settings_update_interval_min)
+                                updateIntervalMinMessage
                             )
                             return@Button
                         }

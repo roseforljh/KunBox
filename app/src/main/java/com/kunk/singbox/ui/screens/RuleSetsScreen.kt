@@ -39,6 +39,7 @@ import com.kunk.singbox.ui.components.AppNotificationManager
 import com.kunk.singbox.ui.components.ConfirmDialog
 import com.kunk.singbox.ui.components.ProfileNodeSelectDialog
 import com.kunk.singbox.ui.components.SingleSelectDialog
+import com.kunk.singbox.ui.components.rememberLocalNetworkPermissionRequest
 import com.kunk.singbox.ui.navigation.Screen
 import androidx.compose.foundation.shape.RoundedCornerShape
 import com.kunk.singbox.viewmodel.NodesViewModel
@@ -130,6 +131,7 @@ fun RuleSetsScreen(
     val nodesForSelection by nodesViewModel.filteredAllNodes.collectAsState()
     val profiles by profilesViewModel.profiles.collectAsState()
     val scope = rememberCoroutineScope()
+    val requestLocalNetworkPermission = rememberLocalNetworkPermissionRequest()
 
     DisposableEffect(Unit) {
         nodesViewModel.setAllNodesUiActive(true)
@@ -326,6 +328,12 @@ fun RuleSetsScreen(
                     if (selectedMode != RuleSetOutboundMode.NODE) {
                         showTargetSelectionDialog = true
                     }
+                } else if (selectedMode == RuleSetOutboundMode.DIRECT) {
+                    requestLocalNetworkPermission {
+                        settingsViewModel.updateRuleSet(updatedRuleSet)
+                    }
+                    outboundEditingRuleSet = null
+                    showOutboundModeDialog = false
                 } else {
                     settingsViewModel.updateRuleSet(updatedRuleSet)
                     outboundEditingRuleSet = null
@@ -754,7 +762,13 @@ fun RuleSetsScreen(
                             }
                         },
                         onToggle = { enabled ->
-                            settingsViewModel.updateRuleSet(ruleSet.copy(enabled = enabled))
+                            if (enabled && ruleSet.outboundMode == RuleSetOutboundMode.DIRECT) {
+                                requestLocalNetworkPermission {
+                                    settingsViewModel.updateRuleSet(ruleSet.copy(enabled = true))
+                                }
+                            } else {
+                                settingsViewModel.updateRuleSet(ruleSet.copy(enabled = enabled))
+                            }
                         },
                         onEditClick = { editingRuleSet = ruleSet },
                         onDeleteClick = { settingsViewModel.deleteRuleSet(ruleSet.id) },

@@ -8,6 +8,7 @@
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.NEARBY_WIFI_DEVICES" />
+    <uses-permission android:name="android.permission.ACCESS_LOCAL_NETWORK" />
     <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-feature
@@ -15,7 +16,6 @@
         android:required="false" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- 电池优化豁免权限,防止息屏时 VPN 服务被系统杀死 -->
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
@@ -98,9 +98,13 @@
         <service
             android:name=".service.ProxyOnlyService"
             android:exported="false"
-            android:foregroundServiceType="dataSync"
+            android:foregroundServiceType="specialUse"
             android:process=":bg"
-            android:stopWithTask="false" />
+            android:stopWithTask="false">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="proxy_only" />
+        </service>
 
         <service
             android:name=".ipc.SingBoxIpcService"

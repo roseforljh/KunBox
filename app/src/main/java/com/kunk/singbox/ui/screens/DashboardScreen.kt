@@ -66,8 +66,10 @@ import com.kunk.singbox.ui.components.NodeSelectorDialog
 import com.kunk.singbox.ui.components.SingleSelectDialog
 import com.kunk.singbox.ui.components.StatusChip
 import com.kunk.singbox.ui.components.AppNotificationManager
+import com.kunk.singbox.ui.components.rememberLocalNetworkPermissionRequest
 import com.kunk.singbox.ui.theme.Neutral500
 import com.kunk.singbox.R
+import com.kunk.singbox.utils.LocalNetworkPermission
 import com.kunk.singbox.viewmodel.NodesViewModel
 import android.app.Activity
 import android.net.VpnService
@@ -133,6 +135,7 @@ fun DashboardScreen(
     val testStatus by viewModel.testStatus.collectAsState()
     val actionStatus by viewModel.actionStatus.collectAsState()
     val vpnPermissionNeeded by viewModel.vpnPermissionNeeded.collectAsState()
+    val requestLocalNetworkPermission = rememberLocalNetworkPermissionRequest()
 
     val vpnPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult()
@@ -444,11 +447,17 @@ fun DashboardScreen(
                 contentAlignment = Alignment.Center,
                 modifier = Modifier.weight(1f)
             ) {
+                val isRunning = connectionState == ConnectionState.Connected ||
+                    connectionState == ConnectionState.Connecting
+                val toggleConnection = { viewModel.toggleConnection() }
                 BigToggle(
-                    isRunning = connectionState == ConnectionState.Connected ||
-                        connectionState == ConnectionState.Connecting,
+                    isRunning = isRunning,
                     onClick = {
-                        viewModel.toggleConnection()
+                        if (!isRunning && LocalNetworkPermission.requiresLocalNetworkAccess(settings)) {
+                            requestLocalNetworkPermission(toggleConnection)
+                        } else {
+                            toggleConnection()
+                        }
                     }
                 )
             }
