@@ -22,6 +22,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.kunk.singbox.model.ExportDataSummary
 import com.kunk.singbox.ui.theme.isLiquidGlassTheme
+import com.kunk.singbox.ui.theme.LiquidGlassDialogEffect
 import com.kunk.singbox.ui.theme.liquidGlassButtonColors
 import com.kunk.singbox.ui.theme.liquidGlassButtonContentColor
 import com.kunk.singbox.ui.theme.liquidGlassButtonPanel
@@ -93,6 +94,7 @@ fun ExportProgressDialog(
         },
         properties = DialogProperties(dismissOnBackPress = state !is ExportState.Exporting)
     ) {
+        LiquidGlassDialogEffect()
         ExportImportCard(
             modifier = Modifier
                 .fillMaxWidth()
@@ -208,6 +210,7 @@ fun ImportPreviewDialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false)
     ) {
+        LiquidGlassDialogEffect()
         ExportImportCard(
             modifier = Modifier
                 .fillMaxWidth(0.9f)
@@ -373,6 +376,7 @@ fun ImportProgressDialog(
         },
         properties = DialogProperties(dismissOnBackPress = state !is ImportState.Importing)
     ) {
+        LiquidGlassDialogEffect()
         ExportImportCard(
             modifier = Modifier
                 .fillMaxWidth()
@@ -506,6 +510,7 @@ fun ValidatingDialog() {
         onDismissRequest = { },
         properties = DialogProperties(dismissOnBackPress = false)
     ) {
+        LiquidGlassDialogEffect()
         ExportImportCard(
             modifier = Modifier
                 .fillMaxWidth()

@@ -38,6 +38,7 @@ import com.kunk.singbox.ui.components.StyledTextField
 import androidx.compose.foundation.shape.RoundedCornerShape
 import com.kunk.singbox.ui.theme.liquidGlassDialogContainerColor
 import com.kunk.singbox.ui.theme.liquidGlassDialogPanel
+import com.kunk.singbox.ui.theme.LiquidGlassDialogEffect
 import com.kunk.singbox.ui.theme.liquidGlassEmptyStatePanel
 import com.kunk.singbox.ui.theme.liquidGlassIconButtonPanel
 import com.kunk.singbox.ui.theme.liquidGlassTextButtonContentColor
@@ -298,6 +299,7 @@ fun CustomRuleEditorDialog(
             )
         },
         text = {
+            LiquidGlassDialogEffect()
             Column(
                 modifier = Modifier
                     .fillMaxWidth()

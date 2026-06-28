@@ -8,6 +8,23 @@ import org.junit.Test
 
 class NodeAutoFailoverPolicyTest {
 
+    private fun validTriggerContext(): NodeAutoFailoverPolicy.TriggerContext {
+        return NodeAutoFailoverPolicy.TriggerContext(
+            isVpnRunning = true,
+            isManuallyStopped = false,
+            isAutoFailoverInFlight = false,
+            isRecoveryInFlight = false,
+            inStartupGracePeriod = false,
+            inNetworkChangeGracePeriod = false,
+            isProxyIdle = false,
+            lastMeaningfulTrafficAtMs = 99_500L,
+            nowAtMs = 100_000L,
+            lastAutoFailoverAtMs = 0L,
+            budgetWindowStartAtMs = 0L,
+            budgetCount = 0
+        )
+    }
+
     @Test
     fun shouldNotStartProbeWithoutRecentTraffic() {
         val context = NodeAutoFailoverPolicy.TriggerContext(
@@ -180,5 +197,27 @@ class NodeAutoFailoverPolicyTest {
 
         assertEquals(1, cleaned.size)
         assertEquals(" node-a ", cleaned.first().tag)
+    }
+
+    @Test
+    fun dnsFastFailoverMayBypassCooldownButHonorsBudget() {
+        val context = validTriggerContext().copy(
+            lastAutoFailoverAtMs = 80_000L,
+            nowAtMs = 100_000L,
+            budgetWindowStartAtMs = 90_000L,
+            budgetCount = 1
+        )
+
+        assertTrue(NodeAutoFailoverPolicy.shouldStartProbe(context, trigger = "dns_remote_timeout"))
+    }
+
+    @Test
+    fun dnsFastFailoverStillHonorsBudget() {
+        val context = validTriggerContext().copy(
+            budgetWindowStartAtMs = 90_000L,
+            budgetCount = NodeAutoFailoverPolicy.AUTO_FAILOVER_BUDGET_MAX_COUNT
+        )
+
+        assertFalse(NodeAutoFailoverPolicy.shouldStartProbe(context, trigger = "dns_remote_timeout"))
     }
 }

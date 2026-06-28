@@ -122,7 +122,8 @@ data class AppSettings(
 enum class LatencyTestMethod(@StringRes val displayNameRes: Int) {
     @SerializedName("TCP") TCP(R.string.latency_test_tcp),
     @SerializedName("REAL_RTT") REAL_RTT(R.string.latency_test_rtt),
-    @SerializedName("HANDSHAKE") HANDSHAKE(R.string.latency_test_handshake);
+    @SerializedName("HANDSHAKE") HANDSHAKE(R.string.latency_test_handshake),
+    @SerializedName("URL_TEST") URL_TEST(R.string.latency_test_url_test);
 
     companion object {
         fun fromDisplayName(name: String): LatencyTestMethod {

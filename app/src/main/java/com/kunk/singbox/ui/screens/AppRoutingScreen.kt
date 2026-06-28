@@ -1,11 +1,20 @@
 package com.kunk.singbox.ui.screens
 
 import com.kunk.singbox.R
-import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -19,7 +28,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -36,68 +44,123 @@ import com.kunk.singbox.viewmodel.SettingsViewModel
 import com.kunk.singbox.ui.theme.isLiquidGlassTheme
 import com.kunk.singbox.ui.theme.liquidGlassEmptyStatePanel
 import com.kunk.singbox.ui.theme.liquidGlassMutedContentColor
-import com.kunk.singbox.ui.theme.liquidGlassPanel
 import com.kunk.singbox.ui.theme.liquidGlassTopAppBarContainerColor
 import com.kunk.singbox.ui.theme.liquidGlassTopAppBarColors
 import com.kunk.singbox.ui.theme.liquidGlassIconButtonPanel
 import com.kunk.singbox.ui.theme.liquidGlassTabIndicatorColor
-import com.kunk.singbox.ui.theme.liquidGlassTabRowPanel
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 
 @Composable
-private fun LiquidGlassTab(
-    selected: Boolean,
-    title: String,
-    onClick: () -> Unit
+private fun CapsuleSlidingIndicator(
+    indicatorOffset: androidx.compose.ui.unit.Dp,
+    slotWidth: androidx.compose.ui.unit.Dp,
+    selectedBrush: Brush
 ) {
-    if (!isLiquidGlassTheme()) {
-        Tab(
-            selected = selected,
-            onClick = onClick,
-            text = {
-                AppRoutingTabLabel(selected = selected, title = title)
-            }
-        )
-        return
-    }
-
-    val interactionSource = remember { MutableInteractionSource() }
-    val isPressed by interactionSource.collectIsPressedAsState()
-    val scale by animateFloatAsState(
-        targetValue = if (isPressed) 0.96f else 1f,
-        animationSpec = spring(stiffness = 520f, dampingRatio = 0.72f),
-        label = "liquid_glass_app_routing_tab_scale"
-    )
-    val selectedModifier = if (selected) {
-        Modifier.liquidGlassPanel(
-            shape = RoundedCornerShape(18.dp),
-            selected = true,
-            shadowElevation = 4.dp
-        )
-    } else {
-        Modifier
-    }
-
+    val indicatorShape = RoundedCornerShape(percent = 50)
     Box(
         modifier = Modifier
-            .fillMaxWidth()
-            .height(48.dp)
-            .graphicsLayer {
-                scaleX = scale
-                scaleY = scale
-            }
-            .clickable(
-                interactionSource = interactionSource,
-                indication = null,
-                onClick = onClick
-            ),
-        contentAlignment = Alignment.Center
+            .offset(x = indicatorOffset)
+            .width(slotWidth)
+            .fillMaxHeight()
+            .padding(4.dp)
+            .clip(indicatorShape)
+            .background(brush = selectedBrush)
+    )
+}
+
+@Composable
+private fun CapsuleTabLabels(
+    tabs: List<String>,
+    selectedIndex: Int,
+    onTabSelected: (Int) -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Box(
-            modifier = selectedModifier.padding(horizontal = 16.dp, vertical = 8.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            AppRoutingTabLabel(selected = selected, title = title)
+        tabs.forEachIndexed { index, title ->
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight()
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClick = { onTabSelected(index) }
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
+                AppRoutingTabLabel(
+                    selected = selectedIndex == index,
+                    title = title
+                )
+            }
         }
+    }
+}
+
+@Composable
+private fun LiquidGlassTabCapsule(
+    selectedIndex: Int,
+    tabs: List<String>,
+    onTabSelected: (Int) -> Unit
+) {
+    val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
+    val capsuleShape = RoundedCornerShape(percent = 50)
+    val itemCount = tabs.size
+    val capsuleBorderColor = if (isDark) Color.White.copy(alpha = 0.14f) else Color.White.copy(alpha = 0.62f)
+
+    val capsuleBrush = Brush.verticalGradient(
+        colors = listOf(
+            Color.White.copy(alpha = if (isDark) 0.14f else 0.48f),
+            MaterialTheme.colorScheme.surface.copy(alpha = if (isDark) 0.48f else 0.58f),
+            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = if (isDark) 0.24f else 0.34f)
+        )
+    )
+
+    val selectedBrush = Brush.verticalGradient(
+        colors = listOf(
+            Color.White.copy(alpha = if (isDark) 0.24f else 0.78f),
+            Color.White.copy(alpha = if (isDark) 0.16f else 0.48f),
+            Color.White.copy(alpha = if (isDark) 0.10f else 0.26f)
+        )
+    )
+
+    BoxWithConstraints(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp)
+            .height(48.dp)
+            .shadow(elevation = 8.dp, shape = capsuleShape, clip = false)
+            .clip(capsuleShape)
+            .background(brush = capsuleBrush)
+            .border(BorderStroke(1.dp, capsuleBorderColor), capsuleShape),
+        contentAlignment = Alignment.CenterStart
+    ) {
+        val slotWidth = maxWidth / itemCount.toFloat()
+        val clampedIndex = selectedIndex.coerceIn(0, itemCount - 1)
+        val targetOffset = slotWidth * clampedIndex.toFloat()
+        val indicatorOffset by animateDpAsState(
+            targetValue = targetOffset,
+            animationSpec = spring(stiffness = 430f, dampingRatio = 0.82f),
+            label = "liquid_glass_tab_indicator_offset"
+        )
+
+        CapsuleSlidingIndicator(
+            indicatorOffset = indicatorOffset,
+            slotWidth = slotWidth,
+            selectedBrush = selectedBrush
+        )
+
+        CapsuleTabLabels(
+            tabs = tabs,
+            selectedIndex = selectedIndex,
+            onTabSelected = onTabSelected
+        )
     }
 }
 
@@ -113,6 +176,7 @@ private fun AppRoutingTabLabel(
     )
 }
 
+@Suppress("LongMethod", "CyclomaticComplexMethod", "CognitiveComplexMethod")
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AppRoutingScreen(
@@ -274,80 +338,112 @@ fun AppRoutingScreen(
                     },
                     colors = liquidGlassTopAppBarColors(defaultContainerColor = MaterialTheme.colorScheme.background)
                 )
-                TabRow(
-                    modifier = Modifier.liquidGlassTabRowPanel(),
-                    selectedTabIndex = selectedTab,
-                    containerColor = liquidGlassTopAppBarContainerColor(MaterialTheme.colorScheme.background),
-                    contentColor = MaterialTheme.colorScheme.onBackground,
-                    indicator = { tabPositions ->
-                        if (useLiquidGlass) {
-                            Box {}
-                        } else {
+                if (useLiquidGlass) {
+                    LiquidGlassTabCapsule(
+                        selectedIndex = selectedTab,
+                        tabs = tabs,
+                        onTabSelected = { selectedTab = it }
+                    )
+                } else {
+                    TabRow(
+                        selectedTabIndex = selectedTab,
+                        containerColor = MaterialTheme.colorScheme.background,
+                        contentColor = MaterialTheme.colorScheme.onBackground,
+                        indicator = { tabPositions ->
                             TabRowDefaults.Indicator(
                                 Modifier.tabIndicatorOffset(tabPositions[selectedTab]),
                                 color = liquidGlassTabIndicatorColor(MaterialTheme.colorScheme.primary)
                             )
+                        },
+                        divider = {}
+                    ) {
+                        tabs.forEachIndexed { index, title ->
+                            Tab(
+                                selected = selectedTab == index,
+                                onClick = { selectedTab = index },
+                                text = {
+                                    AppRoutingTabLabel(selected = selectedTab == index, title = title)
+                                }
+                            )
                         }
-                    },
-                    divider = {}
-                ) {
-                    tabs.forEachIndexed { index, title ->
-                        LiquidGlassTab(
-                            selected = selectedTab == index,
-                            onClick = { selectedTab = index },
-                            title = title
-                        )
                     }
                 }
             }
         }
     ) { padding ->
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding),
-            contentPadding = PaddingValues(
-                start = 16.dp,
-                top = 16.dp,
-                end = 16.dp,
-                bottom = 16.dp + WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
-            ),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            if (selectedTab == 0) {
-                if (settings.appGroups.isEmpty()) {
-                    item {
-                        EmptyState(Icons.Rounded.Folder, stringResource(R.string.app_rules_empty_groups), stringResource(R.string.app_rules_empty_groups_hint))
-                    }
+        AnimatedContent(
+            targetState = selectedTab,
+            transitionSpec = {
+                val animDuration = 350
+                if (targetState > initialState) {
+                    (slideInHorizontally(
+                        initialOffsetX = { it / 4 },
+                        animationSpec = tween(animDuration)
+                    ) + fadeIn(animationSpec = tween(animDuration))) togetherWith
+                        (slideOutHorizontally(
+                            targetOffsetX = { -it / 4 },
+                            animationSpec = tween(animDuration)
+                        ) + fadeOut(animationSpec = tween(animDuration)))
                 } else {
-                    items(settings.appGroups) { group ->
-                        val mode = group.outboundMode ?: RuleSetOutboundMode.PROXY
-                        val outboundText = resolveOutboundText(mode, group.outboundValue, allNodes, profiles)
-                        AppGroupCard(
-                            group = group,
-                            outboundText = "${stringResource(mode.displayNameRes)} -> $outboundText",
-                            onClick = { editingGroup = group },
-                            onToggle = { settingsViewModel.toggleAppGroupEnabled(group.id) },
-                            onDelete = { showDeleteGroupConfirm = group }
-                        )
-                    }
+                    (slideInHorizontally(
+                        initialOffsetX = { -it / 4 },
+                        animationSpec = tween(animDuration)
+                    ) + fadeIn(animationSpec = tween(animDuration))) togetherWith
+                        (slideOutHorizontally(
+                            targetOffsetX = { it / 4 },
+                            animationSpec = tween(animDuration)
+                        ) + fadeOut(animationSpec = tween(animDuration)))
                 }
-            } else {
-                if (settings.appRules.isEmpty()) {
-                    item {
-                        EmptyState(Icons.Rounded.Apps, stringResource(R.string.app_rules_empty_individual), stringResource(R.string.app_rules_empty_individual_hint))
+            },
+            label = "app_routing_tab_content"
+        ) { tab ->
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding),
+                contentPadding = PaddingValues(
+                    start = 16.dp,
+                    top = 16.dp,
+                    end = 16.dp,
+                    bottom = 16.dp + WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+                ),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                if (tab == 0) {
+                    if (settings.appGroups.isEmpty()) {
+                        item {
+                            EmptyState(Icons.Rounded.Folder, stringResource(R.string.app_rules_empty_groups), stringResource(R.string.app_rules_empty_groups_hint))
+                        }
+                    } else {
+                        items(settings.appGroups) { group ->
+                            val mode = group.outboundMode ?: RuleSetOutboundMode.PROXY
+                            val outboundText = resolveOutboundText(mode, group.outboundValue, allNodes, profiles)
+                            AppGroupCard(
+                                group = group,
+                                outboundText = "${stringResource(mode.displayNameRes)} -> $outboundText",
+                                onClick = { editingGroup = group },
+                                onToggle = { settingsViewModel.toggleAppGroupEnabled(group.id) },
+                                onDelete = { showDeleteGroupConfirm = group }
+                            )
+                        }
                     }
                 } else {
-                    items(settings.appRules) { rule ->
-                        val mode = rule.outboundMode ?: RuleSetOutboundMode.PROXY
-                        val outboundText = resolveOutboundText(mode, rule.outboundValue, allNodes, profiles)
-                        AppRuleItem(
-                            rule = rule,
-                            outboundText = "${stringResource(mode.displayNameRes)} -> $outboundText",
-                            onClick = { editingRule = rule },
-                            onToggle = { settingsViewModel.toggleAppRuleEnabled(rule.id) },
-                            onDelete = { showDeleteRuleConfirm = rule }
-                        )
+                    if (settings.appRules.isEmpty()) {
+                        item {
+                            EmptyState(Icons.Rounded.Apps, stringResource(R.string.app_rules_empty_individual), stringResource(R.string.app_rules_empty_individual_hint))
+                        }
+                    } else {
+                        items(settings.appRules) { rule ->
+                            val mode = rule.outboundMode ?: RuleSetOutboundMode.PROXY
+                            val outboundText = resolveOutboundText(mode, rule.outboundValue, allNodes, profiles)
+                            AppRuleItem(
+                                rule = rule,
+                                outboundText = "${stringResource(mode.displayNameRes)} -> $outboundText",
+                                onClick = { editingRule = rule },
+                                onToggle = { settingsViewModel.toggleAppRuleEnabled(rule.id) },
+                                onDelete = { showDeleteRuleConfirm = rule }
+                            )
+                        }
                     }
                 }
             }

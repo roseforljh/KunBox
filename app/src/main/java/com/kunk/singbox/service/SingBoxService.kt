@@ -23,6 +23,7 @@ import com.kunk.singbox.ipc.SingBoxIpcHub
 import com.kunk.singbox.ipc.VpnStateStore
 import com.kunk.singbox.model.AppSettings
 import com.kunk.singbox.model.BackgroundPowerSavingDelay
+import com.kunk.singbox.model.Outbound
 import com.kunk.singbox.model.SingBoxConfig
 import com.kunk.singbox.repository.ConfigRepository
 import com.kunk.singbox.repository.LogRepository
@@ -65,6 +66,13 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
+
+internal data class ActiveProbeResult(
+    val googleProbeOk: Boolean? = null,
+    val cloudflareProbeOk: Boolean? = null,
+    val metaProbeOk: Boolean,
+    val fullSweep: Boolean
+)
 
 @Suppress("TooManyFunctions", "LargeClass", "ProtectedMemberInFinalClass")
 class SingBoxService : VpnService() {
@@ -268,6 +276,7 @@ class SingBoxService : VpnService() {
             serviceScope.launch {
                 KernelHttpClient.updateProxyPortFromSettings(this@SingBoxService)
             }
+            warmAutoFailoverCandidateCache("vpn_started")
         }
 
         override fun onFailed(error: String) {
@@ -330,8 +339,7 @@ class SingBoxService : VpnService() {
         }
 
         override fun startHealthMonitor() {
-            // 健康监控已移除，保留空实现
-            Log.i(SingBoxService.TAG, "Health monitor disabled (simplified mode)")
+            startActiveHealthProbeMonitor()
         }
 
         override fun scheduleKeepaliveWorker() {
@@ -557,10 +565,16 @@ class SingBoxService : VpnService() {
     // TrafficMonitor 实例 - 统一管理流量监控和卡死检测
 
     protected val trafficMonitor = TrafficMonitor(serviceScope)
+    private val healthSignalAggregator = HealthSignalAggregator()
+    private val autoFailoverCandidateCache = AutoFailoverCandidateCache()
     @Volatile protected var lastMeaningfulTrafficAtMs: Long = 0L
     @Volatile protected var isProxyIdleForAutoFailover: Boolean = false
     @Volatile protected var autoFailoverServiceStartedAtMs: Long = 0L
     @Volatile protected var lastAutoFailoverNetworkEventAtMs: Long = 0L
+    @Volatile protected var activeHealthProbeJob: Job? = null
+    @Volatile protected var lastFullActiveHealthProbeAtMs: Long = 0L
+    @Volatile protected var activeHealthProbeTrafficIgnoreUntilMs: Long = 0L
+    protected val activeHealthProbeRunning = AtomicBoolean(false)
 
     protected val trafficListener = object : TrafficMonitor.Listener {
         override fun onTrafficUpdate(snapshot: TrafficMonitor.TrafficSnapshot) {
@@ -819,6 +833,11 @@ class SingBoxService : VpnService() {
                 Log.i(SingBoxService.TAG, "CommandManager: onServiceReload requested")
             }
         })
+        commandManager.setKernelLogObserver { message ->
+            serviceScope.launch(Dispatchers.IO) {
+                handleKernelLogForHealthSignal(message)
+            }
+        }
         Log.i(SingBoxService.TAG, "CommandManager initialized")
     }
 
@@ -1212,11 +1231,173 @@ class SingBoxService : VpnService() {
 
     protected fun handleTrafficUpdateForAutoFailover(snapshot: TrafficMonitor.TrafficSnapshot) {
         val totalSpeed = snapshot.uploadSpeed + snapshot.downloadSpeed
-        if (totalSpeed < SingBoxService.AUTO_FAILOVER_MEANINGFUL_TRAFFIC_BPS) {
+        if (!SingBoxService.shouldRecordMeaningfulTrafficForAutoFailover(
+                totalSpeed = totalSpeed,
+                nowAtMs = System.currentTimeMillis(),
+                activeProbeTrafficIgnoreUntilMs = activeHealthProbeTrafficIgnoreUntilMs
+            )
+        ) {
             return
         }
         lastMeaningfulTrafficAtMs = System.currentTimeMillis()
         isProxyIdleForAutoFailover = false
+    }
+
+    protected fun startActiveHealthProbeMonitor() {
+        if (activeHealthProbeJob?.isActive == true) {
+            return
+        }
+        activeHealthProbeJob = serviceScope.launch {
+            while (isActive) {
+                runActiveHealthProbeTick(System.currentTimeMillis())
+                delay(SingBoxService.ACTIVE_HEALTH_PROBE_CANARY_INTERVAL_MS)
+            }
+        }
+    }
+
+    private suspend fun runActiveHealthProbeTick(nowAtMs: Long) {
+        if (!shouldRunActiveHealthProbe(nowAtMs) || !activeHealthProbeRunning.compareAndSet(false, true)) {
+            return
+        }
+        try {
+            markActiveHealthProbeTrafficWindow(nowAtMs)
+            val fullSweep = shouldRunFullActiveHealthProbe(nowAtMs)
+            if (fullSweep) {
+                lastFullActiveHealthProbeAtMs = nowAtMs
+            }
+            val result = runActiveTunnelHealthProbe(fullSweep)
+            handleActiveProbeResult(result)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(SingBoxService.TAG, "[HealthProbe] active probe failed", e)
+        } finally {
+            markActiveHealthProbeTrafficWindow(System.currentTimeMillis())
+            activeHealthProbeRunning.set(false)
+        }
+    }
+
+    private fun markActiveHealthProbeTrafficWindow(nowAtMs: Long) {
+        val ignoreUntil = nowAtMs + SingBoxService.ACTIVE_HEALTH_PROBE_TRAFFIC_IGNORE_MS
+        if (ignoreUntil > activeHealthProbeTrafficIgnoreUntilMs) {
+            activeHealthProbeTrafficIgnoreUntilMs = ignoreUntil
+        }
+    }
+
+    protected fun stopActiveHealthProbeMonitor() {
+        activeHealthProbeJob?.cancel()
+        activeHealthProbeJob = null
+        activeHealthProbeRunning.set(false)
+        lastFullActiveHealthProbeAtMs = 0L
+    }
+
+    protected fun shouldRunActiveHealthProbe(nowAtMs: Long): Boolean {
+        if (!SingBoxService.shouldAllowRecoveryExecution(
+                isRunning = SingBoxService.isRunning,
+                isStarting = SingBoxService.isStarting,
+                isStopping = isStopping,
+                isManuallyStopped = SingBoxService.isManuallyStopped
+            )
+        ) {
+            return false
+        }
+        if (isAutoFailoverStartupGracePeriod(nowAtMs) || isAutoFailoverNetworkGracePeriod(nowAtMs)) {
+            return false
+        }
+        return SingBoxService.shouldRunActiveHealthProbeForSignals(
+            isAppInForeground = isAppInForeground,
+            lastMeaningfulTrafficAtMs = lastMeaningfulTrafficAtMs,
+            nowAtMs = nowAtMs
+        )
+    }
+
+    protected fun shouldRunFullActiveHealthProbe(nowAtMs: Long): Boolean {
+        val last = lastFullActiveHealthProbeAtMs
+        return last <= 0L || nowAtMs - last >= SingBoxService.ACTIVE_HEALTH_PROBE_FULL_INTERVAL_MS
+    }
+
+    private suspend fun runActiveTunnelHealthProbe(fullSweep: Boolean): ActiveProbeResult = coroutineScope {
+        val meta = async {
+            BoxWrapperManager.probeTunnelViaLocalProxy(
+                context = this@SingBoxService,
+                timeoutMs = SingBoxService.ACTIVE_HEALTH_PROBE_TIMEOUT_MS,
+                probeUrlOverride = BoxWrapperManager.META_TUNNEL_HEALTH_PROBE_URL,
+                headersOnly = true,
+                healthyWhenProxyUnavailable = false
+            )
+        }
+        if (!fullSweep) {
+            return@coroutineScope ActiveProbeResult(metaProbeOk = meta.await(), fullSweep = false)
+        }
+        val google = async {
+            BoxWrapperManager.probeTunnelViaLocalProxy(
+                context = this@SingBoxService,
+                timeoutMs = SingBoxService.ACTIVE_HEALTH_PROBE_TIMEOUT_MS,
+                probeUrlOverride = BoxWrapperManager.FOREGROUND_TUNNEL_HEALTH_PROBE_URL,
+                headersOnly = true,
+                healthyWhenProxyUnavailable = false
+            )
+        }
+        val cloudflare = async {
+            BoxWrapperManager.probeTunnelViaLocalProxy(
+                context = this@SingBoxService,
+                timeoutMs = SingBoxService.ACTIVE_HEALTH_PROBE_TIMEOUT_MS,
+                probeUrlOverride = BoxWrapperManager.CLOUDFLARE_TUNNEL_HEALTH_PROBE_URL,
+                headersOnly = true,
+                healthyWhenProxyUnavailable = false
+            )
+        }
+        ActiveProbeResult(
+            googleProbeOk = google.await(),
+            cloudflareProbeOk = cloudflare.await(),
+            metaProbeOk = meta.await(),
+            fullSweep = true
+        )
+    }
+
+    protected fun handleKernelLogForHealthSignal(message: String) {
+        val signal = healthSignalAggregator.observeKernelLog(
+            line = message,
+            nowMs = SystemClock.elapsedRealtime()
+        ) ?: return
+
+        LogRepository.getInstance().addLog(HealthSignalAggregator.buildSummary(signal))
+        submitAutoFailoverSuspicion("dns_remote_timeout")
+    }
+
+    private fun handleActiveProbeResult(result: ActiveProbeResult) {
+        if (!SingBoxService.shouldTreatActiveProbeAsNodeFailure(
+                googleProbeOk = result.googleProbeOk ?: true,
+                cloudflareProbeOk = result.cloudflareProbeOk ?: true,
+                metaProbeOk = result.metaProbeOk
+            )
+        ) {
+            return
+        }
+        LogRepository.getInstance().addLog(
+            SingBoxService.buildActiveProbeFailureSummary(
+                result = result,
+                coreAvailable = BoxWrapperManager.isAvailable()
+            )
+        )
+        submitAutoFailoverSuspicion("active_probe_failed")
+    }
+
+    protected fun warmAutoFailoverCandidateCache(reason: String) {
+        val currentTag = resolveCurrentProxyOutboundTag() ?: return
+        val latencies = ConfigRepository.getInstance(this@SingBoxService)
+            .nodes
+            .value
+            .associate { node -> node.name to (node.latencyMs ?: -1L) }
+        if (latencies.isEmpty()) {
+            return
+        }
+        autoFailoverCandidateCache.warmFromSavedLatencies(
+            currentTag = currentTag,
+            tagLatencies = latencies,
+            nowMs = System.currentTimeMillis()
+        )
+        Log.d(SingBoxService.TAG, "[AutoFailover] warmed candidate cache: $reason")
     }
 
     protected fun submitAutoFailoverSuspicion(trigger: String) {
@@ -1234,14 +1415,19 @@ class SingBoxService : VpnService() {
             inStartupGracePeriod = isAutoFailoverStartupGracePeriod(now),
             inNetworkChangeGracePeriod = isAutoFailoverNetworkGracePeriod(now),
             isProxyIdle = isProxyIdleForAutoFailover,
-            lastMeaningfulTrafficAtMs = lastMeaningfulTrafficAtMs,
+            lastMeaningfulTrafficAtMs = SingBoxService.resolveAutoFailoverTrafficSignalAtMs(
+                trigger = trigger,
+                isAppInForeground = isAppInForeground,
+                lastMeaningfulTrafficAtMs = lastMeaningfulTrafficAtMs,
+                nowAtMs = now
+            ),
             nowAtMs = now,
             lastAutoFailoverAtMs = VpnStateStore.getLastAutoFailoverAtMs(),
             budgetWindowStartAtMs = VpnStateStore.getAutoFailoverWindowStartAtMs(),
             budgetCount = VpnStateStore.getAutoFailoverCountInWindow()
         )
 
-        if (!NodeAutoFailoverPolicy.shouldStartProbe(context)) {
+        if (!NodeAutoFailoverPolicy.shouldStartProbe(context, trigger = trigger)) {
             Log.d(SingBoxService.TAG, "[AutoFailover] suspicion ignored by policy: $trigger")
             return
         }
@@ -1269,33 +1455,21 @@ class SingBoxService : VpnService() {
 
     protected suspend fun runAutoFailoverProbeSequence(trigger: String) {
         try {
-            val currentTag = resolveCurrentProxyOutboundTag()
-            if (currentTag.isNullOrBlank()) {
-                Log.d(SingBoxService.TAG, "[AutoFailover] skip, no current PROXY selection: $trigger")
-                return
+            val completed = if (SingBoxService.isHealthFastPathTrigger(trigger)) {
+                withTimeoutOrNull(SingBoxService.HEALTH_FAST_FAILOVER_TOTAL_TIMEOUT_MS) {
+                    runAutoFailoverProbeSequenceBody(trigger)
+                    true
+                } == true
+            } else {
+                runAutoFailoverProbeSequenceBody(trigger)
+                true
             }
-
-            val firstEvaluation = runAutoFailoverProbeRound(currentTag)
-            when {
-                firstEvaluation.outcome == NodeAutoFailoverPolicy.ProbeOutcome.CURRENT_HEALTHY -> {
-                    Log.i(SingBoxService.TAG, "[AutoFailover] current node healthy on first probe: $currentTag")
-                }
-
-                firstEvaluation.outcome !=
-                    NodeAutoFailoverPolicy.ProbeOutcome.CURRENT_FAILED_WITH_ALTERNATIVE -> {
-                    Log.i(
-                        SingBoxService.TAG,
-                        "[AutoFailover] probe did not find a healthy alternative: ${firstEvaluation.outcome}"
-                    )
-                }
-
-                else -> {
-                    handleSecondAutoFailoverProbe(
-                        currentTag = currentTag,
-                        firstEvaluation = firstEvaluation,
-                        trigger = trigger
-                    )
-                }
+            if (!completed) {
+                LogRepository.getInstance().addLog(
+                    "WARN: Health failover probe timed out trigger=$trigger " +
+                        "budget=${SingBoxService.HEALTH_FAST_FAILOVER_TOTAL_TIMEOUT_MS}ms"
+                )
+                Log.w(SingBoxService.TAG, "[AutoFailover] health fast path timed out: $trigger")
             }
         } catch (e: CancellationException) {
             throw e
@@ -1306,13 +1480,50 @@ class SingBoxService : VpnService() {
         }
     }
 
+    private suspend fun runAutoFailoverProbeSequenceBody(trigger: String) {
+        val currentTag = resolveCurrentProxyOutboundTag()
+        if (currentTag.isNullOrBlank()) {
+            Log.d(SingBoxService.TAG, "[AutoFailover] skip, no current PROXY selection: $trigger")
+            return
+        }
+
+        if (SingBoxService.isHealthFastPathTrigger(trigger)) {
+            LogRepository.getInstance().addLog(
+                "INFO: Health failover probe started current=$currentTag trigger=$trigger"
+            )
+        }
+
+        val firstEvaluation = runAutoFailoverProbeRound(currentTag, trigger)
+        when {
+            firstEvaluation.outcome == NodeAutoFailoverPolicy.ProbeOutcome.CURRENT_HEALTHY -> {
+                Log.i(SingBoxService.TAG, "[AutoFailover] current node healthy on first probe: $currentTag")
+            }
+
+            firstEvaluation.outcome !=
+                NodeAutoFailoverPolicy.ProbeOutcome.CURRENT_FAILED_WITH_ALTERNATIVE -> {
+                Log.i(
+                    SingBoxService.TAG,
+                    "[AutoFailover] probe did not find a healthy alternative: ${firstEvaluation.outcome}"
+                )
+            }
+
+            else -> {
+                handleSecondAutoFailoverProbe(
+                    currentTag = currentTag,
+                    firstEvaluation = firstEvaluation,
+                    trigger = trigger
+                )
+            }
+        }
+    }
+
     protected suspend fun handleSecondAutoFailoverProbe(
         currentTag: String,
         firstEvaluation: NodeAutoFailoverPolicy.ProbeEvaluation,
         trigger: String
     ) {
-        delay(SingBoxService.AUTO_FAILOVER_PROBE_RETRY_DELAY_MS)
-        val secondEvaluation = runAutoFailoverProbeRound(currentTag)
+        delay(SingBoxService.resolveAutoFailoverRetryDelayMs(trigger))
+        val secondEvaluation = runAutoFailoverProbeRound(currentTag, trigger)
         when {
             secondEvaluation.outcome !=
                 NodeAutoFailoverPolicy.ProbeOutcome.CURRENT_FAILED_WITH_ALTERNATIVE -> {
@@ -1335,13 +1546,23 @@ class SingBoxService : VpnService() {
     }
 
     protected suspend fun runAutoFailoverProbeRound(
-        currentTag: String
+        currentTag: String,
+        trigger: String
     ): NodeAutoFailoverPolicy.ProbeEvaluation {
-        var results = testGroupCandidatesLatency("PROXY")
+        var results = testGroupCandidatesLatency("PROXY", currentTag, trigger)
         val currentHealthyInResults = UrlTestTagMatcher.resolveDelayDetail(results, currentTag)
             ?.delay?.let { it > 0 } == true
-        if (currentHealthyInResults) {
-            val tunnelOk = BoxWrapperManager.probeTunnelViaLocalProxy(this@SingBoxService)
+        if (currentHealthyInResults || SingBoxService.isHealthFastPathTrigger(trigger)) {
+            val tunnelOk = if (SingBoxService.isHealthFastPathTrigger(trigger)) {
+                val result = runActiveTunnelHealthProbe(fullSweep = true)
+                !SingBoxService.shouldTreatActiveProbeAsNodeFailure(
+                    googleProbeOk = result.googleProbeOk ?: true,
+                    cloudflareProbeOk = result.cloudflareProbeOk ?: true,
+                    metaProbeOk = result.metaProbeOk
+                )
+            } else {
+                BoxWrapperManager.probeTunnelViaLocalProxy(this@SingBoxService)
+            }
             if (!tunnelOk) {
                 Log.w(
                     SingBoxService.TAG,
@@ -1372,29 +1593,107 @@ class SingBoxService : VpnService() {
         return evaluation
     }
 
-    protected suspend fun testGroupCandidatesLatency(groupTag: String): Map<String, Int> = coroutineScope {
+    protected suspend fun testGroupCandidatesLatency(groupTag: String): Map<String, Int> {
+        return testGroupCandidatesLatency(groupTag, currentTag = null, trigger = "")
+    }
+
+    protected suspend fun testGroupCandidatesLatency(
+        groupTag: String,
+        currentTag: String?,
+        trigger: String
+    ): Map<String, Int> = coroutineScope {
         val config = loadLastRunningConfig() ?: return@coroutineScope emptyMap()
         val outbounds = config.outbounds.orEmpty()
         val byTag = outbounds.associateBy { it.tag }
-        val groupCandidates = byTag[groupTag]
+        var groupCandidates = resolveAutoFailoverGroupCandidates(groupTag, outbounds, byTag)
+        if (groupCandidates.isEmpty()) return@coroutineScope emptyMap()
+
+        val quarantined = loadActiveAutoFailoverQuarantine(System.currentTimeMillis()).map { it.tag }.toSet()
+        groupCandidates = limitAutoFailoverCandidatesForTrigger(
+            groupCandidates = groupCandidates,
+            currentTag = currentTag,
+            trigger = trigger,
+            quarantinedTags = quarantined
+        )
+        if (groupCandidates.isEmpty()) return@coroutineScope emptyMap()
+
+        val resultMap = measureAutoFailoverCandidateLatencies(groupCandidates, outbounds, trigger)
+        updateAutoFailoverCandidateCache(currentTag, resultMap, quarantined)
+        resultMap
+    }
+
+    private fun resolveAutoFailoverGroupCandidates(
+        groupTag: String,
+        outbounds: List<Outbound>,
+        byTag: Map<String, Outbound>
+    ): List<Outbound> {
+        return byTag[groupTag]
             ?.outbounds
             .orEmpty()
             .mapNotNull { byTag[it] }
             .ifEmpty {
                 outbounds.filter { outbound -> outbound.type !in SingBoxService.LATENCY_SKIPPED_OUTBOUND_TYPES }
             }
-        if (groupCandidates.isEmpty()) return@coroutineScope emptyMap()
+    }
 
+    private fun limitAutoFailoverCandidatesForTrigger(
+        groupCandidates: List<Outbound>,
+        currentTag: String?,
+        trigger: String,
+        quarantinedTags: Set<String>
+    ): List<Outbound> {
+        if (!SingBoxService.isHealthFastPathTrigger(trigger)) {
+            return groupCandidates
+        }
+        val cachedBackup = currentTag?.let {
+            autoFailoverCandidateCache.resolve(
+                currentTag = it,
+                nowMs = System.currentTimeMillis(),
+                quarantinedTags = quarantinedTags
+            )
+        }
+        val selectedTags = SingBoxService.selectAutoFailoverProbeCandidates(
+            currentTag = currentTag.orEmpty(),
+            cachedBackupTag = cachedBackup,
+            candidateTags = groupCandidates.map { it.tag },
+            trigger = trigger,
+            quarantinedTags = quarantinedTags
+        ).toSet()
+        return groupCandidates.filter { it.tag in selectedTags }
+    }
+
+    private suspend fun measureAutoFailoverCandidateLatencies(
+        groupCandidates: List<Outbound>,
+        outbounds: List<Outbound>,
+        trigger: String
+    ): Map<String, Int> = coroutineScope {
+        if (SingBoxService.isHealthFastPathTrigger(trigger)) {
+            return@coroutineScope measureFastAutoFailoverCandidateLatencies(groupCandidates, outbounds, trigger)
+        }
         val settings = SettingsRepository.getInstance(this@SingBoxService).settings.first()
-        val semaphore = Semaphore(settings.latencyTestConcurrency.coerceIn(1, 20))
+        val concurrency = SingBoxService.resolveAutoFailoverCandidateConcurrency(
+            trigger = trigger,
+            userConcurrency = settings.latencyTestConcurrency,
+            candidateCount = groupCandidates.size
+        )
+        val timeoutMs = SingBoxService.resolveAutoFailoverCandidateTimeoutMs(
+            trigger = trigger,
+            userTimeoutMs = settings.latencyTestTimeout
+        )
+        val allowFallback = !SingBoxService.isHealthFastPathTrigger(trigger)
+        val semaphore = Semaphore(concurrency)
         val core = SingBoxCore.getInstance(this@SingBoxService)
         val results = ConcurrentHashMap<String, Int>()
-
         groupCandidates.map { outbound ->
             async(Dispatchers.IO) {
                 semaphore.withPermit {
                     val latency = runCatching {
-                        core.testOutboundLatency(outbound, outbounds)
+                        core.testOutboundLatency(
+                            outbound = outbound,
+                            allOutbounds = outbounds,
+                            timeoutOverrideMs = timeoutMs,
+                            allowFallback = allowFallback
+                        )
                     }.getOrDefault(-1L)
                     if (latency > 0L && latency <= Int.MAX_VALUE) {
                         results[outbound.tag] = latency.toInt()
@@ -1402,8 +1701,52 @@ class SingBoxService : VpnService() {
                 }
             }
         }.awaitAll()
-
         results.toMap()
+    }
+
+    private suspend fun measureFastAutoFailoverCandidateLatencies(
+        groupCandidates: List<Outbound>,
+        outbounds: List<Outbound>,
+        trigger: String
+    ): Map<String, Int> {
+        val settings = SettingsRepository.getInstance(this@SingBoxService).settings.first()
+        val concurrency = SingBoxService.resolveAutoFailoverCandidateConcurrency(
+            trigger = trigger,
+            userConcurrency = settings.latencyTestConcurrency,
+            candidateCount = groupCandidates.size
+        )
+        val timeoutMs = SingBoxService.resolveAutoFailoverCandidateTimeoutMs(
+            trigger = trigger,
+            userTimeoutMs = settings.latencyTestTimeout
+        )
+        val results = ConcurrentHashMap<String, Int>()
+        SingBoxCore.getInstance(this@SingBoxService).testOutboundsLatency(
+            outbounds = groupCandidates,
+            allOutbounds = outbounds,
+            timeoutOverrideMs = timeoutMs,
+            concurrencyOverride = concurrency,
+            portReadyTimeoutOverrideMs = SingBoxService.resolveAutoFailoverPortReadyTimeoutMs(trigger)
+        ) { tag, latency ->
+            if (latency > 0L && latency <= Int.MAX_VALUE) {
+                results[tag] = latency.toInt()
+            }
+        }
+        return results.toMap()
+    }
+
+    private fun updateAutoFailoverCandidateCache(
+        currentTag: String?,
+        resultMap: Map<String, Int>,
+        quarantinedTags: Set<String>
+    ) {
+        if (!currentTag.isNullOrBlank() && resultMap.isNotEmpty()) {
+            autoFailoverCandidateCache.update(
+                currentTag = currentTag,
+                delays = resultMap,
+                nowMs = System.currentTimeMillis(),
+                quarantinedTags = quarantinedTags
+            )
+        }
     }
 
     protected fun loadLastRunningConfig(): SingBoxConfig? {
@@ -1422,6 +1765,7 @@ class SingBoxService : VpnService() {
         trigger: String
     ) {
         val now = System.currentTimeMillis()
+        val startedAtMs = SystemClock.elapsedRealtime()
         val currentQuarantine = loadActiveAutoFailoverQuarantine(now).toMutableList()
         currentQuarantine.add(NodeAutoFailoverPolicy.createQuarantineRecord(currentTag, now))
         val cleanedQuarantine = NodeAutoFailoverPolicy.cleanupExpiredQuarantine(currentQuarantine, now)
@@ -1453,8 +1797,16 @@ class SingBoxService : VpnService() {
             requestNotificationUpdate(force = true)
             requestRemoteStateUpdate(force = true)
             routeGroupSelector.requestImmediateReselect("vpn_health_auto_failover")
+            if (SingBoxService.shouldResetAfterAutoFailover(trigger)) {
+                val closed = BoxWrapperManager.closeAllTrackedConnections()
+                BoxWrapperManager.resetNetwork()
+                LogRepository.getInstance().addLog(
+                    "INFO: Health failover converged connections, trigger=$trigger, closed=$closed"
+                )
+            }
+            val elapsedMs = SystemClock.elapsedRealtime() - startedAtMs
             LogRepository.getInstance().addLog(
-                "INFO: Auto failover switched from $currentTag to $displayName (trigger=$trigger)"
+                "INFO: Auto failover switched from $currentTag to $displayName trigger=$trigger elapsed=${elapsedMs}ms"
             )
             Log.i(SingBoxService.TAG, "[AutoFailover] switched from $currentTag to $displayName, trigger=$trigger")
             return
@@ -1973,6 +2325,25 @@ class SingBoxService : VpnService() {
         }
     }
 
+    protected suspend fun collectForegroundHardFallbackProbeSignal(): SingBoxServiceForegroundHardFallbackProbeSignal {
+        return SingBoxService.collectForegroundHardFallbackProbeSignal(
+            physicalProbe = {
+                ProbeManager.probeFirstSuccessViaVpn(
+                    context = this@SingBoxService,
+                    timeoutMs = 1500L
+                ) != null
+            },
+            tunnelProbe = {
+                BoxWrapperManager.probeTunnelViaLocalProxy(
+                    context = this@SingBoxService,
+                    timeoutMs = 3000L,
+                    probeUrlOverride = BoxWrapperManager.FOREGROUND_TUNNEL_HEALTH_PROBE_URL,
+                    healthyWhenProxyUnavailable = false
+                )
+            }
+        )
+    }
+
     protected fun scheduleForegroundHardFallbackIfNeeded(
         request: RecoveryRequest,
         mode: BoxWrapperManager.RecoveryMode,
@@ -1986,25 +2357,27 @@ class SingBoxService : VpnService() {
         foregroundHardFallbackJob = serviceScope.launch {
             delay(foregroundRecoveryGraceMs)
 
-            // 先探测 VPN 链路，如果正常则跳过 HARD fallback
-            val probeOk = runCatching {
-                ProbeManager.probeFirstSuccessViaVpn(
-                    context = this@SingBoxService,
-                    timeoutMs = 1500L
-                )
-            }.getOrNull() != null
+            val signal = collectForegroundHardFallbackProbeSignal()
 
-            if (probeOk) {
+            if (SingBoxService.shouldSkipForegroundHardFallbackAfterProbe(signal)) {
                 logRecoveryEvent(
                     event = "foreground_hard_fallback_skipped_probe_ok",
                     request = request,
                     mode = BoxWrapperManager.RecoveryMode.HARD,
                     merged = false,
                     skipped = true,
-                    outcome = "vpn_link_healthy_on_probe"
+                    outcome = "physical_probe_ok_and_google_tunnel_probe_ok"
                 )
                 return@launch
             }
+
+            Log.w(
+                TAG,
+                "[RecoveryGate] foreground HARD fallback probe did not prove tunnel healthy: " +
+                    "physicalProbeOk=${signal.physicalProbeOk}, " +
+                    "tunnelProbeOk=${signal.tunnelProbeOk}, " +
+                    "url=${BoxWrapperManager.FOREGROUND_TUNNEL_HEALTH_PROBE_URL}"
+            )
 
             val state = evaluateForegroundFallbackState()
             logRecoveryEvent(
@@ -2039,15 +2412,30 @@ class SingBoxService : VpnService() {
             )
         }.getOrNull() != null
 
+        val tunnelProbeSucceeded = if (probeSucceeded) {
+            runCatching {
+                BoxWrapperManager.probeTunnelViaLocalProxy(
+                    context = this@SingBoxService,
+                    timeoutMs = 3000L,
+                    probeUrlOverride = BoxWrapperManager.FOREGROUND_TUNNEL_HEALTH_PROBE_URL,
+                    healthyWhenProxyUnavailable = false
+                )
+            }.getOrDefault(false)
+        } else {
+            false
+        }
+
         val networkRecoveryNeeded = runCatching {
             !BoxWrapperManager.isAvailable() || BoxWrapperManager.isNetworkRecoveryNeeded()
         }.getOrDefault(true)
 
         return SingBoxServiceNetworkTypeChangedRecoverySignal(
             probeSucceeded = probeSucceeded,
+            tunnelProbeSucceeded = tunnelProbeSucceeded,
             networkRecoveryNeeded = networkRecoveryNeeded,
             strongSignal = SingBoxService.hasStrongNetworkTypeChangedRecoverySignal(
                 probeSucceeded = probeSucceeded,
+                tunnelProbeSucceeded = tunnelProbeSucceeded,
                 networkRecoveryNeeded = networkRecoveryNeeded
             )
         )
@@ -2057,7 +2445,9 @@ class SingBoxService : VpnService() {
         mode: BoxWrapperManager.RecoveryMode,
         signal: SingBoxServiceNetworkTypeChangedRecoverySignal
     ): SingBoxServiceNetworkTypeChangedFallbackState {
-        val signalOutcome = "probe_ok=${signal.probeSucceeded},network_recovery_needed=${signal.networkRecoveryNeeded}"
+        val signalOutcome = "probe_ok=${signal.probeSucceeded}," +
+            "tunnel_probe_ok=${signal.tunnelProbeSucceeded}," +
+            "network_recovery_needed=${signal.networkRecoveryNeeded}"
         val fallbackState = buildNetworkTypeChangedStateSkip()
             ?: if (signal.strongSignal) {
                 SingBoxServiceNetworkTypeChangedFallbackState(
@@ -2953,6 +3343,8 @@ class SingBoxService : VpnService() {
         }
 
         cancelPendingRecoveryWork()
+        stopActiveHealthProbeMonitor()
+        autoFailoverCandidateCache.clear()
 
         // 更新状态
         if (broadcastStoppingState) {
@@ -3093,6 +3485,7 @@ class SingBoxService : VpnService() {
         }
 
         serviceSupervisorJob.cancel()
+        stopActiveHealthProbeMonitor()
         autoFailoverJob?.cancel()
         autoFailoverJob = null
         autoFailoverSupervisorJob.cancel()
@@ -3267,6 +3660,26 @@ class SingBoxService : VpnService() {
 
         internal val AUTO_FAILOVER_PROBE_RETRY_DELAY_MS = 2_500L
 
+        internal const val DNS_FAILOVER_PROBE_RETRY_DELAY_MS = 1_000L
+
+        internal const val HEALTH_FAST_FAILOVER_TOTAL_TIMEOUT_MS = 7_000L
+
+        internal const val HEALTH_FAST_FAILOVER_CANDIDATE_TIMEOUT_MS = 800
+
+        internal const val HEALTH_FAST_FAILOVER_PORT_READY_TIMEOUT_MS = 600L
+
+        internal const val HEALTH_FAST_FAILOVER_CANDIDATE_CONCURRENCY = 3
+
+        internal const val ACTIVE_HEALTH_PROBE_CANARY_INTERVAL_MS = 2_000L
+
+        internal const val ACTIVE_HEALTH_PROBE_FULL_INTERVAL_MS = 10_000L
+
+        internal const val ACTIVE_HEALTH_PROBE_TIMEOUT_MS = 900L
+
+        internal const val ACTIVE_HEALTH_PROBE_TRAFFIC_IGNORE_MS = 3_000L
+
+        internal const val AUTO_FAILOVER_MEANINGFUL_TRAFFIC_DURING_PROBE_BPS = 64 * 1024L
+
         internal val LATENCY_SKIPPED_OUTBOUND_TYPES = setOf(
             "direct",
             "block",
@@ -3376,6 +3789,297 @@ class SingBoxService : VpnService() {
             return file.exists() && file.isFile && file.canRead() && file.length() > 0L
         }
 
+        internal fun isHealthFastPathTrigger(trigger: String): Boolean {
+            return NodeAutoFailoverPolicy.isHealthFastPathTrigger(trigger)
+        }
+
+        internal fun isHealthFastPathTriggerForTest(trigger: String): Boolean {
+            return isHealthFastPathTrigger(trigger)
+        }
+
+        internal fun resolveAutoFailoverRetryDelayMs(trigger: String): Long {
+            return if (isHealthFastPathTrigger(trigger)) {
+                DNS_FAILOVER_PROBE_RETRY_DELAY_MS
+            } else {
+                AUTO_FAILOVER_PROBE_RETRY_DELAY_MS
+            }
+        }
+
+        internal fun resolveAutoFailoverRetryDelayMsForTest(trigger: String): Long {
+            return resolveAutoFailoverRetryDelayMs(trigger)
+        }
+
+        internal fun resolveHealthFastFailoverTotalTimeoutMsForTest(): Long {
+            return HEALTH_FAST_FAILOVER_TOTAL_TIMEOUT_MS
+        }
+
+        internal fun resolveActiveHealthProbeTimeoutMsForTest(): Long {
+            return ACTIVE_HEALTH_PROBE_TIMEOUT_MS
+        }
+
+        internal fun resolveAutoFailoverCandidateTimeoutMs(trigger: String, userTimeoutMs: Int): Int {
+            val safeUserTimeout = userTimeoutMs.coerceAtLeast(1)
+            return if (isHealthFastPathTrigger(trigger)) {
+                safeUserTimeout.coerceAtMost(HEALTH_FAST_FAILOVER_CANDIDATE_TIMEOUT_MS)
+            } else {
+                safeUserTimeout
+            }
+        }
+
+        internal fun resolveAutoFailoverCandidateTimeoutMsForTest(
+            trigger: String,
+            userTimeoutMs: Int
+        ): Int {
+            return resolveAutoFailoverCandidateTimeoutMs(trigger, userTimeoutMs)
+        }
+
+        internal fun resolveAutoFailoverPortReadyTimeoutMs(trigger: String): Long {
+            return if (isHealthFastPathTrigger(trigger)) {
+                HEALTH_FAST_FAILOVER_PORT_READY_TIMEOUT_MS
+            } else {
+                3_000L
+            }
+        }
+
+        internal fun resolveAutoFailoverPortReadyTimeoutMsForTest(trigger: String): Long {
+            return resolveAutoFailoverPortReadyTimeoutMs(trigger)
+        }
+
+        internal fun resolveAutoFailoverCandidateConcurrency(
+            trigger: String,
+            userConcurrency: Int,
+            candidateCount: Int
+        ): Int {
+            val safeCandidateCount = candidateCount.coerceAtLeast(1)
+            val desired = if (isHealthFastPathTrigger(trigger)) {
+                HEALTH_FAST_FAILOVER_CANDIDATE_CONCURRENCY
+            } else {
+                userConcurrency.coerceIn(1, 20)
+            }
+            return desired.coerceAtMost(safeCandidateCount)
+        }
+
+        internal fun resolveAutoFailoverCandidateConcurrencyForTest(
+            trigger: String,
+            userConcurrency: Int,
+            candidateCount: Int
+        ): Int {
+            return resolveAutoFailoverCandidateConcurrency(trigger, userConcurrency, candidateCount)
+        }
+
+        internal fun resolveAutoFailoverCandidateProbeWaves(
+            trigger: String,
+            userConcurrency: Int,
+            candidateCount: Int
+        ): Int {
+            if (candidateCount <= 0) {
+                return 0
+            }
+            if (isHealthFastPathTrigger(trigger)) {
+                return 1
+            }
+            val concurrency = resolveAutoFailoverCandidateConcurrency(
+                trigger = trigger,
+                userConcurrency = userConcurrency,
+                candidateCount = candidateCount
+            )
+            return (candidateCount + concurrency - 1) / concurrency
+        }
+
+        internal fun resolveAutoFailoverCandidateProbeWavesForTest(
+            trigger: String,
+            userConcurrency: Int,
+            candidateCount: Int
+        ): Int {
+            return resolveAutoFailoverCandidateProbeWaves(trigger, userConcurrency, candidateCount)
+        }
+
+        internal fun shouldResetAfterAutoFailover(trigger: String): Boolean {
+            return isHealthFastPathTrigger(trigger)
+        }
+
+        internal fun shouldResetAfterAutoFailoverForTest(trigger: String): Boolean {
+            return shouldResetAfterAutoFailover(trigger)
+        }
+
+        internal fun shouldTreatActiveProbeAsNodeFailure(
+            googleProbeOk: Boolean,
+            cloudflareProbeOk: Boolean,
+            metaProbeOk: Boolean
+        ): Boolean {
+            return !metaProbeOk || (!googleProbeOk && !cloudflareProbeOk)
+        }
+
+        internal fun buildActiveProbeFailureSummary(
+            result: ActiveProbeResult,
+            coreAvailable: Boolean
+        ): String {
+            val googleProbeOk = result.googleProbeOk ?: true
+            val cloudflareProbeOk = result.cloudflareProbeOk ?: true
+            val diagnosis = resolveActiveProbeDiagnosis(
+                googleProbeOk = googleProbeOk,
+                cloudflareProbeOk = cloudflareProbeOk,
+                metaProbeOk = result.metaProbeOk,
+                coreAvailable = coreAvailable
+            )
+            return "INFO: Active health probe failed google=$googleProbeOk " +
+                "cloudflare=$cloudflareProbeOk meta=${result.metaProbeOk} " +
+                "dns_channel=remote core_available=$coreAvailable diagnosis=$diagnosis"
+        }
+
+        internal fun buildActiveProbeFailureSummaryForTest(
+            googleProbeOk: Boolean,
+            cloudflareProbeOk: Boolean,
+            metaProbeOk: Boolean,
+            coreAvailable: Boolean
+        ): String {
+            return buildActiveProbeFailureSummary(
+                result = ActiveProbeResult(
+                    googleProbeOk = googleProbeOk,
+                    cloudflareProbeOk = cloudflareProbeOk,
+                    metaProbeOk = metaProbeOk,
+                    fullSweep = true
+                ),
+                coreAvailable = coreAvailable
+            )
+        }
+
+        private fun resolveActiveProbeDiagnosis(
+            googleProbeOk: Boolean,
+            cloudflareProbeOk: Boolean,
+            metaProbeOk: Boolean,
+            coreAvailable: Boolean
+        ): String {
+            if (!coreAvailable) {
+                return "app_service_unavailable"
+            }
+            if (!googleProbeOk && !cloudflareProbeOk) {
+                return "node_unreachable"
+            }
+            if (!metaProbeOk) {
+                return "remote_dns_timeout"
+            }
+            return "unknown_health_probe_failure"
+        }
+
+        internal fun resolveActiveProbeTargetsForTest(fullSweep: Boolean): List<String> {
+            return if (fullSweep) {
+                listOf(
+                    BoxWrapperManager.FOREGROUND_TUNNEL_HEALTH_PROBE_URL,
+                    BoxWrapperManager.CLOUDFLARE_TUNNEL_HEALTH_PROBE_URL,
+                    BoxWrapperManager.META_TUNNEL_HEALTH_PROBE_URL
+                )
+            } else {
+                listOf(BoxWrapperManager.META_TUNNEL_HEALTH_PROBE_URL)
+            }
+        }
+
+        @Suppress("UNUSED_PARAMETER")
+        internal fun shouldRunActiveHealthProbeForSignals(
+            isAppInForeground: Boolean,
+            lastMeaningfulTrafficAtMs: Long,
+            nowAtMs: Long
+        ): Boolean {
+            // 前台状态不再单独制造探测流量，只保留最近有效流量作为主动探测条件。
+            return NodeAutoFailoverPolicy.hasRecentMeaningfulTraffic(lastMeaningfulTrafficAtMs, nowAtMs)
+        }
+
+        internal fun shouldRunActiveHealthProbeForSignalsForTest(
+            isAppInForeground: Boolean,
+            lastMeaningfulTrafficAtMs: Long,
+            nowAtMs: Long
+        ): Boolean {
+            return shouldRunActiveHealthProbeForSignals(
+                isAppInForeground = isAppInForeground,
+                lastMeaningfulTrafficAtMs = lastMeaningfulTrafficAtMs,
+                nowAtMs = nowAtMs
+            )
+        }
+
+        internal fun shouldRecordMeaningfulTrafficForAutoFailover(
+            totalSpeed: Long,
+            nowAtMs: Long,
+            activeProbeTrafficIgnoreUntilMs: Long
+        ): Boolean {
+            val threshold = if (nowAtMs <= activeProbeTrafficIgnoreUntilMs) {
+                AUTO_FAILOVER_MEANINGFUL_TRAFFIC_DURING_PROBE_BPS
+            } else {
+                AUTO_FAILOVER_MEANINGFUL_TRAFFIC_BPS
+            }
+            return totalSpeed >= threshold
+        }
+
+        internal fun shouldRecordMeaningfulTrafficForAutoFailoverForTest(
+            totalSpeed: Long,
+            nowAtMs: Long,
+            activeProbeTrafficIgnoreUntilMs: Long
+        ): Boolean {
+            return shouldRecordMeaningfulTrafficForAutoFailover(
+                totalSpeed = totalSpeed,
+                nowAtMs = nowAtMs,
+                activeProbeTrafficIgnoreUntilMs = activeProbeTrafficIgnoreUntilMs
+            )
+        }
+
+        internal fun resolveAutoFailoverTrafficSignalAtMs(
+            trigger: String,
+            isAppInForeground: Boolean,
+            lastMeaningfulTrafficAtMs: Long,
+            nowAtMs: Long
+        ): Long {
+            return if (isHealthFastPathTrigger(trigger) && isAppInForeground) {
+                nowAtMs
+            } else {
+                lastMeaningfulTrafficAtMs
+            }
+        }
+
+        internal fun selectAutoFailoverProbeCandidatesForTest(
+            currentTag: String,
+            cachedBackupTag: String?,
+            candidateTags: List<String>,
+            trigger: String
+        ): List<String> {
+            return selectAutoFailoverProbeCandidates(
+                currentTag = currentTag,
+                cachedBackupTag = cachedBackupTag,
+                candidateTags = candidateTags,
+                trigger = trigger,
+                quarantinedTags = emptySet()
+            )
+        }
+
+        internal fun selectAutoFailoverProbeCandidates(
+            currentTag: String,
+            cachedBackupTag: String?,
+            candidateTags: List<String>,
+            trigger: String,
+            quarantinedTags: Set<String>
+        ): List<String> {
+            if (!isHealthFastPathTrigger(trigger)) {
+                return candidateTags.distinct()
+            }
+
+            val selected = mutableListOf<String>()
+            fun addCandidate(tag: String?) {
+                val value = tag?.trim().orEmpty()
+                if (value.isBlank()) return
+                val normalized = UrlTestTagMatcher.normalizeTag(value)
+                if (quarantinedTags.any { UrlTestTagMatcher.normalizeTag(it) == normalized }) return
+                if (selected.none { UrlTestTagMatcher.normalizeTag(it) == normalized }) {
+                    selected.add(value)
+                }
+            }
+
+            addCandidate(currentTag)
+            addCandidate(cachedBackupTag)
+            for (tag in candidateTags) {
+                if (selected.size >= 3) break
+                addCandidate(tag)
+            }
+            return selected.take(3)
+        }
+
         internal fun shouldScheduleNetworkTypeChangedFallback(
             request: RecoveryRequest,
             success: Boolean
@@ -3399,11 +4103,41 @@ class SingBoxService : VpnService() {
                 success
         }
 
+        internal suspend fun collectForegroundHardFallbackProbeSignalForTest(
+            physicalProbe: suspend () -> Boolean,
+            tunnelProbe: suspend () -> Boolean
+        ): SingBoxServiceForegroundHardFallbackProbeSignal {
+            return collectForegroundHardFallbackProbeSignal(physicalProbe, tunnelProbe)
+        }
+
+        internal suspend fun collectForegroundHardFallbackProbeSignal(
+            physicalProbe: suspend () -> Boolean,
+            tunnelProbe: suspend () -> Boolean
+        ): SingBoxServiceForegroundHardFallbackProbeSignal {
+            val physicalProbeOk = runCatching { physicalProbe() }.getOrDefault(false)
+            val tunnelProbeOk = if (physicalProbeOk) {
+                runCatching { tunnelProbe() }.getOrDefault(false)
+            } else {
+                false
+            }
+            return SingBoxServiceForegroundHardFallbackProbeSignal(
+                physicalProbeOk = physicalProbeOk,
+                tunnelProbeOk = tunnelProbeOk
+            )
+        }
+
+        internal fun shouldSkipForegroundHardFallbackAfterProbe(
+            signal: SingBoxServiceForegroundHardFallbackProbeSignal
+        ): Boolean {
+            return signal.physicalProbeOk && signal.tunnelProbeOk
+        }
+
         internal fun hasStrongNetworkTypeChangedRecoverySignal(
             probeSucceeded: Boolean,
+            tunnelProbeSucceeded: Boolean,
             networkRecoveryNeeded: Boolean
         ): Boolean {
-            return probeSucceeded && !networkRecoveryNeeded
+            return probeSucceeded && tunnelProbeSucceeded && !networkRecoveryNeeded
         }
 
         internal fun shouldRunNetworkTypeChangedFallback(

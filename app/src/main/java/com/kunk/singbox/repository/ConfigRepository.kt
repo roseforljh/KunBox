@@ -907,7 +907,16 @@ class ConfigRepository(protected val context: Context) {
     ): ConfigRepositoryLatencyRuntimeContext {
         val rawOutbounds = config.outbounds.orEmpty().mapNotNull { buildOutboundForRuntime(it) }
         val dnsOverrideConfig = parseDnsOverride(_profiles.value.find { it.id == profileId }?.dnsOverride)
-        val serverAddressStrategy = resolveDnsStrategy(settings.serverAddressStrategy, settings.ipVersionMode)
+        val serverAddressStrategy = ConfigRepository.resolveOutboundServerAddressStrategy(
+            settings.serverAddressStrategy,
+            settings.ipVersionMode
+        )
+        logOutboundServerAddressStrategy(
+            scope = "latency_runtime",
+            strategy = settings.serverAddressStrategy,
+            ipVersionMode = settings.ipVersionMode,
+            resolvedStrategy = serverAddressStrategy
+        )
         val defaultResolverOutbounds = ConfigRepository.applyDefaultOutboundDomainResolver(
             rawOutbounds,
             ConfigRepository.DEFAULT_ROUTE_DOMAIN_RESOLVER_TAG,
@@ -964,7 +973,10 @@ class ConfigRepository(protected val context: Context) {
                 }
                 val infoByTag = preparedInfoPairs.associate { (info, outbound) -> outbound.tag to Pair(info, outbound) }
 
-                singBoxCore.testOutboundsLatency(preparedInfoPairs.map { it.second }, dnsConfig) { tag, latency ->
+                singBoxCore.testOutboundsLatency(
+                    outbounds = preparedInfoPairs.map { it.second },
+                    dnsConfig = dnsConfig
+                ) { tag, latency ->
                     initialResults[tag] = latency
                     if (latency > 0L) {
                         val pair = infoByTag[tag] ?: return@testOutboundsLatency
@@ -2899,9 +2911,15 @@ class ConfigRepository(protected val context: Context) {
                 config, activeNode, sanitizedSettings, allNodesSnapshot,
                 activeProfile?.dnsPreResolve ?: false, activeId, dnsOverrideConfig
             )
-            val serverAddressStrategy = resolveDnsStrategy(
+            val serverAddressStrategy = ConfigRepository.resolveOutboundServerAddressStrategy(
                 sanitizedSettings.serverAddressStrategy,
                 sanitizedSettings.ipVersionMode
+            )
+            logOutboundServerAddressStrategy(
+                scope = "run_config",
+                strategy = sanitizedSettings.serverAddressStrategy,
+                ipVersionMode = sanitizedSettings.ipVersionMode,
+                resolvedStrategy = serverAddressStrategy
             )
             val defaultResolverOutbounds = ConfigRepository.applyDefaultOutboundDomainResolver(
                 rawOutboundsContext.outbounds,
@@ -4472,6 +4490,22 @@ class ConfigRepository(protected val context: Context) {
         return mode.resolveDnsStrategy(strategy)
     }
 
+    protected fun logOutboundServerAddressStrategy(
+        scope: String,
+        strategy: DnsStrategy,
+        ipVersionMode: IpVersionMode,
+        resolvedStrategy: String
+    ) {
+        val message = ConfigRepository.buildOutboundServerAddressStrategyLog(
+            scope = scope,
+            strategy = strategy,
+            ipVersionMode = ipVersionMode,
+            resolvedStrategy = resolvedStrategy
+        )
+        Log.i(ConfigRepository.TAG, message)
+        LogRepository.getInstance().addLog(message)
+    }
+
     suspend fun getOutboundByNodeId(nodeId: String): Outbound? = withContext(Dispatchers.IO) {
         val node = _nodes.value.find { it.id == nodeId } ?: return@withContext null
         val config = loadConfig(node.sourceProfileId) ?: return@withContext null
@@ -4949,6 +4983,25 @@ class ConfigRepository(protected val context: Context) {
             "connectivitycheck.gstatic.com",
             "www.gstatic.com"
         )
+
+        internal fun resolveOutboundServerAddressStrategy(
+            strategy: DnsStrategy,
+            ipVersionMode: IpVersionMode
+        ): String {
+            return ipVersionMode.resolveDnsStrategy(strategy)
+        }
+
+        internal fun buildOutboundServerAddressStrategyLog(
+            scope: String,
+            strategy: DnsStrategy,
+            ipVersionMode: IpVersionMode,
+            resolvedStrategy: String
+        ): String {
+            return "INFO [CFG] outbound_server_domain_resolver scope=$scope " +
+                "serverAddressStrategy=${strategy.name} " +
+                "ipVersionMode=${ipVersionMode.name} " +
+                "strategy=$resolvedStrategy"
+        }
 
         internal val ROUTE_GROUP_AUTO_TEST_INTERVAL = "10m"
 
@@ -5763,6 +5816,22 @@ class ConfigRepository(protected val context: Context) {
 
         internal fun resolveDnsStrategyForTest(strategy: DnsStrategy, mode: IpVersionMode): String {
             return mode.resolveDnsStrategy(strategy)
+        }
+
+        internal fun resolveOutboundServerAddressStrategyForTest(
+            strategy: DnsStrategy,
+            mode: IpVersionMode
+        ): String {
+            return resolveOutboundServerAddressStrategy(strategy, mode)
+        }
+
+        internal fun buildOutboundServerAddressStrategyLogForTest(
+            scope: String,
+            strategy: DnsStrategy,
+            ipVersionMode: IpVersionMode,
+            resolvedStrategy: String
+        ): String {
+            return buildOutboundServerAddressStrategyLog(scope, strategy, ipVersionMode, resolvedStrategy)
         }
 
         internal fun buildBypassLanRulesForTest(settings: AppSettings): List<RouteRule> {

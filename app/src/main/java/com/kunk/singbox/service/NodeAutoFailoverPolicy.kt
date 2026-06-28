@@ -52,6 +52,10 @@ object NodeAutoFailoverPolicy {
     )
 
     internal fun shouldStartProbe(context: TriggerContext): Boolean {
+        return shouldStartProbe(context, trigger = "")
+    }
+
+    internal fun shouldStartProbe(context: TriggerContext, trigger: String): Boolean {
         if (!context.isVpnRunning || context.isManuallyStopped) {
             return false
         }
@@ -64,14 +68,23 @@ object NodeAutoFailoverPolicy {
         if (!hasRecentMeaningfulTraffic(context.lastMeaningfulTrafficAtMs, context.nowAtMs)) {
             return false
         }
-        if (isCooldownActive(context.lastAutoFailoverAtMs, context.nowAtMs)) {
-            return false
-        }
-        return !isBudgetExhausted(
+        val budgetExhausted = isBudgetExhausted(
             windowStartAtMs = context.budgetWindowStartAtMs,
             count = context.budgetCount,
             nowAtMs = context.nowAtMs
         )
+        if (budgetExhausted) {
+            return false
+        }
+
+        if (!isHealthFastPathTrigger(trigger) && isCooldownActive(context.lastAutoFailoverAtMs, context.nowAtMs)) {
+            return false
+        }
+        return true
+    }
+
+    internal fun isHealthFastPathTrigger(trigger: String): Boolean {
+        return trigger.startsWith("dns_remote_timeout") || trigger.startsWith("active_probe_failed")
     }
 
     internal fun hasRecentMeaningfulTraffic(

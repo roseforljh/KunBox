@@ -74,6 +74,7 @@ import com.kunk.singbox.ui.theme.liquidGlassButtonContentColor
 import com.kunk.singbox.ui.theme.liquidGlassButtonPanel
 import com.kunk.singbox.ui.theme.liquidGlassDialogContainerColor
 import com.kunk.singbox.ui.theme.liquidGlassDialogPanel
+import com.kunk.singbox.ui.theme.LiquidGlassDialogEffect
 import com.kunk.singbox.ui.theme.liquidGlassEmptyStatePanel
 import com.kunk.singbox.ui.theme.liquidGlassIconButtonPanel
 import com.kunk.singbox.ui.theme.liquidGlassOutlinedButtonBorder
@@ -502,6 +503,7 @@ private fun DomainRuleEditorDialog(
             )
         },
         text = {
+            LiquidGlassDialogEffect()
             Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 StyledTextField(
                     label = stringResource(R.string.custom_rules_content),

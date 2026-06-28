@@ -690,6 +690,7 @@
     <string name="latency_test_tcp">TCP Latency</string>
     <string name="latency_test_rtt">Real RTT</string>
     <string name="latency_test_handshake">HTTP Handshake</string>
+    <string name="latency_test_url_test">URL Test</string>
 
     <!-- Enum: GhProxyMirror -->
     <string name="gh_mirror_sagernet">SagerNet (Official)</string>

@@ -171,6 +171,60 @@ abstract class ConfigRepositoryTestPart4 : ConfigRepositoryTestPart3() {
     }
 
     @Test
+    fun outboundServerAddressAutoKeepsDualStackDefault() {
+        assertEquals(
+            "prefer_ipv4",
+            ConfigRepository.resolveOutboundServerAddressStrategyForTest(
+                DnsStrategy.AUTO,
+                IpVersionMode.DUAL_STACK
+            )
+        )
+    }
+
+    @Test
+    fun outboundServerAddressStrategyHonorsExplicitPreferIpv4() {
+        assertEquals(
+            "prefer_ipv4",
+            ConfigRepository.resolveOutboundServerAddressStrategyForTest(
+                DnsStrategy.PREFER_IPV4,
+                IpVersionMode.DUAL_STACK
+            )
+        )
+    }
+
+    @Test
+    fun outboundServerAddressStrategyHonorsOnlyIpv4AndOnlyIpv6() {
+        assertEquals(
+            "ipv4_only",
+            ConfigRepository.resolveOutboundServerAddressStrategyForTest(
+                DnsStrategy.AUTO,
+                IpVersionMode.IPV4_ONLY
+            )
+        )
+        assertEquals(
+            "ipv6_only",
+            ConfigRepository.resolveOutboundServerAddressStrategyForTest(
+                DnsStrategy.AUTO,
+                IpVersionMode.IPV6_ONLY
+            )
+        )
+    }
+
+    @Test
+    fun outboundServerAddressStrategyDiagnosticLogIncludesEffectiveStrategy() {
+        assertEquals(
+            "INFO [CFG] outbound_server_domain_resolver scope=run_config " +
+                "serverAddressStrategy=AUTO ipVersionMode=DUAL_STACK strategy=prefer_ipv4",
+            ConfigRepository.buildOutboundServerAddressStrategyLogForTest(
+                scope = "run_config",
+                strategy = DnsStrategy.AUTO,
+                ipVersionMode = IpVersionMode.DUAL_STACK,
+                resolvedStrategy = "prefer_ipv4"
+            )
+        )
+    }
+
+    @Test
     override fun testBuildQuicBlockRuleReturnsEmptyWhenBlockQuicDisabled() {
         val rules = ConfigRepository.buildQuicBlockRuleForTest(AppSettings(blockQuic = false))
 

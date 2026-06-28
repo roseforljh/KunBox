@@ -155,6 +155,51 @@ class SingBoxCoreLatencyPathTest {
         assertFalse(batchBody.contains("ports.zip(batchOutbounds.map { it.tag }).toMap()"))
     }
 
+    @Test
+    fun testLatencyTemporaryConfigsStripInternalEchMetadataBeforeJson() {
+        val source = readSingBoxCoreSource()
+        val singleNodeBody = extractFunctionBody(source, "testWithLocalHttpProxyInternal")
+        val batchBody = extractFunctionBody(source, "testOutboundsLatencyBatchInternal")
+
+        assertTrue(singleNodeBody.contains("gson.toJson(stripLatencyRuntimeMetadata(config))"))
+        assertTrue(batchBody.contains("gson.toJson(stripLatencyRuntimeMetadata(config))"))
+    }
+
+    @Test
+    fun testLatencyMethodMapsUrlTestToTotalRequestTime() {
+        val source = readSingBoxCoreSource()
+
+        assertTrue(source.contains("LatencyTestMethod.URL_TEST -> PreciseLatencyTester.Standard.TOTAL"))
+        assertTrue(source.contains("standard = latencyStandardForMethod(settings.latencyTestMethod)"))
+        assertTrue(source.contains("val standard = latencyStandardForMethod(settings.latencyTestMethod)"))
+        assertTrue(source.contains("standard = standard"))
+    }
+
+    @Test
+    fun testBatchLatencyEntrypointPassesOverrideSettingsToOfflinePath() {
+        val source = readSingBoxCoreSource()
+        val batchEntrypoint = extractFunctionBody(source, "testOutboundsLatency")
+        val offlineBody = extractFunctionBody(source, "testOutboundsLatencyOfflineWithTemporaryService")
+
+        assertTrue(batchEntrypoint.contains("settings = settings"))
+        assertTrue(source.contains("settings: AppSettings"))
+        assertFalse(offlineBody.contains("SettingsRepository.getInstance(context).settings.first()"))
+    }
+
+    @Test
+    fun testBatchLatencyPortReadyWaitUsesCallerBudget() {
+        val source = readSingBoxCoreSource()
+        val batchEntrypoint = extractFunctionBody(source, "testOutboundsLatency")
+        val batchInternalBody = extractFunctionBody(source, "testOutboundsLatencyBatchInternal")
+        val waitBody = extractFunctionBody(source, "waitForPortsReady")
+
+        assertTrue(batchEntrypoint.contains("portReadyTimeoutOverrideMs"))
+        assertTrue(batchInternalBody.contains("waitForPortsReady(ports, portReadyTimeoutMs)"))
+        assertTrue(waitBody.contains("portReadyTimeoutMs"))
+        assertFalse(waitBody.contains("+ 3000L"))
+        assertFalse(waitBody.contains("for (attempt in 1..5)"))
+    }
+
     private fun readSingBoxCoreSource(): String {
         val candidates = listOf(
             File("src/main/java/com/kunk/singbox/core/SingBoxCore.kt"),

@@ -693,6 +693,7 @@
     <string name="latency_test_tcp">TCP 延迟</string>
     <string name="latency_test_rtt">真实延迟 (RTT)</string>
     <string name="latency_test_handshake">HTTP 握手延迟</string>
+    <string name="latency_test_url_test">URL Test</string>
 
     <!-- Enum: GhProxyMirror -->
     <string name="gh_mirror_sagernet">SagerNet (官方)</string>
