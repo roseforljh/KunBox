@@ -8,6 +8,8 @@
 
 # SnakeYAML rules - YAML 解析库
 -dontwarn java.beans.**
+# SnakeYAML 静态初始化会读取 class package name，不能被重打包到默认包
+-keeppackagenames org.yaml.snakeyaml.**
 
 # ====================================================================
 # Native Libraries (JNI/Gomobile)

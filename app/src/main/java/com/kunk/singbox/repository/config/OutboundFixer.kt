@@ -667,11 +667,12 @@ object OutboundFixer {
         tcpKeepAliveInterval: String?,
         connectTimeout: String?
     ): Outbound {
+        val serverPorts = fixed.serverPorts?.takeIf { it.isNotEmpty() }
         return Outbound(
             type = fixed.type,
             tag = fixed.tag,
             server = fixed.server,
-            serverPort = fixed.serverPort,
+            serverPort = fixed.serverPort.takeIf { serverPorts == null },
             password = fixed.password,
             authStr = fixed.authStr,
             upMbps = fixed.upMbps ?: 50,
@@ -681,7 +682,7 @@ object OutboundFixer {
             recvWindow = fixed.recvWindow,
             disableMtuDiscovery = fixed.disableMtuDiscovery,
             hopInterval = fixed.hopInterval,
-            serverPorts = fixed.serverPorts,
+            serverPorts = serverPorts,
             tls = fixed.tls,
             multiplex = fixed.multiplex,
             domainResolver = resolveDomainResolver(fixed)
