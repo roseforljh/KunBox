@@ -1,7 +1,12 @@
 package com.kunk.singbox.service
 
+import com.kunk.singbox.model.DnsConfig
+import com.kunk.singbox.model.DnsServer
+import com.kunk.singbox.model.Outbound
+import com.kunk.singbox.model.SingBoxConfig
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -45,7 +50,7 @@ class HealthAutoFailoverLogicTest {
     @Test
     fun fastPathCandidateLatencyUsesBoundedTimeoutAndParallelism() {
         assertEquals(
-            800,
+            1_200,
             SingBoxService.resolveAutoFailoverCandidateTimeoutMsForTest(
                 trigger = "active_probe_failed",
                 userTimeoutMs = 5_000
@@ -140,12 +145,17 @@ class HealthAutoFailoverLogicTest {
     }
 
     @Test
-    fun healthFastPathHasSevenSecondTotalBudget() {
-        assertEquals(7_000L, SingBoxService.resolveHealthFastFailoverTotalTimeoutMsForTest())
+    fun healthFastPathHasNineSecondTotalBudget() {
+        assertEquals(9_000L, SingBoxService.resolveHealthFastFailoverTotalTimeoutMsForTest())
     }
 
     @Test
-    fun healthFastPathBudgetCoversTwoProbeRoundsBeforeSevenSeconds() {
+    fun activeProbeUsesMobileSafeTimeout() {
+        assertEquals(1_500L, SingBoxService.resolveActiveHealthProbeTimeoutMsForTest())
+    }
+
+    @Test
+    fun healthFastPathBudgetCoversTwoProbeRoundsBeforeTotalBudget() {
         val perRoundMs = SingBoxService.resolveAutoFailoverPortReadyTimeoutMsForTest("active_probe_failed") +
             SingBoxService.resolveAutoFailoverCandidateTimeoutMsForTest("active_probe_failed", 5_000) +
             SingBoxService.resolveActiveHealthProbeTimeoutMsForTest()
@@ -180,5 +190,152 @@ class HealthAutoFailoverLogicTest {
         assertTrue(nodeSummary.contains("diagnosis=node_unreachable"))
         assertTrue(appServiceSummary.contains("diagnosis=app_service_unavailable"))
         assertTrue(remoteDnsSummary.contains("dns_channel=remote"))
+    }
+
+    @Test
+    fun activeProbeRequiresAtLeastTwoFailedTargetsBeforeMainFailover() {
+        assertFalse(
+            SingBoxService.shouldTreatActiveProbeAsNodeFailure(
+                googleProbeOk = true,
+                cloudflareProbeOk = true,
+                metaProbeOk = false
+            )
+        )
+        assertFalse(
+            SingBoxService.shouldTreatActiveProbeAsNodeFailure(
+                googleProbeOk = true,
+                cloudflareProbeOk = false,
+                metaProbeOk = true
+            )
+        )
+        assertTrue(
+            SingBoxService.shouldTreatActiveProbeAsNodeFailure(
+                googleProbeOk = false,
+                cloudflareProbeOk = false,
+                metaProbeOk = true
+            )
+        )
+        assertTrue(
+            SingBoxService.shouldTreatActiveProbeAsNodeFailure(
+                googleProbeOk = false,
+                cloudflareProbeOk = true,
+                metaProbeOk = false
+            )
+        )
+    }
+
+    @Test
+    fun singleNodeRouteFailureDetectionOnlyMatchesConcreteNonCurrentNodeDetour() {
+        val config = routeFailureConfig()
+
+        assertEquals(
+            "node-b",
+            SingBoxService.resolveSingleNodeRouteFailureTagForTest(
+                dnsServerTag = "dns-remote-node-b",
+                currentProxyTag = "node-a",
+                config = config
+            )
+        )
+        assertNull(
+            SingBoxService.resolveSingleNodeRouteFailureTagForTest(
+                dnsServerTag = "dns-remote-profile",
+                currentProxyTag = "node-a",
+                config = config
+            )
+        )
+        assertNull(
+            SingBoxService.resolveSingleNodeRouteFailureTagForTest(
+                dnsServerTag = "dns-remote-current",
+                currentProxyTag = "node-a",
+                config = config
+            )
+        )
+        assertNull(
+            SingBoxService.resolveSingleNodeRouteFailureTagForTest(
+                dnsServerTag = "dns-remote-current",
+                currentProxyTag = "node-b",
+                config = config
+            )
+        )
+        assertNull(
+            SingBoxService.resolveSingleNodeRouteFailureTagForTest(
+                dnsServerTag = "dns-remote-nested-current",
+                currentProxyTag = "P:HK",
+                config = config
+            )
+        )
+        assertNull(
+            SingBoxService.resolveSingleNodeRouteFailureTagForTest(
+                dnsServerTag = "dns-remote-node-b",
+                currentProxyTag = null,
+                config = config
+            )
+        )
+    }
+
+    @Test
+    fun mainAutoFailoverOnlyUsesCurrentProxyDnsFailures() {
+        val config = routeFailureConfig()
+
+        assertTrue(
+            SingBoxService.shouldSubmitMainAutoFailoverForDnsSignalForTest(
+                dnsServerTag = "dns-remote-current",
+                currentProxyTag = "node-a",
+                config = config
+            )
+        )
+        assertTrue(
+            SingBoxService.shouldSubmitMainAutoFailoverForDnsSignalForTest(
+                dnsServerTag = "dns-remote-nested-current",
+                currentProxyTag = "P:HK",
+                config = config
+            )
+        )
+        assertFalse(
+            SingBoxService.shouldSubmitMainAutoFailoverForDnsSignalForTest(
+                dnsServerTag = "dns-remote-node-b",
+                currentProxyTag = "node-a",
+                config = config
+            )
+        )
+        assertFalse(
+            SingBoxService.shouldSubmitMainAutoFailoverForDnsSignalForTest(
+                dnsServerTag = "dns-remote-profile",
+                currentProxyTag = "node-a",
+                config = config
+            )
+        )
+        assertTrue(
+            SingBoxService.shouldSubmitMainAutoFailoverForDnsSignalForTest(
+                dnsServerTag = "dns-remote-unknown",
+                currentProxyTag = "node-a",
+                config = config
+            )
+        )
+    }
+
+    private fun routeFailureConfig(): SingBoxConfig {
+        return SingBoxConfig(
+            dns = DnsConfig(
+                servers = listOf(
+                    DnsServer(tag = "dns-remote-node-b", detour = "node-b"),
+                    DnsServer(tag = "dns-remote-profile", detour = "P:HK"),
+                    DnsServer(tag = "dns-remote-current", detour = "node-a"),
+                    DnsServer(tag = "dns-remote-nested-current", detour = "node-a")
+                )
+            ),
+            outbounds = listOf(
+                Outbound(type = "vless", tag = "node-a"),
+                Outbound(type = "vless", tag = "node-b"),
+                Outbound(
+                    type = "selector",
+                    tag = "P:HK",
+                    outbounds = listOf("P:HK#AUTO", "PROXY"),
+                    default = "P:HK#AUTO"
+                ),
+                Outbound(type = "urltest", tag = "P:HK#AUTO", outbounds = listOf("node-a", "node-b")),
+                Outbound(type = "selector", tag = "PROXY", outbounds = listOf("node-a", "node-b"))
+            )
+        )
     }
 }

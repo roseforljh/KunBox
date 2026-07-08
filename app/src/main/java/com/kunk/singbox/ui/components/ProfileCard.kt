@@ -262,7 +262,7 @@ fun ProfileCard(
 
             Spacer(modifier = Modifier.width(16.dp))
 
-            Column {
+            Column(modifier = Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         text = name,
@@ -270,7 +270,8 @@ fun ProfileCard(
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface,
                         maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false)
                     )
                     when {
                         isUpdating -> {
@@ -305,18 +306,40 @@ fun ProfileCard(
 
                 Spacer(modifier = Modifier.height(4.dp))
 
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
                     Text(
                         text = stringResource(R.string.profile_card_updated_at) + " ",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                     )
-                    val disabledSuffix = if (!isEnabled) " (" + stringResource(R.string.common_disabled) + ")" else ""
                     Text(
-                        text = formatLastUpdated(lastUpdated) + disabledSuffix,
+                        text = formatLastUpdated(lastUpdated),
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f)
                     )
+
+                    if (!isEnabled) {
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = stringResource(R.string.common_disabled),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = profileBadgeContentColor(MaterialTheme.colorScheme.onSurfaceVariant),
+                            maxLines = 1,
+                            softWrap = false,
+                            modifier = Modifier
+                                .profileBadgePanel(
+                                    defaultColor = MaterialTheme.colorScheme.surfaceVariant,
+                                    shape = RoundedCornerShape(4.dp)
+                                )
+                                .padding(horizontal = 4.dp, vertical = 1.dp)
+                        )
+                    }
 
                     if (dnsPreResolve) {
                         Spacer(modifier = Modifier.width(8.dp))
@@ -324,6 +347,8 @@ fun ProfileCard(
                             text = "DNS",
                             style = MaterialTheme.typography.labelSmall,
                             color = profileBadgeContentColor(MaterialTheme.colorScheme.primary),
+                            maxLines = 1,
+                            softWrap = false,
                             modifier = Modifier
                                 .profileBadgePanel(
                                     defaultColor = MaterialTheme.colorScheme.primaryContainer,
@@ -402,6 +427,8 @@ fun ProfileCard(
                 }
             }
         }
+
+        Spacer(modifier = Modifier.width(12.dp))
 
         Box(modifier = Modifier.wrapContentSize(Alignment.TopStart)) {
             IconButton(

@@ -28,6 +28,7 @@ import com.kunk.singbox.manager.VpnServiceManager
 import com.kunk.singbox.repository.ConfigRepository
 import com.kunk.singbox.ui.components.AppNotificationManager
 import com.kunk.singbox.repository.SettingsRepository
+import com.kunk.singbox.service.manager.ServiceStateHolder
 import com.kunk.singbox.service.notification.VpnNotificationManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -93,6 +94,7 @@ class VpnTileService : TileService() {
                 .edit()
                 .putBoolean(KEY_VPN_ACTIVE, isActive)
                 .commit()
+            VpnStateStore.setActive(isActive)
         }
 
         fun persistVpnPending(context: Context, pending: String?) {
@@ -183,8 +185,8 @@ class VpnTileService : TileService() {
 
         if (isActive) {
 
-            tile.state = Tile.STATE_INACTIVE
-            tile.label = getString(R.string.app_name)
+            tile.state = Tile.STATE_UNAVAILABLE
+            tile.label = getString(R.string.connection_disconnecting)
             try {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                     tile.subtitle = null
@@ -224,18 +226,12 @@ class VpnTileService : TileService() {
 
     @Suppress("LongMethod", "CyclomaticComplexMethod", "CognitiveComplexMethod")
     private fun updateTile(activeLabelOverride: String? = null) {
-        var persistedActive = runCatching {
-            getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-                .getBoolean(KEY_VPN_ACTIVE, false)
-        }.getOrDefault(false)
+        var persistedActive = VpnStateStore.getActive()
 
         val coreMode = VpnStateStore.getMode()
-        var pending = runCatching {
-            getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-                .getString(KEY_VPN_PENDING, "")
-        }.getOrNull().orEmpty()
+        var pending = VpnStateStore.getPending()
         val hasVpnTransport = hasSystemVpnTransport()
-        val serviceActuallyRunning = serviceBound && remoteService != null
+        val serviceActuallyRunning = isCoreServiceAvailable()
 
         if (coreMode == VpnStateStore.CoreMode.VPN && shouldClearUnavailablePersistedActive(
                 pending = pending,
@@ -324,6 +320,15 @@ class VpnTileService : TileService() {
         }
     }
 
+    private fun isCoreServiceAvailable(): Boolean {
+        return (serviceBound && remoteService != null) ||
+            ProxyOnlyService.isRunning ||
+            ProxyOnlyService.isStarting ||
+            ServiceStateHolder.instance != null ||
+            ServiceStateHolder.isRunning ||
+            ServiceStateHolder.isStarting
+    }
+
     /**
      */
     private fun executeStopVpn() {
@@ -331,7 +336,6 @@ class VpnTileService : TileService() {
         startSequenceId = 0L
 
         persistVpnPending(this, "stopping")
-        persistVpnState(this, false)
         val stopRequestedAt = SystemClock.elapsedRealtime()
 
         serviceScope.launch(Dispatchers.IO) {
@@ -339,8 +343,6 @@ class VpnTileService : TileService() {
                 VpnServiceManager.stopVpn(this@VpnTileService).getOrThrow()
 
                 withContext(Dispatchers.Main) {
-
-                    persistVpnPending(this@VpnTileService, "")
                     updateTile()
                 }
 
@@ -459,17 +461,11 @@ class VpnTileService : TileService() {
     private fun bindService(force: Boolean = false) {
         if (serviceBound || bindRequested) return
 
-        val persistedActive = runCatching {
-            getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-                .getBoolean(KEY_VPN_ACTIVE, false)
-        }.getOrDefault(false)
+        val persistedActive = VpnStateStore.getActive()
+        val pending = VpnStateStore.getPending()
 
-        val pending = runCatching {
-            getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-                .getString(KEY_VPN_PENDING, "")
-        }.getOrNull().orEmpty()
-
-        val shouldTryBind = force || persistedActive || pending == "starting" || pending == "stopping"
+        val shouldTryBind = force || persistedActive || pending == "starting" || pending == "stopping" ||
+            isCoreServiceAvailable()
         if (!shouldTryBind) return
 
         val intent = Intent(this, SingBoxIpcService::class.java)
@@ -501,14 +497,8 @@ class VpnTileService : TileService() {
             if (serviceBound || remoteService != null) return@launch
             if (!bindRequested) return@launch
 
-            val active = runCatching {
-                getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-                    .getBoolean(KEY_VPN_ACTIVE, false)
-            }.getOrDefault(false)
-            val pending = runCatching {
-                getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-                    .getString(KEY_VPN_PENDING, "")
-            }.getOrNull().orEmpty()
+            val active = VpnStateStore.getActive()
+            val pending = VpnStateStore.getPending()
 
             if (shouldClearUnavailableAfterBindFailure(pending, active)) {
                 unbindService()

@@ -2,8 +2,6 @@ package com.kunk.singbox.ui.screens
 
 import com.kunk.singbox.R
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.core.animateDpAsState
-import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -147,11 +145,7 @@ private fun LiquidGlassTabCapsule(
         val slotWidth = maxWidth / itemCount.toFloat()
         val clampedIndex = selectedIndex.coerceIn(0, itemCount - 1)
         val targetOffset = slotWidth * clampedIndex.toFloat()
-        val indicatorOffset by animateDpAsState(
-            targetValue = targetOffset,
-            animationSpec = spring(stiffness = 430f, dampingRatio = 0.82f),
-            label = "liquid_glass_tab_indicator_offset"
-        )
+        val indicatorOffset = targetOffset
 
         CapsuleSlidingIndicator(
             indicatorOffset = indicatorOffset,

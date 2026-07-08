@@ -7,7 +7,7 @@ import java.io.File
 class DashboardViewModelStopTileStateTest {
 
     @Test
-    fun stopVpnPersistsTileOffStateBeforeSendingStopIntent() {
+    fun stopVpnKeepsDisconnectingUntilServiceStopIsConfirmed() {
         val source = File("src/main/java/com/kunk/singbox/viewmodel/DashboardViewModel.kt").readText()
         val body = source.substring(
             source.indexOf("private fun stopVpn()"),
@@ -15,15 +15,16 @@ class DashboardViewModelStopTileStateTest {
         )
 
         val pendingIndex = body.indexOf("VpnTileService.persistVpnPending(context, \"stopping\")")
-        val inactiveIndex = body.indexOf("VpnTileService.persistVpnState(context, false)")
-        val firstStopIntentIndex = body.indexOf("context.startService(Intent(context,")
+        val stopIndex = body.indexOf("VpnServiceManager.stopVpn(context)")
         val refreshIndex = body.indexOf("action = VpnTileService.ACTION_REFRESH_TILE")
 
         assertTrue(pendingIndex >= 0)
-        assertTrue(inactiveIndex >= 0)
-        assertTrue(firstStopIntentIndex >= 0)
-        assertTrue(pendingIndex < firstStopIntentIndex)
-        assertTrue(inactiveIndex < firstStopIntentIndex)
+        assertTrue(stopIndex >= 0)
+        assertTrue(pendingIndex < stopIndex)
         assertTrue(refreshIndex >= 0)
+        assertTrue(body.contains("ConnectionState.Disconnecting"))
+        assertTrue(body.contains("ServiceState.STOPPED"))
+        assertTrue(body.contains("performDisconnect()"))
+        assertTrue(!body.contains("VpnTileService.persistVpnState(context, false)"))
     }
 }

@@ -17,6 +17,7 @@ import com.kunk.singbox.model.ConnectionStats
 import com.kunk.singbox.model.AppSettings
 import com.kunk.singbox.model.NodeUi
 import com.kunk.singbox.model.ProfileUi
+import com.kunk.singbox.manager.VpnServiceManager
 import com.kunk.singbox.repository.SettingsRepository
 import com.kunk.singbox.ipc.SingBoxRemote
 import com.kunk.singbox.ipc.VpnStateStore
@@ -163,6 +164,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
     private var pingTestJob: Job? = null
     private var lastErrorToastJob: Job? = null
     private var startMonitorJob: Job? = null
+    private var stopConfirmJob: Job? = null
 
     // Active profile and node from ConfigRepository
     val activeProfileId: StateFlow<String?> = configRepository.activeProfileId
@@ -262,10 +264,9 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                     systemVpnDetectedOnBoot = true
                 }
 
-                val persisted = context.getSharedPreferences("vpn_state", Context.MODE_PRIVATE)
-                    .getBoolean("vpn_active", false)
+                val persisted = VpnStateStore.getActive()
 
-                if (!hasSystemVpn && persisted) {
+                if (!hasSystemVpn && persisted && VpnStateStore.getMode() == VpnStateStore.CoreMode.VPN) {
                     VpnTileService.persistVpnState(context, false)
                 }
 
@@ -709,6 +710,8 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
     private fun startCore() {
         viewModelScope.launch {
             val context = getApplication<Application>()
+            stopConfirmJob?.cancel()
+            stopConfirmJob = null
 
             val settings = runCatching {
                 SettingsRepository.getInstance(context).settings.first()
@@ -871,36 +874,46 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         startMonitorJob = null
         stopTrafficMonitor()
         stopPingTest()
-        // Immediately set to Idle for responsive UI
-        _connectionState.value = ConnectionState.Idle
+        _connectionState.value = ConnectionState.Disconnecting
         _connectedAtElapsedMs.value = null
         _statsBase.value = ConnectionStats(0, 0, 0, 0, 0)
         VpnTileService.persistVpnPending(context, "stopping")
-        VpnTileService.persistVpnState(context, false)
 
-        when (VpnStateStore.getMode()) {
-            VpnStateStore.CoreMode.PROXY -> {
-                context.startService(Intent(context, ProxyOnlyService::class.java).apply {
-                    action = ProxyOnlyService.ACTION_STOP
-                })
-            }
-            VpnStateStore.CoreMode.VPN -> {
-                context.startService(Intent(context, SingBoxService::class.java).apply {
-                    action = SingBoxService.ACTION_STOP
-                })
-            }
-            VpnStateStore.CoreMode.NONE -> {
-                context.startService(Intent(context, ProxyOnlyService::class.java).apply {
-                    action = ProxyOnlyService.ACTION_STOP
-                })
-                context.startService(Intent(context, SingBoxService::class.java).apply {
-                    action = SingBoxService.ACTION_STOP
-                })
-            }
+        val stopResult = VpnServiceManager.stopVpn(context)
+        if (stopResult.isFailure) {
+            _connectionState.value = ConnectionState.Error
+            return
         }
+
         context.startService(Intent(context, VpnTileService::class.java).apply {
             action = VpnTileService.ACTION_REFRESH_TILE
         })
+        waitForStopConfirmation(context)
+    }
+
+    private fun waitForStopConfirmation(context: Context) {
+        stopConfirmJob?.cancel()
+        stopConfirmJob = viewModelScope.launch {
+            try {
+                if (SingBoxRemote.state.value != ServiceState.STOPPED) {
+                    withTimeout(8000L) {
+                        SingBoxRemote.state.first { it == ServiceState.STOPPED }
+                    }
+                }
+            } catch (e: TimeoutCancellationException) {
+                Log.w(TAG, "Timeout waiting for service stop confirmation", e)
+                SingBoxRemote.ensureBound(context)
+                delay(300)
+            }
+
+            if (SingBoxRemote.state.value == ServiceState.STOPPED) {
+                VpnTileService.persistVpnPending(context, "")
+                performDisconnect()
+            } else {
+                setConnectionState(ConnectionState.Disconnecting)
+            }
+            stopConfirmJob = null
+        }
     }
 
     private fun startPingTest() {
@@ -996,6 +1009,8 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         super.onCleared()
         startMonitorJob?.cancel()
         startMonitorJob = null
+        stopConfirmJob?.cancel()
+        stopConfirmJob = null
         stopTrafficMonitor()
         stopPingTest()
     }

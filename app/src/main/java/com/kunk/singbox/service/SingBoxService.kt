@@ -576,6 +576,7 @@ class SingBoxService : VpnService() {
     @Volatile protected var lastFullActiveHealthProbeAtMs: Long = 0L
     @Volatile protected var activeHealthProbeTrafficIgnoreUntilMs: Long = 0L
     protected val activeHealthProbeRunning = AtomicBoolean(false)
+    private val singleNodeRouteFailureNotificationTimes = ConcurrentHashMap<String, Long>()
 
     protected val trafficListener = object : TrafficMonitor.Listener {
         override fun onTrafficUpdate(snapshot: TrafficMonitor.TrafficSnapshot) {
@@ -875,7 +876,7 @@ class SingBoxService : VpnService() {
                 notificationManager.showTemporaryNotification(notificationId, notification)
                 serviceScope.launch {
                     delay(8000)
-                    notificationManager.cancelNotification(notificationId)
+                    notificationManager.cancelNotification(VpnNotificationManager.NOTIFICATION_ID + notificationId)
                 }
             }
 
@@ -1363,7 +1364,52 @@ class SingBoxService : VpnService() {
         ) ?: return
 
         LogRepository.getInstance().addLog(HealthSignalAggregator.buildSummary(signal))
-        submitAutoFailoverSuspicion("dns_remote_timeout")
+        val runningConfig = loadLastRunningConfig()
+        val currentProxyTag = resolveCurrentProxyOutboundTag()
+        if (runningConfig != null) {
+            notifySingleNodeRouteFailureIfNeeded(signal, currentProxyTag, runningConfig)
+        }
+        if (runningConfig == null ||
+            SingBoxService.shouldSubmitMainAutoFailoverForDnsSignal(
+                dnsServerTag = signal.dnsServerTag,
+                currentProxyTag = currentProxyTag,
+                config = runningConfig
+            )
+        ) {
+            submitAutoFailoverSuspicion("dns_remote_timeout")
+        }
+    }
+
+    private fun notifySingleNodeRouteFailureIfNeeded(
+        signal: HealthSignal,
+        currentProxyTag: String?,
+        runningConfig: SingBoxConfig
+    ) {
+        val failureTag = SingBoxService.resolveSingleNodeRouteFailureTag(
+            dnsServerTag = signal.dnsServerTag,
+            currentProxyTag = currentProxyTag,
+            config = runningConfig
+        ) ?: return
+
+        val now = SystemClock.elapsedRealtime()
+        val lastNotifyAt = singleNodeRouteFailureNotificationTimes[failureTag] ?: 0L
+        if (!SingBoxService.shouldNotifySingleNodeRouteFailure(failureTag, lastNotifyAt, now)) {
+            return
+        }
+        singleNodeRouteFailureNotificationTimes[failureTag] = now
+
+        val configRepository = ConfigRepository.getInstance(this@SingBoxService)
+        val displayName = configRepository.resolveNodeNameFromOutboundTag(failureTag) ?: failureTag
+        val message = SingBoxService.buildSingleNodeRouteFailureNotificationText(displayName)
+        LogRepository.getInstance().addLog("WARN: $message")
+
+        val notificationId = 2600 + (failureTag.hashCode().absoluteValue % 500)
+        val notification = notificationManager.createStartingNotification(message)
+        notificationManager.showTemporaryNotification(notificationId, notification)
+        serviceScope.launch {
+            delay(8000)
+            notificationManager.cancelNotification(VpnNotificationManager.NOTIFICATION_ID + notificationId)
+        }
     }
 
     private fun handleActiveProbeResult(result: ActiveProbeResult) {
@@ -3698,9 +3744,9 @@ class SingBoxService : VpnService() {
 
         internal const val DNS_FAILOVER_PROBE_RETRY_DELAY_MS = 1_000L
 
-        internal const val HEALTH_FAST_FAILOVER_TOTAL_TIMEOUT_MS = 7_000L
+        internal const val HEALTH_FAST_FAILOVER_TOTAL_TIMEOUT_MS = 9_000L
 
-        internal const val HEALTH_FAST_FAILOVER_CANDIDATE_TIMEOUT_MS = 800
+        internal const val HEALTH_FAST_FAILOVER_CANDIDATE_TIMEOUT_MS = 1_200
 
         internal const val HEALTH_FAST_FAILOVER_PORT_READY_TIMEOUT_MS = 600L
 
@@ -3710,11 +3756,13 @@ class SingBoxService : VpnService() {
 
         internal const val ACTIVE_HEALTH_PROBE_FULL_INTERVAL_MS = 10_000L
 
-        internal const val ACTIVE_HEALTH_PROBE_TIMEOUT_MS = 900L
+        internal const val ACTIVE_HEALTH_PROBE_TIMEOUT_MS = 1_500L
 
         internal const val ACTIVE_HEALTH_PROBE_TRAFFIC_IGNORE_MS = 3_000L
 
         internal const val AUTO_FAILOVER_MEANINGFUL_TRAFFIC_DURING_PROBE_BPS = 64 * 1024L
+
+        internal const val SINGLE_NODE_ROUTE_FAILURE_NOTIFICATION_DEBOUNCE_MS = 60_000L
 
         internal val LATENCY_SKIPPED_OUTBOUND_TYPES = setOf(
             "direct",
@@ -3938,12 +3986,153 @@ class SingBoxService : VpnService() {
             return shouldResetAfterAutoFailover(trigger)
         }
 
+        internal fun resolveSingleNodeRouteFailureTagForTest(
+            dnsServerTag: String?,
+            currentProxyTag: String?,
+            config: SingBoxConfig
+        ): String? {
+            return resolveSingleNodeRouteFailureTag(dnsServerTag, currentProxyTag, config)
+        }
+
+        internal fun resolveSingleNodeRouteFailureTag(
+            dnsServerTag: String?,
+            currentProxyTag: String?,
+            config: SingBoxConfig
+        ): String? {
+            val currentTag = currentProxyTag?.trim()?.takeIf { it.isNotBlank() } ?: return null
+            val mainConcreteTags = resolveMainConcreteOutboundTags(currentTag, config)
+            val detourTag = resolveDnsSignalDetourTag(dnsServerTag, config)
+            val outbound = detourTag?.let { tag ->
+                config.outbounds.orEmpty().firstOrNull { it.tag == tag }
+            }
+            val outboundType = outbound?.type?.trim()?.lowercase().orEmpty()
+            val isCurrentProxyTag = detourTag?.let { tag ->
+                mainConcreteTags.any { mainTag ->
+                    UrlTestTagMatcher.normalizeTag(tag) == UrlTestTagMatcher.normalizeTag(mainTag)
+                }
+            } == true
+
+            return when {
+                detourTag.isNullOrBlank() -> null
+                isCurrentProxyTag -> null
+                outbound == null -> null
+                outboundType.isBlank() || outboundType in LATENCY_SKIPPED_OUTBOUND_TYPES -> null
+                else -> detourTag
+            }
+        }
+
+        internal fun shouldSubmitMainAutoFailoverForDnsSignalForTest(
+            dnsServerTag: String?,
+            currentProxyTag: String?,
+            config: SingBoxConfig
+        ): Boolean {
+            return shouldSubmitMainAutoFailoverForDnsSignal(dnsServerTag, currentProxyTag, config)
+        }
+
+        internal fun shouldSubmitMainAutoFailoverForDnsSignal(
+            dnsServerTag: String?,
+            currentProxyTag: String?,
+            config: SingBoxConfig
+        ): Boolean {
+            val detourTag = resolveDnsSignalDetourTag(dnsServerTag, config) ?: return true
+            if (detourTag.equals("PROXY", ignoreCase = true)) return true
+
+            val outbound = config.outbounds.orEmpty().firstOrNull { it.tag == detourTag } ?: return true
+            val outboundType = outbound.type.trim().lowercase()
+            if (outboundType == "selector" || outboundType == "urltest" || outboundType == "url-test") {
+                return false
+            }
+            val currentTag = currentProxyTag?.trim()?.takeIf { it.isNotBlank() } ?: return true
+            val mainConcreteTags = resolveMainConcreteOutboundTags(currentTag, config)
+            val normalizedDetour = UrlTestTagMatcher.normalizeTag(detourTag)
+            return mainConcreteTags.any { tag ->
+                UrlTestTagMatcher.normalizeTag(tag) == normalizedDetour
+            }
+        }
+
+        private fun resolveDnsSignalDetourTag(dnsServerTag: String?, config: SingBoxConfig): String? {
+            val dnsTag = dnsServerTag?.trim().orEmpty()
+            if (dnsTag.isBlank()) return null
+            return config.dns
+                ?.servers
+                .orEmpty()
+                .firstOrNull { it.tag?.trim() == dnsTag }
+                ?.detour
+                ?.trim()
+                ?.takeIf { it.isNotBlank() }
+        }
+
+        private fun resolveMainConcreteOutboundTags(currentProxyTag: String?, config: SingBoxConfig): List<String> {
+            val tags = mutableListOf<String>()
+            fun add(tag: String?) {
+                val value = tag?.trim()?.takeIf { it.isNotBlank() } ?: return
+                val normalized = UrlTestTagMatcher.normalizeTag(value)
+                if (tags.none { UrlTestTagMatcher.normalizeTag(it) == normalized }) {
+                    tags.add(value)
+                }
+            }
+
+            add(resolveConcreteOutboundTag(currentProxyTag, config))
+            add(resolveConcreteOutboundTag("PROXY", config))
+            return tags
+        }
+
+        private fun resolveConcreteOutboundTag(tag: String?, config: SingBoxConfig): String? {
+            var current = tag?.trim()?.takeIf { it.isNotBlank() } ?: return null
+            val outboundsByTag = config.outbounds.orEmpty().associateBy { it.tag }
+            var remainingDepth = 4
+            var resolved = false
+            while (!resolved && !current.isNullOrBlank() && remainingDepth > 0) {
+                val activeTag = current.orEmpty()
+                val outbound = outboundsByTag[activeTag]
+                val next = when (outbound?.type?.trim()?.lowercase()) {
+                    "selector" -> outbound.default?.trim()?.takeIf { it.isNotBlank() } ?: firstOutboundRef(outbound)
+                    "urltest", "url-test" -> firstOutboundRef(outbound)
+                    else -> {
+                        resolved = true
+                        null
+                    }
+                }
+                if (next == null ||
+                    UrlTestTagMatcher.normalizeTag(next) == UrlTestTagMatcher.normalizeTag(activeTag)
+                ) {
+                    resolved = true
+                } else {
+                    current = next
+                    remainingDepth--
+                }
+            }
+            return current
+        }
+
+        private fun firstOutboundRef(outbound: Outbound): String? {
+            return outbound.outbounds
+                .orEmpty()
+                .firstNotNullOfOrNull { it.trim().takeIf(String::isNotBlank) }
+        }
+
+        internal fun shouldNotifySingleNodeRouteFailure(
+            failureTag: String,
+            lastNotifyAtMs: Long,
+            nowAtMs: Long,
+            debounceMs: Long = SINGLE_NODE_ROUTE_FAILURE_NOTIFICATION_DEBOUNCE_MS
+        ): Boolean {
+            if (failureTag.isBlank()) return false
+            return lastNotifyAtMs <= 0L || nowAtMs - lastNotifyAtMs >= debounceMs
+        }
+
+        internal fun buildSingleNodeRouteFailureNotificationText(displayName: String): String {
+            val safeName = displayName.trim().ifBlank { "未知节点" }
+            return "单节点分流节点 $safeName 连接异常"
+        }
+
         internal fun shouldTreatActiveProbeAsNodeFailure(
             googleProbeOk: Boolean,
             cloudflareProbeOk: Boolean,
             metaProbeOk: Boolean
         ): Boolean {
-            return !metaProbeOk || (!googleProbeOk && !cloudflareProbeOk)
+            val failedCount = listOf(googleProbeOk, cloudflareProbeOk, metaProbeOk).count { !it }
+            return failedCount >= 2
         }
 
         internal fun buildActiveProbeFailureSummary(

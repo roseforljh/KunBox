@@ -61,6 +61,8 @@ import com.kunk.singbox.ui.navigation.Screen
 import com.kunk.singbox.ui.navigation.getTabForRoute
 
 private val liquidGlassButtonShape = RoundedCornerShape(percent = 50)
+private val liquidGlassNavCapsuleHeight = 60.dp
+private val liquidGlassNavItemMinTouchSize = 56.dp
 private val liquidGlassSelectedIndicatorSize = 44.dp
 
 private data class LiquidGlassNavColors(
@@ -209,7 +211,7 @@ private fun LiquidGlassAppNavBar(
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(78.dp + safeBottomPadding)
+            .height(86.dp + safeBottomPadding)
             .padding(start = 28.dp, top = 6.dp, end = 28.dp, bottom = 12.dp + safeBottomPadding),
         contentAlignment = Alignment.BottomCenter
     ) {
@@ -259,7 +261,7 @@ private fun LiquidGlassCapsule(
     BoxWithConstraints(
         modifier = Modifier
             .fillMaxWidth()
-            .height(52.dp)
+            .height(liquidGlassNavCapsuleHeight)
             .shadow(elevation = 14.dp, shape = liquidGlassButtonShape, clip = false)
             .clip(liquidGlassButtonShape)
             .background(brush = liquidGlassCapsuleBrush(isDark = isDark))
@@ -305,11 +307,7 @@ private fun BoxScope.LiquidGlassSelectedIndicator(
         itemCount = itemCount,
         maxWidth = maxWidth
     )
-    val indicatorOffset by animateDpAsState(
-        targetValue = targetOffset,
-        animationSpec = spring(stiffness = 430f, dampingRatio = 0.82f),
-        label = "liquid_glass_nav_selected_offset"
-    )
+    val indicatorOffset = targetOffset
 
     Box(
         modifier = Modifier
@@ -341,7 +339,8 @@ private fun LiquidGlassNavItem(
 
     Box(
         modifier = modifier
-            .size(48.dp)
+            .fillMaxWidth()
+            .height(liquidGlassNavItemMinTouchSize)
             .graphicsLayer {
                 scaleX = metrics.scale
                 scaleY = metrics.scale

@@ -90,7 +90,7 @@ class RecoveryForegroundFallbackProbeTest {
     }
 
     @Test
-    fun activeHealthSignalHandlesGeneralAndMetaOnlyFailure() {
+    fun activeHealthSignalRequiresMultipleProbeFailures() {
         assertFalse(
             SingBoxService.shouldTreatActiveProbeAsNodeFailure(
                 googleProbeOk = true,
@@ -105,7 +105,7 @@ class RecoveryForegroundFallbackProbeTest {
                 metaProbeOk = false
             )
         )
-        assertTrue(
+        assertFalse(
             SingBoxService.shouldTreatActiveProbeAsNodeFailure(
                 googleProbeOk = true,
                 cloudflareProbeOk = true,

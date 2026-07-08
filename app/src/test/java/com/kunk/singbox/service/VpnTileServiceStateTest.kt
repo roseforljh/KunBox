@@ -139,4 +139,14 @@ class VpnTileServiceStateTest {
         assertFalse(body.contains("delay(2000)"))
         assertFalse(body.contains("isStartingSequence = false\n                        startSequenceId = 0L"))
     }
+
+    @Test
+    fun tileRuntimeStateReadsVpnStateStoreInsteadOfLegacyPreferences() {
+        val source = File("src/main/java/com/kunk/singbox/service/VpnTileService.kt").readText()
+
+        assertTrue(source.contains("VpnStateStore.getActive()"))
+        assertTrue(source.contains("VpnStateStore.getPending()"))
+        assertFalse(source.contains(".getBoolean(KEY_VPN_ACTIVE"))
+        assertFalse(source.contains(".getString(KEY_VPN_PENDING"))
+    }
 }

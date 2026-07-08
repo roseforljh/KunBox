@@ -94,21 +94,21 @@ object AppNotificationManager {
         val darkTheme = context.isDarkTheme()
         val colors = if (darkTheme) {
             intArrayOf(
-                Color.argb(72, 255, 255, 255),
-                Color.argb(150, 32, 32, 36),
-                Color.argb(118, 10, 10, 12)
+                Color.argb(56, 255, 255, 255),
+                Color.argb(126, 32, 32, 36),
+                Color.argb(92, 10, 10, 12)
             )
         } else {
             intArrayOf(
-                Color.argb(226, 255, 255, 255),
-                Color.argb(214, 245, 245, 247),
-                Color.argb(188, 235, 238, 242)
+                Color.argb(172, 255, 255, 255),
+                Color.argb(146, 245, 245, 247),
+                Color.argb(118, 235, 238, 242)
             )
         }
         val strokeColor = if (darkTheme) {
-            Color.argb(70, 255, 255, 255)
+            Color.argb(78, 255, 255, 255)
         } else {
-            Color.argb(180, 255, 255, 255)
+            Color.argb(132, 255, 255, 255)
         }
 
         return GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, colors).apply {

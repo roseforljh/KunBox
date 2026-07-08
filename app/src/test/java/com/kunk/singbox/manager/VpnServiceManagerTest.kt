@@ -46,4 +46,26 @@ class VpnServiceManagerTest {
         assertFalse(source.contains("com.kunk.singbox_preferences"))
         assertFalse(source.contains("tun_enabled"))
     }
+
+    @Test
+    fun runtimeStateDoesNotReadLegacyVpnPreferences() {
+        val source = File("src/main/java/com/kunk/singbox/manager/VpnServiceManager.kt").readText()
+
+        assertTrue(source.contains("VpnStateStore.getActive()"))
+        assertTrue(source.contains("VpnStateStore.getPending()"))
+        assertFalse(source.contains("PREFS_VPN_STATE"))
+        assertFalse(source.contains("getSharedPreferences"))
+    }
+
+    @Test
+    fun stopVpnSendsStopToBothRuntimeServices() {
+        val source = File("src/main/java/com/kunk/singbox/manager/VpnServiceManager.kt").readText()
+        val body = source.substring(
+            source.indexOf("fun stopVpn(context: Context)"),
+            source.indexOf("/**", source.indexOf("fun stopVpn(context: Context)"))
+        )
+
+        assertTrue(body.contains("SingBoxService::class.java"))
+        assertTrue(body.contains("ProxyOnlyService::class.java"))
+    }
 }

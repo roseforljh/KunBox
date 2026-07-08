@@ -459,11 +459,11 @@ class LiquidGlassMaterialCallCoverageTest {
                 val relativePath = file.relativeTo(sourceDir).invariantSeparatorsPath
                 file.readLines()
                     .asSequence()
-                    .mapIndexedNotNull { index, line ->
+                    .mapNotNull { line ->
                         val callName = callPatterns.firstOrNull { (_, pattern) ->
                             pattern.containsMatchIn(line)
-                        }?.first ?: return@mapIndexedNotNull null
-                        "$relativePath:${index + 1}:$callName:${line.trim()}"
+                        }?.first
+                        if (callName == null) null else "$relativePath:$callName:${line.trim()}"
                     }
             }
             .sorted()
@@ -722,19 +722,19 @@ class LiquidGlassMaterialCallCoverageTest {
         )
 
         val directMaterialSurfaceAllowList = listOf(
-            "MainActivity.kt:376:Surface:Surface(",
-            "ui/components/AppNavBar.kt:113:NavigationBar:NavigationBar(",
-            "ui/components/AppNavBar.kt:172:NavigationBarItem:NavigationBarItem(",
-            "ui/components/ExportImportDialogs.kt:70:Card:Card(",
-            "ui/components/StandardCard.kt:65:Card:Card(",
-            "ui/components/StandardCard.kt:76:Card:Card(",
-            "ui/screens/AppRoutingScreen.kt:423:Tab:Tab(",
-            "ui/screens/ConnectionInfoScreen.kt:604:Card:Card(",
-            "ui/screens/ConnectionInfoScreen.kt:731:Card:Card(",
-            "ui/screens/RuleSetHubScreen.kt:344:Card:Card(",
-            "ui/theme/LiquidGlassChipControls.kt:75:FilterChip:FilterChip(",
-            "ui/theme/LiquidGlassMenuControls.kt:32:DropdownMenu:DropdownMenu(",
-            "ui/theme/LiquidGlassMenuControls.kt:53:DropdownMenu:DropdownMenu("
+            "MainActivity.kt:Surface:Surface(",
+            "ui/components/AppNavBar.kt:NavigationBar:NavigationBar(",
+            "ui/components/AppNavBar.kt:NavigationBarItem:NavigationBarItem(",
+            "ui/components/ExportImportDialogs.kt:Card:Card(",
+            "ui/components/StandardCard.kt:Card:Card(",
+            "ui/components/StandardCard.kt:Card:Card(",
+            "ui/screens/AppRoutingScreen.kt:Tab:Tab(",
+            "ui/screens/ConnectionInfoScreen.kt:Card:Card(",
+            "ui/screens/ConnectionInfoScreen.kt:Card:Card(",
+            "ui/screens/RuleSetHubScreen.kt:Card:Card(",
+            "ui/theme/LiquidGlassChipControls.kt:FilterChip:FilterChip(",
+            "ui/theme/LiquidGlassMenuControls.kt:DropdownMenu:DropdownMenu(",
+            "ui/theme/LiquidGlassMenuControls.kt:DropdownMenu:DropdownMenu("
         )
 
         val basicTextFieldPanelMarkers = listOf(

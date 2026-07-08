@@ -72,6 +72,28 @@ class OutboundFixerTest {
     }
 
     @Test
+    fun testBuildRuntimeHysteria2OmitsServerPortWhenServerPortsConfigured() {
+        val outbound = Outbound(
+            type = "hysteria2",
+            tag = "hy2-node",
+            server = "hy2.example.com",
+            serverPort = 60000,
+            password = "secret",
+            serverPorts = listOf("60000-65530"),
+            tls = TlsConfig(enabled = true, serverName = "edge.example.com")
+        )
+
+        val runtime = OutboundFixer.buildRuntimeHysteriaOutbound(
+            outbound,
+            null,
+            null
+        )
+
+        assertNull(runtime.serverPort)
+        assertEquals(listOf("60000-65530"), runtime.serverPorts)
+    }
+
+    @Test
     fun testBuildForRuntimePreservesShadowsocksTransportAndTls() {
         val outbound = Outbound(
             type = "shadowsocks",

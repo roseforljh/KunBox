@@ -68,6 +68,49 @@ class LiquidGlassControlCoverageTest {
     }
 
     @Test
+    fun liquidGlassSubscriptionDialogLabelsRenderOutsideTextFields() {
+        val source = File("src/main/java/com/kunk/singbox/ui/screens/ProfilesScreenDialogs.kt")
+            .readNormalizedText()
+        val body = source.substring(source.indexOf("internal fun SubscriptionInputDialog("))
+
+        assertTrue(source.contains("ProfileLiquidGlassTextFieldLabel("))
+        assertTrue(source.contains("liquidGlassAwareTextFieldLabel("))
+        assertTrue(body.contains("ProfileLiquidGlassTextFieldLabel(text = nameLabel, useLiquidGlass = useLiquidGlass)"))
+        assertTrue(body.contains("ProfileLiquidGlassTextFieldLabel(text = urlLabel, useLiquidGlass = useLiquidGlass)"))
+        assertTrue(body.contains("label = liquidGlassAwareTextFieldLabel(useLiquidGlass, nameLabel)"))
+        assertTrue(body.contains("label = liquidGlassAwareTextFieldLabel(useLiquidGlass, urlLabel)"))
+    }
+
+    @Test
+    fun liquidGlassBottomNavItemsUseExpandedClickTarget() {
+        val source = File("src/main/java/com/kunk/singbox/ui/components/AppNavBar.kt")
+            .readNormalizedText()
+        val body = source.substring(
+            source.indexOf("private fun LiquidGlassNavItem("),
+            source.indexOf("@Composable", source.indexOf("private fun LiquidGlassNavItem(") + 1)
+        )
+
+        assertTrue(source.contains("private val liquidGlassNavItemMinTouchSize = 56.dp"))
+        assertTrue(body.contains(".fillMaxWidth()"))
+        assertTrue(body.contains(".height(liquidGlassNavItemMinTouchSize)"))
+    }
+
+    @Test
+    fun liquidGlassSelectedCapsulesMoveSynchronouslyWithoutOffsetAnimation() {
+        val navSource = File("src/main/java/com/kunk/singbox/ui/components/AppNavBar.kt")
+            .readNormalizedText()
+        val routingSource = File("src/main/java/com/kunk/singbox/ui/screens/AppRoutingScreen.kt")
+            .readNormalizedText()
+        val navIndicatorBody = navSource.extractFunctionBody("LiquidGlassSelectedIndicator")
+        val routingCapsuleBody = routingSource.extractFunctionBody("LiquidGlassTabCapsule")
+
+        assertTrue(navIndicatorBody.contains("val indicatorOffset = targetOffset"))
+        assertTrue(!navIndicatorBody.contains("animateDpAsState"))
+        assertTrue(routingCapsuleBody.contains("val indicatorOffset = targetOffset"))
+        assertTrue(!routingCapsuleBody.contains("animateDpAsState"))
+    }
+
+    @Test
     fun textButtonsUseLiquidGlassPanels() {
         val liquidControls = liquidControlSources()
         val componentFiles = listOf(
@@ -577,6 +620,29 @@ class LiquidGlassControlCoverageTest {
             val source = File("src/main/java/com/kunk/singbox/ui/screens/$fileName").readNormalizedText()
             assertTrue("$fileName should contain $pattern", source.contains(pattern))
         }
+    }
+
+    private fun String.extractFunctionBody(functionName: String): String {
+        val markers = listOf("fun $functionName(", "fun BoxScope.$functionName(")
+        val start = markers
+            .map(::indexOf)
+            .filter { it >= 0 }
+            .minOrNull()
+            ?: -1
+        require(start >= 0) { "Function not found: $functionName" }
+        val bodyStart = indexOf('{', start)
+        require(bodyStart >= 0) { "Function body not found: $functionName" }
+        var depth = 0
+        for (index in bodyStart until length) {
+            when (this[index]) {
+                '{' -> depth += 1
+                '}' -> {
+                    depth -= 1
+                    if (depth == 0) return substring(bodyStart, index + 1)
+                }
+            }
+        }
+        error("Function body not closed: $functionName")
     }
 
     private companion object {
