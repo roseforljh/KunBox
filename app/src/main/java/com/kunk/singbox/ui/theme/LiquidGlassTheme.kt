@@ -1,5 +1,8 @@
 package com.kunk.singbox.ui.theme
 
+import android.graphics.BlurMaskFilter
+import android.os.Build
+import android.view.WindowManager
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -10,8 +13,6 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.window.DialogWindowProvider
-import android.os.Build
-import android.view.WindowManager
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
@@ -35,7 +36,6 @@ import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import android.graphics.BlurMaskFilter
 import com.kunk.singbox.model.AppThemeStyle
 
 val LocalAppThemeStyle = staticCompositionLocalOf { AppThemeStyle.DEFAULT }
@@ -74,13 +74,14 @@ fun Modifier.liquidGlassPanel(
         return this
     }
 
-    val shadow = liquidGlassPanelShadowSpec(selected = selected)
+    val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
+    val shadowAlpha = if (isDark) 0.35f else 0.12f
 
     val baseModifier = this
         .hollowShadow(
             shape = shape,
-            color = shadow.color,
-            alpha = shadow.alpha,
+            color = Color.Black,
+            alpha = shadowAlpha,
             blurRadius = shadowElevation,
             offsetY = shadowElevation / 2
         )
@@ -94,24 +95,6 @@ fun Modifier.liquidGlassPanel(
             shape = shape
         )
     return if (!enabled) baseModifier.alpha(0.56f) else baseModifier
-}
-
-private data class LiquidGlassShadowSpec(
-    val color: Color,
-    val alpha: Float
-)
-
-@Composable
-private fun liquidGlassPanelShadowSpec(selected: Boolean): LiquidGlassShadowSpec {
-    val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
-    val color = if (selected) MaterialTheme.colorScheme.primary else Color.Black
-    val alpha = when {
-        selected && isDark -> 0.40f
-        selected -> 0.22f
-        isDark -> 0.35f
-        else -> 0.12f
-    }
-    return LiquidGlassShadowSpec(color = color, alpha = alpha)
 }
 
 fun Modifier.hollowShadow(
@@ -238,36 +221,27 @@ fun liquidGlassPanelBrush(selected: Boolean = false): Brush {
     val primary = MaterialTheme.colorScheme.primary
 
     return Brush.linearGradient(
-        colors = if (selected) {
-            if (isDark) {
-                // 暗色模式：轻微的主题色高光叠加在毛玻璃上
-                listOf(
-                    Color.White.copy(alpha = 0.18f),
-                    primary.copy(alpha = 0.18f),
-                    primary.copy(alpha = 0.10f)
-                )
-            } else {
-                listOf(
-                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.32f),
-                    primary.copy(alpha = 0.12f),
-                    MaterialTheme.colorScheme.surface.copy(alpha = 0.18f)
-                )
-            }
-        } else {
-            if (isDark) {
-                listOf(
-                    Color.White.copy(alpha = 0.14f),
-                    MaterialTheme.colorScheme.surface.copy(alpha = 0.48f),
-                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.24f)
-                )
-            } else {
-                // 亮色模式下：极具通透半透明感的彩色玻璃折射质感，避免死白块
-                listOf(
-                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.26f),
-                    primary.copy(alpha = 0.08f),
-                    MaterialTheme.colorScheme.surface.copy(alpha = 0.14f)
-                )
-            }
+        colors = when {
+            selected && isDark -> listOf(
+                Color.White.copy(alpha = 0.07f),
+                primary.copy(alpha = 0.10f),
+                MaterialTheme.colorScheme.surface.copy(alpha = 0.06f)
+            )
+            selected -> listOf(
+                Color.White.copy(alpha = 0.08f),
+                primary.copy(alpha = 0.07f),
+                MaterialTheme.colorScheme.surface.copy(alpha = 0.04f)
+            )
+            isDark -> listOf(
+                Color.White.copy(alpha = 0.05f),
+                MaterialTheme.colorScheme.surface.copy(alpha = 0.08f),
+                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.05f)
+            )
+            else -> listOf(
+                Color.White.copy(alpha = 0.06f),
+                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.04f),
+                primary.copy(alpha = 0.02f)
+            )
         }
     )
 }
@@ -278,20 +252,20 @@ fun liquidGlassPanelBorderBrush(selected: Boolean = false): Brush {
     val primary = MaterialTheme.colorScheme.primary
     return if (selected) {
         androidx.compose.ui.graphics.SolidColor(
-            primary.copy(alpha = if (isDark) 0.45f else 0.62f)
+            primary.copy(alpha = if (isDark) 0.58f else 0.72f)
         )
     } else {
         Brush.linearGradient(
             colors = if (isDark) {
                 listOf(
-                    Color.White.copy(alpha = 0.35f),
-                    Color.White.copy(alpha = 0.05f)
+                    Color.White.copy(alpha = 0.50f),
+                    Color.White.copy(alpha = 0.08f)
                 )
             } else {
                 // 亮色模式下：边缘全反射勾勒，强白色高光渐变到淡淡的 primary 边缘反射
                 listOf(
-                    Color.White.copy(alpha = 0.90f),
-                    primary.copy(alpha = 0.22f)
+                    Color.White.copy(alpha = 0.92f),
+                    primary.copy(alpha = 0.24f)
                 )
             }
         )

@@ -128,6 +128,29 @@ private fun Modifier.profileDnsOptionPanel(isSelected: Boolean): Modifier {
 }
 
 @Composable
+private fun ProfileLiquidGlassTextFieldLabel(text: String, useLiquidGlass: Boolean) {
+    if (useLiquidGlass) {
+        Text(
+            text = text,
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            fontWeight = FontWeight.Medium,
+            modifier = Modifier.padding(start = 4.dp, bottom = 6.dp)
+        )
+    }
+}
+
+private fun liquidGlassAwareTextFieldLabel(
+    useLiquidGlass: Boolean,
+    text: String
+): (@Composable () -> Unit)? {
+    if (useLiquidGlass) {
+        return null
+    }
+    return { Text(text) }
+}
+
+@Composable
 private fun Modifier.profileCustomNodePanel(isSelected: Boolean): Modifier {
     val shape = RoundedCornerShape(10.dp)
     return if (isLiquidGlassTheme()) {
@@ -759,6 +782,12 @@ internal fun SubscriptionInputDialog(
         "https://dns.google/dns-query" to stringResource(R.string.profiles_dns_server_google),
         "https://dns.alidns.com/dns-query" to stringResource(R.string.profiles_dns_server_alidns)
     )
+    val useLiquidGlass = isLiquidGlassTheme()
+    val nameLabel = stringResource(R.string.profiles_name_label)
+    val urlLabel = stringResource(R.string.profiles_url_label)
+    val autoUpdateIntervalLabel = stringResource(R.string.profiles_auto_update_interval)
+    val dnsServerLabel = stringResource(R.string.profiles_dns_server)
+    val dnsOverrideLabel = "DNS JSON"
 
     androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss) {
         LiquidGlassDialogEffect()
@@ -779,10 +808,11 @@ internal fun SubscriptionInputDialog(
             Spacer(modifier = Modifier.height(16.dp))
 
             val nameFieldShape = RoundedCornerShape(16.dp)
+            ProfileLiquidGlassTextFieldLabel(text = nameLabel, useLiquidGlass = useLiquidGlass)
             androidx.compose.material3.OutlinedTextField(
                 value = name,
                 onValueChange = { name = it },
-                label = { Text(stringResource(R.string.profiles_name_label)) },
+                label = liquidGlassAwareTextFieldLabel(useLiquidGlass, nameLabel),
                 modifier = Modifier
                     .fillMaxWidth()
                     .liquidGlassTextFieldPanel(shape = nameFieldShape),
@@ -803,10 +833,11 @@ internal fun SubscriptionInputDialog(
             Spacer(modifier = Modifier.height(12.dp))
 
             val urlFieldShape = RoundedCornerShape(16.dp)
+            ProfileLiquidGlassTextFieldLabel(text = urlLabel, useLiquidGlass = useLiquidGlass)
             androidx.compose.material3.OutlinedTextField(
                 value = url,
                 onValueChange = { url = it },
-                label = { Text(stringResource(R.string.profiles_url_label)) },
+                label = liquidGlassAwareTextFieldLabel(useLiquidGlass, urlLabel),
                 modifier = Modifier
                     .fillMaxWidth()
                     .liquidGlassTextFieldPanel(shape = urlFieldShape),
@@ -863,6 +894,10 @@ internal fun SubscriptionInputDialog(
                     Spacer(modifier = Modifier.height(12.dp))
 
                     val autoUpdateFieldShape = RoundedCornerShape(16.dp)
+                    ProfileLiquidGlassTextFieldLabel(
+                        text = autoUpdateIntervalLabel,
+                        useLiquidGlass = useLiquidGlass
+                    )
                     androidx.compose.material3.OutlinedTextField(
                         value = autoUpdateMinutes,
                         onValueChange = { newValue ->
@@ -871,7 +906,7 @@ internal fun SubscriptionInputDialog(
                                 autoUpdateMinutes = newValue
                             }
                         },
-                        label = { Text(stringResource(R.string.profiles_auto_update_interval)) },
+                        label = liquidGlassAwareTextFieldLabel(useLiquidGlass, autoUpdateIntervalLabel),
                         modifier = Modifier
                             .fillMaxWidth()
                             .liquidGlassTextFieldPanel(shape = autoUpdateFieldShape),
@@ -947,12 +982,13 @@ internal fun SubscriptionInputDialog(
                     Spacer(modifier = Modifier.height(12.dp))
 
                     val dnsFieldShape = RoundedCornerShape(16.dp)
+                    ProfileLiquidGlassTextFieldLabel(text = dnsServerLabel, useLiquidGlass = useLiquidGlass)
                     androidx.compose.material3.OutlinedTextField(
                         value = dnsServerOptions.find { it.first == selectedDnsServer }?.second ?: selectedDnsServer,
                         onValueChange = {},
                         readOnly = true,
                         enabled = false,
-                        label = { Text(stringResource(R.string.profiles_dns_server)) },
+                        label = liquidGlassAwareTextFieldLabel(useLiquidGlass, dnsServerLabel),
                         trailingIcon = {
                             Icon(
                                 imageVector = Icons.Filled.ArrowDropDown,
@@ -990,7 +1026,7 @@ internal fun SubscriptionInputDialog(
                             .padding(vertical = 16.dp)
                     ) {
                         Text(
-                            text = stringResource(R.string.profiles_dns_server),
+                            text = dnsServerLabel,
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurface,
@@ -1067,10 +1103,11 @@ internal fun SubscriptionInputDialog(
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     val dnsOverrideFieldShape = RoundedCornerShape(16.dp)
+                    ProfileLiquidGlassTextFieldLabel(text = dnsOverrideLabel, useLiquidGlass = useLiquidGlass)
                     androidx.compose.material3.OutlinedTextField(
                         value = dnsOverrideText,
                         onValueChange = { dnsOverrideText = it },
-                        label = { Text("DNS JSON") },
+                        label = liquidGlassAwareTextFieldLabel(useLiquidGlass, dnsOverrideLabel),
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(160.dp)

@@ -44,28 +44,20 @@ object VpnServiceManager {
     /**
      *
      */
-    fun isRunning(context: Context): Boolean {
-        val prefs = context.applicationContext.getSharedPreferences(
-            PREFS_VPN_STATE,
-            Context.MODE_PRIVATE
-        )
-        val persistedActive = prefs.getBoolean(KEY_VPN_ACTIVE, false)
-        val pending = prefs.getString(KEY_VPN_PENDING, "") ?: ""
+    fun isRunning(): Boolean {
+        val persistedActive = VpnStateStore.getActive()
+        val pending = VpnStateStore.getPending()
 
         if (pending.isNotEmpty()) {
-            return persistedActive || pending == "starting"
+            return persistedActive || pending == "starting" || pending == "stopping"
         }
 
         if (persistedActive) {
             return true
         }
 
-        return SingBoxRemote.isRunning.value
+        return SingBoxRemote.isRunning.value || SingBoxRemote.isStarting.value
     }
-
-    private const val PREFS_VPN_STATE = "vpn_state"
-    private const val KEY_VPN_ACTIVE = "vpn_active"
-    private const val KEY_VPN_PENDING = "vpn_pending"
 
     /**
      */
@@ -78,7 +70,7 @@ object VpnServiceManager {
      * @return "tun" | "proxy" | null
      */
     fun getActiveService(context: Context): String? {
-        if (!isRunning(context)) return null
+        if (!isRunning()) return null
 
         return if (isTunEnabled(context)) "tun" else "proxy"
     }
@@ -87,7 +79,7 @@ object VpnServiceManager {
      *
      */
     fun toggleVpn(context: Context): Result<Unit> {
-        return if (isRunning(context)) {
+        return if (isRunning()) {
             stopVpn(context)
         } else {
             startVpn(context)
@@ -157,23 +149,22 @@ object VpnServiceManager {
         Log.d(TAG, "stopVpn")
 
         return runCatching {
-            val mode = VpnStateStore.getMode()
-            val stopTun = when (mode) {
-                VpnStateStore.CoreMode.VPN -> true
-                VpnStateStore.CoreMode.PROXY -> false
-                VpnStateStore.CoreMode.NONE -> isTunEnabled(context)
+            val appContext = context.applicationContext
+            val tunResult = runCatching {
+                appContext.startService(Intent(appContext, SingBoxService::class.java).apply {
+                    action = SingBoxService.ACTION_STOP
+                })
+            }
+            val proxyResult = runCatching {
+                appContext.startService(Intent(appContext, ProxyOnlyService::class.java).apply {
+                    action = ProxyOnlyService.ACTION_STOP
+                })
             }
 
-            val intent = if (stopTun) {
-                Intent(context, SingBoxService::class.java).apply {
-                    action = SingBoxService.ACTION_STOP
-                }
-            } else {
-                Intent(context, ProxyOnlyService::class.java).apply {
-                    action = ProxyOnlyService.ACTION_STOP
-                }
+            if (tunResult.isFailure && proxyResult.isFailure) {
+                throw tunResult.exceptionOrNull() ?: proxyResult.exceptionOrNull()
+                    ?: IllegalStateException("Failed to send stop commands")
             }
-            context.startService(intent)
             Unit
         }
             .onFailure { Log.e(TAG, "Failed to stop VPN service", it) }
@@ -246,7 +237,7 @@ object VpnServiceManager {
      */
     fun getCurrentConfig(context: Context): String {
         return buildString {
-            append("isRunning: ${isRunning(context)}\n")
+            append("isRunning: ${isRunning()}\n")
             append("isStarting: ${isStarting()}\n")
             append("activeService: ${getActiveService(context)}\n")
             append("cachedTunEnabled: $cachedTunEnabled\n")

@@ -165,7 +165,7 @@ fun NodeCard(
     val cardModifier = if (useLiquidGlass) {
         modifier
             .fillMaxWidth()
-            .liquidGlassPanel(shape = shape, selected = isSelected)
+            .liquidGlassPanel(shape = shape, selected = isSelected, shadowElevation = 0.dp)
     } else {
         modifier
             .fillMaxWidth()
@@ -423,7 +423,11 @@ fun NodeGridCard(
         modifier
             .fillMaxWidth()
             .height(84.dp)
-            .liquidGlassPanel(shape = shape, selected = isSelected, shadowElevation = 8.dp)
+            .liquidGlassPanel(
+                shape = shape,
+                selected = isSelected,
+                shadowElevation = 0.dp
+            )
     } else {
         modifier
             .fillMaxWidth()

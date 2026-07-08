@@ -21,7 +21,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.luminance
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -81,39 +80,8 @@ fun Modifier.liquidGlassFloatingActionPanel(
         return this
     }
 
-    val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
-
-    // 高亮液态玻璃笔刷，增强边缘和高光的折射质感
-    val fabBrush = Brush.verticalGradient(
-        colors = listOf(
-            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = if (isDark) 0.18f else 0.26f),
-            MaterialTheme.colorScheme.primary.copy(alpha = if (isDark) 0.12f else 0.08f),
-            MaterialTheme.colorScheme.surface.copy(alpha = if (isDark) 0.26f else 0.14f)
-        )
-    )
-
-    // 亮暗折射的边框渐变，呈现高级实体玻璃边缘
-    val borderBrush = Brush.verticalGradient(
-        colors = listOf(
-            Color.White.copy(alpha = if (isDark) 0.35f else 0.42f),
-            MaterialTheme.colorScheme.primary.copy(alpha = if (isDark) 0.10f else 0.18f)
-        )
-    )
-
     return this
-        .hollowShadow(
-            shape = shape,
-            color = MaterialTheme.colorScheme.primary,
-            alpha = if (isDark) 0.32f else 0.14f,
-            blurRadius = shadowElevation,
-            offsetY = shadowElevation / 2
-        )
-        .clip(shape)
-        .background(brush = fabBrush)
-        .border(
-            border = BorderStroke(width = 1.dp, brush = borderBrush),
-            shape = shape
-        )
+        .liquidGlassPanel(shape = shape, selected = true, shadowElevation = shadowElevation)
         .liquidGlassPressBounceEffect()
 }
 

@@ -106,7 +106,7 @@ object NetworkAutoSwitchManager {
                 ssid = ssid
             ),
             vpn = NetworkAutoSwitchPolicy.VpnSnapshot(
-                isRunning = VpnServiceManager.isRunning(context),
+                isRunning = VpnServiceManager.isRunning(),
                 isStarting = VpnServiceManager.isStarting(),
                 manuallyStopped = VpnStateStore.isManuallyStopped(),
                 stoppedByTrustedWifi = stoppedByTrustedWifi

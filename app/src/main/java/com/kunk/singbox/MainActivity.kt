@@ -163,15 +163,17 @@ fun SingBoxApp() {
     }
 
     val settingsRepository = remember { SettingsRepository.getInstance(context) }
-    val settings by settingsRepository.settings.collectAsStateWithLifecycle(initialValue = null)
+    val settings by settingsRepository.settings.collectAsStateWithLifecycle(
+        initialValue = settingsRepository.settings.value
+    )
     val dashboardViewModel: DashboardViewModel = viewModel()
 
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
         dashboardViewModel.refreshState()
     }
 
-    LaunchedEffect(settings?.appLanguage) {
-        val language = settings?.appLanguage ?: return@LaunchedEffect
+    LaunchedEffect(settings.appLanguage) {
+        val language = settings.appLanguage
         val prefs = context.getSharedPreferences("settings", Context.MODE_PRIVATE)
         prefs.edit().putString("app_language_cache", language.name).apply()
     }
@@ -179,8 +181,8 @@ fun SingBoxApp() {
     val isVpnRunningForUpdate by SingBoxRemote.isRunning.collectAsStateWithLifecycle()
     var updateChecked by remember { mutableStateOf(false) }
 
-    LaunchedEffect(settings?.autoCheckUpdate, isVpnRunningForUpdate) {
-        if (settings?.autoCheckUpdate != true || updateChecked) return@LaunchedEffect
+    LaunchedEffect(settings.autoCheckUpdate, isVpnRunningForUpdate) {
+        if (!settings.autoCheckUpdate || updateChecked) return@LaunchedEffect
 
         if (isVpnRunningForUpdate) {
 
@@ -190,8 +192,8 @@ fun SingBoxApp() {
         }
     }
 
-    LaunchedEffect(settings?.autoCheckUpdate) {
-        if (settings?.autoCheckUpdate != true) return@LaunchedEffect
+    LaunchedEffect(settings.autoCheckUpdate) {
+        if (!settings.autoCheckUpdate) return@LaunchedEffect
         kotlinx.coroutines.delay(10000L)
         if (!updateChecked) {
             updateChecked = true
@@ -250,9 +252,9 @@ fun SingBoxApp() {
         }
     }
 
-    LaunchedEffect(settings?.autoConnect, connectionState, isRunning, isStarting, manuallyStopped) {
+    LaunchedEffect(settings.autoConnect, connectionState, isRunning, isStarting, manuallyStopped) {
         fun shouldAutoConnect(persistedManuallyStopped: Boolean): Boolean {
-            return settings?.autoConnect == true &&
+            return settings.autoConnect &&
                 connectionState == ConnectionState.Idle &&
                 !isRunning &&
                 !isStarting &&
@@ -272,10 +274,10 @@ fun SingBoxApp() {
         }
     }
 
-    LaunchedEffect(settings?.excludeFromRecent) {
+    LaunchedEffect(settings.excludeFromRecent) {
         val am = context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
         am?.appTasks?.forEach {
-            it.setExcludeFromRecents(settings?.excludeFromRecent == true)
+            it.setExcludeFromRecents(settings.excludeFromRecent)
         }
     }
 
@@ -291,8 +293,8 @@ fun SingBoxApp() {
         }
     }
 
-    val appTheme = settings?.appTheme ?: com.kunk.singbox.model.AppThemeMode.SYSTEM
-    val appThemeStyle = settings?.appThemeStyle ?: AppThemeStyle.DEFAULT
+    val appTheme = settings.appTheme
+    val appThemeStyle = settings.appThemeStyle
 
     SingBoxTheme(appTheme = appTheme, appThemeStyle = appThemeStyle) {
         val navController = rememberNavController()
