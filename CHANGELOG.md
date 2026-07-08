@@ -1,5 +1,31 @@
 # Changelog
 
+## [2.19.0](https://github.com/roseforljh/KunBox/compare/v2.18.1...v2.19.0) (2026-06-28)
+
+
+### Features
+
+* optimize kotlin 2.4 upgraded stack ([4e66d8e](https://github.com/roseforljh/KunBox/commit/4e66d8e2ec744c0efff9082f75c89b010b73161d))
+
+
+### Bug Fixes
+
+* adjust bottom nav safe padding ([39b26cd](https://github.com/roseforljh/KunBox/commit/39b26cd05c03ea1f89f5e6f49178cdff92819bf8))
+* adjust latency probe dns fallback ([1abdc2d](https://github.com/roseforljh/KunBox/commit/1abdc2dde26a02ddc1cdc8e44803e03564fc7b2b))
+* collapse split implementations ([c77217c](https://github.com/roseforljh/KunBox/commit/c77217c2c5f250b3018d69faf7945a1bb7cceed6))
+* improve debug config logging ([4d49620](https://github.com/roseforljh/KunBox/commit/4d49620e233edc945b5d13eba4e462fc51c21b02))
+* improve ruleset badge contrast ([20526dd](https://github.com/roseforljh/KunBox/commit/20526dd91bb392f8261a595080dda7d4bb7f4c2d))
+* merge PR [#101](https://github.com/roseforljh/KunBox/issues/101) liquid glass UI fixes ([874b97a](https://github.com/roseforljh/KunBox/commit/874b97a6547e871eafcc437789db19bba2ea234b))
+* queue vpn restart after shutdown ([3078c13](https://github.com/roseforljh/KunBox/commit/3078c13f7818f3e2918604cbde2fb11e2b314f9e))
+* refresh detekt baseline ([a80fa3b](https://github.com/roseforljh/KunBox/commit/a80fa3b9c5c58f13406fd6fcea3c7b5131b19508))
+* remove unused dependencies and obsolete files ([e2de144](https://github.com/roseforljh/KunBox/commit/e2de1445713d21901959aad663ae806df3769c6a))
+* serialize node switching ([a109540](https://github.com/roseforljh/KunBox/commit/a1095402b3f54b42859c4be954173c246faa8254))
+* strip latency runtime ECH metadata before config JSON serialization ([6e94328](https://github.com/roseforljh/KunBox/commit/6e94328f13705414fbd5163682060a3a56d51246))
+* sync vpn tile and node add state ([a3c82d8](https://github.com/roseforljh/KunBox/commit/a3c82d816c98d759fb6b0009658c2e252c738da0))
+* upgrade kotlin android dependencies ([9b077a8](https://github.com/roseforljh/KunBox/commit/9b077a8740c90f0c5d5da86c0f400d12b4b4b232))
+* 优化健康探测自动切换 ([e9a0438](https://github.com/roseforljh/KunBox/commit/e9a0438142ea85407a5f96e0682f480d7da5343a))
+* 新增 URL Test 延迟测试方式 ([bcbf0dd](https://github.com/roseforljh/KunBox/commit/bcbf0dd89328d3aa358edbf6196e6b88d7b74859))
+
 ## [2.18.1](https://github.com/roseforljh/KunBox/compare/v2.18.0...v2.18.1) (2026-06-22)
 
 
