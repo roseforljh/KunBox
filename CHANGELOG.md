@@ -1,6 +1,6 @@
 # Changelog
 
-## [2.19.0](https://github.com/roseforljh/KunBox/compare/v2.18.1...v2.19.0) (2026-06-28)
+## [2.19.0](https://github.com/roseforljh/KunBox/compare/v2.18.1...v2.19.0) (2026-07-08)
 
 
 ### Features
@@ -23,8 +23,12 @@
 * strip latency runtime ECH metadata before config JSON serialization ([6e94328](https://github.com/roseforljh/KunBox/commit/6e94328f13705414fbd5163682060a3a56d51246))
 * sync vpn tile and node add state ([a3c82d8](https://github.com/roseforljh/KunBox/commit/a3c82d816c98d759fb6b0009658c2e252c738da0))
 * upgrade kotlin android dependencies ([9b077a8](https://github.com/roseforljh/KunBox/commit/9b077a8740c90f0c5d5da86c0f400d12b4b4b232))
+* 优化健康探测与自动切换 ([510ad0a](https://github.com/roseforljh/KunBox/commit/510ad0a56617029fd37ea4edda49b3d5c9049de2))
 * 优化健康探测自动切换 ([e9a0438](https://github.com/roseforljh/KunBox/commit/e9a0438142ea85407a5f96e0682f480d7da5343a))
+* 优化液态玻璃与服务状态同步 ([24d31c8](https://github.com/roseforljh/KunBox/commit/24d31c891470703b44287d83c06a392e27113d41))
+* 修复订阅更新闪退和卡片布局 ([b2fd191](https://github.com/roseforljh/KunBox/commit/b2fd19174eeb53040c4f602ec56f80aa646ab7f0))
 * 新增 URL Test 延迟测试方式 ([bcbf0dd](https://github.com/roseforljh/KunBox/commit/bcbf0dd89328d3aa358edbf6196e6b88d7b74859))
+* 更新 sing-box 内核 ([4600a64](https://github.com/roseforljh/KunBox/commit/4600a6448e2923dc02d30668a6d26a804a6a87da))
 
 ## [2.18.1](https://github.com/roseforljh/KunBox/compare/v2.18.0...v2.18.1) (2026-06-22)
 
