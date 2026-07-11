@@ -31,6 +31,7 @@ import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.CompositingStrategy
@@ -782,46 +783,49 @@ fun NodesScreen(
                                 label = "translateY"
                             )
 
-                            if (nodeColumnCount == 1) {
-                                NodeCard(
-                                    name = node.displayName,
-                                    type = node.protocolDisplay,
-                                    latency = node.latencyMs,
-                                    isSelected = isSelected,
-                                    isTesting = isTestingNode,
-                                    onClick = onNodeClick,
-                                    onEdit = onEdit,
-                                    onExport = onExport,
-                                    onLatency = onLatency,
-                                    onDelete = onDelete,
-                                    modifier = Modifier
-                                        .animateItem()
-                                        .graphicsLayer {
-                                            this.alpha = alpha
-                                            this.translationY = translateY
-                                            this.compositingStrategy = CompositingStrategy.ModulateAlpha
-                                        }
+                            // animateItem 包住整张卡，避免选中边框与卡片位移动画脱节
+                            Box(
+                                modifier = Modifier.animateItem(
+                                    placementSpec = spring(
+                                        stiffness = 500f,
+                                        dampingRatio = 0.85f
+                                    )
                                 )
-                            } else {
-                                NodeGridCard(
-                                    name = node.displayName,
-                                    type = node.protocolDisplay,
-                                    latency = node.latencyMs,
-                                    isSelected = isSelected,
-                                    isTesting = isTestingNode,
-                                    onClick = onNodeClick,
-                                    onEdit = onEdit,
-                                    onExport = onExport,
-                                    onLatency = onLatency,
-                                    onDelete = onDelete,
-                                    modifier = Modifier
-                                        .animateItem()
-                                        .graphicsLayer {
-                                            this.alpha = alpha
-                                            this.translationY = translateY
-                                            this.compositingStrategy = CompositingStrategy.ModulateAlpha
-                                        }
-                                )
+                            ) {
+                                val cardModifier = Modifier.graphicsLayer {
+                                    this.alpha = alpha
+                                    this.translationY = translateY
+                                    this.compositingStrategy = CompositingStrategy.ModulateAlpha
+                                }
+                                if (nodeColumnCount == 1) {
+                                    NodeCard(
+                                        name = node.displayName,
+                                        type = node.protocolDisplay,
+                                        latency = node.latencyMs,
+                                        isSelected = isSelected,
+                                        isTesting = isTestingNode,
+                                        onClick = onNodeClick,
+                                        onEdit = onEdit,
+                                        onExport = onExport,
+                                        onLatency = onLatency,
+                                        onDelete = onDelete,
+                                        modifier = cardModifier
+                                    )
+                                } else {
+                                    NodeGridCard(
+                                        name = node.displayName,
+                                        type = node.protocolDisplay,
+                                        latency = node.latencyMs,
+                                        isSelected = isSelected,
+                                        isTesting = isTestingNode,
+                                        onClick = onNodeClick,
+                                        onEdit = onEdit,
+                                        onExport = onExport,
+                                        onLatency = onLatency,
+                                        onDelete = onDelete,
+                                        modifier = cardModifier
+                                    )
+                                }
                             }
                         }
                     }

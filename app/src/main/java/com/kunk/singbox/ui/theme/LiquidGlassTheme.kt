@@ -89,7 +89,8 @@ fun Modifier.liquidGlassPanel(
         .background(liquidGlassPanelBrush(selected = selected))
         .border(
             border = BorderStroke(
-                width = if (selected) 1.2.dp else 0.8.dp,
+                // 固定线宽，避免选中态切换/位移时边框与卡片不同步
+                width = 1.dp,
                 brush = liquidGlassPanelBorderBrush(selected = selected)
             ),
             shape = shape

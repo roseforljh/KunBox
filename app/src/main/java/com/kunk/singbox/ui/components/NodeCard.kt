@@ -102,7 +102,7 @@ fun NodeCard(
     val shape = RoundedCornerShape(16.dp)
     val useLiquidGlass = isLiquidGlassTheme()
     val borderColor = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
-    val borderWidth = if (isSelected) 2.dp else 1.dp
+    val borderWidth = 1.dp
     val cardModifier = if (useLiquidGlass) {
         modifier
             .fillMaxWidth()
@@ -347,7 +347,7 @@ fun NodeGridCard(
     } else {
         MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
     }
-    val borderWidth = if (isSelected) 2.dp else 1.dp
+    val borderWidth = 1.dp
     val cardModifier = if (useLiquidGlass) {
         modifier
             .fillMaxWidth()
