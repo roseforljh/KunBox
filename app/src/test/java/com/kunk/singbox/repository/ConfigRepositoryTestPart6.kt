@@ -320,7 +320,7 @@ abstract class ConfigRepositoryTestPart6 : ConfigRepositoryTestPart5() {
         }
 
         assertEquals("https", localDns.type)
-        assertEquals("dns.alidns.com", localDns.server)
+        assertEquals("223.5.5.5", localDns.server)
         assertEquals("/dns-query", localDns.path)
         assertEquals("bestvmr-dns", outbounds.first().domainResolver?.server)
         assertEquals("udp", privateDns?.type)

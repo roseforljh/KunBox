@@ -38,6 +38,16 @@ class SettingsStoreTest {
     }
 
     @Test
+    fun testMigrateSettingsReplacesDomainLocalDnsWithIpDoh() {
+        val migrated = SettingsStore.migrateSettings(
+            version = 9,
+            settings = AppSettings(localDns = AppSettings.LEGACY_DOMAIN_LOCAL_DNS)
+        )
+
+        assertEquals(AppSettings.DEFAULT_LOCAL_DNS, migrated.localDns)
+    }
+
+    @Test
     fun testMigrateSettingsReplacesOldVersionLocalDefaultWithDoh() {
         val migrated = SettingsStore.migrateSettings(
             version = 2,

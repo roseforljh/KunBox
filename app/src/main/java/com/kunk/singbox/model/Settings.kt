@@ -93,11 +93,12 @@ data class AppSettings(
     @SerializedName("nodeColumnCount") val nodeColumnCount: Int = 1
 ) {
     companion object {
-        const val DEFAULT_LOCAL_DNS = "https://dns.alidns.com/dns-query"
+        const val DEFAULT_LOCAL_DNS = "https://223.5.5.5/dns-query"
         const val DEFAULT_REMOTE_DNS = "https://1.1.1.1/dns-query"
         const val DEFAULT_LATENCY_TEST_URL = "https://www.gstatic.com/generate_204"
         const val DEFAULT_FAKE_IP_RANGE = "198.18.0.0/15,fc00::/18"
         const val LEGACY_LOCAL_DNS = "local"
+        const val LEGACY_DOMAIN_LOCAL_DNS = "https://dns.alidns.com/dns-query"
         const val DEFAULT_FAKE_DNS_EXCLUDED_DOMAINS = "accounts.google.com\noauth.googleusercontent.com\n" +
             "appleid.apple.com\nidmsa.apple.com\nlogin.microsoftonline.com\nlogin.live.com\n" +
             "lan\nlocal\nlocalhost\nlocaldomain\narpa"

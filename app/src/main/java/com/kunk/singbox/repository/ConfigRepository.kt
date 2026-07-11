@@ -773,12 +773,13 @@ class ConfigRepository(protected val context: Context) {
     ) {
         val latencyValue = normalizeLatencyValue(latency)
         results[info.nodeId] = latencyValue
+        // 测完单个节点立即刷新 UI，避免整批结束后才一次性显示
+        applyLatencyResultsToMemory(mapOf(info.nodeId to latencyValue))
         onNodeComplete?.invoke(info.nodeId, latencyValue)
     }
 
-    protected suspend fun applyLatencyResults(results: Map<String, Long>) {
+    protected fun applyLatencyResultsToMemory(results: Map<String, Long>) {
         if (results.isEmpty()) return
-
         savedNodeLatencies.putAll(results)
         _nodes.update { nodes -> ConfigRepository.applyLatencyResultsToNodes(nodes, results) }
         _allNodes.update { nodes -> ConfigRepository.applyLatencyResultsToNodes(nodes, results) }
@@ -787,7 +788,11 @@ class ConfigRepository(protected val context: Context) {
                 ConfigRepository.applyLatencyResultsToNodes(nodes, results)
             }
         }
+    }
 
+    protected suspend fun applyLatencyResults(results: Map<String, Long>) {
+        if (results.isEmpty()) return
+        // 内存已在 recordLatencyResult 逐节点写入，这里只落库
         try {
             nodeLatencyDao.insertAll(
                 results.map { (nodeId, latency) ->
@@ -3303,7 +3308,6 @@ class ConfigRepository(protected val context: Context) {
         dnsServers.add(
             ConfigRepository.buildBootstrapDnsServer(
                 localDnsAddress = localDnsAddr,
-                remoteDnsAddress = remoteDnsAddr,
                 tag = bootstrapTag,
                 domainStrategy = bootstrapStrategy
             )
@@ -5295,18 +5299,18 @@ class ConfigRepository(protected val context: Context) {
             }
         }
 
+        // bootstrap 只认 localDns 的 IP；否则系统 DNS，避免用 remote 1.1.1.1 解域名
         internal fun buildBootstrapDnsServer(
             localDnsAddress: String,
-            remoteDnsAddress: String,
             tag: String,
             domainStrategy: String?
         ): DnsServer {
-            val numericAddress = listOf(localDnsAddress, remoteDnsAddress).firstOrNull { address ->
+            val numericLocalAddress = localDnsAddress.takeIf { address ->
                 extractHostFromAddress(address)?.let(::isIpAddressValue) == true
             }
-            return if (numericAddress != null) {
+            return if (numericLocalAddress != null) {
                 buildDnsServer(
-                    address = numericAddress,
+                    address = numericLocalAddress,
                     tag = tag,
                     domainStrategy = domainStrategy
                 ).copy(detour = null, domainResolver = null)
@@ -6892,7 +6896,11 @@ class ConfigRepository(protected val context: Context) {
 
         internal fun normalizeLocalDns(value: String?): String {
             val trimmed = value?.trim().orEmpty()
-            return if (trimmed.isBlank() || trimmed.equals(AppSettings.LEGACY_LOCAL_DNS, ignoreCase = true)) {
+            return if (
+                trimmed.isBlank() ||
+                trimmed.equals(AppSettings.LEGACY_LOCAL_DNS, ignoreCase = true) ||
+                trimmed.equals(AppSettings.LEGACY_DOMAIN_LOCAL_DNS, ignoreCase = true)
+            ) {
                 AppSettings.DEFAULT_LOCAL_DNS
             } else {
                 trimmed

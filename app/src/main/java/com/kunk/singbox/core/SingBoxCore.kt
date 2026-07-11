@@ -79,7 +79,6 @@ class SingBoxCore private constructor(private val context: Context) {
             sanitizeDnsServer: (DnsServer) -> DnsServer = { it }
         ): DnsConfig {
             val localDnsAddr = ConfigRepository.normalizeLocalDns(settings.localDns)
-            val remoteDnsAddr = ConfigRepository.normalizeRemoteDns(settings.remoteDns)
             val localResolver = ConfigRepository.buildDnsResolverForAddress(localDnsAddr)
             val localServer = ConfigRepository.buildDnsServer(
                 address = localDnsAddr,
@@ -90,7 +89,6 @@ class SingBoxCore private constructor(private val context: Context) {
             val servers = mutableListOf(
                 ConfigRepository.buildBootstrapDnsServer(
                     localDnsAddress = localDnsAddr,
-                    remoteDnsAddress = remoteDnsAddr,
                     tag = ConfigRepository.DEFAULT_ROUTE_DOMAIN_RESOLVER_TAG,
                     domainStrategy = "prefer_ipv4"
                 ),

@@ -651,11 +651,12 @@ fun ProfilesScreen(
                             animationSpec = spring(dampingRatio = 0.8f, stiffness = 260f),
                             label = "dragScale"
                         )
+                        // 非拖拽时 elevation 必须为 0，否则 graphicsLayer 矩形阴影会透出圆角卡片底部灰边
                         val dragShadow by animateFloatAsState(
                             targetValue = when {
                                 isDraggingItem && isCurrentlyDragging -> 8f
                                 isSettlingItem -> 4f
-                                else -> 2f
+                                else -> 0f
                             },
                             animationSpec = spring(dampingRatio = 0.82f, stiffness = 260f),
                             label = "dragShadow"

@@ -28,6 +28,7 @@ class SettingsStore private constructor(context: Context) {
         private const val FAKE_IP_RANGE_MIGRATION_VERSION = 7
         private const val NETWORK_AUTO_SWITCH_MIGRATION_VERSION = 8
         private const val APP_THEME_STYLE_MIGRATION_VERSION = 9
+        private const val LOCAL_DNS_IP_DOH_MIGRATION_VERSION = 10
         private const val LEGACY_DEFAULT_FAKE_IP_RANGE = "198.18.0.0/15"
 
         @Volatile
@@ -101,6 +102,13 @@ class SettingsStore private constructor(context: Context) {
             result = migrateFakeIpRange(version, result)
             result = migrateNetworkAutoSwitch(version, result)
             result = migrateAppThemeStyle(version, result)
+            if (
+                version < LOCAL_DNS_IP_DOH_MIGRATION_VERSION &&
+                result.localDns.equals(AppSettings.LEGACY_DOMAIN_LOCAL_DNS, ignoreCase = true)
+            ) {
+                Log.i(TAG, "Migrating domain localDns to '${AppSettings.DEFAULT_LOCAL_DNS}'")
+                result = result.copy(localDns = AppSettings.DEFAULT_LOCAL_DNS)
+            }
             val latencyTestUrl = AppSettings.validateLatencyTestUrl(result.latencyTestUrl)
             if (latencyTestUrl == null) {
                 Log.w(TAG, "Recovering invalid latency test URL to the official sing-box default")

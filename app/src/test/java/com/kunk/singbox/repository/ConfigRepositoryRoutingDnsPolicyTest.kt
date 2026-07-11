@@ -47,13 +47,11 @@ class ConfigRepositoryRoutingDnsPolicyTest {
     fun bootstrapUsesConfiguredNumericDnsOrSystemResolverWithoutHardcodedFallback() {
         val numeric = ConfigRepository.buildBootstrapDnsServer(
             localDnsAddress = "udp://9.9.9.9",
-            remoteDnsAddress = "https://dns.example.com/dns-query",
             tag = "dns-bootstrap",
             domainStrategy = "prefer_ipv4"
         )
         val system = ConfigRepository.buildBootstrapDnsServer(
             localDnsAddress = "https://dns.local.example/dns-query",
-            remoteDnsAddress = "https://dns.remote.example/dns-query",
             tag = "dns-bootstrap",
             domainStrategy = "prefer_ipv4"
         )
@@ -64,18 +62,17 @@ class ConfigRepositoryRoutingDnsPolicyTest {
     }
 
     @Test
-    fun defaultRemoteDnsRemainsNumericEncryptedBootstrap() {
-        val remoteDns = ConfigRepository.normalizeRemoteDns(null)
+    fun defaultLocalDnsIsNumericEncryptedBootstrap() {
+        val localDns = ConfigRepository.normalizeLocalDns(null)
         val bootstrap = ConfigRepository.buildBootstrapDnsServer(
-            localDnsAddress = AppSettings.DEFAULT_LOCAL_DNS,
-            remoteDnsAddress = remoteDns,
+            localDnsAddress = localDns,
             tag = "dns-bootstrap",
             domainStrategy = "prefer_ipv4"
         )
 
-        assertEquals(AppSettings.DEFAULT_REMOTE_DNS, remoteDns)
+        assertEquals(AppSettings.DEFAULT_LOCAL_DNS, localDns)
         assertEquals("https", bootstrap.type)
-        assertEquals("1.1.1.1", bootstrap.server)
+        assertEquals("223.5.5.5", bootstrap.server)
         assertNull(bootstrap.detour)
         assertNull(bootstrap.domainResolver)
     }

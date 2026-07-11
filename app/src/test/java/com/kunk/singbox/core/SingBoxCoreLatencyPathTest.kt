@@ -43,7 +43,7 @@ class SingBoxCoreLatencyPathTest {
     fun testLatencyDnsConfigUsesSystemBootstrapWhenConfiguredDnsHostsNeedResolution() {
         val config = SingBoxCore.buildLatencyTestDnsConfig(
             AppSettings(
-                localDns = "https://dns.alidns.com/dns-query",
+                localDns = "https://dns.example.com/dns-query",
                 remoteDns = "https://dns.google/dns-query"
             )
         )
