@@ -55,6 +55,7 @@ object OutboundFixer {
     private val REGEX_INTERVAL_DIGITS = Regex("^\\d+$")
     private val REGEX_INTERVAL_DECIMAL = Regex("^\\d+\\.\\d+$")
     private val REGEX_INTERVAL_UNIT = Regex("^\\d+(\\.\\d+)?[smhSMH]$")
+    private val REGEX_PORT_DASH = Regex("""^(\d+)\s*-\s*(\d+)$""")
     private val REGEX_IPV4 = Regex("^\\d{1,3}(\\.\\d{1,3}){3}$")
     private val REGEX_IPV6 = Regex("^[0-9a-fA-F:]+$")
 
@@ -62,15 +63,8 @@ object OutboundFixer {
         var result = normalizeTransport(outbound)
 
         // Fix interval
-        val interval = result.interval
-        if (interval != null) {
-            val fixedInterval = when {
-                REGEX_INTERVAL_DIGITS.matches(interval) -> "${interval}s"
-                REGEX_INTERVAL_DECIMAL.matches(interval) -> "${interval}s"
-                REGEX_INTERVAL_UNIT.matches(interval) -> interval.lowercase()
-                else -> interval
-            }
-            if (fixedInterval != interval) {
+        normalizeDuration(result.interval)?.let { fixedInterval ->
+            if (fixedInterval != result.interval) {
                 result = result.copy(interval = fixedInterval)
             }
         }
@@ -98,9 +92,21 @@ object OutboundFixer {
 
         // 统一旧别名并补齐 urltest 运行所需的最小字段
         if (result.type == "urltest" || result.type == "url-test") {
+            val fixedInterval = normalizeDuration(result.interval) ?: "3m"
+            val fixedIdle = normalizeDuration(result.idleTimeout)
+            // sing-box 要求 interval <= idle_timeout；缺省 idle 时默认 3 倍 interval
+            val idleTimeout = if (
+                fixedIdle == null || durationSeconds(fixedIdle) < durationSeconds(fixedInterval)
+            ) {
+                scaleDuration(fixedInterval, 3)
+            } else {
+                fixedIdle
+            }
             result = result.copy(
                 type = "urltest",
                 default = null,
+                interval = fixedInterval,
+                idleTimeout = idleTimeout,
                 interruptExistConnections = result.interruptExistConnections ?: false
             )
         }
@@ -925,7 +931,40 @@ object OutboundFixer {
         return v.contains(":") && REGEX_IPV6.matches(v)
     }
 
+    // sing-box server_ports 用冒号表示区间，订阅里常见 60000-65530 需转成 60000:65530
     private fun convertPortRangeFormat(portSpec: String): String {
-        return portSpec.trim()
+        val trimmed = portSpec.trim()
+        val dash = REGEX_PORT_DASH.matchEntire(trimmed) ?: return trimmed
+        return "${dash.groupValues[1]}:${dash.groupValues[2]}"
+    }
+
+    // 解析 sing-box duration（支持 10 / 10s / 3m / 1h）
+    private fun normalizeDuration(raw: String?): String? {
+        val value = raw?.trim().orEmpty()
+        if (value.isEmpty()) return null
+        return when {
+            REGEX_INTERVAL_DIGITS.matches(value) -> "${value}s"
+            REGEX_INTERVAL_DECIMAL.matches(value) -> "${value}s"
+            REGEX_INTERVAL_UNIT.matches(value) -> value.lowercase()
+            else -> null
+        }
+    }
+
+    private fun durationSeconds(value: String): Long {
+        val unit = value.last().lowercaseChar()
+        val number = value.dropLast(1).toDoubleOrNull() ?: return 0L
+        val seconds = when (unit) {
+            's' -> number
+            'm' -> number * 60
+            'h' -> number * 3600
+            else -> number
+        }
+        return seconds.toLong().coerceAtLeast(0L)
+    }
+
+    private fun scaleDuration(value: String, factor: Int): String {
+        val unit = value.last().lowercaseChar()
+        val number = value.dropLast(1).toDoubleOrNull() ?: return value
+        return "${(number * factor).toLong()}$unit"
     }
 }

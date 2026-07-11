@@ -151,10 +151,24 @@ class OutboundFixerTest {
             tls = TlsConfig(enabled = true, serverName = "edge.example.com")
         )
 
-        val runtime = OutboundFixer.buildRuntimeHysteriaOutbound(outbound)
+        val fixed = OutboundFixer.fix(outbound)
+        val runtime = OutboundFixer.buildRuntimeHysteriaOutbound(fixed)
 
         assertNull(runtime.serverPort)
-        assertEquals(listOf("60000-65530"), runtime.serverPorts)
+        assertEquals(listOf("60000:65530"), runtime.serverPorts)
+    }
+
+    @Test
+    fun testFixConvertsHysteriaDashPortRangeToColon() {
+        val fixed = OutboundFixer.fix(
+            Outbound(
+                type = "hysteria2",
+                tag = "hy2",
+                server = "hy2.example.com",
+                serverPorts = listOf("60000-65530", "443", "1000 - 2000")
+            )
+        )
+        assertEquals(listOf("60000:65530", "443", "1000:2000"), fixed.serverPorts)
     }
 
     @Test
@@ -951,5 +965,22 @@ class OutboundFixerTest {
         assertEquals("https://example.com/test", fixed.url)
         assertEquals("5m", fixed.interval)
         assertEquals(10, fixed.tolerance)
+        assertEquals("15m", fixed.idleTimeout)
+    }
+
+    @Test
+    fun testFixRaisesUrlTestIdleTimeoutWhenSmallerThanInterval() {
+        val fixed = OutboundFixer.fix(
+            Outbound(
+                type = "urltest",
+                tag = "auto",
+                outbounds = listOf("a", "b"),
+                interval = "10m",
+                idleTimeout = "1m"
+            )
+        )
+
+        assertEquals("10m", fixed.interval)
+        assertEquals("30m", fixed.idleTimeout)
     }
 }

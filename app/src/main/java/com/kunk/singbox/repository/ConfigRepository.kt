@@ -1971,6 +1971,17 @@ class ConfigRepository(protected val context: Context) {
     ): NodeUi? {
         if (outbound.tag.isBlank()) return null
 
+        // 订阅信息位（剩余流量/套餐到期）常写成 127.0.0.1，不当作可测节点
+        val server = outbound.server?.trim().orEmpty()
+        if (
+            server == "127.0.0.1" ||
+            server.equals("localhost", ignoreCase = true) ||
+            server == "0.0.0.0" ||
+            server == "::1"
+        ) {
+            return null
+        }
+
         var group = nodeToGroup[outbound.tag] ?: "Default"
         if (group.contains("://") || group.length > 50) {
             group = "Default"
