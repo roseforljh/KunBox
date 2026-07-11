@@ -8,7 +8,6 @@ import com.kunk.singbox.model.DomainResolveConfig
 import com.kunk.singbox.model.Outbound
 import com.kunk.singbox.model.RoutingMode
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -32,7 +31,7 @@ abstract class ConfigRepositoryTestPart2 : ConfigRepositoryTestPart1() {
             independentCache = false
         )
 
-        val actual = ConfigRepository.applyDnsOverrideForTest(base, override)
+        val actual = ConfigRepository.applyDnsOverride(base, override)
 
         assertEquals("remote", actual.finalServer)
         assertEquals("prefer_ipv4", actual.strategy)
@@ -52,7 +51,7 @@ abstract class ConfigRepositoryTestPart2 : ConfigRepositoryTestPart1() {
             rules = listOf(DnsRule(domainSuffix = listOf("bestvmr.com"), server = "airport-dns"))
         )
 
-        val actual = ConfigRepository.applyDnsOverrideForTest(base, override)
+        val actual = ConfigRepository.applyDnsOverride(base, override)
 
         assertEquals("route", actual.rules?.firstOrNull()?.action)
         assertEquals("airport-dns", actual.rules?.firstOrNull()?.server)
@@ -91,7 +90,7 @@ abstract class ConfigRepositoryTestPart2 : ConfigRepositoryTestPart1() {
 
     @Test
     override fun testDnsOverrideAcceptsFullConfigDnsWrapper() {
-        val config = ConfigRepository.parseDnsOverrideForTest(bestvmrDnsOverrideJson())
+        val config = ConfigRepository.parseDnsOverrideConfig(bestvmrDnsOverrideJson())
 
         assertEquals("bestvmr-dns", config?.servers?.firstOrNull()?.tag)
         assertEquals("udp://47.110.75.65:8053", config?.servers?.firstOrNull()?.address)
@@ -104,7 +103,7 @@ abstract class ConfigRepositoryTestPart2 : ConfigRepositoryTestPart1() {
 
     @Test
     override fun testDnsOverrideCompatibilityWarningDetectsLegacyFieldsAndImplicitRouteAction() {
-        val warning = ConfigRepository.buildDnsOverrideCompatibilityWarningForTest(bestvmrDnsOverrideJson())
+        val warning = ConfigRepository.buildDnsOverrideCompatibilityWarning(bestvmrDnsOverrideJson())
 
         assertNotNull(warning)
         assertTrue(warning?.contains("DNS 覆写使用了旧版 sing-box 格式") == true)
@@ -114,7 +113,7 @@ abstract class ConfigRepositoryTestPart2 : ConfigRepositoryTestPart1() {
 
     @Test
     override fun testDnsOverrideCompatibilityWarningDetectsMissingServerAndGlobalRule() {
-        val warning = ConfigRepository.buildDnsOverrideCompatibilityWarningForTest(
+        val warning = ConfigRepository.buildDnsOverrideCompatibilityWarning(
             """
             {
               "servers": [
@@ -137,7 +136,7 @@ abstract class ConfigRepositoryTestPart2 : ConfigRepositoryTestPart1() {
 
     @Test
     override fun testDnsOverrideCompatibilityWarningDetectsInvalidJson() {
-        val warning = ConfigRepository.buildDnsOverrideCompatibilityWarningForTest("{")
+        val warning = ConfigRepository.buildDnsOverrideCompatibilityWarning("{")
 
         assertNotNull(warning)
         assertTrue(warning?.contains("无法解析") == true)
@@ -145,7 +144,7 @@ abstract class ConfigRepositoryTestPart2 : ConfigRepositoryTestPart1() {
 
     @Test
     override fun testDnsOverrideCompatibilityWarningDetectsLegacyAddressResolver() {
-        val warning = ConfigRepository.buildDnsOverrideCompatibilityWarningForTest(
+        val warning = ConfigRepository.buildDnsOverrideCompatibilityWarning(
             """
             {
               "servers": [
@@ -172,8 +171,8 @@ abstract class ConfigRepositoryTestPart2 : ConfigRepositoryTestPart1() {
     }
 
     @Test
-    override fun testDnsOverrideCompatibilityWarningDetectsOtherMigrationRisks() {
-        val warning = ConfigRepository.buildDnsOverrideCompatibilityWarningForTest(
+    override fun testDnsOverrideCompatibilityWarningAcceptsCurrentMatchers() {
+        val warning = ConfigRepository.buildDnsOverrideCompatibilityWarning(
             """
             {
               "dns": {
@@ -198,15 +197,12 @@ abstract class ConfigRepositoryTestPart2 : ConfigRepositoryTestPart1() {
             """.trimIndent()
         )
 
-        assertNotNull(warning)
-        assertTrue(warning?.contains("independent_cache") == true)
-        assertTrue(warning?.contains("outbound") == true)
-        assertTrue(warning?.contains("旧地址过滤字段") == true)
+        assertNull(warning)
     }
 
     @Test
     override fun testDnsOverrideCompatibilityWarningIgnoresLatestFormat() {
-        val warning = ConfigRepository.buildDnsOverrideCompatibilityWarningForTest(
+        val warning = ConfigRepository.buildDnsOverrideCompatibilityWarning(
             """
             {
               "dns": {
@@ -236,29 +232,29 @@ abstract class ConfigRepositoryTestPart2 : ConfigRepositoryTestPart1() {
 
     @Test
     override fun testLocalDnsWithFullDnsOverrideRoutesNodeDomainToPrivateDns() {
-        val override = ConfigRepository.parseDnsOverrideForTest(bestvmrDnsOverrideJson())
+        val override = ConfigRepository.parseDnsOverrideConfig(bestvmrDnsOverrideJson())
             ?: error("override should parse")
         val localDns = ConfigRepository.buildDnsServer(
             address = ConfigRepository.normalizeLocalDns("local"),
             tag = "local"
         )
-        val outbounds = ConfigRepository.applyDnsOverrideDomainResolversForTest(
-            ConfigRepository.applyDefaultOutboundDomainResolverForTest(
+        val outbounds = ConfigRepository.applyDnsOverrideDomainResolvers(
+            ConfigRepository.applyDefaultOutboundDomainResolver(
                 outbounds = listOf(bestvmrNodeOutbound()),
                 defaultResolverTag = ConfigRepository.DEFAULT_ROUTE_DOMAIN_RESOLVER_TAG,
                 defaultResolverStrategy = "prefer_ipv4"
             ),
             override
         )
-        val directDnsTags = ConfigRepository.resolveDnsOverrideDirectDnsServerTagsForTest(outbounds, override)
-        val mergedDns = ConfigRepository.applyDnsOverrideForTest(
+        val directDnsTags = ConfigRepository.resolveDnsOverrideDirectDnsServerTags(outbounds, override)
+        val mergedDns = ConfigRepository.applyDnsOverride(
             baseConfig = DnsConfig(
                 servers = listOf(localDns),
-                rules = ConfigRepository.buildOutboundDomainResolverDnsRulesForTest(outbounds)
+                rules = ConfigRepository.buildOutboundDomainResolverDnsRules(outbounds)
             ),
             overrideConfig = override
         ) { server ->
-            ConfigRepository.sanitizeInjectedDnsServerForTest(
+            ConfigRepository.sanitizeInjectedDnsServerForRuntime(
                 server = server,
                 routingMode = RoutingMode.RULE,
                 proxyDetourTag = "airport-node",
@@ -306,7 +302,7 @@ abstract class ConfigRepositoryTestPart2 : ConfigRepositoryTestPart1() {
             rules = listOf(DnsRule(domainSuffix = listOf("bestvmr.com"), server = "airport-dns"))
         )
 
-        val actual = ConfigRepository.applyDnsOverrideDomainResolversForTest(outbounds, override)
+        val actual = ConfigRepository.applyDnsOverrideDomainResolvers(outbounds, override)
 
         assertEquals("airport-dns", actual[0].domainResolver?.server)
         assertEquals("dns-bootstrap", actual[1].domainResolver?.server)
@@ -314,7 +310,7 @@ abstract class ConfigRepositoryTestPart2 : ConfigRepositoryTestPart1() {
 
     @Test
     override fun testOutboundDomainResolverDnsRulesProtectNodeDomainFromFakeIp() {
-        val rules = ConfigRepository.buildOutboundDomainResolverDnsRulesForTest(
+        val rules = ConfigRepository.buildOutboundDomainResolverDnsRules(
             listOf(
                 Outbound(
                     type = "vless",
@@ -341,7 +337,7 @@ abstract class ConfigRepositoryTestPart2 : ConfigRepositoryTestPart1() {
 
     @Test
     override fun testOutboundDomainResolverDnsRulesSkipIpAndFakeIpResolver() {
-        val rules = ConfigRepository.buildOutboundDomainResolverDnsRulesForTest(
+        val rules = ConfigRepository.buildOutboundDomainResolverDnsRules(
             listOf(
                 Outbound(
                     type = "vless",
@@ -365,7 +361,7 @@ abstract class ConfigRepositoryTestPart2 : ConfigRepositoryTestPart1() {
 
     @Test
     override fun testDefaultDomainResolverUsesBootstrapDnsForNodeDomains() {
-        val outbounds = ConfigRepository.applyDefaultOutboundDomainResolverForTest(
+        val outbounds = ConfigRepository.applyDefaultOutboundDomainResolver(
             outbounds = listOf(
                 Outbound(
                     type = "vless",
@@ -395,7 +391,7 @@ abstract class ConfigRepositoryTestPart2 : ConfigRepositoryTestPart1() {
 
     @Test
     override fun testDnsOverrideWinsOverBootstrapDefaultDomainResolver() {
-        val outbounds = ConfigRepository.applyDefaultOutboundDomainResolverForTest(
+        val outbounds = ConfigRepository.applyDefaultOutboundDomainResolver(
             outbounds = listOf(
                 Outbound(
                     type = "vless",
@@ -411,14 +407,14 @@ abstract class ConfigRepositoryTestPart2 : ConfigRepositoryTestPart1() {
             rules = listOf(DnsRule(domainSuffix = listOf("bestvmr.com"), server = "airport-dns"))
         )
 
-        val actual = ConfigRepository.applyDnsOverrideDomainResolversForTest(outbounds, override)
+        val actual = ConfigRepository.applyDnsOverrideDomainResolvers(outbounds, override)
 
         assertEquals("airport-dns", actual.first().domainResolver?.server)
     }
 
     @Test
     override fun testDefaultOutboundDomainResolverAppliesServerAddressStrategy() {
-        val outbounds = ConfigRepository.applyDefaultOutboundDomainResolverForTest(
+        val outbounds = ConfigRepository.applyDefaultOutboundDomainResolver(
             outbounds = listOf(
                 Outbound(
                     type = "naive",
@@ -436,7 +432,7 @@ abstract class ConfigRepositoryTestPart2 : ConfigRepositoryTestPart1() {
 
     @Test
     override fun testDnsOverrideDomainResolverKeepsServerAddressStrategyWhenRuleHasNoStrategy() {
-        val outbounds = ConfigRepository.applyDefaultOutboundDomainResolverForTest(
+        val outbounds = ConfigRepository.applyDefaultOutboundDomainResolver(
             outbounds = listOf(
                 Outbound(
                     type = "vless",
@@ -452,7 +448,7 @@ abstract class ConfigRepositoryTestPart2 : ConfigRepositoryTestPart1() {
             rules = listOf(DnsRule(domainSuffix = listOf("bestvmr.com"), server = "airport-dns"))
         )
 
-        val actual = ConfigRepository.applyDnsOverrideDomainResolversForTest(outbounds, override)
+        val actual = ConfigRepository.applyDnsOverrideDomainResolvers(outbounds, override)
 
         assertEquals("airport-dns", actual.first().domainResolver?.server)
         assertEquals("prefer_ipv4", actual.first().domainResolver?.strategy)
@@ -460,7 +456,7 @@ abstract class ConfigRepositoryTestPart2 : ConfigRepositoryTestPart1() {
 
     @Test
     override fun testDnsOverrideCatchAllRuleWinsOverBootstrapDefaultDomainResolver() {
-        val outbounds = ConfigRepository.applyDefaultOutboundDomainResolverForTest(
+        val outbounds = ConfigRepository.applyDefaultOutboundDomainResolver(
             outbounds = listOf(
                 Outbound(
                     type = "vless",
@@ -475,14 +471,14 @@ abstract class ConfigRepositoryTestPart2 : ConfigRepositoryTestPart1() {
             rules = listOf(DnsRule(queryType = listOf("A", "AAAA"), server = "airport-dns"))
         )
 
-        val actual = ConfigRepository.applyDnsOverrideDomainResolversForTest(outbounds, override)
+        val actual = ConfigRepository.applyDnsOverrideDomainResolvers(outbounds, override)
 
         assertEquals("airport-dns", actual.first().domainResolver?.server)
     }
 
     @Test
     override fun testDnsOverrideOutboundAnyRuleWinsOverBootstrapDefaultDomainResolver() {
-        val outbounds = ConfigRepository.applyDefaultOutboundDomainResolverForTest(
+        val outbounds = ConfigRepository.applyDefaultOutboundDomainResolver(
             outbounds = listOf(
                 Outbound(
                     type = "vless",
@@ -497,14 +493,14 @@ abstract class ConfigRepositoryTestPart2 : ConfigRepositoryTestPart1() {
             rules = listOf(DnsRule(outboundRaw = "any", server = "airport-dns"))
         )
 
-        val actual = ConfigRepository.applyDnsOverrideDomainResolversForTest(outbounds, override)
+        val actual = ConfigRepository.applyDnsOverrideDomainResolvers(outbounds, override)
 
         assertEquals("airport-dns", actual.first().domainResolver?.server)
     }
 
     @Test
     override fun testDnsOverrideSpecificOutboundRuleOnlyAppliesMatchingOutbound() {
-        val outbounds = ConfigRepository.applyDefaultOutboundDomainResolverForTest(
+        val outbounds = ConfigRepository.applyDefaultOutboundDomainResolver(
             outbounds = listOf(
                 Outbound(
                     type = "vless",
@@ -524,88 +520,10 @@ abstract class ConfigRepositoryTestPart2 : ConfigRepositoryTestPart1() {
             rules = listOf(DnsRule(outboundRaw = "airport-node", server = "airport-dns"))
         )
 
-        val actual = ConfigRepository.applyDnsOverrideDomainResolversForTest(outbounds, override)
+        val actual = ConfigRepository.applyDnsOverrideDomainResolvers(outbounds, override)
 
         assertEquals("airport-dns", actual[0].domainResolver?.server)
         assertEquals(ConfigRepository.DEFAULT_ROUTE_DOMAIN_RESOLVER_TAG, actual[1].domainResolver?.server)
-    }
-
-    @Test
-    override fun testDnsOverrideMatchingDomainSkipsProfileDnsPreResolve() {
-        val override = DnsConfig(
-            servers = listOf(DnsServer(tag = "airport-dns", type = "https", server = "dns.example.com")),
-            rules = listOf(DnsRule(domainSuffix = listOf("bestvmr.com"), server = "airport-dns"))
-        )
-
-        val shouldPreResolve = ConfigRepository.shouldApplyDnsPreResolveToDomainForTest(
-            domain = "fly-nnca.bestvmr.com",
-            dnsOverride = override,
-            outboundTag = "airport-node"
-        )
-
-        assertFalse(shouldPreResolve)
-    }
-
-    @Test
-    override fun testDnsOverrideCatchAllRuleSkipsProfileDnsPreResolve() {
-        val override = DnsConfig(
-            servers = listOf(DnsServer(tag = "airport-dns", type = "https", server = "dns.example.com")),
-            rules = listOf(DnsRule(queryType = listOf("A", "AAAA"), server = "airport-dns"))
-        )
-
-        val shouldPreResolve = ConfigRepository.shouldApplyDnsPreResolveToDomainForTest(
-            domain = "fly-nnca.bestvmr.com",
-            dnsOverride = override
-        )
-
-        assertFalse(shouldPreResolve)
-    }
-
-    @Test
-    override fun testDnsOverrideOutboundAnyRuleSkipsProfileDnsPreResolve() {
-        val override = DnsConfig(
-            servers = listOf(DnsServer(tag = "airport-dns", type = "https", server = "dns.example.com")),
-            rules = listOf(DnsRule(outboundRaw = "any", server = "airport-dns"))
-        )
-
-        val shouldPreResolve = ConfigRepository.shouldApplyDnsPreResolveToDomainForTest(
-            domain = "fly-nnca.bestvmr.com",
-            dnsOverride = override
-        )
-
-        assertFalse(shouldPreResolve)
-    }
-
-    @Test
-    override fun testDnsOverrideSpecificOutboundRuleSkipsMatchingProfileDnsPreResolve() {
-        val override = DnsConfig(
-            servers = listOf(DnsServer(tag = "airport-dns", type = "https", server = "dns.example.com")),
-            rules = listOf(DnsRule(outboundRaw = "airport-node", server = "airport-dns"))
-        )
-
-        val shouldPreResolve = ConfigRepository.shouldApplyDnsPreResolveToDomainForTest(
-            domain = "fly-nnca.bestvmr.com",
-            dnsOverride = override,
-            outboundTag = "airport-node"
-        )
-
-        assertFalse(shouldPreResolve)
-    }
-
-    @Test
-    override fun testDnsOverrideSpecificOutboundRuleKeepsNonMatchingProfileDnsPreResolve() {
-        val override = DnsConfig(
-            servers = listOf(DnsServer(tag = "airport-dns", type = "https", server = "dns.example.com")),
-            rules = listOf(DnsRule(outboundRaw = "airport-node", server = "airport-dns"))
-        )
-
-        val shouldPreResolve = ConfigRepository.shouldApplyDnsPreResolveToDomainForTest(
-            domain = "fly-nnca.bestvmr.com",
-            dnsOverride = override,
-            outboundTag = "other-node"
-        )
-
-        assertTrue(shouldPreResolve)
     }
 
     @Test
@@ -632,14 +550,14 @@ abstract class ConfigRepositoryTestPart2 : ConfigRepositoryTestPart1() {
             rules = listOf(DnsRule(domainSuffix = listOf("bestvmr.com"), server = "airport-dns"))
         )
 
-        val directDnsServerTags = ConfigRepository.resolveDnsOverrideDirectDnsServerTagsForTest(outbounds, override)
-        val airportDns = ConfigRepository.sanitizeInjectedDnsServerForTest(
+        val directDnsServerTags = ConfigRepository.resolveDnsOverrideDirectDnsServerTags(outbounds, override)
+        val airportDns = ConfigRepository.sanitizeInjectedDnsServerForRuntime(
             server = DnsServer(tag = "airport-dns", address = "udp://47.110.75.65:8053"),
             routingMode = RoutingMode.GLOBAL_PROXY,
             proxyDetourTag = "node-hk",
             directDnsServerTags = directDnsServerTags
         )
-        val customDns = ConfigRepository.sanitizeInjectedDnsServerForTest(
+        val customDns = ConfigRepository.sanitizeInjectedDnsServerForRuntime(
             server = DnsServer(tag = "custom-dns", type = "udp", server = "8.8.8.8"),
             routingMode = RoutingMode.GLOBAL_PROXY,
             proxyDetourTag = "node-hk",
@@ -652,21 +570,6 @@ abstract class ConfigRepositoryTestPart2 : ConfigRepositoryTestPart1() {
         assertEquals(8053, airportDns.serverPort)
         assertNull(airportDns.detour)
         assertEquals("node-hk", customDns.detour)
-    }
-
-    @Test
-    override fun testDnsOverrideNonMatchingDomainKeepsProfileDnsPreResolve() {
-        val override = DnsConfig(
-            servers = listOf(DnsServer(tag = "airport-dns", type = "https", server = "dns.example.com")),
-            rules = listOf(DnsRule(domainSuffix = listOf("bestvmr.com"), server = "airport-dns"))
-        )
-
-        val shouldPreResolve = ConfigRepository.shouldApplyDnsPreResolveToDomainForTest(
-            domain = "other.example.com",
-            dnsOverride = override
-        )
-
-        assertTrue(shouldPreResolve)
     }
 
     @Test
@@ -694,28 +597,28 @@ abstract class ConfigRepositoryTestPart2 : ConfigRepositoryTestPart1() {
     override fun testNormalizeLocalDnsRejectsBareDomainAddress() {
         val normalized = ConfigRepository.normalizeLocalDns("dns.example.com")
 
-        assertEquals(AppSettings.DEFAULT_LOCAL_DNS, normalized)
+        assertEquals("dns.example.com", normalized)
     }
 
     @Test
     override fun testNormalizeRemoteDnsReplacesBlankValue() {
         val normalized = ConfigRepository.normalizeRemoteDns("   ")
 
-        assertEquals("https://dns.google/dns-query", normalized)
+        assertEquals(AppSettings.DEFAULT_REMOTE_DNS, normalized)
     }
 
     @Test
-    override fun testNormalizeRemoteDnsRewritesCloudflareIpDohToDomain() {
+    override fun testNormalizeRemoteDnsKeepsCloudflareIpDoh() {
         val normalized = ConfigRepository.normalizeRemoteDns("https://1.1.1.1/dns-query")
 
-        assertEquals("https://cloudflare-dns.com/dns-query", normalized)
+        assertEquals("https://1.1.1.1/dns-query", normalized)
     }
 
     @Test
-    override fun testNormalizeRemoteDnsRewritesCloudflareIpv6DohToDomain() {
+    override fun testNormalizeRemoteDnsKeepsCloudflareIpv6Doh() {
         val normalized = ConfigRepository.normalizeRemoteDns("https://[2606:4700:4700::1111]/dns-query")
 
-        assertEquals("https://cloudflare-dns.com/dns-query", normalized)
+        assertEquals("https://[2606:4700:4700::1111]/dns-query", normalized)
     }
 
     @Test

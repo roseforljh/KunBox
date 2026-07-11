@@ -25,6 +25,32 @@ data class TrafficStatsUiState(
     val nodeNames: Map<String, String> = emptyMap()
 )
 
+internal fun buildNodeNameMap(
+    topNodes: List<NodeTrafficStats>,
+    percentages: List<Pair<NodeTrafficStats, Float>>,
+    fallbackName: (String) -> String?
+): Map<String, String> {
+    val nodeIds = linkedSetOf<String>()
+    val nodeNames = linkedMapOf<String, String>()
+
+    fun collect(stats: NodeTrafficStats) {
+        val nodeId = stats.nodeId ?: return
+        nodeIds += nodeId
+        stats.nodeName
+            ?.takeIf { it.isNotBlank() }
+            ?.let { nodeNames.putIfAbsent(nodeId, it) }
+    }
+
+    topNodes.forEach(::collect)
+    percentages.forEach { (stats, _) -> collect(stats) }
+    nodeIds.forEach { nodeId ->
+        if (nodeId !in nodeNames) {
+            fallbackName(nodeId)?.let { nodeNames[nodeId] = it }
+        }
+    }
+    return nodeNames
+}
+
 class TrafficStatsViewModel(application: Application) : AndroidViewModel(application) {
 
     private val appContext = application.applicationContext
@@ -68,23 +94,12 @@ class TrafficStatsViewModel(application: Application) : AndroidViewModel(applica
                 val summary = trafficRepository.getTrafficSummary(period)
                 val topNodes = trafficRepository.getTopNodes(summary, 10)
                 val percentages = trafficRepository.getNodeTrafficPercentages(summary)
+                val fallbackNames = (
+                    configRepository.allNodes.value + configRepository.nodes.value
+                    ).associate { node -> node.id to node.name }
 
-                val nodeNames = mutableMapOf<String, String>()
-                val allNodeIds = mutableSetOf<String>()
-                topNodes.forEach { it.nodeId?.let { id -> allNodeIds.add(id) } }
-                percentages.forEach { it.first.nodeId?.let { id -> allNodeIds.add(id) } }
-
-                allNodeIds.forEach { nodeId ->
-                    val storedName = topNodes.find { it.nodeId == nodeId }?.nodeName
-                        ?: percentages.find { it.first.nodeId == nodeId }?.first?.nodeName
-                    if (!storedName.isNullOrBlank()) {
-                        nodeNames[nodeId] = storedName
-                    } else {
-                        val node = configRepository.getNodeById(nodeId)
-                        if (node != null) {
-                            nodeNames[nodeId] = node.name
-                        }
-                    }
+                val nodeNames = buildNodeNameMap(topNodes, percentages) { nodeId ->
+                    fallbackNames[nodeId]
                 }
 
                 TrafficStatsUiState(

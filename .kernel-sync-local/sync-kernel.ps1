@@ -1,5 +1,7 @@
 param(
-    [Parameter()] [string] $Tag
+    [Parameter()] [string] $Tag,
+    [Parameter()] [string] $SourceRepository,
+    [Parameter()] [switch] $SelfTestBinaryScan
 )
 
 $ErrorActionPreference = 'Stop'
@@ -7,21 +9,63 @@ Set-StrictMode -Version Latest
 
 $officialRemote = 'https://github.com/SagerNet/sing-box.git'
 $officialReleaseApi = 'https://api.github.com/repos/SagerNet/sing-box/releases?per_page=30'
+$trustedTagCommits = @{
+    'v1.13.14' = '25a600db24f7680ad9806ce5427bd0ab8afe1114'
+}
+$trustedPatchHashes = @{
+    'v1.13.14' = '4C89FE3A078F5DC68DA351BF04B1B9536D048925266E15332E5D6F2BFAB2ECE2'
+}
+$trustedPatchFiles = @{
+    'v1.13.14' = @(
+        'cmd/internal/build_libbox/main.go',
+        'protocol/vless/outbound.go',
+        'protocol/vless/outbound_test.go'
+    )
+}
 $gomobileVersion = 'v0.1.12'
 $backupKeepCount = 3
-$requiredMethods = @(
-    'getKunBoxVersion',
-    'resetAllConnections',
-    'recoverNetworkAuto',
+$requiredAndroidAbis = @('arm64-v8a', 'armeabi-v7a', 'x86', 'x86_64')
+$requiredMethods = @()
+$forbiddenMethods = @(
     'checkNetworkRecoveryNeeded',
     'closeAllTrackedConnections',
+    'closeIdleConnections',
     'getConnectionCount',
-    'closeIdleConnections'
+    'recoverNetworkAuto',
+    'resetAllConnections'
 )
+$forbiddenNativeMarkers = @(
+    [pscustomobject]@{
+        Category = 'private VLESS Encryption implementation'
+        Pattern = 'github.com/sagernet/sing-box/protocol/vless/encryption'
+    },
+    [pscustomobject]@{
+        Category = 'private VLESS Encryption implementation'
+        Pattern = 'parseVLESSClientEncryption'
+    },
+    [pscustomobject]@{
+        Category = 'Tailscale implementation'
+        Pattern = 'controlplane.tailscale.com'
+    },
+    [pscustomobject]@{
+        Category = 'Tailscale implementation'
+        Pattern = 'Tailscale outbound'
+    }
+)
+$forbiddenNativeImplementationMethods = @(
+    'CheckNetworkRecoveryNeeded',
+    'CloseAllTrackedConnections',
+    'CloseIdleConnections',
+    'GetConnectionCount',
+    'RecoverNetworkAuto',
+    'ResetAllConnections'
+)
+$forbiddenNativeMarkers += @($forbiddenNativeImplementationMethods | ForEach-Object {
+    [pscustomobject]@{ Category = 'private connection recovery implementation'; Pattern = "experimental/libbox.$_" }
+})
 
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $repoRoot = Split-Path -Parent $scriptDir
-$upstreamDir = Join-Path $scriptDir 'upstream-sing-box'
 $patchesDir = Join-Path $scriptDir 'patches'
 $targetAar = Join-Path $repoRoot 'app\libs\libbox.aar'
 $gradleWrapper = Join-Path $repoRoot 'gradlew.bat'
@@ -29,11 +73,112 @@ $backupDir = $scriptDir
 $timestamp = Get-Date -Format 'yyyyMMdd.HHmmss'
 $backupAar = Join-Path $backupDir ("libbox.aar.backup-before-replace.$timestamp")
 $tempDir = Join-Path $scriptDir 'tmp-sync-kernel-current'
+$upstreamDir = Join-Path $tempDir 'upstream-sing-box'
+$aarCheckDir = Join-Path $tempDir 'aar-check'
 $resolvedTag = $null
 $patchFile = $null
 $syncSucceeded = $false
+$aarReplaced = $false
 
 Add-Type -AssemblyName System.IO.Compression.FileSystem
+
+if ($null -eq ('KunBoxChunkedAsciiScanner' -as [type])) {
+    Add-Type -TypeDefinition @'
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Text;
+
+public static class KunBoxChunkedAsciiScanner
+{
+    private sealed class PatternBytes
+    {
+        public readonly string Text;
+        public readonly byte[] Bytes;
+
+        public PatternBytes(string text, byte[] bytes)
+        {
+            Text = text;
+            Bytes = bytes;
+        }
+    }
+
+    public static Dictionary<string, long> Find(Stream stream, string[] patterns, int bufferSize)
+    {
+        if (stream == null) throw new ArgumentNullException("stream");
+        if (patterns == null) throw new ArgumentNullException("patterns");
+        if (bufferSize <= 0) throw new ArgumentOutOfRangeException("bufferSize");
+
+        var buckets = new List<PatternBytes>[256];
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        var result = new Dictionary<string, long>(StringComparer.Ordinal);
+        var maxPatternLength = 0;
+
+        foreach (var pattern in patterns)
+        {
+            if (String.IsNullOrEmpty(pattern)) throw new ArgumentException("ASCII patterns must not be empty.", "patterns");
+            if (!seen.Add(pattern)) throw new ArgumentException("ASCII patterns must be unique: " + pattern, "patterns");
+            foreach (var value in pattern)
+            {
+                if (value > 0x7f) throw new ArgumentException("Pattern is not ASCII: " + pattern, "patterns");
+            }
+
+            var bytes = Encoding.ASCII.GetBytes(pattern);
+            var item = new PatternBytes(pattern, bytes);
+            var bucket = buckets[bytes[0]];
+            if (bucket == null)
+            {
+                bucket = new List<PatternBytes>();
+                buckets[bytes[0]] = bucket;
+            }
+            bucket.Add(item);
+            maxPatternLength = Math.Max(maxPatternLength, bytes.Length);
+        }
+
+        if (maxPatternLength == 0) return result;
+
+        var overlapSize = maxPatternLength - 1;
+        var buffer = new byte[checked(bufferSize + overlapSize)];
+        var carry = 0;
+        long consumed = 0;
+
+        while (true)
+        {
+            var read = stream.Read(buffer, carry, bufferSize);
+            if (read == 0) break;
+
+            var count = carry + read;
+            var bufferOffset = consumed - carry;
+            for (var index = 0; index < count; index++)
+            {
+                var candidates = buckets[buffer[index]];
+                if (candidates == null) continue;
+
+                foreach (var candidate in candidates)
+                {
+                    if (result.ContainsKey(candidate.Text) || index + candidate.Bytes.Length > count) continue;
+
+                    var matches = true;
+                    for (var patternIndex = 1; patternIndex < candidate.Bytes.Length; patternIndex++)
+                    {
+                        if (buffer[index + patternIndex] == candidate.Bytes[patternIndex]) continue;
+                        matches = false;
+                        break;
+                    }
+                    if (matches) result.Add(candidate.Text, bufferOffset + index);
+                }
+            }
+
+            consumed += read;
+            carry = Math.Min(overlapSize, count);
+            if (carry > 0) Buffer.BlockCopy(buffer, count - carry, buffer, 0, carry);
+        }
+
+        return result;
+    }
+}
+'@
+}
 
 function Write-Stage([string] $name) {
     Write-Host ''
@@ -49,23 +194,23 @@ function Remove-PathIfExists {
         [Parameter(Mandatory = $true)] [string] $Path
     )
 
-    if (Test-Path $Path) {
-        Remove-Item -Path $Path -Recurse -Force
+    $resolvedScriptDir = [System.IO.Path]::GetFullPath($scriptDir).TrimEnd(
+        [System.IO.Path]::DirectorySeparatorChar,
+        [System.IO.Path]::AltDirectorySeparatorChar
+    )
+    $resolvedPath = [System.IO.Path]::GetFullPath($Path)
+    $scriptPrefix = $resolvedScriptDir + [System.IO.Path]::DirectorySeparatorChar
+    if (-not $resolvedPath.StartsWith($scriptPrefix, [System.StringComparison]::OrdinalIgnoreCase)) {
+        Fail "Refuse to remove path outside kernel workspace: $resolvedPath"
+    }
+
+    if (Test-Path -LiteralPath $resolvedPath) {
+        Remove-Item -LiteralPath $resolvedPath -Recurse -Force
     }
 }
 
 function Remove-WorkspaceGarbage {
-    $tempPatterns = @(
-        'tmp-sync-kernel-*',
-        'tmp-libbox-*-check'
-    )
-
-    foreach ($pattern in $tempPatterns) {
-        Get-ChildItem -Path $scriptDir -Filter $pattern -Force -ErrorAction SilentlyContinue |
-            ForEach-Object {
-                Remove-PathIfExists -Path $_.FullName
-            }
-    }
+    Remove-PathIfExists -Path $tempDir
 }
 
 function Trim-OldAarBackups {
@@ -83,86 +228,10 @@ function Trim-OldAarBackups {
         }
 }
 
-function Get-PatchTouchedPaths {
-    param(
-        [Parameter(Mandatory = $true)] [string] $PatchPath
-    )
-
-    $paths = New-Object System.Collections.Generic.List[string]
-    foreach ($line in Get-Content -Path $PatchPath) {
-        if ($line -notmatch '^\+\+\+ b/(.+)$') {
-            continue
-        }
-
-        $relativePath = $matches[1]
-        if ($relativePath -eq '/dev/null') {
-            continue
-        }
-
-        if (-not $paths.Contains($relativePath)) {
-            $paths.Add($relativePath)
-        }
-    }
-
-    return $paths.ToArray()
-}
-
-function Test-GitTrackedPath {
-    param(
-        [Parameter(Mandatory = $true)] [string] $gitBinary,
-        [Parameter(Mandatory = $true)] [string] $RelativePath
-    )
-
-    Push-Location $upstreamDir
-    try {
-        $previousErrorActionPreference = $ErrorActionPreference
-        $ErrorActionPreference = 'Continue'
-        & $gitBinary 'ls-files' '--error-unmatch' '--' $RelativePath *> $null
-        $exitCode = $LASTEXITCODE
-        $ErrorActionPreference = $previousErrorActionPreference
-        return $exitCode -eq 0
-    }
-    finally {
-        $ErrorActionPreference = $previousErrorActionPreference
-        Pop-Location
-    }
-}
-
-function Remove-UpstreamGeneratedArtifacts {
-    param(
-        [Parameter()] [switch] $RemoveBuiltAar,
-        [Parameter()] [string[]] $PatchTouchedPaths = @(),
-        [Parameter()] [string] $gitBinary
-    )
-
-    $pathsToRemove = @(
-        'libbox-sources.jar',
-        'libbox-legacy-sources.jar',
-        'libbox-legacy.aar'
-    )
-
-    if ($RemoveBuiltAar.IsPresent) {
-        $pathsToRemove += 'libbox.aar'
-    }
-
-    foreach ($relativePath in $pathsToRemove) {
-        Remove-PathIfExists -Path (Join-Path $upstreamDir $relativePath)
-    }
-
-    if ($gitBinary) {
-        foreach ($relativePath in $PatchTouchedPaths) {
-            $candidatePath = Join-Path $upstreamDir $relativePath
-            if ((Test-Path $candidatePath) -and (-not (Test-GitTrackedPath -gitBinary $gitBinary -RelativePath $relativePath))) {
-                Remove-PathIfExists -Path $candidatePath
-            }
-        }
-    }
-}
-
 function Assert-UpstreamTreeIsClean([string] $gitBinary) {
     $status = (Get-ExternalOutput -FilePath $gitBinary -Arguments @('status', '--porcelain', '--untracked-files=all') -WorkingDirectory $upstreamDir -FailureMessage 'Failed to inspect upstream worktree').Trim()
     if (-not [string]::IsNullOrWhiteSpace($status)) {
-        Fail "upstream-sing-box still has leftover tracked or untracked changes after targeted cleanup:`n$status`nRefuse to continue with a dirty cache."
+        Fail "Fresh official sing-box clone is unexpectedly dirty:`n$status`nRefuse to continue."
     }
 }
 
@@ -231,30 +300,71 @@ function Resolve-TargetTag {
 function Resolve-PatchFile([string] $targetTag) {
     $candidate = Join-Path $patchesDir ("kunbox-$targetTag.patch")
 
-    if (Test-Path $candidate) {
-        Write-Host "Using exact patch for ${targetTag}: $candidate"
-        return $candidate
+    if (-not (Test-Path $candidate)) {
+        Fail "Exact KunBox patch for $targetTag not found: $candidate. Refuse to apply a patch from another sing-box release."
     }
 
-    $fallbackPatch = Get-ChildItem -Path $patchesDir -File -Filter 'kunbox-*.patch' |
-        ForEach-Object {
-            if ($_.BaseName -match '^kunbox-v(\d+)\.(\d+)\.(\d+)$') {
-                [pscustomobject]@{
-                    File = $_
-                    Version = [version] "$($matches[1]).$($matches[2]).$($matches[3])"
-                }
+    Write-Host "Using exact patch for ${targetTag}: $candidate"
+    return $candidate
+}
+
+function Assert-MinimalLibboxPatch([string] $PatchPath, [string] $TargetTag) {
+    $expectedHash = $trustedPatchHashes[$TargetTag]
+    $expectedFiles = @($trustedPatchFiles[$TargetTag])
+    if ([string]::IsNullOrWhiteSpace($expectedHash) -or $expectedFiles.Count -eq 0) {
+        Fail "No trusted KunBox patch policy is pinned for $TargetTag"
+    }
+
+    $actualHash = (Get-FileHash -LiteralPath $PatchPath -Algorithm SHA256).Hash
+    if ($actualHash -cne $expectedHash) {
+        Fail "KunBox patch SHA256 mismatch for ${TargetTag}: $actualHash, expected $expectedHash"
+    }
+
+    $currentPath = $null
+    $changedFiles = @()
+    $exportedDeclarations = @()
+    $removedTailscaleBuildTag = $false
+    foreach ($line in Get-Content -Path $PatchPath -Encoding UTF8) {
+        if ($line -match '^diff --git a/(.+) b/(.+)$') {
+            if ($matches[1] -cne $matches[2]) {
+                Fail "KunBox patch renames files, which is not allowed: $($matches[1]) -> $($matches[2])"
             }
-        } |
-        Sort-Object -Property Version -Descending |
-        Select-Object -First 1 |
-        ForEach-Object { $_.File }
-
-    if ($null -eq $fallbackPatch) {
-        Fail "No KunBox patch file found in $patchesDir. Add at least one kunbox-<tag>.patch before syncing this official release."
+            $currentPath = $matches[2]
+            $changedFiles += $currentPath
+            continue
+        }
+        if ($currentPath -eq 'cmd/internal/build_libbox/main.go') {
+            if ($line -cmatch '^\+.*(with_tailscale|ts_omit_)') {
+                Fail 'KunBox patch must not add Tailscale or ts_omit build tags.'
+            }
+            if ($line -cmatch '^-\s*sharedTags = append\(sharedTags, "with_tailscale"') {
+                $removedTailscaleBuildTag = $true
+            }
+        }
+        if ($currentPath -notlike 'experimental/libbox/*') {
+            continue
+        }
+        if ($line -cmatch '^\+(func|type|var|const)\s+([A-Z][A-Za-z0-9_]*)') {
+            $exportedDeclarations += "$($matches[1]) $($matches[2])"
+        } elseif ($line -cmatch '^\+func\s+\([^)]*\)\s+([A-Z][A-Za-z0-9_]*)') {
+            $exportedDeclarations += "method $($matches[1])"
+        }
     }
 
-    Write-Warning "Patch for $targetTag not found, falling back to $($fallbackPatch.Name)."
-    return $fallbackPatch.FullName
+    $actualFiles = @($changedFiles | Sort-Object -Unique)
+    $fileDiff = @(Compare-Object -ReferenceObject $expectedFiles -DifferenceObject $actualFiles -CaseSensitive)
+    if ($fileDiff.Count -gt 0) {
+        Fail "KunBox patch file set mismatch for ${TargetTag}. Expected: $($expectedFiles -join ', '); actual: $($actualFiles -join ', ')"
+    }
+    if (-not $removedTailscaleBuildTag) {
+        Fail 'KunBox patch must remove the official sharedTags append that enables with_tailscale.'
+    }
+
+    if (@($exportedDeclarations).Count -gt 0) {
+        Fail "KunBox patch must not add exported libbox declarations: $($exportedDeclarations -join ', ')"
+    }
+
+    Write-Host "Patch policy: SHA256 and allowed file set verified for $TargetTag."
 }
 
 function Format-ProcessArgument([string] $value) {
@@ -363,10 +473,29 @@ function Resolve-AndroidSdk {
 }
 
 function Resolve-AndroidNdk([string] $sdkPath) {
-    $preferredVersion = '29.0.14206865'
+    $preferredVersion = [version] '29.0.14206865'
+
+    function Assert-NdkVersion([string] $path) {
+        $resolvedPath = (Resolve-Path $path).Path
+        $sourceProperties = Join-Path $resolvedPath 'source.properties'
+        $revision = if (Test-Path $sourceProperties) {
+            $line = Get-Content -Path $sourceProperties -Encoding UTF8 |
+                Where-Object { $_ -match '^Pkg\.Revision\s*=\s*(.+)$' } |
+                Select-Object -First 1
+            if ($line -and $line -match '^Pkg\.Revision\s*=\s*(.+)$') { $matches[1].Trim() } else { $null }
+        } else {
+            Split-Path -Leaf $resolvedPath
+        }
+
+        $parsedVersion = $null
+        if (-not [version]::TryParse($revision, [ref] $parsedVersion) -or $parsedVersion -lt $preferredVersion) {
+            Fail "Android NDK $preferredVersion or newer is required. Found '$revision' at $resolvedPath"
+        }
+        return $resolvedPath
+    }
 
     if ($env:ANDROID_NDK_HOME -and (Test-Path $env:ANDROID_NDK_HOME)) {
-        return (Resolve-Path $env:ANDROID_NDK_HOME).Path
+        return Assert-NdkVersion -path $env:ANDROID_NDK_HOME
     }
 
     $ndkRoot = Join-Path $sdkPath 'ndk'
@@ -374,18 +503,26 @@ function Resolve-AndroidNdk([string] $sdkPath) {
         Fail "Android SDK is missing the ndk directory: $ndkRoot"
     }
 
-    $preferredPath = Join-Path $ndkRoot $preferredVersion
+    $preferredPath = Join-Path $ndkRoot $preferredVersion.ToString()
     if (Test-Path $preferredPath) {
-        return (Resolve-Path $preferredPath).Path
+        return Assert-NdkVersion -path $preferredPath
     }
 
-    $fallback = Get-ChildItem -Path $ndkRoot -Directory | Sort-Object Name -Descending | Select-Object -First 1
+    $fallback = Get-ChildItem -Path $ndkRoot -Directory |
+        ForEach-Object {
+            $version = $null
+            if ([version]::TryParse($_.Name, [ref] $version) -and $version -ge $preferredVersion) {
+                [pscustomobject]@{ Directory = $_; Version = $version }
+            }
+        } |
+        Sort-Object Version -Descending |
+        Select-Object -First 1
     if ($null -eq $fallback) {
         Fail "No Android NDK found. Install $preferredVersion or newer."
     }
 
-    Write-Warning "Preferred NDK $preferredVersion not found. Falling back to $($fallback.Name)."
-    return $fallback.FullName
+    Write-Warning "Preferred NDK $preferredVersion not found. Falling back to $($fallback.Version)."
+    return Assert-NdkVersion -path $fallback.Directory.FullName
 }
 
 function Extract-ZipEntry {
@@ -434,25 +571,102 @@ function Ensure-GomobileTools([string] $goBinary, [string] $binDir) {
     $gomobilePath = Join-Path $binDir 'gomobile.exe'
     $gobindPath = Join-Path $binDir 'gobind.exe'
 
-    if (-not (Test-Path $gomobilePath)) {
-        Invoke-External -FilePath $goBinary -Arguments @('install', "github.com/sagernet/gomobile/cmd/gomobile@$gomobileVersion") -WorkingDirectory $repoRoot -FailureMessage 'Failed to install gomobile'
-    }
+    $tools = @(
+        [pscustomobject]@{
+            Name = 'gomobile'
+            Path = $gomobilePath
+            Package = "github.com/sagernet/gomobile/cmd/gomobile@$gomobileVersion"
+        },
+        [pscustomobject]@{
+            Name = 'gobind'
+            Path = $gobindPath
+            Package = "github.com/sagernet/gomobile/cmd/gobind@$gomobileVersion"
+        }
+    )
+    $expectedModulePattern = '(?m)^\s*mod\s+github\.com/sagernet/gomobile\s+' +
+        [regex]::Escape($gomobileVersion) + '(\s|$)'
 
-    if (-not (Test-Path $gobindPath)) {
-        Invoke-External -FilePath $goBinary -Arguments @('install', "github.com/sagernet/gomobile/cmd/gobind@$gomobileVersion") -WorkingDirectory $repoRoot -FailureMessage 'Failed to install gobind'
+    foreach ($tool in $tools) {
+        $install = -not (Test-Path $tool.Path)
+        if (-not $install) {
+            $versionInfo = Get-ExternalOutput -FilePath $goBinary -Arguments @('version', '-m', $tool.Path) -WorkingDirectory $repoRoot -FailureMessage "Failed to inspect $($tool.Name) build metadata"
+            $install = $versionInfo -notmatch $expectedModulePattern
+            if ($install) {
+                Write-Warning "$($tool.Name) is not built from github.com/sagernet/gomobile $gomobileVersion; reinstalling pinned version."
+            }
+        }
+        if ($install) {
+            Invoke-External -FilePath $goBinary -Arguments @('install', $tool.Package) -WorkingDirectory $repoRoot -FailureMessage "Failed to install $($tool.Name)"
+        }
     }
 
     if (-not (Test-Path $gomobilePath) -or -not (Test-Path $gobindPath)) {
         Fail 'gomobile or gobind is still missing after install. Check GOPATH/bin and Go permissions.'
     }
 
+    foreach ($tool in $tools) {
+        $versionInfo = Get-ExternalOutput -FilePath $goBinary -Arguments @('version', '-m', $tool.Path) -WorkingDirectory $repoRoot -FailureMessage "Failed to verify $($tool.Name) build metadata"
+        if ($versionInfo -notmatch $expectedModulePattern) {
+            Fail "$($tool.Name) is not pinned to github.com/sagernet/gomobile $gomobileVersion"
+        }
+    }
+
+}
+
+function Resolve-UpstreamCloneSource([string] $gitBinary) {
+    if ([string]::IsNullOrWhiteSpace($SourceRepository)) {
+        return [pscustomobject]@{ Path = $officialRemote; IsLocal = $false }
+    }
+
+    $sourceCandidate = if ([System.IO.Path]::IsPathRooted($SourceRepository)) {
+        $SourceRepository
+    } else {
+        Join-Path $repoRoot $SourceRepository
+    }
+    $sourcePath = (Resolve-Path -LiteralPath $sourceCandidate).Path
+    if (-not (Test-Path (Join-Path $sourcePath '.git'))) {
+        Fail "Local upstream source is not a git worktree: $sourcePath"
+    }
+
+    $remoteUrl = (Get-ExternalOutput -FilePath $gitBinary -Arguments @(
+            'remote', 'get-url', 'origin'
+        ) -WorkingDirectory $sourcePath -FailureMessage 'Failed to read local upstream origin').Trim()
+    if ($remoteUrl -notmatch 'SagerNet/sing-box(\.git)?$') {
+        Fail "Local upstream source origin is not the official repository: $remoteUrl"
+    }
+
+    $expectedCommit = $trustedTagCommits[$resolvedTag]
+    if ([string]::IsNullOrWhiteSpace($expectedCommit)) {
+        Fail "Local upstream source is not allowed for unpinned tag: $resolvedTag"
+    }
+    $actualCommit = (Get-ExternalOutput -FilePath $gitBinary -Arguments @(
+            'rev-list', '-n', '1', "refs/tags/$resolvedTag"
+        ) -WorkingDirectory $sourcePath -FailureMessage "Local upstream source does not contain tag $resolvedTag").Trim()
+    if ($actualCommit -cne $expectedCommit) {
+        Fail "Local upstream tag $resolvedTag points to $actualCommit, expected $expectedCommit"
+    }
+
+    Write-Host "Using pinned local official git source: $sourcePath ($resolvedTag@$actualCommit)"
+    return [pscustomobject]@{ Path = $sourcePath; IsLocal = $true }
 }
 
 function Prepare-UpstreamTree([string] $gitBinary) {
-    Write-Stage 'Stage 1/5: Prepare upstream'
+    Write-Stage 'Stage 1/8: Prepare official upstream'
 
-    if (-not (Test-Path $upstreamDir)) {
-        Invoke-External -FilePath $gitBinary -Arguments @('clone', '--branch', $resolvedTag, '--single-branch', $officialRemote, $upstreamDir) -WorkingDirectory $scriptDir -FailureMessage 'Failed to clone official sing-box'
+    Remove-PathIfExists -Path $upstreamDir
+    New-Item -ItemType Directory -Path $tempDir -Force | Out-Null
+    $cloneSource = Resolve-UpstreamCloneSource -gitBinary $gitBinary
+    $cloneArguments = @('clone', '--branch', $resolvedTag, '--single-branch')
+    if (-not $cloneSource.IsLocal) {
+        $cloneArguments += @('--depth', '1')
+    }
+    $cloneArguments += @($cloneSource.Path, $upstreamDir)
+    Invoke-External -FilePath $gitBinary -Arguments $cloneArguments -WorkingDirectory $tempDir -FailureMessage 'Failed to clone official sing-box'
+
+    if ($cloneSource.IsLocal) {
+        Invoke-External -FilePath $gitBinary -Arguments @(
+            'remote', 'set-url', 'origin', $officialRemote
+        ) -WorkingDirectory $upstreamDir -FailureMessage 'Failed to normalize cloned upstream origin'
     }
 
     if (-not (Test-Path (Join-Path $upstreamDir '.git'))) {
@@ -464,22 +678,65 @@ function Prepare-UpstreamTree([string] $gitBinary) {
         Fail "upstream-sing-box origin is not the official repository: $remoteUrl"
     }
 
-    $patchTouchedPaths = Get-PatchTouchedPaths -PatchPath $patchFile
+    $checkedOutTag = (Get-ExternalOutput -FilePath $gitBinary -Arguments @('describe', '--tags', '--exact-match', 'HEAD') -WorkingDirectory $upstreamDir -FailureMessage 'Failed to verify checked out sing-box tag').Trim()
+    if ($checkedOutTag -ne $resolvedTag) {
+        Fail "Expected official tag $resolvedTag but cloned $checkedOutTag"
+    }
 
-    Invoke-External -FilePath $gitBinary -Arguments @('fetch', 'origin', '--tags', '--force') -WorkingDirectory $upstreamDir -FailureMessage 'Failed to fetch official tags'
-    Invoke-External -FilePath $gitBinary -Arguments @('checkout', '--force', '--detach', $resolvedTag) -WorkingDirectory $upstreamDir -FailureMessage "Failed to checkout $resolvedTag"
-    Invoke-External -FilePath $gitBinary -Arguments @('reset', '--hard', $resolvedTag) -WorkingDirectory $upstreamDir -FailureMessage 'Failed to reset upstream worktree'
-    Remove-UpstreamGeneratedArtifacts -RemoveBuiltAar -PatchTouchedPaths $patchTouchedPaths -gitBinary $gitBinary
+    $expectedCommit = $trustedTagCommits[$resolvedTag]
+    if ([string]::IsNullOrWhiteSpace($expectedCommit)) {
+        Fail "Official tag is not pinned to a trusted commit: $resolvedTag"
+    }
+    $checkedOutCommit = (Get-ExternalOutput -FilePath $gitBinary -Arguments @('rev-parse', 'HEAD') -WorkingDirectory $upstreamDir -FailureMessage 'Failed to read checked out sing-box commit').Trim()
+    $checkedOutTagCommit = (Get-ExternalOutput -FilePath $gitBinary -Arguments @('rev-list', '-n', '1', "refs/tags/$resolvedTag") -WorkingDirectory $upstreamDir -FailureMessage "Failed to resolve cloned tag $resolvedTag").Trim()
+    if ($checkedOutCommit -cne $expectedCommit -or $checkedOutTagCommit -cne $expectedCommit) {
+        Fail "Official tag/HEAD commit mismatch for ${resolvedTag}: HEAD=$checkedOutCommit, tag=$checkedOutTagCommit, expected=$expectedCommit"
+    }
+    Write-Host "Upstream commit policy: $resolvedTag@$expectedCommit verified."
+
     Assert-UpstreamTreeIsClean -gitBinary $gitBinary
+}
+
+function Apply-KunBoxPatch([string] $gitBinary) {
+    Write-Stage 'Stage 3/8: Apply KunBox patches'
+
     Write-Host "Using patch: $patchFile"
     $patchName = [System.IO.Path]::GetFileName($patchFile)
     Invoke-External -FilePath $gitBinary -Arguments @('apply', '--check', $patchFile) -WorkingDirectory $upstreamDir -FailureMessage "KunBox patch $patchName does not apply cleanly to official $resolvedTag. Fix the coupling first."
     Invoke-External -FilePath $gitBinary -Arguments @('apply', '--whitespace=nowarn', $patchFile) -WorkingDirectory $upstreamDir -FailureMessage 'Failed to apply KunBox patch'
 }
 
-function Build-Libbox([string] $goBinary) {
-    Write-Stage 'Stage 2/5: Build libbox.aar'
+function Run-GoValidation([string] $goBinary) {
+    Write-Stage 'Stage 4/8: Validate patched Go packages'
+
     $env:GOTOOLCHAIN = 'local'
+    $packages = @('./protocol/vless')
+    Invoke-External -FilePath $goBinary -Arguments (@('test') + $packages) -WorkingDirectory $upstreamDir -FailureMessage 'Patched Go package tests failed'
+    Invoke-External -FilePath $goBinary -Arguments (@('test', '-race') + $packages) -WorkingDirectory $upstreamDir -FailureMessage 'Patched Go race tests failed'
+    Invoke-External -FilePath $goBinary -Arguments (@('vet') + $packages) -WorkingDirectory $upstreamDir -FailureMessage 'Patched Go vet failed'
+}
+
+function Remove-LibboxBuildArtifacts {
+    foreach ($relativePath in @(
+        'libbox.aar',
+        'libbox-sources.jar',
+        'libbox-legacy.aar',
+        'libbox-legacy-sources.jar'
+    )) {
+        Remove-PathIfExists -Path (Join-Path $upstreamDir $relativePath)
+    }
+}
+
+function Build-LibboxSnapshot {
+    param(
+        [Parameter(Mandatory = $true)] [string] $goBinary,
+        [Parameter(Mandatory = $true)] [string] $OutputPath,
+        [Parameter(Mandatory = $true)] [string] $StageName
+    )
+
+    Write-Stage $StageName
+    $env:GOTOOLCHAIN = 'local'
+    Remove-LibboxBuildArtifacts
     Invoke-External -FilePath $goBinary -Arguments @('run', './cmd/internal/build_libbox', '-target', 'android') -WorkingDirectory $upstreamDir -FailureMessage 'Failed to build libbox.aar'
 
     $builtAar = Join-Path $upstreamDir 'libbox.aar'
@@ -487,19 +744,238 @@ function Build-Libbox([string] $goBinary) {
         Fail "Build completed but $builtAar was not created."
     }
 
-    return $builtAar
+    Remove-PathIfExists -Path $OutputPath
+    Copy-Item -LiteralPath $builtAar -Destination $OutputPath -Force
+    Remove-LibboxBuildArtifacts
+    return $OutputPath
 }
 
-function Assert-AarMethods([string] $aarPath, [string] $javapBinary) {
-    Write-Stage 'Stage 3/5: Verify AAR methods'
+function Get-AarJniEntries([string] $AarPath) {
+    $zip = [System.IO.Compression.ZipFile]::OpenRead($AarPath)
+    try {
+        $entries = @($zip.Entries | Where-Object {
+                -not $_.FullName.EndsWith('/') -and $_.FullName -match '^jni/[^/]+/[^/]+$'
+            })
+        if ($entries.Count -eq 0) {
+            Fail "AAR contains no JNI entries: $AarPath"
+        }
+        $emptyEntries = @($entries | Where-Object { $_.Length -le 0 } | ForEach-Object { $_.FullName })
+        if ($emptyEntries.Count -gt 0) {
+            Fail "AAR contains empty JNI entries: $($emptyEntries -join ', ')"
+        }
+        return @($entries | ForEach-Object { $_.FullName } | Sort-Object -Unique)
+    }
+    finally {
+        $zip.Dispose()
+    }
+}
 
-    Remove-PathIfExists -Path $tempDir
-    New-Item -ItemType Directory -Path $tempDir -Force | Out-Null
+function Invoke-BinaryPatternScannerSelfTest {
+    $bufferSize = 8
+    $expectedPattern = 'cross-block-hit'
+    $missingPattern = 'missing-marker'
+    $prefix = '1234567'
+    $payload = [System.Text.Encoding]::ASCII.GetBytes($prefix + $expectedPattern + '-tail')
+    $stream = New-Object System.IO.MemoryStream(, $payload)
+    try {
+        $hits = [KunBoxChunkedAsciiScanner]::Find(
+            $stream,
+            [string[]] @($expectedPattern, $missingPattern),
+            $bufferSize
+        )
+    }
+    finally {
+        $stream.Dispose()
+    }
 
-    $classesJar = Join-Path $tempDir 'classes.jar'
-    Extract-ZipEntry -ZipPath $aarPath -EntryName 'classes.jar' -DestinationPath $classesJar
+    if (-not $hits.ContainsKey($expectedPattern) -or $hits[$expectedPattern] -ne $prefix.Length) {
+        Fail "Binary pattern scanner self-test missed a cross-block pattern at offset $($prefix.Length)."
+    }
+    if ($hits.ContainsKey($missingPattern)) {
+        Fail 'Binary pattern scanner self-test reported a pattern that is not present.'
+    }
 
-    $javapOutput = Get-ExternalOutput -FilePath $javapBinary -Arguments @('-classpath', $classesJar, 'io.nekohasekai.libbox.Libbox') -WorkingDirectory $tempDir -FailureMessage 'javap verification failed'
+    $policyPatterns = [string[]] @($forbiddenNativeMarkers | ForEach-Object { $_.Pattern })
+    $benignPolicyText = (@(
+            'xhttp',
+            'XHTTP',
+            'splithttp',
+            'SplitHTTP',
+            'vless encryption',
+            'VLESS Encryption'
+        ) + $forbiddenMethods + $forbiddenNativeImplementationMethods) -join '|'
+    $benignPolicyStream = New-Object System.IO.MemoryStream(
+        , [System.Text.Encoding]::ASCII.GetBytes($benignPolicyText)
+    )
+    try {
+        $benignPolicyHits = [KunBoxChunkedAsciiScanner]::Find(
+            $benignPolicyStream,
+            $policyPatterns,
+            $bufferSize
+        )
+    }
+    finally {
+        $benignPolicyStream.Dispose()
+    }
+    if ($benignPolicyHits.Count -gt 0) {
+        Fail "Native binary policy uses an overly broad marker: $($benignPolicyHits.Keys -join ', ')"
+    }
+
+    $specificPolicyStream = New-Object System.IO.MemoryStream(
+        , [System.Text.Encoding]::ASCII.GetBytes(($policyPatterns -join '|'))
+    )
+    try {
+        $specificPolicyHits = [KunBoxChunkedAsciiScanner]::Find(
+            $specificPolicyStream,
+            $policyPatterns,
+            $bufferSize
+        )
+    }
+    finally {
+        $specificPolicyStream.Dispose()
+    }
+    $missedPolicyPatterns = @($policyPatterns | Where-Object { -not $specificPolicyHits.ContainsKey($_) })
+    if ($missedPolicyPatterns.Count -gt 0) {
+        Fail "Native binary policy self-test missed specific markers: $($missedPolicyPatterns -join ', ')"
+    }
+
+    Write-Host "Binary pattern scanner self-test passed: cross-block and native policy marker checks succeeded."
+}
+
+function Assert-AarNativeBinaryPolicy {
+    param(
+        [Parameter(Mandatory = $true)] [string] $AarPath,
+        [Parameter(Mandatory = $true)] [string[]] $JniEntries
+    )
+
+    $allAbis = @($JniEntries | ForEach-Object {
+            if ($_ -match '^jni/([^/]+)/') { $matches[1] }
+        } | Sort-Object -Unique)
+    $libboxEntries = @($JniEntries | Where-Object { $_ -match '^jni/[^/]+/libbox\.so$' } | Sort-Object -Unique)
+    $libboxAbis = @($libboxEntries | ForEach-Object {
+            if ($_ -match '^jni/([^/]+)/libbox\.so$') { $matches[1] }
+        } | Sort-Object -Unique)
+    $missingAbis = @($allAbis | Where-Object { $_ -notin $libboxAbis })
+    if ($libboxEntries.Count -eq 0 -or $missingAbis.Count -gt 0) {
+        Fail "Patched AAR is missing libbox.so for JNI ABIs: $($missingAbis -join ', ')"
+    }
+    $requiredAbiDiff = @(
+        Compare-Object -ReferenceObject $requiredAndroidAbis -DifferenceObject $libboxAbis -CaseSensitive
+    )
+    if ($requiredAbiDiff.Count -gt 0) {
+        Fail "Patched AAR libbox ABI set mismatch. Expected: $($requiredAndroidAbis -join ', '); actual: $($libboxAbis -join ', ')"
+    }
+
+    $patterns = [string[]] @($forbiddenNativeMarkers | ForEach-Object { $_.Pattern })
+    $violations = New-Object System.Collections.Generic.List[string]
+    $zip = [System.IO.Compression.ZipFile]::OpenRead($AarPath)
+    try {
+        foreach ($entryName in $libboxEntries) {
+            $entry = $zip.GetEntry($entryName)
+            if ($null -eq $entry -or $entry.Length -le 0) {
+                Fail "AAR entry is missing or empty: $entryName"
+            }
+
+            $entryStream = $entry.Open()
+            try {
+                $hits = [KunBoxChunkedAsciiScanner]::Find($entryStream, $patterns, 65536)
+            }
+            finally {
+                $entryStream.Dispose()
+            }
+
+            foreach ($marker in $forbiddenNativeMarkers) {
+                if (-not $hits.ContainsKey($marker.Pattern)) {
+                    continue
+                }
+                [void] $violations.Add(
+                    "$entryName contains forbidden $($marker.Category) marker '$($marker.Pattern)' at offset 0x$('{0:X}' -f $hits[$marker.Pattern])"
+                )
+            }
+        }
+    }
+    finally {
+        $zip.Dispose()
+    }
+
+    if ($violations.Count -gt 0) {
+        Fail "Patched AAR native binary policy check failed:`n$($violations -join "`n")"
+    }
+
+    Write-Host "AAR native binary policy: scanned $($libboxEntries.Count) ABI libbox.so entries; no Tailscale, private VLESS Encryption, or connection recovery implementations found. Official XHTTP remains enabled."
+}
+
+function Get-JavaClassEntries([string] $ClassesJar) {
+    $zip = [System.IO.Compression.ZipFile]::OpenRead($ClassesJar)
+    try {
+        $entries = @($zip.Entries |
+                Where-Object { -not $_.FullName.EndsWith('/') -and $_.FullName.EndsWith('.class') } |
+                ForEach-Object { $_.FullName } |
+                Sort-Object -Unique)
+        if ($entries.Count -eq 0) {
+            Fail "classes.jar contains no Java classes: $ClassesJar"
+        }
+        return $entries
+    }
+    finally {
+        $zip.Dispose()
+    }
+}
+
+function Get-JavaPublicApi {
+    param(
+        [Parameter(Mandatory = $true)] [string] $ClassesJar,
+        [Parameter(Mandatory = $true)] [string[]] $ClassEntries,
+        [Parameter(Mandatory = $true)] [string] $javapBinary,
+        [Parameter(Mandatory = $true)] [string] $WorkingDirectory
+    )
+
+    $classNames = @($ClassEntries |
+            Where-Object { $_ -ne 'module-info.class' -and $_ -notlike 'META-INF/versions/*' } |
+            ForEach-Object { $_.Substring(0, $_.Length - '.class'.Length).Replace('/', '.') } |
+            Sort-Object -Unique)
+    if ($classNames.Count -eq 0) {
+        Fail "classes.jar contains no javap-compatible classes: $ClassesJar"
+    }
+
+    $api = New-Object System.Collections.Generic.List[string]
+    foreach ($className in $classNames) {
+        $javapOutput = Get-ExternalOutput -FilePath $javapBinary -Arguments @('-classpath', $ClassesJar, '-public', '-s', $className) -WorkingDirectory $WorkingDirectory -FailureMessage "javap failed for $className"
+        $pending = $null
+        foreach ($rawLine in ($javapOutput -split "`r?`n")) {
+            $line = $rawLine.Trim()
+            if ([string]::IsNullOrWhiteSpace($line) -or $line.StartsWith('Compiled from ')) {
+                continue
+            }
+            if ($line -eq '}') {
+                if ($null -ne $pending) {
+                    [void] $api.Add("$className`t$pending")
+                    $pending = $null
+                }
+                continue
+            }
+            if ($line.StartsWith('descriptor:')) {
+                if ($null -eq $pending) {
+                    Fail "Unexpected javap descriptor without declaration for ${className}: $line"
+                }
+                [void] $api.Add("$className`t$pending`t$line")
+                $pending = $null
+                continue
+            }
+            if ($null -ne $pending) {
+                [void] $api.Add("$className`t$pending")
+            }
+            $pending = $line
+        }
+        if ($null -ne $pending) {
+            [void] $api.Add("$className`t$pending")
+        }
+    }
+    return @($api | Sort-Object -Unique)
+}
+
+function Assert-PatchedLibboxMethods([string] $ClassesJar, [string] $javapBinary) {
+    $javapOutput = Get-ExternalOutput -FilePath $javapBinary -Arguments @('-classpath', $ClassesJar, '-public', 'io.nekohasekai.libbox.Libbox') -WorkingDirectory $aarCheckDir -FailureMessage 'javap verification failed for Libbox'
 
     $missing = @()
     foreach ($method in $requiredMethods) {
@@ -507,21 +983,81 @@ function Assert-AarMethods([string] $aarPath, [string] $javapBinary) {
             $missing += $method
         }
     }
-
     if ($missing.Count -gt 0) {
-        $missingList = $missing -join ', '
-        Fail "The new libbox.aar is missing required KunBox methods: $missingList. Fix the kernel export layer and rerun."
+        Fail "The patched libbox.aar is missing required KunBox methods: $($missing -join ', ')."
+    }
+
+    $unexpected = @()
+    foreach ($method in $forbiddenMethods) {
+        if ($javapOutput -match ([regex]::Escape($method) + '\(')) {
+            $unexpected += $method
+        }
+    }
+    if ($unexpected.Count -gt 0) {
+        Fail "The patched libbox.aar still exports removed private methods: $($unexpected -join ', ')."
     }
 }
 
+function Assert-AarCompatibility {
+    param(
+        [Parameter(Mandatory = $true)] [string] $OfficialAar,
+        [Parameter(Mandatory = $true)] [string] $PatchedAar,
+        [Parameter(Mandatory = $true)] [string] $javapBinary
+    )
+
+    Write-Stage 'Stage 6/8: Verify AAR API and ABI compatibility'
+    Remove-PathIfExists -Path $aarCheckDir
+    $officialCheckDir = Join-Path $aarCheckDir 'official'
+    $patchedCheckDir = Join-Path $aarCheckDir 'patched'
+    New-Item -ItemType Directory -Path $officialCheckDir, $patchedCheckDir -Force | Out-Null
+
+    $officialClassesJar = Join-Path $officialCheckDir 'classes.jar'
+    $patchedClassesJar = Join-Path $patchedCheckDir 'classes.jar'
+    Extract-ZipEntry -ZipPath $OfficialAar -EntryName 'classes.jar' -DestinationPath $officialClassesJar
+    Extract-ZipEntry -ZipPath $PatchedAar -EntryName 'classes.jar' -DestinationPath $patchedClassesJar
+
+    $officialClasses = @(Get-JavaClassEntries -ClassesJar $officialClassesJar)
+    $patchedClasses = @(Get-JavaClassEntries -ClassesJar $patchedClassesJar)
+    $classDiff = @(Compare-Object -ReferenceObject $officialClasses -DifferenceObject $patchedClasses -CaseSensitive)
+    if ($classDiff.Count -gt 0) {
+        $removedClasses = @($classDiff | Where-Object { $_.SideIndicator -eq '<=' } | ForEach-Object { $_.InputObject })
+        $addedClasses = @($classDiff | Where-Object { $_.SideIndicator -eq '=>' } | ForEach-Object { $_.InputObject })
+        Fail "Patched AAR Java class set differs from official AAR. Removed: $($removedClasses -join ', '); added: $($addedClasses -join ', ')"
+    }
+
+    $officialApi = @(Get-JavaPublicApi -ClassesJar $officialClassesJar -ClassEntries $officialClasses -javapBinary $javapBinary -WorkingDirectory $officialCheckDir)
+    $patchedApi = @(Get-JavaPublicApi -ClassesJar $patchedClassesJar -ClassEntries $patchedClasses -javapBinary $javapBinary -WorkingDirectory $patchedCheckDir)
+    $apiDiff = @(Compare-Object -ReferenceObject $officialApi -DifferenceObject $patchedApi -CaseSensitive)
+    if ($apiDiff.Count -gt 0) {
+        $removedApi = @($apiDiff | Where-Object { $_.SideIndicator -eq '<=' } | ForEach-Object { $_.InputObject })
+        $addedApi = @($apiDiff | Where-Object { $_.SideIndicator -eq '=>' } | ForEach-Object { $_.InputObject })
+        Fail "Patched AAR public API differs from official AAR. Removed: $($removedApi -join ', '); added: $($addedApi -join ', ')"
+    }
+
+    $officialJni = @(Get-AarJniEntries -AarPath $OfficialAar)
+    $patchedJni = @(Get-AarJniEntries -AarPath $PatchedAar)
+    $jniDiff = @(Compare-Object -ReferenceObject $officialJni -DifferenceObject $patchedJni -CaseSensitive)
+    if ($jniDiff.Count -gt 0) {
+        $removedJni = @($jniDiff | Where-Object { $_.SideIndicator -eq '<=' } | ForEach-Object { $_.InputObject })
+        $addedJni = @($jniDiff | Where-Object { $_.SideIndicator -eq '=>' } | ForEach-Object { $_.InputObject })
+        Fail "Patched AAR JNI entry set differs from official AAR. Removed: $($removedJni -join ', '); added: $($addedJni -join ', ')"
+    }
+
+    Assert-AarNativeBinaryPolicy -AarPath $PatchedAar -JniEntries $patchedJni
+    Assert-PatchedLibboxMethods -ClassesJar $patchedClassesJar -javapBinary $javapBinary
+    Write-Host 'AAR public API matches the official baseline.'
+    Write-Host "AAR JNI entries: $($patchedJni -join ', ')"
+}
+
 function Replace-Aar([string] $aarPath) {
-    Write-Stage 'Stage 4/5: Backup and replace libbox.aar'
+    Write-Stage 'Stage 7/8: Backup and replace libbox.aar'
 
     if (-not (Test-Path $targetAar)) {
         Fail "Target AAR not found: $targetAar"
     }
 
     Copy-Item -Path $targetAar -Destination $backupAar -Force
+    $script:aarReplaced = $true
     Copy-Item -Path $aarPath -Destination $targetAar -Force
     Trim-OldAarBackups
 
@@ -530,7 +1066,7 @@ function Replace-Aar([string] $aarPath) {
 }
 
 function Run-GradleValidation {
-    Write-Stage 'Stage 5/5: Run Gradle validation'
+    Write-Stage 'Stage 8/8: Run Gradle validation'
 
     if (-not (Test-Path $gradleWrapper)) {
         Fail "Gradle wrapper not found: $gradleWrapper"
@@ -539,6 +1075,15 @@ function Run-GradleValidation {
     Invoke-External -FilePath $gradleWrapper -Arguments @('assembleDebug') -WorkingDirectory $repoRoot -FailureMessage 'assembleDebug failed. Fix the Kotlin compat layer or kernel export coupling.'
     Invoke-External -FilePath $gradleWrapper -Arguments @('testDebugUnitTest') -WorkingDirectory $repoRoot -FailureMessage 'testDebugUnitTest failed. Fix the Kotlin compat layer or kernel export coupling.'
     Invoke-External -FilePath $gradleWrapper -Arguments @('detekt') -WorkingDirectory $repoRoot -FailureMessage 'detekt failed. Fix the Kotlin compat layer or kernel export coupling.'
+}
+
+if ($SelfTestBinaryScan) {
+    Invoke-BinaryPatternScannerSelfTest
+    foreach ($targetTag in @($trustedPatchHashes.Keys)) {
+        $selfTestPatch = Resolve-PatchFile -targetTag $targetTag
+        Assert-MinimalLibboxPatch -PatchPath $selfTestPatch -TargetTag $targetTag
+    }
+    exit 0
 }
 
 try {
@@ -579,26 +1124,40 @@ try {
 
     $resolvedTag = Resolve-TargetTag
     $patchFile = Resolve-PatchFile -targetTag $resolvedTag
+    Assert-MinimalLibboxPatch -PatchPath $patchFile -TargetTag $resolvedTag
     Write-Host ("Patch file: {0}" -f $patchFile)
 
     Ensure-GomobileTools -goBinary $goPath -binDir $gopathBin
     Prepare-UpstreamTree -gitBinary $gitPath
-    $builtAar = Build-Libbox -goBinary $goPath
-    Assert-AarMethods -aarPath $builtAar -javapBinary $javapPath
+    $officialAar = Build-LibboxSnapshot -goBinary $goPath -OutputPath (Join-Path $tempDir 'official-libbox.aar') -StageName 'Stage 2/8: Build official AAR baseline'
+    Assert-UpstreamTreeIsClean -gitBinary $gitPath
+    Apply-KunBoxPatch -gitBinary $gitPath
+    Run-GoValidation -goBinary $goPath
+    $builtAar = Build-LibboxSnapshot -goBinary $goPath -OutputPath (Join-Path $tempDir 'patched-libbox.aar') -StageName 'Stage 5/8: Build patched libbox.aar'
+    Assert-AarCompatibility -OfficialAar $officialAar -PatchedAar $builtAar -javapBinary $javapPath
     Replace-Aar -aarPath $builtAar
     Run-GradleValidation
-    Remove-UpstreamGeneratedArtifacts -RemoveBuiltAar
+    $aarReplaced = $false
     $syncSucceeded = $true
 
     Write-Host ''
     Write-Host 'sync-kernel.ps1 completed successfully.'
 }
 catch {
-    [Console]::Error.WriteLine($_.Exception.Message)
+    $failure = $_.Exception
+    if ($aarReplaced -and (Test-Path $backupAar)) {
+        try {
+            Copy-Item -Path $backupAar -Destination $targetAar -Force
+            $aarReplaced = $false
+            [Console]::Error.WriteLine("Gradle validation failed; restored previous libbox.aar from $backupAar")
+        } catch {
+            [Console]::Error.WriteLine("Failed to restore previous libbox.aar: $($_.Exception.Message)")
+        }
+    }
+    [Console]::Error.WriteLine($failure.Message)
     exit 1
 }
 finally {
-    Remove-PathIfExists -Path $tempDir
     Remove-WorkspaceGarbage
     if ($syncSucceeded) {
         Trim-OldAarBackups

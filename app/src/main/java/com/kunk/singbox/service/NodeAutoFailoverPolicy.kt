@@ -14,7 +14,6 @@ object NodeAutoFailoverPolicy {
         val isVpnRunning: Boolean,
         val isManuallyStopped: Boolean,
         val isAutoFailoverInFlight: Boolean,
-        val isRecoveryInFlight: Boolean,
         val inStartupGracePeriod: Boolean,
         val inNetworkChangeGracePeriod: Boolean,
         val isProxyIdle: Boolean,
@@ -59,7 +58,7 @@ object NodeAutoFailoverPolicy {
         if (!context.isVpnRunning || context.isManuallyStopped) {
             return false
         }
-        if (context.isAutoFailoverInFlight || context.isRecoveryInFlight) {
+        if (context.isAutoFailoverInFlight) {
             return false
         }
         if (context.inStartupGracePeriod || context.inNetworkChangeGracePeriod || context.isProxyIdle) {

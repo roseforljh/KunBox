@@ -1,11 +1,8 @@
 ﻿package com.kunk.singbox.utils.parser
 
-/**
- */
-
 data class NodeLinkParserWebSocketPathConfig(
     val path: String,
-    val maxEarlyData: Int?,
+    val maxEarlyData: Long?,
     val earlyDataHeaderName: String?
 )
 

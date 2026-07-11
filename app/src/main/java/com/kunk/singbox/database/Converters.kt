@@ -4,10 +4,6 @@ import androidx.room.TypeConverter
 import com.kunk.singbox.model.ProfileType
 import com.kunk.singbox.model.UpdateStatus
 
-/**
- *
- *
- */
 class Converters {
 
     @TypeConverter

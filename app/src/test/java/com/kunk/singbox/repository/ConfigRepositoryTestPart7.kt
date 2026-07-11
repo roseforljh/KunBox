@@ -1,9 +1,7 @@
 package com.kunk.singbox.repository
 
 import com.google.gson.Gson
-import com.kunk.singbox.model.AppGroup
 import com.kunk.singbox.model.AppSettings
-import com.kunk.singbox.model.CustomRule
 import com.kunk.singbox.model.DnsRule
 import com.kunk.singbox.model.DomainResolveConfig
 import com.kunk.singbox.model.Outbound
@@ -12,8 +10,6 @@ import com.kunk.singbox.model.RuleSet
 import com.kunk.singbox.model.RuleSetConfig
 import com.kunk.singbox.model.RuleSetOutboundMode
 import com.kunk.singbox.model.RuleSetType
-import com.kunk.singbox.model.RuleType
-import com.kunk.singbox.model.ProfileType
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
@@ -26,28 +22,28 @@ abstract class ConfigRepositoryTestPart7 : ConfigRepositoryTestPart6() {
     override fun testNormalizeLocalDnsRejectsBareDomainAddress() {
         val normalized = ConfigRepository.normalizeLocalDns("dns.example.com")
 
-        assertEquals(AppSettings.DEFAULT_LOCAL_DNS, normalized)
+        assertEquals("dns.example.com", normalized)
     }
 
     @Test
     override fun testNormalizeRemoteDnsReplacesBlankValue() {
         val normalized = ConfigRepository.normalizeRemoteDns("   ")
 
-        assertEquals("https://dns.google/dns-query", normalized)
+        assertEquals(AppSettings.DEFAULT_REMOTE_DNS, normalized)
     }
 
     @Test
-    override fun testNormalizeRemoteDnsRewritesCloudflareIpDohToDomain() {
+    override fun testNormalizeRemoteDnsKeepsCloudflareIpDoh() {
         val normalized = ConfigRepository.normalizeRemoteDns("https://1.1.1.1/dns-query")
 
-        assertEquals("https://cloudflare-dns.com/dns-query", normalized)
+        assertEquals("https://1.1.1.1/dns-query", normalized)
     }
 
     @Test
-    override fun testNormalizeRemoteDnsRewritesCloudflareIpv6DohToDomain() {
+    override fun testNormalizeRemoteDnsKeepsCloudflareIpv6Doh() {
         val normalized = ConfigRepository.normalizeRemoteDns("https://[2606:4700:4700::1111]/dns-query")
 
-        assertEquals("https://cloudflare-dns.com/dns-query", normalized)
+        assertEquals("https://[2606:4700:4700::1111]/dns-query", normalized)
     }
 
     @Test
@@ -98,7 +94,7 @@ abstract class ConfigRepositoryTestPart7 : ConfigRepositoryTestPart6() {
         val config = subscriptionManager.parse(yaml)
         val anytls = config?.outbounds?.find { it.tag == "yaml-anytls-cert" }
         assertNotNull(anytls)
-        assertEquals(certificatePem, anytls?.tls?.certificate?.trim())
+        assertEquals(certificatePem, anytls?.tls?.certificate?.singleOrNull()?.trim())
     }
 
     @Test
@@ -152,9 +148,9 @@ abstract class ConfigRepositoryTestPart7 : ConfigRepositoryTestPart6() {
 
         val anytls = config?.outbounds?.find { it.tag == "json-anytls-cert" }
         assertNotNull(anytls)
-        assertEquals(certificatePem, anytls?.tls?.certificate)
-        assertEquals(caPem, anytls?.tls?.ca)
-        assertEquals(keyPem, anytls?.tls?.key)
+        assertEquals(listOf(certificatePem), anytls?.tls?.certificate)
+        assertEquals(listOf(caPem), anytls?.tls?.ca)
+        assertEquals(listOf(keyPem), anytls?.tls?.key)
     }
 
     @Test
@@ -213,7 +209,7 @@ abstract class ConfigRepositoryTestPart7 : ConfigRepositoryTestPart6() {
 
         val json = Gson().toJson(server)
         assertTrue(json.contains("\"domain_resolver\""))
-        assertTrue(json.contains("\"server\":\"dns-bootstrap\""))
+        assertTrue(json.contains("\"domain_resolver\":\"dns-bootstrap\""))
     }
 
     @Test
@@ -268,7 +264,7 @@ abstract class ConfigRepositoryTestPart7 : ConfigRepositoryTestPart6() {
 
     @Test
     override fun testBuildDynamicDnsServerUsesGivenDetour() {
-        val server = ConfigRepository.buildDynamicRemoteDnsServerForTest(
+        val server = ConfigRepository.buildDynamicRemoteDnsServer(
             detourTag = "P:HK",
             remoteDnsAddr = "https://dns.google/dns-query",
             remoteStrategy = "prefer_ipv4",
@@ -298,7 +294,7 @@ abstract class ConfigRepositoryTestPart7 : ConfigRepositoryTestPart6() {
 
     @Test
     override fun testBuildDynamicRemoteDnsServerForProxyDetourCarriesDetour() {
-        val server = ConfigRepository.buildDynamicRemoteDnsServerForTest(
+        val server = ConfigRepository.buildDynamicRemoteDnsServer(
             detourTag = "PROXY",
             remoteDnsAddr = "https://1.1.1.1/dns-query",
             remoteStrategy = "prefer_ipv4",
@@ -313,7 +309,7 @@ abstract class ConfigRepositoryTestPart7 : ConfigRepositoryTestPart6() {
 
     @Test
     override fun testBuildDynamicRemoteDnsServerKeepsRemoteDnsForEchDetour() {
-        val server = ConfigRepository.buildDynamicRemoteDnsServerForTest(
+        val server = ConfigRepository.buildDynamicRemoteDnsServer(
             detourTag = "ECH Node",
             remoteDnsAddr = "https://1.1.1.1/dns-query",
             remoteStrategy = "prefer_ipv4",
@@ -330,7 +326,7 @@ abstract class ConfigRepositoryTestPart7 : ConfigRepositoryTestPart6() {
 
     @Test
     override fun testBuildFakeIpDnsServerForTestIncludesRangesForFakeIpTransport() {
-        val server = ConfigRepository.buildFakeIpDnsServerForTest("198.18.0.0/15")
+        val server = ConfigRepository.buildFakeIpDnsServer("198.18.0.0/15")
 
         assertEquals("fakeip-dns", server.tag)
         assertEquals("fakeip", server.type)
@@ -340,7 +336,7 @@ abstract class ConfigRepositoryTestPart7 : ConfigRepositoryTestPart6() {
 
     @Test
     override fun testBuildFakeIpDnsServerForTestPreservesCustomIpv4AndIpv6Ranges() {
-        val server = ConfigRepository.buildFakeIpDnsServerForTest("198.18.0.0/15,fd00::/16")
+        val server = ConfigRepository.buildFakeIpDnsServer("198.18.0.0/15,fd00::/16")
 
         assertEquals("198.18.0.0/15", server.inet4Range)
         assertEquals("fd00::/16", server.inet6Range)
@@ -348,7 +344,7 @@ abstract class ConfigRepositoryTestPart7 : ConfigRepositoryTestPart6() {
 
     @Test
     override fun testBuildFakeIpDnsServerForTestRecoversNullRange() {
-        val server = ConfigRepository.buildFakeIpDnsServerForTest(null)
+        val server = ConfigRepository.buildFakeIpDnsServer(null)
 
         assertEquals("198.18.0.0/15", server.inet4Range)
         assertEquals("fc00::/18", server.inet6Range)
@@ -356,7 +352,7 @@ abstract class ConfigRepositoryTestPart7 : ConfigRepositoryTestPart6() {
 
     @Test
     override fun testDnsServerTagForRouteTagUsesDynamicServerWhenFakeDnsDisabled() {
-        val serverTag = ConfigRepository.dnsServerTagForSemanticForTest(
+        val serverTag = ConfigRepository.dnsServerTagForSemantic(
             semantic = ConfigRepository.OutboundSemantic.RouteTag("P:HK"),
             fakeDnsEnabled = false
         )
@@ -366,7 +362,7 @@ abstract class ConfigRepositoryTestPart7 : ConfigRepositoryTestPart6() {
 
     @Test
     override fun testDnsServerTagForRouteTagUsesDynamicServerWhenFakeDnsEnabled() {
-        val serverTag = ConfigRepository.dnsServerTagForSemanticForTest(
+        val serverTag = ConfigRepository.dnsServerTagForSemantic(
             semantic = ConfigRepository.OutboundSemantic.RouteTag("P:HK"),
             fakeDnsEnabled = true
         )
@@ -376,7 +372,7 @@ abstract class ConfigRepositoryTestPart7 : ConfigRepositoryTestPart6() {
 
     @Test
     override fun testDnsServerTagForProxyUsesProxyServerWhenFakeDnsEnabled() {
-        val serverTag = ConfigRepository.resolveDnsServerTagForRuleSemanticForTest(
+        val serverTag = ConfigRepository.dnsServerTagForSemantic(
             semantic = ConfigRepository.OutboundSemantic.Proxy,
             fakeDnsEnabled = true,
             proxyServerTag = ConfigRepository.buildDynamicDnsServerTag("PROXY")
@@ -388,35 +384,35 @@ abstract class ConfigRepositoryTestPart7 : ConfigRepositoryTestPart6() {
     @Test
     override fun testDnsRouteToProxyUsesProxyDnsForIpQueriesWhenFakeDnsEnabled() {
         val proxyServerTag = ConfigRepository.buildDynamicDnsServerTag("PROXY")
-        val rules = ConfigRepository.buildDnsRouteToProxyForTest(
+        val rules = ConfigRepository.buildDnsRouteToNonDirect(
             fakeDnsEnabled = true,
-            proxyServerTag = proxyServerTag,
+            serverTag = proxyServerTag,
             rule = com.kunk.singbox.model.DnsRule(ruleSet = listOf("geosite-google"))
         )
 
         assertEquals(1, rules.size)
         assertEquals(proxyServerTag, rules[0].server)
-        assertEquals(listOf("A", "AAAA"), rules[0].queryType)
+        assertNull(rules[0].queryType)
     }
 
     @Test
     override fun testDnsRouteToProxyReturnsProxyDnsRuleWhenFakeDnsEnabled() {
         val proxyServerTag = ConfigRepository.buildDynamicDnsServerTag("PROXY")
-        val rules = ConfigRepository.buildDnsRouteToProxyForTest(
+        val rules = ConfigRepository.buildDnsRouteToNonDirect(
             fakeDnsEnabled = true,
-            proxyServerTag = proxyServerTag,
+            serverTag = proxyServerTag,
             rule = com.kunk.singbox.model.DnsRule(ruleSet = listOf("geosite-geolocation-!cn"))
         )
 
         assertEquals(1, rules.size)
         assertEquals(proxyServerTag, rules[0].server)
-        assertEquals(listOf("A", "AAAA"), rules[0].queryType)
+        assertNull(rules[0].queryType)
     }
 
     @Test
     override fun testDnsRouteToNonDirectReturnsSpecificDnsRuleWhenFakeDnsEnabled() {
         val serverTag = ConfigRepository.buildDynamicDnsServerTag("SG|官方优选|94ms_2")
-        val rules = ConfigRepository.buildDnsRouteToNonDirectForTest(
+        val rules = ConfigRepository.buildDnsRouteToNonDirect(
             fakeDnsEnabled = true,
             serverTag = serverTag,
             rule = com.kunk.singbox.model.DnsRule(ruleSet = listOf("geosite-geolocation-!cn"))
@@ -424,29 +420,18 @@ abstract class ConfigRepositoryTestPart7 : ConfigRepositoryTestPart6() {
 
         assertEquals(1, rules.size)
         assertEquals(serverTag, rules[0].server)
-        assertEquals(listOf("A", "AAAA"), rules[0].queryType)
-    }
-
-    @Test
-    override fun testNonIpDnsFallbackRoutesHttpsAndSvcbToProxyDns() {
-        val rule = ConfigRepository.buildNonIpDnsFallbackRuleForTest(
-            ConfigRepository.buildDynamicDnsServerTag("PROXY")
-        )
-
-        assertEquals("route", rule.action)
-        assertEquals(listOf("HTTPS", "SVCB"), rule.queryType)
-        assertEquals(ConfigRepository.buildDynamicDnsServerTag("PROXY"), rule.server)
+        assertNull(rules[0].queryType)
     }
 
     @Test
     override fun testDnsRouteToDirectOnlyRoutesIpQueriesToLocalDns() {
-        val rule = ConfigRepository.buildDnsRouteToDirectForTest(
+        val rule = ConfigRepository.buildDnsRouteToDirect("local",
             com.kunk.singbox.model.DnsRule(ruleSet = listOf("geosite-cn"))
         )
 
         assertEquals("route", rule.action)
         assertEquals("local", rule.server)
-        assertEquals(listOf("A", "AAAA"), rule.queryType)
+        assertNull(rule.queryType)
     }
 
     @Test
@@ -493,52 +478,43 @@ abstract class ConfigRepositoryTestPart7 : ConfigRepositoryTestPart6() {
     }
 
     @Test
-    override fun testRuleSetDnsPriorityKeepsProxySpecificRulesBeforeDirectCountryRules() {
-        val sortedRuleSets = ConfigRepository.sortRuleSetsForDnsAndRoutePriorityForTest(
-            listOf(
-                RuleSet(
-                    tag = "geosite-cn",
-                    type = RuleSetType.REMOTE,
-                    outboundMode = RuleSetOutboundMode.DIRECT
-                ),
-                RuleSet(
-                    tag = "geosite-google",
-                    type = RuleSetType.REMOTE,
-                    outboundMode = RuleSetOutboundMode.PROXY
-                ),
-                RuleSet(
-                    tag = "geosite-geolocation-!cn",
-                    type = RuleSetType.REMOTE,
-                    outboundMode = RuleSetOutboundMode.PROXY
-                )
-            )
+    override fun testRuleSetDnsOrderMatchesPersistedOrder() {
+        val rules = ConfigRepository.buildOrderedDnsRules(
+            entries = listOf(
+                DnsRule(ruleSet = listOf("geosite-cn")) to ConfigRepository.OutboundSemantic.Direct,
+                DnsRule(ruleSet = listOf("geosite-google")) to ConfigRepository.OutboundSemantic.Proxy,
+                DnsRule(ruleSet = listOf("geosite-geolocation-!cn")) to
+                    ConfigRepository.OutboundSemantic.Proxy
+            ),
+            fakeDnsEnabled = false,
+            directServerTag = "local",
+            proxyServerTag = "remote"
         )
 
         assertEquals(
-            listOf("geosite-google", "geosite-cn", "geosite-geolocation-!cn"),
-            sortedRuleSets.map { it.tag }
+            listOf("geosite-cn", "geosite-google", "geosite-geolocation-!cn"),
+            rules.map { it.ruleSet?.single() }
         )
+        assertEquals(listOf("local", "remote", "remote"), rules.map { it.server })
     }
 
     @Test
-    override fun testGoogleConnectivityDnsRulesUseProxyBeforeCountryRules() {
-        val proxyServerTag = ConfigRepository.buildDynamicDnsServerTag("PROXY")
-        val googleRules = ConfigRepository.buildGoogleConnectivityDnsRulesForTest(
-            fakeDnsEnabled = false,
-            proxyServerTag = proxyServerTag
-        )
-        val directCountryRule = ConfigRepository.buildDnsRouteToDirectForTest(
-            DnsRule(ruleSet = listOf("geosite-cn"))
+    override fun testUserDnsRulePriorityMatchesRouteOrder() {
+        val domainRule = DnsRule(domain = listOf("example.com"))
+        val appRule = DnsRule(packageName = listOf("com.example.app"))
+        val ruleSetRule = DnsRule(ruleSet = listOf("geosite-cn"))
+
+        val rules = ConfigRepository.mergeUserDnsRules(
+            domainRules = listOf(domainRule),
+            appRules = listOf(appRule),
+            ruleSetRules = listOf(ruleSetRule)
         )
 
-        assertEquals(1, googleRules.size)
-        assertEquals(ConfigRepository.googleConnectivityCheckDomains, googleRules.first().domain)
-        assertEquals(proxyServerTag, googleRules.first().server)
-        assertEquals("local", directCountryRule.server)
+        assertEquals(listOf(domainRule, appRule, ruleSetRule), rules)
     }
 
     @Test
-    override fun testGoogleConnectivityRouteRulePrecedesDirectCountryRule() {
+    override fun testRouteRulesDoNotInjectGoogleOverride() {
         val rules = ConfigRepository.buildRunRouteRulesForTest(
             settings = AppSettings(
                 ruleSets = listOf(
@@ -556,21 +532,17 @@ abstract class ConfigRepositoryTestPart7 : ConfigRepositoryTestPart6() {
             validRuleSets = listOf(RuleSetConfig(tag = "geosite-cn"))
         )
 
-        val googleIndex = rules.indexOfFirst {
-            it.domain == ConfigRepository.googleConnectivityCheckDomains && it.outbound == "PROXY"
-        }
         val countryIndex = rules.indexOfFirst {
             it.ruleSet == listOf("geosite-cn") && it.outbound == "direct"
         }
 
-        assertTrue(googleIndex >= 0)
         assertTrue(countryIndex >= 0)
-        assertTrue(googleIndex < countryIndex)
+        assertTrue(rules.none { it.domain.orEmpty().contains("connectivitycheck.gstatic.com") })
     }
 
     @Test
     override fun testDnsServerTagForFallbackProxyUsesProxyServer() {
-        val serverTag = ConfigRepository.dnsServerTagForSemanticForTest(
+        val serverTag = ConfigRepository.dnsServerTagForSemantic(
             semantic = ConfigRepository.OutboundSemantic.FallbackProxy("PROXY"),
             fakeDnsEnabled = false
         )
@@ -580,7 +552,7 @@ abstract class ConfigRepositoryTestPart7 : ConfigRepositoryTestPart6() {
 
     @Test
     override fun testDnsServerTagForFallbackProxyUsesDynamicServerWhenFakeDnsEnabled() {
-        val serverTag = ConfigRepository.dnsServerTagForSemanticForTest(
+        val serverTag = ConfigRepository.dnsServerTagForSemantic(
             semantic = ConfigRepository.OutboundSemantic.FallbackProxy("PROXY"),
             fakeDnsEnabled = true,
             proxyServerTag = ConfigRepository.buildDynamicDnsServerTag("PROXY")
@@ -591,7 +563,7 @@ abstract class ConfigRepositoryTestPart7 : ConfigRepositoryTestPart6() {
 
     @Test
     override fun testDnsServerTagForFakeIpExcludeDomainUsesDynamicServerWhenFakeDnsEnabled() {
-        val serverTag = ConfigRepository.dnsServerTagForSemanticForTest(
+        val serverTag = ConfigRepository.dnsServerTagForSemantic(
             semantic = ConfigRepository.OutboundSemantic.RouteTag("P:HK"),
             fakeDnsEnabled = true
         )
@@ -601,38 +573,21 @@ abstract class ConfigRepositoryTestPart7 : ConfigRepositoryTestPart6() {
 
     @Test
     override fun testResolveRouteModeForRuleSetUsesProxyDefault() {
-        val resolved = ConfigRepository.resolveRouteModeForRuleSetForTest(
-            RuleSet(
-                tag = "geo-test",
-                type = RuleSetType.LOCAL,
-                path = "/tmp/geo.srs",
-                outboundMode = null
-            )
-        )
+        val resolved = ConfigRepository.resolveRuleSetOutboundMode(null)
 
         assertEquals(RuleSetOutboundMode.PROXY, resolved)
     }
 
     @Test
     override fun testResolveRouteModeForAppGroupUsesDirectDefault() {
-        val resolved = ConfigRepository.resolveRouteModeForAppGroupForTest(
-            AppGroup(name = "group", outboundMode = null)
-        )
+        val resolved = ConfigRepository.resolveAppGroupOutboundMode(null)
 
         assertEquals(RuleSetOutboundMode.DIRECT, resolved)
     }
 
     @Test
     override fun testResolveRouteModeForCustomRuleUsesLegacyOutboundDefault() {
-        val resolved = ConfigRepository.resolveRouteModeForCustomRuleForTest(
-            CustomRule(
-                name = "rule",
-                type = RuleType.DOMAIN,
-                value = "example.com",
-                outbound = OutboundTag.BLOCK,
-                outboundMode = null
-            )
-        )
+        val resolved = ConfigRepository.resolveCustomRuleOutboundMode(null, OutboundTag.BLOCK)
 
         assertEquals(RuleSetOutboundMode.BLOCK, resolved)
     }
@@ -724,7 +679,9 @@ abstract class ConfigRepositoryTestPart7 : ConfigRepositoryTestPart6() {
                 mode = RuleSetOutboundMode.PROFILE,
                 value = "profile-1",
                 selectorTag = "PROXY",
-                outbounds = listOf(com.kunk.singbox.model.Outbound(tag = "P:HK", type = "selector")),
+                outbounds = listOf(
+                    com.kunk.singbox.model.Outbound(tag = "P:HK#profile-1", type = "selector")
+                ),
                 profiles = listOf(
                     com.kunk.singbox.database.entity.ProfileEntity(
                         id = "profile-1",
@@ -739,7 +696,7 @@ abstract class ConfigRepositoryTestPart7 : ConfigRepositoryTestPart6() {
             )
         )
 
-        assertEquals(ConfigRepository.OutboundSemantic.RouteTag("P:HK"), semantic)
+        assertEquals(ConfigRepository.OutboundSemantic.RouteTag("P:HK#profile-1"), semantic)
     }
 
     @Test
@@ -756,25 +713,5 @@ abstract class ConfigRepositoryTestPart7 : ConfigRepositoryTestPart6() {
         )
 
         assertEquals(ConfigRepository.OutboundSemantic.FallbackProxy("PROXY"), semantic)
-    }
-
-    @Test
-    override fun testResolveProfileSelectorDefaultPrefersLowestLatencyOverRememberedNode() {
-        val defaultTag = ConfigRepository.resolveProfileSelectorDefault(
-            nodeIds = listOf("node-1", "node-2", "node-3"),
-            nodeTagMap = mapOf(
-                "node-1" to "tag-a",
-                "node-2" to "tag-b",
-                "node-3" to "tag-c"
-            ),
-            rememberedNodeId = "node-2",
-            savedNodeLatencies = mapOf(
-                "node-1" to 20L,
-                "node-2" to 10L,
-                "node-3" to 5L
-            )
-        )
-
-        assertEquals("tag-c", defaultTag)
     }
 }

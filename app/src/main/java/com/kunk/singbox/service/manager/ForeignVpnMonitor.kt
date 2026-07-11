@@ -5,12 +5,8 @@ import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.NetworkRequest
-import android.os.Build
 import android.util.Log
 
-/**
- *
- */
 class ForeignVpnMonitor(
     private val context: Context
 ) {
@@ -34,8 +30,6 @@ class ForeignVpnMonitor(
     }
 
     fun detectExistingVpnNetworks(): List<Network> {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return emptyList()
-
         val cm = connectivityManager ?: context.getSystemService(ConnectivityManager::class.java)
         connectivityManager = cm
         if (cm == null) return emptyList()
@@ -49,8 +43,6 @@ class ForeignVpnMonitor(
         }.getOrDefault(emptyList())
     }
 
-    /**
-     */
     fun hasExistingVpn(): Boolean {
         val vpnNetworks = detectExistingVpnNetworks()
         if (vpnNetworks.isNotEmpty()) {
@@ -60,11 +52,7 @@ class ForeignVpnMonitor(
         return false
     }
 
-    /**
-     *
-     */
     fun start() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return
         if (callback != null) return
 
         val cm = connectivityManager ?: context.getSystemService(ConnectivityManager::class.java)
@@ -103,9 +91,6 @@ class ForeignVpnMonitor(
             .onFailure { Log.w(TAG, "Failed to register foreign VPN monitor", it) }
     }
 
-    /**
-     *
-     */
     fun stop() {
         val cm = connectivityManager ?: return
         callback?.let { cb ->

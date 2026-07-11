@@ -65,7 +65,7 @@ sealed class Screen(val route: String) {
     object RuleSets : Screen("rule_sets")
     object CustomRules : Screen("custom_rules")
     object DomainRules : Screen("domain_rules")
-    object AppRules : Screen("app_rules")
+    object AppRouting : Screen("app_rules")
     object RuleSetHub : Screen("rule_set_hub")
     object TrafficStats : Screen("traffic_stats")
     object ConnectionInfo : Screen("connection_info")
@@ -106,7 +106,7 @@ fun getTabForRoute(route: String?): String {
         route == Screen.RuleSets.route -> Screen.Settings.route
         route == Screen.CustomRules.route -> Screen.Settings.route
         route == Screen.DomainRules.route -> Screen.Settings.route
-        route == Screen.AppRules.route -> Screen.Settings.route
+        route == Screen.AppRouting.route -> Screen.Settings.route
         route == Screen.RuleSetHub.route -> Screen.Settings.route
         route == Screen.Diagnostics.route -> Screen.Settings.route
         route == Screen.Logs.route -> Screen.Settings.route
@@ -375,7 +375,7 @@ fun AppNavigation(
             popExitTransition = popExitTransition
         ) { DomainRulesScreen(navController) }
         composable(
-            route = Screen.AppRules.route,
+            route = Screen.AppRouting.route,
             enterTransition = enterTransition,
             exitTransition = exitTransition,
             popEnterTransition = popEnterTransition,

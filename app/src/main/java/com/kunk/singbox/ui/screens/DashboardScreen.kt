@@ -85,6 +85,7 @@ import com.kunk.singbox.ui.theme.liquidGlassMutedContentColor
 import com.kunk.singbox.ui.theme.liquidGlassStrongContentColor
 import com.kunk.singbox.ui.theme.isLiquidGlassTheme
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.collectLatest
 
 @Composable
 @Suppress("LongMethod", "CyclomaticComplexMethod", "CognitiveComplexMethod", "FunctionNaming")
@@ -131,9 +132,6 @@ fun DashboardScreen(
     var showNodeDialog by remember { mutableStateOf(false) }
     var lastConnectionState by remember { mutableStateOf<ConnectionState?>(null) }
 
-    val updateStatus by viewModel.updateStatus.collectAsStateWithLifecycle()
-    val testStatus by viewModel.testStatus.collectAsStateWithLifecycle()
-    val actionStatus by viewModel.actionStatus.collectAsStateWithLifecycle()
     val vpnPermissionNeeded by viewModel.vpnPermissionNeeded.collectAsStateWithLifecycle()
     val requestLocalNetworkPermission = rememberLocalNetworkPermissionRequest()
 
@@ -158,23 +156,9 @@ fun DashboardScreen(
         lastConnectionState = connectionState
     }
 
-    // Monitor update status
-    LaunchedEffect(updateStatus) {
-        updateStatus?.let {
-            AppNotificationManager.showMessage(context, it)
-        }
-    }
-
-    // Monitor test status
-    LaunchedEffect(testStatus) {
-        testStatus?.let {
-            AppNotificationManager.showMessage(context, it)
-        }
-    }
-
-    LaunchedEffect(actionStatus) {
-        actionStatus?.let {
-            AppNotificationManager.showMessage(context, it)
+    LaunchedEffect(viewModel) {
+        viewModel.toastEvents.collectLatest { message ->
+            AppNotificationManager.showMessage(context, message)
         }
     }
 

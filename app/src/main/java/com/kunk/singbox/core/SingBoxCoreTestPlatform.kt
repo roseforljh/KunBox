@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.util.Log
+import com.kunk.singbox.utils.DefaultNetworkListener
 import io.nekohasekai.libbox.*
 import java.net.NetworkInterface
 import java.util.Collections
@@ -16,7 +17,6 @@ internal class TestPlatformInterface(private val context: Context) : PlatformInt
     private val connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
 
     override fun autoDetectInterfaceControl(fd: Int) {
-
         val service = com.kunk.singbox.service.SingBoxService.instance
         if (service != null) {
             try {
@@ -29,11 +29,10 @@ internal class TestPlatformInterface(private val context: Context) : PlatformInt
             } catch (e: Exception) {
                 Log.w(TEST_PLATFORM_TAG, "Socket protection error for fd=$fd: ${e.message}")
             }
-            return
         }
 
         try {
-            val network = connectivityManager.activeNetwork
+            val network = selectPhysicalNetwork()
             if (network != null) {
 
                 val pfd = android.os.ParcelFileDescriptor.adoptFd(fd)
@@ -45,7 +44,7 @@ internal class TestPlatformInterface(private val context: Context) : PlatformInt
                     pfd.detachFd()
                 }
             } else {
-                Log.w(TEST_PLATFORM_TAG, "autoDetectInterfaceControl: no active network for fd=$fd")
+                Log.w(TEST_PLATFORM_TAG, "autoDetectInterfaceControl: no physical network for fd=$fd")
             }
         } catch (e: Exception) {
             Log.w(TEST_PLATFORM_TAG, "autoDetectInterfaceControl: bind network error for fd=$fd: ${e.message}")
@@ -63,7 +62,7 @@ internal class TestPlatformInterface(private val context: Context) : PlatformInt
         if (listener == null) return
 
         try {
-            val activeNetwork = connectivityManager.activeNetwork
+            val activeNetwork = selectPhysicalNetwork()
             if (activeNetwork != null) {
                 val linkProperties = connectivityManager.getLinkProperties(activeNetwork)
                 val interfaceName = linkProperties?.interfaceName ?: ""
@@ -72,14 +71,14 @@ internal class TestPlatformInterface(private val context: Context) : PlatformInt
                         java.net.NetworkInterface.getByName(interfaceName)?.index ?: 0
                     } catch (e: Exception) { 0 }
                     val caps = connectivityManager.getNetworkCapabilities(activeNetwork)
-                    val isExpensive = caps?.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_NOT_METERED) == false
+                    val isExpensive = caps?.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED) == false
                     listener.updateDefaultInterface(interfaceName, index, isExpensive, false)
                     Log.d(TEST_PLATFORM_TAG, "TestPlatformInterface: initialized default interface: $interfaceName (index=$index)")
                 } else {
                     Log.w(TEST_PLATFORM_TAG, "TestPlatformInterface: no interface name for active network")
                 }
             } else {
-                Log.w(TEST_PLATFORM_TAG, "TestPlatformInterface: no active network available")
+                Log.w(TEST_PLATFORM_TAG, "TestPlatformInterface: no physical network available")
             }
         } catch (e: Exception) {
             Log.w(TEST_PLATFORM_TAG, "TestPlatformInterface: failed to get default interface: ${e.message}")
@@ -88,6 +87,9 @@ internal class TestPlatformInterface(private val context: Context) : PlatformInt
 
     override fun closeDefaultInterfaceMonitor(listener: InterfaceUpdateListener?) {
     }
+
+    private fun selectPhysicalNetwork() =
+        DefaultNetworkListener.selectBestPhysicalNetwork(connectivityManager)
 
     override fun getInterfaces(): NetworkInterfaceIterator? {
         return try {
@@ -145,8 +147,6 @@ internal class TestPlatformInterface(private val context: Context) : PlatformInt
     override fun systemCertificates(): StringIterator? = null
 }
 
-/**
- */
 internal class TestCommandServerHandler : io.nekohasekai.libbox.CommandServerHandler {
     override fun serviceStop() {}
     override fun serviceReload() {}
@@ -161,6 +161,3 @@ internal class StringIteratorImpl(private val list: List<String>) : StringIterat
     override fun next(): String = list[index++]
     override fun len(): Int = list.size
 }
-
-/**
- */

@@ -2,19 +2,40 @@ package com.kunk.singbox.utils.parser
 
 import android.util.Log
 import com.google.gson.Gson
+import com.google.gson.JsonPrimitive
 import com.kunk.singbox.model.EchConfig
 import com.kunk.singbox.model.ObfsConfig
 import com.kunk.singbox.model.Outbound
 import com.kunk.singbox.model.RealityConfig
 import com.kunk.singbox.model.TlsConfig
 import com.kunk.singbox.model.TransportConfig
+import com.kunk.singbox.model.UInt32JsonAdapter
 import com.kunk.singbox.model.UtlsConfig
+import com.kunk.singbox.model.V2RAY_TRANSPORT_TYPES
 import com.kunk.singbox.model.WireGuardPeer
+import com.kunk.singbox.model.asHttpHeaderMap
 
-/**
- */
 @Suppress("TooManyFunctions", "LargeClass")
 class NodeLinkParser(private val gson: Gson) {
+    companion object {
+        internal val SUPPORTED_LINK_PREFIXES = listOf(
+            "vmess://", "vless://", "ss://", "trojan://",
+            "hysteria2://", "hy2://", "hysteria://", "tuic://", "anytls://",
+            "naive://", "naive+https://", "wireguard://", "wg://", "ssh://",
+            "socks4://", "socks4a://", "socks5://", "socks://", "http://", "https://"
+        )
+        internal fun isSupportedLink(link: String): Boolean {
+            val value = link.trim()
+            val prefix = SUPPORTED_LINK_PREFIXES.firstOrNull { value.startsWith(it, ignoreCase = true) }
+                ?: return false
+            if (prefix != "http://" && prefix != "https://") return true
+            return runCatching {
+                val uri = java.net.URI(value)
+                !uri.userInfo.isNullOrBlank() || uri.port > 0 || !uri.fragment.isNullOrBlank()
+            }.getOrDefault(false)
+        }
+    }
+
     protected fun firstParam(params: Map<String, String>, vararg keys: String): String? {
         return keys.firstNotNullOfOrNull { key ->
             params.entries.firstOrNull { it.key.equals(key, ignoreCase = true) }?.value
@@ -46,6 +67,30 @@ class NodeLinkParser(private val gson: Gson) {
         }
     }
 
+    private fun buildXhttpTransport(
+        host: String?,
+        path: String?,
+        value: (String) -> Any?
+    ): TransportConfig {
+        fun longValue(name: String): Long? = when (val raw = value(name)) {
+            is Number -> raw.toLong()
+            else -> raw?.toString()?.toLongOrNull()
+        }
+
+        return TransportConfig(
+            type = "xhttp",
+            path = path.orEmpty().ifBlank { "/" },
+            host = parseHostList(host),
+            mode = value("mode")?.toString(),
+            xPaddingBytes = value("xPaddingBytes")?.toString(),
+            scMaxEachPostBytes = longValue("scMaxEachPostBytes"),
+            scMinPostsIntervalMs = longValue("scMinPostsIntervalMs"),
+            scMaxBufferedPosts = longValue("scMaxBufferedPosts"),
+            noGRPCHeader = parseBooleanFlag(value("noGRPCHeader")?.toString()),
+            noSSEHeader = parseBooleanFlag(value("noSSEHeader")?.toString())
+        )
+    }
+
     protected fun parseHostList(value: String?): List<String>? {
         if (value.isNullOrBlank()) return null
         val hosts = value.split(',').map { it.trim() }.filter { it.isNotBlank() }
@@ -55,6 +100,9 @@ class NodeLinkParser(private val gson: Gson) {
     protected fun parseSingleHost(value: String?): List<String>? {
         return parseHostList(value)?.firstOrNull()?.let { listOf(it) }
     }
+
+    private fun isUnsupportedV2RayTransport(type: String): Boolean =
+        type.isNotEmpty() && type !in V2RAY_TRANSPORT_TYPES
 
     protected fun parseWireGuardLocalAddress(params: Map<String, String>): List<String>? {
         return firstParam(params, "address", "local_address", "localAddress", "ip")
@@ -88,7 +136,7 @@ class NodeLinkParser(private val gson: Gson) {
         }
     }
 
-    protected fun parseWebSocketPathConfig(rawPath: String?): NodeLinkParserWebSocketPathConfig {
+    private fun parseWebSocketPathConfig(rawPath: String?): NodeLinkParserWebSocketPathConfig? {
         if (rawPath.isNullOrBlank()) {
             return NodeLinkParserWebSocketPathConfig(path = "/", maxEarlyData = null, earlyDataHeaderName = null)
         }
@@ -102,7 +150,11 @@ class NodeLinkParser(private val gson: Gson) {
 
         val basePath = normalized.substring(0, questionIndex).ifEmpty { "/" }
         val queryParams = parseQueryParams(normalized.substring(questionIndex + 1))
-        val maxEarlyData = firstParam(queryParams, "ed")?.toIntOrNull()
+        val rawMaxEarlyData = firstParam(queryParams, "ed")
+        val maxEarlyData = rawMaxEarlyData?.toLongOrNull()?.let { value ->
+            runCatching { UInt32JsonAdapter.requireValue(value) }.getOrNull()
+        }
+        if (rawMaxEarlyData != null && maxEarlyData == null) return null
         val earlyDataHeaderName = if (maxEarlyData != null) "Sec-WebSocket-Protocol" else null
         return NodeLinkParserWebSocketPathConfig(
             path = basePath,
@@ -180,9 +232,6 @@ class NodeLinkParser(private val gson: Gson) {
         return server?.takeIf { it.isNotBlank() && !isIpLiteral(it) }
     }
 
-    /**
-     */
-
     protected fun sanitizeUri(link: String): String {
         var result = link
 
@@ -238,6 +287,8 @@ class NodeLinkParser(private val gson: Gson) {
             normalizedLink.startsWith("https://") -> parseHttpLink(normalizedLink, useTls = true)
             normalizedLink.startsWith("http://") -> parseHttpLink(normalizedLink, useTls = false)
             normalizedLink.startsWith("socks5://") ||
+                normalizedLink.startsWith("socks4a://") ||
+                normalizedLink.startsWith("socks4://") ||
                 normalizedLink.startsWith("socks://") -> parseSocks5Link(normalizedLink)
             normalizedLink.startsWith("wireguard://") ||
                 normalizedLink.startsWith("wg://") -> parseWireGuardLink(normalizedLink)
@@ -474,7 +525,8 @@ class NodeLinkParser(private val gson: Gson) {
         return server to port
     }
 
-    protected fun parseVMessLink(link: String): Outbound? {
+    @Suppress("CognitiveComplexMethod", "CyclomaticComplexMethod", "LongMethod", "ReturnCount")
+    private fun parseVMessLink(link: String): Outbound? {
         try {
             val base64Part = link.removePrefix("vmess://").trim()
             Log.d("NodeLinkParser", "Parsing VMess, base64 length: ${base64Part.length}")
@@ -491,7 +543,15 @@ class NodeLinkParser(private val gson: Gson) {
             val port = (json["port"] as? String)?.toIntOrNull() ?: (json["port"] as? Double)?.toInt() ?: 443
             val id = json["id"] as? String ?: ""
             val aid = (json["aid"] as? String)?.toIntOrNull() ?: (json["aid"] as? Double)?.toInt() ?: 0
-            val net = (json["net"] as? String ?: "tcp").lowercase()
+            val net = (json["net"] as? String)
+                ?.trim()
+                ?.lowercase()
+                ?.ifEmpty { "tcp" }
+                ?: "tcp"
+            if (isUnsupportedV2RayTransport(net)) {
+                Log.w("NodeLinkParser", "Ignoring VMess node with unsupported transport: $net")
+                return null
+            }
             val type = json["type"] as? String ?: "none"
             val host = json["host"] as? String ?: ""
             val path = json["path"] as? String ?: ""
@@ -509,11 +569,16 @@ class NodeLinkParser(private val gson: Gson) {
             } else null
 
             val transport = when (net) {
-                "ws" -> TransportConfig(
-                    type = "ws",
-                    path = if (path.isBlank()) "/" else path,
-                    headers = if (host.isNotBlank()) mapOf("Host" to host) else null
-                )
+                "ws" -> {
+                    val webSocketPathConfig = parseWebSocketPathConfig(path) ?: return null
+                    TransportConfig(
+                        type = "ws",
+                        path = webSocketPathConfig.path,
+                        headers = if (host.isNotBlank()) mapOf("Host" to host) else null,
+                        maxEarlyData = webSocketPathConfig.maxEarlyData,
+                        earlyDataHeaderName = webSocketPathConfig.earlyDataHeaderName
+                    )
+                }
                 "tcp" -> if (type == "http") {
                     TransportConfig(
                         type = "http",
@@ -532,27 +597,18 @@ class NodeLinkParser(private val gson: Gson) {
                     host = parseHostList(host),
                     path = path
                 )
+                "quic" -> TransportConfig(type = "quic")
                 "httpupgrade" -> TransportConfig(
                     type = "httpupgrade",
                     path = if (path.isBlank()) "/" else path,
                     host = parseSingleHost(host)
                 )
-                "xhttp", "splithttp" -> TransportConfig(
-                    type = "xhttp",
-                    path = if (path.isBlank()) "/" else path,
-                    host = parseHostList(host),
-                    mode = json["mode"] as? String,
-                    xPaddingBytes = json["xPaddingBytes"] as? String,
-                    scMaxEachPostBytes = (json["scMaxEachPostBytes"] as? String)?.toLongOrNull()
-                        ?: (json["scMaxEachPostBytes"] as? Double)?.toLong(),
-                    scMinPostsIntervalMs = (json["scMinPostsIntervalMs"] as? String)?.toLongOrNull()
-                        ?: (json["scMinPostsIntervalMs"] as? Double)?.toLong(),
-                    scMaxBufferedPosts = (json["scMaxBufferedPosts"] as? String)?.toLongOrNull()
-                        ?: (json["scMaxBufferedPosts"] as? Double)?.toLong(),
-                    noGRPCHeader = parseBooleanFlag(json["noGRPCHeader"]?.toString()),
-                    noSSEHeader = parseBooleanFlag(json["noSSEHeader"]?.toString())
-                )
+                "xhttp", "splithttp" -> buildXhttpTransport(host, path) { key -> json[key] }
                 else -> null
+            }
+            if (net == "quic" && tlsConfig?.enabled != true) {
+                Log.w("NodeLinkParser", "Ignoring VMess QUIC node without TLS: $ps")
+                return null
             }
 
             if (aid != 0) {
@@ -582,8 +638,8 @@ class NodeLinkParser(private val gson: Gson) {
         return null
     }
 
-    @Suppress("CognitiveComplexMethod", "CyclomaticComplexMethod", "LongMethod")
-    protected fun parseVLessLink(link: String): Outbound? {
+    @Suppress("CognitiveComplexMethod", "CyclomaticComplexMethod", "LongMethod", "ReturnCount")
+    private fun parseVLessLink(link: String): Outbound? {
         try {
             val uri = java.net.URI(sanitizeUri(link))
             val name = java.net.URLDecoder.decode(uri.fragment ?: "VLESS Node", "UTF-8")
@@ -602,9 +658,17 @@ class NodeLinkParser(private val gson: Gson) {
 
             val hostParam = firstParam(params, "host")
             val explicitSni = firstParam(params, "sni")?.takeIf { it.isNotBlank() }
-            val transportType = firstParam(params, "type")?.lowercase() ?: "tcp"
+            val transportType = firstParam(params, "type")
+                ?.trim()
+                ?.lowercase()
+                ?.ifEmpty { "tcp" }
+                ?: "tcp"
+            if (isUnsupportedV2RayTransport(transportType)) {
+                Log.w("NodeLinkParser", "Ignoring VLESS node with unsupported transport: $transportType")
+                return null
+            }
             val securityRaw = (firstParam(params, "security") ?: "none").lowercase()
-            val tlsLikeTransport = transportType in setOf("ws", "grpc", "xhttp", "splithttp", "httpupgrade")
+            val tlsLikeTransport = transportType != "tcp" && transportType in V2RAY_TRANSPORT_TYPES
             val shouldInferTls = explicitSni != null || (port == 443 && hostParam != null && tlsLikeTransport)
             // 很多机场生成的 VLESS 分享链接会省略 security=tls。
             // 出现 sni，或 443 端口上的常见 HTTP 类传输带 Host 时，按 TLS 处理。
@@ -624,8 +688,11 @@ class NodeLinkParser(private val gson: Gson) {
             val flow = firstParam(params, "flow")?.takeIf { it.isNotBlank() }
             val packetEncoding = firstParam(params, "packetEncoding", "packet-encoding")
                 ?.takeIf { it.isNotBlank() }
-            val encryption = firstParam(params, "encryption")
-                ?.takeIf { it.isNotBlank() && !it.equals("none", ignoreCase = true) }
+            val encryption = firstParam(params, "encryption")?.trim()
+            if (!encryption.isNullOrEmpty() && !encryption.equals("none", ignoreCase = true)) {
+                Log.w("NodeLinkParser", "Ignoring VLESS node with unsupported private encryption")
+                return null
+            }
 
             val echConfig = parseEchConfig(params)
 
@@ -656,7 +723,7 @@ class NodeLinkParser(private val gson: Gson) {
 
             val transport = when (transportType) {
                 "ws" -> {
-                    val webSocketPathConfig = parseWebSocketPathConfig(firstParam(params, "path"))
+                    val webSocketPathConfig = parseWebSocketPathConfig(firstParam(params, "path")) ?: return null
                     TransportConfig(
                         type = "ws",
                         path = webSocketPathConfig.path,
@@ -669,24 +736,30 @@ class NodeLinkParser(private val gson: Gson) {
                     type = "grpc",
                     serviceName = firstParam(params, "serviceName", "sn") ?: ""
                 )
+                "h2", "http" -> TransportConfig(
+                    type = "http",
+                    path = firstParam(params, "path"),
+                    method = firstParam(params, "method"),
+                    host = parseHostList(hostParam)
+                )
+                "quic" -> TransportConfig(type = "quic")
                 "httpupgrade" -> TransportConfig(
                     type = "httpupgrade",
                     path = firstParam(params, "path") ?: "/",
                     host = parseSingleHost(hostParam)
                 )
-                "xhttp", "splithttp" -> TransportConfig(
-                    type = "xhttp",
-                    path = firstParam(params, "path") ?: "/",
-                    host = parseHostList(hostParam),
-                    mode = firstParam(params, "mode"),
-                    xPaddingBytes = firstParam(params, "xPaddingBytes", "x-padding-bytes"),
-                    scMaxEachPostBytes = firstParam(params, "scMaxEachPostBytes")?.toLongOrNull(),
-                    scMinPostsIntervalMs = firstParam(params, "scMinPostsIntervalMs")?.toLongOrNull(),
-                    scMaxBufferedPosts = firstParam(params, "scMaxBufferedPosts")?.toLongOrNull(),
-                    noGRPCHeader = parseBooleanFlag(firstParam(params, "noGRPCHeader")),
-                    noSSEHeader = parseBooleanFlag(firstParam(params, "noSSEHeader"))
-                )
+                "xhttp", "splithttp" -> buildXhttpTransport(hostParam, firstParam(params, "path")) { key ->
+                    if (key == "xPaddingBytes") {
+                        firstParam(params, "xPaddingBytes", "x-padding-bytes")
+                    } else {
+                        firstParam(params, key)
+                    }
+                }
                 else -> null
+            }
+            if (transportType == "quic" && tlsConfig?.enabled != true) {
+                Log.w("NodeLinkParser", "Ignoring VLESS QUIC node without TLS: $name")
+                return null
             }
 
             return Outbound(
@@ -698,8 +771,7 @@ class NodeLinkParser(private val gson: Gson) {
                 flow = flow,
                 tls = tlsConfig,
                 transport = transport,
-                packetEncoding = packetEncoding,
-                encryption = encryption
+                packetEncoding = packetEncoding
             )
         } catch (e: Exception) {
             Log.e("NodeLinkParser", "Failed to parse VLESS link", e)
@@ -707,7 +779,8 @@ class NodeLinkParser(private val gson: Gson) {
         return null
     }
 
-    protected fun parseTrojanLink(link: String): Outbound? {
+    @Suppress("ReturnCount")
+    private fun parseTrojanLink(link: String): Outbound? {
         try {
             val uri = java.net.URI(sanitizeUri(link))
             val name = java.net.URLDecoder.decode(uri.fragment ?: "Trojan Node", "UTF-8")
@@ -717,6 +790,15 @@ class NodeLinkParser(private val gson: Gson) {
             if (!hasRequiredLinkFields("Trojan", server, password, port)) return null
 
             val params = parseQueryParams(uri.query)
+            val transportType = firstParam(params, "type")
+                ?.trim()
+                ?.lowercase()
+                ?.ifEmpty { "tcp" }
+                ?: "tcp"
+            if (isUnsupportedV2RayTransport(transportType)) {
+                Log.w("NodeLinkParser", "Ignoring Trojan node with unsupported transport: $transportType")
+                return null
+            }
 
             val hostParam = firstParam(params, "host")
             val sni = defaultTlsServerName(
@@ -739,6 +821,7 @@ class NodeLinkParser(private val gson: Gson) {
                 ech = echConfig
             )
             val transport = buildTrojanTransport(params, hostParam)
+            if (transportType != "tcp" && transport == null) return null
 
             return Outbound(
                 type = "trojan",
@@ -759,13 +842,22 @@ class NodeLinkParser(private val gson: Gson) {
         params: Map<String, String>,
         hostParam: String?
     ): TransportConfig? {
-        val transportType = firstParam(params, "type")?.lowercase() ?: "tcp"
+        val transportType = firstParam(params, "type")
+            ?.trim()
+            ?.lowercase()
+            ?.ifEmpty { "tcp" }
+            ?: "tcp"
         return when (transportType) {
-            "ws" -> TransportConfig(
-                type = "ws",
-                path = firstParam(params, "path") ?: "/",
-                headers = hostParam?.let { mapOf("Host" to it) }
-            )
+            "ws" -> {
+                val webSocketPathConfig = parseWebSocketPathConfig(firstParam(params, "path")) ?: return null
+                TransportConfig(
+                    type = "ws",
+                    path = webSocketPathConfig.path,
+                    headers = hostParam?.let { mapOf("Host" to it) },
+                    maxEarlyData = webSocketPathConfig.maxEarlyData,
+                    earlyDataHeaderName = webSocketPathConfig.earlyDataHeaderName
+                )
+            }
 
             "grpc" -> TransportConfig(
                 type = "grpc",
@@ -775,8 +867,11 @@ class NodeLinkParser(private val gson: Gson) {
             "h2", "http" -> TransportConfig(
                 type = "http",
                 path = firstParam(params, "path"),
+                method = firstParam(params, "method"),
                 host = parseHostList(hostParam)
             )
+
+            "quic" -> TransportConfig(type = "quic")
 
             "httpupgrade" -> TransportConfig(
                 type = "httpupgrade",
@@ -784,18 +879,13 @@ class NodeLinkParser(private val gson: Gson) {
                 host = parseSingleHost(hostParam)
             )
 
-            "xhttp", "splithttp" -> TransportConfig(
-                type = "xhttp",
-                path = firstParam(params, "path") ?: "/",
-                host = parseHostList(hostParam),
-                mode = firstParam(params, "mode"),
-                xPaddingBytes = firstParam(params, "xPaddingBytes", "x-padding-bytes"),
-                scMaxEachPostBytes = firstParam(params, "scMaxEachPostBytes")?.toLongOrNull(),
-                scMinPostsIntervalMs = firstParam(params, "scMinPostsIntervalMs")?.toLongOrNull(),
-                scMaxBufferedPosts = firstParam(params, "scMaxBufferedPosts")?.toLongOrNull(),
-                noGRPCHeader = parseBooleanFlag(firstParam(params, "noGRPCHeader")),
-                noSSEHeader = parseBooleanFlag(firstParam(params, "noSSEHeader"))
-            )
+            "xhttp", "splithttp" -> buildXhttpTransport(hostParam, firstParam(params, "path")) { key ->
+                if (key == "xPaddingBytes") {
+                    firstParam(params, "xPaddingBytes", "x-padding-bytes")
+                } else {
+                    firstParam(params, key)
+                }
+            }
 
             else -> null
         }
@@ -838,7 +928,12 @@ class NodeLinkParser(private val gson: Gson) {
                     certificatePublicKeySha256 = params["pinSHA256"]?.let { listOf(it) }
                 ),
                 obfs = params["obfs"]?.let { ObfsConfig(type = it, password = params["obfs-password"]) },
-                serverPorts = parseServerPorts(params["mport"])
+                serverPorts = parseServerPorts(firstParam(params, "mport", "server_ports")),
+                hopInterval = firstParam(params, "hop_interval", "hop-interval"),
+                network = firstParam(params, "network")?.let(::listOf),
+                disableMtuDiscovery = parseBooleanFlag(
+                    firstParam(params, "disable_mtu_discovery", "disable-mtu-discovery")
+                )
             )
         } catch (e: Exception) {
             Log.e("NodeLinkParser", "Failed to parse Hy2 link", e)
@@ -878,28 +973,38 @@ class NodeLinkParser(private val gson: Gson) {
             val server = uri.host
             val port = if (uri.port == -1) 443 else uri.port
 
-            val params = mutableMapOf<String, String>()
-            uri.query?.split("&")?.forEach { param ->
-                val parts = param.split("=", limit = 2)
-                if (parts.size == 2) {
-                    params[parts[0]] = java.net.URLDecoder.decode(parts[1], "UTF-8")
-                }
-            }
+            val params = parseQueryParams(uri.rawQuery)
 
             return Outbound(
                 type = "hysteria",
                 tag = name,
                 server = server,
                 serverPort = port,
-                authStr = params["auth"],
-                upMbps = params["up_mbps"]?.toIntOrNull() ?: params["up"]?.toIntOrNull() ?: 50,
-                downMbps = params["down_mbps"]?.toIntOrNull() ?: params["down"]?.toIntOrNull() ?: 50,
+                authStr = firstParam(params, "auth", "auth_str") ?: uri.userInfo,
+                upMbps = firstParam(params, "up_mbps", "upmbps", "up")?.toIntOrNull(),
+                downMbps = firstParam(params, "down_mbps", "downmbps", "down")?.toIntOrNull(),
                 tls = TlsConfig(
                     enabled = true,
                     serverName = defaultTlsServerName(
-                        explicitServerName = params["sni"],
+                        explicitServerName = firstParam(params, "sni"),
                         server = server
-                    )
+                    ),
+                    insecure = parseBooleanFlag(
+                        firstParam(params, "insecure", "allowInsecure", "skip-cert-verify")
+                    ),
+                    alpn = parseCsvQueryParam(firstParam(params, "alpn")),
+                    certificatePublicKeySha256 = firstParam(params, "pinSHA256")?.let { listOf(it) }
+                ),
+                obfs = firstParam(params, "obfs")?.let {
+                    ObfsConfig(type = it, stringValue = true)
+                },
+                serverPorts = parseServerPorts(firstParam(params, "mport", "server_ports")),
+                hopInterval = firstParam(params, "hop_interval", "hop-interval"),
+                network = firstParam(params, "network")?.let(::listOf),
+                recvWindowConn = firstParam(params, "recv_window_conn")?.toBigIntegerOrNull(),
+                recvWindow = firstParam(params, "recv_window")?.toBigIntegerOrNull(),
+                disableMtuDiscovery = parseBooleanFlag(
+                    firstParam(params, "disable_mtu_discovery", "disable-mtu-discovery")
                 )
             )
         } catch (e: Exception) {
@@ -1008,7 +1113,7 @@ class NodeLinkParser(private val gson: Gson) {
                 serverPort = port,
                 username = username,
                 password = password,
-                network = if (useQuic) "quic" else "h2",
+                network = listOf(if (useQuic) "quic" else "h2"),
                 insecureConcurrency = insecureConcurrency,
                 extraHeaders = extraHeaders,
                 quic = useQuic,
@@ -1030,7 +1135,7 @@ class NodeLinkParser(private val gson: Gson) {
     }
 
     protected fun parseNaiveExtraHeaders(params: Map<String, String>): Map<String, String>? {
-        val normalized = linkedMapOf<String, String>()
+        val normalized = linkedMapOf<String, MutableList<String>>()
         params.forEach { (key, rawValue) ->
             if (!key.equals("extra_headers", ignoreCase = true)) return@forEach
             rawValue
@@ -1046,12 +1151,15 @@ class NodeLinkParser(private val gson: Gson) {
                     val headerName = line.substring(0, separatorIndex).trim()
                     val headerValue = line.substring(separatorIndex + 1).trim()
                     if (headerName.isNotEmpty() && headerValue.isNotEmpty()) {
-                        normalized[headerName] = headerValue
+                        normalized.getOrPut(headerName) { mutableListOf() }.add(headerValue)
                     }
                 }
         }
 
-        return normalized.ifEmpty { null }
+        return normalized
+            .mapValues { (_, values) -> values.toList() }
+            .takeIf { it.isNotEmpty() }
+            ?.asHttpHeaderMap()
     }
 
     protected fun parseTuicLink(link: String): Outbound? {
@@ -1074,10 +1182,13 @@ class NodeLinkParser(private val gson: Gson) {
                 password = credentials.password,
                 congestionControl = transportOptions.congestionControl,
                 udpRelayMode = transportOptions.udpRelayMode,
+                udpOverStream = parseBooleanFlag(firstParam(params, "udp_over_stream")),
                 zeroRttHandshake = transportOptions.zeroRtt,
-                disableSni = if (tlsOptions.disableSni) true else null,
+                heartbeat = firstParam(params, "heartbeat"),
+                network = firstParam(params, "network")?.let(::listOf),
                 tls = TlsConfig(
                     enabled = true,
+                    disableSni = if (tlsOptions.disableSni) true else null,
                     serverName = tlsOptions.serverName,
                     insecure = tlsOptions.insecure,
                     alpn = tlsOptions.alpn,
@@ -1099,27 +1210,43 @@ class NodeLinkParser(private val gson: Gson) {
             val privateKey = uri.userInfo?.takeIf { it.isNotBlank() } ?: return null
             val server = uri.host?.takeIf { it.isNotBlank() } ?: return null
             val port = if (uri.port > 0) uri.port else 51820
-
-            val params = parseQueryParams(uri.rawQuery.orEmpty())
+            val params = parseQueryParams(uri.rawQuery)
             val publicKey = firstParam(params, "public_key", "publicKey", "peer_public_key") ?: return null
             val localAddress = parseWireGuardLocalAddress(params) ?: return null
+            val reserved = firstParam(params, "reserved")
+                ?.split(",")
+                ?.mapNotNull { it.trim().toIntOrNull() }
+                ?.takeIf { it.isNotEmpty() }
 
             val peer = WireGuardPeer(
                 server = server,
                 serverPort = port,
                 publicKey = publicKey,
-                preSharedKey = firstParam(params, "pre_shared_key", "preSharedKey")
+                preSharedKey = firstParam(params, "pre_shared_key", "preSharedKey"),
+                allowedIps = parseCsvQueryParam(firstParam(params, "allowed_ips")),
+                persistentKeepaliveInterval = firstParam(
+                    params,
+                    "persistent_keepalive_interval",
+                    "keepalive"
+                )?.toIntOrNull(),
+                reserved = reserved
             )
 
             return Outbound(
                 type = "wireguard",
                 tag = name,
-                privateKey = privateKey,
+                privateKey = listOf(privateKey),
                 localAddress = localAddress,
-                peers = listOf(peer)
+                peers = listOf(peer),
+                mtu = firstParam(params, "mtu")?.toIntOrNull(),
+                listenPort = firstParam(params, "listen_port")?.toIntOrNull(),
+                udpTimeout = firstParam(params, "udp_timeout"),
+                workers = firstParam(params, "workers")?.toIntOrNull(),
+                system = parseBooleanFlag(firstParam(params, "system")),
+                endpointName = firstParam(params, "name")
             )
         } catch (e: Exception) {
-            Log.e("NodeLinkParser", "Failed to parse WG link", e)
+            Log.e("NodeLinkParser", "Failed to parse WireGuard link", e)
         }
         return null
     }
@@ -1129,15 +1256,22 @@ class NodeLinkParser(private val gson: Gson) {
             val uri = java.net.URI(sanitizeUri(link))
             val name = java.net.URLDecoder.decode(uri.fragment ?: "SSH Node", "UTF-8")
             val userInfo = uri.userInfo ?: ""
-            val parts = userInfo.split(":")
+            val parts = userInfo.split(":", limit = 2)
+            val params = parseQueryParams(uri.rawQuery)
 
             return Outbound(
                 type = "ssh",
                 tag = name,
                 server = uri.host,
                 serverPort = if (uri.port > 0) uri.port else 22,
-                user = parts.getOrNull(0),
-                password = parts.getOrNull(1)
+                user = java.net.URLDecoder.decode(parts.getOrNull(0).orEmpty(), "UTF-8").takeIf { it.isNotBlank() },
+                password = java.net.URLDecoder.decode(parts.getOrNull(1).orEmpty(), "UTF-8").takeIf { it.isNotBlank() },
+                privateKey = firstParam(params, "private_key")?.let(::listOf),
+                privateKeyPath = firstParam(params, "private_key_path"),
+                privateKeyPassphrase = firstParam(params, "private_key_passphrase"),
+                hostKey = parseCsvQueryParam(firstParam(params, "host_key")),
+                hostKeyAlgorithms = parseCsvQueryParam(firstParam(params, "host_key_algorithms")),
+                clientVersion = firstParam(params, "client_version")
             )
         } catch (e: Exception) {
             Log.e("NodeLinkParser", "Failed to parse SSH link", e)
@@ -1162,6 +1296,7 @@ class NodeLinkParser(private val gson: Gson) {
                 )
                 val (username, password) = parseHttpCredentials(uri)
                 val port = if (uri.port > 0) uri.port else if (useTls) 443 else 8080
+                val params = parseQueryParams(uri.rawQuery)
 
                 Outbound(
                     type = "http",
@@ -1170,7 +1305,11 @@ class NodeLinkParser(private val gson: Gson) {
                     serverPort = port,
                     username = username,
                     password = password,
-                    tls = buildHttpTlsConfig(useTls, server)
+                    tls = buildHttpTlsConfig(useTls, server, params),
+                    path = firstParam(params, "proxy_path", "path"),
+                    headers = parseNaiveExtraHeaders(
+                        mapOf("extra_headers" to firstParam(params, "headers", "extra_headers").orEmpty())
+                    )
                 )
             }
         } catch (e: Exception) {
@@ -1189,14 +1328,27 @@ class NodeLinkParser(private val gson: Gson) {
         return username to password
     }
 
-    protected fun buildHttpTlsConfig(useTls: Boolean, server: String): TlsConfig? {
+    private fun buildHttpTlsConfig(
+        useTls: Boolean,
+        server: String,
+        params: Map<String, String> = emptyMap()
+    ): TlsConfig? {
         if (!useTls) return null
         return TlsConfig(
             enabled = true,
             serverName = defaultTlsServerName(
-                explicitServerName = null,
+                explicitServerName = firstParam(params, "sni", "server_name"),
                 server = server
-            )
+            ),
+            insecure = parseBooleanFlag(firstParam(params, "insecure", "allowInsecure")),
+            alpn = parseCsvQueryParam(firstParam(params, "alpn")),
+            ca = firstParam(params, "certificate", "ca")?.let(::listOf),
+            caPath = firstParam(params, "certificate_path", "ca_path"),
+            certificate = firstParam(params, "client_certificate")?.let(::listOf),
+            certificatePath = firstParam(params, "client_certificate_path"),
+            key = firstParam(params, "client_key")?.let(::listOf),
+            keyPath = firstParam(params, "client_key_path"),
+            certificatePublicKeySha256 = firstParam(params, "pinSHA256")?.let { listOf(it) }
         )
     }
 
@@ -1227,12 +1379,20 @@ class NodeLinkParser(private val gson: Gson) {
     protected fun parseSocks5Link(link: String): Outbound? {
         try {
 
+            val schemeVersion = when {
+                link.startsWith("socks4a://") -> "4a"
+                link.startsWith("socks4://") -> "4"
+                else -> "5"
+            }
             val normalizedLink = link
-                .replace("socks5://", "socks://")
+                .replaceFirst("socks5://", "socks://")
+                .replaceFirst("socks4a://", "socks://")
+                .replaceFirst("socks4://", "socks://")
             val uri = java.net.URI(sanitizeUri(normalizedLink))
             val name = java.net.URLDecoder.decode(uri.fragment ?: "SOCKS5 Proxy", "UTF-8")
             val server = uri.host ?: return null
             val port = if (uri.port > 0) uri.port else 1080
+            val params = parseQueryParams(uri.rawQuery)
 
             var username: String? = null
             var password: String? = null
@@ -1249,8 +1409,15 @@ class NodeLinkParser(private val gson: Gson) {
                 tag = name,
                 server = server,
                 serverPort = port,
+                version = JsonPrimitive(firstParam(params, "version") ?: schemeVersion),
                 username = username,
-                password = password
+                password = password,
+                network = firstParam(params, "network")?.let(::listOf),
+                udpOverTcp = if (parseBooleanFlag(firstParam(params, "uot", "udp_over_tcp")) == true) {
+                    com.kunk.singbox.model.UdpOverTcpConfig(enabled = true)
+                } else {
+                    null
+                }
             )
         } catch (e: Exception) {
             Log.e("NodeLinkParser", "Failed to parse SOCKS5 link", e)

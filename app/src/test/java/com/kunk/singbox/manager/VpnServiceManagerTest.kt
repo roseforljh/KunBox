@@ -60,9 +60,10 @@ class VpnServiceManagerTest {
     @Test
     fun stopVpnSendsStopToBothRuntimeServices() {
         val source = File("src/main/java/com/kunk/singbox/manager/VpnServiceManager.kt").readText()
+        val start = source.indexOf("fun stopVpn(context: Context)")
         val body = source.substring(
-            source.indexOf("fun stopVpn(context: Context)"),
-            source.indexOf("/**", source.indexOf("fun stopVpn(context: Context)"))
+            start,
+            source.indexOf("fun restartVpn(context: Context)", start)
         )
 
         assertTrue(body.contains("SingBoxService::class.java"))

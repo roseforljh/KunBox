@@ -14,8 +14,6 @@ import com.kunk.singbox.repository.LogRepository
  */
 object L {
 
-    /**
-     */
     enum class Category(val prefix: String, val emoji: String) {
         CONNECTION("CONN", "\uD83D\uDD17"),
         VPN("VPN", "\uD83D\uDEE1\uFE0F"),
@@ -26,70 +24,46 @@ object L {
         INFO("INFO", "\u2139\uFE0F")
     }
 
-    /**
-     */
     @Volatile
     var minCategoryLevel: Int = Log.INFO
 
-    /**
-     */
     @Volatile
     var showEmoji: Boolean = true
 
-    /**
-     */
     @Volatile
     var logcatEnabled: Boolean = true
 
-    /**
-     */
     @Volatile
     var uiLogEnabled: Boolean = true
 
-    /**
-     */
     fun connection(tag: String, message: String, level: Int = Log.INFO) {
         log(Category.CONNECTION, tag, message, level)
     }
 
-    /**
-     */
     fun vpn(tag: String, message: String, level: Int = Log.INFO) {
         log(Category.VPN, tag, message, level)
     }
 
-    /**
-     */
     fun config(tag: String, message: String, level: Int = Log.INFO) {
         log(Category.CONFIG, tag, message, level)
     }
 
-    /**
-     */
     fun network(tag: String, message: String, level: Int = Log.INFO) {
         log(Category.NETWORK, tag, message, level)
     }
 
-    /**
-     */
     fun error(tag: String, message: String, throwable: Throwable? = null) {
         log(Category.ERROR, tag, message, Log.ERROR, throwable)
     }
 
-    /**
-     */
     fun warn(tag: String, message: String, throwable: Throwable? = null) {
         log(Category.ERROR, tag, message, Log.WARN, throwable)
     }
 
-    /**
-     */
     fun debug(tag: String, message: String) {
         log(Category.DEBUG, tag, message, Log.DEBUG)
     }
 
-    /**
-     */
     fun info(tag: String, message: String) {
         log(Category.INFO, tag, message, Log.INFO)
     }
@@ -150,8 +124,6 @@ object L {
         log(category, tag, "[Step $current/$total] $message", Log.INFO)
     }
 
-    /**
-     */
     fun result(tag: String, success: Boolean, message: String, category: Category = Category.CONNECTION) {
         val level = if (success) Log.INFO else Log.WARN
         val prefix = if (success) "✅" else "❌"
@@ -166,8 +138,6 @@ object L {
         log(category, tag, "$from → $to", Log.INFO)
     }
 
-    /**
-     */
     fun metric(tag: String, name: String, value: Number, unit: String = "", category: Category = Category.NETWORK) {
         log(category, tag, "$name: $value $unit".trim(), Log.DEBUG)
     }

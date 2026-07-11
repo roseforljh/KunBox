@@ -6,15 +6,6 @@ val IpVersionMode.includesIpv4: Boolean
 val IpVersionMode.includesIpv6: Boolean
     get() = this != IpVersionMode.IPV4_ONLY
 
-fun IpVersionMode.tunAddresses(tunAddress: TunAddressConfig): List<String> {
-    return when (this) {
-        IpVersionMode.IPV4_ONLY -> listOf(tunAddress.ipv4)
-        IpVersionMode.DUAL_STACK -> listOf(tunAddress.ipv4, tunAddress.ipv6)
-        IpVersionMode.PREFER_IPV6 -> listOf(tunAddress.ipv4, tunAddress.ipv6)
-        IpVersionMode.IPV6_ONLY -> listOf(tunAddress.ipv6)
-    }
-}
-
 fun IpVersionMode.autoDnsStrategy(): String {
     return when (this) {
         IpVersionMode.IPV4_ONLY -> "ipv4_only"

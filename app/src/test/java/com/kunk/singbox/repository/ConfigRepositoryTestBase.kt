@@ -4,14 +4,11 @@ import com.google.gson.Gson
 import com.kunk.singbox.model.Outbound
 import com.kunk.singbox.model.RuleSet
 import com.kunk.singbox.model.RuleSetConfig
-import com.kunk.singbox.model.ProfileUi
-import com.kunk.singbox.model.SubscriptionUpdateStage
 import com.kunk.singbox.utils.parser.Base64Parser
 import com.kunk.singbox.utils.parser.ClashYamlParser
 import com.kunk.singbox.utils.parser.NodeLinkParser
 import com.kunk.singbox.utils.parser.SingBoxParser
 import com.kunk.singbox.utils.parser.SubscriptionManager
-import kotlinx.coroutines.flow.MutableStateFlow
 
 @Suppress("TooManyFunctions")
 abstract class ConfigRepositoryTestBase {
@@ -33,19 +30,9 @@ abstract class ConfigRepositoryTestBase {
         validRuleSets: List<RuleSetConfig>
     ): List<RuleSet>
 
-    protected abstract fun createUpdatingProfile(profileId: String): ProfileUi
-
     protected abstract fun bestvmrDnsOverrideJson(): String
 
     protected abstract fun bestvmrNodeOutbound(): Outbound
-
-    protected abstract fun applyStageForRun(
-        profiles: MutableStateFlow<List<ProfileUi>>,
-        activeRuns: Map<String, Long>,
-        profileId: String,
-        runId: Long,
-        stage: SubscriptionUpdateStage?
-    )
 
     abstract fun testStableNodeIdConsistency()
 
@@ -103,12 +90,6 @@ abstract class ConfigRepositoryTestBase {
 
     abstract fun testResolveSubscriptionUpdateStageMapsKnownStages()
 
-    abstract fun testLaunchSubscriptionDnsPreResolveReturnsWithoutWaitingForResolution()
-
-    abstract fun testLaunchSubscriptionDnsPreResolveSwallowsBackgroundFailure()
-
-    abstract fun testLaunchSubscriptionDnsPreResolveStaleRunCannotClearNewUpdateStage()
-
     abstract fun testBatchUpdateResultAggregatesMixedSubscriptionResults()
 
     abstract fun testResolveAppRuleOutboundModeDefaultsToProxy()
@@ -151,7 +132,7 @@ abstract class ConfigRepositoryTestBase {
 
     abstract fun testDnsOverrideCompatibilityWarningDetectsLegacyAddressResolver()
 
-    abstract fun testDnsOverrideCompatibilityWarningDetectsOtherMigrationRisks()
+    abstract fun testDnsOverrideCompatibilityWarningAcceptsCurrentMatchers()
 
     abstract fun testDnsOverrideCompatibilityWarningIgnoresLatestFormat()
 
@@ -177,19 +158,7 @@ abstract class ConfigRepositoryTestBase {
 
     abstract fun testDnsOverrideSpecificOutboundRuleOnlyAppliesMatchingOutbound()
 
-    abstract fun testDnsOverrideMatchingDomainSkipsProfileDnsPreResolve()
-
-    abstract fun testDnsOverrideCatchAllRuleSkipsProfileDnsPreResolve()
-
-    abstract fun testDnsOverrideOutboundAnyRuleSkipsProfileDnsPreResolve()
-
-    abstract fun testDnsOverrideSpecificOutboundRuleSkipsMatchingProfileDnsPreResolve()
-
-    abstract fun testDnsOverrideSpecificOutboundRuleKeepsNonMatchingProfileDnsPreResolve()
-
     abstract fun testDnsOverrideNodeDomainResolverSkipsAutomaticProxyDetour()
-
-    abstract fun testDnsOverrideNonMatchingDomainKeepsProfileDnsPreResolve()
 
     abstract fun testNormalizeLocalDnsReplacesLegacyLocalValue()
 
@@ -201,9 +170,9 @@ abstract class ConfigRepositoryTestBase {
 
     abstract fun testNormalizeRemoteDnsReplacesBlankValue()
 
-    abstract fun testNormalizeRemoteDnsRewritesCloudflareIpDohToDomain()
+    abstract fun testNormalizeRemoteDnsKeepsCloudflareIpDoh()
 
-    abstract fun testNormalizeRemoteDnsRewritesCloudflareIpv6DohToDomain()
+    abstract fun testNormalizeRemoteDnsKeepsCloudflareIpv6Doh()
 
     abstract fun testNormalizeRemoteDnsKeepsNonCloudflareIpDoh()
 
@@ -259,8 +228,6 @@ abstract class ConfigRepositoryTestBase {
 
     abstract fun testDnsRouteToNonDirectReturnsSpecificDnsRuleWhenFakeDnsEnabled()
 
-    abstract fun testNonIpDnsFallbackRoutesHttpsAndSvcbToProxyDns()
-
     abstract fun testDnsRouteToDirectOnlyRoutesIpQueriesToLocalDns()
 
     abstract fun testNormalizeRuleSetUrlAddsRawPrefixForGithubPathOnlyUrl()
@@ -269,11 +236,11 @@ abstract class ConfigRepositoryTestBase {
 
     abstract fun testNormalizeRuleSetForSaveNormalizesRemoteRuleSetUrl()
 
-    abstract fun testRuleSetDnsPriorityKeepsProxySpecificRulesBeforeDirectCountryRules()
+    abstract fun testRuleSetDnsOrderMatchesPersistedOrder()
 
-    abstract fun testGoogleConnectivityDnsRulesUseProxyBeforeCountryRules()
+    abstract fun testUserDnsRulePriorityMatchesRouteOrder()
 
-    abstract fun testGoogleConnectivityRouteRulePrecedesDirectCountryRule()
+    abstract fun testRouteRulesDoNotInjectGoogleOverride()
 
     abstract fun testDnsServerTagForFallbackProxyUsesProxyServer()
 
@@ -300,16 +267,6 @@ abstract class ConfigRepositoryTestBase {
     abstract fun testResolveOutboundSemanticProfileValid()
 
     abstract fun testResolveOutboundSemanticProfileInvalid()
-
-    abstract fun testResolveProfileSelectorDefaultPrefersLowestLatencyOverRememberedNode()
-
-    abstract fun testResolveProfileSelectorDefaultIgnoresRememberedNodeOutsideCurrentProfile()
-
-    abstract fun testResolveProfileSelectorDefaultFallsBackToRememberedNodeWhenLatencyUnavailable()
-
-    abstract fun testResolveProfileSelectorDefaultUsesLowestPositiveLatency()
-
-    abstract fun testResolveProfileSelectorDefaultFallsBackToFirstTag()
 
     abstract fun testBuildProfileRouteGroupOutboundsCreatesNestedAutoStructure()
 
@@ -347,9 +304,9 @@ abstract class ConfigRepositoryTestBase {
 
     abstract fun testResolveRunDnsFinalServerUsesProxyDetourWhenRuleProxyAndFakeDnsEnabled()
 
-    abstract fun testResolveProxyDnsDetourTagUsesSelectorDefaultConcreteNode()
+    abstract fun testResolveProxyDnsDetourTagKeepsSelectorAcrossNodeSwitch()
 
-    abstract fun testResolveProxyDnsDetourTagUnwrapsUrlTestDefault()
+    abstract fun testResolveProxyDnsDetourTagKeepsSelectorForUrlTest()
 
     abstract fun testBypassLanRulesUseIpIsPrivate()
 

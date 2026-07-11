@@ -8,36 +8,28 @@ import androidx.room.TypeConverters
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.kunk.singbox.database.dao.ActiveStateDao
-import com.kunk.singbox.database.dao.NodeDao
 import com.kunk.singbox.database.dao.NodeLatencyDao
 import com.kunk.singbox.database.dao.ProfileDao
 import com.kunk.singbox.database.dao.SettingsDao
 import com.kunk.singbox.database.entity.ActiveStateEntity
-import com.kunk.singbox.database.entity.NodeEntity
 import com.kunk.singbox.database.entity.NodeLatencyEntity
 import com.kunk.singbox.database.entity.ProfileEntity
 import com.kunk.singbox.database.entity.SettingsEntity
 
-/**
- *
- *
- */
 @Database(
     entities = [
         ProfileEntity::class,
-        NodeEntity::class,
         ActiveStateEntity::class,
         NodeLatencyEntity::class,
         SettingsEntity::class
     ],
-    version = 7,
+    version = 8,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
 abstract class AppDatabase : RoomDatabase() {
 
     abstract fun profileDao(): ProfileDao
-    abstract fun nodeDao(): NodeDao
     abstract fun activeStateDao(): ActiveStateDao
     abstract fun nodeLatencyDao(): NodeLatencyDao
     abstract fun settingsDao(): SettingsDao
@@ -66,13 +58,12 @@ abstract class AppDatabase : RoomDatabase() {
                     MIGRATION_3_4,
                     MIGRATION_4_5,
                     MIGRATION_5_6,
-                    MIGRATION_6_7
+                    MIGRATION_6_7,
+                    MIGRATION_7_8
                 )
                 .build()
         }
 
-        /**
-         */
         private val MIGRATION_1_2 = object : Migration(1, 2) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("""
@@ -86,8 +77,6 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
-        /**
-         */
         private val MIGRATION_2_3 = object : Migration(2, 3) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("""
@@ -107,8 +96,6 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
-        /**
-         */
         private val MIGRATION_3_4 = object : Migration(3, 4) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE profiles ADD COLUMN dnsPreResolve INTEGER NOT NULL DEFAULT 0")
@@ -188,8 +175,13 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
-        /**
-         */
+        private val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("DROP TABLE IF EXISTS nodes")
+                db.execSQL("DROP INDEX IF EXISTS index_node_latencies_nodeId")
+            }
+        }
+
         fun getInMemoryDatabase(context: Context): AppDatabase {
             return Room.inMemoryDatabaseBuilder(
                 context.applicationContext,

@@ -9,8 +9,6 @@ import com.kunk.singbox.repository.ConfigRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 
-/**
- */
 internal const val FORCE_NOTIFICATION_AFTER_EXPLICIT_HOT_SWITCH: Boolean = true
 
 internal fun resolveExplicitHotSwitchDisplayName(
@@ -52,8 +50,6 @@ class NodeSwitchManager(
         this.callbacks = callbacks
     }
 
-    /**
-     */
     fun performHotSwitch(
         nodeId: String,
         outboundTag: String?,
@@ -105,8 +101,6 @@ class NodeSwitchManager(
         }
     }
 
-    /**
-     */
     fun switchNextNode(
         serviceClass: Class<*>,
         actionStart: String,

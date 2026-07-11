@@ -13,6 +13,7 @@ import okhttp3.Request
 import okhttp3.Response
 import okio.Timeout
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.IOException
@@ -22,6 +23,27 @@ import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.reflect.KClass
 
 class NetworkClientCancellationTest {
+
+    @Test
+    fun derivedClientsReuseSharedDispatcherAndConnectionPool() {
+        val directClient = NetworkClient.createClientWithoutRetry(
+            connectTimeoutSeconds = 1,
+            readTimeoutSeconds = 1
+        )
+        val proxyClient = NetworkClient.createClientWithProxy(
+            proxyPort = 2080,
+            connectTimeoutSeconds = 1,
+            readTimeoutSeconds = 1,
+            callTimeoutSeconds = null
+        )
+
+        assertSame(NetworkClient.client.dispatcher, directClient.dispatcher)
+        assertSame(NetworkClient.client.connectionPool, directClient.connectionPool)
+        assertEquals(0, directClient.callTimeoutMillis)
+        assertSame(NetworkClient.client.dispatcher, proxyClient.dispatcher)
+        assertSame(NetworkClient.client.connectionPool, proxyClient.connectionPool)
+        assertEquals(0, proxyClient.callTimeoutMillis)
+    }
 
     @Test
     fun executeCancellableCancelsCallWhenCoroutineIsCancelled() = runBlocking {

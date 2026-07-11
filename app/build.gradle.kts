@@ -54,9 +54,14 @@ if (!abiOnly.isNullOrBlank() && abiOnly !in availableLibboxAbis) {
 }
 
 val preferredDefaultAbis = listOf("arm64-v8a", "armeabi-v7a")
-val defaultAbis = preferredDefaultAbis.filter { it in availableLibboxAbis }.ifEmpty {
-    if (availableLibboxAbis.isEmpty()) listOf("arm64-v8a") else availableLibboxAbis.sorted()
+val missingDefaultAbis = preferredDefaultAbis.filterNot { it in availableLibboxAbis }
+if (abiOnly.isNullOrBlank() && missingDefaultAbis.isNotEmpty()) {
+    throw GradleException(
+        "app/libs/libbox.aar is missing required default ABIs: $missingDefaultAbis. " +
+            "Available: ${availableLibboxAbis.sorted()}. Run the pinned kernel sync first."
+    )
 }
+val defaultAbis = preferredDefaultAbis
 val apkAbis = abiOnly?.let { listOf(it) } ?: defaultAbis
 
 val sfaApkArm64Path = providers.gradleProperty("sfaApkArm64").orNull?.takeIf { it.isNotBlank() }
@@ -259,11 +264,11 @@ configure<ApplicationExtension> {
         minSdk = 24
         targetSdk = 37
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        
+
         // Dynamic versioning
         val envVersionCode = System.getenv("VERSION_CODE")?.toIntOrNull()
         val gitCommitCount = gitOutput("rev-list", "--count", "HEAD")?.toIntOrNull()
-        
+
         // Offset to ensure versionCode > previous hardcoded value (5946)
         val gitVersionCode = gitCommitCount?.let { 6000 + it } ?: 6001
 
@@ -274,7 +279,6 @@ configure<ApplicationExtension> {
         versionCode = envVersionCode ?: gitVersionCode
         versionName = gitVersionName
 
-        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
             useSupportLibrary = true
         }
@@ -381,7 +385,6 @@ configure<ApplicationExtension> {
 tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
     compilerOptions {
         jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_11)
-        suppressWarnings.set(true)
     }
 }
 

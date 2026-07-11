@@ -6,7 +6,6 @@ import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.kunk.singbox.ipc.VpnStateStore
-import com.kunk.singbox.model.FilterMode
 import com.kunk.singbox.model.NodeFilter
 import com.kunk.singbox.model.NodeSortType
 import com.kunk.singbox.model.NodeUi
@@ -14,6 +13,7 @@ import com.kunk.singbox.model.ProfileUi
 import com.kunk.singbox.model.PingResultCode
 import com.kunk.singbox.repository.ConfigRepository
 import com.kunk.singbox.repository.SettingsRepository
+import com.kunk.singbox.utils.parser.NodeLinkParser
 import com.kunk.singbox.viewmodel.shared.NodeDisplaySettings
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.Dispatchers
@@ -63,64 +63,13 @@ class NodesViewModel(application: Application) : AndroidViewModel(application) {
             initialValue = 1
         )
 
-    private val _customNodeOrder = MutableStateFlow<List<String>>(emptyList())
-
-    init {
-
-        viewModelScope.launch {
-            displaySettings.customOrder.collect { order ->
-                _customNodeOrder.value = order
-            }
-        }
-    }
-
     val nodes: StateFlow<List<NodeUi>> = combine(
         configRepository.nodes,
         displaySettings.sortType,
         displaySettings.nodeFilter,
-        _customNodeOrder
+        displaySettings.customOrder
     ) { nodes: List<NodeUi>, sortType: NodeSortType, filter: NodeFilter, customOrder: List<String> ->
-        val filtered = when (filter.filterMode) {
-            FilterMode.NONE -> nodes
-            FilterMode.INCLUDE -> {
-                val keywords = filter.effectiveIncludeKeywords
-                if (keywords.isEmpty()) {
-                    nodes
-                } else {
-                    nodes.filter { node ->
-                        keywords.any { keyword ->
-                            node.displayName.contains(keyword, ignoreCase = true)
-                        }
-                    }
-                }
-            }
-            FilterMode.EXCLUDE -> {
-                val keywords = filter.effectiveExcludeKeywords
-                if (keywords.isEmpty()) {
-                    nodes
-                } else {
-                    nodes.filter { node ->
-                        keywords.none { keyword ->
-                            node.displayName.contains(keyword, ignoreCase = true)
-                        }
-                    }
-                }
-            }
-        }
-        when (sortType) {
-            NodeSortType.DEFAULT -> filtered
-            NodeSortType.LATENCY -> filtered.sortedWith(compareBy<NodeUi> {
-                val l = it.latencyMs
-
-                if (l == null || l <= 0) Long.MAX_VALUE else l
-            })
-            NodeSortType.NAME,
-            NodeSortType.REGION -> filtered.sortedBy { it.name }
-            NodeSortType.CUSTOM -> {
-                val orderMap = customOrder.withIndex().associate { it.value to it.index }
-                filtered.sortedBy { orderMap[it.id] ?: Int.MAX_VALUE }
-            }
-        }
+        buildDashboardNodes(nodes, filter, sortType, customOrder)
     }.flowOn(Dispatchers.Default).stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5000),
@@ -132,46 +81,7 @@ class NodesViewModel(application: Application) : AndroidViewModel(application) {
         displaySettings.sortType,
         displaySettings.nodeFilter
     ) { nodes, sortType, filter ->
-        val filtered = when (filter.filterMode) {
-            FilterMode.NONE -> nodes
-            FilterMode.INCLUDE -> {
-                val keywords = filter.effectiveIncludeKeywords
-                if (keywords.isEmpty()) {
-                    nodes
-                } else {
-                    nodes.filter { node ->
-                        keywords.any { keyword ->
-                            node.displayName.contains(keyword, ignoreCase = true)
-                        }
-                    }
-                }
-            }
-            FilterMode.EXCLUDE -> {
-                val keywords = filter.effectiveExcludeKeywords
-                if (keywords.isEmpty()) {
-                    nodes
-                } else {
-                    nodes.filter { node ->
-                        keywords.none { keyword ->
-                            node.displayName.contains(keyword, ignoreCase = true)
-                        }
-                    }
-                }
-            }
-        }
-        when (sortType) {
-            NodeSortType.DEFAULT -> filtered
-            NodeSortType.LATENCY -> filtered.sortedWith(compareBy<NodeUi> {
-                val l = it.latencyMs
-                if (l == null || l <= 0) Long.MAX_VALUE else l
-            })
-            NodeSortType.NAME,
-            NodeSortType.REGION -> filtered.sortedBy { it.name }
-            NodeSortType.CUSTOM -> {
-
-                filtered
-            }
-        }
+        buildDashboardNodes(nodes, filter, sortType, emptyList())
     }.flowOn(Dispatchers.Default).stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5000),
@@ -179,37 +89,11 @@ class NodesViewModel(application: Application) : AndroidViewModel(application) {
     )
 
     val allNodes: StateFlow<List<NodeUi>> = configRepository.allNodes
-        .stateIn(
-            scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(5000),
-            initialValue = emptyList()
-        )
-
     val profiles: StateFlow<List<ProfileUi>> = configRepository.profiles
-        .stateIn(
-            scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(5000),
-            initialValue = emptyList()
-        )
-
     val activeNodeId: StateFlow<String?> = configRepository.activeNodeId
-        .stateIn(
-            scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(5000),
-            initialValue = null
-        )
-
-    private val _switchResult = MutableStateFlow<String?>(null)
-    val switchResult: StateFlow<String?> = _switchResult.asStateFlow()
-
-    private val _latencyMessage = MutableStateFlow<String?>(null)
-    val latencyMessage: StateFlow<String?> = _latencyMessage.asStateFlow()
 
     private val _testProgress = MutableStateFlow<Pair<Int, Int>?>(null)
     val testProgress: StateFlow<Pair<Int, Int>?> = _testProgress.asStateFlow()
-
-    private val _addNodeResult = MutableStateFlow<String?>(null)
-    val addNodeResult: StateFlow<String?> = _addNodeResult.asStateFlow()
 
     private val _toastEvents = MutableSharedFlow<String>(extraBufferCapacity = 8)
     val toastEvents: SharedFlow<String> = _toastEvents.asSharedFlow()
@@ -234,14 +118,9 @@ class NodesViewModel(application: Application) : AndroidViewModel(application) {
                 } else {
                     "Failed to switch to $nodeName"
                 }
-                _switchResult.value = msg
                 emitToast(msg)
             }
         }
-    }
-
-    fun clearSwitchResult() {
-        _switchResult.value = null
     }
 
     fun testLatency(nodeId: String) {
@@ -265,21 +144,12 @@ class NodesViewModel(application: Application) : AndroidViewModel(application) {
                         R.string.nodes_test_failed,
                         node?.displayName ?: ""
                     )
-                    _latencyMessage.value = msg
                     emitToast(msg)
                 }
             } finally {
                 _testingNodeIds.update { it - nodeId }
             }
         }
-    }
-
-    fun clearLatencyMessage() {
-        _latencyMessage.value = null
-    }
-
-    fun clearAddNodeResult() {
-        _addNodeResult.value = null
     }
 
     fun testAllLatency() {
@@ -407,7 +277,6 @@ class NodesViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun setCustomNodeOrder(order: List<String>) {
-        _customNodeOrder.value = order
         viewModelScope.launch {
             settingsRepository.setCustomNodeOrder(order)
         }
@@ -425,15 +294,8 @@ class NodesViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             val trimmedContent = content.trim()
 
-            val supportedPrefixes = listOf(
-                "vmess://", "vless://", "ss://", "trojan://",
-                "hysteria2://", "hy2://", "hysteria://",
-                "tuic://", "anytls://", "naive://", "naive+https://", "wireguard://", "ssh://"
-            )
-
-            if (supportedPrefixes.none { trimmedContent.startsWith(it) }) {
+            if (!NodeLinkParser.isSupportedLink(trimmedContent)) {
                 val msg = getApplication<Application>().getString(R.string.nodes_unsupported_format)
-                _addNodeResult.value = msg
                 emitToast(msg)
                 return@launch
             }
@@ -445,11 +307,9 @@ class NodesViewModel(application: Application) : AndroidViewModel(application) {
             )
             result.onSuccess { node ->
                 val msg = getApplication<Application>().getString(R.string.common_add) + ": ${node.displayName}"
-                _addNodeResult.value = msg
                 emitToast(msg)
             }.onFailure { e ->
                 val msg = e.message ?: getApplication<Application>().getString(R.string.nodes_add_failed)
-                _addNodeResult.value = msg
                 emitToast(msg)
             }
         }

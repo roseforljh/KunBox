@@ -4,16 +4,15 @@ import android.content.Context
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
-import android.net.NetworkRequest
 import android.os.Build
 import android.os.Handler
 import android.os.SystemClock
 import android.provider.Settings
-import android.system.OsConstants
 import android.util.Log
 import com.kunk.singbox.core.LibboxCompat
 import com.kunk.singbox.model.AppSettings
 import com.kunk.singbox.model.RoutingMode
+import com.kunk.singbox.utils.DefaultNetworkListener
 import io.nekohasekai.libbox.ConnectionOwner
 import io.nekohasekai.libbox.InterfaceUpdateListener
 import io.nekohasekai.libbox.NetworkInterfaceIterator
@@ -22,17 +21,13 @@ import io.nekohasekai.libbox.StringIterator
 import io.nekohasekai.libbox.TunOptions
 import io.nekohasekai.libbox.WIFIState
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 import java.io.File
 import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.NetworkInterface
+import java.nio.ByteOrder
 import java.util.concurrent.atomic.AtomicLong
 
-/**
- */
 class PlatformInterfaceImpl(
     private val context: Context,
     private val serviceScope: CoroutineScope,
@@ -40,23 +35,36 @@ class PlatformInterfaceImpl(
     private val callbacks: Callbacks
 ) : PlatformInterface {
 
+    internal enum class ProcFsUidLookupStatus {
+        RESOLVED,
+        NOT_FOUND,
+        AMBIGUOUS,
+        UNAVAILABLE
+    }
+
+    internal data class ProcFsUidLookupResult(
+        val status: ProcFsUidLookupStatus,
+        val uid: Int = 0
+    )
+
+    private data class ProcFsOwnerCandidate(
+        val uid: Int?,
+        val matchesFullTuple: Boolean,
+        val isWildcardRemote: Boolean
+    )
+
     companion object {
         private const val TAG = "PlatformInterfaceImpl"
-        private const val NETWORK_SWITCH_DELAY_MS = 2000L
+        private const val PROC_FS_LOCAL_ENDPOINT_INDEX = 1
+        private const val PROC_FS_REMOTE_ENDPOINT_INDEX = 2
+        private const val PROC_FS_UID_INDEX = 7
+        private const val IP_PROTOCOL_TCP = 6
+        private const val IP_PROTOCOL_UDP = 17
+        private val PROC_FS_WHITESPACE = Regex("\\s+")
+        internal const val UID_PACKAGE_CACHE_TTL_MS = 5 * 60 * 1000L
 
-        internal fun shouldHandoverToActiveDefaultNetwork(
-            isActiveDefault: Boolean,
-            isVpn: Boolean,
-            isValidPhysical: Boolean
-        ): Boolean {
-            return isActiveDefault && !isVpn && isValidPhysical
-        }
-
-        internal fun shouldHandoverToRequestedDefaultNetwork(
-            isVpn: Boolean,
-            isValidPhysical: Boolean
-        ): Boolean {
-            return !isVpn && isValidPhysical
+        internal fun isUidPackageCacheFresh(cachedAtMs: Long, nowMs: Long): Boolean {
+            return nowMs - cachedAtMs in 0 until UID_PACKAGE_CACHE_TTL_MS
         }
 
         internal fun shouldForceConnectionOwnerRouting(settings: AppSettings?): Boolean {
@@ -69,11 +77,152 @@ class PlatformInterfaceImpl(
             return !shouldForceConnectionOwnerRouting(settings)
         }
 
-        internal fun shouldBindProtectedSocketToPhysicalNetwork(
-            protected: Boolean,
-            physicalNetworkAvailable: Boolean
-        ): Boolean {
-            return protected && physicalNetworkAvailable
+        internal fun resolvePackageNames(
+            uid: Int,
+            cachedPackageName: String?,
+            lookup: () -> Collection<String>
+        ): List<String> {
+            if (uid <= 0) return emptyList()
+            val resolved = runCatching { lookup() }
+                .getOrDefault(emptyList())
+                .map(String::trim)
+                .filter(String::isNotBlank)
+                .distinct()
+            return resolved.ifEmpty { listOfNotNull(cachedPackageName?.takeIf(String::isNotBlank)) }
+        }
+
+        internal fun startListenerIfCurrent(
+            isCurrent: () -> Boolean,
+            start: () -> Unit,
+            stop: () -> Unit
+        ) {
+            if (!isCurrent()) return
+            var completed = false
+            try {
+                start()
+                completed = true
+            } finally {
+                if (!completed || !isCurrent()) stop()
+            }
+        }
+
+        internal fun encodeProcFsEndpoint(address: InetAddress, port: Int): String? {
+            if (port !in 1..65535) return null
+            val addressBytes = address.address
+            if (addressBytes.size != 4 && addressBytes.size != 16) return null
+
+            val procFsBytes = addressBytes.copyOf()
+            if (ByteOrder.nativeOrder() == ByteOrder.LITTLE_ENDIAN) {
+                for (offset in procFsBytes.indices step 4) {
+                    var left = offset
+                    var right = offset + 3
+                    while (left < right) {
+                        val value = procFsBytes[left]
+                        procFsBytes[left] = procFsBytes[right]
+                        procFsBytes[right] = value
+                        left++
+                        right--
+                    }
+                }
+            }
+
+            val hex = "0123456789ABCDEF"
+            return buildString(procFsBytes.size * 2 + 5) {
+                procFsBytes.forEach { byte ->
+                    val value = byte.toInt() and 0xFF
+                    append(hex[value ushr 4])
+                    append(hex[value and 0x0F])
+                }
+                append(':')
+                append(port.toString(16).uppercase().padStart(4, '0'))
+            }
+        }
+
+        internal fun procFsTablePath(ipProtocol: Int, addressLength: Int): String? {
+            val basePath = when (ipProtocol) {
+                IP_PROTOCOL_TCP -> "/proc/net/tcp"
+                IP_PROTOCOL_UDP -> "/proc/net/udp"
+                else -> return null
+            }
+            return when (addressLength) {
+                4 -> basePath
+                16 -> "${basePath}6"
+                else -> null
+            }
+        }
+
+        private fun isProcFsWildcardEndpoint(endpoint: String): Boolean {
+            val separator = endpoint.lastIndexOf(':')
+            if (separator <= 0 || endpoint.substring(separator + 1) != "0000") return false
+            val address = endpoint.substring(0, separator)
+            return (address.length == 8 || address.length == 32) && address.all { it == '0' }
+        }
+
+        private fun parseProcFsOwnerCandidate(
+            line: String,
+            sourceEndpoint: String,
+            destinationEndpoint: String
+        ): ProcFsOwnerCandidate? {
+            val parts = line.trim().split(PROC_FS_WHITESPACE)
+            val localEndpoint = parts.getOrNull(PROC_FS_LOCAL_ENDPOINT_INDEX) ?: return null
+            if (!localEndpoint.equals(sourceEndpoint, ignoreCase = true)) return null
+            val remoteEndpoint = parts.getOrNull(PROC_FS_REMOTE_ENDPOINT_INDEX)
+            return ProcFsOwnerCandidate(
+                uid = parts.getOrNull(PROC_FS_UID_INDEX)?.toIntOrNull()?.takeIf { it > 0 },
+                matchesFullTuple = remoteEndpoint?.equals(destinationEndpoint, ignoreCase = true) == true,
+                isWildcardRemote = remoteEndpoint?.let(::isProcFsWildcardEndpoint) == true
+            )
+        }
+
+        private fun resolveProcFsUidCandidates(
+            candidates: List<ProcFsOwnerCandidate>,
+            allowUdpWildcardFallback: Boolean
+        ): ProcFsUidLookupResult {
+            val fullTupleUids = candidates.filter(ProcFsOwnerCandidate::matchesFullTuple)
+                .mapNotNull(ProcFsOwnerCandidate::uid)
+                .toSet()
+            val sourceEndpointUids = candidates.mapNotNull(ProcFsOwnerCandidate::uid).toSet()
+            val hasInvalidFullTupleOwner = candidates.any { it.matchesFullTuple && it.uid == null }
+            val hasInvalidSourceOwner = candidates.any { it.uid == null }
+
+            return when {
+                fullTupleUids.size > 1 || (fullTupleUids.isNotEmpty() && hasInvalidFullTupleOwner) -> {
+                    ProcFsUidLookupResult(ProcFsUidLookupStatus.AMBIGUOUS)
+                }
+                fullTupleUids.size == 1 -> {
+                    ProcFsUidLookupResult(ProcFsUidLookupStatus.RESOLVED, fullTupleUids.first())
+                }
+                !allowUdpWildcardFallback || candidates.none(ProcFsOwnerCandidate::isWildcardRemote) -> {
+                    ProcFsUidLookupResult(ProcFsUidLookupStatus.NOT_FOUND)
+                }
+                sourceEndpointUids.size > 1 || (sourceEndpointUids.isNotEmpty() && hasInvalidSourceOwner) -> {
+                    ProcFsUidLookupResult(ProcFsUidLookupStatus.AMBIGUOUS)
+                }
+                sourceEndpointUids.size == 1 -> {
+                    ProcFsUidLookupResult(ProcFsUidLookupStatus.RESOLVED, sourceEndpointUids.first())
+                }
+                else -> ProcFsUidLookupResult(ProcFsUidLookupStatus.NOT_FOUND)
+            }
+        }
+
+        internal fun resolveProcFsUidFromLines(
+            lines: Sequence<String>,
+            sourceEndpoint: String,
+            destinationEndpoint: String,
+            allowUdpWildcardFallback: Boolean = false
+        ): ProcFsUidLookupResult {
+            val iterator = lines.iterator()
+            val headerIsValid = iterator.hasNext() && iterator.next().let { header ->
+                header.contains("local_address") && header.contains("rem_address") && header.contains("uid")
+            }
+            if (!headerIsValid) {
+                return ProcFsUidLookupResult(ProcFsUidLookupStatus.UNAVAILABLE)
+            }
+
+            val candidates = iterator.asSequence()
+                .mapNotNull { line -> parseProcFsOwnerCandidate(line, sourceEndpoint, destinationEndpoint) }
+                .toList()
+            return resolveProcFsUidCandidates(candidates, allowUdpWildcardFallback)
         }
 
         internal fun networkInterfaceTypeForName(name: String): Int {
@@ -119,15 +268,11 @@ class PlatformInterfaceImpl(
             currentInterfaceListener?.updateDefaultInterface(name, index, isExpensive, isConstrained)
         }
 
-        override fun isRunning(): Boolean = callbacks.isRunning()
-
-        override fun requestCoreNetworkRecovery(reason: String, force: Boolean) {
-            callbacks.requestCoreNetworkReset(reason, force)
+        override fun resetCoreNetwork() {
+            callbacks.onDefaultNetworkChanged()
         }
     }
 
-    /**
-     */
     interface Callbacks {
         fun protect(fd: Int): Boolean
         fun openTun(options: TunOptions): Result<Int>
@@ -138,14 +283,9 @@ class PlatformInterfaceImpl(
         fun setLastKnownNetwork(network: Network?)
         fun markVpnStarted()
 
-        fun requestCoreNetworkReset(reason: String, force: Boolean)
-        fun resetConnectionsOptimal(reason: String, skipDebounce: Boolean)
+        fun onDefaultNetworkChanged()
         fun setUnderlyingNetworks(networks: Array<Network>?)
 
-        fun isRunning(): Boolean
-        fun isStarting(): Boolean
-        fun isManuallyStopped(): Boolean
-        fun getLastConfigPath(): String?
         fun getCurrentSettings(): com.kunk.singbox.model.AppSettings?
 
         fun incrementConnectionOwnerCalls()
@@ -164,20 +304,11 @@ class PlatformInterfaceImpl(
     }
 
     private var connectivityManager: ConnectivityManager? = null
-    private var networkCallback: ConnectivityManager.NetworkCallback? = null
-    private var vpnNetworkCallback: ConnectivityManager.NetworkCallback? = null
-    private var currentInterfaceListener: InterfaceUpdateListener? = null
-    private var networkCallbackReady = false
+    private val defaultNetworkMonitorLock = Any()
+    private val defaultNetworkMonitorGeneration = AtomicLong(0L)
+    @Volatile private var defaultNetworkListenerKey: Any? = null
+    @Volatile private var currentInterfaceListener: InterfaceUpdateListener? = null
     private var defaultInterfaceName = ""
-    private var vpnHealthJob: Job? = null
-    private var postTunRebindJob: Job? = null
-    private var vpnLinkValidated = false
-
-    private val lastVpnHealthRecoveryAtMs = AtomicLong(0L)
-    private val vpnHealthRecoveryMinIntervalMs: Long = 30_000L
-
-    private val vpnStartedAtMs = AtomicLong(0L)
-    private val lastSetUnderlyingNetworksAtMs = AtomicLong(0L)
 
     // ProcFS readability cache (avoid repeated /proc reads)
     private val lastProcFsCheckAtMs = AtomicLong(0L)
@@ -197,21 +328,6 @@ class PlatformInterfaceImpl(
                     .addLog("ERROR: protect($fd) failed")
             }
             return
-        }
-
-        val physicalNetwork = callbacks.findBestPhysicalNetwork()
-        if (shouldBindProtectedSocketToPhysicalNetwork(protected, physicalNetwork != null)) {
-            runCatching {
-                val pfd = android.os.ParcelFileDescriptor.adoptFd(fd)
-                try {
-                    physicalNetwork?.bindSocket(pfd.fileDescriptor)
-                    Log.d(TAG, "autoDetectInterfaceControl: protected and bound fd=$fd to $physicalNetwork")
-                } finally {
-                    pfd.detachFd()
-                }
-            }.onFailure { e ->
-                Log.w(TAG, "autoDetectInterfaceControl: bind physical network failed for fd=$fd: ${e.message}")
-            }
         }
     }
 
@@ -246,7 +362,6 @@ class PlatformInterfaceImpl(
                 val network = callbacks.getCurrentNetwork()
                 if (network != null) {
                     callbacks.setLastKnownNetwork(network)
-                    vpnStartedAtMs.set(SystemClock.elapsedRealtime())
                     callbacks.markVpnStarted()
                 }
                 Log.i(TAG, "TUN interface established with fd: $fd")
@@ -321,75 +436,28 @@ class PlatformInterfaceImpl(
 
         fun toConnectionOwner(uid: Int): ConnectionOwner {
             if (uid <= 0) return ConnectionOwner()
-            val packageName = runCatching {
-                val pkgs = context.packageManager.getPackagesForUid(uid)
-                if (!pkgs.isNullOrEmpty()) pkgs[0] else context.packageManager.getNameForUid(uid).orEmpty()
-            }.getOrDefault("")
-            if (packageName.isNotBlank()) {
-                callbacks.cacheUidToPackage(uid, packageName)
+            val cachedPackageName = callbacks.getUidFromCache(uid)
+            val packageNames = PlatformInterfaceImpl.resolvePackageNames(uid, cachedPackageName) {
+                context.packageManager.getPackagesForUid(uid)?.toList()
+                    ?: listOfNotNull(context.packageManager.getNameForUid(uid))
+            }
+            val primaryPackageName = packageNames.firstOrNull().orEmpty()
+            if (primaryPackageName.isNotBlank() && primaryPackageName != cachedPackageName) {
+                callbacks.cacheUidToPackage(uid, primaryPackageName)
             }
             return ConnectionOwner().apply {
                 userId = uid
-                LibboxCompat.setConnectionOwnerPackageName(this, packageName)
-                userName = packageName
+                LibboxCompat.setConnectionOwnerPackageNames(this, packageNames)
+                userName = primaryPackageName
             }
-        }
-
-        fun findUidFromProcFsBySourcePort(protocol: Int, srcPort: Int): Int {
-            if (srcPort <= 0) return 0
-            if (!procFsUsable) return 0
-
-            val procFiles = when (protocol) {
-                OsConstants.IPPROTO_TCP -> listOf("/proc/net/tcp", "/proc/net/tcp6")
-                OsConstants.IPPROTO_UDP -> listOf("/proc/net/udp", "/proc/net/udp6")
-                else -> emptyList()
-            }
-            if (procFiles.isEmpty()) return 0
-
-            val targetPortHex = srcPort.toString(16).uppercase().padStart(4, '0')
-
-            fun parseUidFromLine(parts: List<String>): Int {
-                if (parts.size < 9) return 0
-                val uidStr = parts.getOrNull(7) ?: return 0
-                return uidStr.toIntOrNull() ?: 0
-            }
-
-            for (path in procFiles) {
-                try {
-                    val file = File(path)
-                    if (!file.exists() || !file.canRead()) continue
-                    var resultUid = 0
-                    file.bufferedReader().useLines { lines ->
-                        for (line in lines.drop(1)) {
-                            val parts = line.trim().split(Regex("\\s+")).filter { it.isNotEmpty() }
-                            val local = parts.getOrNull(1) ?: continue
-                            val portHex = local.substringAfter(':', "").uppercase()
-                            if (portHex == targetPortHex) {
-                                val uid = parseUidFromLine(parts)
-                                if (uid > 0) {
-                                    resultUid = uid
-                                    break
-                                }
-                            }
-                        }
-                    }
-                    if (resultUid > 0) return resultUid
-                } catch (e: Exception) {
-                    // ignore
-                }
-            }
-            return 0
-        }
-
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
-            callbacks.incrementConnectionOwnerInvalidArgs()
-            callbacks.setConnectionOwnerLastEvent("api<29")
-            return ConnectionOwner()
         }
 
         fun parseAddress(value: String?): InetAddress? {
             if (value.isNullOrBlank()) return null
             val cleaned = value.trim().replace("[", "").replace("]", "").substringBefore("%")
+            val looksNumeric = cleaned.any { it == '.' || it == ':' } &&
+                cleaned.all { it in "0123456789abcdefABCDEF:." }
+            if (!looksNumeric) return null
             return try {
                 InetAddress.getByName(cleaned)
             } catch (_: Exception) {
@@ -397,31 +465,81 @@ class PlatformInterfaceImpl(
             }
         }
 
-        val sourceIp = parseAddress(sourceAddress)
-        val destinationIp = parseAddress(destinationAddress)
+        val sourceIp = parseAddress(sourceAddress)?.takeIf { sourcePort in 1..65535 }
+        val destinationIp = parseAddress(destinationAddress)?.takeIf { destinationPort in 1..65535 }
 
-        val protocol = when (ipProtocol) {
-            OsConstants.IPPROTO_TCP -> OsConstants.IPPROTO_TCP
-            OsConstants.IPPROTO_UDP -> OsConstants.IPPROTO_UDP
-            else -> ipProtocol
-        }
+        val protocol = ipProtocol
+        val protocolSupported = protocol == IP_PROTOCOL_TCP || protocol == IP_PROTOCOL_UDP
 
-        if (sourceIp == null || sourcePort <= 0 || destinationIp == null || destinationPort <= 0) {
-            val uid = findUidFromProcFsBySourcePort(protocol, sourcePort)
-            if (uid > 0) {
-                callbacks.incrementConnectionOwnerUidResolved()
-                callbacks.setConnectionOwnerLastUid(uid)
-                callbacks.setConnectionOwnerLastEvent(
-                    "procfs_fallback uid=$uid proto=$protocol src=$sourceAddress:$sourcePort dst=$destinationAddress:$destinationPort"
-                )
-                return toConnectionOwner(uid)
-            }
-
+        if (!protocolSupported || sourceIp == null || destinationIp == null) {
             callbacks.incrementConnectionOwnerInvalidArgs()
             callbacks.setConnectionOwnerLastEvent(
                 "invalid_args src=$sourceAddress:$sourcePort dst=$destinationAddress:$destinationPort proto=$ipProtocol"
             )
             return ConnectionOwner()
+        }
+
+        fun findUidFromProcFsByConnection(): ProcFsUidLookupResult {
+            if (!procFsUsable) return ProcFsUidLookupResult(ProcFsUidLookupStatus.UNAVAILABLE)
+            if (sourceIp.address.size != destinationIp.address.size) {
+                return ProcFsUidLookupResult(ProcFsUidLookupStatus.NOT_FOUND)
+            }
+
+            val path = procFsTablePath(protocol, sourceIp.address.size)
+                ?: return ProcFsUidLookupResult(ProcFsUidLookupStatus.NOT_FOUND)
+            val sourceEndpoint = encodeProcFsEndpoint(sourceIp, sourcePort)
+                ?: return ProcFsUidLookupResult(ProcFsUidLookupStatus.NOT_FOUND)
+            val destinationEndpoint = encodeProcFsEndpoint(destinationIp, destinationPort)
+                ?: return ProcFsUidLookupResult(ProcFsUidLookupStatus.NOT_FOUND)
+            val file = File(path)
+            if (!file.exists() || !file.canRead()) {
+                return ProcFsUidLookupResult(ProcFsUidLookupStatus.UNAVAILABLE)
+            }
+
+            return try {
+                file.bufferedReader().useLines { lines ->
+                    resolveProcFsUidFromLines(
+                        lines = lines,
+                        sourceEndpoint = sourceEndpoint,
+                        destinationEndpoint = destinationEndpoint,
+                        allowUdpWildcardFallback = protocol == IP_PROTOCOL_UDP
+                    )
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to read $path for connection owner", e)
+                ProcFsUidLookupResult(ProcFsUidLookupStatus.UNAVAILABLE)
+            }
+        }
+
+        fun resolveFromProcFs(eventPrefix: String): ConnectionOwner? {
+            val lookup = findUidFromProcFsByConnection()
+            val uid = lookup.uid.takeIf { lookup.status == ProcFsUidLookupStatus.RESOLVED && it > 0 }
+            if (lookup.status != ProcFsUidLookupStatus.RESOLVED || uid == null) {
+                callbacks.setConnectionOwnerLastEvent(
+                    "${eventPrefix}_procfs_${lookup.status.name.lowercase()} " +
+                        "proto=$protocol src=$sourceAddress:$sourcePort dst=$destinationAddress:$destinationPort"
+                )
+                if (lookup.status == ProcFsUidLookupStatus.AMBIGUOUS) {
+                    Log.w(
+                        TAG,
+                        "Ambiguous ProcFS owner for " +
+                            "$protocol $sourceAddress:$sourcePort->$destinationAddress:$destinationPort"
+                    )
+                }
+                return null
+            }
+
+            callbacks.incrementConnectionOwnerUidResolved()
+            callbacks.setConnectionOwnerLastUid(uid)
+            callbacks.setConnectionOwnerLastEvent(
+                "${eventPrefix}_procfs_resolved uid=$uid proto=$protocol " +
+                    "src=$sourceAddress:$sourcePort dst=$destinationAddress:$destinationPort"
+            )
+            return toConnectionOwner(uid)
+        }
+
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+            return resolveFromProcFs("legacy_api_${Build.VERSION.SDK_INT}") ?: ConnectionOwner()
         }
 
         return try {
@@ -447,7 +565,8 @@ class PlatformInterfaceImpl(
         } catch (e: SecurityException) {
             callbacks.incrementConnectionOwnerSecurityDenied()
             callbacks.setConnectionOwnerLastEvent(
-                "SecurityException findConnectionOwner proto=$protocol $sourceIp:$sourcePort->$destinationIp:$destinationPort"
+                "SecurityException findConnectionOwner proto=$protocol " +
+                    "$sourceIp:$sourcePort->$destinationIp:$destinationPort"
             )
             if (!callbacks.isConnectionOwnerPermissionDeniedLogged()) {
                 callbacks.setConnectionOwnerPermissionDeniedLogged(true)
@@ -455,303 +574,107 @@ class PlatformInterfaceImpl(
                 com.kunk.singbox.repository.LogRepository.getInstance()
                     .addLog("WARN: findConnectionOwner permission denied; per-app routing disabled on this ROM")
             }
-            val uid = findUidFromProcFsBySourcePort(protocol, sourcePort)
-            if (uid > 0) {
-                callbacks.incrementConnectionOwnerUidResolved()
-                callbacks.setConnectionOwnerLastUid(uid)
-                callbacks.setConnectionOwnerLastEvent("procfs_fallback_after_security uid=$uid")
-                toConnectionOwner(uid)
-            } else {
-                ConnectionOwner()
-            }
+            resolveFromProcFs("security_denied") ?: ConnectionOwner()
         } catch (e: Exception) {
             callbacks.incrementConnectionOwnerOtherException()
             callbacks.setConnectionOwnerLastEvent("Exception ${e.javaClass.simpleName}: ${e.message}")
-            val uid = findUidFromProcFsBySourcePort(protocol, sourcePort)
-            if (uid > 0) {
-                callbacks.incrementConnectionOwnerUidResolved()
-                callbacks.setConnectionOwnerLastUid(uid)
-                callbacks.setConnectionOwnerLastEvent("procfs_fallback_after_exception uid=$uid")
-                toConnectionOwner(uid)
-            } else {
-                ConnectionOwner()
-            }
+            resolveFromProcFs("exception_${e.javaClass.simpleName}") ?: ConnectionOwner()
         }
-    }
-
-    private fun isUsableInitialNetwork(network: Network?): Boolean {
-        if (network == null) return false
-        val caps = connectivityManager?.getNetworkCapabilities(network)
-        val isVpn = caps?.hasTransport(NetworkCapabilities.TRANSPORT_VPN) == true
-        val hasInternet = caps?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true
-        return !isVpn && hasInternet
     }
 
     override fun startDefaultInterfaceMonitor(listener: InterfaceUpdateListener?) {
-        currentInterfaceListener = listener
-
-        vpnStartedAtMs.set(SystemClock.elapsedRealtime())
-        lastSetUnderlyingNetworksAtMs.set(SystemClock.elapsedRealtime())
-        networkSwitchManager.markVpnStarted()
-
-        connectivityManager = callbacks.getConnectivityManager()
-
-        var initialNetwork: Network? = com.kunk.singbox.utils.DefaultNetworkListener.underlyingNetwork
-        if (initialNetwork != null && !isUsableInitialNetwork(initialNetwork)) {
-            Log.w(TAG, "startDefaultInterfaceMonitor: cached underlyingNetwork is invalid, ignoring")
-            initialNetwork = null
+        val listenerKey = Any()
+        val monitorState = synchronized(defaultNetworkMonitorLock) {
+            val generation = defaultNetworkMonitorGeneration.incrementAndGet()
+            val previousListenerKey = defaultNetworkListenerKey
+            defaultNetworkListenerKey = listenerKey
+            currentInterfaceListener = listener
+            networkSwitchManager.init(networkSwitchCallbacks)
+            networkSwitchManager.markVpnStarted()
+            connectivityManager = callbacks.getConnectivityManager()
+            Triple(generation, previousListenerKey, connectivityManager)
         }
-
-        if (initialNetwork == null) {
-            val lastKnown = callbacks.getLastKnownNetwork()
-            if (isUsableInitialNetwork(lastKnown)) {
-                initialNetwork = lastKnown
-                Log.i(TAG, "startDefaultInterfaceMonitor: using preserved lastKnownNetwork: $lastKnown")
-            }
-        }
-
-        if (initialNetwork == null) {
-            val activeNet = connectivityManager?.activeNetwork
-            if (activeNet != null) {
-                val caps = connectivityManager?.getNetworkCapabilities(activeNet)
-                val isVpn = caps?.hasTransport(NetworkCapabilities.TRANSPORT_VPN) == true
-                if (!isVpn && caps?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true) {
-                    initialNetwork = activeNet
+        val monitorGeneration = monitorState.first
+        monitorState.second?.let(DefaultNetworkListener::stop)
+        val manager = monitorState.third
+        if (manager == null) {
+            synchronized(defaultNetworkMonitorLock) {
+                if (defaultNetworkListenerKey === listenerKey) {
+                    defaultNetworkListenerKey = null
+                    currentInterfaceListener = null
+                    networkSwitchManager.cleanup()
                 }
             }
+            return
         }
 
-        if (initialNetwork != null) {
-            networkCallbackReady = true
-            callbacks.setLastKnownNetwork(initialNetwork)
-
-            val linkProperties = connectivityManager?.getLinkProperties(initialNetwork)
-            val interfaceName = linkProperties?.interfaceName ?: ""
-            if (interfaceName.isNotEmpty()) {
-                defaultInterfaceName = interfaceName
-                val index = try {
-                    NetworkInterface.getByName(interfaceName)?.index ?: 0
-                } catch (e: Exception) { 0 }
-                val caps = connectivityManager?.getNetworkCapabilities(initialNetwork)
-                val isExpensive = caps?.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED) == false
-                currentInterfaceListener?.updateDefaultInterface(interfaceName, index, isExpensive, false)
-            }
-
-            Log.i(TAG, "startDefaultInterfaceMonitor: initialized with network=$initialNetwork, interface=$defaultInterfaceName")
-        } else {
-            Log.w(TAG, "startDefaultInterfaceMonitor: no usable physical network found at startup")
+        fun isCurrentMonitor(): Boolean {
+            return defaultNetworkMonitorGeneration.get() == monitorGeneration &&
+                defaultNetworkListenerKey === listenerKey
         }
 
-        mainHandler.post {
-            registerNetworkCallbacksDeferred()
-        }
-    }
+        initializeDefaultInterface(manager, ::isCurrentMonitor)
 
-    private fun registerNetworkCallbacksDeferred() {
-        if (networkCallback != null) return
-
-        val cm = connectivityManager ?: return
-
-        networkCallback = object : ConnectivityManager.NetworkCallback() {
-            override fun onAvailable(network: Network) {
-                val caps = cm.getNetworkCapabilities(network)
-                val isVpn = caps?.hasTransport(NetworkCapabilities.TRANSPORT_VPN) == true
-                val isActiveDefault = cm.activeNetwork == network
-                val isValidated = caps?.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED) == true
-                val isValidPhysical = caps?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true &&
-                    caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN)
-                val shouldHandover = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                    shouldHandoverToRequestedDefaultNetwork(isVpn, isValidPhysical)
-                } else {
-                    shouldHandoverToActiveDefaultNetwork(isActiveDefault, isVpn, isValidPhysical)
-                }
-                if (!shouldHandover) {
-                    return
-                }
-
-                networkCallbackReady = true
-                if (!isValidated) {
-                    Log.d(
-                        TAG,
-                        "Active default network $network not yet validated, handing over underlying network first"
-                    )
-                }
-                Log.i(TAG, "Network available: $network (active default, validated=$isValidated)")
-                updateDefaultInterface(network)
-            }
-
-            override fun onLost(network: Network) {
-                Log.i(TAG, "Network lost: $network")
-                if (network != callbacks.getLastKnownNetwork()) {
-                    return
-                }
-
-                val newActive = cm.activeNetwork
-                if (newActive != null && newActive != network) {
-                    Log.i(TAG, "Switching to new active network: $newActive")
-                    updateDefaultInterface(newActive)
-                    return
-                }
-
-                mainHandler.postDelayed({
-                    if (callbacks.getLastKnownNetwork() != network) {
-                        return@postDelayed
-                    }
-                    val delayedActive = cm.activeNetwork
-                    if (delayedActive != null && delayedActive != network) {
-                        Log.i(TAG, "Delayed switch to new active network: $delayedActive")
-                        updateDefaultInterface(delayedActive)
-                    } else {
-                        Log.i(TAG, "No replacement network after delay, waiting for onAvailable")
-                    }
-                }, NETWORK_SWITCH_DELAY_MS)
-            }
-
-            override fun onCapabilitiesChanged(network: Network, caps: NetworkCapabilities) {
-                val isVpn = caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN)
-                val isActiveDefault = cm.activeNetwork == network
-                val isValidated = caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
-                val isValidPhysical = caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
-                    caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN)
-                val shouldHandover = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                    shouldHandoverToRequestedDefaultNetwork(isVpn, isValidPhysical)
-                } else {
-                    shouldHandoverToActiveDefaultNetwork(isActiveDefault, isVpn, isValidPhysical)
-                }
-                if (shouldHandover) {
-                    networkCallbackReady = true
-                    if (!isValidated) {
-                        Log.d(TAG, "Active network $network not yet validated, updating underlying network first")
-                    }
-                    updateDefaultInterface(network)
-                }
-            }
-        }
-
-        val requestBuilder = NetworkRequest.Builder()
-            .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            requestBuilder.addCapability(NetworkCapabilities.NET_CAPABILITY_NOT_RESTRICTED)
-        } else {
-            requestBuilder.addCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN)
-        }
-        val request = requestBuilder.build()
-
-        val defaultCallback = networkCallback ?: return
-        try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                cm.requestNetwork(request, defaultCallback)
-            } else {
-                cm.registerNetworkCallback(request, defaultCallback)
-            }
-        } catch (e: Exception) {
-            Log.w(TAG, "Failed to register network callback", e)
-        }
-
-        vpnNetworkCallback = object : ConnectivityManager.NetworkCallback() {
-            override fun onCapabilitiesChanged(network: Network, caps: NetworkCapabilities) {
-                if (!callbacks.isRunning()) return
-                val isValidated = caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
-                if (isValidated) {
-                    vpnLinkValidated = true
-                    if (vpnHealthJob?.isActive == true) {
-                        Log.i(TAG, "VPN link validated, cancelling recovery job")
-                        vpnHealthJob?.cancel()
-                    }
-                } else {
-                    vpnLinkValidated = false
-
-                    // Captive portal / no internet: do not spam recovery; user action is required.
-                    val hasInternet = caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
-                    val isCaptivePortal = caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_CAPTIVE_PORTAL)
-                    if (!hasInternet || isCaptivePortal) {
-                        Log.w(
-                            TAG,
-                            "VPN link not validated (hasInternet=$hasInternet, " +
-                                "captivePortal=$isCaptivePortal), skip recovery"
-                        )
-                        return
-                    }
-
-                    if (vpnHealthJob?.isActive != true) {
-                        val now = SystemClock.elapsedRealtime()
-                        val last = lastVpnHealthRecoveryAtMs.get()
-                        val elapsed = now - last
-                        if (elapsed in 0 until vpnHealthRecoveryMinIntervalMs) {
-                            Log.w(
-                                TAG,
-                                "VPN link not validated, skip recovery (throttled, elapsed=${elapsed}ms)"
-                            )
-                            return
-                        }
-
-                        Log.w(TAG, "VPN link not validated, scheduling recovery in 5s")
-                        lastVpnHealthRecoveryAtMs.set(now)
-                        vpnHealthJob = serviceScope.launch {
-                            delay(5000)
-                            if (callbacks.isRunning() && !callbacks.isStarting() &&
-                                !callbacks.isManuallyStopped() && callbacks.getLastConfigPath() != null) {
-                                Log.w(TAG, "VPN link still not validated after 5s, attempting rebind and reset")
-                                try {
-                                    val bestNetwork = callbacks.findBestPhysicalNetwork()
-                                    if (bestNetwork != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP_MR1) {
-                                        callbacks.setUnderlyingNetworks(arrayOf(bestNetwork))
-                                        callbacks.setLastKnownNetwork(bestNetwork)
-                                        Log.i(TAG, "Rebound underlying network to $bestNetwork during health recovery")
-                                        com.kunk.singbox.repository.LogRepository.getInstance()
-                                            .addLog("INFO VPN health recovery: rebound to $bestNetwork")
-                                    }
-                                    callbacks.requestCoreNetworkReset(reason = "vpnHealthRecovery", force = false)
-                                } catch (e: Exception) {
-                                    Log.e(TAG, "Failed to reset network stack during health recovery", e)
-                                }
-                            }
-                        }
+        startListenerIfCurrent(
+            isCurrent = ::isCurrentMonitor,
+            start = {
+                DefaultNetworkListener.start(
+                    connectivityManager = manager,
+                    key = listenerKey
+                ) { network ->
+                    if (network != null && isCurrentMonitor()) {
+                        updateDefaultInterface(network)
                     }
                 }
+            },
+            stop = {
+                DefaultNetworkListener.stop(listenerKey)
             }
-
-            override fun onLost(network: Network) {
-                vpnHealthJob?.cancel()
-            }
-        }
-
-        val vpnRequest = NetworkRequest.Builder()
-            .addTransportType(NetworkCapabilities.TRANSPORT_VPN)
-            .removeCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN)
-            .build()
-
-        val vpnCallback = vpnNetworkCallback ?: return
-        try {
-            cm.registerNetworkCallback(vpnRequest, vpnCallback)
-        } catch (e: Exception) {
-            Log.w(TAG, "Failed to register VPN network callback", e)
-        }
+        )
     }
 
     override fun closeDefaultInterfaceMonitor(listener: InterfaceUpdateListener?) {
-        networkCallback?.let {
-            try {
-                connectivityManager?.unregisterNetworkCallback(it)
-            } catch (e: Exception) {
-                Log.w(TAG, "Failed to unregister default network callback", e)
+        val listenerKey = synchronized(defaultNetworkMonitorLock) {
+            defaultNetworkMonitorGeneration.incrementAndGet()
+            defaultNetworkListenerKey.also {
+                defaultNetworkListenerKey = null
+                currentInterfaceListener = null
+                defaultInterfaceName = ""
+                connectivityManager = null
+                networkSwitchManager.cleanup()
             }
         }
-        vpnNetworkCallback?.let {
-            try {
-                connectivityManager?.unregisterNetworkCallback(it)
-            } catch (e: Exception) {
-                Log.w(TAG, "Failed to unregister VPN network callback", e)
+        listenerKey?.let(DefaultNetworkListener::stop)
+    }
+
+    private fun initializeDefaultInterface(
+        manager: ConnectivityManager,
+        isCurrentMonitor: () -> Boolean
+    ) {
+        val initialNetwork = DefaultNetworkListener.selectBestPhysicalNetwork(manager)
+        if (initialNetwork == null) {
+            if (isCurrentMonitor()) {
+                Log.w(TAG, "startDefaultInterfaceMonitor: no usable physical network found at startup")
             }
+            return
         }
-        vpnHealthJob?.cancel()
-        postTunRebindJob?.cancel()
-        postTunRebindJob = null
-        vpnNetworkCallback = null
-        networkCallback = null
-        currentInterfaceListener = null
-        networkCallbackReady = false
-        networkSwitchManager.cleanup()
+
+        val interfaceName = manager.getLinkProperties(initialNetwork)?.interfaceName.orEmpty()
+        val interfaceIndex = runCatching { NetworkInterface.getByName(interfaceName)?.index ?: 0 }.getOrDefault(0)
+        val capabilities = manager.getNetworkCapabilities(initialNetwork)
+        val isExpensive = capabilities?.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED) == false
+        if (!isCurrentMonitor()) return
+
+        callbacks.setLastKnownNetwork(initialNetwork)
+        if (interfaceName.isNotEmpty()) {
+            defaultInterfaceName = interfaceName
+            currentInterfaceListener?.updateDefaultInterface(interfaceName, interfaceIndex, isExpensive, false)
+        }
+        Log.i(
+            TAG,
+            "startDefaultInterfaceMonitor: initialized with " +
+                "network=$initialNetwork, interface=$defaultInterfaceName"
+        )
     }
 
     override fun getInterfaces(): NetworkInterfaceIterator? {

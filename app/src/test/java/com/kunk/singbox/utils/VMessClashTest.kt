@@ -43,7 +43,26 @@ proxies:
         // Transport should be null for raw TCP
         assertNull("Transport should be null for raw TCP", vmess?.transport)
 
-        // Check packetEncoding
-        assertEquals("xudp", vmess?.packetEncoding)
+        // 缺省配置不得注入非官方 packet_encoding
+        assertNull(vmess?.packetEncoding)
+    }
+
+    @Test
+    fun testParseVMessWithoutSkipCertVerifyKeepsVerificationEnabled() {
+        val yaml = """
+            proxies:
+              - name: Secure-VMess
+                type: vmess
+                server: long-random-looking-edge-123456.example.com
+                port: 443
+                uuid: d9362c09-496b-3b0d-932d-bdb971e586d5
+                cipher: auto
+                tls: true
+        """.trimIndent()
+
+        val vmess = ClashYamlParser().parse(yaml)?.outbounds?.find { it.type == "vmess" }
+
+        assertNotNull(vmess)
+        assertEquals(false, vmess?.tls?.insecure)
     }
 }

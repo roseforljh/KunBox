@@ -184,7 +184,7 @@ fun AppRoutingScreen(
     installedAppsViewModel: InstalledAppsViewModel = viewModel()
 ) {
     val settings by settingsViewModel.settings.collectAsStateWithLifecycle()
-    var selectedTab by remember { mutableStateOf(0) }
+    var selectedTab by remember { mutableIntStateOf(0) }
     val useLiquidGlass = isLiquidGlassTheme()
     val requestLocalNetworkPermission = rememberLocalNetworkPermissionRequest()
     val tabs =
@@ -213,8 +213,10 @@ fun AppRoutingScreen(
         installedAppsViewModel.loadAppsIfNeeded()
     }
 
-    val allInstalledApps by installedAppsViewModel.installedApps.collectAsStateWithLifecycle()
-    val installedApps = allInstalledApps
+    val installedApps by installedAppsViewModel.appItems.collectAsStateWithLifecycle()
+    val loadAppIcon = remember(installedAppsViewModel) {
+        installedAppsViewModel::loadIcon
+    }
 
     fun saveGroupWithPermissionCheck(group: AppGroup, save: () -> Unit) {
         if (LocalNetworkPermission.requiresLocalNetworkAccess(
@@ -272,6 +274,7 @@ fun AppRoutingScreen(
             nodes = allNodes,
             nodesForSelection = nodesForSelection,
             profiles = profiles,
+            loadIcon = loadAppIcon,
             onDismiss = { showAddGroupDialog = false },
             onConfirm = { group ->
                 saveGroupWithPermissionCheck(group) {
@@ -289,6 +292,7 @@ fun AppRoutingScreen(
             nodes = allNodes,
             nodesForSelection = nodesForSelection,
             profiles = profiles,
+            loadIcon = loadAppIcon,
             onDismiss = { editingGroup = null },
             onConfirm = { group ->
                 saveGroupWithPermissionCheck(group) {
@@ -324,6 +328,7 @@ fun AppRoutingScreen(
             nodes = allNodes,
             nodesForSelection = nodesForSelection,
             profiles = profiles,
+            loadIcon = loadAppIcon,
             onDismiss = { showAddRuleDialog = false },
             onConfirm = { rule ->
                 saveRuleWithPermissionCheck(rule) {
@@ -342,6 +347,7 @@ fun AppRoutingScreen(
             nodes = allNodes,
             nodesForSelection = nodesForSelection,
             profiles = profiles,
+            loadIcon = loadAppIcon,
             onDismiss = { editingRule = null },
             onConfirm = { rule ->
                 saveRuleWithPermissionCheck(rule) {
@@ -477,6 +483,7 @@ fun AppRoutingScreen(
                             AppGroupCard(
                                 group = group,
                                 outboundText = "${stringResource(mode.displayNameRes)} -> $outboundText",
+                                loadIcon = loadAppIcon,
                                 onClick = { editingGroup = group },
                                 onToggle = { toggleGroupWithPermissionCheck(group) },
                                 onDelete = { showDeleteGroupConfirm = group }
@@ -495,6 +502,7 @@ fun AppRoutingScreen(
                             AppRuleItem(
                                 rule = rule,
                                 outboundText = "${stringResource(mode.displayNameRes)} -> $outboundText",
+                                loadIcon = loadAppIcon,
                                 onClick = { editingRule = rule },
                                 onToggle = { toggleRuleWithPermissionCheck(rule) },
                                 onDelete = { showDeleteRuleConfirm = rule }

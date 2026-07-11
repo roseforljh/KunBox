@@ -11,7 +11,7 @@ class CommandManagerLogObserverTest {
         val observed = mutableListOf<String>()
         val stored = mutableListOf<String>()
 
-        CommandManager.dispatchKernelLogForTest(
+        CommandManager.dispatchKernelLog(
             message = "ERROR dns: exchange failed for graph.facebook.com. IN A: context deadline exceeded",
             uiLogsEnabled = false,
             observer = { observed.add(it) },
@@ -27,7 +27,7 @@ class CommandManagerLogObserverTest {
         val observed = mutableListOf<String>()
         val stored = mutableListOf<String>()
 
-        CommandManager.dispatchKernelLogForTest(
+        CommandManager.dispatchKernelLog(
             message = "INFO test",
             uiLogsEnabled = true,
             observer = { observed.add(it) },

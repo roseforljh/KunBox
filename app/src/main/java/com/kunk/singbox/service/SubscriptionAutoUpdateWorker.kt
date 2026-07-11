@@ -11,8 +11,6 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import java.util.concurrent.TimeUnit
 
-/**
- */
 class SubscriptionAutoUpdateWorker(
     context: Context,
     workerParams: WorkerParameters
@@ -74,23 +72,17 @@ class SubscriptionAutoUpdateWorker(
             )
         }
 
-        /**
-         */
         fun cancel(context: Context, profileId: String) {
             val workManager = WorkManager.getInstance(context)
             val workName = "$WORK_NAME_PREFIX$profileId"
             workManager.cancelUniqueWork(workName)
         }
 
-        /**
-         */
         fun cancelAll(context: Context) {
             val workManager = WorkManager.getInstance(context)
             workManager.cancelAllWorkByTag(TAG)
         }
 
-        /**
-         */
         suspend fun rescheduleAll(context: Context) = withContext(Dispatchers.IO) {
             try {
                 val configRepository = ConfigRepository.getInstance(context)

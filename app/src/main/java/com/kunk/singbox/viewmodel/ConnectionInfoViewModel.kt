@@ -6,93 +6,92 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.google.gson.Gson
 import com.kunk.singbox.ipc.VpnStateStore
-import com.kunk.singbox.model.ClashConnection
 import com.kunk.singbox.model.ClashConnectionsResponse
 import com.kunk.singbox.model.SingBoxConfig
+import com.kunk.singbox.utils.NetworkClient
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.File
 import java.util.concurrent.TimeUnit
 
+data class ConnectionInfoUiState(
+    val response: ClashConnectionsResponse? = null,
+    val isRefreshing: Boolean = true,
+    val vpnActive: Boolean = false
+)
+
+internal fun Request.Builder.withClashApiAuth(secret: String?): Request.Builder = apply {
+    if (!secret.isNullOrBlank()) header("Authorization", "Bearer $secret")
+}
+
+private data class ClashApiEndpoint(val baseUrl: String, val secret: String?)
+
 class ConnectionInfoViewModel(application: Application) : AndroidViewModel(application) {
     private val tag = "ConnectionInfoViewModel"
     private val gson = Gson()
-    private val client = OkHttpClient.Builder()
+    private val client = NetworkClient.newBuilder()
         .connectTimeout(2, TimeUnit.SECONDS)
         .readTimeout(2, TimeUnit.SECONDS)
         .writeTimeout(2, TimeUnit.SECONDS)
         .build()
 
-    private val _connectionsResponse = MutableStateFlow<ClashConnectionsResponse?>(null)
-    val connectionsResponse = _connectionsResponse.asStateFlow()
-
     private val _isRefreshing = MutableStateFlow(true)
-    val isRefreshing: StateFlow<Boolean> = _isRefreshing.asStateFlow()
+    private val refreshRequests = MutableSharedFlow<Boolean>(extraBufferCapacity = 1)
 
-    private val _vpnActive = MutableStateFlow(false)
-    val vpnActive: StateFlow<Boolean> = _vpnActive.asStateFlow()
+    // 缓存 Clash API 地址和密钥，避免每次轮询都读配置文件。
+    private var cachedClashApiEndpoint: ClashApiEndpoint? = null
 
-    private var pollJob: Job? = null
-    // 缓存 Clash API 地址，避免每次轮询都读配置文件
-    private var cachedClashApiUrl: String? = null
-
-    val connections: StateFlow<List<ClashConnection>> =
-        _connectionsResponse.map { it?.connections ?: emptyList() }
-            .stateIn(
-                scope = viewModelScope,
-                started = SharingStarted.WhileSubscribed(5000),
-                initialValue = emptyList()
+    val uiState: StateFlow<ConnectionInfoUiState> = flow {
+        var lastResponse: ClashConnectionsResponse? = null
+        merge(pollingTicks(), refreshRequests).collect { forceRefresh ->
+            val isRefreshing = _isRefreshing.value
+            val vpnActive = VpnStateStore.getActive()
+            if (!vpnActive) {
+                lastResponse = null
+                cachedClashApiEndpoint = null
+            } else if (isRefreshing || forceRefresh) {
+                fetchConnections()?.let { lastResponse = it }
+            }
+            emit(
+                ConnectionInfoUiState(
+                    response = lastResponse,
+                    isRefreshing = isRefreshing,
+                    vpnActive = vpnActive
+                )
             )
-
-    init {
-        startPolling()
-    }
+        }
+    }.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = ConnectionInfoUiState()
+    )
 
     fun setRefreshing(refresh: Boolean) {
         _isRefreshing.value = refresh
-        if (refresh) {
-            startPolling()
-        } else {
-            stopPolling()
+        refreshRequests.tryEmit(false)
+    }
+
+    private fun pollingTicks() = flow {
+        while (true) {
+            emit(false)
+            delay(1500)
         }
     }
 
-    private fun startPolling() {
-        if (pollJob != null && pollJob?.isActive == true) return
-        pollJob = viewModelScope.launch {
-            while (true) {
-                val isActive = VpnStateStore.getActive()
-                _vpnActive.value = isActive
-                if (isActive && _isRefreshing.value) {
-                    fetchConnections()
-                } else {
-                    _connectionsResponse.value = null
-                    // VPN 不活跃时清除缓存，下次连接后重新读取
-                    cachedClashApiUrl = null
-                }
-                delay(1500)
-            }
-        }
-    }
-
-    private fun stopPolling() {
-        pollJob?.cancel()
-        pollJob = null
-    }
-
-    private suspend fun getClashApiUrl(): String? {
-        cachedClashApiUrl?.let { return it }
+    private suspend fun getClashApiEndpoint(): ClashApiEndpoint? {
+        cachedClashApiEndpoint?.let { return it }
         return withContext(Dispatchers.IO) {
             try {
                 val file = File(getApplication<Application>().filesDir, "running_config.json")
@@ -101,11 +100,16 @@ class ConnectionInfoViewModel(application: Application) : AndroidViewModel(appli
                     val config = gson.fromJson(json, SingBoxConfig::class.java)
                     val controller = config.experimental?.clashApi?.externalController
                     if (!controller.isNullOrBlank()) {
-                        val url = "http://$controller"
-                        cachedClashApiUrl = url
-                        return@withContext url
+                        val endpoint = ClashApiEndpoint(
+                            baseUrl = "http://$controller",
+                            secret = config.experimental?.clashApi?.secret
+                        )
+                        cachedClashApiEndpoint = endpoint
+                        return@withContext endpoint
                     }
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 Log.e(tag, "Failed to read running config", e)
             }
@@ -113,42 +117,44 @@ class ConnectionInfoViewModel(application: Application) : AndroidViewModel(appli
         }
     }
 
-    private suspend fun fetchConnections() = withContext(Dispatchers.IO) {
-        val baseUrl = getClashApiUrl() ?: return@withContext
+    private suspend fun fetchConnections(): ClashConnectionsResponse? = withContext(Dispatchers.IO) {
+        val endpoint = getClashApiEndpoint() ?: return@withContext null
         val request = Request.Builder()
-            .url("$baseUrl/connections")
+            .url("${endpoint.baseUrl}/connections")
+            .withClashApiAuth(endpoint.secret)
             .get()
             .build()
 
         try {
-            client.newCall(request).execute().use { response ->
-                if (response.isSuccessful) {
-                    val body = response.body?.string()
-                    if (body != null) {
-                        val res = gson.fromJson(body, ClashConnectionsResponse::class.java)
-                        _connectionsResponse.value = res
-                    }
-                }
+            NetworkClient.executeCancellable(client, request) { response ->
+                if (!response.isSuccessful) return@executeCancellable null
+                gson.fromJson(response.body.string(), ClashConnectionsResponse::class.java)
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Log.e(tag, "Failed to fetch connections", e)
+            null
         }
     }
 
     fun closeConnection(id: String) {
         viewModelScope.launch(Dispatchers.IO) {
-            val baseUrl = getClashApiUrl() ?: return@launch
+            val endpoint = getClashApiEndpoint() ?: return@launch
             val request = Request.Builder()
-                .url("$baseUrl/connections/$id")
+                .url("${endpoint.baseUrl}/connections/$id")
+                .withClashApiAuth(endpoint.secret)
                 .delete()
                 .build()
 
             try {
-                client.newCall(request).execute().use { response ->
+                NetworkClient.executeCancellable(client, request) { response ->
                     if (response.isSuccessful) {
-                        fetchConnections()
+                        refreshRequests.tryEmit(true)
                     }
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 Log.e(tag, "Failed to close connection $id", e)
             }
@@ -157,26 +163,24 @@ class ConnectionInfoViewModel(application: Application) : AndroidViewModel(appli
 
     fun closeAllConnections() {
         viewModelScope.launch(Dispatchers.IO) {
-            val baseUrl = getClashApiUrl() ?: return@launch
+            val endpoint = getClashApiEndpoint() ?: return@launch
             val request = Request.Builder()
-                .url("$baseUrl/connections")
+                .url("${endpoint.baseUrl}/connections")
+                .withClashApiAuth(endpoint.secret)
                 .delete()
                 .build()
 
             try {
-                client.newCall(request).execute().use { response ->
+                NetworkClient.executeCancellable(client, request) { response ->
                     if (response.isSuccessful) {
-                        fetchConnections()
+                        refreshRequests.tryEmit(true)
                     }
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 Log.e(tag, "Failed to close all connections", e)
             }
         }
-    }
-
-    override fun onCleared() {
-        stopPolling()
-        super.onCleared()
     }
 }

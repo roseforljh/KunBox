@@ -92,10 +92,3 @@ data class AppInfo(
     @SerializedName("packageName") val packageName: String,
     @SerializedName("appName") val appName: String
 )
-
-@Keep
-data class InstalledApp(
-    val packageName: String,
-    val appName: String,
-    val isSystemApp: Boolean = false
-)

@@ -20,8 +20,6 @@ import com.kunk.singbox.repository.RuleSetRepository
 import com.kunk.singbox.repository.SettingsRepository
 import com.kunk.singbox.service.notification.VpnNotificationManager
 import com.kunk.singbox.utils.LocalNetworkPermission
-import com.kunk.singbox.utils.dns.DnsResolver
-import com.kunk.singbox.utils.perf.DnsPrewarmer
 import com.kunk.singbox.utils.perf.PerfTracer
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.first
@@ -40,44 +38,6 @@ class StartupManager(
         internal fun resolveRuntimeLogLevel(debugLoggingEnabled: Boolean): String {
             return if (debugLoggingEnabled) "debug" else "error"
         }
-
-        internal fun applyPrewarmedDomainIps(
-            config: SingBoxConfig,
-            prewarmedDomainIps: Map<String, String>
-        ): SingBoxConfig {
-            if (prewarmedDomainIps.isEmpty()) return config
-
-            var changed = false
-            val newOutbounds = config.outbounds?.map { outbound ->
-                val server = outbound.server?.trim()
-                val hasExplicitDomainResolver = !outbound.domainResolver?.server.isNullOrBlank()
-                val canUsePrewarmedIp = !server.isNullOrBlank() &&
-                    !DnsResolver.isIpAddress(server) &&
-                    !hasExplicitDomainResolver &&
-                    canReplaceServerWithPrewarmedIp(outbound)
-                if (!canUsePrewarmedIp) {
-                    outbound
-                } else {
-                    val resolvedIp = prewarmedDomainIps[server]
-                    if (resolvedIp.isNullOrBlank()) {
-                        outbound
-                    } else {
-                        changed = true
-                        outbound.copy(server = resolvedIp)
-                    }
-                }
-            }
-
-            return if (changed) config.copy(outbounds = newOutbounds) else config
-        }
-
-        private fun canReplaceServerWithPrewarmedIp(outbound: com.kunk.singbox.model.Outbound): Boolean {
-            val hasTls = outbound.tls != null
-            if (!hasTls) return true
-
-            val explicitServerName = outbound.tls?.serverName?.takeIf { it.isNotBlank() }
-            return explicitServerName != null
-        }
     }
 
     private val gson = Gson()
@@ -88,8 +48,6 @@ class StartupManager(
         logRepo.addLog("INFO [Startup] $msg")
     }
 
-    /**
-     */
     private fun isPortAvailable(port: Int): Boolean {
         if (port <= 0) return true
         return try {
@@ -103,8 +61,6 @@ class StartupManager(
         }
     }
 
-    /**
-     */
     interface Callbacks {
         fun onStarting()
         fun onStarted(configContent: String)
@@ -120,14 +76,8 @@ class StartupManager(
 
         fun detectExistingVpns(): Boolean
 
-        fun initSelectorManager(configContent: String)
         fun createAndStartCommandServer(): Result<Unit>
-        fun startCommandClients()
-        fun startRouteGroupAutoSelect(configContent: String)
-        fun scheduleAsyncRuleSetUpdate()
-        fun startHealthMonitor()
-        fun scheduleKeepaliveWorker()
-        fun startTrafficMonitor()
+        fun launchPostStartTasks(configContent: String)
 
         fun updateTileState()
         fun setIsRunning(running: Boolean)
@@ -140,16 +90,12 @@ class StartupManager(
         suspend fun ensureNetworkCallbackReady(timeoutMs: Long)
         fun setLastKnownNetwork(network: Network?)
         fun setNetworkCallbackReady(ready: Boolean)
-        /**
-         */
         fun restoreUnderlyingNetwork(network: Network)
 
         suspend fun waitForCleanupJob()
         fun stopSelf()
     }
 
-    /**
-     */
     sealed class StartResult {
         data class Success(val configContent: String, val durationMs: Long) : StartResult()
         data class Failed(val error: String, val exception: Exception? = null) : StartResult()
@@ -157,24 +103,19 @@ class StartupManager(
         data object NeedPermission : StartResult()
     }
 
-    /**
-     */
     private data class ParallelInitResult(
         val network: Network?,
         val ruleSetReady: Boolean,
         val settings: AppSettings,
-        val configContent: String,
-        val dnsPrewarmResult: DnsPrewarmer.PrewarmResult?
+        val configContent: String
     )
 
-    /**
-     */
     @Suppress("CognitiveComplexMethod", "CyclomaticComplexMethod", "LongMethod")
     suspend fun startVpn(
         configPath: String,
         cleanCache: Boolean,
+        startToken: Long,
         coreManager: CoreManager,
-        connectManager: ConnectManager,
         callbacks: Callbacks
     ): StartResult = withContext(Dispatchers.IO) {
         val startupBeginMs = SystemClock.elapsedRealtime()
@@ -186,6 +127,11 @@ class StartupManager(
             var stepStart = SystemClock.elapsedRealtime()
             callbacks.waitForCleanupJob()
             log("[STEP] waitForCleanupJob: ${SystemClock.elapsedRealtime() - stepStart}ms")
+
+            if (!coreManager.isStartTokenCurrent(startToken)) {
+                callbacks.onCancelled()
+                return@withContext StartResult.Cancelled
+            }
 
             callbacks.onStarting()
 
@@ -217,14 +163,6 @@ class StartupManager(
             val initResult = parallelInit(configPath, callbacks)
             PerfTracer.end(PerfTracer.Phases.PARALLEL_INIT)
             log("[STEP] parallelInit: ${SystemClock.elapsedRealtime() - stepStart}ms")
-
-            initResult.dnsPrewarmResult?.let { result ->
-                log(
-                    "[STEP] DNS prewarm: ${result.resolvedDomains} resolved, " +
-                        "${result.cachedDomains} cached, ${result.failedDomains} failed " +
-                        "of ${result.totalDomains} total in ${result.durationMs}ms"
-                )
-            } ?: log("[STEP] DNS prewarm: skipped")
 
             if (!initResult.ruleSetReady) {
                 throw IllegalStateException("Required rule sets are not ready")
@@ -261,7 +199,7 @@ class StartupManager(
             callbacks.restoreUnderlyingNetwork(initResult.network)
 
             stepStart = SystemClock.elapsedRealtime()
-            when (val result = coreManager.startLibbox(configContent)) {
+            when (val result = coreManager.startLibbox(configContent, startToken)) {
                 is CoreManager.StartResult.Success -> {
                     log(
                         "[STEP] startLibbox: ${SystemClock.elapsedRealtime() - stepStart}ms " +
@@ -272,6 +210,7 @@ class StartupManager(
                     throw Exception("Libbox start failed: ${result.error}", result.exception)
                 }
                 is CoreManager.StartResult.Cancelled -> {
+                    callbacks.onCancelled()
                     return@withContext StartResult.Cancelled
                 }
             }
@@ -280,10 +219,10 @@ class StartupManager(
             if (!coreManager.isServiceRunning()) {
                 throw IllegalStateException("Service is not running after successful start")
             }
-
-            callbacks.startCommandClients()
-            callbacks.initSelectorManager(configContent)
-            log("[STEP] postInit (clients+selector): ${SystemClock.elapsedRealtime() - stepStart}ms")
+            if (!coreManager.isStartTokenCurrent(startToken)) {
+                callbacks.onCancelled()
+                return@withContext StartResult.Cancelled
+            }
 
             stepStart = SystemClock.elapsedRealtime()
             callbacks.setIsRunning(true)
@@ -293,19 +232,14 @@ class StartupManager(
             log("[STEP] markRunning: ${SystemClock.elapsedRealtime() - stepStart}ms")
 
             stepStart = SystemClock.elapsedRealtime()
-            callbacks.startTrafficMonitor()
-            callbacks.startHealthMonitor()
-            callbacks.scheduleKeepaliveWorker()
-            callbacks.startRouteGroupAutoSelect(configContent)
-            callbacks.scheduleAsyncRuleSetUpdate()
-            log("[STEP] startMonitors: ${SystemClock.elapsedRealtime() - stepStart}ms")
-
-            stepStart = SystemClock.elapsedRealtime()
             callbacks.persistVpnPending("")
             callbacks.updateTileState()
             log("[STEP] updateUI: ${SystemClock.elapsedRealtime() - stepStart}ms")
 
-            callbacks.onStarted(configContent)
+            runCatching { callbacks.onStarted(configContent) }
+                .onFailure { error -> Log.w(TAG, "Post-start notification failed", error) }
+            runCatching { callbacks.launchPostStartTasks(configContent) }
+                .onFailure { error -> Log.w(TAG, "Failed to launch post-start tasks", error) }
 
             val totalMs = PerfTracer.end(PerfTracer.Phases.VPN_STARTUP)
             val actualTotal = SystemClock.elapsedRealtime() - startupBeginMs
@@ -354,14 +288,10 @@ class StartupManager(
             log("[parallelInit] loadSettings: ${SystemClock.elapsedRealtime() - t}ms")
             settings
         }
-        val dnsPrewarmDeferred = async { prewarmDns(rawConfigContent) }
-
         stepStart = SystemClock.elapsedRealtime()
         val settings = settingsDeferred.await()
         ensureLocalNetworkPermission(settings)
-        val dnsResult = dnsPrewarmDeferred.await()
-        val prewarmedDomainIps = DnsPrewarmer.snapshotResolvedDomains(rawConfigContent)
-        val configContent = patchConfig(rawConfigContent, settings, prewarmedDomainIps)
+        val configContent = patchConfig(rawConfigContent, settings)
         log("[parallelInit] patchConfig: ${SystemClock.elapsedRealtime() - stepStart}ms")
 
         dumpDebugOutbounds(configPath, configContent, settings.debugLoggingEnabled)
@@ -375,8 +305,7 @@ class StartupManager(
             network = network,
             ruleSetReady = ruleSetReady,
             settings = settings,
-            configContent = configContent,
-            dnsPrewarmResult = dnsResult
+            configContent = configContent
         )
     }
 
@@ -418,7 +347,7 @@ class StartupManager(
         logDebug(
             "[DEBUG] VLESS outbound '${outbound.tag}': server=${outbound.server}:${outbound.serverPort}, " +
                 "flow=${outbound.flow}, tls=${outbound.tls != null}, packet_encoding=${outbound.packetEncoding}, " +
-                "transport_type=${outbound.transport?.type}, transport_mode=${outbound.transport?.mode}"
+                "transport_type=${outbound.transport?.type}"
         )
     }
 
@@ -479,17 +408,6 @@ class StartupManager(
         return result
     }
 
-    private suspend fun prewarmDns(rawConfigContent: String): DnsPrewarmer.PrewarmResult? {
-        val t = SystemClock.elapsedRealtime()
-        val result = runCatching {
-            DnsPrewarmer.prewarm(rawConfigContent)
-        }.getOrNull()
-        log(
-            "[parallelInit] dnsPrewarm: ${SystemClock.elapsedRealtime() - t}ms, domains=${result?.totalDomains ?: 0}"
-        )
-        return result
-    }
-
     private fun ensureLocalNetworkPermission(settings: AppSettings) {
         if (!LocalNetworkPermission.canApplySettings(context, settings)) {
             throw IllegalStateException(LocalNetworkPermission.MISSING_PERMISSION_ERROR)
@@ -498,8 +416,7 @@ class StartupManager(
 
     private fun patchConfig(
         rawConfigContent: String,
-        settings: AppSettings,
-        prewarmedDomainIps: Map<String, String> = emptyMap()
+        settings: AppSettings
     ): String {
         var configContent = rawConfigContent
         val logLevel = resolveRuntimeLogLevel(settings.debugLoggingEnabled)
@@ -511,7 +428,6 @@ class StartupManager(
                 ?: com.kunk.singbox.model.LogConfig(level = logLevel, timestamp = true, output = "box.log")
 
             var newConfig = configObj.copy(log = logConfig)
-            newConfig = applyPrewarmedDomainIps(newConfig, prewarmedDomainIps)
             val restrictLanListen = LocalNetworkPermission.shouldRestrictLanListen(context)
 
             if (newConfig.inbounds != null) {
@@ -551,7 +467,7 @@ class StartupManager(
                 TAG,
                 "Patched config: auto_route=${settings.autoRoute}, " +
                     "log_level=$logLevel, connect_timeout=$defaultConnectTimeout, " +
-                    "prewarmed_domains=${prewarmedDomainIps.size}, restrict_lan_listen=$restrictLanListen"
+                    "restrict_lan_listen=$restrictLanListen"
             )
         } catch (e: Exception) {
             Log.w(TAG, "Failed to patch config: ${e.message}")

@@ -16,18 +16,8 @@ import com.kunk.singbox.model.RuleSetConfig
 import com.kunk.singbox.model.RuleSetOutboundMode
 import com.kunk.singbox.model.SingBoxConfig
 import com.kunk.singbox.model.BatchUpdateResult
-import com.kunk.singbox.model.ProfileType
-import com.kunk.singbox.model.ProfileUi
 import com.kunk.singbox.model.SubscriptionUpdateStage
 import com.kunk.singbox.model.SubscriptionUpdateResult
-import com.kunk.singbox.model.UpdateStatus
-import kotlinx.coroutines.CompletableDeferred
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancel
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
@@ -37,7 +27,6 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.net.ConnectException
 import java.net.SocketTimeoutException
-import java.util.concurrent.TimeUnit
 
 @Suppress("TooManyFunctions")
 abstract class ConfigRepositoryTestPart1 : ConfigRepositoryTestBase() {
@@ -46,20 +35,7 @@ abstract class ConfigRepositoryTestPart1 : ConfigRepositoryTestBase() {
         validRuleSets: List<RuleSetConfig>
     ): List<RuleSet> {
         val validTags = validRuleSets.mapNotNull { it.tag }.toSet()
-        return ConfigRepository.filterAppliedRemoteRuleSetsForTest(ruleSets, validTags)
-    }
-
-    protected override fun createUpdatingProfile(profileId: String): ProfileUi {
-        return ProfileUi(
-            id = profileId,
-            name = "Test Profile",
-            type = ProfileType.Subscription,
-            url = "https://example.com/sub",
-            lastUpdated = 0,
-            enabled = true,
-            updateStatus = UpdateStatus.Updating,
-            updateStage = SubscriptionUpdateStage.Requesting
-        )
+        return ConfigRepository.filterAppliedRemoteRuleSets(ruleSets, validTags)
     }
 
     protected override fun bestvmrDnsOverrideJson(): String =
@@ -91,22 +67,6 @@ abstract class ConfigRepositoryTestPart1 : ConfigRepositoryTestBase() {
             tag = "airport-node",
             server = "fly-nnca.bestvmr.com"
         )
-
-    protected override fun applyStageForRun(
-        profiles: MutableStateFlow<List<ProfileUi>>,
-        activeRuns: Map<String, Long>,
-        profileId: String,
-        runId: Long,
-        stage: SubscriptionUpdateStage?
-    ) {
-        ConfigRepository.setProfileUpdateStageIfCurrent(
-            profilesState = profiles,
-            activeUpdateRuns = activeRuns,
-            profileId = profileId,
-            runId = runId,
-            stage = stage
-        )
-    }
 
     @Test
     override fun testStableNodeIdConsistency() {
@@ -401,11 +361,11 @@ abstract class ConfigRepositoryTestPart1 : ConfigRepositoryTestBase() {
 
     @Test
     override fun testSubscriptionContentLengthLimitAllowsUnknownOrBoundedLength() {
-        assertFalse(ConfigRepository.isSubscriptionContentLengthTooLargeForTest(-1))
-        assertFalse(ConfigRepository.isSubscriptionContentLengthTooLargeForTest(1024))
+        assertFalse(ConfigRepository.isSubscriptionContentLengthTooLarge(-1))
+        assertFalse(ConfigRepository.isSubscriptionContentLengthTooLarge(1024))
         assertFalse(
-            ConfigRepository.isSubscriptionContentLengthTooLargeForTest(
-                ConfigRepository.subscriptionResponseMaxBytesForTest()
+            ConfigRepository.isSubscriptionContentLengthTooLarge(
+                ConfigRepository.SUBSCRIPTION_RESPONSE_MAX_BYTES
             )
         )
     }
@@ -413,8 +373,8 @@ abstract class ConfigRepositoryTestPart1 : ConfigRepositoryTestBase() {
     @Test
     override fun testSubscriptionContentLengthLimitRejectsOversizedLength() {
         assertTrue(
-            ConfigRepository.isSubscriptionContentLengthTooLargeForTest(
-                ConfigRepository.subscriptionResponseMaxBytesForTest() + 1
+            ConfigRepository.isSubscriptionContentLengthTooLarge(
+                ConfigRepository.SUBSCRIPTION_RESPONSE_MAX_BYTES + 1
             )
         )
     }
@@ -433,110 +393,7 @@ abstract class ConfigRepositoryTestPart1 : ConfigRepositoryTestBase() {
             SubscriptionUpdateStage.Saving,
             ConfigRepository.resolveSubscriptionUpdateStage("saving")
         )
-        assertEquals(
-            SubscriptionUpdateStage.DnsBackground,
-            ConfigRepository.resolveSubscriptionUpdateStage("dns_background")
-        )
         assertNull(ConfigRepository.resolveSubscriptionUpdateStage("unknown"))
-    }
-
-    @Test
-    override fun testLaunchSubscriptionDnsPreResolveReturnsWithoutWaitingForResolution() {
-        val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
-        val started = CompletableDeferred<Unit>()
-        val release = CompletableDeferred<Unit>()
-
-        try {
-            val startNs = System.nanoTime()
-            val job = ConfigRepository.launchSubscriptionDnsPreResolve(
-                scope = scope,
-                profileId = "profile-1",
-                enabled = true
-            ) {
-                started.complete(Unit)
-                release.await()
-                true
-            }
-            val elapsedMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startNs)
-
-            runBlocking { started.await() }
-
-            assertNotNull(job)
-            assertTrue(elapsedMs < 200)
-            assertTrue(job?.isActive == true)
-
-            release.complete(Unit)
-            runBlocking { job?.join() }
-
-            assertTrue(job?.isCompleted == true)
-        } finally {
-            scope.cancel()
-        }
-    }
-
-    @Test
-    override fun testLaunchSubscriptionDnsPreResolveSwallowsBackgroundFailure() {
-        val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
-
-        try {
-            val job = ConfigRepository.launchSubscriptionDnsPreResolve(
-                scope = scope,
-                profileId = "profile-2",
-                enabled = true
-            ) {
-                throw SocketTimeoutException("dns timeout")
-            }
-
-            runBlocking { job?.join() }
-
-            assertNotNull(job)
-            assertTrue(job?.isCompleted == true)
-            assertFalse(job?.isCancelled == true)
-        } finally {
-            scope.cancel()
-        }
-    }
-
-    @Test
-    override fun testLaunchSubscriptionDnsPreResolveStaleRunCannotClearNewUpdateStage() {
-        val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
-        val profileId = "profile-3"
-        val profiles = MutableStateFlow(listOf(createUpdatingProfile(profileId)))
-        val activeRuns = mutableMapOf(profileId to 1L)
-        val oldStarted = CompletableDeferred<Unit>()
-        val releaseOld = CompletableDeferred<Unit>()
-
-        try {
-            val oldJob = ConfigRepository.launchSubscriptionDnsPreResolve(
-                scope = scope,
-                profileId = profileId,
-                enabled = true,
-                updateRunId = 1L,
-                onStarted = {
-                    applyStageForRun(profiles, activeRuns, profileId, 1L, SubscriptionUpdateStage.DnsBackground)
-                    oldStarted.complete(Unit)
-                },
-                onFinished = {
-                    applyStageForRun(profiles, activeRuns, profileId, 1L, null)
-                }
-            ) {
-                releaseOld.await()
-                true
-            }
-
-            runBlocking { oldStarted.await() }
-            assertEquals(SubscriptionUpdateStage.DnsBackground, profiles.value.single().updateStage)
-
-            activeRuns[profileId] = 2L
-            applyStageForRun(profiles, activeRuns, profileId, 2L, SubscriptionUpdateStage.Requesting)
-
-            releaseOld.complete(Unit)
-            runBlocking { oldJob?.join() }
-
-            assertEquals(SubscriptionUpdateStage.Requesting, profiles.value.single().updateStage)
-        } finally {
-            scope.cancel()
-        }
     }
 
     @Test
@@ -720,7 +577,7 @@ abstract class ConfigRepositoryTestPart1 : ConfigRepositoryTestBase() {
             fakeip = DnsFakeIpConfig(enabled = true, inet4Range = "198.18.0.0/15")
         )
 
-        val actual = ConfigRepository.applyDnsOverrideForTest(base, override) {
+        val actual = ConfigRepository.applyDnsOverride(base, override) {
             it.copy(detour = "selected-node")
         }
         val remoteServer = actual.servers?.firstOrNull { it.tag == "remote" }

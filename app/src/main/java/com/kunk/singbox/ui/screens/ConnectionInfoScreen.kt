@@ -263,10 +263,11 @@ fun ConnectionInfoScreen(
     navController: NavController,
     viewModel: ConnectionInfoViewModel = viewModel()
 ) {
-    val allConnections by viewModel.connections.collectAsStateWithLifecycle()
-    val response by viewModel.connectionsResponse.collectAsStateWithLifecycle()
-    val isRefreshing by viewModel.isRefreshing.collectAsStateWithLifecycle()
-    val vpnActive by viewModel.vpnActive.collectAsStateWithLifecycle()
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val response = uiState.response
+    val isRefreshing = uiState.isRefreshing
+    val vpnActive = uiState.vpnActive
+    val allConnections = response?.connections.orEmpty()
 
     var showConfirmDeleteAll by remember { mutableStateOf(false) }
     var isSearchExpanded by remember { mutableStateOf(false) }
@@ -444,7 +445,7 @@ fun ConnectionInfoScreen(
             // 概览信息栏
             if (vpnActive) {
                 OverviewCard(
-                    totalConnections = response?.connections?.size ?: 0,
+                    totalConnections = allConnections.size,
                     uploadTotal = response?.uploadTotal ?: 0,
                     downloadTotal = response?.downloadTotal ?: 0
                 )

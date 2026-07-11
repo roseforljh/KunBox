@@ -1,65 +1,59 @@
 package com.kunk.singbox.service.manager
 
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNull
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 
 class BackgroundPowerManagerTest {
 
     @Test
-    fun returnRecoveryStateSkipReasonIsNullWhenRecoveryAllowed() {
-        val result = BackgroundPowerManager.buildReturnRecoveryStateSkipReason(
-            isVpnRunning = true,
-            isVpnStarting = false,
-            isVpnStopping = false,
-            isManuallyStopped = false
+    fun remainingDelayUsesOriginalAwayTimestamp() {
+        val minute = 60_000L
+
+        val remaining = BackgroundPowerManager.remainingPowerSavingDelayMs(
+            thresholdMs = 30 * minute,
+            userAwayAtMs = minute,
+            nowMs = 21 * minute
         )
 
-        assertNull(result)
+        assertEquals(10 * minute, remaining)
     }
 
     @Test
-    fun returnRecoveryStateSkipReasonBlocksManualStop() {
-        val result = BackgroundPowerManager.buildReturnRecoveryStateSkipReason(
-            isVpnRunning = true,
-            isVpnStarting = false,
-            isVpnStopping = false,
-            isManuallyStopped = true
+    fun forcePowerSavingSuspendsAndResumesProcessesOnce() {
+        val callbacks = RecordingCallbacks()
+        val manager = BackgroundPowerManager(
+            CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
         )
+        manager.init(callbacks, thresholdMs = Long.MAX_VALUE)
 
-        assertEquals(
-            "recovery not allowed (running=true, starting=false, stopping=false, manuallyStopped=true)",
-            result
-        )
+        manager.forceEnterPowerSaving()
+        manager.forceEnterPowerSaving()
+
+        assertTrue(manager.isPowerSaving)
+        assertEquals(1, callbacks.suspendCalls)
+
+        manager.forceExitPowerSaving()
+        manager.forceExitPowerSaving()
+
+        assertFalse(manager.isPowerSaving)
+        assertEquals(1, callbacks.resumeCalls)
     }
 
-    @Test
-    fun returnRecoveryStateSkipReasonBlocksStopInProgress() {
-        val result = BackgroundPowerManager.buildReturnRecoveryStateSkipReason(
-            isVpnRunning = true,
-            isVpnStarting = false,
-            isVpnStopping = true,
-            isManuallyStopped = false
-        )
+    private class RecordingCallbacks : BackgroundPowerManager.Callbacks {
+        var suspendCalls: Int = 0
+        var resumeCalls: Int = 0
 
-        assertEquals(
-            "recovery not allowed (running=true, starting=false, stopping=true, manuallyStopped=false)",
-            result
-        )
-    }
+        override fun suspendNonEssentialProcesses() {
+            suspendCalls++
+        }
 
-    @Test
-    fun returnRecoveryStateSkipReasonBlocksStoppedService() {
-        val result = BackgroundPowerManager.buildReturnRecoveryStateSkipReason(
-            isVpnRunning = false,
-            isVpnStarting = false,
-            isVpnStopping = false,
-            isManuallyStopped = true
-        )
-
-        assertEquals(
-            "recovery not allowed (running=false, starting=false, stopping=false, manuallyStopped=true)",
-            result
-        )
+        override fun resumeNonEssentialProcesses() {
+            resumeCalls++
+        }
     }
 }

@@ -19,20 +19,21 @@ class SettingsRepositoryTest {
 
     @Test
     fun sanitizeProxyPortKeepsValidPortAndRejectsInvalidValues() {
-        assertEquals(2080, SettingsRepository.sanitizeProxyPortForTest(2080))
-        assertEquals(1, SettingsRepository.sanitizeProxyPortForTest(0))
-        assertEquals(65535, SettingsRepository.sanitizeProxyPortForTest(70000))
+        assertEquals(2080, SettingsRepository.sanitizeProxyPort(2080))
+        assertEquals(1, SettingsRepository.sanitizeProxyPort(0))
+        assertEquals(65535, SettingsRepository.sanitizeProxyPort(70000))
     }
 
     @Test
     fun sanitizeLatencyConcurrencyKeepsSemaphorePermitRange() {
-        assertEquals(5, SettingsRepository.sanitizeLatencyTestConcurrencyForTest(5))
-        assertEquals(1, SettingsRepository.sanitizeLatencyTestConcurrencyForTest(0))
-        assertEquals(20, SettingsRepository.sanitizeLatencyTestConcurrencyForTest(99))
+        assertEquals(5, SettingsRepository.sanitizeLatencyTestConcurrency(5))
+        assertEquals(1, SettingsRepository.sanitizeLatencyTestConcurrency(0))
+        assertEquals(20, SettingsRepository.sanitizeLatencyTestConcurrency(99))
     }
 
     @Test
     fun buildImportedSettingsImportsPreviouslySkippedFields() {
+        val currentLatencyTestUrl = "https://probe.current.example/204"
         val imported = AppSettings(
             appLanguage = AppLanguage.ENGLISH,
             appThemeStyle = AppThemeStyle.LIQUID_GLASS,
@@ -46,12 +47,13 @@ class SettingsRepositoryTest {
             autoCheckUpdate = false,
             backgroundPowerSavingDelay = BackgroundPowerSavingDelay.NEVER,
             proxyPort = 70000,
+            latencyTestUrl = "file:///tmp/probe",
             latencyTestConcurrency = 99,
             ruleSetAutoUpdateInterval = 1
         )
 
-        val result = SettingsRepository.buildImportedSettingsForTest(
-            current = AppSettings(),
+        val result = SettingsRepository.buildImportedSettings(
+            current = AppSettings(latencyTestUrl = currentLatencyTestUrl),
             imported = imported,
             importRules = true
         )
@@ -68,6 +70,7 @@ class SettingsRepositoryTest {
         assertFalse(result.autoCheckUpdate)
         assertEquals(BackgroundPowerSavingDelay.NEVER, result.backgroundPowerSavingDelay)
         assertEquals(65535, result.proxyPort)
+        assertEquals(currentLatencyTestUrl, result.latencyTestUrl)
         assertEquals(20, result.latencyTestConcurrency)
         assertEquals(15, result.ruleSetAutoUpdateInterval)
     }
@@ -83,7 +86,7 @@ class SettingsRepositoryTest {
             CustomRule(name = "imported", type = RuleType.DOMAIN, value = "imported.example")
         )
 
-        val result = SettingsRepository.buildImportedSettingsForTest(
+        val result = SettingsRepository.buildImportedSettings(
             current = AppSettings(
                 customRules = currentRules,
                 ruleSets = currentRuleSets,

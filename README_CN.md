@@ -108,7 +108,6 @@
 | **SOCKS5** | `SOCKS5` | `socks5://` | SOCKS5 代理支持 |
 | **AnyTLS** | `AnyTLS` | `anytls://` | 通用 TLS 包装, 流量伪装 |
 | **Naive** | `Naive` | `naive+https://` | 原生 sing-box Naive 协议支持 |
-| **xHTTP** | `xHTTP` | `xhttp://` | xHTTP 传输协议支持 |
 
 ### 订阅生态支持
 - **Sing-box JSON**: 原生支持，特性最全。
@@ -146,7 +145,7 @@ KunBox-Android/
 │
 ├── .kernel-sync-local/    # 仅本地使用的 sing-box 同步工作区与一键脚本
 │   ├── sync-kernel.ps1    # 对齐官方最新稳定版、构建并替换 libbox.aar
-│   └── upstream-sing-box/ # 官方 sing-box 工作树与 KunBox 补丁应用目标
+│   └── patches/           # 与官方 tag 精确对应的 KunBox 最小补丁
 │
 └── config/detekt/         # 代码质量检查配置
 ```
@@ -227,9 +226,9 @@ KEY_PASSWORD=your_key_password
 
 ### 同步 libbox 内核（仅本地工作区）
 
-KunBox 现在统一使用 `.kernel-sync-local/` 做内核同步。该目录**不要提交到 git**。脚本默认会自动解析官方 `SagerNet/sing-box` 最新稳定版，并明确排除 GitHub `prerelease` 条目以及带有 `alpha`、`beta`、`rc` 后缀的 tag。
+KunBox 统一使用 `.kernel-sync-local/` 做内核同步。该目录**不要提交到 git**。脚本默认解析官方 `SagerNet/sing-box` 最新稳定版，并排除 GitHub `prerelease` 条目以及带有 `alpha`、`beta`、`rc` 后缀的 tag。
 
-同步工作区现在默认复用安全缓存。不再执行 `git clean -fdx` 粗暴清空全部未跟踪内容，而是先对上游工作树做 `reset --hard`，再只清理已知垃圾；如果定向清理后仍残留 tracked / untracked 变更，会直接报错退出。脚本同时复用固定校验临时目录，并把 `libbox.aar.backup-before-replace.*` 收敛为最近 3 份。
+每次同步都会在受控临时目录浅克隆目标官方 tag，补丁和构建产物不会复用旧上游工作树。脚本结束后只清理自身临时目录，并把 `libbox.aar.backup-before-replace.*` 收敛为最近 3 份。
 
 在仓库根目录直接执行：
 
@@ -240,31 +239,25 @@ KunBox 现在统一使用 `.kernel-sync-local/` 做内核同步。该目录**不
 如需手动锁定某个官方 tag，可显式传参：
 
 ```powershell
-.\.kernel-sync-local\sync-kernel.ps1 -Tag v1.13.4
+.\.kernel-sync-local\sync-kernel.ps1 -Tag v1.13.14
 ```
 
-当前检查时官方最新稳定版仍是 `v1.13.4`，但它不再是脚本里的固定默认逻辑。
+当前检查时官方最新稳定版为 `v1.13.14`，脚本仍以官方发布接口的实时结果为准。
 
 脚本会依次完成：
 
-1. 检查 Git、Go、Java 17、Android SDK、Android NDK、`gomobile`、`gobind`
-2. 解析并打印目标官方 tag，然后确保 `.kernel-sync-local/upstream-sing-box` 存在，强制对齐到该 tag，并执行定向垃圾清理而不是清空整个缓存
-3. 优先应用目标 tag 对应的本地 KunBox 扩展补丁；若不存在同名文件，则回退到当前可用的最小 KunBox 补丁继续尝试
-4. 构建 `libbox.aar`
-5. 校验新 AAR 至少仍导出：
-   - `getKunBoxVersion`
-   - `resetAllConnections`
-   - `recoverNetworkAuto`
-   - `checkNetworkRecoveryNeeded`
-   - `closeAllTrackedConnections`
-   - `getConnectionCount`
-   - `closeIdleConnections`
-6. 备份并替换 `app/libs/libbox.aar`，同时把历史备份裁剪到最近 3 份
-7. 运行 `assembleDebug`、`testDebugUnitTest`、`detekt`
+1. 检查 Git、Go、Java 17、Android SDK、Android NDK、`gomobile`、`gobind`，并解析目标官方 tag
+2. 在受控临时目录浅克隆该精确 tag，并校验 origin、HEAD tag 与干净状态
+3. 构建未修改的官方 AAR，作为 API 与 ABI 基线
+4. 只应用 `patches/kunbox-<tag>.patch` 精确补丁，并对受影响的 VLESS 包运行普通测试、race 测试和 `go vet`
+5. 构建补丁 AAR
+6. 对比官方与补丁 AAR 的 Java 类集合、公开 API 和非空 JNI 条目集合；要求公开 API 与官方 sing-box 完全一致，同时禁止六个已删除私有恢复方法
+7. 备份并替换 `app/libs/libbox.aar`
+8. 运行 `assembleDebug`、`testDebugUnitTest`、`detekt`；失败时恢复备份，成功时只保留最近 3 份备份
 
-定向清理会处理历史 `tmp-sync-kernel-*`、`tmp-libbox-*-check`、`libbox-sources.jar`、`libbox-legacy-sources.jar`、`libbox-legacy.aar` 等明显垃圾，并清理上一次补丁应用遗留的未跟踪新增文件；同步成功后还会移除上游目录里临时生成的 `libbox.aar`。
+脚本只清理 `.kernel-sync-local/tmp-sync-kernel-current`，不会删除其他本地内核工作树。
 
-如果脚本无法解析稳定版 tag、找不到任何 `patches/kunbox-*.patch`、在定向清理后仍检测到脏文件，或在 `git apply --check`、补丁应用、AAR 方法校验、Gradle 验证阶段报错，中断都是预期行为。仅仅缺少同名 `patches/kunbox-<tag>.patch` 已不再是前置阻塞。请按报错点修复 Kotlin 兼容层或内核导出层耦合，再重新执行脚本。
+无法解析稳定版 tag、缺少精确版本补丁、官方临时树异常变脏，或 `git apply --check`、Go 测试、AAR 方法校验、Gradle 验证失败时，脚本都会中断。应按报错点修复版本耦合后重新执行。
 
 ### 运行测试
 

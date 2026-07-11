@@ -220,12 +220,51 @@ class SingBoxRemoteStateTest {
     @Test
     fun `ensure bound syncs live service state before returning healthy connection`() {
         val source = File("src/main/java/com/kunk/singbox/ipc/SingBoxRemote.kt").readText()
+        val start = source.indexOf("fun ensureBound(context: Context)")
         val body = source.substring(
-            source.indexOf("fun ensureBound(context: Context)"),
-            source.indexOf("/**", source.indexOf("fun ensureBound(context: Context)"))
+            start,
+            source.indexOf("fun queryAndSyncState(context: Context)", start)
         )
 
         assertTrue(body.contains("EnsureBoundAction.NONE -> {"))
-        assertTrue(body.contains("syncStateFromService(currentService)"))
+        assertTrue(body.contains("if (!syncStateFromService(currentService))"))
+        assertTrue(body.contains("rebind(context)"))
+    }
+
+    @Test
+    fun `service state sync failure is observable and triggers rebind`() {
+        val source = File("src/main/java/com/kunk/singbox/ipc/SingBoxRemote.kt").readText()
+        val syncStart = source.indexOf("private fun syncStateFromService")
+        val syncBody = source.substring(syncStart, source.indexOf("private fun hasSystemVpn", syncStart))
+        val queryStart = source.indexOf("fun queryAndSyncState(context: Context)")
+        val queryBody = source.substring(queryStart, source.indexOf("fun rebind(context: Context)", queryStart))
+        val recoveryStart = source.indexOf("fun instantRecovery(")
+        val recoveryBody = source.substring(
+            recoveryStart,
+            source.indexOf("@Deprecated", recoveryStart)
+        )
+
+        assertTrue(syncBody.contains("ISingBoxService?): Boolean"))
+        assertTrue(syncBody.contains("}.isSuccess"))
+        assertTrue(queryBody.contains("val synced = syncStateFromService(s)"))
+        assertTrue(queryBody.contains("rebind(context)"))
+        assertTrue(recoveryBody.contains("val ok = syncStateFromService(s)"))
+        assertTrue(recoveryBody.contains("return recovering"))
+        assertFalse(recoveryBody.contains("callback?.invoke(RecoveryResult.AlreadyConnected)"))
+    }
+
+    @Test
+    fun `concurrent recovery requests keep every final callback`() {
+        val source = File("src/main/java/com/kunk/singbox/ipc/SingBoxRemote.kt").readText(Charsets.UTF_8)
+        val start = source.indexOf("private val pendingRecoveryCallbacks")
+        val body = source.substring(
+            start,
+            source.indexOf("private fun clearPendingUrlTestRequests", start)
+        )
+
+        assertTrue(body.contains("ConcurrentLinkedQueue<(RecoveryResult) -> Unit>()"))
+        assertTrue(body.contains("callback?.let(pendingRecoveryCallbacks::add)"))
+        assertTrue(body.contains("pendingRecoveryCallbacks.poll()"))
+        assertFalse(body.contains("pendingRecoveryCallback = callback"))
     }
 }

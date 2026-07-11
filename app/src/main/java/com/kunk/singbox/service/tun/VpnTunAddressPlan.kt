@@ -8,7 +8,10 @@ data class VpnTunAddressPlan(
     val addresses: List<Pair<String, Int>>,
     val globalRoutes: List<Pair<String, Int>>,
     val defaultDnsServers: List<String>
-)
+) {
+    val cidrAddresses: List<String>
+        get() = addresses.map { (address, prefix) -> "$address/$prefix" }
+}
 
 object VpnTunAddressPlanner {
     fun build(mode: IpVersionMode): VpnTunAddressPlan {
@@ -19,14 +22,12 @@ object VpnTunAddressPlanner {
         if (mode.includesIpv4) {
             addresses.add("172.19.0.1" to 30)
             routes.add("0.0.0.0" to 0)
-            dnsServers.add("223.5.5.5")
-            dnsServers.add("119.29.29.29")
-            dnsServers.add("1.1.1.1")
+            dnsServers.add("172.19.0.2")
         }
         if (mode.includesIpv6) {
             addresses.add("fd00::1" to 126)
             routes.add("::" to 0)
-            dnsServers.add("2606:4700:4700::1111")
+            dnsServers.add("fd00::2")
         }
 
         return VpnTunAddressPlan(addresses, routes, dnsServers)

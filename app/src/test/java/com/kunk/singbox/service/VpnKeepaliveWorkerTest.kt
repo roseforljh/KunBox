@@ -17,7 +17,7 @@ class VpnKeepaliveWorkerTest {
     @Test
     fun runningConfigUsableRequiresReadableNonEmptyFile() {
         assertTrue(
-            VpnKeepaliveWorker.isRunningConfigUsableForTest(
+            VpnKeepaliveWorker.isRunningConfigUsable(
                 exists = true,
                 isFile = true,
                 canRead = true,
@@ -26,7 +26,7 @@ class VpnKeepaliveWorkerTest {
         )
 
         assertFalse(
-            VpnKeepaliveWorker.isRunningConfigUsableForTest(
+            VpnKeepaliveWorker.isRunningConfigUsable(
                 exists = true,
                 isFile = true,
                 canRead = true,
@@ -34,7 +34,7 @@ class VpnKeepaliveWorkerTest {
             )
         )
         assertFalse(
-            VpnKeepaliveWorker.isRunningConfigUsableForTest(
+            VpnKeepaliveWorker.isRunningConfigUsable(
                 exists = true,
                 isFile = false,
                 canRead = true,
@@ -42,7 +42,7 @@ class VpnKeepaliveWorkerTest {
             )
         )
         assertFalse(
-            VpnKeepaliveWorker.isRunningConfigUsableForTest(
+            VpnKeepaliveWorker.isRunningConfigUsable(
                 exists = true,
                 isFile = true,
                 canRead = false,
@@ -54,7 +54,7 @@ class VpnKeepaliveWorkerTest {
     @Test
     fun keepaliveAttemptsRecoveryOnlyWhenCoreServiceIsDeadAndConfigUsable() {
         assertTrue(
-            VpnKeepaliveWorker.shouldAttemptRecoveryForTest(
+            VpnKeepaliveWorker.shouldAttemptRecovery(
                 manuallyStopped = false,
                 mode = VpnStateStore.CoreMode.VPN,
                 coreServiceAlive = false,
@@ -63,7 +63,7 @@ class VpnKeepaliveWorkerTest {
         )
 
         assertFalse(
-            VpnKeepaliveWorker.shouldAttemptRecoveryForTest(
+            VpnKeepaliveWorker.shouldAttemptRecovery(
                 manuallyStopped = false,
                 mode = VpnStateStore.CoreMode.VPN,
                 coreServiceAlive = true,
@@ -71,7 +71,7 @@ class VpnKeepaliveWorkerTest {
             )
         )
         assertFalse(
-            VpnKeepaliveWorker.shouldAttemptRecoveryForTest(
+            VpnKeepaliveWorker.shouldAttemptRecovery(
                 manuallyStopped = true,
                 mode = VpnStateStore.CoreMode.VPN,
                 coreServiceAlive = false,
@@ -79,7 +79,7 @@ class VpnKeepaliveWorkerTest {
             )
         )
         assertFalse(
-            VpnKeepaliveWorker.shouldAttemptRecoveryForTest(
+            VpnKeepaliveWorker.shouldAttemptRecovery(
                 manuallyStopped = false,
                 mode = VpnStateStore.CoreMode.NONE,
                 coreServiceAlive = false,
@@ -91,7 +91,7 @@ class VpnKeepaliveWorkerTest {
     @Test
     fun keepaliveClearsStaleStateWhenConfigIsMissingForDeadProcess() {
         assertTrue(
-            VpnKeepaliveWorker.shouldClearStaleRecoveryStateForTest(
+            VpnKeepaliveWorker.shouldClearStaleRecoveryState(
                 manuallyStopped = false,
                 mode = VpnStateStore.CoreMode.PROXY,
                 coreServiceAlive = false,
@@ -100,7 +100,7 @@ class VpnKeepaliveWorkerTest {
         )
 
         assertFalse(
-            VpnKeepaliveWorker.shouldClearStaleRecoveryStateForTest(
+            VpnKeepaliveWorker.shouldClearStaleRecoveryState(
                 manuallyStopped = false,
                 mode = VpnStateStore.CoreMode.PROXY,
                 coreServiceAlive = true,
@@ -108,7 +108,7 @@ class VpnKeepaliveWorkerTest {
             )
         )
         assertFalse(
-            VpnKeepaliveWorker.shouldClearStaleRecoveryStateForTest(
+            VpnKeepaliveWorker.shouldClearStaleRecoveryState(
                 manuallyStopped = true,
                 mode = VpnStateStore.CoreMode.PROXY,
                 coreServiceAlive = false,
@@ -116,7 +116,7 @@ class VpnKeepaliveWorkerTest {
             )
         )
         assertFalse(
-            VpnKeepaliveWorker.shouldClearStaleRecoveryStateForTest(
+            VpnKeepaliveWorker.shouldClearStaleRecoveryState(
                 manuallyStopped = false,
                 mode = VpnStateStore.CoreMode.NONE,
                 coreServiceAlive = false,
@@ -128,21 +128,21 @@ class VpnKeepaliveWorkerTest {
     @Test
     fun keepaliveClearsStateAfterForegroundStartDeniedOrRetryBudgetExhausted() {
         assertTrue(
-            VpnKeepaliveWorker.shouldClearAfterRecoveryFailureForTest(
+            VpnKeepaliveWorker.shouldClearAfterRecoveryFailure(
                 runAttemptCount = 0,
                 foregroundStartDenied = true
             )
         )
 
         assertTrue(
-            VpnKeepaliveWorker.shouldClearAfterRecoveryFailureForTest(
+            VpnKeepaliveWorker.shouldClearAfterRecoveryFailure(
                 runAttemptCount = 3,
                 foregroundStartDenied = false
             )
         )
 
         assertFalse(
-            VpnKeepaliveWorker.shouldClearAfterRecoveryFailureForTest(
+            VpnKeepaliveWorker.shouldClearAfterRecoveryFailure(
                 runAttemptCount = 2,
                 foregroundStartDenied = false
             )

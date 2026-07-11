@@ -27,7 +27,7 @@ class NodeDetailScreenTransportTest {
                 "Host" to "cdn.example.com",
                 "User-Agent" to "KunBox"
             ),
-            maxEarlyData = 2048,
+            maxEarlyData = 2048L,
             earlyDataHeaderName = "Sec-WebSocket-Protocol"
         )
 

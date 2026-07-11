@@ -1,13 +1,8 @@
 package com.kunk.singbox.ui.screens
 
 import com.kunk.singbox.R
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.horizontalScroll
@@ -23,7 +18,6 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.kunk.singbox.model.RuleSet
@@ -52,6 +46,7 @@ import com.kunk.singbox.ui.theme.liquidGlassSwitchColors
 import com.kunk.singbox.ui.theme.liquidGlassTextButtonContentColor
 import com.kunk.singbox.ui.theme.liquidGlassTextButtonColors
 import com.kunk.singbox.ui.theme.liquidGlassTextButtonPanel
+import com.kunk.singbox.ui.theme.liquidGlassPressFeedback
 
 @Composable
 private fun Modifier.ruleSetMenuPanel(shape: RoundedCornerShape = RoundedCornerShape(12.dp)): Modifier {
@@ -63,30 +58,11 @@ private fun Modifier.ruleSetMenuPanel(shape: RoundedCornerShape = RoundedCornerS
 }
 
 @Composable
-private fun Modifier.ruleSetItemPressFeedback(onClick: () -> Unit): Modifier {
-    val useLiquidGlass = isLiquidGlassTheme()
-    val interactionSource = remember { MutableInteractionSource() }
-    val isPressed by interactionSource.collectIsPressedAsState()
-    val scale by animateFloatAsState(
-        targetValue = if (useLiquidGlass && isPressed) 0.98f else 1f,
-        animationSpec = spring(stiffness = 520f, dampingRatio = 0.72f),
-        label = "liquid_glass_rule_set_item_scale"
+private fun Modifier.ruleSetItemPressFeedback(onClick: () -> Unit): Modifier =
+    liquidGlassPressFeedback(
+        label = "liquid_glass_rule_set_item_scale",
+        onClick = onClick
     )
-    val clickModifier = if (useLiquidGlass) {
-        Modifier.clickable(
-            interactionSource = interactionSource,
-            indication = null,
-            onClick = onClick
-        )
-    } else {
-        Modifier.clickable(onClick = onClick)
-    }
-
-    return graphicsLayer {
-        scaleX = scale
-        scaleY = scale
-    }.then(clickModifier)
-}
 
 @Composable
 private fun ruleSetBadgeContentColor(defaultColor: Color): Color {

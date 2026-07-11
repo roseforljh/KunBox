@@ -6,11 +6,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
-/**
- *
- *
- *
- */
 object SelectorManager {
     private const val TAG = "SelectorManager"
 
@@ -26,10 +21,6 @@ object SelectorManager {
     private val _canHotSwitch = MutableStateFlow(false)
     val canHotSwitchFlow: StateFlow<Boolean> = _canHotSwitch.asStateFlow()
 
-    /**
-     *
-     *
-     */
     fun recordSelectorSignature(outboundTags: List<String>, selectedTag: String? = null) {
         currentOutboundTags = outboundTags.toList()
         currentSelectorSignature = computeSignature(outboundTags)
@@ -40,10 +31,6 @@ object SelectorManager {
         Log.d(TAG, "Recorded selector: ${outboundTags.size} outbounds, sig=$currentSelectorSignature, selected=$selectedTag")
     }
 
-    /**
-     *
-     *
-     */
     fun canHotSwitch(newOutboundTags: List<String>): Boolean {
         val currentSig = currentSelectorSignature ?: return false
         val newSig = computeSignature(newOutboundTags)
@@ -72,33 +59,12 @@ object SelectorManager {
         }
     }
 
-    /**
-     *
-     * @return true if successful
-     */
-    fun selectOutboundViaWrapper(outboundTag: String): Boolean {
-        val success = BoxWrapperManager.selectOutbound(outboundTag)
-        if (success) {
-            _selectedOutbound.value = outboundTag
-            Log.i(TAG, "Hot switch via BoxWrapper: -> $outboundTag")
-        }
-        return success
-    }
-
-    /**
-     */
     fun getSelectedOutbound(): String? = _selectedOutbound.value
 
-    /**
-     */
     fun getCurrentOutboundTags(): List<String> = currentOutboundTags
 
-    /**
-     */
     fun hasSelector(): Boolean = currentSelectorSignature != null && currentOutboundTags.isNotEmpty()
 
-    /**
-     */
     fun clear() {
         currentSelectorSignature = null
         currentOutboundTags = emptyList()
@@ -107,8 +73,6 @@ object SelectorManager {
         Log.d(TAG, "Selector state cleared")
     }
 
-    /**
-     */
     private fun computeSignature(tags: List<String>): String {
         return tags.sorted().hashCode().toString()
     }

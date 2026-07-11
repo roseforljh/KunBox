@@ -6,20 +6,21 @@ import com.kunk.singbox.model.MultiplexConfig
 import com.kunk.singbox.model.Outbound
 import com.kunk.singbox.model.TlsConfig
 import com.kunk.singbox.model.TransportConfig
+import com.kunk.singbox.model.UInt32JsonAdapter
+import com.kunk.singbox.model.V2RAY_TRANSPORT_PROTOCOLS
+import com.kunk.singbox.model.V2RAY_TRANSPORT_TYPES
+import com.kunk.singbox.model.V2RAY_XHTTP_TRANSPORT_TYPES
+import com.kunk.singbox.model.allHeaderValues
+import com.kunk.singbox.model.asHttpHeaderMap
 import com.kunk.singbox.repository.SettingsRepository
 
-/**
- */
 @Suppress("LargeClass")
 object OutboundFixer {
     private const val TAG = "OutboundFixer"
-    private const val ROUTE_GROUP_AUTO_TAG_SUFFIX = "#AUTO"
     @Volatile private var cachedTcpKeepAliveEnabled: Boolean? = null
     @Volatile private var cachedTcpKeepAliveInterval: String? = null
     @Volatile private var cachedConnectTimeout: String? = null
 
-    /**
-     */
     private fun getTcpKeepAliveConfig(context: android.content.Context): Triple<Boolean, String?, String?> {
         cachedTcpKeepAliveEnabled?.let { enabled ->
             return Triple(enabled, cachedTcpKeepAliveInterval, cachedConnectTimeout)
@@ -56,18 +57,9 @@ object OutboundFixer {
     private val REGEX_INTERVAL_UNIT = Regex("^\\d+(\\.\\d+)?[smhSMH]$")
     private val REGEX_IPV4 = Regex("^\\d{1,3}(\\.\\d{1,3}){3}$")
     private val REGEX_IPV6 = Regex("^[0-9a-fA-F:]+$")
-    private val REGEX_ED_PARAM_START = Regex("\\?ed=\\d+")
-    private val REGEX_ED_PARAM_MID = Regex("&ed=\\d+")
 
-    internal fun shouldKeepUrlTestForRuntime(tag: String?): Boolean {
-        val normalizedTag = tag?.trim().orEmpty()
-        return normalizedTag.startsWith("P:") && normalizedTag.endsWith(ROUTE_GROUP_AUTO_TAG_SUFFIX)
-    }
-
-    /**
-     */
     fun fix(outbound: Outbound): Outbound {
-        var result = outbound
+        var result = normalizeTransport(outbound)
 
         // Fix interval
         val interval = result.interval
@@ -104,38 +96,13 @@ object OutboundFixer {
             }
         }
 
-        // Fix URLTest - Convert to selector to avoid sing-box core panic during InterfaceUpdated
+        // 统一旧别名并补齐 urltest 运行所需的最小字段
         if (result.type == "urltest" || result.type == "url-test") {
-            var newOutbounds = result.outbounds
-            if (newOutbounds.isNullOrEmpty()) {
-                newOutbounds = listOf("direct")
-            }
-
-            result = if (shouldKeepUrlTestForRuntime(result.tag)) {
-                result.copy(
-                    type = "urltest",
-                    outbounds = newOutbounds,
-                    default = null,
-                    interruptExistConnections = result.interruptExistConnections ?: false
-                )
-            } else {
-                result.copy(
-                    type = "selector",
-                    outbounds = newOutbounds,
-                    default = newOutbounds.firstOrNull(),
-                    interruptExistConnections = result.interruptExistConnections ?: false,
-                    url = null,
-                    interval = null,
-                    tolerance = null
-                )
-            }
-        }
-
-        // Selector 的 outbounds 不应为空，但为了防止配置错误导致服务无法启动，
-        // 添加 "direct" 作为 fallback
-        if (result.type == "selector" && result.outbounds.isNullOrEmpty()) {
-            Log.w(TAG, "Selector has empty outbounds, adding 'direct' as fallback")
-            result = result.copy(outbounds = listOf("direct"))
+            result = result.copy(
+                type = "urltest",
+                default = null,
+                interruptExistConnections = result.interruptExistConnections ?: false
+            )
         }
 
         // Fix TLS SNI for WebSocket
@@ -146,10 +113,8 @@ object OutboundFixer {
                 ?: transport.headers?.get("host")
                 ?: transport.host?.firstOrNull()
             val sni = tls.serverName?.trim().orEmpty()
-            val server = result.server?.trim().orEmpty()
             if (!wsHost.isNullOrBlank() && !isIpLiteral(wsHost)) {
-                val needFix = sni.isBlank() || isIpLiteral(sni) || (server.isNotBlank() && sni.equals(server, ignoreCase = true))
-                if (needFix && !wsHost.equals(sni, ignoreCase = true)) {
+                if (sni.isBlank()) {
                     result = result.copy(tls = tls.copy(serverName = wsHost))
                 }
             }
@@ -160,8 +125,8 @@ object OutboundFixer {
         val needsWsAlpn = result.transport?.type == "ws" &&
             tlsAfterSni?.enabled == true &&
             tlsAfterSni.ech?.enabled != true
-        if (needsWsAlpn && (tlsAfterSni?.alpn == null || tlsAfterSni.alpn.isEmpty())) {
-            result = result.copy(tls = tlsAfterSni?.copy(alpn = listOf("http/1.1")))
+        if (needsWsAlpn && (tlsAfterSni.alpn == null || tlsAfterSni.alpn.isEmpty())) {
+            result = result.copy(tls = tlsAfterSni.copy(alpn = listOf("http/1.1")))
         }
 
         if (transport?.type == "httpupgrade") {
@@ -173,8 +138,10 @@ object OutboundFixer {
                 ?: headerHost?.takeIf { it.isNotBlank() }
             val normalizedPath = transport.path?.trim()?.ifEmpty { "/" } ?: "/"
             val cleanedHeaders = transport.headers
+                ?.allHeaderValues()
                 ?.filterKeys { !it.equals("Host", ignoreCase = true) }
                 ?.takeIf { it.isNotEmpty() }
+                ?.asHttpHeaderMap()
             val normalizedHost = httpUpgradeHost?.let { listOf(it) }
 
             if (
@@ -193,25 +160,19 @@ object OutboundFixer {
 
             val tlsForHttpUpgrade = result.tls?.takeIf { it.enabled == true }
             val sni = tlsForHttpUpgrade?.serverName?.trim().orEmpty()
-            val server = result.server?.trim().orEmpty()
             val shouldFixSni = tlsForHttpUpgrade != null &&
                 !httpUpgradeHost.isNullOrBlank() &&
                 !isIpLiteral(httpUpgradeHost) &&
-                (
-                    sni.isBlank() ||
-                        isIpLiteral(sni) ||
-                        (server.isNotBlank() && sni.equals(server, ignoreCase = true))
-                    )
+                sni.isBlank()
 
-            if (shouldFixSni && tlsForHttpUpgrade != null) {
+            if (shouldFixSni) {
                 result = result.copy(tls = tlsForHttpUpgrade.copy(serverName = httpUpgradeHost))
             }
         }
 
-        if (transport?.type == "xhttp") {
+        if (transport?.type == "xhttp" || transport?.type == "splithttp") {
             val rawPath = transport.path ?: "/"
             val normalizedPath = normalizeXhttpPath(rawPath)
-
             val xhttpHost = transport.host?.firstOrNull()
             val tlsForXhttp = result.tls?.takeIf { it.enabled == true }
             val xhttpSni = tlsForXhttp?.serverName?.trim().orEmpty()
@@ -219,32 +180,17 @@ object OutboundFixer {
             val shouldFixXhttpSni = tlsForXhttp != null &&
                 !xhttpHost.isNullOrBlank() &&
                 !isIpLiteral(xhttpHost) &&
-                (
-                    xhttpSni.isBlank() ||
-                        isIpLiteral(xhttpSni) ||
-                        (server.isNotBlank() && xhttpSni.equals(server, ignoreCase = true))
-                    )
-
-            val currentAlpn = tlsForXhttp?.alpn
-            val shouldFixXhttpAlpn = tlsForXhttp != null && currentAlpn.isNullOrEmpty()
+                (xhttpSni.isBlank() || isIpLiteral(xhttpSni) || (server.isNotBlank() && xhttpSni.equals(server, true)))
+            val shouldFixXhttpAlpn = tlsForXhttp != null && tlsForXhttp.alpn.isNullOrEmpty()
 
             if (normalizedPath != rawPath || shouldFixXhttpSni || shouldFixXhttpAlpn) {
                 var updated = result.copy(
-                    transport = transport.copy(path = normalizedPath)
+                    transport = transport.copy(type = "xhttp", path = normalizedPath)
                 )
-
                 var tlsUpdated = tlsForXhttp
-                if (shouldFixXhttpSni && tlsUpdated != null) {
-                    tlsUpdated = tlsUpdated.copy(serverName = xhttpHost)
-                }
-                if (shouldFixXhttpAlpn && tlsUpdated != null) {
-                    tlsUpdated = tlsUpdated.copy(alpn = listOf("h2"))
-                }
-
-                if (tlsUpdated != result.tls) {
-                    updated = updated.copy(tls = tlsUpdated)
-                }
-
+                if (shouldFixXhttpSni && tlsUpdated != null) tlsUpdated = tlsUpdated.copy(serverName = xhttpHost)
+                if (shouldFixXhttpAlpn && tlsUpdated != null) tlsUpdated = tlsUpdated.copy(alpn = listOf("h2"))
+                if (tlsUpdated != result.tls) updated = updated.copy(tls = tlsUpdated)
                 result = updated
             }
         }
@@ -268,7 +214,7 @@ object OutboundFixer {
 
         // Fix User-Agent and path for WS
         if (transport != null && transport.type == "ws") {
-            val headers = transport.headers?.toMutableMap() ?: mutableMapOf()
+            val headers = transport.headers?.allHeaderValues()?.toMutableMap() ?: mutableMapOf()
             var needUpdate = false
 
             if (!headers.containsKey("Host")) {
@@ -276,7 +222,7 @@ object OutboundFixer {
                     ?: result.tls?.serverName
                     ?: result.server
                 if (!host.isNullOrBlank()) {
-                    headers["Host"] = host
+                    headers["Host"] = listOf(host)
                     needUpdate = true
                 }
             }
@@ -288,23 +234,30 @@ object OutboundFixer {
                 } else {
                     "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/115.0"
                 }
-                headers["User-Agent"] = userAgent
+                headers["User-Agent"] = listOf(userAgent)
                 needUpdate = true
             }
 
             val rawPath = transport.path ?: "/"
-            val cleanPath = rawPath
-                .replace(REGEX_ED_PARAM_START, "")
-                .replace(REGEX_ED_PARAM_MID, "")
-                .trimEnd('?', '&')
-                .ifEmpty { "/" }
+            val (cleanPath, embeddedEarlyData) = splitWebSocketEarlyData(rawPath)
+            val migratedEarlyData = if (transport.maxEarlyData == null) {
+                embeddedEarlyData?.toLongOrNull()?.let { value ->
+                    runCatching { UInt32JsonAdapter.requireValue(value) }.getOrNull()
+                }
+            } else {
+                null
+            }
 
             val pathChanged = cleanPath != rawPath
+            val earlyDataChanged = migratedEarlyData != null
 
-            if (needUpdate || pathChanged) {
+            if (needUpdate || pathChanged || earlyDataChanged) {
                 result = result.copy(transport = transport.copy(
-                    headers = headers,
-                    path = cleanPath
+                    headers = headers.asHttpHeaderMap(),
+                    path = cleanPath,
+                    maxEarlyData = transport.maxEarlyData ?: migratedEarlyData,
+                    earlyDataHeaderName = transport.earlyDataHeaderName
+                        ?: migratedEarlyData?.let { "Sec-WebSocket-Protocol" }
                 ))
             }
         }
@@ -321,20 +274,10 @@ object OutboundFixer {
             val cleanedHopInterval = result.hopInterval?.takeIf { it.isNotBlank() }
             result = result.copy(
                 serverPorts = cleanedServerPorts,
-                hopInterval = cleanedHopInterval
+                hopInterval = cleanedHopInterval,
+                obfs = result.obfs?.copy(stringValue = result.type == "hysteria")
             )
         }
-        if (result.type == "vmess" && result.packetEncoding.isNullOrBlank()) {
-            result = result.copy(packetEncoding = "xudp")
-        }
-        val isVlessNeedingXudp = result.type == "vless" &&
-            result.packetEncoding.isNullOrBlank() &&
-            result.encryption.isNullOrBlank() &&
-            result.transport?.type != "xhttp"
-        if (isVlessNeedingXudp) {
-            result = result.copy(packetEncoding = "xudp")
-        }
-
         if (result.type == "naive") {
             result = fixNaive(result)
         }
@@ -347,57 +290,114 @@ object OutboundFixer {
         return result
     }
 
-    /**
-     */
-    private fun normalizeLegacyTransport(outbound: Outbound): Outbound {
-        if (outbound.type == "http") {
-            return outbound
-        }
-        val legacyNetwork = outbound.network?.takeIf { it.isNotBlank() }
-        val legacyPath = outbound.path?.takeIf { it.isNotBlank() }
-        val legacyHeaders = outbound.headers?.takeIf { it.isNotEmpty() }
-        val transport = outbound.transport
-
-        val hasNoLegacy = legacyNetwork == null && legacyPath == null && legacyHeaders == null
-        if (transport == null && hasNoLegacy) {
-            return outbound
+    private fun normalizeTransport(outbound: Outbound): Outbound {
+        val transport = outbound.transport ?: return outbound
+        if (outbound.type !in V2RAY_TRANSPORT_PROTOCOLS) {
+            return outbound.copy(transport = null)
         }
 
-        val normalizedTransport = if (transport == null) {
-            TransportConfig(
-                type = legacyNetwork ?: "tcp",
-                path = legacyPath,
-                headers = legacyHeaders
-            )
-        } else {
-            transport.copy(
-                type = transport.type?.ifBlank { legacyNetwork ?: "tcp" } ?: (legacyNetwork ?: "tcp"),
-                path = transport.path ?: legacyPath,
-                headers = transport.headers ?: legacyHeaders
-            )
+        val type = transport.type?.trim()?.lowercase().orEmpty()
+        val normalized = when {
+            type.isEmpty() || type == "tcp" -> null
+            type == "h2" -> normalizeTransportFields(transport, "http")
+            type == "splithttp" -> normalizeTransportFields(transport, "xhttp")
+            type in V2RAY_TRANSPORT_TYPES -> normalizeTransportFields(transport, type)
+            else -> transport.copy(type = type)
         }
-
-        return outbound.copy(
-            transport = normalizedTransport,
-            network = null,
-            path = null,
-            headers = null
-        )
+        return outbound.copy(transport = normalized)
     }
 
+    private fun normalizeTransportFields(transport: TransportConfig, type: String): TransportConfig {
+        return when (type) {
+            "http" -> transport.copy(
+                type = type,
+                serviceName = null,
+                permitWithoutStream = null,
+                earlyDataHeaderName = null,
+                maxEarlyData = null
+            )
+            "ws" -> transport.copy(
+                type = type,
+                method = null,
+                serviceName = null,
+                host = null,
+                idleTimeout = null,
+                pingTimeout = null,
+                permitWithoutStream = null
+            )
+            "quic" -> TransportConfig(type = type)
+            "grpc" -> transport.copy(
+                type = type,
+                path = null,
+                method = null,
+                headers = null,
+                host = null,
+                earlyDataHeaderName = null,
+                maxEarlyData = null
+            )
+            "httpupgrade" -> transport.copy(
+                type = type,
+                method = null,
+                serviceName = null,
+                host = transport.host
+                    ?.asSequence()
+                    ?.map(String::trim)
+                    ?.firstOrNull(String::isNotEmpty)
+                    ?.let(::listOf),
+                idleTimeout = null,
+                pingTimeout = null,
+                permitWithoutStream = null,
+                earlyDataHeaderName = null,
+                maxEarlyData = null
+            )
+            "xhttp" -> transport.copy(
+                type = type,
+                method = null,
+                serviceName = null,
+                headers = null,
+                idleTimeout = null,
+                pingTimeout = null,
+                permitWithoutStream = null,
+                earlyDataHeaderName = null,
+                maxEarlyData = null
+            )
+            else -> transport
+        }
+    }
+
+    @Suppress("CyclomaticComplexMethod")
     private fun applyCommonDialFields(runtime: Outbound, fixed: Outbound): Outbound {
+        if (runtime.type == "selector" || runtime.type == "urltest") return runtime
         return runtime.copy(
             detour = runtime.detour ?: fixed.detour,
-            connectTimeout = runtime.connectTimeout ?: fixed.connectTimeout,
+            bindInterface = runtime.bindInterface ?: fixed.bindInterface,
+            inet4BindAddress = runtime.inet4BindAddress ?: fixed.inet4BindAddress,
+            inet6BindAddress = runtime.inet6BindAddress ?: fixed.inet6BindAddress,
+            bindAddressNoPort = runtime.bindAddressNoPort ?: fixed.bindAddressNoPort,
+            protectPath = runtime.protectPath ?: fixed.protectPath,
+            routingMark = runtime.routingMark ?: fixed.routingMark,
+            reuseAddr = runtime.reuseAddr ?: fixed.reuseAddr,
+            netns = runtime.netns ?: fixed.netns,
+            connectTimeout = fixed.connectTimeout ?: runtime.connectTimeout,
             tcpFastOpen = runtime.tcpFastOpen ?: fixed.tcpFastOpen,
-            udpOverTcp = runtime.udpOverTcp ?: fixed.udpOverTcp,
-            domainResolver = runtime.domainResolver ?: fixed.domainResolver
+            tcpMultiPath = runtime.tcpMultiPath ?: fixed.tcpMultiPath,
+            disableTcpKeepAlive = runtime.disableTcpKeepAlive ?: fixed.disableTcpKeepAlive,
+            tcpKeepAlive = fixed.tcpKeepAlive ?: runtime.tcpKeepAlive,
+            tcpKeepAliveInterval = fixed.tcpKeepAliveInterval ?: runtime.tcpKeepAliveInterval,
+            udpFragment = runtime.udpFragment ?: fixed.udpFragment,
+            domainResolver = runtime.domainResolver ?: fixed.domainResolver,
+            networkStrategy = runtime.networkStrategy ?: fixed.networkStrategy,
+            networkType = runtime.networkType ?: fixed.networkType,
+            fallbackNetworkType = runtime.fallbackNetworkType ?: fixed.fallbackNetworkType,
+            fallbackDelay = runtime.fallbackDelay ?: fixed.fallbackDelay,
+            domainStrategy = runtime.domainStrategy ?: fixed.domainStrategy
         )
     }
 
     @Suppress("LongMethod")
     fun buildForRuntime(context: android.content.Context, outbound: Outbound): Outbound? {
-        val fixed = normalizeLegacyTransport(applyNaiveRuntimeCompatibility(fix(outbound)))
+        if (hasInvalidV2RayTransport(outbound)) return null
+        val fixed = applyNaiveRuntimeCompatibility(fix(outbound))
 
         val (tcpKeepAliveEnabled, tcpKeepAliveInterval, connectTimeout) = getTcpKeepAliveConfig(context)
 
@@ -415,7 +415,8 @@ object OutboundFixer {
         tcpKeepAliveInterval: String? = null,
         connectTimeout: String? = null
     ): Outbound? {
-        val fixed = normalizeLegacyTransport(applyNaiveRuntimeCompatibility(fix(outbound)))
+        if (hasInvalidV2RayTransport(outbound)) return null
+        val fixed = applyNaiveRuntimeCompatibility(fix(outbound))
         return buildForRuntimeWithDialConfig(
             fixed = fixed,
             tcpKeepAliveEnabled = tcpKeepAliveEnabled,
@@ -424,13 +425,17 @@ object OutboundFixer {
         )
     }
 
-    @Suppress("LongMethod")
+    @Suppress("LongMethod", "ReturnCount")
     private fun buildForRuntimeWithDialConfig(
         fixed: Outbound,
         tcpKeepAliveEnabled: Boolean,
         tcpKeepAliveInterval: String?,
         connectTimeout: String?
     ): Outbound? {
+        if ((fixed.type == "selector" || fixed.type == "urltest") && fixed.outbounds.isNullOrEmpty()) {
+            Log.w(TAG, "Skipping empty ${fixed.type} outbound: ${fixed.tag}")
+            return null
+        }
         return applyCommonDialFields(when (fixed.type) {
             "selector" -> Outbound(
                 type = "selector",
@@ -440,26 +445,17 @@ object OutboundFixer {
                 interruptExistConnections = fixed.interruptExistConnections
             )
 
-            "urltest", "url-test" -> if (shouldKeepUrlTestForRuntime(fixed.tag)) {
-                Outbound(
-                    type = "urltest",
-                    tag = fixed.tag,
-                    outbounds = fixed.outbounds,
-                    default = null,
-                    url = fixed.url,
-                    interval = fixed.interval,
-                    tolerance = fixed.tolerance,
-                    interruptExistConnections = fixed.interruptExistConnections
-                )
-            } else {
-                Outbound(
-                    type = "selector",
-                    tag = fixed.tag,
-                    outbounds = fixed.outbounds,
-                    default = fixed.default,
-                    interruptExistConnections = fixed.interruptExistConnections
-                )
-            }
+            "urltest", "url-test" -> Outbound(
+                type = "urltest",
+                tag = fixed.tag,
+                outbounds = fixed.outbounds,
+                default = null,
+                url = fixed.url,
+                interval = fixed.interval,
+                tolerance = fixed.tolerance,
+                idleTimeout = fixed.idleTimeout,
+                interruptExistConnections = fixed.interruptExistConnections
+            )
 
             "direct" -> Outbound(type = fixed.type, tag = fixed.tag)
 
@@ -478,12 +474,12 @@ object OutboundFixer {
                 uuid = fixed.uuid,
                 alterId = fixed.alterId,
                 security = fixed.security,
+                globalPadding = fixed.globalPadding,
+                authenticatedLength = fixed.authenticatedLength,
                 packetEncoding = fixed.packetEncoding,
                 tls = fixed.tls,
                 transport = fixed.transport,
                 network = fixed.network,
-                path = fixed.path,
-                headers = fixed.headers,
                 multiplex = fixed.multiplex,
                 domainResolver = resolveDomainResolver(fixed),
 
@@ -492,27 +488,32 @@ object OutboundFixer {
                 connectTimeout = connectTimeout
             )
 
-            "vless" -> Outbound(
-                type = fixed.type,
-                tag = fixed.tag,
-                server = fixed.server,
-                serverPort = fixed.serverPort,
-                uuid = fixed.uuid,
-                flow = fixed.flow,
-                packetEncoding = fixed.packetEncoding,
-                encryption = fixed.encryption,
-                tls = fixed.tls,
-                transport = fixed.transport,
-                network = fixed.network,
-                path = fixed.path,
-                headers = fixed.headers,
-                multiplex = fixed.multiplex,
-                domainResolver = resolveDomainResolver(fixed),
+            "vless" -> {
+                val encryption = fixed.encryption?.trim()
+                if (!encryption.isNullOrEmpty() && !encryption.equals("none", ignoreCase = true)) {
+                    Log.w(TAG, "Skipping unsupported VLESS encryption for '${fixed.tag}': $encryption")
+                    return null
+                }
+                Outbound(
+                    type = fixed.type,
+                    tag = fixed.tag,
+                    server = fixed.server,
+                    serverPort = fixed.serverPort,
+                    uuid = fixed.uuid,
+                    flow = fixed.flow,
+                    packetEncoding = fixed.packetEncoding,
+                    encryption = null,
+                    tls = fixed.tls,
+                    transport = fixed.transport,
+                    network = fixed.network,
+                    multiplex = fixed.multiplex,
+                    domainResolver = resolveDomainResolver(fixed),
 
-                tcpKeepAlive = tcpKeepAliveInterval,
-                tcpKeepAliveInterval = tcpKeepAliveInterval,
-                connectTimeout = connectTimeout
-            )
+                    tcpKeepAlive = tcpKeepAliveInterval,
+                    tcpKeepAliveInterval = tcpKeepAliveInterval,
+                    connectTimeout = connectTimeout
+                )
+            }
 
             "trojan" -> Outbound(
                 type = fixed.type,
@@ -523,8 +524,6 @@ object OutboundFixer {
                 tls = fixed.tls,
                 transport = fixed.transport,
                 network = fixed.network,
-                path = fixed.path,
-                headers = fixed.headers,
                 multiplex = fixed.multiplex,
                 domainResolver = resolveDomainResolver(fixed),
 
@@ -542,8 +541,6 @@ object OutboundFixer {
                 password = fixed.password,
                 plugin = fixed.plugin,
                 pluginOpts = fixed.pluginOpts,
-                tls = fixed.tls,
-                transport = fixed.transport,
                 udpOverTcp = fixed.udpOverTcp,
                 multiplex = fixed.multiplex,
                 detour = fixed.detour,
@@ -555,11 +552,7 @@ object OutboundFixer {
                 connectTimeout = connectTimeout
             )
 
-            "hysteria", "hysteria2" -> buildRuntimeHysteriaOutbound(
-                fixed,
-                tcpKeepAliveInterval,
-                connectTimeout
-            )
+            "hysteria", "hysteria2" -> buildRuntimeHysteriaOutbound(fixed)
 
             "tuic" -> Outbound(
                 type = fixed.type,
@@ -570,11 +563,11 @@ object OutboundFixer {
                 password = fixed.password,
                 congestionControl = fixed.congestionControl,
                 udpRelayMode = fixed.udpRelayMode,
+                udpOverStream = fixed.udpOverStream,
                 zeroRttHandshake = fixed.zeroRttHandshake,
                 heartbeat = fixed.heartbeat,
-                mtu = fixed.mtu,
                 tls = fixed.tls,
-                multiplex = fixed.multiplex,
+                network = fixed.network,
                 domainResolver = resolveDomainResolver(fixed),
 
                 tcpKeepAlive = tcpKeepAliveInterval,
@@ -599,7 +592,6 @@ object OutboundFixer {
                 idleSessionTimeout = fixed.idleSessionTimeout,
                 minIdleSession = fixed.minIdleSession,
                 tls = fixed.tls,
-                multiplex = fixed.multiplex,
                 domainResolver = resolveDomainResolver(fixed),
 
                 tcpKeepAlive = tcpKeepAliveInterval,
@@ -607,21 +599,10 @@ object OutboundFixer {
                 connectTimeout = connectTimeout
             )
 
-            "wireguard" -> Outbound(
-                type = fixed.type,
-                tag = fixed.tag,
-                localAddress = fixed.localAddress,
-                privateKey = fixed.privateKey,
-                peerPublicKey = fixed.peerPublicKey,
-                preSharedKey = fixed.preSharedKey,
-                reserved = fixed.reserved,
-                peers = fixed.peers,
-                domainResolver = resolveDomainResolver(fixed),
-
-                tcpKeepAlive = tcpKeepAliveInterval,
-                tcpKeepAliveInterval = tcpKeepAliveInterval,
-                connectTimeout = connectTimeout
-            )
+            "wireguard" -> {
+                Log.w(TAG, "Skipping removed WireGuard outbound '${fixed.tag}'; sing-box 1.13 requires an endpoint")
+                return null
+            }
 
             "ssh" -> Outbound(
                 type = fixed.type,
@@ -630,6 +611,7 @@ object OutboundFixer {
                 serverPort = fixed.serverPort,
                 user = fixed.user,
                 password = fixed.password,
+                privateKey = fixed.privateKey,
                 privateKeyPath = fixed.privateKeyPath,
                 privateKeyPassphrase = fixed.privateKeyPassphrase,
                 hostKey = fixed.hostKey,
@@ -637,6 +619,38 @@ object OutboundFixer {
                 clientVersion = fixed.clientVersion,
                 domainResolver = resolveDomainResolver(fixed),
 
+                tcpKeepAlive = tcpKeepAliveInterval,
+                tcpKeepAliveInterval = tcpKeepAliveInterval,
+                connectTimeout = connectTimeout
+            )
+
+            "socks" -> Outbound(
+                type = fixed.type,
+                tag = fixed.tag,
+                server = fixed.server,
+                serverPort = fixed.serverPort,
+                version = fixed.version,
+                username = fixed.username,
+                password = fixed.password,
+                network = fixed.network,
+                udpOverTcp = fixed.udpOverTcp,
+                domainResolver = resolveDomainResolver(fixed),
+                tcpKeepAlive = tcpKeepAliveInterval,
+                tcpKeepAliveInterval = tcpKeepAliveInterval,
+                connectTimeout = connectTimeout
+            )
+
+            "http" -> Outbound(
+                type = fixed.type,
+                tag = fixed.tag,
+                server = fixed.server,
+                serverPort = fixed.serverPort,
+                username = fixed.username,
+                password = fixed.password,
+                tls = fixed.tls,
+                path = fixed.path,
+                headers = fixed.headers,
+                domainResolver = resolveDomainResolver(fixed),
                 tcpKeepAlive = tcpKeepAliveInterval,
                 tcpKeepAliveInterval = tcpKeepAliveInterval,
                 connectTimeout = connectTimeout
@@ -661,12 +675,7 @@ object OutboundFixer {
         }, fixed)
     }
 
-    @Suppress("UnusedParameter")
-    internal fun buildRuntimeHysteriaOutbound(
-        fixed: Outbound,
-        tcpKeepAliveInterval: String?,
-        connectTimeout: String?
-    ): Outbound {
+    internal fun buildRuntimeHysteriaOutbound(fixed: Outbound): Outbound {
         val serverPorts = fixed.serverPorts?.takeIf { it.isNotEmpty() }
         return Outbound(
             type = fixed.type,
@@ -674,17 +683,21 @@ object OutboundFixer {
             server = fixed.server,
             serverPort = fixed.serverPort.takeIf { serverPorts == null },
             password = fixed.password,
+            auth = fixed.auth,
             authStr = fixed.authStr,
-            upMbps = fixed.upMbps ?: 50,
-            downMbps = fixed.downMbps ?: 50,
+            up = fixed.up,
+            upMbps = fixed.upMbps,
+            down = fixed.down,
+            downMbps = fixed.downMbps,
             obfs = fixed.obfs,
             recvWindowConn = fixed.recvWindowConn,
             recvWindow = fixed.recvWindow,
-            disableMtuDiscovery = fixed.disableMtuDiscovery,
+            disableMtuDiscovery = fixed.disableMtuDiscovery.takeIf { fixed.type == "hysteria" },
             hopInterval = fixed.hopInterval,
             serverPorts = serverPorts,
+            brutalDebug = fixed.brutalDebug.takeIf { fixed.type == "hysteria2" },
             tls = fixed.tls,
-            multiplex = fixed.multiplex,
+            network = fixed.network,
             domainResolver = resolveDomainResolver(fixed)
         )
     }
@@ -695,6 +708,7 @@ object OutboundFixer {
         tcpKeepAliveInterval: String?,
         connectTimeout: String?
     ): Outbound {
+        val useQuic = fixed.quic == true || fixed.network?.firstOrNull().equals("quic", ignoreCase = true)
         return Outbound(
             type = fixed.type,
             tag = fixed.tag,
@@ -704,8 +718,14 @@ object OutboundFixer {
             password = fixed.password,
             insecureConcurrency = fixed.insecureConcurrency,
             extraHeaders = fixed.extraHeaders,
-            quic = fixed.network?.equals("quic", ignoreCase = true),
-            quicCongestionControl = fixed.congestionControl,
+            streamReceiveWindow = fixed.streamReceiveWindow,
+            quic = useQuic,
+            quicCongestionControl = if (useQuic) {
+                fixed.quicCongestionControl ?: fixed.congestionControl
+            } else {
+                null
+            },
+            quicSessionReceiveWindow = fixed.quicSessionReceiveWindow,
             tls = fixed.tls,
             udpOverTcp = fixed.udpOverTcp,
             domainResolver = resolveNaiveDomainResolver(fixed),
@@ -718,24 +738,30 @@ object OutboundFixer {
 
     @Suppress("CyclomaticComplexMethod")
     private fun fixNaive(outbound: Outbound): Outbound {
-        val normalizedNetwork = when (outbound.network?.trim()?.lowercase()) {
-            "h2", "quic" -> outbound.network?.trim()
+        val currentNetwork = outbound.network?.firstOrNull()?.trim()
+        val normalizedNetwork = when (currentNetwork?.lowercase()) {
+            "h2", "quic" -> currentNetwork
             else -> "h2"
         }
         val useQuic = normalizedNetwork == "quic" || outbound.quic == true
 
-        val normalizedHeaders = buildMap {
+        val normalizedHeaderValues = buildMap {
             outbound.extraHeaders
-                ?.asSequence()
-                ?.map { (key, value) -> key.trim() to value.trim() }
-                ?.filter { (key, value) -> key.isNotEmpty() && value.isNotEmpty() }
-                ?.forEach { (key, value) -> put(key, value) }
+                ?.allHeaderValues()
+                ?.forEach { (key, values) ->
+                    val normalizedKey = key.trim()
+                    val normalizedValues = values.map(String::trim).filter(String::isNotEmpty)
+                    if (normalizedKey.isNotEmpty() && normalizedValues.isNotEmpty()) {
+                        put(normalizedKey, normalizedValues)
+                    }
+                }
 
             val host = outbound.headers?.get("Host")?.trim()
             if (!host.isNullOrEmpty() && !containsKey("Host")) {
-                put("Host", host)
+                put("Host", listOf(host))
             }
         }.ifEmpty { null }
+        val normalizedHeaders = normalizedHeaderValues?.asHttpHeaderMap()
 
         val host = normalizedHeaders?.get("Host")?.trim()
         val tls = outbound.tls ?: TlsConfig(enabled = true)
@@ -743,11 +769,15 @@ object OutboundFixer {
         val shouldSetSni = tlsEnabled &&
             !host.isNullOrBlank() &&
             !isIpLiteral(host) &&
-            (tls.serverName.isNullOrBlank() || isIpLiteral(tls.serverName ?: ""))
-        val tlsUpdated = if (shouldSetSni) tls.copy(serverName = host, enabled = true) else tls
+            tls.serverName.isNullOrBlank()
+        val serverName = if (shouldSetSni) host else tls.serverName
+        val tlsUpdated = tls.copy(
+            enabled = true,
+            serverName = serverName
+        )
 
         return outbound.copy(
-            network = if (useQuic) "quic" else "h2",
+            network = listOf(if (useQuic) "quic" else "h2"),
             path = null,
             headers = null,
             extraHeaders = normalizedHeaders,
@@ -776,12 +806,87 @@ object OutboundFixer {
     private fun applyNaiveRuntimeCompatibility(outbound: Outbound): Outbound {
         if (outbound.type != "naive") return outbound
 
-        val hasQuic = outbound.quic == true || outbound.network?.lowercase() == "quic"
+        val hasQuic = outbound.quic == true || outbound.network?.firstOrNull()?.lowercase() == "quic"
         val quicSupported = LibboxCompat.isNaiveQuicSupported()
         if (!hasQuic || quicSupported) return outbound
 
-        val tls = (outbound.tls ?: TlsConfig(enabled = true)).copy(alpn = listOf("h2"))
-        return outbound.copy(network = "h2", quic = false, tls = tls)
+        return outbound.copy(network = listOf("h2"), quic = false)
+    }
+
+    private fun hasInvalidV2RayTransport(outbound: Outbound): Boolean {
+        val transport = outbound.transport ?: return false
+        if (outbound.type !in V2RAY_TRANSPORT_PROTOCOLS) return false
+
+        val transportType = transport.type?.trim()?.lowercase().orEmpty()
+        val normalizedType = if (transportType == "h2") "http" else transportType
+        return when {
+            transportType.isEmpty() || transportType == "tcp" -> false
+            normalizedType !in V2RAY_TRANSPORT_TYPES -> rejectTransport(
+                "Skipping unknown V2Ray transport '$transportType' for '${outbound.tag}'"
+            )
+            normalizedType in V2RAY_XHTTP_TRANSPORT_TYPES && outbound.encryption?.let {
+                it.isNotBlank() && !it.equals("none", ignoreCase = true)
+            } == true -> rejectTransport(
+                "Skipping XHTTP with unsupported private VLESS encryption for '${outbound.tag}'"
+            )
+            normalizedType == "ws" && hasInvalidWebSocketEarlyData(transport) -> rejectTransport(
+                "Skipping WebSocket transport with invalid max_early_data for '${outbound.tag}'"
+            )
+            normalizedType == "quic" && outbound.tls?.enabled != true -> rejectTransport(
+                "Skipping QUIC transport without TLS for '${outbound.tag}'"
+            )
+            else -> false
+        }
+    }
+
+    private fun hasInvalidWebSocketEarlyData(transport: TransportConfig): Boolean {
+        val invalidMaxEarlyData = transport.maxEarlyData?.let { value ->
+            runCatching { UInt32JsonAdapter.requireValue(value) }.isFailure
+        } == true
+        val embeddedEarlyData = transport.path?.let(::splitWebSocketEarlyData)?.second
+        val parsedEmbeddedEarlyData = embeddedEarlyData?.toLongOrNull()
+        val invalidEmbeddedEarlyData = if (embeddedEarlyData == null) {
+            false
+        } else {
+            parsedEmbeddedEarlyData == null || runCatching {
+                UInt32JsonAdapter.requireValue(parsedEmbeddedEarlyData)
+            }.isFailure
+        }
+        return invalidMaxEarlyData || invalidEmbeddedEarlyData
+    }
+
+    private fun rejectTransport(message: String): Boolean {
+        Log.w(TAG, message)
+        return true
+    }
+
+    private fun splitWebSocketEarlyData(rawPath: String): Pair<String, String?> {
+        val queryIndex = rawPath.indexOf('?')
+        if (queryIndex == -1) return rawPath to null
+
+        val path = rawPath.substring(0, queryIndex).ifEmpty { "/" }
+        var earlyData: String? = null
+        val remainingQuery = rawPath.substring(queryIndex + 1)
+            .split('&')
+            .filter { parameter ->
+                val isEarlyData = parameter.substringBefore('=').equals("ed", ignoreCase = true)
+                if (isEarlyData && earlyData == null) {
+                    earlyData = parameter.substringAfter('=', missingDelimiterValue = "")
+                }
+                !isEarlyData
+            }
+            .joinToString("&")
+        val cleanPath = if (remainingQuery.isEmpty()) path else "$path?$remainingQuery"
+        return cleanPath to earlyData
+    }
+
+    private fun normalizeXhttpPath(path: String): String {
+        val trimmed = path.trim().ifEmpty { "/" }
+        val withLeadingSlash = if (trimmed.startsWith("/")) trimmed else "/$trimmed"
+        if (!withLeadingSlash.contains("://")) return withLeadingSlash
+        return withLeadingSlash.substringAfter("://")
+            .substringAfter("/", missingDelimiterValue = "/")
+            .let { if (it.startsWith("/")) it else "/$it" }
     }
 
     private fun tuneMuxForVisionReality(outbound: Outbound): MultiplexConfig? {
@@ -792,10 +897,6 @@ object OutboundFixer {
         val tls = outbound.tls
         val hasReality = tls?.enabled == true && tls.reality?.enabled == true
         if (!hasVisionFlow || !hasReality) return mux
-
-        val transportType = outbound.transport?.type?.lowercase()
-        val isXhttp = transportType == "xhttp" || transportType == "splithttp"
-        if (isXhttp) return mux
 
         val normalizedProtocol = when (mux.protocol?.lowercase()) {
             "h2mux", "smux", "yamux" -> "h2mux"
@@ -824,27 +925,6 @@ object OutboundFixer {
         return v.contains(":") && REGEX_IPV6.matches(v)
     }
 
-    private fun normalizeXhttpPath(path: String): String {
-        val trimmed = path.trim().ifEmpty { "/" }
-        val withLeadingSlash = if (trimmed.startsWith("/")) trimmed else "/$trimmed"
-
-        // 验证路径格式: 必须是有效的 HTTP 路径
-        // 允许: /, /path, /path/to/resource
-        // 允许带查询: /path?query=value
-        // 不允许: scheme://host/path (这应该是完整 URL)
-        if (withLeadingSlash.contains("://")) {
-            Log.w(TAG, "XHTTP path appears to be a full URL: $withLeadingSlash, extracting path only")
-            // 尝试提取路径部分
-            return withLeadingSlash.substringAfter("://")
-                .substringAfter("/", missingDelimiterValue = "/")
-                .let { if (it.startsWith("/")) it else "/$it" }
-        }
-
-        return withLeadingSlash
-    }
-
-    /**
-     */
     private fun convertPortRangeFormat(portSpec: String): String {
         return portSpec.trim()
     }

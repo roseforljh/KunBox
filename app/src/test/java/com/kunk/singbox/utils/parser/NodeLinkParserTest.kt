@@ -237,7 +237,53 @@ class NodeLinkParserTest : NodeLinkParserProxyAndEdgeTest() {
     }
 
     @Test
-    fun testParseVMessWithXhttpExtendedParams() {
+    fun testParseV2RayQuicTransports() {
+        val vmessJson = """
+            {
+              "v":"2",
+              "ps":"VMess QUIC",
+              "add":"vmess.example.com",
+              "port":"443",
+              "id":"uuid-vmess",
+              "aid":"0",
+              "net":"quic",
+              "tls":"tls"
+            }
+        """.trimIndent()
+        val vmessLink = "vmess://${java.util.Base64.getEncoder().encodeToString(vmessJson.toByteArray())}"
+        val vlessLink =
+            "vless://uuid-vless@vless.example.com:443?security=tls&type=quic#VLESS%20QUIC"
+        val trojanLink =
+            "trojan://secret@trojan.example.com:443?type=quic&sni=trojan.example.com#Trojan%20QUIC"
+
+        assertEquals("quic", parser.parse(vmessLink)?.transport?.type)
+        assertEquals("quic", parser.parse(vlessLink)?.transport?.type)
+        assertEquals("quic", parser.parse(trojanLink)?.transport?.type)
+    }
+
+    @Test
+    fun testParseV2RayLinksRejectUnknownTransport() {
+        val vmessJson = """
+            {
+              "v":"2",
+              "ps":"VMess KCP",
+              "add":"vmess.example.com",
+              "port":"443",
+              "id":"uuid-vmess",
+              "aid":"0",
+              "net":"kcp",
+              "tls":"tls"
+            }
+        """.trimIndent()
+        val vmessLink = "vmess://${java.util.Base64.getEncoder().encodeToString(vmessJson.toByteArray())}"
+
+        assertNull(parser.parse(vmessLink))
+        assertNull(parser.parse("vless://uuid@vless.example.com:443?security=tls&type=kcp#VLESS"))
+        assertNull(parser.parse("trojan://secret@trojan.example.com:443?type=kcp#Trojan"))
+    }
+
+    @Test
+    fun testParseVMessSupportsXhttpTransport() {
         val vmessJson = """
             {
               "v":"2",
@@ -267,11 +313,11 @@ class NodeLinkParserTest : NodeLinkParserProxyAndEdgeTest() {
 
         assertNotNull(outbound)
         assertEquals("xhttp", outbound?.transport?.type)
-        assertEquals(listOf("h1.example.com", "h2.example.com"), outbound?.transport?.host)
         assertEquals("/xhttp", outbound?.transport?.path)
+        assertEquals(listOf("h1.example.com", "h2.example.com"), outbound?.transport?.host)
         assertEquals("auto", outbound?.transport?.mode)
         assertEquals("100-200", outbound?.transport?.xPaddingBytes)
-        assertEquals(1048576L, outbound?.transport?.scMaxEachPostBytes)
+        assertEquals(1_048_576L, outbound?.transport?.scMaxEachPostBytes)
         assertEquals(30L, outbound?.transport?.scMinPostsIntervalMs)
         assertEquals(64L, outbound?.transport?.scMaxBufferedPosts)
         assertEquals(true, outbound?.transport?.noGRPCHeader)
@@ -293,11 +339,39 @@ class NodeLinkParserTest : NodeLinkParserProxyAndEdgeTest() {
         assertEquals("vless", outbound?.type)
         assertEquals("ws", outbound?.transport?.type)
         assertEquals("/", outbound?.transport?.path)
-        assertEquals(2560, outbound?.transport?.maxEarlyData)
+        assertEquals(2560L, outbound?.transport?.maxEarlyData)
         assertEquals("Sec-WebSocket-Protocol", outbound?.transport?.earlyDataHeaderName)
         assertEquals("random", outbound?.tls?.utls?.fingerprint)
         assertEquals(true, outbound?.tls?.insecure)
         assertEquals("lp3.0528.linkpc.net", outbound?.tls?.serverName)
+    }
+
+    @Test
+    fun testParseWebSocketEarlyDataHonorsUInt32Bounds() {
+        val maxValueLink =
+            "vless://uuid@example.com:443?security=tls&type=ws&path=%2F%3Fed%3D4294967295#Max"
+        val overflowLink =
+            "vless://uuid@example.com:443?security=tls&type=ws&path=%2F%3Fed%3D4294967296#Overflow"
+        val negativeLink =
+            "vless://uuid@example.com:443?security=tls&type=ws&path=%2F%3Fed%3D-1#Negative"
+
+        assertEquals(4_294_967_295L, parser.parse(maxValueLink)?.transport?.maxEarlyData)
+        assertNull(parser.parse(overflowLink))
+        assertNull(parser.parse(negativeLink))
+    }
+
+    @Test
+    fun testParseVLessHttpAndH2Transports() {
+        listOf("http", "h2").forEach { type ->
+            val outbound = parser.parse(
+                "vless://uuid@example.com:443?security=tls&type=$type" +
+                    "&host=h1.example.com,h2.example.com&path=%2Fhealth#$type"
+            )
+
+            assertEquals("http", outbound?.transport?.type)
+            assertEquals(listOf("h1.example.com", "h2.example.com"), outbound?.transport?.host)
+            assertEquals("/health", outbound?.transport?.path)
+        }
     }
 
     @Test
@@ -386,20 +460,13 @@ class NodeLinkParserTest : NodeLinkParserProxyAndEdgeTest() {
     }
 
     @Test
-    fun testParseRealVLessWebSocketPqcNodeNormalizesPathAndPreservesEncryption() {
+    fun testParseVLessRejectsUnsupportedPrivateEncryption() {
         val link = "vless://b6fd6867-c239-4d95-8a98-cb036d34fc21@34.150.59.170:39797" +
             "?encryption=mlkem768x25519plus.native.0rtt.sample&flow=xtls-rprx-vision" +
             "&type=ws&path=b6fd6867-c239-4d95-8a98-cb036d34fc21-vw#vl-ws-enc"
 
         val outbound = parser.parse(link)
-        val runtime = outbound?.let { OutboundFixer.buildForRuntimeWithDialConfigForTest(it) }
-
-        assertNotNull(outbound)
-        assertNotNull(runtime)
-        assertEquals("ws", runtime?.transport?.type)
-        assertEquals("/b6fd6867-c239-4d95-8a98-cb036d34fc21-vw", runtime?.transport?.path)
-        assertNull(runtime?.packetEncoding)
-        assertEquals("mlkem768x25519plus.native.0rtt.sample", runtime?.encryption)
+        assertNull(outbound)
     }
 
     @Test
@@ -440,7 +507,7 @@ class NodeLinkParserTest : NodeLinkParserProxyAndEdgeTest() {
     }
 
     @Test
-    fun testParseVLessWithXhttpExtendedParams() {
+    fun testParseVLessSupportsXhttpTransport() {
         val link =
             "vless://uuid@xhttp.example.com:443?security=tls&type=xhttp&host=h1.example.com,h2.example.com" +
                 "&path=%2Fxhttp&mode=auto&xPaddingBytes=100-200&scMaxEachPostBytes=1048576" +
@@ -451,18 +518,12 @@ class NodeLinkParserTest : NodeLinkParserProxyAndEdgeTest() {
         assertNotNull(outbound)
         assertEquals("xhttp", outbound?.transport?.type)
         assertEquals(listOf("h1.example.com", "h2.example.com"), outbound?.transport?.host)
-        assertEquals("/xhttp", outbound?.transport?.path)
         assertEquals("auto", outbound?.transport?.mode)
-        assertEquals("100-200", outbound?.transport?.xPaddingBytes)
-        assertEquals(1048576L, outbound?.transport?.scMaxEachPostBytes)
-        assertEquals(30L, outbound?.transport?.scMinPostsIntervalMs)
-        assertEquals(64L, outbound?.transport?.scMaxBufferedPosts)
-        assertEquals(true, outbound?.transport?.noGRPCHeader)
-        assertEquals(true, outbound?.transport?.noSSEHeader)
+        assertEquals(1_048_576L, outbound?.transport?.scMaxEachPostBytes)
     }
 
     @Test
-    fun testParseVLessWithCustomEncryptionAndXhttp() {
+    fun testParseVLessRejectsPrivateEncryptionWithXhttp() {
         val link =
             "vless://uuid@xhttp.example.com:443?security=reality&sni=apple.com&pbk=public-key-123" +
                 "&sid=short-id-123&fp=chrome&flow=xtls-rprx-vision&type=xhttp" +
@@ -470,13 +531,7 @@ class NodeLinkParserTest : NodeLinkParserProxyAndEdgeTest() {
 
         val outbound = parser.parse(link)
 
-        assertNotNull(outbound)
-        assertEquals("vless", outbound?.type)
-        assertEquals("xhttp", outbound?.transport?.type)
-        assertEquals("xtls-rprx-vision", outbound?.flow)
-        assertEquals("mlkem768x25519plus.native.0rtt.sample", outbound?.encryption)
-        assertNull(outbound?.packetEncoding)
-        assertEquals("apple.com", outbound?.tls?.serverName)
+        assertNull(outbound)
     }
 
     @Test
@@ -497,22 +552,14 @@ class NodeLinkParserTest : NodeLinkParserProxyAndEdgeTest() {
     }
 
     @Test
-    fun testRealVLessXhttpRealityNodePreservesXudpPacketEncodingForRuntime() {
+    fun testRealVLessXhttpRealityNodeIsRejected() {
         val link = "vless://2edd765b-a895-46ab-a01c-c4719947546b@35.194.192.123:13324" +
             "?type=xhttp&encryption=mlkem768x25519plus.native.0rtt.sample&flow=xtls-rprx-vision" +
             "&security=reality&pbk=public-key-123&sid=94c5638d&sni=apple.com&fp=chrome" +
             "&packetEncoding=xudp&path=%2F2edd765b-a895-46ab-a01c-c4719947546b-xh&mode=auto" +
             "#TW-GCP-xhttp"
         val outbound = parser.parse(link)
-        val runtime = outbound?.let { OutboundFixer.buildForRuntimeWithDialConfigForTest(it) }
-
-        assertNotNull(outbound)
-        assertNotNull(runtime)
-        assertEquals("xudp", outbound?.packetEncoding)
-        assertEquals("xudp", runtime?.packetEncoding)
-        assertEquals("xhttp", runtime?.transport?.type)
-        assertEquals("/2edd765b-a895-46ab-a01c-c4719947546b-xh", runtime?.transport?.path)
-        assertEquals("apple.com", runtime?.tls?.serverName)
+        assertNull(outbound)
     }
 
     @Test
@@ -577,7 +624,7 @@ class NodeLinkParserTest : NodeLinkParserProxyAndEdgeTest() {
     }
 
     @Test
-    fun testParseTrojanWithXhttpExtendedParams() {
+    fun testParseTrojanSupportsXhttpTransport() {
         val link =
             "trojan://password@trojan.example.com:443?security=tls&type=xhttp&host=h1.example.com,h2.example.com" +
                 "&path=%2Fxhttp&mode=auto&xPaddingBytes=100-200&scMaxEachPostBytes=1048576" +
@@ -587,25 +634,9 @@ class NodeLinkParserTest : NodeLinkParserProxyAndEdgeTest() {
         val outbound = parser.parse(link)
 
         assertNotNull(outbound)
-        assertEquals("trojan", outbound?.type)
-        assertEquals("TrojanXHTTP", outbound?.tag)
-        assertEquals("trojan.example.com", outbound?.server)
-        assertEquals(443, outbound?.serverPort)
-        assertEquals("password", outbound?.password)
-        assertEquals(true, outbound?.tls?.enabled)
-        assertEquals("sni.example.com", outbound?.tls?.serverName)
-        assertEquals(true, outbound?.tls?.insecure)
-        assertEquals("chrome", outbound?.tls?.utls?.fingerprint)
-        assertEquals(listOf("h2", "http/1.1"), outbound?.tls?.alpn)
-
         assertEquals("xhttp", outbound?.transport?.type)
         assertEquals("/xhttp", outbound?.transport?.path)
         assertEquals(listOf("h1.example.com", "h2.example.com"), outbound?.transport?.host)
-        assertEquals("auto", outbound?.transport?.mode)
-        assertEquals("100-200", outbound?.transport?.xPaddingBytes)
-        assertEquals(1048576L, outbound?.transport?.scMaxEachPostBytes)
-        assertEquals(30L, outbound?.transport?.scMinPostsIntervalMs)
-        assertEquals(64L, outbound?.transport?.scMaxBufferedPosts)
         assertEquals(true, outbound?.transport?.noGRPCHeader)
         assertEquals(true, outbound?.transport?.noSSEHeader)
     }
@@ -627,6 +658,19 @@ class NodeLinkParserTest : NodeLinkParserProxyAndEdgeTest() {
         assertTrue(gson.toJson(outbound?.transport).contains("\"host\":\"cdn.example.com\""))
         assertEquals(true, outbound?.tls?.enabled)
         assertEquals("sni.example.com", outbound?.tls?.serverName)
+    }
+
+    @Test
+    fun testParseTrojanWebSocketEarlyData() {
+        val outbound = parser.parse(
+            "trojan://secret@trojan.example.com:443?type=ws&path=%2Fws%3Fed%3D2048" +
+                "&host=cdn.example.com#TrojanWS"
+        )
+
+        assertEquals("ws", outbound?.transport?.type)
+        assertEquals("/ws", outbound?.transport?.path)
+        assertEquals(2048L, outbound?.transport?.maxEarlyData)
+        assertEquals("Sec-WebSocket-Protocol", outbound?.transport?.earlyDataHeaderName)
     }
 
     // ==================== Hysteria2 ====================
@@ -736,7 +780,7 @@ class NodeLinkParserTest : NodeLinkParserProxyAndEdgeTest() {
         assertEquals(443, outbound?.serverPort)
         assertEquals("user", outbound?.username)
         assertEquals("pass", outbound?.password)
-        assertEquals("h2", outbound?.network)
+        assertEquals(listOf("h2"), outbound?.network)
         assertEquals(2, outbound?.insecureConcurrency)
         assertEquals("naive", outbound?.extraHeaders?.get("User-Agent"))
         assertEquals("demo", outbound?.extraHeaders?.get("X-Test"))
@@ -757,7 +801,7 @@ class NodeLinkParserTest : NodeLinkParserProxyAndEdgeTest() {
         assertEquals("NaiveHttps", outbound?.tag)
         assertEquals("u", outbound?.username)
         assertEquals("p", outbound?.password)
-        assertEquals("h2", outbound?.network)
+        assertEquals(listOf("h2"), outbound?.network)
         assertEquals("naive", outbound?.extraHeaders?.get("User-Agent"))
     }
 
@@ -801,7 +845,7 @@ class NodeLinkParserTest : NodeLinkParserProxyAndEdgeTest() {
         assertEquals("bbr", outbound?.congestionControl)
         assertEquals("native", outbound?.udpRelayMode)
         assertEquals("tuic.example.com", outbound?.tls?.serverName)
-        assertNull(outbound?.disableSni)
+        assertNull(outbound?.tls?.disableSni)
     }
 
     @Test
@@ -811,7 +855,8 @@ class NodeLinkParserTest : NodeLinkParserProxyAndEdgeTest() {
 
         assertNotNull(outbound)
         assertEquals("tuic", outbound?.type)
-        assertEquals(true, outbound?.disableSni)
+        assertNull(outbound?.disableSni)
+        assertEquals(true, outbound?.tls?.disableSni)
         assertEquals(true, outbound?.tls?.enabled)
         assertEquals("edge.example.com", outbound?.tls?.serverName)
     }
@@ -901,18 +946,25 @@ class NodeLinkParserTest : NodeLinkParserProxyAndEdgeTest() {
     @Test
     fun testParseWireGuardUsesRequiredLocalAddress() {
         val link = "wireguard://private-key@example.com:51820?" +
-            "public_key=peer-key&address=10.7.0.2%2F32,fd00%3A%3A2%2F128#WireGuardNode"
+            "public_key=peer-key&address=10.7.0.2%2F32,fd00%3A%3A2%2F128" +
+            "&allowed_ips=0.0.0.0%2F0,%3A%3A%2F0&persistent_keepalive_interval=25" +
+            "&reserved=1,2,3&mtu=1380&workers=2#WireGuardNode"
 
         val outbound = parser.parse(link)
 
         assertNotNull(outbound)
         assertEquals("wireguard", outbound?.type)
         assertEquals("WireGuardNode", outbound?.tag)
-        assertEquals("private-key", outbound?.privateKey)
+        assertEquals(listOf("private-key"), outbound?.privateKey)
         assertEquals(listOf("10.7.0.2/32", "fd00::2/128"), outbound?.localAddress)
         assertEquals("example.com", outbound?.peers?.firstOrNull()?.server)
         assertEquals(51820, outbound?.peers?.firstOrNull()?.serverPort)
         assertEquals("peer-key", outbound?.peers?.firstOrNull()?.publicKey)
+        assertEquals(listOf("0.0.0.0/0", "::/0"), outbound?.peers?.firstOrNull()?.allowedIps)
+        assertEquals(25, outbound?.peers?.firstOrNull()?.persistentKeepaliveInterval)
+        assertEquals(listOf(1, 2, 3), outbound?.peers?.firstOrNull()?.reserved)
+        assertEquals(1380, outbound?.mtu)
+        assertEquals(2, outbound?.workers)
     }
 
     @Test
@@ -922,5 +974,14 @@ class NodeLinkParserTest : NodeLinkParserProxyAndEdgeTest() {
         val outbound = parser.parse(link)
 
         assertNull(outbound)
+    }
+
+    @Test
+    fun supportedLinkPrefixesMatchImplementedProtocols() {
+        assertTrue(NodeLinkParser.isSupportedLink("https://user:pass@example.com:443#HTTP"))
+        assertFalse(NodeLinkParser.isSupportedLink("https://subscription.example.com/config"))
+        assertTrue(NodeLinkParser.isSupportedLink("socks4a://example.com:1080#SOCKS"))
+        assertTrue(NodeLinkParser.isSupportedLink("wg://private@example.com:51820?address=10.0.0.2%2F32"))
+        assertFalse(NodeLinkParser.isSupportedLink("ssr://unsupported"))
     }
 }

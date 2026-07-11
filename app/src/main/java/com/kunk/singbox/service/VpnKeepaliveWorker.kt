@@ -10,10 +10,6 @@ import com.kunk.singbox.ipc.VpnStateStore
 import java.io.File
 import java.util.concurrent.TimeUnit
 
-/**
- *
- *
- */
 class VpnKeepaliveWorker(
     context: Context,
     params: WorkerParameters
@@ -30,9 +26,6 @@ class VpnKeepaliveWorker(
             return ExistingPeriodicWorkPolicy.UPDATE
         }
 
-        /**
-         *
-         */
         fun schedule(context: Context) {
             val constraints = Constraints.Builder()
                 .setRequiredNetworkType(NetworkType.CONNECTED)
@@ -56,15 +49,11 @@ class VpnKeepaliveWorker(
             Log.i(TAG, "VPN keepalive worker scheduled (interval: ${CHECK_INTERVAL_MINUTES}min)")
         }
 
-        /**
-         */
         fun cancel(context: Context) {
             WorkManager.getInstance(context).cancelUniqueWork(WORK_NAME)
             Log.i(TAG, "VPN keepalive worker cancelled")
         }
 
-        /**
-         */
         @Suppress("DEPRECATION")
         private fun isCoreServiceAlive(context: Context, mode: VpnStateStore.CoreMode): Boolean {
             val activityManager = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
@@ -79,41 +68,7 @@ class VpnKeepaliveWorker(
             }
         }
 
-        internal fun isRunningConfigUsableForTest(
-            exists: Boolean,
-            isFile: Boolean,
-            canRead: Boolean,
-            length: Long
-        ): Boolean {
-            return isRunningConfigUsable(exists, isFile, canRead, length)
-        }
-
-        internal fun shouldAttemptRecoveryForTest(
-            manuallyStopped: Boolean,
-            mode: VpnStateStore.CoreMode,
-            coreServiceAlive: Boolean,
-            runningConfigUsable: Boolean
-        ): Boolean {
-            return shouldAttemptRecovery(manuallyStopped, mode, coreServiceAlive, runningConfigUsable)
-        }
-
-        internal fun shouldClearStaleRecoveryStateForTest(
-            manuallyStopped: Boolean,
-            mode: VpnStateStore.CoreMode,
-            coreServiceAlive: Boolean,
-            runningConfigUsable: Boolean
-        ): Boolean {
-            return shouldClearStaleRecoveryState(manuallyStopped, mode, coreServiceAlive, runningConfigUsable)
-        }
-
-        internal fun shouldClearAfterRecoveryFailureForTest(
-            runAttemptCount: Int,
-            foregroundStartDenied: Boolean
-        ): Boolean {
-            return shouldClearAfterRecoveryFailure(runAttemptCount, foregroundStartDenied)
-        }
-
-        private fun shouldAttemptRecovery(
+        internal fun shouldAttemptRecovery(
             manuallyStopped: Boolean,
             mode: VpnStateStore.CoreMode,
             coreServiceAlive: Boolean,
@@ -125,7 +80,7 @@ class VpnKeepaliveWorker(
                 runningConfigUsable
         }
 
-        private fun shouldClearStaleRecoveryState(
+        internal fun shouldClearStaleRecoveryState(
             manuallyStopped: Boolean,
             mode: VpnStateStore.CoreMode,
             coreServiceAlive: Boolean,
@@ -137,7 +92,7 @@ class VpnKeepaliveWorker(
                 !runningConfigUsable
         }
 
-        private fun shouldClearAfterRecoveryFailure(
+        internal fun shouldClearAfterRecoveryFailure(
             runAttemptCount: Int,
             foregroundStartDenied: Boolean
         ): Boolean {
@@ -158,7 +113,7 @@ class VpnKeepaliveWorker(
             )
         }
 
-        private fun isRunningConfigUsable(
+        internal fun isRunningConfigUsable(
             exists: Boolean,
             isFile: Boolean,
             canRead: Boolean,
@@ -228,9 +183,6 @@ class VpnKeepaliveWorker(
         }
     }
 
-    /**
-     *
-     */
     private fun attemptVpnRecovery(mode: VpnStateStore.CoreMode, runningConfigPath: String): Boolean {
         return try {
             Log.i(TAG, "Attempting to recover VPN service (mode: $mode)...")
@@ -271,8 +223,8 @@ class VpnKeepaliveWorker(
     }
 
     private fun clearStaleRecoveryState(reason: String) {
-        VpnTileService.persistVpnState(applicationContext, false)
-        VpnTileService.persistVpnPending(applicationContext, "")
+        VpnTileService.persistVpnState(false)
+        VpnTileService.persistVpnPending("")
         VpnStateStore.clearRuntimeState()
         VpnStateStore.setMode(VpnStateStore.CoreMode.NONE)
         VpnStateStore.setLastError(reason)

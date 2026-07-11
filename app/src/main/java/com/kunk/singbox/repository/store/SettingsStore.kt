@@ -21,9 +21,6 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
-/**
- *
- */
 class SettingsStore private constructor(context: Context) {
     companion object {
         private const val TAG = "SettingsStore"
@@ -42,7 +39,7 @@ class SettingsStore private constructor(context: Context) {
             }
         }
 
-        @Suppress("CognitiveComplexMethod")
+        @Suppress("CognitiveComplexMethod", "CyclomaticComplexMethod")
         internal fun migrateSettings(version: Int, settings: AppSettings): AppSettings {
             var result = settings
 
@@ -104,6 +101,11 @@ class SettingsStore private constructor(context: Context) {
             result = migrateFakeIpRange(version, result)
             result = migrateNetworkAutoSwitch(version, result)
             result = migrateAppThemeStyle(version, result)
+            val latencyTestUrl = AppSettings.validateLatencyTestUrl(result.latencyTestUrl)
+            if (latencyTestUrl == null) {
+                Log.w(TAG, "Recovering invalid latency test URL to the official sing-box default")
+            }
+            result = result.copy(latencyTestUrl = latencyTestUrl ?: AppSettings.DEFAULT_LATENCY_TEST_URL)
 
             return result
         }
@@ -151,15 +153,7 @@ class SettingsStore private constructor(context: Context) {
             return version != SettingsEntity.CURRENT_VERSION || migrated != loaded
         }
 
-        internal fun resolveSettingsAfterPersistenceForTest(
-            previous: AppSettings,
-            updated: AppSettings,
-            persisted: Boolean
-        ): AppSettings {
-            return resolveSettingsAfterPersistence(previous, updated, persisted)
-        }
-
-        private fun resolveSettingsAfterPersistence(
+        internal fun resolveSettingsAfterPersistence(
             previous: AppSettings,
             updated: AppSettings,
             persisted: Boolean
@@ -213,16 +207,12 @@ class SettingsStore private constructor(context: Context) {
         }
     }
 
-    /**
-     */
     fun updateSettings(update: (AppSettings) -> AppSettings) {
         scope.launch {
             updateSettingsLocked(update)
         }
     }
 
-    /**
-     */
     suspend fun updateSettingsAndWait(update: (AppSettings) -> AppSettings): Boolean {
         return updateSettingsLocked(update)
     }
@@ -264,12 +254,8 @@ class SettingsStore private constructor(context: Context) {
         }
     }
 
-    /**
-     */
     fun getCurrentSettings(): AppSettings = _settings.value
 
-    /**
-     */
     suspend fun reload() {
         withContext(Dispatchers.IO) {
             loadSettings()
@@ -280,8 +266,6 @@ class SettingsStore private constructor(context: Context) {
         settingsDao.hasSettings()
     }
 
-    /**
-     */
     suspend fun resetSettings() {
         writeMutex.withLock {
             try {

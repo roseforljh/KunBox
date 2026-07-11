@@ -40,6 +40,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import com.kunk.singbox.model.Outbound
 import com.kunk.singbox.model.TlsConfig
+import com.kunk.singbox.model.allHeaderValues
+import com.kunk.singbox.model.asHttpHeaderMap
 import com.kunk.singbox.ui.theme.isLiquidGlassTheme
 import com.kunk.singbox.ui.theme.liquidGlassButtonColors
 import com.kunk.singbox.ui.theme.liquidGlassButtonContentColor
@@ -317,7 +319,7 @@ internal fun createEmptyOutbound(protocol: String): Outbound {
         tag = "New-${protocol.uppercase()}",
         server = "",
         serverPort = defaultPort,
-        network = if (protocol == "naive") "h2" else null,
+        network = if (protocol == "naive") listOf("h2") else null,
         quic = if (protocol == "naive") false else null,
         tls = if (needsTls) TlsConfig(enabled = true) else null
     )
@@ -325,14 +327,16 @@ internal fun createEmptyOutbound(protocol: String): Outbound {
 
 internal fun formatHeaderLines(headers: Map<String, String>?): String {
     return headers
+        ?.allHeaderValues()
         ?.entries
         ?.sortedBy { it.key.lowercase() }
-        ?.joinToString("\n") { (key, value) -> "$key: $value" }
+        ?.flatMap { (key, values) -> values.map { value -> "$key: $value" } }
+        ?.joinToString("\n")
         .orEmpty()
 }
 
 internal fun parseHeaderLines(text: String): Map<String, String>? {
-    val parsed = linkedMapOf<String, String>()
+    val parsed = linkedMapOf<String, MutableList<String>>()
     text.lineSequence()
         .map { it.trim() }
         .filter { it.isNotEmpty() }
@@ -343,9 +347,12 @@ internal fun parseHeaderLines(text: String): Map<String, String>? {
             val key = line.substring(0, separatorIndex).trim()
             val value = line.substring(separatorIndex + 1).trim()
             if (key.isNotEmpty() && value.isNotEmpty()) {
-                parsed[key] = value
+                parsed.getOrPut(key) { mutableListOf() }.add(value)
             }
         }
 
-    return parsed.ifEmpty { null }
+    return parsed
+        .mapValues { (_, values) -> values.toList() }
+        .takeIf { it.isNotEmpty() }
+        ?.asHttpHeaderMap()
 }

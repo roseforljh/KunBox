@@ -25,6 +25,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -35,6 +36,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.IntOffset
 import com.kunk.singbox.R
 import kotlinx.coroutines.launch
 import kotlin.random.Random
@@ -70,7 +72,7 @@ fun BigToggle(
         if (running) 0.dp else 20.dp
     }
 
-    var shakeKey by remember { androidx.compose.runtime.mutableStateOf(0) }
+    var shakeKey by remember { mutableIntStateOf(0) }
     LaunchedEffect(isRunning) {
         if (isRunning) {
             shakeKey = shakeKey + 1
@@ -160,13 +162,18 @@ fun BigToggle(
     ) {
         Box(
             contentAlignment = Alignment.Center,
-            modifier = Modifier.offset(y = verticalOffset)
+            modifier = Modifier.offset { IntOffset(x = 0, y = verticalOffset.roundToPx()) }
         ) {
             Box(
                 contentAlignment = Alignment.Center,
                 modifier = Modifier
                     .scale(scale)
-                    .offset(y = bounceOffset.value.dp + floatOffset.value.dp)
+                    .offset {
+                        IntOffset(
+                            x = 0,
+                            y = (bounceOffset.value + floatOffset.value).dp.roundToPx()
+                        )
+                    }
             ) {
                 AnimatedContent(
                     targetState = isRunning,

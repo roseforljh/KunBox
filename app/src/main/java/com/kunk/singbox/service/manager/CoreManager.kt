@@ -3,7 +3,6 @@
 import android.content.Context
 import android.net.Network
 import android.net.VpnService
-import android.os.Build
 import android.os.ParcelFileDescriptor
 import android.os.PowerManager
 import android.net.wifi.WifiManager
@@ -22,11 +21,12 @@ import io.nekohasekai.libbox.PlatformInterface
 import io.nekohasekai.libbox.TunOptions
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.io.File
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
 
-/**
- *
- */
 class CoreManager(
     private val context: Context,
     private val vpnService: VpnService,
@@ -34,6 +34,18 @@ class CoreManager(
 ) {
     companion object {
         private const val TAG = "CoreManager"
+
+        internal fun shouldAcquireServiceLock(isHeld: Boolean, locksSuppressed: Boolean): Boolean {
+            return !locksSuppressed && !isHeld
+        }
+
+        internal fun isStartTokenCurrent(
+            startToken: Long,
+            currentGeneration: Long,
+            stopping: Boolean
+        ): Boolean {
+            return !stopping && startToken == currentGeneration
+        }
     }
 
     private val tunManager = VpnTunManager(context, vpnService)
@@ -48,11 +60,11 @@ class CoreManager(
     @Volatile var currentSettings: AppSettings? = null
         private set
 
-    @Volatile var isStarting = false
-        private set
+    private val starting = AtomicBoolean(false)
+    private val stopping = AtomicBoolean(false)
 
-    @Volatile var isStopping = false
-        private set
+    val isStarting: Boolean get() = starting.get()
+    val isStopping: Boolean get() = stopping.get()
 
     @Volatile var currentConfigContent: String? = null
         private set
@@ -66,27 +78,53 @@ class CoreManager(
     private var wifiLock: WifiManager.WifiLock? = null
 
     @Volatile
-    private var wifiLockSuppressed: Boolean = false
+    private var locksSuppressed: Boolean = false
 
     private var platformInterface: PlatformInterface? = null
+    private val lifecycleMutex = Mutex()
+    private val stopGeneration = AtomicLong(0L)
 
-    /**
-     */
+    fun captureStartToken(): Long? {
+        val generation = stopGeneration.get()
+        return generation.takeIf {
+            isStartTokenCurrent(
+                startToken = it,
+                currentGeneration = stopGeneration.get(),
+                stopping = stopping.get()
+            )
+        }
+    }
+
+    fun isStartTokenCurrent(startToken: Long): Boolean {
+        return isStartTokenCurrent(
+            startToken = startToken,
+            currentGeneration = stopGeneration.get(),
+            stopping = stopping.get()
+        )
+    }
+
+    fun beginStop(): Long {
+        if (stopping.compareAndSet(false, true)) {
+            stopGeneration.incrementAndGet()
+        }
+        return stopGeneration.get()
+    }
+
+    fun completeStop() {
+        stopping.set(false)
+    }
+
     sealed class StartResult {
         data class Success(val durationMs: Long, val configContent: String) : StartResult()
         data class Failed(val error: String, val exception: Exception? = null) : StartResult()
         object Cancelled : StartResult()
     }
 
-    /**
-     */
     sealed class StopResult {
         object Success : StopResult()
         data class Failed(val error: String) : StopResult()
     }
 
-    /**
-     */
     fun init(platformInterface: PlatformInterface): Result<Unit> {
         return runCatching {
             this.platformInterface = platformInterface
@@ -94,8 +132,6 @@ class CoreManager(
         }
     }
 
-    /**
-     */
     fun preallocateTunBuilder(): Result<Unit> {
         return runCatching {
             tunManager.preallocateBuilder()
@@ -103,8 +139,6 @@ class CoreManager(
         }
     }
 
-    /**
-     */
     suspend fun loadSettings(): Result<AppSettings> {
         return runCatching {
             PerfTracer.begin(PerfTracer.Phases.SETTINGS_LOAD)
@@ -115,14 +149,10 @@ class CoreManager(
         }
     }
 
-    /**
-     */
     fun setCurrentSettings(settings: AppSettings) {
         currentSettings = settings
     }
 
-    /**
-     */
     fun acquireLocks(): Result<Unit> {
         return runCatching {
             acquireWakeLock()
@@ -132,21 +162,22 @@ class CoreManager(
     }
 
     private fun acquireWakeLock() {
-        if (wakeLock?.isHeld == true) return
+        if (!shouldAcquireServiceLock(wakeLock?.isHeld == true, locksSuppressed)) {
+            if (locksSuppressed) Log.i(TAG, "WakeLock suppressed (power saving), skip acquire")
+            return
+        }
 
         val pm = context.getSystemService(Context.POWER_SERVICE) as PowerManager
         wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "KunBox:VpnService")
         wakeLock?.setReferenceCounted(false)
-        // Keep a long timeout as a safety net. We rely on explicit release in stopFully().
-        wakeLock?.acquire(24 * 60 * 60 * 1000L)
+        wakeLock?.acquire()
     }
 
     private fun acquireWifiLockIfAllowed() {
-        if (wifiLockSuppressed) {
-            Log.i(TAG, "WifiLock suppressed (power saving), skip acquire")
+        if (!shouldAcquireServiceLock(wifiLock?.isHeld == true, locksSuppressed)) {
+            if (locksSuppressed) Log.i(TAG, "WifiLock suppressed (power saving), skip acquire")
             return
         }
-        if (wifiLock?.isHeld == true) return
 
         val wm = context.getSystemService(Context.WIFI_SERVICE) as WifiManager
         @Suppress("DEPRECATION")
@@ -155,38 +186,43 @@ class CoreManager(
         wifiLock?.acquire()
     }
 
-    /**
-     */
     fun releaseLocks(): Result<Unit> {
         return runCatching {
-            if (wakeLock?.isHeld == true) wakeLock?.release()
-            wakeLock = null
+            releaseWakeLockInternal()
             releaseWifiLockInternal()
             Log.i(TAG, "WakeLock and WifiLock released")
         }
     }
 
     /**
-     * Reduce battery usage in background power-saving mode.
-     * Stability-first: we only suppress WifiLock here (WakeLock kept as before).
+     * 省电模式释放 CPU 与 Wi-Fi 锁，网络数据到达时仍可由系统唤醒 VPN 进程。
      */
     fun enterPowerSavingMode(): Result<Unit> {
         return runCatching {
-            wifiLockSuppressed = true
+            locksSuppressed = true
+            releaseWakeLockInternal()
             releaseWifiLockInternal()
-            Log.i(TAG, "Entered power saving mode: WifiLock suppressed")
+            Log.i(TAG, "Entered power saving mode: WakeLock and WifiLock released")
         }
     }
 
     /**
-     * Resume normal mode. WifiLock will be re-acquired when VPN is running.
+     * 返回前台后仅在内核仍运行时恢复锁，避免停止过程中重新持锁。
      */
     fun exitPowerSavingMode(): Result<Unit> {
         return runCatching {
-            wifiLockSuppressed = false
-            acquireWifiLockIfAllowed()
-            Log.i(TAG, "Exited power saving mode: WifiLock allowed")
+            locksSuppressed = false
+            if (isServiceRunning()) {
+                acquireWakeLock()
+                acquireWifiLockIfAllowed()
+            }
+            Log.i(TAG, "Exited power saving mode: locks restored=${isServiceRunning()}")
         }
+    }
+
+    private fun releaseWakeLockInternal() {
+        if (wakeLock?.isHeld == true) wakeLock?.release()
+        wakeLock = null
     }
 
     private fun releaseWifiLockInternal() {
@@ -194,8 +230,6 @@ class CoreManager(
         wifiLock = null
     }
 
-    /**
-     */
     fun cleanCacheDb(): Result<Boolean> {
         return runCatching {
             val cacheDir = File(context.filesDir, "singbox_data")
@@ -210,127 +244,146 @@ class CoreManager(
         }
     }
 
-    /**
-     */
     fun setCommandServer(server: CommandServer?) {
         commandServer = server
     }
 
-    /**
-     */
-    suspend fun startLibbox(configContent: String): StartResult {
-        if (isStarting) {
+    @Suppress("LongMethod", "CognitiveComplexMethod")
+    suspend fun startLibbox(configContent: String, startToken: Long): StartResult {
+        if (!isStartTokenCurrent(startToken)) {
+            return StartResult.Cancelled
+        }
+        if (!starting.compareAndSet(false, true)) {
             return StartResult.Failed("Already starting")
         }
-
-        isStarting = true
-        PerfTracer.begin(PerfTracer.Phases.LIBBOX_START)
 
         val logRepo = com.kunk.singbox.repository.LogRepository.getInstance()
 
         return try {
-            val server = commandServer
-                ?: throw IllegalStateException("CommandServer not initialized")
-            val pi = platformInterface
-                ?: throw IllegalStateException("PlatformInterface not initialized")
-
-            logRepo.addLog("INFO [Startup] [STEP] startLibbox: ensureLibboxSetup...")
-            SingBoxCore.ensureLibboxSetup(context)
-
-            logRepo.addLog("INFO [Startup] [STEP] startLibbox: creating BoxService...")
-            val serviceStartTime = android.os.SystemClock.elapsedRealtime()
-
-            withContext(Dispatchers.IO) {
-                val overrideOptions = OverrideOptions().apply {
-                    autoRedirect = false
+            lifecycleMutex.withLock {
+                if (!isStartTokenCurrent(startToken)) {
+                    Log.i(TAG, "Libbox start cancelled by a newer stop request")
+                    return@withLock StartResult.Cancelled
                 }
-                server.startOrReloadService(configContent, overrideOptions)
+
+                PerfTracer.begin(PerfTracer.Phases.LIBBOX_START)
+                try {
+                    val server = commandServer
+                        ?: throw IllegalStateException("CommandServer not initialized")
+                    checkNotNull(platformInterface) { "PlatformInterface not initialized" }
+
+                    logRepo.addLog("INFO [Startup] [STEP] startLibbox: ensureLibboxSetup...")
+                    SingBoxCore.ensureLibboxSetup(context)
+
+                    if (!isStartTokenCurrent(startToken)) {
+                        Log.i(TAG, "Libbox start cancelled before native start")
+                        PerfTracer.end(PerfTracer.Phases.LIBBOX_START)
+                        return@withLock StartResult.Cancelled
+                    }
+
+                    logRepo.addLog("INFO [Startup] [STEP] startLibbox: creating BoxService...")
+                    val serviceStartTime = android.os.SystemClock.elapsedRealtime()
+
+                    withContext(Dispatchers.IO) {
+                        val overrideOptions = OverrideOptions().apply {
+                            autoRedirect = false
+                        }
+                        server.startOrReloadService(configContent, overrideOptions)
+                    }
+
+                    if (!isStartTokenCurrent(startToken)) {
+                        Log.i(TAG, "Libbox start invalidated while native start was running")
+                        PerfTracer.end(PerfTracer.Phases.LIBBOX_START)
+                        return@withLock StartResult.Cancelled
+                    }
+
+                    val serviceStartDuration = android.os.SystemClock.elapsedRealtime() - serviceStartTime
+                    logRepo.addLog(
+                        "INFO [Startup] [STEP] startLibbox: BoxService started in ${serviceStartDuration}ms"
+                    )
+
+                    currentConfigContent = configContent
+
+                    val durationMs = PerfTracer.end(PerfTracer.Phases.LIBBOX_START)
+                    Log.i(TAG, "Libbox started in ${durationMs}ms")
+
+                    StartResult.Success(durationMs, configContent)
+                } catch (e: CancellationException) {
+                    PerfTracer.end(PerfTracer.Phases.LIBBOX_START)
+                    Log.i(TAG, "Libbox start cancelled")
+                    throw e
+                } catch (e: Exception) {
+                    PerfTracer.end(PerfTracer.Phases.LIBBOX_START)
+                    Log.e(TAG, "Libbox start failed: ${e.message}", e)
+                    logRepo.addLog("ERR [Startup] startLibbox failed: ${e.message}")
+                    StartResult.Failed(e.message ?: "Unknown error", e)
+                }
             }
-
-            val serviceStartDuration = android.os.SystemClock.elapsedRealtime() - serviceStartTime
-            logRepo.addLog(
-                "INFO [Startup] [STEP] startLibbox: BoxService started in ${serviceStartDuration}ms"
-            )
-
-            currentConfigContent = configContent
-
-            val durationMs = PerfTracer.end(PerfTracer.Phases.LIBBOX_START)
-            Log.i(TAG, "Libbox started in ${durationMs}ms")
-
-            StartResult.Success(durationMs, configContent)
-        } catch (e: CancellationException) {
-            PerfTracer.end(PerfTracer.Phases.LIBBOX_START)
-            Log.i(TAG, "Libbox start cancelled")
-            StartResult.Cancelled
-        } catch (e: Exception) {
-            PerfTracer.end(PerfTracer.Phases.LIBBOX_START)
-            Log.e(TAG, "Libbox start failed: ${e.message}", e)
-            logRepo.addLog("ERR [Startup] startLibbox failed: ${e.message}")
-            StartResult.Failed(e.message ?: "Unknown error", e)
         } finally {
-            isStarting = false
+            starting.set(false)
         }
     }
 
-    /**
-     */
     suspend fun stopService(): Result<Unit> {
-        return runCatching {
-            withContext(Dispatchers.IO) {
-                BoxWrapperManager.release()
-
-                SelectorManager.clear()
-
-                commandServer?.closeService()
-
-                currentConfigContent = null
-                Log.i(TAG, "Service stopped")
-                Unit
+        beginStop()
+        return try {
+            runCatching {
+                lifecycleMutex.withLock { stopServiceLocked() }
             }
+        } finally {
+            completeStop()
         }
     }
 
-    /**
-     */
-    suspend fun stopFully(): Result<Unit> {
-        if (isStopping) {
-            return Result.failure(IllegalStateException("Already stopping"))
+    private suspend fun stopServiceLocked() {
+        withContext(Dispatchers.IO) {
+            BoxWrapperManager.release()
+
+            SelectorManager.clear()
+
+            commandServer?.closeService()
+
+            currentConfigContent = null
+            Log.i(TAG, "Service stopped")
         }
+    }
 
-        isStopping = true
+    suspend fun stopFully(completeLifecycle: Boolean = true): Result<Unit> {
+        beginStop()
 
-        return runCatching {
-            withContext(Dispatchers.IO) {
+        return try {
+            runCatching {
+                lifecycleMutex.withLock {
+                    val stopResult = runCatching { stopServiceLocked() }
 
-                stopService()
+                    withContext(Dispatchers.IO) {
+                        vpnInterface?.let { pfd ->
+                            runCatching { pfd.close() }
+                            vpnInterface = null
+                        }
 
-                vpnInterface?.let { pfd ->
-                    runCatching { pfd.close() }
-                    vpnInterface = null
+                        tunManager.cleanup()
+
+                        releaseLocks()
+
+                        currentSettings = null
+                        Log.i(TAG, "VPN fully stopped")
+                    }
+
+                    stopResult.getOrThrow()
                 }
-
-                tunManager.cleanup()
-
-                releaseLocks()
-
-                currentSettings = null
-                Log.i(TAG, "VPN fully stopped")
-                Unit
             }
-        }.also {
-            isStopping = false
+        } finally {
+            if (completeLifecycle) {
+                completeStop()
+            }
         }
     }
 
-    /**
-     */
     suspend fun stop(): Result<Unit> = stopFully()
 
-    /**
-     */
     private fun applyUnderlyingNetworkIfPossible(underlyingNetwork: Network?, reason: String) {
         if (underlyingNetwork == null) return
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP_MR1) return
 
         runCatching {
             vpnService.setUnderlyingNetworks(arrayOf(underlyingNetwork))
@@ -340,8 +393,6 @@ class CoreManager(
         }
     }
 
-    /**
-     */
     fun openTun(
         options: TunOptions?,
         underlyingNetwork: Network? = null,
@@ -390,8 +441,6 @@ class CoreManager(
         }
     }
 
-    /**
-     */
     fun closeTunInterface(): Result<Unit> {
         return runCatching {
             vpnInterface?.let { pfd ->
@@ -399,15 +448,9 @@ class CoreManager(
                 vpnInterface = null
                 Log.i(TAG, "TUN interface closed")
             }
-            Unit
         }
     }
 
-    /**
-     */
-    fun preserveTunInterface(): ParcelFileDescriptor? = vpnInterface
-
-    fun setVpnInterface(pfd: ParcelFileDescriptor?) { vpnInterface = pfd }
     fun isServiceRunning(): Boolean = currentConfigContent != null
 
     fun isVpnInterfaceValid(): Boolean = vpnInterface?.fileDescriptor?.valid() == true
@@ -415,17 +458,7 @@ class CoreManager(
     suspend fun wakeService(): Result<Unit> {
         return runCatching {
             withContext(Dispatchers.IO) {
-                BoxWrapperManager.resume()
-                Unit
-            }
-        }
-    }
-
-    suspend fun resetNetwork(): Result<Unit> {
-        return runCatching {
-            withContext(Dispatchers.IO) {
-                BoxWrapperManager.resetNetwork()
-                Unit
+                BoxWrapperManager.wake()
             }
         }
     }
@@ -434,26 +467,45 @@ class CoreManager(
      * Hot reload config without destroying VPN service
      * Returns true if hot reload succeeded, false if fallback to full restart is needed
      */
-    @Suppress("UNUSED_PARAMETER")
-    suspend fun hotReloadConfig(configContent: String, preserveSelector: Boolean = true): Result<Boolean> {
-        return runCatching {
-            withContext(Dispatchers.IO) {
-                val server = commandServer ?: return@withContext false
-                val pi = platformInterface ?: return@withContext false
+    @Suppress("CognitiveComplexMethod")
+    suspend fun hotReloadConfig(configContent: String, startToken: Long): Result<Boolean> {
+        return try {
+            Result.success(
+                lifecycleMutex.withLock {
+                    if (!isStartTokenCurrent(startToken) || currentConfigContent == null) {
+                        Log.w(TAG, "Hot reload cancelled because the service is stopping or already stopped")
+                        return@withLock false
+                    }
 
-                Log.i(TAG, "Attempting hot reload...")
+                    withContext(Dispatchers.IO) {
+                        val server = commandServer ?: return@withContext false
+                        if (platformInterface == null || !isStartTokenCurrent(startToken)) {
+                            return@withContext false
+                        }
 
-                val overrideOptions = OverrideOptions().apply {
-                    autoRedirect = false
+                        Log.i(TAG, "Attempting hot reload...")
+
+                        val overrideOptions = OverrideOptions().apply {
+                            autoRedirect = false
+                        }
+                        server.startOrReloadService(configContent, overrideOptions)
+
+                        if (!isStartTokenCurrent(startToken)) {
+                            Log.i(TAG, "Hot reload invalidated while native reload was running")
+                            return@withContext false
+                        }
+
+                        currentConfigContent = configContent
+
+                        Log.i(TAG, "Hot reload completed successfully")
+                        true
+                    }
                 }
-                server.startOrReloadService(configContent, overrideOptions)
-
-                // Update current config content
-                currentConfigContent = configContent
-
-                Log.i(TAG, "Hot reload completed successfully")
-                true
-            }
+            )
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Result.failure(e)
         }
     }
 

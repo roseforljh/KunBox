@@ -8,6 +8,31 @@ import java.io.File
 class VpnTileServiceStateTest {
 
     @Test
+    fun runningStateCompletesLocalStartingSequence() {
+        assertTrue(VpnTileService.shouldCompleteStartingSequence(ServiceState.RUNNING))
+    }
+
+    @Test
+    fun listeningClearsStartingSequenceWhenPendingHasFinished() {
+        assertTrue(
+            VpnTileService.shouldClearStartingSequenceOnListen(
+                isStartingSequence = true,
+                pending = ""
+            )
+        )
+    }
+
+    @Test
+    fun listeningKeepsStartingSequenceWhileStartIsPending() {
+        assertFalse(
+            VpnTileService.shouldClearStartingSequenceOnListen(
+                isStartingSequence = true,
+                pending = "starting"
+            )
+        )
+    }
+
+    @Test
     fun unavailableTileStateKeepsLocalStartingGrace() {
         assertFalse(
             VpnTileService.shouldClearUnavailablePending(
@@ -106,21 +131,21 @@ class VpnTileServiceStateTest {
     @Test
     fun vpnPermissionIsOnlyNeededWhenStartingTunMode() {
         assertFalse(
-            VpnTileService.shouldRequestVpnPermissionBeforeStartForTest(
+            VpnTileService.shouldRequestVpnPermissionBeforeStart(
                 isActive = true,
                 tunEnabled = true,
                 vpnPrepareRequired = true
             )
         )
         assertFalse(
-            VpnTileService.shouldRequestVpnPermissionBeforeStartForTest(
+            VpnTileService.shouldRequestVpnPermissionBeforeStart(
                 isActive = false,
                 tunEnabled = false,
                 vpnPrepareRequired = true
             )
         )
         assertTrue(
-            VpnTileService.shouldRequestVpnPermissionBeforeStartForTest(
+            VpnTileService.shouldRequestVpnPermissionBeforeStart(
                 isActive = false,
                 tunEnabled = true,
                 vpnPrepareRequired = true

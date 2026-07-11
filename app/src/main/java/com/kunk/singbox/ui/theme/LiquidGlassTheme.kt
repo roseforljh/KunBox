@@ -23,7 +23,7 @@ import androidx.compose.ui.composed
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.ClipOp
 import androidx.compose.ui.graphics.Color
@@ -103,7 +103,7 @@ fun Modifier.hollowShadow(
     alpha: Float = 0.08f,
     blurRadius: Dp = 12.dp,
     offsetY: Dp = 6.dp
-): Modifier = this.drawBehind {
+): Modifier = this.drawWithCache {
     val outline = shape.createOutline(size, layoutDirection, this)
     val path = Path()
     when (outline) {
@@ -112,22 +112,26 @@ fun Modifier.hollowShadow(
         is Outline.Generic -> path.addPath(outline.path)
     }
 
-    clipPath(path, clipOp = ClipOp.Difference) {
-        drawIntoCanvas { canvas ->
-            val paint = Paint().apply {
-                this.color = color.copy(alpha = alpha)
-            }
-            if (blurRadius.toPx() > 0) {
-                paint.asFrameworkPaint().maskFilter = BlurMaskFilter(
-                    blurRadius.toPx(),
-                    BlurMaskFilter.Blur.NORMAL
-                )
-            }
+    val blurRadiusPx = blurRadius.toPx()
+    val offsetYPx = offsetY.toPx()
+    val paint = Paint().apply {
+        this.color = color.copy(alpha = alpha)
+        if (blurRadiusPx > 0) {
+            asFrameworkPaint().maskFilter = BlurMaskFilter(
+                blurRadiusPx,
+                BlurMaskFilter.Blur.NORMAL
+            )
+        }
+    }
 
-            canvas.save()
-            canvas.translate(0f, offsetY.toPx())
-            canvas.drawPath(path, paint)
-            canvas.restore()
+    onDrawBehind {
+        clipPath(path, clipOp = ClipOp.Difference) {
+            drawIntoCanvas { canvas ->
+                canvas.save()
+                canvas.translate(0f, offsetYPx)
+                canvas.drawPath(path, paint)
+                canvas.restore()
+            }
         }
     }
 }

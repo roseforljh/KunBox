@@ -3,8 +3,6 @@ package com.kunk.singbox.ui.screens
 import com.kunk.singbox.R
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -16,6 +14,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import com.kunk.singbox.ui.theme.LiquidGlassDialogEffect
+import com.kunk.singbox.utils.parser.NodeLinkParser
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -25,17 +24,12 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowDropDown
-import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.ContentPaste
 import androidx.compose.material.icons.rounded.DashboardCustomize
 import androidx.compose.material.icons.rounded.Description
@@ -51,7 +45,6 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.res.stringResource
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -77,6 +70,7 @@ import com.kunk.singbox.ui.theme.liquidGlassButtonContentColor
 import com.kunk.singbox.ui.theme.liquidGlassButtonPanel
 import com.kunk.singbox.ui.theme.liquidGlassCheckboxColors
 import com.kunk.singbox.ui.theme.liquidGlassPanel
+import com.kunk.singbox.ui.theme.liquidGlassPressFeedback
 import com.kunk.singbox.ui.theme.liquidGlassProgressColor
 import com.kunk.singbox.ui.theme.liquidGlassProgressTrackColor
 import com.kunk.singbox.ui.theme.liquidGlassSwitchColors
@@ -103,27 +97,6 @@ private fun Modifier.profileGroupPanel(shape: RoundedCornerShape = RoundedCorner
         liquidGlassPanel(shape = shape, shadowElevation = 6.dp)
     } else {
         background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
-    }
-}
-
-@Composable
-private fun Modifier.profileDnsMenuPanel(): Modifier {
-    val shape = RoundedCornerShape(24.dp)
-    return if (isLiquidGlassTheme()) {
-        liquidGlassPanel(shape = shape, shadowElevation = 24.dp)
-    } else {
-        background(MaterialTheme.colorScheme.surface, shape)
-    }
-}
-
-@Composable
-private fun Modifier.profileDnsOptionPanel(isSelected: Boolean): Modifier {
-    return if (isLiquidGlassTheme()) {
-        liquidGlassPanel(shape = RoundedCornerShape(12.dp), selected = isSelected, shadowElevation = 4.dp)
-    } else {
-        background(
-            if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f) else Color.Transparent
-        )
     }
 }
 
@@ -171,112 +144,18 @@ private fun Modifier.profileCustomNodePanel(isSelected: Boolean): Modifier {
 private fun Modifier.profileGroupPressFeedback(
     enabled: Boolean,
     onClick: () -> Unit
-): Modifier {
-    val useLiquidGlass = isLiquidGlassTheme()
-    val interactionSource = remember { MutableInteractionSource() }
-    val isPressed by interactionSource.collectIsPressedAsState()
-    val scale by animateFloatAsState(
-        targetValue = if (useLiquidGlass && enabled && isPressed) 0.98f else 1f,
-        animationSpec = spring(stiffness = 520f, dampingRatio = 0.72f),
-        label = "liquid_glass_profile_group_scale"
-    )
-    val clickModifier = if (useLiquidGlass) {
-        Modifier.clickable(
-            enabled = enabled,
-            interactionSource = interactionSource,
-            indication = null,
-            onClick = onClick
-        )
-    } else {
-        Modifier.clickable(
-            enabled = enabled,
-            onClick = onClick
-        )
-    }
-
-    return graphicsLayer {
-        scaleX = scale
-        scaleY = scale
-    }.then(clickModifier)
-}
+): Modifier = liquidGlassPressFeedback(
+    enabled = enabled,
+    label = "liquid_glass_profile_group_scale",
+    onClick = onClick
+)
 
 @Composable
-private fun Modifier.profileCustomNodePressFeedback(onClick: () -> Unit): Modifier {
-    val useLiquidGlass = isLiquidGlassTheme()
-    val interactionSource = remember { MutableInteractionSource() }
-    val isPressed by interactionSource.collectIsPressedAsState()
-    val scale by animateFloatAsState(
-        targetValue = if (useLiquidGlass && isPressed) 0.98f else 1f,
-        animationSpec = spring(stiffness = 520f, dampingRatio = 0.72f),
-        label = "liquid_glass_profile_custom_node_scale"
+private fun Modifier.profileCustomNodePressFeedback(onClick: () -> Unit): Modifier =
+    liquidGlassPressFeedback(
+        label = "liquid_glass_profile_custom_node_scale",
+        onClick = onClick
     )
-    val clickModifier = if (useLiquidGlass) {
-        Modifier.clickable(
-            interactionSource = interactionSource,
-            indication = null,
-            onClick = onClick
-        )
-    } else {
-        Modifier.clickable(onClick = onClick)
-    }
-
-    return graphicsLayer {
-        scaleX = scale
-        scaleY = scale
-    }.then(clickModifier)
-}
-
-@Composable
-private fun Modifier.profileDnsDropdownPressFeedback(onClick: () -> Unit): Modifier {
-    val useLiquidGlass = isLiquidGlassTheme()
-    val interactionSource = remember { MutableInteractionSource() }
-    val isPressed by interactionSource.collectIsPressedAsState()
-    val scale by animateFloatAsState(
-        targetValue = if (useLiquidGlass && isPressed) 0.98f else 1f,
-        animationSpec = spring(stiffness = 520f, dampingRatio = 0.72f),
-        label = "liquid_glass_profile_dns_dropdown_scale"
-    )
-    val clickModifier = if (useLiquidGlass) {
-        Modifier.clickable(
-            interactionSource = interactionSource,
-            indication = null,
-            onClick = onClick
-        )
-    } else {
-        Modifier.clickable(onClick = onClick)
-    }
-
-    return graphicsLayer {
-        scaleX = scale
-        scaleY = scale
-    }.then(clickModifier)
-}
-
-@Composable
-private fun Modifier.profileDnsOptionPressFeedback(onClick: () -> Unit): Modifier {
-    val useLiquidGlass = isLiquidGlassTheme()
-    val interactionSource = remember { MutableInteractionSource() }
-    val isPressed by interactionSource.collectIsPressedAsState()
-    val scale by animateFloatAsState(
-        targetValue = if (useLiquidGlass && isPressed) 0.98f else 1f,
-        animationSpec = spring(stiffness = 520f, dampingRatio = 0.72f),
-        label = "liquid_glass_profile_dns_option_scale"
-    )
-    val clickModifier = if (useLiquidGlass) {
-        Modifier.clickable(
-            interactionSource = interactionSource,
-            indication = null,
-            onClick = onClick
-        )
-    } else {
-        Modifier.clickable(onClick = onClick)
-    }
-
-    return graphicsLayer {
-        scaleX = scale
-        scaleY = scale
-    }.then(clickModifier)
-}
 
 internal fun List<String>.updatedCustomSelection(nodeId: String, checked: Boolean): List<String> {
     return if (checked) {
@@ -735,8 +614,6 @@ internal fun SubscriptionInputDialog(
     initialName: String = "",
     initialUrl: String = "",
     initialAutoUpdateInterval: Int = 0,
-    initialDnsPreResolve: Boolean = false,
-    initialDnsServer: String? = null,
     initialDnsOverride: String? = null,
     title: String = stringResource(R.string.profiles_add_subscription),
     onDismiss: () -> Unit,
@@ -744,8 +621,6 @@ internal fun SubscriptionInputDialog(
         name: String,
         url: String,
         autoUpdateInterval: Int,
-        dnsPreResolve: Boolean,
-        dnsServer: String?,
         dnsOverride: String?
     ) -> Unit
 ) {
@@ -763,13 +638,6 @@ internal fun SubscriptionInputDialog(
             }
         )
     }
-    var dnsPreResolveEnabled by rememberSaveable(initialDnsPreResolve) {
-        mutableStateOf(initialDnsPreResolve)
-    }
-    var selectedDnsServer by rememberSaveable(initialDnsServer) {
-        mutableStateOf(initialDnsServer ?: "https://cloudflare-dns.com/dns-query")
-    }
-    var dnsDropdownExpanded by remember { mutableStateOf(false) }
     var dnsOverrideText by rememberSaveable(initialDnsOverride) {
         mutableStateOf(initialDnsOverride ?: "")
     }
@@ -777,16 +645,10 @@ internal fun SubscriptionInputDialog(
         mutableStateOf(!initialDnsOverride.isNullOrBlank())
     }
 
-    val dnsServerOptions = listOf(
-        "https://cloudflare-dns.com/dns-query" to stringResource(R.string.profiles_dns_server_cloudflare),
-        "https://dns.google/dns-query" to stringResource(R.string.profiles_dns_server_google),
-        "https://dns.alidns.com/dns-query" to stringResource(R.string.profiles_dns_server_alidns)
-    )
     val useLiquidGlass = isLiquidGlassTheme()
     val nameLabel = stringResource(R.string.profiles_name_label)
     val urlLabel = stringResource(R.string.profiles_url_label)
     val autoUpdateIntervalLabel = stringResource(R.string.profiles_auto_update_interval)
-    val dnsServerLabel = stringResource(R.string.profiles_dns_server)
     val dnsOverrideLabel = "DNS JSON"
 
     androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss) {
@@ -943,141 +805,6 @@ internal fun SubscriptionInputDialog(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = stringResource(R.string.profiles_dns_preresolve),
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    Text(
-                        text = stringResource(R.string.profiles_dns_preresolve_hint),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                androidx.compose.material3.Switch(
-                    checked = dnsPreResolveEnabled,
-                    onCheckedChange = { dnsPreResolveEnabled = it },
-                    colors = liquidGlassSwitchColors(
-                        checkedThumbColor = MaterialTheme.colorScheme.primary,
-                        checkedTrackColor = MaterialTheme.colorScheme.primaryContainer
-                    )
-                )
-            }
-
-            AnimatedVisibility(
-                visible = dnsPreResolveEnabled,
-                enter = expandVertically(
-                    animationSpec = tween(durationMillis = 300)
-                ) + fadeIn(
-                    animationSpec = tween(durationMillis = 300)
-                ),
-                exit = shrinkVertically(
-                    animationSpec = tween(durationMillis = 300)
-                ) + fadeOut(
-                    animationSpec = tween(durationMillis = 300)
-                )
-            ) {
-                Column {
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    val dnsFieldShape = RoundedCornerShape(16.dp)
-                    ProfileLiquidGlassTextFieldLabel(text = dnsServerLabel, useLiquidGlass = useLiquidGlass)
-                    androidx.compose.material3.OutlinedTextField(
-                        value = dnsServerOptions.find { it.first == selectedDnsServer }?.second ?: selectedDnsServer,
-                        onValueChange = {},
-                        readOnly = true,
-                        enabled = false,
-                        label = liquidGlassAwareTextFieldLabel(useLiquidGlass, dnsServerLabel),
-                        trailingIcon = {
-                            Icon(
-                                imageVector = Icons.Filled.ArrowDropDown,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .liquidGlassTextFieldPanel(shape = dnsFieldShape)
-                            .profileDnsDropdownPressFeedback {
-                                dnsDropdownExpanded = true
-                            },
-                        shape = dnsFieldShape,
-                        colors = liquidGlassOutlinedTextFieldColors(
-                            disabledTextColor = MaterialTheme.colorScheme.onSurface,
-                            disabledBorderColor = liquidGlassTextFieldBorderColor(MaterialTheme.colorScheme.outline),
-                            disabledContainerColor = liquidGlassTextFieldContainerColor(Color.Transparent),
-                            disabledLabelColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                            disabledTrailingIconColor = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    )
-                }
-            }
-
-            if (dnsDropdownExpanded) {
-                androidx.compose.ui.window.Dialog(
-                    onDismissRequest = { dnsDropdownExpanded = false }
-                ) {
-                    LiquidGlassDialogEffect()
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .profileDnsMenuPanel()
-                            .padding(vertical = 16.dp)
-                    ) {
-                        Text(
-                            text = dnsServerLabel,
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp)
-                        )
-
-                        Spacer(modifier = Modifier.height(8.dp))
-
-                        dnsServerOptions.forEach { (url, label) ->
-                            val isSelected = selectedDnsServer == url
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .profileDnsOptionPanel(isSelected)
-                                    .profileDnsOptionPressFeedback {
-                                        selectedDnsServer = url
-                                        dnsDropdownExpanded = false
-                                    }
-                                    .padding(horizontal = 24.dp, vertical = 14.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Text(
-                                    text = label,
-                                    style = MaterialTheme.typography.bodyLarge,
-                                    color = if (isSelected) MaterialTheme.colorScheme.primary
-                                    else MaterialTheme.colorScheme.onSurface
-                                )
-                                if (isSelected) {
-                                    Icon(
-                                        imageVector = Icons.Rounded.Check,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.primary,
-                                        modifier = Modifier.size(20.dp)
-                                    )
-                                }
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(8.dp))
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
                 Text(
                     text = stringResource(R.string.profiles_dns_override),
                     style = MaterialTheme.typography.bodyLarge,
@@ -1141,15 +868,7 @@ internal fun SubscriptionInputDialog(
             Button(
                 onClick = {
 
-                    val isNodeLink = url.trim().let {
-                        it.startsWith("vmess://") || it.startsWith("vless://") ||
-                            it.startsWith("ss://") || it.startsWith("ssr://") ||
-                            it.startsWith("trojan://") || it.startsWith("hysteria://") ||
-                            it.startsWith("hysteria2://") || it.startsWith("hy2://") ||
-                            it.startsWith("tuic://") || it.startsWith("bean://") ||
-                            it.startsWith("wireguard://") || it.startsWith("ssh://") ||
-                            it.startsWith("naive://") || it.startsWith("naive+https://")
-                    }
+                    val isNodeLink = NodeLinkParser.isSupportedLink(url)
 
                     if (isNodeLink) {
                         AppNotificationManager.showMessage(
@@ -1196,8 +915,6 @@ internal fun SubscriptionInputDialog(
                         name,
                         url,
                         finalInterval,
-                        dnsPreResolveEnabled,
-                        if (dnsPreResolveEnabled) selectedDnsServer else null,
                         finalDnsOverride
                     )
                 },

@@ -5,20 +5,12 @@ import com.kunk.singbox.model.Outbound
 import com.kunk.singbox.model.SingBoxConfig
 import java.net.URLDecoder
 
-/**
- */
 interface SubscriptionParser {
-    /**
-     */
     fun canParse(content: String): Boolean
 
-    /**
-     */
     fun parse(content: String): SingBoxConfig?
 }
 
-/**
- */
 class SubscriptionManager(private val parsers: List<SubscriptionParser>) {
 
     companion object {
@@ -26,8 +18,6 @@ class SubscriptionManager(private val parsers: List<SubscriptionParser>) {
         private val FILENAME_REGEX =
             """filename\*?=\s*(?:([^'"]*)'[^']*')?["']?([^"';]*)["']?""".toRegex(RegexOption.IGNORE_CASE)
 
-        /**
-         */
         private fun getDeduplicationKey(outbound: Outbound): String? {
             if (outbound.server == null || outbound.serverPort == null) return null
             val type = outbound.type
@@ -39,8 +29,6 @@ class SubscriptionManager(private val parsers: List<SubscriptionParser>) {
             return outbound.toString()
         }
 
-        /**
-         */
         fun deduplicateOutbounds(outbounds: List<Outbound>): List<Outbound> {
             val seen = mutableSetOf<String>()
             val result = mutableListOf<Outbound>()
@@ -112,8 +100,6 @@ class SubscriptionManager(private val parsers: List<SubscriptionParser>) {
         }
     }
 
-    /**
-     */
     fun parse(content: String): SingBoxConfig? {
         for (parser in parsers) {
             if (parser.canParse(content)) {

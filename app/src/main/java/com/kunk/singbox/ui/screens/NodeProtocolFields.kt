@@ -1,5 +1,6 @@
 package com.kunk.singbox.ui.screens
 
+import com.google.gson.JsonPrimitive
 import com.kunk.singbox.R
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Bolt
@@ -232,14 +233,15 @@ internal fun NodeProtocolFields(
     if (type == "tuic" || type == "hysteria2") {
         SettingSwitchItem(
             title = stringResource(R.string.node_detail_disable_sni),
-            checked = outbound.disableSni == true,
+            checked = outbound.tls?.disableSni == true,
             icon = Icons.Rounded.Fingerprint,
             onCheckedChange = { checked ->
                 val currentTls = outbound.tls ?: TlsConfig(enabled = true)
                 editingOutbound = outbound.copy(
-                    disableSni = if (checked) true else null,
+                    disableSni = null,
                     tls = currentTls.copy(
-                        enabled = true
+                        enabled = true,
+                        disableSni = if (checked) true else null
                     )
                 )
             }
@@ -262,13 +264,13 @@ internal fun NodeProtocolFields(
         )
         EditableSelectionItem(
             title = stringResource(R.string.node_detail_transport_protocol),
-            value = if (outbound.quic == true || outbound.network == "quic") "quic" else "h2",
+            value = if (outbound.quic == true || outbound.network?.firstOrNull() == "quic") "quic" else "h2",
             options = listOf("h2", "quic"),
             icon = Icons.Rounded.SwapHoriz,
             onValueChange = {
                 val useQuic = it == "quic"
                 editingOutbound = outbound.copy(
-                    network = if (useQuic) "quic" else "h2",
+                    network = listOf(if (useQuic) "quic" else "h2"),
                     quic = useQuic
                 )
             }
@@ -324,8 +326,7 @@ internal fun NodeProtocolFields(
             value = peer.server ?: "",
             icon = Icons.Rounded.Router,
             onValueChange = {
-                val newPeer = peer.copy(server = it)
-                editingOutbound = outbound.copy(peers = listOf(newPeer))
+                editingOutbound = outbound.copy(peers = listOf(peer.copy(server = it)))
             }
         )
         EditableTextItem(
@@ -333,23 +334,21 @@ internal fun NodeProtocolFields(
             value = peer.serverPort?.toString() ?: "",
             icon = Icons.Rounded.Numbers,
             onValueChange = {
-                val newPeer = peer.copy(serverPort = it.toIntOrNull())
-                editingOutbound = outbound.copy(peers = listOf(newPeer))
+                editingOutbound = outbound.copy(peers = listOf(peer.copy(serverPort = it.toIntOrNull())))
             }
         )
         EditableTextItem(
             title = stringResource(R.string.node_detail_private_key),
-            value = outbound.privateKey ?: "",
+            value = outbound.privateKey?.firstOrNull().orEmpty(),
             icon = Icons.Rounded.Key,
-            onValueChange = { editingOutbound = outbound.copy(privateKey = it) }
+            onValueChange = { editingOutbound = outbound.copy(privateKey = listOf(it)) }
         )
         EditableTextItem(
             title = stringResource(R.string.node_detail_peer_public_key),
             value = peer.publicKey ?: "",
             icon = Icons.Rounded.Key,
             onValueChange = {
-                val newPeer = peer.copy(publicKey = it)
-                editingOutbound = outbound.copy(peers = listOf(newPeer))
+                editingOutbound = outbound.copy(peers = listOf(peer.copy(publicKey = it)))
             }
         )
         EditableTextItem(
@@ -357,8 +356,9 @@ internal fun NodeProtocolFields(
             value = peer.preSharedKey ?: "",
             icon = Icons.Rounded.Key,
             onValueChange = {
-                val newPeer = peer.copy(preSharedKey = if (it.isEmpty()) null else it)
-                editingOutbound = outbound.copy(peers = listOf(newPeer))
+                editingOutbound = outbound.copy(
+                    peers = listOf(peer.copy(preSharedKey = it.takeIf { value -> value.isNotEmpty() }))
+                )
             }
         )
         EditableTextItem(
@@ -366,8 +366,8 @@ internal fun NodeProtocolFields(
             value = outbound.localAddress?.joinToString(", ") ?: "",
             icon = Icons.Rounded.Dns,
             onValueChange = {
-                val list = it.split(",").map { s -> s.trim() }.filter { s -> s.isNotEmpty() }
-                editingOutbound = outbound.copy(localAddress = list)
+                val addresses = it.split(",").map { value -> value.trim() }.filter { value -> value.isNotEmpty() }
+                editingOutbound = outbound.copy(localAddress = addresses.takeIf { values -> values.isNotEmpty() })
             }
         )
         EditableTextItem(
@@ -378,16 +378,18 @@ internal fun NodeProtocolFields(
         )
         EditableTextItem(
             title = stringResource(R.string.node_detail_reserved),
-            value = outbound.reserved?.joinToString(", ") ?: "",
+            value = peer.reserved?.joinToString(", ") ?: "",
             icon = Icons.Rounded.Tag,
             onValueChange = {
-                val list = it.split(",").mapNotNull { s -> s.trim().toIntOrNull() }
-                editingOutbound = outbound.copy(reserved = if (list.isEmpty()) null else list)
+                val reserved = it.split(",").mapNotNull { value -> value.trim().toIntOrNull() }
+                editingOutbound = outbound.copy(
+                    peers = listOf(peer.copy(reserved = reserved.takeIf { values -> values.isNotEmpty() }))
+                )
             }
         )
     }
 
-    // 7. SSH
+    // 8. SSH
     if (type == "ssh") {
         EditableTextItem(
             title = stringResource(R.string.node_detail_username),
@@ -403,9 +405,11 @@ internal fun NodeProtocolFields(
         )
         EditableTextItem(
             title = stringResource(R.string.node_detail_private_key),
-            value = outbound.privateKey ?: "",
+            value = outbound.privateKey?.firstOrNull().orEmpty(),
             icon = Icons.Rounded.Key,
-            onValueChange = { editingOutbound = outbound.copy(privateKey = if (it.isEmpty()) null else it) }
+            onValueChange = {
+                editingOutbound = outbound.copy(privateKey = it.takeIf(String::isNotEmpty)?.let(::listOf))
+            }
         )
         EditableTextItem(
             title = stringResource(R.string.node_detail_passphrase),
@@ -456,10 +460,10 @@ internal fun NodeProtocolFields(
     if (type == "socks") {
         EditableSelectionItem(
             title = stringResource(R.string.node_detail_socks_version),
-            value = outbound.version?.toString() ?: "5",
+            value = outbound.version?.asString ?: "5",
             options = listOf("4", "4a", "5"),
             icon = Icons.Rounded.Tag,
-            onValueChange = { editingOutbound = outbound.copy(version = it.replace("a", "").toIntOrNull()) }
+            onValueChange = { editingOutbound = outbound.copy(version = JsonPrimitive(it)) }
         )
         EditableTextItem(
             title = stringResource(R.string.node_detail_username_optional),
@@ -495,10 +499,12 @@ internal fun NodeProtocolFields(
     if (type == "shadowtls") {
         EditableSelectionItem(
             title = stringResource(R.string.node_detail_shadowtls_version),
-            value = outbound.version?.toString() ?: "3",
+            value = outbound.version?.asString ?: "3",
             options = listOf("1", "2", "3"),
             icon = Icons.Rounded.Tag,
-            onValueChange = { editingOutbound = outbound.copy(version = it.toIntOrNull()) }
+            onValueChange = { value ->
+                editingOutbound = outbound.copy(version = value.toIntOrNull()?.let(::JsonPrimitive))
+            }
         )
         EditableTextItem(
             title = stringResource(R.string.node_detail_password),
@@ -539,7 +545,12 @@ internal fun NodeProtocolFields(
             value = outbound.obfs?.type ?: "",
             icon = Icons.Rounded.Lock,
             onValueChange = {
-                val newObfs = if (it.isEmpty()) null else (outbound.obfs?.copy(type = it) ?: ObfsConfig(type = it))
+                val newObfs = if (it.isEmpty()) {
+                    null
+                } else {
+                    outbound.obfs?.copy(type = it, stringValue = true)
+                        ?: ObfsConfig(type = it, stringValue = true)
+                }
                 editingOutbound = outbound.copy(obfs = newObfs)
             }
         )

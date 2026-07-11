@@ -24,8 +24,6 @@ import java.nio.file.Files
 import java.nio.file.StandardCopyOption
 import java.security.MessageDigest
 
-/**
- */
 class RuleSetRepository(private val context: Context) {
 
     companion object {
@@ -108,35 +106,7 @@ class RuleSetRepository(private val context: Context) {
             return "$prefix-$digest.srs"
         }
 
-        internal fun isDownloadedRuleSetValidForTest(
-            header: String,
-            fileLength: Long,
-            format: String
-        ): Boolean {
-            return isDownloadedRuleSetContentValid(header, fileLength, format)
-        }
-
-        internal fun createDownloadTempFileForTest(targetFile: File): File {
-            return createDownloadTempFile(targetFile)
-        }
-
-        internal fun shouldDownloadRemoteRuleSetForTest(
-            fileExists: Boolean,
-            allowNetwork: Boolean,
-            forceUpdate: Boolean,
-            isExpired: Boolean
-        ): Boolean {
-            return shouldDownloadRemoteRuleSet(fileExists, allowNetwork, forceUpdate, isExpired)
-        }
-
-        internal fun isRemoteRuleSetReadyAfterDownloadFailureForTest(
-            fileExists: Boolean,
-            forceUpdate: Boolean
-        ): Boolean {
-            return isRemoteRuleSetReadyAfterDownloadFailure(fileExists, forceUpdate)
-        }
-
-        private fun shouldDownloadRemoteRuleSet(
+        internal fun shouldDownloadRemoteRuleSet(
             fileExists: Boolean,
             allowNetwork: Boolean,
             forceUpdate: Boolean,
@@ -145,22 +115,22 @@ class RuleSetRepository(private val context: Context) {
             return allowNetwork && (!fileExists || forceUpdate || isExpired)
         }
 
-        private fun isRemoteRuleSetReadyAfterDownloadFailure(fileExists: Boolean, forceUpdate: Boolean): Boolean {
+        internal fun isRemoteRuleSetReadyAfterDownloadFailure(fileExists: Boolean, forceUpdate: Boolean): Boolean {
             return fileExists && !forceUpdate
         }
 
-        private fun createDownloadTempFile(targetFile: File): File {
+        internal fun createDownloadTempFile(targetFile: File): File {
             targetFile.parentFile?.mkdirs()
             val prefix = "${targetFile.name.take(64)}.".takeIf { it.length >= 3 } ?: "tmp."
             return File.createTempFile(prefix, ".tmp", targetFile.parentFile)
         }
 
-        private fun isDownloadedRuleSetContentValid(
-            content: String,
+        internal fun isDownloadedRuleSetContentValid(
+            header: String,
             fileLength: Long,
             format: String
         ): Boolean {
-            val trimmed = content.trim()
+            val trimmed = header.trim()
             val isSource = isSourceFormat(format)
             return when {
                 fileLength < RULE_SET_MIN_SIZE_BYTES -> false
@@ -329,14 +299,10 @@ class RuleSetRepository(private val context: Context) {
         }
     }
 
-    /**
-     */
     fun isRuleSetLocal(tag: String): Boolean {
         return getRuleSetFile(tag).exists()
     }
 
-    /**
-     */
     suspend fun hasLocalCache(): Boolean = withContext(Dispatchers.IO) {
         val settings = settingsRepository.settings.first()
 
@@ -349,8 +315,6 @@ class RuleSetRepository(private val context: Context) {
         true
     }
 
-    /**
-     */
     suspend fun ensureRuleSetsReady(
         forceUpdate: Boolean = false,
         allowNetwork: Boolean = false,
@@ -389,8 +353,6 @@ class RuleSetRepository(private val context: Context) {
         allReady
     }
 
-    /**
-     */
     suspend fun prefetchRuleSet(
         ruleSet: RuleSet,
         forceUpdate: Boolean = false,
@@ -426,8 +388,6 @@ class RuleSetRepository(private val context: Context) {
         }
     }
 
-    /**
-     */
     private fun installBaselineRuleSet(tag: String, targetFile: File): Boolean {
         return try {
             val assetPath = "rulesets/$tag.srs"
@@ -446,8 +406,6 @@ class RuleSetRepository(private val context: Context) {
         }
     }
 
-    /**
-     */
     fun getRuleSetPath(tag: String): String {
         return getRuleSetFile(tag).absolutePath
     }
@@ -522,44 +480,40 @@ class RuleSetRepository(private val context: Context) {
                     false
                 } else {
                     val body = response.body
-                    if (body == null) {
-                        false
-                    } else {
-                        val downloadTempFile = createDownloadTempFile(targetFile)
-                        tempFile = downloadTempFile
+                    val downloadTempFile = createDownloadTempFile(targetFile)
+                    tempFile = downloadTempFile
 
-                        body.byteStream().use { input ->
-                            downloadTempFile.outputStream().use { output ->
-                                input.copyTo(output)
-                            }
+                    body.byteStream().use { input ->
+                        downloadTempFile.outputStream().use { output ->
+                            input.copyTo(output)
                         }
+                    }
 
-                        val isValid = try {
-                            if (!isDownloadedRuleSetFileValid(downloadTempFile, format)) {
-                                Log.e(TAG, "Downloaded file is invalid, discarding: ${targetFile.name}")
-                                false
-                            } else {
-                                true
-                            }
-                        } catch (e: Exception) {
-                            Log.w(TAG, "Failed to verify downloaded file", e)
-
+                    val isValid = try {
+                        if (!isDownloadedRuleSetFileValid(downloadTempFile, format)) {
+                            Log.e(TAG, "Downloaded file is invalid, discarding: ${targetFile.name}")
                             false
+                        } else {
+                            true
                         }
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Failed to verify downloaded file", e)
 
-                        if (isValid) {
-                            if (!replaceRuleSetFile(downloadTempFile, targetFile)) {
-                                Log.e(TAG, "Failed to replace rule set file: ${downloadTempFile.name}")
-                                false
-                            } else {
-                                downloadTempFile.delete()
-                                Log.i(TAG, "Rule set downloaded and verified successfully: ${targetFile.name}")
-                                true
-                            }
+                        false
+                    }
+
+                    if (isValid) {
+                        if (!replaceRuleSetFile(downloadTempFile, targetFile)) {
+                            Log.e(TAG, "Failed to replace rule set file: ${downloadTempFile.name}")
+                            false
                         } else {
                             downloadTempFile.delete()
-                            false
+                            Log.i(TAG, "Rule set downloaded and verified successfully: ${targetFile.name}")
+                            true
                         }
+                    } else {
+                        downloadTempFile.delete()
+                        false
                     }
                 }
             }

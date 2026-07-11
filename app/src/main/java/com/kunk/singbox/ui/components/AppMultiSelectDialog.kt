@@ -1,5 +1,6 @@
 package com.kunk.singbox.ui.components
 
+import android.graphics.Bitmap
 import androidx.compose.ui.res.stringResource
 import com.kunk.singbox.R
 import androidx.compose.foundation.Image
@@ -29,7 +30,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.Divider
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -42,19 +43,16 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material3.IconButton
-import androidx.compose.runtime.rememberCoroutineScope
-import kotlinx.coroutines.launch
-import androidx.core.graphics.drawable.toBitmap
-import com.kunk.singbox.model.InstalledApp
+import com.kunk.singbox.model.InstalledAppUi
 import com.kunk.singbox.repository.InstalledAppsRepository
+import com.kunk.singbox.viewmodel.InstalledAppsViewModel
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.kunk.singbox.ui.theme.isLiquidGlassTheme
 import com.kunk.singbox.ui.theme.liquidGlassButtonColors
 import com.kunk.singbox.ui.theme.liquidGlassButtonContentColor
@@ -111,6 +109,7 @@ private fun Modifier.appSelectFilterPanel(shape: RoundedCornerShape = RoundedCor
 }
 
 @Composable
+@Suppress("LongMethod", "CyclomaticComplexMethod", "CognitiveComplexMethod")
 fun AppMultiSelectDialog(
     title: String,
     selectedPackages: Set<String>,
@@ -118,43 +117,20 @@ fun AppMultiSelectDialog(
     enableQuickSelectCommonApps: Boolean = false,
     quickSelectExcludeCommonApps: Boolean = false,
     onConfirm: (List<String>) -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    installedAppsViewModel: InstalledAppsViewModel = viewModel()
 ) {
-
-    data class EnhancedApp(
-        val label: String,
-        val packageName: String,
-        val isSystemApp: Boolean,
-        val hasLauncher: Boolean
-    )
-
-    val context = LocalContext.current
-    val pm = context.packageManager
-
-    val repository = remember { InstalledAppsRepository.getInstance(context) }
-    val installedApps by repository.installedApps.collectAsStateWithLifecycle()
-    val loadingState by repository.loadingState.collectAsStateWithLifecycle()
+    val allApps by installedAppsViewModel.appItems.collectAsStateWithLifecycle()
+    val loadingState by installedAppsViewModel.loadingState.collectAsStateWithLifecycle()
 
     LaunchedEffect(Unit) {
-        repository.refreshApps()
-    }
-
-    val allApps = remember(installedApps) {
-        installedApps.map { app: InstalledApp ->
-            val hasLauncher = pm.getLaunchIntentForPackage(app.packageName) != null
-            EnhancedApp(
-                label = app.appName,
-                packageName = app.packageName,
-                isSystemApp = app.isSystemApp,
-                hasLauncher = hasLauncher
-            )
-        }
+        installedAppsViewModel.loadAppsIfNeeded()
     }
 
     var query by remember { mutableStateOf("") }
     var showSystemApps by remember { mutableStateOf(false) }
     var showNoLauncherApps by remember { mutableStateOf(false) }
-    var tempSelected by remember(selectedPackages) { mutableStateOf(selectedPackages.toMutableSet()) }
+    var tempSelected by remember(selectedPackages) { mutableStateOf(selectedPackages.toSet()) }
 
     val commonExactPackages = remember {
         setOf(
@@ -207,16 +183,15 @@ fun AppMultiSelectDialog(
             .filter { showSystemApps || !it.isSystemApp }
             .filter { showNoLauncherApps || it.hasLauncher }
             .filter {
-                q.isEmpty() || it.label.lowercase().contains(q) || it.packageName.lowercase().contains(q)
+                q.isEmpty() || it.appName.lowercase().contains(q) || it.packageName.lowercase().contains(q)
             }
             .toList()
             .sortedWith(
-                compareByDescending<EnhancedApp> { tempSelected.contains(it.packageName) }
-                    .thenBy { it.label.lowercase() }
+                compareByDescending<InstalledAppUi> { tempSelected.contains(it.packageName) }
+                    .thenBy { it.appName.lowercase() }
             )
     }
 
-    val scope = rememberCoroutineScope()
     val isLoading = loadingState is InstalledAppsRepository.LoadingState.Loading
     val useLiquidGlass = isLiquidGlassTheme()
 
@@ -241,7 +216,7 @@ fun AppMultiSelectDialog(
                     modifier = Modifier.weight(1f)
                 )
                 IconButton(
-                    onClick = { scope.launch { repository.reloadApps() } },
+                    onClick = installedAppsViewModel::reloadApps,
                     enabled = !isLoading,
                     modifier = Modifier
                         .size(32.dp)
@@ -394,9 +369,7 @@ fun AppMultiSelectDialog(
                                     commonMatches
                                 }
 
-                                tempSelected = tempSelected.toMutableSet().apply {
-                                    addAll(matches)
-                                }
+                                tempSelected = tempSelected + matches
                             }
                             .padding(horizontal = 12.dp, vertical = 6.dp)
                     ) {
@@ -411,7 +384,9 @@ fun AppMultiSelectDialog(
             }
 
             Spacer(modifier = Modifier.height(8.dp))
-            Divider(color = liquidGlassDividerColor(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)))
+            HorizontalDivider(
+                color = liquidGlassDividerColor(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
+            )
             Spacer(modifier = Modifier.height(8.dp))
 
             LazyColumn(
@@ -422,16 +397,12 @@ fun AppMultiSelectDialog(
             ) {
                 items(filteredApps, key = { it.packageName }) { app ->
                     val checked = tempSelected.contains(app.packageName)
-                    val density = LocalDensity.current
                     val iconSize = 40.dp
-                    val iconSizePx = with(density) { iconSize.roundToPx() }
-                    val iconBitmap = remember(app.packageName) {
-                        runCatching {
-                            pm.getApplicationIcon(app.packageName)
-                                .toBitmap(iconSizePx, iconSizePx)
-                                .asImageBitmap()
-                        }.getOrNull()
+                    var icon by remember(app.packageName) { mutableStateOf<Bitmap?>(null) }
+                    LaunchedEffect(app.packageName) {
+                        icon = installedAppsViewModel.loadIcon(app.packageName)
                     }
+                    val iconBitmap = remember(icon) { icon?.asImageBitmap() }
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -450,8 +421,10 @@ fun AppMultiSelectDialog(
                             .liquidGlassPressFeedback(
                                 label = "liquid_glass_app_select_item_scale"
                             ) {
-                                tempSelected = tempSelected.toMutableSet().apply {
-                                    if (checked) remove(app.packageName) else add(app.packageName)
+                                tempSelected = if (checked) {
+                                    tempSelected - app.packageName
+                                } else {
+                                    tempSelected + app.packageName
                                 }
                             }
                             .padding(vertical = 4.dp, horizontal = 4.dp),
@@ -460,8 +433,10 @@ fun AppMultiSelectDialog(
                         Checkbox(
                             checked = checked,
                             onCheckedChange = { newChecked ->
-                                tempSelected = tempSelected.toMutableSet().apply {
-                                    if (newChecked) add(app.packageName) else remove(app.packageName)
+                                tempSelected = if (newChecked) {
+                                    tempSelected + app.packageName
+                                } else {
+                                    tempSelected - app.packageName
                                 }
                             },
                             colors = liquidGlassCheckboxColors()
@@ -486,7 +461,7 @@ fun AppMultiSelectDialog(
                         Spacer(modifier = Modifier.width(12.dp))
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = app.label,
+                                text = app.appName,
                                 color = MaterialTheme.colorScheme.onSurface,
                                 style = MaterialTheme.typography.bodyLarge
                             )

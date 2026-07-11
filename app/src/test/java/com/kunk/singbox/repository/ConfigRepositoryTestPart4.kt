@@ -14,6 +14,7 @@ import com.kunk.singbox.model.SingBoxConfig
 import com.kunk.singbox.model.ProfileType
 import com.kunk.singbox.model.RoutingMode
 import com.kunk.singbox.model.TlsConfig
+import com.kunk.singbox.model.resolveDnsStrategy
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -23,48 +24,12 @@ import org.junit.Test
 
 @Suppress("TooManyFunctions")
 abstract class ConfigRepositoryTestPart4 : ConfigRepositoryTestPart3() {
-    override fun testResolveProfileSelectorDefaultUsesLowestPositiveLatency() {
-        val defaultTag = ConfigRepository.resolveProfileSelectorDefault(
-            nodeIds = listOf("node-1", "node-2", "node-3"),
-            nodeTagMap = mapOf(
-                "node-1" to "tag-a",
-                "node-2" to "tag-b",
-                "node-3" to "tag-c"
-            ),
-            rememberedNodeId = null,
-            savedNodeLatencies = mapOf(
-                "node-1" to 120L,
-                "node-2" to 45L,
-                "node-3" to 60L
-            )
-        )
-
-        assertEquals("tag-b", defaultTag)
-    }
-
-    @Test
-    override fun testResolveProfileSelectorDefaultFallsBackToFirstTag() {
-        val defaultTag = ConfigRepository.resolveProfileSelectorDefault(
-            nodeIds = listOf("node-1", "node-2"),
-            nodeTagMap = mapOf(
-                "node-1" to "tag-a",
-                "node-2" to "tag-b"
-            ),
-            rememberedNodeId = null,
-            savedNodeLatencies = mapOf(
-                "node-1" to 0L,
-                "node-2" to -1L
-            )
-        )
-
-        assertEquals("tag-a", defaultTag)
-    }
-
     @Test
     override fun testBuildProfileRouteGroupOutboundsCreatesNestedAutoStructure() {
-        val outbounds = ConfigRepository.buildProfileRouteGroupOutboundsForTest(
+        val outbounds = ConfigRepository.buildProfileRouteGroupOutbounds(
             groupTag = "P:HK",
-            nodeTags = listOf("node-a", "node-b")
+            nodeTags = listOf("node-a", "node-b"),
+            testUrl = "https://probe.example/204"
         )
 
         assertEquals(2, outbounds.size)
@@ -74,7 +39,7 @@ abstract class ConfigRepositoryTestPart4 : ConfigRepositoryTestPart3() {
         assertEquals("P:HK#AUTO", autoGroup.tag)
         assertEquals(listOf("node-a", "node-b"), autoGroup.outbounds)
         assertNull(autoGroup.default)
-        assertEquals("https://www.gstatic.com/generate_204", autoGroup.url)
+        assertEquals("https://probe.example/204", autoGroup.url)
         assertEquals("10m", autoGroup.interval)
         assertEquals(50, autoGroup.tolerance)
 
@@ -87,7 +52,7 @@ abstract class ConfigRepositoryTestPart4 : ConfigRepositoryTestPart3() {
 
     @Test
     override fun testApplySelectorSafeOutboundsKeepsUrlTestDefaultNull() {
-        val safeOutbounds = ConfigRepository.applySelectorSafeOutboundsForTest(
+        val safeOutbounds = ConfigRepository.sanitizeSelectorSafeOutbounds(
             listOf(
                 Outbound(
                     type = "urltest",
@@ -117,7 +82,7 @@ abstract class ConfigRepositoryTestPart4 : ConfigRepositoryTestPart3() {
 
     @Test
     override fun testBuildAppRoutingRulesUsesSemanticRejectForBlockRule() {
-        val routeRule = ConfigRepository.toRouteRuleForTest(
+        val routeRule = ConfigRepository.toRouteRule(
             ConfigRepository.OutboundSemantic.Block,
             "PROXY"
         )
@@ -130,15 +95,15 @@ abstract class ConfigRepositoryTestPart4 : ConfigRepositoryTestPart3() {
     override fun testResolveDnsStrategyClampsIpv4OnlyMode() {
         assertEquals(
             "ipv4_only",
-            ConfigRepository.resolveDnsStrategyForTest(DnsStrategy.AUTO, IpVersionMode.IPV4_ONLY)
+            IpVersionMode.IPV4_ONLY.resolveDnsStrategy(DnsStrategy.AUTO)
         )
         assertEquals(
             "ipv4_only",
-            ConfigRepository.resolveDnsStrategyForTest(DnsStrategy.PREFER_IPV6, IpVersionMode.IPV4_ONLY)
+            IpVersionMode.IPV4_ONLY.resolveDnsStrategy(DnsStrategy.PREFER_IPV6)
         )
         assertEquals(
             "ipv4_only",
-            ConfigRepository.resolveDnsStrategyForTest(DnsStrategy.ONLY_IPV6, IpVersionMode.IPV4_ONLY)
+            IpVersionMode.IPV4_ONLY.resolveDnsStrategy(DnsStrategy.ONLY_IPV6)
         )
     }
 
@@ -146,15 +111,15 @@ abstract class ConfigRepositoryTestPart4 : ConfigRepositoryTestPart3() {
     override fun testResolveDnsStrategyClampsIpv6OnlyMode() {
         assertEquals(
             "ipv6_only",
-            ConfigRepository.resolveDnsStrategyForTest(DnsStrategy.AUTO, IpVersionMode.IPV6_ONLY)
+            IpVersionMode.IPV6_ONLY.resolveDnsStrategy(DnsStrategy.AUTO)
         )
         assertEquals(
             "ipv6_only",
-            ConfigRepository.resolveDnsStrategyForTest(DnsStrategy.PREFER_IPV4, IpVersionMode.IPV6_ONLY)
+            IpVersionMode.IPV6_ONLY.resolveDnsStrategy(DnsStrategy.PREFER_IPV4)
         )
         assertEquals(
             "ipv6_only",
-            ConfigRepository.resolveDnsStrategyForTest(DnsStrategy.ONLY_IPV4, IpVersionMode.IPV6_ONLY)
+            IpVersionMode.IPV6_ONLY.resolveDnsStrategy(DnsStrategy.ONLY_IPV4)
         )
     }
 
@@ -162,11 +127,11 @@ abstract class ConfigRepositoryTestPart4 : ConfigRepositoryTestPart3() {
     override fun testResolveDnsStrategyPrefersIpv6InPreferMode() {
         assertEquals(
             "prefer_ipv6",
-            ConfigRepository.resolveDnsStrategyForTest(DnsStrategy.AUTO, IpVersionMode.PREFER_IPV6)
+            IpVersionMode.PREFER_IPV6.resolveDnsStrategy(DnsStrategy.AUTO)
         )
         assertEquals(
             "prefer_ipv4",
-            ConfigRepository.resolveDnsStrategyForTest(DnsStrategy.PREFER_IPV4, IpVersionMode.PREFER_IPV6)
+            IpVersionMode.PREFER_IPV6.resolveDnsStrategy(DnsStrategy.PREFER_IPV4)
         )
     }
 
@@ -174,7 +139,7 @@ abstract class ConfigRepositoryTestPart4 : ConfigRepositoryTestPart3() {
     fun outboundServerAddressAutoKeepsDualStackDefault() {
         assertEquals(
             "prefer_ipv4",
-            ConfigRepository.resolveOutboundServerAddressStrategyForTest(
+            ConfigRepository.resolveOutboundServerAddressStrategy(
                 DnsStrategy.AUTO,
                 IpVersionMode.DUAL_STACK
             )
@@ -185,7 +150,7 @@ abstract class ConfigRepositoryTestPart4 : ConfigRepositoryTestPart3() {
     fun outboundServerAddressStrategyHonorsExplicitPreferIpv4() {
         assertEquals(
             "prefer_ipv4",
-            ConfigRepository.resolveOutboundServerAddressStrategyForTest(
+            ConfigRepository.resolveOutboundServerAddressStrategy(
                 DnsStrategy.PREFER_IPV4,
                 IpVersionMode.DUAL_STACK
             )
@@ -196,14 +161,14 @@ abstract class ConfigRepositoryTestPart4 : ConfigRepositoryTestPart3() {
     fun outboundServerAddressStrategyHonorsOnlyIpv4AndOnlyIpv6() {
         assertEquals(
             "ipv4_only",
-            ConfigRepository.resolveOutboundServerAddressStrategyForTest(
+            ConfigRepository.resolveOutboundServerAddressStrategy(
                 DnsStrategy.AUTO,
                 IpVersionMode.IPV4_ONLY
             )
         )
         assertEquals(
             "ipv6_only",
-            ConfigRepository.resolveOutboundServerAddressStrategyForTest(
+            ConfigRepository.resolveOutboundServerAddressStrategy(
                 DnsStrategy.AUTO,
                 IpVersionMode.IPV6_ONLY
             )
@@ -215,7 +180,7 @@ abstract class ConfigRepositoryTestPart4 : ConfigRepositoryTestPart3() {
         assertEquals(
             "INFO [CFG] outbound_server_domain_resolver scope=run_config " +
                 "serverAddressStrategy=AUTO ipVersionMode=DUAL_STACK strategy=prefer_ipv4",
-            ConfigRepository.buildOutboundServerAddressStrategyLogForTest(
+            ConfigRepository.buildOutboundServerAddressStrategyLog(
                 scope = "run_config",
                 strategy = DnsStrategy.AUTO,
                 ipVersionMode = IpVersionMode.DUAL_STACK,
@@ -226,14 +191,14 @@ abstract class ConfigRepositoryTestPart4 : ConfigRepositoryTestPart3() {
 
     @Test
     override fun testBuildQuicBlockRuleReturnsEmptyWhenBlockQuicDisabled() {
-        val rules = ConfigRepository.buildQuicBlockRuleForTest(AppSettings(blockQuic = false))
+        val rules = ConfigRepository.buildQuicBlockRuleStatic(AppSettings(blockQuic = false))
 
         assertTrue(rules.isEmpty())
     }
 
     @Test
     override fun testBuildQuicBlockRuleOnlyRejectsSniffedQuicWhenBlockQuicEnabled() {
-        val rules = ConfigRepository.buildQuicBlockRuleForTest(AppSettings(blockQuic = true))
+        val rules = ConfigRepository.buildQuicBlockRuleStatic(AppSettings(blockQuic = true))
 
         assertEquals(1, rules.size)
         assertTrue(rules.any { it.protocol?.contains("quic") == true })
@@ -244,14 +209,14 @@ abstract class ConfigRepositoryTestPart4 : ConfigRepositoryTestPart3() {
 
     @Test
     override fun testBuildTunFakeIpDnsRuleReturnsEmptyWhenFakeDnsDisabled() {
-        val rules = ConfigRepository.buildTunFakeIpDnsRulesForTest(false)
+        val rules = ConfigRepository.buildTunFakeIpDnsRulesStatic(false)
 
         assertTrue(rules.isEmpty())
     }
 
     @Test
     override fun testBuildTunFakeIpDnsRuleRoutesTunAaaaAndAWhenFakeDnsEnabled() {
-        val rules = ConfigRepository.buildTunFakeIpDnsRulesForTest(true)
+        val rules = ConfigRepository.buildTunFakeIpDnsRulesStatic(true)
 
         assertEquals(1, rules.size)
         assertEquals(listOf("A", "AAAA"), rules.first().queryType)
@@ -262,7 +227,7 @@ abstract class ConfigRepositoryTestPart4 : ConfigRepositoryTestPart3() {
 
     @Test
     override fun testBuildEchDnsRulesRoutesHttpsQueryServerNameToGivenDnsServer() {
-        val rules = ConfigRepository.buildEchDnsRulesForTest(
+        val rules = ConfigRepository.buildEchDnsRules(
             outbounds = listOf(
                 Outbound(
                     type = "vless",
@@ -287,7 +252,7 @@ abstract class ConfigRepositoryTestPart4 : ConfigRepositoryTestPart3() {
 
     @Test
     override fun testBuildEchAwareHttpsSvcbRulesRoutesEchBeforeRejectWhenBlockQuicEnabled() {
-        val rules = ConfigRepository.buildEchAwareHttpsSvcbDnsRulesForTest(
+        val rules = ConfigRepository.buildEchAwareHttpsSvcbDnsRules(
             blockQuic = true,
             outbounds = listOf(
                 Outbound(
@@ -305,7 +270,7 @@ abstract class ConfigRepositoryTestPart4 : ConfigRepositoryTestPart3() {
         assertEquals(listOf("HTTPS", "SVCB"), rules[0].queryType)
         assertEquals("dns-bootstrap", rules[0].server)
         assertEquals("predefined", rules[1].action)
-        assertEquals("NOERROR", rules[1].rcode)
+        assertEquals("NOERROR", rules[1].rcode?.asString)
         assertEquals(listOf("HTTPS", "SVCB"), rules[1].queryType)
     }
 
@@ -329,10 +294,10 @@ abstract class ConfigRepositoryTestPart4 : ConfigRepositoryTestPart3() {
             )
         )
 
-        assertNull(ConfigRepository.resolveActiveEchDnsServerForTest("plain-node", outbounds))
+        assertNull(ConfigRepository.resolveActiveEchDnsServer("plain-node", outbounds))
         assertEquals(
             "https://dns.alidns.com/dns-query",
-            ConfigRepository.resolveActiveEchDnsServerForTest("ech-node", outbounds)
+            ConfigRepository.resolveActiveEchDnsServer("ech-node", outbounds)
         )
     }
 
@@ -364,7 +329,7 @@ abstract class ConfigRepositoryTestPart4 : ConfigRepositoryTestPart3() {
 
         assertEquals(
             "https://dns.alidns.com/dns-query",
-            ConfigRepository.resolveActiveEchDnsServerForTest("active-ech-node", outbounds)
+            ConfigRepository.resolveActiveEchDnsServer("active-ech-node", outbounds)
         )
     }
 
@@ -385,7 +350,7 @@ abstract class ConfigRepositoryTestPart4 : ConfigRepositoryTestPart3() {
             )
         )
 
-        assertTrue(ConfigRepository.needsLegacyEchDnsRepairForTest(config))
+        assertTrue(ConfigRepository.needsLegacyEchDnsRepair(config))
     }
 
     @Test
@@ -420,51 +385,22 @@ abstract class ConfigRepositoryTestPart4 : ConfigRepositoryTestPart3() {
     }
 
     @Test
-    override fun testResolveProxyDnsDetourTagUsesSelectorDefaultConcreteNode() {
-        val detourTag = ConfigRepository.resolveProxyDnsDetourTagForTest(
-            selectorTag = "PROXY",
-            outbounds = listOf(
-                Outbound(
-                    type = "selector",
-                    tag = "PROXY",
-                    outbounds = listOf("node-a", "node-b"),
-                    default = "node-b"
-                ),
-                Outbound(type = "vless", tag = "node-a"),
-                Outbound(type = "vless", tag = "node-b")
-            )
-        )
+    override fun testResolveProxyDnsDetourTagKeepsSelectorAcrossNodeSwitch() {
+        val detourTag = ConfigRepository.resolveProxyDnsDetourTagForTest("PROXY")
 
-        assertEquals("node-b", detourTag)
+        assertEquals("PROXY", detourTag)
     }
 
     @Test
-    override fun testResolveProxyDnsDetourTagUnwrapsUrlTestDefault() {
-        val detourTag = ConfigRepository.resolveProxyDnsDetourTagForTest(
-            selectorTag = "PROXY",
-            outbounds = listOf(
-                Outbound(
-                    type = "selector",
-                    tag = "PROXY",
-                    outbounds = listOf("P:HK#AUTO"),
-                    default = "P:HK#AUTO"
-                ),
-                Outbound(
-                    type = "urltest",
-                    tag = "P:HK#AUTO",
-                    outbounds = listOf("node-a", "node-b")
-                ),
-                Outbound(type = "vless", tag = "node-a"),
-                Outbound(type = "vless", tag = "node-b")
-            )
-        )
+    override fun testResolveProxyDnsDetourTagKeepsSelectorForUrlTest() {
+        val detourTag = ConfigRepository.resolveProxyDnsDetourTagForTest("PROXY")
 
-        assertEquals("node-a", detourTag)
+        assertEquals("PROXY", detourTag)
     }
 
     @Test
     override fun testBypassLanRulesUseIpIsPrivate() {
-        val rules = ConfigRepository.buildBypassLanRulesForTest(AppSettings(bypassLan = true))
+        val rules = ConfigRepository.buildBypassLanRulesStatic(AppSettings(bypassLan = true))
 
         assertEquals(1, rules.size)
         assertEquals(true, rules.first().ipIsPrivate)
@@ -473,16 +409,18 @@ abstract class ConfigRepositoryTestPart4 : ConfigRepositoryTestPart3() {
 
     @Test
     override fun testHijackDnsRulesCatchTunDnsPortBeforeProtocolSniffing() {
-        val rules = ConfigRepository.buildHijackDnsRulesForTest()
+        val rules = ConfigRepository.buildHijackDnsRulesStatic()
 
-        assertEquals(3, rules.size)
+        assertEquals(4, rules.size)
         assertEquals(listOf("tun-in"), rules[0].inbound)
         assertEquals(listOf(53), rules[0].port)
         assertEquals("hijack-dns", rules[0].action)
-        assertEquals(listOf("dns"), rules[1].protocol)
-        assertEquals("hijack-dns", rules[1].action)
-        assertEquals(listOf(853), rules[2].port)
-        assertEquals("reject", rules[2].action)
+        assertEquals(listOf("tun-in", "mixed-in"), rules[1].inbound)
+        assertEquals("sniff", rules[1].action)
+        assertEquals(listOf("dns"), rules[2].protocol)
+        assertEquals("hijack-dns", rules[2].action)
+        assertEquals(listOf(853), rules[3].port)
+        assertEquals("reject", rules[3].action)
     }
 
     @Test
@@ -504,7 +442,7 @@ abstract class ConfigRepositoryTestPart4 : ConfigRepositoryTestPart3() {
             selectorTag = "PROXY",
             outbounds = listOf(
                 Outbound(type = "selector", tag = "PROXY"),
-                Outbound(type = "selector", tag = "P:鹰")
+                Outbound(type = "selector", tag = "P:鹰#profile-1")
             ),
             profiles = listOf(
                 com.kunk.singbox.database.entity.ProfileEntity(
@@ -521,7 +459,7 @@ abstract class ConfigRepositoryTestPart4 : ConfigRepositoryTestPart3() {
 
         val googleRule = rules.firstOrNull { it.ruleSet == listOf("geosite-google") }
         assertNotNull(googleRule)
-        assertEquals("P:鹰", googleRule?.outbound)
+        assertEquals("P:鹰#profile-1", googleRule?.outbound)
     }
 
     @Test
@@ -538,14 +476,14 @@ abstract class ConfigRepositoryTestPart4 : ConfigRepositoryTestPart3() {
 
     @Test
     override fun testBypassLanRulesDisabledWhenSettingOff() {
-        val rules = ConfigRepository.buildBypassLanRulesForTest(AppSettings(bypassLan = false))
+        val rules = ConfigRepository.buildBypassLanRulesStatic(AppSettings(bypassLan = false))
 
         assertTrue(rules.isEmpty())
     }
 
     @Test
     override fun testMulticastRejectRulesCoverIpv4AndIpv6WhenDualStack() {
-        val rules = ConfigRepository.buildMulticastRejectRulesForTest(
+        val rules = ConfigRepository.buildMulticastRejectRulesStatic(
             AppSettings(ipVersionMode = IpVersionMode.DUAL_STACK)
         )
 
@@ -555,10 +493,10 @@ abstract class ConfigRepositoryTestPart4 : ConfigRepositoryTestPart3() {
 
     @Test
     override fun testMulticastRejectRulesFollowIpVersionMode() {
-        val ipv4Only = ConfigRepository.buildMulticastRejectRulesForTest(
+        val ipv4Only = ConfigRepository.buildMulticastRejectRulesStatic(
             AppSettings(ipVersionMode = IpVersionMode.IPV4_ONLY)
         )
-        val ipv6Only = ConfigRepository.buildMulticastRejectRulesForTest(
+        val ipv6Only = ConfigRepository.buildMulticastRejectRulesStatic(
             AppSettings(ipVersionMode = IpVersionMode.IPV6_ONLY)
         )
 
@@ -625,7 +563,7 @@ abstract class ConfigRepositoryTestPart4 : ConfigRepositoryTestPart3() {
         val target = java.io.File(tempDir, "running_config.json")
         target.writeText("""{"old":true}""")
 
-        ConfigRepository.writeTextFileAtomicallyForTest(target, """{"new":true}""")
+        ConfigRepository.writeTextFileAtomically(target, """{"new":true}""")
 
         assertEquals("""{"new":true}""", target.readText())
         assertFalse(java.io.File(tempDir, "running_config.json.tmp").exists())
@@ -640,7 +578,7 @@ abstract class ConfigRepositoryTestPart4 : ConfigRepositoryTestPart3() {
         target.writeText("""{"old":true}""")
         blockedTempPath.mkdir()
 
-        ConfigRepository.writeTextFileAtomicallyForTest(target, """{"new":true}""")
+        ConfigRepository.writeTextFileAtomically(target, """{"new":true}""")
 
         assertEquals("""{"new":true}""", target.readText())
         assertTrue(blockedTempPath.isDirectory)
@@ -656,7 +594,7 @@ abstract class ConfigRepositoryTestPart4 : ConfigRepositoryTestPart3() {
             10.0.0.0/8
             """.trimIndent())
 
-        val ruleType = ConfigRepository.detectRuleSetRuleTypeForTest(tempFile)
+        val ruleType = ConfigRepository.detectRuleSetRuleTypeStatic(tempFile)
         assertEquals(ConfigRepository.RuleSetRuleType.IP, ruleType)
     }
 
@@ -670,7 +608,7 @@ abstract class ConfigRepositoryTestPart4 : ConfigRepositoryTestPart3() {
             domain:twitter.com
             """.trimIndent())
 
-        val ruleType = ConfigRepository.detectRuleSetRuleTypeForTest(tempFile)
+        val ruleType = ConfigRepository.detectRuleSetRuleTypeStatic(tempFile)
         assertEquals(ConfigRepository.RuleSetRuleType.DOMAIN, ruleType)
     }
 
@@ -684,7 +622,7 @@ abstract class ConfigRepositoryTestPart4 : ConfigRepositoryTestPart3() {
             geosite:youtube
             """.trimIndent())
 
-        val ruleType = ConfigRepository.detectRuleSetRuleTypeForTest(tempFile)
+        val ruleType = ConfigRepository.detectRuleSetRuleTypeStatic(tempFile)
         assertEquals(ConfigRepository.RuleSetRuleType.MIXED, ruleType)
     }
 
@@ -697,7 +635,7 @@ abstract class ConfigRepositoryTestPart4 : ConfigRepositoryTestPart3() {
             geoip:cn
             """.trimIndent())
 
-        val ruleType = ConfigRepository.detectRuleSetRuleTypeForTest(tempFile)
+        val ruleType = ConfigRepository.detectRuleSetRuleTypeStatic(tempFile)
         assertEquals(ConfigRepository.RuleSetRuleType.IP, ruleType)
     }
 
@@ -710,7 +648,7 @@ abstract class ConfigRepositoryTestPart4 : ConfigRepositoryTestPart3() {
             domain-keyword:twitter
             """.trimIndent())
 
-        val ruleType = ConfigRepository.detectRuleSetRuleTypeForTest(tempFile)
+        val ruleType = ConfigRepository.detectRuleSetRuleTypeStatic(tempFile)
         assertEquals(ConfigRepository.RuleSetRuleType.DOMAIN, ruleType)
     }
 
@@ -723,7 +661,7 @@ abstract class ConfigRepositoryTestPart4 : ConfigRepositoryTestPart3() {
             ::1/128
             """.trimIndent())
 
-        val ruleType = ConfigRepository.detectRuleSetRuleTypeForTest(tempFile)
+        val ruleType = ConfigRepository.detectRuleSetRuleTypeStatic(tempFile)
         assertEquals(ConfigRepository.RuleSetRuleType.IP, ruleType)
     }
 
@@ -731,7 +669,7 @@ abstract class ConfigRepositoryTestPart4 : ConfigRepositoryTestPart3() {
     override fun testDetectRuleSetRuleTypeEmptyFile() {
         val tempFile = createTempRuleSetFile("")
 
-        val ruleType = ConfigRepository.detectRuleSetRuleTypeForTest(tempFile)
+        val ruleType = ConfigRepository.detectRuleSetRuleTypeStatic(tempFile)
         assertEquals(ConfigRepository.RuleSetRuleType.UNKNOWN, ruleType)
     }
 
@@ -744,7 +682,7 @@ abstract class ConfigRepositoryTestPart4 : ConfigRepositoryTestPart3() {
             ! Yet another
             """.trimIndent())
 
-        val ruleType = ConfigRepository.detectRuleSetRuleTypeForTest(tempFile)
+        val ruleType = ConfigRepository.detectRuleSetRuleTypeStatic(tempFile)
         assertEquals(ConfigRepository.RuleSetRuleType.UNKNOWN, ruleType)
     }
 
@@ -752,7 +690,7 @@ abstract class ConfigRepositoryTestPart4 : ConfigRepositoryTestPart3() {
     override fun testDetectRuleSetRuleTypeUsesGeositeTagForBinaryRuleSet() {
         val tempFile = createTempRuleSetBytes(byteArrayOf(0, 1, 2, 3))
 
-        val ruleType = ConfigRepository.detectRuleSetRuleTypeForTest(tempFile, "geosite-cn")
+        val ruleType = ConfigRepository.detectRuleSetRuleTypeStatic(tempFile, "geosite-cn")
 
         assertEquals(ConfigRepository.RuleSetRuleType.DOMAIN, ruleType)
     }
@@ -761,7 +699,7 @@ abstract class ConfigRepositoryTestPart4 : ConfigRepositoryTestPart3() {
     override fun testDetectRuleSetRuleTypeKeepsUnknownBinaryAsUnknownWithoutTagHint() {
         val tempFile = createTempRuleSetBytes(byteArrayOf('S'.code.toByte(), 'R'.code.toByte(), 'S'.code.toByte(), 1))
 
-        val ruleType = ConfigRepository.detectRuleSetRuleTypeForTest(tempFile, "ads")
+        val ruleType = ConfigRepository.detectRuleSetRuleTypeStatic(tempFile, "ads")
 
         assertEquals(ConfigRepository.RuleSetRuleType.UNKNOWN, ruleType)
     }

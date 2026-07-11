@@ -22,7 +22,6 @@ import com.kunk.singbox.repository.ConfigRepository
 import com.kunk.singbox.repository.LogRepository
 import com.kunk.singbox.repository.SettingsRepository
 import com.kunk.singbox.repository.RuleSetRepository
-import com.kunk.singbox.utils.KernelHttpClient
 import com.kunk.singbox.utils.LocalNetworkPermission
 import com.kunk.singbox.utils.NetworkClient
 import io.nekohasekai.libbox.CommandServer
@@ -82,23 +81,7 @@ class ProxyOnlyService : Service() {
         private val _lastErrorFlow = kotlinx.coroutines.flow.MutableStateFlow<String?>(null)
         val lastErrorFlow = _lastErrorFlow.asStateFlow()
 
-        internal fun shouldClearRuntimeStateOnDestroyForTest(
-            isRunning: Boolean,
-            isStarting: Boolean,
-            isStopping: Boolean,
-            pending: String,
-            mode: VpnStateStore.CoreMode
-        ): Boolean {
-            return shouldClearRuntimeStateOnDestroy(
-                isRunning = isRunning,
-                isStarting = isStarting,
-                isStopping = isStopping,
-                pending = pending,
-                mode = mode
-            )
-        }
-
-        private fun shouldClearRuntimeStateOnDestroy(
+        internal fun shouldClearRuntimeStateOnDestroy(
             isRunning: Boolean,
             isStarting: Boolean,
             isStopping: Boolean,
@@ -113,27 +96,15 @@ class ProxyOnlyService : Service() {
             return mode == VpnStateStore.CoreMode.NONE && pending.isNotBlank()
         }
 
-        internal fun shouldContinueCoreStartAfterForegroundResultForTest(foregroundStarted: Boolean): Boolean {
-            return shouldContinueCoreStartAfterForegroundResult(foregroundStarted)
-        }
-
-        private fun shouldContinueCoreStartAfterForegroundResult(foregroundStarted: Boolean): Boolean {
+        internal fun shouldContinueCoreStartAfterForegroundResult(foregroundStarted: Boolean): Boolean {
             return foregroundStarted
         }
 
-        internal fun shouldClearRuntimeStateAfterStopForTest(stopService: Boolean): Boolean {
-            return shouldClearRuntimeStateAfterStop(stopService)
-        }
-
-        private fun shouldClearRuntimeStateAfterStop(stopService: Boolean): Boolean {
+        internal fun shouldClearRuntimeStateAfterStop(stopService: Boolean): Boolean {
             return stopService
         }
 
-        internal fun shouldStartForegroundBeforeConfigGenerationForTest(action: String?, configPath: String?): Boolean {
-            return shouldStartForegroundBeforeConfigGeneration(action, configPath)
-        }
-
-        private fun shouldStartForegroundBeforeConfigGeneration(action: String?, configPath: String?): Boolean {
+        internal fun shouldStartForegroundBeforeConfigGeneration(action: String?, configPath: String?): Boolean {
             return action == ACTION_START && configPath.isNullOrBlank()
         }
 
@@ -424,7 +395,7 @@ class ProxyOnlyService : Service() {
 
         when (intent?.action) {
             ACTION_START -> {
-                VpnTileService.persistVpnPending(applicationContext, "starting")
+                VpnTileService.persistVpnPending("starting")
                 val configPath = intent.getStringExtra(EXTRA_CONFIG_PATH)
 
                 // P0 Optimization: If config path is missing, generate it inside Service
@@ -476,7 +447,7 @@ class ProxyOnlyService : Service() {
                 }
             }
             ACTION_STOP -> {
-                VpnTileService.persistVpnPending(applicationContext, "stopping")
+                VpnTileService.persistVpnPending("stopping")
                 stopCore(stopService = true)
             }
             ACTION_SWITCH_NODE -> {
@@ -516,18 +487,8 @@ class ProxyOnlyService : Service() {
                 serviceScope.launch {
                     try {
 
-                        if (LibboxCompat.isPaused()) {
-                            LibboxCompat.resumeService()
-                        }
-                        Log.i(TAG, "[PrepareRestart] Step 1/2: Ensured core is awake")
-
-                        Log.i(TAG, "[PrepareRestart] Step 2/2: Close connections")
-                        delay(50)
-                        try {
-                            Libbox.resetAllConnections(false)
-                        } catch (e: Exception) {
-                            Log.w(TAG, "resetAllConnections failed: ${e.message}")
-                        }
+                        commandServer?.wake()
+                        Log.i(TAG, "[PrepareRestart] Ensured core is awake")
 
                         Log.i(TAG, "[PrepareRestart] Complete")
                     } catch (e: Exception) {
@@ -651,11 +612,9 @@ class ProxyOnlyService : Service() {
                 isRunning = true
                 NetworkClient.onVpnStateChanged(true)
 
-                KernelHttpClient.updateProxyPortFromSettings(this@ProxyOnlyService)
-
-                VpnTileService.persistVpnState(applicationContext, true)
+                VpnTileService.persistVpnState(true)
                 VpnStateStore.setMode(VpnStateStore.CoreMode.PROXY)
-                VpnTileService.persistVpnPending(applicationContext, "")
+                VpnTileService.persistVpnPending("")
                 setLastError(null)
                 notifyRemoteState(state = ServiceState.RUNNING)
                 updateTileState()
@@ -708,15 +667,13 @@ class ProxyOnlyService : Service() {
         isRunning = false
         isStarting = false
         NetworkClient.onVpnStateChanged(false)
-        VpnTileService.persistVpnState(applicationContext, false)
+        VpnTileService.persistVpnState(false)
         VpnStateStore.setMode(VpnStateStore.CoreMode.NONE)
-        VpnTileService.persistVpnPending(applicationContext, "")
+        VpnTileService.persistVpnPending("")
         notifyRemoteState(state = ServiceState.STOPPED)
         updateTileState()
     }
 
-    /**
-     */
     @Suppress("CognitiveComplexMethod", "LongMethod")
     private fun stopCore(stopService: Boolean): Job? {
         synchronized(this) {
@@ -747,65 +704,65 @@ class ProxyOnlyService : Service() {
                 .settings.value.proxyPort
         }.getOrDefault(2080)
 
-        val job = cleanupScope.launch(NonCancellable) {
-            try {
-                jobToJoin?.join()
-            } catch (e: Exception) {
-                Log.w(TAG, "Failed to join start job", e)
-            }
-
-            if (serverToClose != null) {
-                Log.i(TAG, "Closing CommandServer...")
-                val closeStart = SystemClock.elapsedRealtime()
+        val job = cleanupScope.launch {
+            withContext(NonCancellable) {
                 try {
-                    serverToClose.closeService()
-                    serverToClose?.close()
-
-                    if (proxyPort > 0) {
-                        val portReleased = waitForPortAvailable(proxyPort, PORT_WAIT_TIMEOUT_MS)
-                        val elapsed = SystemClock.elapsedRealtime() - closeStart
-                        if (portReleased) {
-                            Log.i(TAG, "CommandServer closed, port $proxyPort released in ${elapsed}ms")
-                        } else {
-
-                            val reason = "Proxy port $proxyPort was not released after ${elapsed}ms"
-                            Log.e(TAG, reason)
-                            setLastError(reason)
-                        }
-                    } else {
-                        Log.i(TAG, "CommandServer closed in ${SystemClock.elapsedRealtime() - closeStart}ms")
-                    }
+                    jobToJoin?.join()
                 } catch (e: Exception) {
-                    Log.w(TAG, "Failed to close CommandServer: ${e.message}", e)
+                    Log.w(TAG, "Failed to join start job", e)
                 }
-            }
 
-            withContext(Dispatchers.Main) {
-                runCatching { stopForeground(STOP_FOREGROUND_REMOVE) }
-                if (stopSelfRequested) {
-                    stopSelf()
-                }
-                if (shouldClearRuntimeStateAfterStop(stopService = stopSelfRequested)) {
-                    VpnTileService.persistVpnState(applicationContext, false)
-                    VpnStateStore.setMode(VpnStateStore.CoreMode.NONE)
-                    VpnTileService.persistVpnPending(applicationContext, "")
-                }
-                notifyRemoteState(state = ServiceState.STOPPED)
-                updateTileState()
-            }
+                if (serverToClose != null) {
+                    Log.i(TAG, "Closing CommandServer...")
+                    val closeStart = SystemClock.elapsedRealtime()
+                    try {
+                        serverToClose.closeService()
+                        serverToClose.close()
 
-            synchronized(this@ProxyOnlyService) {
-                isStopping = false
-                stopSelfRequested = false
-                cleanupJob = null
+                        if (proxyPort > 0) {
+                            val portReleased = waitForPortAvailable(proxyPort, PORT_WAIT_TIMEOUT_MS)
+                            val elapsed = SystemClock.elapsedRealtime() - closeStart
+                            if (portReleased) {
+                                Log.i(TAG, "CommandServer closed, port $proxyPort released in ${elapsed}ms")
+                            } else {
+
+                                val reason = "Proxy port $proxyPort was not released after ${elapsed}ms"
+                                Log.e(TAG, reason)
+                                setLastError(reason)
+                            }
+                        } else {
+                            Log.i(TAG, "CommandServer closed in ${SystemClock.elapsedRealtime() - closeStart}ms")
+                        }
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Failed to close CommandServer: ${e.message}", e)
+                    }
+                }
+
+                withContext(Dispatchers.Main) {
+                    runCatching { stopForeground(STOP_FOREGROUND_REMOVE) }
+                    if (stopSelfRequested) {
+                        stopSelf()
+                    }
+                    if (shouldClearRuntimeStateAfterStop(stopService = stopSelfRequested)) {
+                        VpnTileService.persistVpnState(false)
+                        VpnStateStore.setMode(VpnStateStore.CoreMode.NONE)
+                        VpnTileService.persistVpnPending("")
+                    }
+                    notifyRemoteState(state = ServiceState.STOPPED)
+                    updateTileState()
+                }
+
+                synchronized(this@ProxyOnlyService) {
+                    isStopping = false
+                    stopSelfRequested = false
+                    cleanupJob = null
+                }
             }
         }
         cleanupJob = job
         return job
     }
 
-    /**
-     */
     private suspend fun waitForCleanupJob() {
         val job = cleanupJob
         if (job != null && job.isActive) {
@@ -816,8 +773,6 @@ class ProxyOnlyService : Service() {
         }
     }
 
-    /**
-     */
     private fun isPortAvailable(port: Int): Boolean {
         if (port <= 0) return true
         return try {
@@ -831,8 +786,6 @@ class ProxyOnlyService : Service() {
         }
     }
 
-    /**
-     */
     private suspend fun waitForPortAvailable(port: Int, timeoutMs: Long = PORT_WAIT_TIMEOUT_MS): Boolean {
         if (port <= 0) return true
         val startTime = SystemClock.elapsedRealtime()
@@ -966,10 +919,10 @@ class ProxyOnlyService : Service() {
         isRunning = false
         isStarting = false
         NetworkClient.onVpnStateChanged(false)
-        VpnTileService.persistVpnState(applicationContext, false)
+        VpnTileService.persistVpnState(false)
         VpnStateStore.clearRuntimeState()
         VpnStateStore.setMode(VpnStateStore.CoreMode.NONE)
-        VpnTileService.persistVpnPending(applicationContext, "")
+        VpnTileService.persistVpnPending("")
         notifyRemoteState(state = ServiceState.STOPPED)
         updateTileState()
     }

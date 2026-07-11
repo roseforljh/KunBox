@@ -101,7 +101,7 @@ class DiagnosticsViewModelNodeLineTest {
             runConfig = createConfig(routeRules = emptyList())
         )
 
-        assertTrue(report.contains("DNS 泄露: 是"))
+        assertTrue(report.contains("DNS 静态风险: 存在"))
         assertTrue(report.contains("运行配置缺少覆盖 tun-in:53 或 protocol=dns 的 DNS 劫持规则"))
     }
 
@@ -112,7 +112,7 @@ class DiagnosticsViewModelNodeLineTest {
             runConfig = createConfig(dnsServers = listOf(DnsServer(tag = "local", type = "local")))
         )
 
-        assertTrue(report.contains("DNS 泄露: 是"))
+        assertTrue(report.contains("DNS 静态风险: 存在"))
         assertTrue(report.contains("DNS 服务器 local 使用系统 DNS 类型 local"))
     }
 
@@ -123,7 +123,7 @@ class DiagnosticsViewModelNodeLineTest {
             runConfig = createConfig(dnsServers = listOf(DnsServer(tag = "remote", type = "https")))
         )
 
-        assertTrue(report.contains("DNS 泄露: 是"))
+        assertTrue(report.contains("DNS 静态风险: 存在"))
         assertTrue(report.contains("DNS final 指向 local，但 servers 中不存在该 tag"))
     }
 
@@ -134,7 +134,7 @@ class DiagnosticsViewModelNodeLineTest {
             runConfig = createConfig(inbounds = emptyList())
         )
 
-        assertTrue(report.contains("DNS 泄露: 是"))
+        assertTrue(report.contains("DNS 静态风险: 存在"))
         assertTrue(report.contains("运行配置缺少 TUN 入站"))
     }
 
@@ -149,7 +149,7 @@ class DiagnosticsViewModelNodeLineTest {
             )
         )
 
-        assertTrue(report.contains("DNS 泄露: 是"))
+        assertTrue(report.contains("DNS 静态风险: 存在"))
         assertTrue(report.contains("运行配置缺少覆盖 tun-in:53 或 protocol=dns 的 DNS 劫持规则"))
     }
 
@@ -160,7 +160,7 @@ class DiagnosticsViewModelNodeLineTest {
             runConfig = createConfig(dnsServers = listOf(DnsServer(tag = "local", type = "udp", server = "223.5.5.5")))
         )
 
-        assertTrue(report.contains("DNS 泄露: 是"))
+        assertTrue(report.contains("DNS 静态风险: 存在"))
         assertTrue(report.contains("DNS 服务器 local 使用明文直连 DNS udp://223.5.5.5"))
     }
 
@@ -177,7 +177,7 @@ class DiagnosticsViewModelNodeLineTest {
             )
         )
 
-        assertTrue(report.contains("DNS 泄露: 是"))
+        assertTrue(report.contains("DNS 静态风险: 存在"))
         assertTrue(report.contains("DNS final 指向不安全服务器 remote"))
     }
 
@@ -192,7 +192,7 @@ class DiagnosticsViewModelNodeLineTest {
             )
         )
 
-        assertTrue(report.contains("DNS 泄露: 是"))
+        assertTrue(report.contains("DNS 静态风险: 存在"))
         assertTrue(report.contains("DNS 服务器 local detour 指向不存在的出站 proxy-node"))
     }
 
@@ -208,12 +208,12 @@ class DiagnosticsViewModelNodeLineTest {
             )
         )
 
-        assertTrue(report.contains("DNS 泄露: 是"))
+        assertTrue(report.contains("DNS 静态风险: 存在"))
         assertTrue(report.contains("DNS 服务器 local detour 指向直连出站 direct"))
     }
 
     @Test
-    fun buildDnsLeakCheckReport_reportsLeakWhenTunAutoRouteDisabled() {
+    fun buildDnsLeakCheckReport_doesNotTreatAutoRouteAsAndroidVpnRouteSignal() {
         val report = buildDnsLeakCheckReport(
             coreActive = true,
             runConfig = createConfig(
@@ -221,8 +221,8 @@ class DiagnosticsViewModelNodeLineTest {
             )
         )
 
-        assertTrue(report.contains("DNS 泄露: 是"))
-        assertTrue(report.contains("TUN 入站 auto_route 未启用"))
+        assertTrue(report.contains("DNS 静态风险: 未发现明显配置缺口"))
+        assertTrue(report.contains("此结果仅检查静态配置"))
     }
 
     @Test
@@ -232,10 +232,11 @@ class DiagnosticsViewModelNodeLineTest {
             runConfig = createConfig()
         )
 
-        assertTrue(report.contains("DNS 泄露: 否"))
+        assertTrue(report.contains("DNS 静态风险: 未发现明显配置缺口"))
         assertTrue(report.contains("route.rules 已包含覆盖 tun-in:53 或 protocol=dns 的 hijack-dns"))
         assertTrue(report.contains("DNS final 指向有效且安全的 server tag"))
         assertTrue(report.contains("未发现系统 DNS 或明文直连 DNS server"))
+        assertTrue(report.contains("不能替代设备抓包"))
     }
 
     private fun createNode(id: String, name: String): NodeUi {

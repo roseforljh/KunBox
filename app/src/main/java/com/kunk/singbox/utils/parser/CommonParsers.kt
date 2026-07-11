@@ -11,8 +11,6 @@ import com.kunk.singbox.model.Outbound
 import com.kunk.singbox.model.SingBoxConfig
 import com.kunk.singbox.model.TlsConfig
 
-/**
- */
 class SingBoxParser(private val gson: Gson) : SubscriptionParser {
     companion object {
         private const val TAG = "SingBoxParser"
@@ -56,48 +54,59 @@ class SingBoxParser(private val gson: Gson) : SubscriptionParser {
         }
     }
 
+    @Suppress("CyclomaticComplexMethod")
     private fun normalizeTlsAliases(tls: TlsConfig?, rawTls: JsonObject? = null): TlsConfig? {
         if (tls == null && rawTls == null) return null
         val baseTls = tls ?: TlsConfig()
+        val legacyCa = readJsonListAlias(rawTls, "ca", "ca-cert", "ca_cert", "caPem", "ca_pem")
+        val legacyCaPath = readJsonStringAlias(rawTls, "ca_path", "ca-path")
         return baseTls.copy(
-            ca = baseTls.ca ?: readJsonAlias(rawTls, "ca", "ca-cert", "ca_cert", "caPem", "ca_pem"),
-            caPath = baseTls.caPath ?: readJsonAlias(rawTls, "ca_path", "ca-path"),
-            certificate = baseTls.certificate ?: readJsonAlias(
+            ca = legacyCa ?: baseTls.ca ?: readJsonListAlias(rawTls, "certificate"),
+            caPath = legacyCaPath ?: baseTls.caPath ?: readJsonStringAlias(rawTls, "certificate_path"),
+            certificate = baseTls.certificate ?: readJsonListAlias(
                 rawTls,
-                "certificate",
-                "cert",
+                "client_certificate",
                 "client-cert",
                 "client_cert"
-            ),
-            certificatePath = baseTls.certificatePath ?: readJsonAlias(
+            ) ?: legacyCa?.let { readJsonListAlias(rawTls, "certificate") },
+            certificatePath = baseTls.certificatePath ?: readJsonStringAlias(
                 rawTls,
-                "certificate_path",
-                "certificate-path",
-                "cert_path",
-                "cert-path",
+                "client_certificate_path",
                 "client-cert-path",
                 "client_cert_path"
-            ),
-            key = baseTls.key ?: readJsonAlias(rawTls, "key", "client-key", "client_key"),
-            keyPath = baseTls.keyPath ?: readJsonAlias(
+            ) ?: legacyCaPath?.let { readJsonStringAlias(rawTls, "certificate_path") },
+            key = baseTls.key ?: readJsonListAlias(rawTls, "client_key", "client-key", "key"),
+            keyPath = baseTls.keyPath ?: readJsonStringAlias(
                 rawTls,
-                "key_path",
-                "key-path",
+                "client_key_path",
                 "client-key-path",
-                "client_key_path"
+                "key_path"
             )
         )
     }
 
-    private fun readJsonAlias(rawObject: JsonObject?, vararg aliases: String): String? {
+    private fun readJsonStringAlias(rawObject: JsonObject?, vararg aliases: String): String? {
         if (rawObject == null) return null
         return aliases.firstNotNullOfOrNull { alias ->
             rawObject.get(alias)?.takeIf { it.isJsonPrimitive }?.asString?.takeIf { it.isNotBlank() }
         }
     }
 
-    /**
-     */
+    private fun readJsonListAlias(rawObject: JsonObject?, vararg aliases: String): List<String>? {
+        if (rawObject == null) return null
+        return aliases.firstNotNullOfOrNull { alias ->
+            when (val value = rawObject.get(alias)) {
+                null -> null
+                is JsonArray -> value.mapNotNull { element ->
+                    element.takeIf { it.isJsonPrimitive }?.asString?.takeIf { it.isNotBlank() }
+                }.takeIf { it.isNotEmpty() }
+                else -> value.takeIf { it.isJsonPrimitive }?.asString
+                    ?.takeIf { it.isNotBlank() }
+                    ?.let(::listOf)
+            }
+        }
+    }
+
     private fun parseAsOutboundArray(content: String): SingBoxConfig? {
         return try {
             val rawElements = JsonParser.parseString(content).asJsonArray
@@ -111,28 +120,26 @@ class SingBoxParser(private val gson: Gson) : SubscriptionParser {
         }
     }
 
-    /**
-     */
     @Suppress("NestedBlockDepth")
     private fun parseAsConfigObject(content: String): SingBoxConfig? {
         return try {
             val jsonObject = JsonParser.parseString(content).asJsonObject
-
+            val parsed = gson.fromJson(jsonObject, SingBoxConfig::class.java)
             val outboundsElement = jsonObject.get("outbounds") ?: jsonObject.get("proxies")
-
             if (outboundsElement != null && outboundsElement.isJsonArray) {
                 val rawElements = outboundsElement.asJsonArray
                 val outbounds: List<Outbound> = gson.fromJson(rawElements, OUTBOUND_LIST_TYPE)
                 if (outbounds.isNotEmpty()) {
                     val normalizedOutbounds = normalizeOutbounds(outbounds, rawElements)
-                    return if (jsonObject.has("outbounds")) {
-                        gson.fromJson(jsonObject, SingBoxConfig::class.java).copy(outbounds = normalizedOutbounds)
-                    } else {
-                        SingBoxConfig(outbounds = normalizedOutbounds)
-                    }
+                    return parsed.copy(outbounds = normalizedOutbounds)
                 }
             }
-            null
+            parsed.takeIf {
+                !it.endpoints.isNullOrEmpty() ||
+                    !it.inbounds.isNullOrEmpty() ||
+                    it.dns != null ||
+                    it.route != null
+            }
         } catch (e: Exception) {
             Log.w(TAG, "Failed to extract outbounds from JSON: ${e.message}")
             null
@@ -140,29 +147,8 @@ class SingBoxParser(private val gson: Gson) : SubscriptionParser {
     }
 }
 
-/**
- */
 class Base64Parser(private val nodeParser: (String) -> Outbound?) : SubscriptionParser {
-    private val linkPrefixes = listOf(
-        "vmess://",
-        "vless://",
-        "ss://",
-        "ssr://",
-        "trojan://",
-        "hysteria://",
-        "hysteria2://",
-        "hy2://",
-        "tuic://",
-        "anytls://",
-        "naive://",
-        "naive+https://",
-        "wireguard://",
-        "ssh://",
-        "socks5://",
-        "socks://",
-        "http://",
-        "https://"
-    )
+    private val linkPrefixes = NodeLinkParser.SUPPORTED_LINK_PREFIXES
 
     override fun canParse(content: String): Boolean {
         val trimmed = content.trim()

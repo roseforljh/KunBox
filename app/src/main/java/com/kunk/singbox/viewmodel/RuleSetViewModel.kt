@@ -9,9 +9,7 @@ import com.kunk.singbox.model.HubRuleSet
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import okhttp3.Request
 import com.kunk.singbox.ipc.VpnStateStore
@@ -35,11 +33,6 @@ class RuleSetViewModel(application: Application) : AndroidViewModel(application)
     private val ruleSetRepository = RuleSetRepository.getInstance(application)
     private val settingsRepository = SettingsRepository.getInstance(application)
     val settings: StateFlow<AppSettings> = settingsRepository.settings
-        .stateIn(
-            scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(5000),
-            initialValue = AppSettings()
-        )
 
     private val _ruleSets = MutableStateFlow<List<HubRuleSet>>(emptyList())
     val ruleSets: StateFlow<List<HubRuleSet>> = _ruleSets.asStateFlow()
@@ -197,12 +190,12 @@ class RuleSetViewModel(application: Application) : AndroidViewModel(application)
 
         return response.use { resp ->
             if (!resp.isSuccessful) {
-                val errorBody = resp.body?.string() ?: ""
+                val errorBody = resp.body.string()
                 Log.e(TAG, "[SagerNet] HTTP ${resp.code}, body=$errorBody")
                 return@use emptyList()
             }
 
-            val json = resp.body?.string() ?: "{}"
+            val json = resp.body.string()
             val treeResponse: GithubTreeResponse = gson.fromJson(json, GithubTreeResponse::class.java)
                 ?: return@use emptyList()
 
@@ -235,12 +228,12 @@ class RuleSetViewModel(application: Application) : AndroidViewModel(application)
 
         return response.use { resp ->
             if (!resp.isSuccessful) {
-                val errorBody = resp.body?.string() ?: ""
+                val errorBody = resp.body.string()
                 Log.e(TAG, "[SagerNet] HTTP ${resp.code}, body=$errorBody")
                 return@use emptyList()
             }
 
-            val json = resp.body?.string() ?: "{}"
+            val json = resp.body.string()
             val treeResponse: GithubTreeResponse = gson.fromJson(json, GithubTreeResponse::class.java)
                 ?: return@use emptyList()
 

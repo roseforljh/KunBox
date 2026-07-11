@@ -115,7 +115,6 @@ We've built a comprehensive protocol support network, compatible with most proxy
 | **SOCKS5** | `SOCKS5` | `socks5://` | SOCKS5 proxy support |
 | **AnyTLS** | `AnyTLS` | `anytls://` | Universal TLS wrapper, Traffic obfuscation |
 | **Naive** | `Naive` | `naive+https://` | Native sing-box Naive protocol support |
-| **xHTTP** | `xHTTP` | `xhttp://` | xHTTP transport protocol support |
 
 ### Subscription Ecosystem Support
 - **Sing-box JSON**: Native support with full features.
@@ -153,7 +152,7 @@ KunBox-Android/
 │
 ├── .kernel-sync-local/    # Local-only sing-box sync workspace and one-click script
 │   ├── sync-kernel.ps1    # Re-sync the latest official stable upstream, build and replace libbox.aar
-│   └── upstream-sing-box/ # Official sing-box worktree + KunBox patch application target
+│   └── patches/           # Exact-version minimal KunBox patches
 │
 └── config/detekt/         # Code quality check configuration
 ```
@@ -234,9 +233,9 @@ Then execute:
 
 ### Sync libbox Core (Local-only)
 
-KunBox now uses the local workspace `.kernel-sync-local/` for kernel sync. This directory is **not committed to git**. By default, the script resolves the latest official stable `SagerNet/sing-box` tag automatically and explicitly skips GitHub prerelease entries plus tags with `alpha`, `beta`, or `rc` suffixes.
+KunBox uses the local workspace `.kernel-sync-local/` for kernel sync. This directory is **not committed to git**. By default, the script resolves the latest official stable `SagerNet/sing-box` tag and skips GitHub prerelease entries plus tags with `alpha`, `beta`, or `rc` suffixes.
 
-The sync workspace now reuses safe caches by default. Instead of `git clean -fdx`, the script hard-resets the upstream worktree, removes only known generated garbage, fails explicitly if leftover tracked or untracked files still exist, reuses a fixed verification temp directory, and keeps only the newest 3 `libbox.aar.backup-before-replace.*` backups.
+Each sync shallow-clones the exact official tag into a controlled temporary directory. Patched sources and build artifacts are never reused from an old upstream worktree. The script removes only its own temporary directory when it exits and keeps the newest 3 `libbox.aar.backup-before-replace.*` files.
 
 Run the one-click script from the repository root:
 
@@ -247,31 +246,25 @@ Run the one-click script from the repository root:
 If you need to pin a specific official tag manually, pass it explicitly:
 
 ```powershell
-.\.kernel-sync-local\sync-kernel.ps1 -Tag v1.13.4
+.\.kernel-sync-local\sync-kernel.ps1 -Tag v1.13.14
 ```
 
-At the time of writing, the latest official stable release still resolves to `v1.13.4`, but that value is no longer hardcoded as the default logic.
+At the time of writing, the latest official stable release is `v1.13.14`; the script still trusts the live official release API by default.
 
 The script performs these stages in order:
 
-1. Check Git, Go, Java 17, Android SDK, Android NDK, `gomobile`, and `gobind`
-2. Resolve and print the target official tag, then ensure `.kernel-sync-local/upstream-sing-box` exists, hard-reset it to that tag, and run targeted garbage cleanup instead of wiping the whole cache
-3. Prefer the matching local KunBox patch for the target tag, or fall back to the current available minimal KunBox patch if no exact filename exists
-4. Build `libbox.aar`
-5. Verify the built AAR still exports:
-   - `getKunBoxVersion`
-   - `resetAllConnections`
-   - `recoverNetworkAuto`
-   - `checkNetworkRecoveryNeeded`
-   - `closeAllTrackedConnections`
-   - `getConnectionCount`
-   - `closeIdleConnections`
-6. Backup and replace `app/libs/libbox.aar`, then trim old backups down to the newest 3 copies
-7. Run `assembleDebug`, `testDebugUnitTest`, and `detekt`
+1. Check Git, Go, Java 17, Android SDK, Android NDK, `gomobile`, and `gobind`, then resolve the target official tag
+2. Shallow-clone that exact tag into the controlled temporary directory and verify its origin, HEAD tag, and clean state
+3. Build the untouched official AAR as the API and ABI baseline
+4. Apply only `patches/kunbox-<tag>.patch`, then run `go test`, race tests, and `go vet` for the affected VLESS package
+5. Build the patched AAR
+6. Compare the official and patched Java class sets, public APIs, and non-empty JNI entry sets; require the public API to match official sing-box exactly and reject the six removed private recovery methods
+7. Backup and replace `app/libs/libbox.aar`
+8. Run `assembleDebug`, `testDebugUnitTest`, and `detekt`; restore the backup on failure and keep only the newest 3 backups on success
 
-The targeted cleanup removes obvious garbage such as stale `tmp-sync-kernel-*`, `tmp-libbox-*-check`, `libbox-sources.jar`, `libbox-legacy-sources.jar`, and `libbox-legacy.aar`, and also deletes untracked files that were created by a previous patch application. After a successful sync it also removes the temporary upstream `libbox.aar` copy.
+The script removes only `.kernel-sync-local/tmp-sync-kernel-current`, so unrelated local kernel worktrees are never deleted.
 
-If the script cannot resolve a stable official tag, cannot find any `patches/kunbox-*.patch`, detects leftover dirty files after targeted cleanup, or the selected patch stops on `git apply --check` / patch application, AAR method checks, or Gradle verification, treat that as a real coupling break. Missing an exact `kunbox-<tag>.patch` filename alone is no longer a blocker. Fix the Kotlin compatibility layer or the kernel export layer at the reported failure point, then rerun the script.
+The script stops when it cannot resolve a stable tag, the exact-version patch is missing, the fresh official tree becomes dirty, or `git apply --check`, Go tests, AAR method validation, or Gradle validation fails. Fix the reported version coupling and rerun it.
 
 ### Run Tests
 

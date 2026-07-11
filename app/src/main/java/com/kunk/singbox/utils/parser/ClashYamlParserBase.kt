@@ -6,10 +6,6 @@ import com.kunk.singbox.model.SingBoxConfig
 import com.kunk.singbox.model.TlsConfig
 import com.kunk.singbox.model.TransportConfig
 import com.kunk.singbox.model.UtlsConfig
-import java.net.URI
-
-/**
- */
 
 @Suppress("TooManyFunctions")
 abstract class ClashYamlParserBase : SubscriptionParser {
@@ -20,12 +16,6 @@ abstract class ClashYamlParserBase : SubscriptionParser {
 
     protected abstract fun sanitizeUrlTestUrl(rawUrl: String?): String
 
-    protected abstract fun isSafeUrlTestUri(uri: URI): Boolean
-
-    protected abstract fun isUnsafeLiteralAddress(host: String): Boolean
-
-    protected abstract fun looksLikeIpLiteral(host: String): Boolean
-
     protected abstract fun normalizeProxyGroupRefs(rawProxies: Any?, knownOutboundTags: Set<String>): List<String>
 
     protected abstract fun normalizeProxyGroupRef(ref: String, knownOutboundTags: Set<String>): String?
@@ -33,8 +23,6 @@ abstract class ClashYamlParserBase : SubscriptionParser {
     protected abstract fun parseProxy(proxyMap: Map<*, *>, globalFingerprint: String? = null, globalTlsMinVersion: String? = null): List<Outbound>?
 
     protected abstract fun parseVLess(map: Map<*, *>, name: String, server: String?, port: Int?, globalFingerprint: String? = null, globalTlsMinVersion: String? = null): Outbound?
-
-    protected abstract fun extractXhttpExtraEncryption(map: Map<*, *>): String?
 
     protected abstract fun parseVMess(map: Map<*, *>, name: String, server: String?, port: Int?, globalFingerprint: String? = null, globalTlsMinVersion: String? = null): Outbound?
 
@@ -113,8 +101,9 @@ abstract class ClashYamlParserBase : SubscriptionParser {
         wsOpts: Map<*, *>?,
         path: String,
         headers: Map<String, String>,
-        host: String?
-    ): TransportConfig
+        host: String?,
+        forceHttpUpgrade: Boolean = false
+    ): TransportConfig?
 
     protected abstract fun Map<String, String>.withoutHostHeader(): Map<String, String>
 }

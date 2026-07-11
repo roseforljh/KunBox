@@ -168,12 +168,6 @@ fun ConnectionSettingsScreen(
             Spacer(modifier = Modifier.height(16.dp))
 
             StandardCard {
-                SettingSwitchItem(
-                    title = stringResource(R.string.connection_settings_wake_reset),
-                    subtitle = stringResource(R.string.connection_settings_wake_reset_subtitle),
-                    checked = settings.wakeResetConnections,
-                    onCheckedChange = { settingsViewModel.setWakeResetConnections(it) }
-                )
                 SettingItem(
                     title = stringResource(R.string.connection_settings_power_saving),
                     subtitle = stringResource(R.string.connection_settings_power_saving_subtitle),

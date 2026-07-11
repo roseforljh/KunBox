@@ -38,7 +38,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.ui.res.stringResource
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -188,11 +187,6 @@ fun SettingsScreen(
     if (importState is ImportState.Validating) {
         ValidatingDialog()
     }
-    LaunchedEffect(importState) {
-        if (importState is ImportState.Error) {
-        }
-    }
-
     val statusBarPadding = WindowInsets.statusBars.asPaddingValues()
 
     Column(

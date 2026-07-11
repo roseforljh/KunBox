@@ -1,13 +1,9 @@
 package com.kunk.singbox.ui.screens
 
 import com.kunk.singbox.R
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
+import android.graphics.Bitmap
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -28,13 +24,10 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.core.graphics.drawable.toBitmap
 import com.kunk.singbox.model.*
 import com.kunk.singbox.ui.components.ClickableDropdownField
 import com.kunk.singbox.ui.components.ProfileNodeSelectDialog
@@ -65,6 +58,18 @@ import com.kunk.singbox.ui.theme.liquidGlassTextButtonColors
 import com.kunk.singbox.ui.theme.liquidGlassTextButtonPanel
 
 private const val APP_INFO_SEPARATOR = "\t"
+
+@Composable
+private fun rememberAppIcon(
+    packageName: String,
+    loadIcon: suspend (String) -> Bitmap?
+): Bitmap? {
+    var icon by remember(packageName) { mutableStateOf<Bitmap?>(null) }
+    LaunchedEffect(packageName, loadIcon) {
+        icon = loadIcon(packageName)
+    }
+    return icon
+}
 
 private fun AppInfo.toSavedValue(): String {
     return "$packageName$APP_INFO_SEPARATOR$appName"
@@ -170,56 +175,19 @@ private fun Modifier.routingSelectablePanel(isSelected: Boolean): Modifier {
 }
 
 @Composable
-private fun Modifier.routingItemPressFeedback(onClick: () -> Unit): Modifier {
-    val useLiquidGlass = isLiquidGlassTheme()
-    val interactionSource = remember { MutableInteractionSource() }
-    val isPressed by interactionSource.collectIsPressedAsState()
-    val scale by animateFloatAsState(
-        targetValue = if (useLiquidGlass && isPressed) 0.98f else 1f,
-        animationSpec = spring(stiffness = 520f, dampingRatio = 0.72f),
-        label = "liquid_glass_routing_item_scale"
+private fun Modifier.routingItemPressFeedback(onClick: () -> Unit): Modifier =
+    liquidGlassPressFeedback(
+        label = "liquid_glass_routing_item_scale",
+        onClick = onClick
     )
-    val clickModifier = if (useLiquidGlass) {
-        Modifier.clickable(
-            interactionSource = interactionSource,
-            indication = null,
-            onClick = onClick
-        )
-    } else {
-        Modifier.clickable(onClick = onClick)
-    }
-
-    return graphicsLayer {
-        scaleX = scale
-        scaleY = scale
-    }.then(clickModifier)
-}
 
 @Composable
-private fun Modifier.selectedAppRemovePressFeedback(onClick: () -> Unit): Modifier {
-    val useLiquidGlass = isLiquidGlassTheme()
-    val interactionSource = remember { MutableInteractionSource() }
-    val isPressed by interactionSource.collectIsPressedAsState()
-    val scale by animateFloatAsState(
-        targetValue = if (useLiquidGlass && isPressed) 0.9f else 1f,
-        animationSpec = spring(stiffness = 520f, dampingRatio = 0.72f),
-        label = "liquid_glass_selected_app_remove_scale"
+private fun Modifier.selectedAppRemovePressFeedback(onClick: () -> Unit): Modifier =
+    liquidGlassPressFeedback(
+        pressedScale = 0.9f,
+        label = "liquid_glass_selected_app_remove_scale",
+        onClick = onClick
     )
-    val clickModifier = if (useLiquidGlass) {
-        Modifier.clickable(
-            interactionSource = interactionSource,
-            indication = null,
-            onClick = onClick
-        )
-    } else {
-        Modifier.clickable(onClick = onClick)
-    }
-
-    return graphicsLayer {
-        scaleX = scale
-        scaleY = scale
-    }.then(clickModifier)
-}
 
 @Composable
 private fun RoutingStatusBadge(
@@ -276,27 +244,24 @@ private fun appRuleDeleteButton(onDelete: () -> Unit) {
     }
 }
 
-@Suppress("LongMethod")
+@Suppress("LongMethod", "LongParameterList")
 @Composable
 fun AppRuleItem(
     rule: AppRule,
     outboundText: String,
+    loadIcon: suspend (String) -> Bitmap?,
     onClick: () -> Unit,
     onToggle: () -> Unit,
     onDelete: () -> Unit
 ) {
-    val context = LocalContext.current
     val mode = rule.outboundMode ?: RuleSetOutboundMode.DIRECT
     val (outboundIcon, color) = when (mode) {
         RuleSetOutboundMode.PROXY, RuleSetOutboundMode.NODE, RuleSetOutboundMode.PROFILE -> Icons.Rounded.Shield to MaterialTheme.colorScheme.primary
         RuleSetOutboundMode.DIRECT -> Icons.Rounded.Public to MaterialTheme.colorScheme.tertiary
         RuleSetOutboundMode.BLOCK -> Icons.Rounded.Block to MaterialTheme.colorScheme.error
     }
-    val appIcon = remember(rule.packageName) {
-        try {
-            context.packageManager.getApplicationIcon(rule.packageName).toBitmap(160, 160).asImageBitmap()
-        } catch (e: Exception) { null }
-    }
+    val appIcon = rememberAppIcon(rule.packageName, loadIcon)
+    val iconBitmap = remember(appIcon) { appIcon?.asImageBitmap() }
 
     StandardCard(onClick = onClick) {
         Row(
@@ -306,8 +271,12 @@ fun AppRuleItem(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Box(modifier = Modifier.size(44.dp), contentAlignment = Alignment.Center) {
-                if (appIcon != null) {
-                    Image(bitmap = appIcon, contentDescription = null, modifier = Modifier.size(40.dp).clip(RoundedCornerShape(10.dp)))
+                if (iconBitmap != null) {
+                    Image(
+                        bitmap = iconBitmap,
+                        contentDescription = null,
+                        modifier = Modifier.size(40.dp).clip(RoundedCornerShape(10.dp))
+                    )
                 } else {
                     Box(
                         modifier = Modifier
@@ -352,13 +321,15 @@ fun AppRuleItem(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
+@Suppress("LongParameterList", "LongMethod", "CyclomaticComplexMethod", "CognitiveComplexMethod")
 fun AppRuleEditorDialog(
     initialRule: AppRule? = null,
-    installedApps: List<InstalledApp>,
+    installedApps: List<InstalledAppUi>,
     existingPackages: Set<String>,
     nodes: List<NodeUi>,
     nodesForSelection: List<NodeUi>? = null,
     profiles: List<ProfileUi>,
+    loadIcon: suspend (String) -> Bitmap?,
     onDismiss: () -> Unit,
     onConfirm: (AppRule) -> Unit
 ) {
@@ -381,9 +352,8 @@ fun AppRuleEditorDialog(
     var targetSelectionTitle by remember { mutableStateOf("") }
     var targetOptions by remember { mutableStateOf<List<Pair<String, String>>>(emptyList()) }
     val selectedApp = selectedAppPackageName?.let { packageName ->
-        InstalledApp(packageName = packageName, appName = selectedAppName ?: packageName)
+        AppInfo(packageName = packageName, appName = selectedAppName ?: packageName)
     }
-    val context = LocalContext.current
     val selectProfileTitle = stringResource(R.string.rulesets_select_profile)
 
     val selectionNodes = nodesForSelection ?: nodes
@@ -405,6 +375,7 @@ fun AppRuleEditorDialog(
         AppPickerDialog(
             apps = installedApps,
             existingPackages = existingPackages,
+            loadIcon = loadIcon,
             onSelect = {
                 selectedAppPackageName = it.packageName
                 selectedAppName = it.appName
@@ -433,7 +404,6 @@ fun AppRuleEditorDialog(
                         targetSelectionTitle = selectProfileTitle
                         targetOptions = profiles.map { it.name to it.id }
                     }
-                    else -> {}
                 }
                 if (selectedMode != RuleSetOutboundMode.NODE) {
                     showTargetSelectionDialog = true
@@ -570,7 +540,14 @@ fun AppRuleEditorDialog(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AppPickerDialog(apps: List<InstalledApp>, existingPackages: Set<String>, onSelect: (InstalledApp) -> Unit, onDismiss: () -> Unit) {
+@Suppress("LongMethod")
+fun AppPickerDialog(
+    apps: List<InstalledAppUi>,
+    existingPackages: Set<String>,
+    loadIcon: suspend (String) -> Bitmap?,
+    onSelect: (InstalledAppUi) -> Unit,
+    onDismiss: () -> Unit
+) {
     var searchQuery by remember { mutableStateOf("") }
     var showSystemApps by remember { mutableStateOf(false) }
     val filteredApps = remember(apps, searchQuery, showSystemApps, existingPackages) {
@@ -665,8 +642,12 @@ fun AppPickerDialog(apps: List<InstalledApp>, existingPackages: Set<String>, onS
                     modifier = Modifier.fillMaxSize(),
                     verticalArrangement = Arrangement.spacedBy(2.dp)
                 ) {
-                    items(filteredApps) { app ->
-                        AppListItem(app = app, onClick = { onSelect(app) })
+                    items(filteredApps, key = { it.packageName }) { app ->
+                        AppListItem(
+                            app = app,
+                            loadIcon = loadIcon,
+                            onClick = { onSelect(app) }
+                        )
                     }
                 }
             }
@@ -696,14 +677,14 @@ fun AppPickerDialog(apps: List<InstalledApp>, existingPackages: Set<String>, onS
 }
 
 @Composable
-fun AppListItem(app: InstalledApp, onClick: () -> Unit) {
-    val context = LocalContext.current
+fun AppListItem(
+    app: InstalledAppUi,
+    loadIcon: suspend (String) -> Bitmap?,
+    onClick: () -> Unit
+) {
     val itemShape = RoundedCornerShape(8.dp)
-    val appIcon = remember(app.packageName) {
-        try {
-            context.packageManager.getApplicationIcon(app.packageName).toBitmap(96, 96).asImageBitmap()
-        } catch (e: Exception) { null }
-    }
+    val icon = rememberAppIcon(app.packageName, loadIcon)
+    val appIcon = remember(icon) { icon?.asImageBitmap() }
 
     Row(
         modifier = Modifier
@@ -752,13 +733,12 @@ fun AppListItem(app: InstalledApp, onClick: () -> Unit) {
 }
 
 @Composable
-fun AppIconSmall(packageName: String) {
-    val context = LocalContext.current
-    val appIcon = remember(packageName) {
-        try {
-            context.packageManager.getApplicationIcon(packageName).toBitmap(128, 128).asImageBitmap()
-        } catch (e: Exception) { null }
-    }
+fun AppIconSmall(
+    packageName: String,
+    loadIcon: suspend (String) -> Bitmap?
+) {
+    val icon = rememberAppIcon(packageName, loadIcon)
+    val appIcon = remember(icon) { icon?.asImageBitmap() }
 
     if (appIcon != null) {
         Image(
@@ -784,9 +764,11 @@ fun AppIconSmall(packageName: String) {
 }
 
 @Composable
+@Suppress("LongParameterList", "LongMethod", "CognitiveComplexMethod")
 fun AppGroupCard(
     group: AppGroup,
     outboundText: String,
+    loadIcon: suspend (String) -> Bitmap?,
     onClick: () -> Unit,
     onToggle: () -> Unit,
     onDelete: () -> Unit
@@ -856,8 +838,11 @@ fun AppGroupCard(
                 LazyRow(
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    items(group.apps.take(8)) { app ->
-                        AppIconSmall(packageName = app.packageName)
+                    items(group.apps.take(8), key = { it.packageName }) { app ->
+                        AppIconSmall(
+                            packageName = app.packageName,
+                            loadIcon = loadIcon
+                        )
                     }
                     if (group.apps.size > 8) {
                         item {
@@ -878,13 +863,13 @@ fun AppGroupCard(
 }
 
 @Composable
-fun SelectedAppChip(app: AppInfo, onRemove: () -> Unit) {
-    val context = LocalContext.current
-    val appIcon = remember(app.packageName) {
-        try {
-            context.packageManager.getApplicationIcon(app.packageName).toBitmap(96, 96).asImageBitmap()
-        } catch (e: Exception) { null }
-    }
+fun SelectedAppChip(
+    app: AppInfo,
+    loadIcon: suspend (String) -> Bitmap?,
+    onRemove: () -> Unit
+) {
+    val icon = rememberAppIcon(app.packageName, loadIcon)
+    val appIcon = remember(icon) { icon?.asImageBitmap() }
 
     Row(
         modifier = Modifier
@@ -923,16 +908,13 @@ fun SelectedAppChip(app: AppInfo, onRemove: () -> Unit) {
 @Suppress("LongMethod")
 @Composable
 fun SelectableAppItem(
-    app: InstalledApp,
+    app: InstalledAppUi,
     isSelected: Boolean,
+    loadIcon: suspend (String) -> Bitmap?,
     onClick: () -> Unit
 ) {
-    val context = LocalContext.current
-    val appIcon = remember(app.packageName) {
-        try {
-            context.packageManager.getApplicationIcon(app.packageName).toBitmap(96, 96).asImageBitmap()
-        } catch (e: Exception) { null }
-    }
+    val icon = rememberAppIcon(app.packageName, loadIcon)
+    val appIcon = remember(icon) { icon?.asImageBitmap() }
 
     Row(
         modifier = Modifier
@@ -993,9 +975,11 @@ fun SelectableAppItem(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
+@Suppress("LongMethod")
 fun MultiAppSelectorDialog(
-    installedApps: List<InstalledApp>,
+    installedApps: List<InstalledAppUi>,
     selectedApps: Set<AppInfo>,
+    loadIcon: suspend (String) -> Bitmap?,
     onConfirm: (Set<AppInfo>) -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -1006,10 +990,13 @@ fun MultiAppSelectorDialog(
     val tempSelected = remember(tempSelectedEntries) {
         tempSelectedEntries.toAppInfoSet()
     }
+    val tempSelectedPackages = remember(tempSelected) {
+        tempSelected.mapTo(mutableSetOf()) { it.packageName }
+    }
     var searchQuery by remember { mutableStateOf("") }
     var showSystemApps by remember { mutableStateOf(false) }
 
-    val filteredApps = remember(installedApps, searchQuery, showSystemApps, tempSelected) {
+    val filteredApps = remember(installedApps, searchQuery, showSystemApps, tempSelectedPackages) {
         val filtered = installedApps.filter { app ->
             val matchesSearch = searchQuery.isBlank() ||
                 app.appName.contains(searchQuery, ignoreCase = true) ||
@@ -1017,8 +1004,7 @@ fun MultiAppSelectorDialog(
             val matchesFilter = showSystemApps || !app.isSystemApp
             matchesSearch && matchesFilter
         }
-        val selectedPackages = tempSelected.map { it.packageName }.toSet()
-        filtered.sortedByDescending { it.packageName in selectedPackages }
+        filtered.sortedByDescending { it.packageName in tempSelectedPackages }
     }
 
     AlertDialog(
@@ -1113,12 +1099,13 @@ fun MultiAppSelectorDialog(
                     modifier = Modifier.fillMaxSize(),
                     verticalArrangement = Arrangement.spacedBy(2.dp)
                 ) {
-                    items(filteredApps) { app ->
+                    items(filteredApps, key = { it.packageName }) { app ->
                         val appInfo = AppInfo(app.packageName, app.appName)
-                        val isSelected = tempSelected.any { it.packageName == app.packageName }
+                        val isSelected = app.packageName in tempSelectedPackages
                         SelectableAppItem(
                             app = app,
                             isSelected = isSelected,
+                            loadIcon = loadIcon,
                             onClick = {
                                 val savedAppInfo = appInfo.toSavedValue()
                                 tempSelectedEntries = if (isSelected) {
@@ -1176,12 +1163,14 @@ fun MultiAppSelectorDialog(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
+@Suppress("LongParameterList", "LongMethod", "CyclomaticComplexMethod", "CognitiveComplexMethod")
 fun AppGroupEditorDialog(
     initialGroup: AppGroup? = null,
-    installedApps: List<InstalledApp>,
+    installedApps: List<InstalledAppUi>,
     nodes: List<NodeUi>,
     nodesForSelection: List<NodeUi>? = null,
     profiles: List<ProfileUi>,
+    loadIcon: suspend (String) -> Bitmap?,
     onDismiss: () -> Unit,
     onConfirm: (AppGroup) -> Unit
 ) {
@@ -1200,7 +1189,6 @@ fun AppGroupEditorDialog(
     val selectedApps = remember(selectedAppEntries) {
         selectedAppEntries.map { it.toAppInfo() }
     }
-
     var showAppSelector by remember { mutableStateOf(false) }
     var showOutboundModeDialog by remember { mutableStateOf(false) }
     var showTargetSelectionDialog by remember { mutableStateOf(false) }
@@ -1208,7 +1196,6 @@ fun AppGroupEditorDialog(
 
     var targetSelectionTitle by remember { mutableStateOf("") }
     var targetOptions by remember { mutableStateOf<List<Pair<String, String>>>(emptyList()) }
-    val context = LocalContext.current
     val selectProfileTitle = stringResource(R.string.rulesets_select_profile)
 
     val selectionNodes = nodesForSelection ?: nodes
@@ -1230,6 +1217,7 @@ fun AppGroupEditorDialog(
         MultiAppSelectorDialog(
             installedApps = installedApps,
             selectedApps = selectedApps.toSet(),
+            loadIcon = loadIcon,
             onConfirm = { apps ->
                 selectedAppEntries = apps.toSavedValues()
                 showAppSelector = false
@@ -1253,7 +1241,7 @@ fun AppGroupEditorDialog(
                 if (selectedMode != initialGroup?.outboundMode) {
                     outboundValue = null
                 } else {
-                    outboundValue = initialGroup?.outboundValue
+                    outboundValue = initialGroup.outboundValue
                 }
                 showOutboundModeDialog = false
                 if (selectedMode == RuleSetOutboundMode.NODE ||
@@ -1266,7 +1254,6 @@ fun AppGroupEditorDialog(
                             targetSelectionTitle = selectProfileTitle
                             targetOptions = profiles.map { it.name to it.id }
                         }
-                        else -> {}
                     }
                     if (selectedMode != RuleSetOutboundMode.NODE) {
                         showTargetSelectionDialog = true
@@ -1406,9 +1393,10 @@ fun AppGroupEditorDialog(
                         }
                     } else {
                         LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            items(selectedApps) { app ->
+                            items(selectedApps, key = { it.packageName }) { app ->
                                 SelectedAppChip(
                                     app = app,
+                                    loadIcon = loadIcon,
                                     onRemove = {
                                         selectedAppEntries = selectedAppEntries.filterNot {
                                             it.toAppInfo().packageName == app.packageName

@@ -4,12 +4,18 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.kunk.singbox.repository.LogRepository
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.onCompletion
+import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class LogViewModel(application: Application) : AndroidViewModel(application) {
     private val repository = LogRepository.getInstance()
@@ -21,10 +27,6 @@ class LogViewModel(application: Application) : AndroidViewModel(application) {
     val selectedCategory: StateFlow<String?> = _selectedCategory.asStateFlow()
 
     val categories: List<String> = listOf("CONN", "DNS", "ERR", "WARN", "INFO")
-
-    init {
-        repository.setLogUiActive(true)
-    }
 
     val filteredLogs: StateFlow<List<String>> = combine(
         repository.logs,
@@ -40,11 +42,20 @@ class LogViewModel(application: Application) : AndroidViewModel(application) {
             result = result.filter { it.lowercase().contains(lower) }
         }
         result
-    }.stateIn(
-        scope = viewModelScope,
-        started = SharingStarted.WhileSubscribed(5000),
-        initialValue = emptyList()
-    )
+    }.flowOn(Dispatchers.Default)
+        .onStart {
+            withContext(Dispatchers.IO) {
+                repository.setLogUiActive(true)
+            }
+        }
+        .onCompletion {
+            repository.setLogUiActive(false)
+        }
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = emptyList()
+        )
 
     fun setSearchKeyword(keyword: String) {
         _searchKeyword.value = keyword
@@ -55,15 +66,12 @@ class LogViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun clearLogs() {
-        repository.clearLogs()
+        viewModelScope.launch(Dispatchers.IO) {
+            repository.clearLogs()
+        }
     }
 
     fun getLogsForExport(): String {
         return repository.getLogsAsText()
-    }
-
-    override fun onCleared() {
-        repository.setLogUiActive(false)
-        super.onCleared()
     }
 }
