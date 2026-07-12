@@ -7,9 +7,6 @@ import com.kunk.singbox.model.ProfileType
 import com.kunk.singbox.model.ProfileUi
 import com.kunk.singbox.model.UpdateStatus
 
-/**
- *
- */
 @Entity(
     tableName = "profiles",
     indices = [
@@ -37,8 +34,6 @@ data class ProfileEntity(
     val dnsServer: String? = null,
     val dnsOverride: String? = null
 ) {
-    /**
-     */
     fun toUiModel(): ProfileUi = ProfileUi(
         id = id,
         name = name,
@@ -57,8 +52,6 @@ data class ProfileEntity(
     )
 
     companion object {
-        /**
-         */
         fun fromUiModel(ui: ProfileUi, sortOrder: Int = 0): ProfileEntity = ProfileEntity(
             id = ui.id,
             name = ui.name,

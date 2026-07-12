@@ -23,16 +23,6 @@ class IpVersionModeRulesTest {
     }
 
     @Test
-    fun tunAddressesFollowMode() {
-        val tunAddress = TunAddressConfig(ipv4 = "10.7.0.1/30", ipv6 = "fd07::1/126")
-
-        assertEquals(listOf("10.7.0.1/30"), IpVersionMode.IPV4_ONLY.tunAddresses(tunAddress))
-        assertEquals(listOf("10.7.0.1/30", "fd07::1/126"), IpVersionMode.DUAL_STACK.tunAddresses(tunAddress))
-        assertEquals(listOf("10.7.0.1/30", "fd07::1/126"), IpVersionMode.PREFER_IPV6.tunAddresses(tunAddress))
-        assertEquals(listOf("fd07::1/126"), IpVersionMode.IPV6_ONLY.tunAddresses(tunAddress))
-    }
-
-    @Test
     fun autoDnsStrategyFollowsMode() {
         assertEquals("ipv4_only", IpVersionMode.IPV4_ONLY.autoDnsStrategy())
         assertEquals("prefer_ipv4", IpVersionMode.DUAL_STACK.autoDnsStrategy())

@@ -3,14 +3,10 @@
     <string name="app_name">KunBox</string>
 
     <!-- App Shortcuts -->
-    <string name="shortcut_toggle">Toggle</string>
-    <string name="shortcut_toggle_short">Toggle</string>
     <string name="shortcut_toggle_vpn">Toggle VPN On/Off</string>
     <string name="shortcut_toggle_vpn_short">On/Off</string>
     <string name="shortcut_switch_node">Switch Node</string>
     <string name="shortcut_switch_node_short">Node</string>
-    <string name="shortcut_scan">Scan QR Code</string>
-    <string name="shortcut_scan_short">Scan</string>
 
     <!-- Update Notification -->
     <string name="update_channel_name">App Updates</string>
@@ -40,7 +36,6 @@
     <string name="common_disable">Disable</string>
     <string name="common_enabled">Enabled</string>
     <string name="common_disabled">Disabled</string>
-    <string name="common_select_all">Select All</string>
     <string name="common_clear">Clear</string>
     <string name="common_copy">Copy</string>
     <string name="common_latency">Latency</string>
@@ -55,7 +50,6 @@
     <string name="common_no">No</string>
     <string name="common_auto">Auto</string>
     <string name="common_menu">Menu</string>
-    <string name="common_more_options">More Options</string>
     <string name="common_view">View</string>
     <string name="common_downloaded">Downloaded</string>
     <string name="common_ready">Ready</string>
@@ -63,7 +57,6 @@
     <string name="common_background">Background</string>
     <string name="common_inbound">Inbound</string>
     <string name="common_outbound">Outbound</string>
-    <string name="splash_tagline">Secure · Fast · Stable</string>
 
     <!-- Connection Status -->
     <string name="connection_idle">Disconnected</string>
@@ -71,7 +64,6 @@
     <string name="connection_connected">Connected</string>
     <string name="connection_disconnecting">Disconnecting...</string>
     <string name="connection_error">Error</string>
-    <string name="connection_failed_check_config">Connection failed, please check configuration</string>
 
     <!-- Dashboard -->
     <string name="dashboard_routing_mode">Routing Mode</string>
@@ -90,7 +82,6 @@
     <string name="dashboard_no_nodes_available">No nodes available</string>
     <string name="dashboard_test_complete">Test complete</string>
     <string name="dashboard_config_generation_failed">Config generation failed</string>
-    <string name="dashboard_system_vpn_running">Another VPN is running</string>
 
     <!-- Settings -->
     <string name="settings_title">Settings</string>
@@ -168,13 +159,9 @@
     <string name="routing_settings_default_rule">Default Rule</string>
     <string name="routing_settings_latency_test_method">Latency Test Method</string>
     <string name="routing_settings_latency_test_url">Latency Test URL</string>
-    <string name="routing_settings_latency_test_timeout">Test Timeout</string>
     <string name="routing_settings_latency_test_timeout_s">%d seconds</string>
     <string name="routing_settings_subscription_timeout">Subscription Update Timeout</string>
-    <string name="routing_settings_subscription_timeout_subtitle">Will stop updating and show failure after timeout</string>
     <string name="routing_settings_github_mirror">GitHub Mirror</string>
-    <string name="routing_settings_block_ads">Block Ads</string>
-    <string name="routing_settings_block_ads_subtitle">Block common ad domains</string>
     <string name="routing_settings_block_quic">Block QUIC</string>
     <string name="routing_settings_block_quic_subtitle">Block UDP 443 to reduce initial load latency</string>
     <string name="routing_settings_bypass_lan">Bypass LAN</string>
@@ -189,19 +176,16 @@
     <!-- TUN Settings -->
     <string name="tun_settings_title">TUN / VPN Settings</string>
     <string name="tun_settings_enable">Enable TUN</string>
-    <string name="tun_settings_enable_subtitle">Create VPN interface to capture system traffic</string>
+    <string name="tun_settings_enable_subtitle">Captures system traffic and classic DNS; when disabled, local proxy mode does not protect system DNS</string>
     <string name="tun_settings_stack">Stack</string>
     <string name="tun_settings_ip_version_mode">IP Version Mode</string>
     <string name="tun_settings_mtu">MTU</string>
     <string name="tun_settings_mtu_auto">Auto MTU</string>
-    <string name="tun_settings_mtu_auto_subtitle">Wi-Fi/Ethernet 1480, cellular 1400; tuned for QUIC proxy protocols, can be disabled for manual MTU</string>
-    <string name="tun_settings_interface_name">Interface Name</string>
+    <string name="tun_settings_mtu_auto_subtitle">Reserve tunnel overhead from the current physical link MTU</string>
     <string name="tun_settings_auto_route">Auto Route</string>
     <string name="tun_settings_auto_route_subtitle">Automatically configure system routing table</string>
-    <string name="tun_settings_endpoint_independent_nat">Endpoint Independent NAT</string>
-    <string name="tun_settings_endpoint_independent_nat_subtitle">Improve P2P connections (Full Cone)</string>
     <string name="tun_settings_strict_route">Strict Route</string>
-    <string name="tun_settings_strict_route_subtitle">Prevent DNS leaks</string>
+    <string name="tun_settings_strict_route_subtitle">Limits route bypass; DNS safety still depends on TUN, hijack rules, and system VPN policy</string>
     <string name="tun_settings_route_mode">Route Mode</string>
     <string name="tun_settings_route_cidrs">Route CIDRs</string>
     <string name="tun_settings_route_cidrs_configured">%d configured</string>
@@ -211,7 +195,6 @@
     <string name="tun_settings_blocklist">Blocklist</string>
     <string name="tun_settings_blocklist_configured">%d configured</string>
     <string name="tun_settings_select_vpn_apps">Select apps that can use VPN</string>
-    <string name="tun_settings_select_bypass_apps">Select apps to bypass VPN</string>
 
     <!-- DNS Settings -->
     <string name="dns_settings_title">DNS Settings</string>
@@ -263,12 +246,6 @@
     <string name="profiles_auto_update">Auto Update</string>
     <string name="profiles_auto_update_interval">Update Interval (minutes)</string>
     <string name="profiles_auto_update_hint">Recommended 30+ minutes</string>
-    <string name="profiles_dns_preresolve">DNS Pre-resolve</string>
-    <string name="profiles_dns_preresolve_hint">Pre-resolve node domains to IP to bypass DNS pollution</string>
-    <string name="profiles_dns_server">DNS Server</string>
-    <string name="profiles_dns_server_cloudflare">Cloudflare (1.1.1.1)</string>
-    <string name="profiles_dns_server_google">Google (8.8.8.8)</string>
-    <string name="profiles_dns_server_alidns">Alibaba DNS (223.5.5.5)</string>
     <string name="profiles_dns_override">DNS Override</string>
     <string name="profiles_dns_override_hint">Append custom DNS config (JSON format, with servers and rules fields)</string>
     <string name="profiles_name_label">Name</string>
@@ -301,10 +278,6 @@
     <string name="nodes_filter_cleared">Filter cleared</string>
     <string name="nodes_unsupported_format">Unsupported link format</string>
     <string name="nodes_add_failed">Add failed</string>
-    <string name="nodes_group_auto_generated">Groups are auto-generated from profiles, to delete please go to \'Profile Management\' and delete the corresponding profile</string>
-    <string name="nodes_stat_total">%d nodes</string>
-    <string name="nodes_stat_available">%d available</string>
-    <string name="nodes_stat_avg_latency">%dms</string>
     <string name="node_create_title">Create Node</string>
     <string name="node_created">Node created</string>
     <string name="nodes_manual_create">Create Manually</string>
@@ -314,7 +287,6 @@
     <string name="nodes_sort_default">Default</string>
     <string name="nodes_sort_latency">Latency (Low → High)</string>
     <string name="nodes_sort_name">Name (A → Z)</string>
-    <string name="nodes_sort_region">Region</string>
 
     <!-- Node Filter -->
     <string name="node_filter_title">Node Filter</string>
@@ -322,7 +294,6 @@
     <string name="node_filter_none">No Filter</string>
     <string name="node_filter_include">Include Only</string>
     <string name="node_filter_exclude">Exclude</string>
-    <string name="node_filter_keywords">Keywords</string>
     <string name="node_filter_keywords_hint">Separate with commas, e.g.: Hong Kong, HK, JP</string>
     <string name="node_filter_keywords_tip">Tip: Keywords match node names, case insensitive</string>
 
@@ -373,6 +344,8 @@
     <string name="node_detail_peer_public_key">Peer Public Key</string>
     <string name="node_detail_pre_shared_key">Pre-Shared Key</string>
     <string name="node_detail_local_address">Local Address (CIDR)</string>
+    <string name="node_detail_allowed_ips">AllowedIPs</string>
+    <string name="node_detail_persistent_keepalive">Keepalive (seconds)</string>
     <string name="node_detail_mtu">MTU</string>
     <string name="node_detail_reserved">Reserved (WARP)</string>
     <string name="node_detail_passphrase">Passphrase</string>
@@ -425,7 +398,6 @@
     <string name="rulesets_empty">No rule sets</string>
     <string name="rulesets_add">Add Rule Set</string>
     <string name="rulesets_edit">Edit Rule Set</string>
-    <string name="rulesets_default_rule">Default Rule</string>
     <string name="rulesets_delete_title">Delete Rule Set</string>
     <string name="rulesets_delete_confirm">Are you sure you want to delete rule set \"%s\"?</string>
     <string name="rulesets_delete_batch_confirm">Are you sure you want to delete %d selected rule sets?</string>
@@ -448,24 +420,14 @@
 
     <!-- Rule Set Hub -->
     <string name="ruleset_hub_title">Rule Set Hub</string>
-    <string name="ruleset_hub_subtitle">by SagerNet</string>
 
     <!-- Rule Set Default Configs -->
     <string name="rulesets_add_default">Add Default Rule Sets</string>
-    <string name="rulesets_default_subtitle">Common rules for users in mainland China</string>
-    <string name="rulesets_geosite_cn_desc">China mainland domains direct</string>
-    <string name="rulesets_geosite_not_cn_desc">Non-China domains proxy</string>
-    <string name="rulesets_geosite_ads_desc">Ad domains block</string>
-    <string name="rulesets_geosite_private_desc">Private network direct</string>
-    <string name="rulesets_geosite_apple_desc">Apple services proxy</string>
 
     <!-- App Rules -->
     <string name="app_rules_title">App Routing</string>
-    <string name="app_rules_empty">No app routing rules</string>
-    <string name="app_rules_description">Set different proxy rules for different apps</string>
     <string name="app_rules_add">Add App Rule</string>
     <string name="app_rules_edit">Edit App Rule</string>
-    <string name="app_groups_description">Create groups to categorize multiple apps and set proxy rules collectively</string>
     <string name="app_rules_delete_title">Delete Rule</string>
     <string name="app_rules_delete_confirm">Are you sure you want to delete the routing rule for \"%s\"?</string>
     <string name="app_rules_not_selected">Not Selected</string>
@@ -481,12 +443,10 @@
     <string name="app_rules_select_target">Select Target</string>
 
     <!-- App Groups -->
-    <string name="app_groups_add">Add Group</string>
     <string name="app_groups_create">Create Group</string>
     <string name="app_groups_edit">Edit Group</string>
     <string name="app_groups_delete_title">Delete Group</string>
     <string name="app_groups_delete_confirm">Are you sure you want to delete \"%1$s\" group? Contains %2$d apps.</string>
-    <string name="app_groups_empty">No groups</string>
     <string name="app_groups_name">Group Name</string>
     <string name="app_groups_select_apps">Select Apps</string>
     <string name="app_groups_click_to_add">Click above to select apps</string>
@@ -523,8 +483,6 @@
     <string name="logs_export">Export</string>
     <string name="logs_clear">Clear</string>
     <string name="logs_search_hint">Search keywords (domain, error, etc.)</string>
-    <string name="logs_debug_disabled">Debug mode disabled</string>
-    <string name="logs_debug_disabled_hint">Logs are not recorded when debug mode is off to save performance</string>
 
     <!-- Diagnostics -->
     <string name="diagnostics_title">Network Diagnostics</string>
@@ -546,21 +504,18 @@
     <string name="diagnostics_node_line_query_subtitle">View current global node route and exit observation</string>
     <string name="diagnostics_node_line_query_loading">Querying...</string>
     <string name="diagnostics_connectivity">Connectivity Check</string>
-    <string name="diagnostics_connectivity_subtitle">Connection test (www.google.com)</string>
+    <string name="diagnostics_connectivity_subtitle">Connection test using the configured latency target</string>
     <string name="diagnostics_connectivity_loading">Checking...</string>
     <string name="diagnostics_ping_test">Ping Test</string>
-    <string name="diagnostics_ping_test_subtitle">ICMP Ping (8.8.8.8)</string>
+    <string name="diagnostics_ping_test_subtitle">TCP connect test using the configured latency target</string>
     <string name="diagnostics_dns_query">DNS Query</string>
-    <string name="diagnostics_dns_query_subtitle">Domain resolution (www.google.com)</string>
+    <string name="diagnostics_dns_query_subtitle">Resolve the configured latency target domain</string>
     <string name="diagnostics_dns_leak_check">DNS Leak Check</string>
-    <string name="diagnostics_dns_leak_check_subtitle">Check current running config for DNS leaks</string>
+    <string name="diagnostics_dns_leak_check_subtitle">Static check of DNS leak risks in the current running config</string>
     <string name="diagnostics_dns_leak_check_loading">Checking...</string>
     <string name="diagnostics_routing_test">Routing Test</string>
     <string name="diagnostics_routing_test_subtitle">Rule matching simulation (baidu.com)</string>
     <string name="diagnostics_routing_test_loading">Testing...</string>
-    <string name="diagnostics_file_not_exist">Does not exist</string>
-    <string name="diagnostics_file_not_readable">Exists but not readable</string>
-    <string name="diagnostics_stats_reset">findConnectionOwner stats reset.</string>
 
     <!-- Profile Editor -->
     <string name="profile_editor_title">Edit Profile</string>
@@ -584,12 +539,9 @@
     <string name="import_overwrite_warning">Import will overwrite existing profiles and settings with the same name</string>
     <string name="import_count_items">%d items</string>
     <string name="import_success">Import Successful</string>
-    <string name="import_partial_success">Partial Import Success</string>
     <string name="import_failed">Import Failed</string>
     <string name="import_settings_restored">Settings restored</string>
     <string name="import_success_detail">Imported: %1$d profiles, %2$d nodes</string>
-    <string name="import_partial_detail">Success: %1$d\nFailed: %2$d</string>
-    <string name="import_more_errors">… and %d more errors</string>
 
     <!-- App List -->
     <string name="app_list_loading">Loading app list...</string>
@@ -604,6 +556,9 @@
     <string name="qr_scanner_cannot_read_image">Cannot read image</string>
     <string name="qr_scanner_flash_on">Flash on</string>
     <string name="qr_scanner_flash_off">Flash off</string>
+    <string name="qr_scanner_gallery">Gallery</string>
+    <string name="qr_scanner_flash">Flash</string>
+    <string name="qr_scanner_hint">Place the QR code inside the frame to scan automatically</string>
 
     <!-- Profile Card -->
     <string name="profile_card_no_expiry">No Expiry</string>
@@ -621,9 +576,6 @@
     <!-- Connection Settings -->
     <string name="connection_settings_show_notification_speed">Show Speed in Notification</string>
     <string name="connection_settings_show_notification_speed_subtitle">Display real-time upload and download speed in notification</string>
-    <string name="connection_settings_wake_reset">Reset Connections on Wake</string>
-    <string name="connection_settings_wake_reset_subtitle">Close all connections when device wakes from sleep</string>
-
     <!-- About Dialog -->
     <string name="about_version">App Version: %1$s (%2$d)</string>
     <string name="about_kernel_version">Kernel Version: %s</string>
@@ -731,9 +683,6 @@
     <string name="update_status_partial">Update complete, %1$d successful, %2$d failed</string>
     <string name="update_status_complete">Update complete</string>
 
-    <!-- Infinite Date -->
-    <string name="date_infinite">No Expiry</string>
-
     <!-- Enum: BackgroundPowerSavingDelay -->
     <string name="power_saving_delay_5min">5 minutes</string>
     <string name="power_saving_delay_15min">15 minutes</string>
@@ -748,7 +697,6 @@
 
     <!-- Node Switch Messages -->
     <string name="node_switch_success">Switched to %s</string>
-    <string name="node_switch_not_running">Switched to %s (service not running)</string>
     <string name="node_switch_failed">Failed to switch to %s</string>
     <string name="node_start_failed">Start failed: %s</string>
     <string name="nodes_no_valid_found">No valid nodes found</string>
@@ -756,18 +704,13 @@
     <!-- Subscription Update Messages -->
     <string name="subscription_update_success_with_changes">Update successful (%1$s, %2$d nodes)</string>
     <string name="subscription_update_success_no_changes">Update complete, no changes (%d nodes)</string>
-    <string name="subscription_update_success_background_dns">%1$s, DNS pre-resolve moved to background</string>
     <string name="subscription_update_stage_requesting">Requesting</string>
     <string name="subscription_update_stage_parsing">Parsing</string>
     <string name="subscription_update_stage_saving">Saving</string>
-    <string name="subscription_update_stage_dns_background">Background DNS pre-resolve</string>
     <string name="ruleset_update_network_error">Update failed, please check your network</string>
 
     <!-- App Groups -->
     <string name="app_groups_name_placeholder">e.g. Social, Games</string>
-
-    <!-- RuleSet Hub -->
-    <string name="ruleset_hub_rule_count">Rules count: %d</string>
 
     <!-- RuleSets Screen -->
     <string name="rulesets_selection_mode">%d selected</string>

@@ -1,10 +1,5 @@
 package com.kunk.singbox.ui.components
 
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.horizontalScroll as foundationHorizontalScroll
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -25,7 +20,6 @@ import androidx.compose.material3.Text
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithContent
@@ -33,7 +27,6 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -41,6 +34,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.kunk.singbox.ui.theme.isLiquidGlassTheme
 import com.kunk.singbox.ui.theme.liquidGlassPanel
+import com.kunk.singbox.ui.theme.liquidGlassPressFeedback
 import com.kunk.singbox.ui.theme.liquidGlassSwitchColors
 
 private fun shouldDrawSettingSubtitleFade(useLiquidGlass: Boolean, scrollMaxValue: Int): Boolean {
@@ -52,34 +46,12 @@ private fun Modifier.settingItemPressFeedback(
     useLiquidGlass: Boolean,
     enabled: Boolean,
     onClick: (() -> Unit)?
-): Modifier {
-    val interactionSource = remember { MutableInteractionSource() }
-    val isPressed by interactionSource.collectIsPressedAsState()
-    val isClickable = enabled && onClick != null
-    val scale by animateFloatAsState(
-        targetValue = if (useLiquidGlass && isClickable && isPressed) 0.98f else 1f,
-        animationSpec = spring(stiffness = 520f, dampingRatio = 0.72f),
-        label = "liquid_glass_setting_item_scale"
-    )
-    val clickModifier = if (useLiquidGlass) {
-        Modifier.clickable(
-            enabled = isClickable,
-            interactionSource = interactionSource,
-            indication = null,
-            onClick = onClick ?: {}
-        )
-    } else {
-        Modifier.clickable(
-            enabled = isClickable,
-            onClick = onClick ?: {}
-        )
-    }
-
-    return graphicsLayer {
-        scaleX = scale
-        scaleY = scale
-    }.then(clickModifier)
-}
+): Modifier = liquidGlassPressFeedback(
+    enabled = enabled,
+    useLiquidGlass = useLiquidGlass,
+    label = "liquid_glass_setting_item_scale",
+    onClick = onClick
+)
 
 @Suppress("LongMethod", "CognitiveComplexMethod")
 @Composable

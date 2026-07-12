@@ -74,7 +74,11 @@ singbox-core/
 app/.idea/
 nul
 Kkunbox/
-.kernel-sync-local/
+.kernel-sync-local/*
+!.kernel-sync-local/sync-kernel.ps1
+!.kernel-sync-local/patches/
+.kernel-sync-local/patches/*
+!.kernel-sync-local/patches/kunbox-v1.13.14.patch
 OPENWORLD_MIGRATION_PLAN.md
 .factory/settings.json
 .gstack/

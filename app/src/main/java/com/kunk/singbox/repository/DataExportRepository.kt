@@ -18,8 +18,6 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import java.io.File
 
-/**
- */
 class DataExportRepository(private val context: Context) {
 
     companion object {
@@ -37,14 +35,7 @@ class DataExportRepository(private val context: Context) {
             }
         }
 
-        internal fun validateProfileExportCompletenessForTest(
-            totalProfiles: Int,
-            exportedProfiles: Int
-        ): Result<Unit> {
-            return validateProfileExportCompleteness(totalProfiles, exportedProfiles)
-        }
-
-        private fun validateProfileExportCompleteness(
+        internal fun validateProfileExportCompleteness(
             totalProfiles: Int,
             exportedProfiles: Int
         ): Result<Unit> {
@@ -75,8 +66,6 @@ class DataExportRepository(private val context: Context) {
     private val configDir: File
         get() = File(context.filesDir, "configs").also { it.mkdirs() }
 
-    /**
-     */
     suspend fun exportAllData(): Result<String> = withContext(Dispatchers.IO) {
         try {
 
@@ -134,8 +123,6 @@ class DataExportRepository(private val context: Context) {
         }
     }
 
-    /**
-     */
     suspend fun exportToFile(uri: Uri): Result<Unit> = withContext(Dispatchers.IO) {
         try {
             val jsonResult = exportAllData()
@@ -157,8 +144,7 @@ class DataExportRepository(private val context: Context) {
         }
     }
 
-    /**
-     */
+    @Suppress("SENSELESS_COMPARISON")
     suspend fun validateImportData(jsonData: String): Result<ExportData> = withContext(Dispatchers.IO) {
         try {
             validateImportPayloadSize(jsonData)
@@ -190,8 +176,6 @@ class DataExportRepository(private val context: Context) {
         }
     }
 
-    /**
-     */
     fun getExportDataSummary(exportData: ExportData): ExportDataSummary {
         val totalNodeCount = exportData.profiles.sumOf { profileData ->
             profileData.config.outbounds?.count { outbound ->
@@ -216,8 +200,6 @@ class DataExportRepository(private val context: Context) {
         )
     }
 
-    /**
-     */
     suspend fun importData(jsonData: String, options: ImportOptions = ImportOptions()): Result<ImportResult> = withContext(Dispatchers.IO) {
         try {
             val validateResult = validateImportData(jsonData)
@@ -314,8 +296,6 @@ class DataExportRepository(private val context: Context) {
         }
     }
 
-    /**
-     */
     suspend fun importFromFile(uri: Uri, options: ImportOptions = ImportOptions()): Result<ImportResult> = withContext(Dispatchers.IO) {
         try {
             validateImportFileSize(uri)
@@ -328,8 +308,6 @@ class DataExportRepository(private val context: Context) {
         }
     }
 
-    /**
-     */
     suspend fun validateFromFile(uri: Uri): Result<ExportData> = withContext(Dispatchers.IO) {
         try {
             validateImportFileSize(uri)
@@ -342,15 +320,11 @@ class DataExportRepository(private val context: Context) {
         }
     }
 
-    /**
-     */
     private suspend fun importSettings(settings: AppSettings, importRules: Boolean = true) {
 
         settingsRepository.replaceImportedSettings(imported = settings, importRules = importRules)
     }
 
-    /**
-     */
     private suspend fun importProfile(profileData: ProfileExportData, overwrite: Boolean): Int {
         val profile = profileData.profile
         val config = profileData.config
@@ -521,9 +495,6 @@ class DataExportRepository(private val context: Context) {
         }
     }
 
-    /**
-     *
-     */
     fun cleanup() {
         repositoryScope.cancel()
         Log.i(TAG, "DataExportRepository cleanup completed")

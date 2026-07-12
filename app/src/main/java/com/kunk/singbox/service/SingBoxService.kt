@@ -16,7 +16,6 @@ import android.util.Log
 import com.google.gson.Gson
 import com.kunk.singbox.R
 import com.kunk.singbox.core.BoxWrapperManager
-import com.kunk.singbox.core.ProbeManager
 import com.kunk.singbox.core.SelectorManager
 import com.kunk.singbox.core.SingBoxCore
 import com.kunk.singbox.ipc.SingBoxIpcHub
@@ -29,35 +28,29 @@ import com.kunk.singbox.repository.ConfigRepository
 import com.kunk.singbox.repository.LogRepository
 import com.kunk.singbox.repository.RuleSetRepository
 import com.kunk.singbox.repository.SettingsRepository
-import com.kunk.singbox.repository.TrafficRepository
 import com.kunk.singbox.service.manager.BackgroundPowerManager
 import com.kunk.singbox.service.manager.CommandManager
-import com.kunk.singbox.service.manager.ConnectManager
 import com.kunk.singbox.service.manager.CoreManager
 import com.kunk.singbox.service.manager.ForeignVpnMonitor
 import com.kunk.singbox.service.manager.NetworkHelper
 import com.kunk.singbox.service.manager.NodeSwitchManager
 import com.kunk.singbox.service.manager.PlatformInterfaceImpl
-import com.kunk.singbox.service.manager.RouteGroupSelector
 import com.kunk.singbox.service.manager.ScreenStateManager
-import com.kunk.singbox.service.manager.SelectorManager as ServiceSelectorManager
 import com.kunk.singbox.service.manager.ServiceStateHolder
 import com.kunk.singbox.service.manager.ShutdownManager
 import com.kunk.singbox.service.manager.UrlTestTagMatcher
-import com.kunk.singbox.service.network.NetworkManager
 import com.kunk.singbox.service.network.TrafficMonitor
 import com.kunk.singbox.service.notification.VpnNotificationManager
 import com.kunk.singbox.ui.components.AppNotificationManager
-import com.kunk.singbox.utils.KernelHttpClient
+import com.kunk.singbox.utils.DefaultNetworkListener
 import com.kunk.singbox.utils.L
 import com.kunk.singbox.utils.LocalNetworkPermission
 import com.kunk.singbox.utils.NetworkClient
+import com.kunk.singbox.utils.perf.StateCache
 import io.nekohasekai.libbox.*
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
-import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.math.absoluteValue
 import kotlinx.coroutines.*
@@ -68,41 +61,22 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 
-internal data class ActiveProbeResult(
-    val googleProbeOk: Boolean? = null,
-    val cloudflareProbeOk: Boolean? = null,
-    val metaProbeOk: Boolean,
-    val fullSweep: Boolean
+internal data class UidPackageCacheEntry(
+    val packageName: String,
+    val cachedAtMs: Long
 )
 
 @Suppress("TooManyFunctions", "LargeClass", "ProtectedMemberInFinalClass")
 class SingBoxService : VpnService() {
 
     protected val gson = Gson()
+    private val defaultNetworkListenerKey = Any()
 
     // ===== 新架构 Managers =====
     // 核心管理器 (VPN 启动/停止)
 
     protected val coreManager: CoreManager by lazy {
         CoreManager(this, this, serviceScope)
-    }
-
-    // 连接管理器
-
-    protected val connectManager: ConnectManager by lazy {
-        ConnectManager(this, serviceScope)
-    }
-
-    // 节点选择管理器
-
-    protected val serviceSelectorManager: ServiceSelectorManager by lazy {
-        ServiceSelectorManager()
-    }
-
-    // 路由组自动选择管理器
-
-    protected val routeGroupSelector: RouteGroupSelector by lazy {
-        RouteGroupSelector(this, serviceScope)
     }
 
     // Command 管理器 (Server/Client 交互)
@@ -125,7 +99,7 @@ class SingBoxService : VpnService() {
     // 网络辅助工具
 
     protected val networkHelper: NetworkHelper by lazy {
-        NetworkHelper(this, serviceScope)
+        NetworkHelper(this)
     }
 
     // 启动管理器
@@ -171,14 +145,13 @@ class SingBoxService : VpnService() {
         override fun openTun(options: TunOptions): Result<Int> {
             isConnectingTun.set(true)
             return try {
-                val network = connectManager.getCurrentNetwork()
+                val network = getCurrentPhysicalNetwork()
                 val result = coreManager.openTun(options, network, reuseExisting = true)
                 result.onSuccess { _ ->
                     vpnInterface = coreManager.vpnInterface
                     if (network != null) {
                         lastKnownNetwork = network
-                        vpnStartedAtMs.set(SystemClock.elapsedRealtime())
-                        connectManager.markVpnStarted()
+                        markPhysicalNetworkChanged()
                     }
                 }
                 result
@@ -188,28 +161,18 @@ class SingBoxService : VpnService() {
         }
 
         override fun getConnectivityManager(): ConnectivityManager? = connectivityManager
-        override fun getCurrentNetwork(): Network? = connectManager.getCurrentNetwork()
+        override fun getCurrentNetwork(): Network? = getCurrentPhysicalNetwork()
         override fun getLastKnownNetwork(): Network? = lastKnownNetwork
         override fun setLastKnownNetwork(network: Network?) { lastKnownNetwork = network }
-        override fun markVpnStarted() { connectManager.markVpnStarted() }
+        override fun markVpnStarted() { markPhysicalNetworkChanged() }
 
-        override fun requestCoreNetworkReset(reason: String, force: Boolean) {
-            this@SingBoxService.requestCoreNetworkReset(reason, force)
-        }
-        override fun resetConnectionsOptimal(reason: String, skipDebounce: Boolean) {
-            serviceScope.launch {
-                BoxWrapperManager.resetAllConnections(true)
-                Log.i(SingBoxService.TAG, "resetConnectionsOptimal: $reason")
-            }
+        override fun onDefaultNetworkChanged() {
+            this@SingBoxService.handleDefaultNetworkChanged()
         }
         override fun setUnderlyingNetworks(networks: Array<Network>?) {
             this@SingBoxService.setUnderlyingNetworks(networks)
         }
 
-        override fun isRunning(): Boolean = ServiceStateHolder.isRunning
-        override fun isStarting(): Boolean = ServiceStateHolder.isStarting
-        override fun isManuallyStopped(): Boolean = ServiceStateHolder.isManuallyStopped
-        override fun getLastConfigPath(): String? = ServiceStateHolder.lastConfigPath
         override fun getCurrentSettings(): AppSettings? = currentSettings
 
         override fun incrementConnectionOwnerCalls() { ServiceStateHolder.incrementConnectionOwnerCalls() }
@@ -236,7 +199,7 @@ class SingBoxService : VpnService() {
         override fun cacheUidToPackage(uid: Int, packageName: String) {
             this@SingBoxService.cacheUidToPackage(uid, packageName)
         }
-        override fun getUidFromCache(uid: Int): String? = uidToPackageCache[uid]
+        override fun getUidFromCache(uid: Int): String? = getCachedPackageForUid(uid)
 
         override fun findBestPhysicalNetwork(): Network? = this@SingBoxService.findBestPhysicalNetwork()
     }
@@ -258,34 +221,21 @@ class SingBoxService : VpnService() {
         override fun onStarting() {
             updateServiceState(ServiceState.STARTING)
             realTimeNodeName = null
-            vpnLinkValidated = false
         }
 
         override fun onStarted(configContent: String) {
             Log.i(SingBoxService.TAG, "KunBox VPN started successfully")
             notificationManager.setSuppressUpdates(false)
             autoFailoverServiceStartedAtMs = System.currentTimeMillis()
-            isProxyIdleForAutoFailover = false
-
-            // BoxWrapperManager 在 libbox 启动后初始化，避免 hasSelector() 超时
-            commandManager.getCommandServer()?.let { server ->
-                BoxWrapperManager.init(server)
-            }
-            Log.i(SingBoxService.TAG, "BoxWrapperManager initialized")
-
-            // 初始化 KernelHttpClient 的代理端口
-            serviceScope.launch {
-                KernelHttpClient.updateProxyPortFromSettings(this@SingBoxService)
-            }
-            warmAutoFailoverCandidateCache("vpn_started")
         }
 
         override fun onFailed(error: String) {
             Log.e(SingBoxService.TAG, error)
             setLastError(error)
+            VpnStateStore.setLastError(error)
+            VpnTileService.persistVpnPending("")
             notificationManager.setSuppressUpdates(true)
             notificationManager.cancelNotification()
-            updateServiceState(ServiceState.STOPPED)
         }
 
         override fun onCancelled() {
@@ -307,11 +257,6 @@ class SingBoxService : VpnService() {
         override fun stopForeignVpnMonitor() { foreignVpnMonitor.stop() }
         override fun detectExistingVpns(): Boolean = foreignVpnMonitor.hasExistingVpn()
 
-        // 组件初始化
-        override fun initSelectorManager(configContent: String) {
-            this@SingBoxService.initSelectorManager(configContent)
-        }
-
         override fun createAndStartCommandServer(): Result<Unit> {
             return runCatching {
                 // 1. 创建 CommandServer
@@ -324,33 +269,8 @@ class SingBoxService : VpnService() {
             }
         }
 
-        override fun startCommandClients() {
-            commandManager.startClients().onFailure { e ->
-                Log.e(SingBoxService.TAG, "Failed to start Command Clients", e)
-            }
-            serviceSelectorManager.updateCommandClient(commandManager.getCommandClient())
-        }
-
-        override fun startRouteGroupAutoSelect(configContent: String) {
-            routeGroupSelector.start(configContent)
-        }
-
-        override fun scheduleAsyncRuleSetUpdate() {
-            this@SingBoxService.scheduleAsyncRuleSetUpdate()
-        }
-
-        override fun startHealthMonitor() {
-            startActiveHealthProbeMonitor()
-        }
-
-        override fun scheduleKeepaliveWorker() {
-            VpnKeepaliveWorker.schedule(applicationContext)
-            Log.i(SingBoxService.TAG, "VPN keepalive worker scheduled")
-        }
-
-        override fun startTrafficMonitor() {
-            trafficMonitor.start(Process.myUid(), trafficListener)
-            networkManager = NetworkManager(this@SingBoxService, this@SingBoxService)
+        override fun launchPostStartTasks(configContent: String) {
+            this@SingBoxService.launchPostStartTasks(configContent)
         }
 
         // 状态管理
@@ -359,13 +279,13 @@ class SingBoxService : VpnService() {
         override fun setIsStarting(starting: Boolean) { SingBoxService.isStarting = starting }
         override fun setLastError(error: String?) { SingBoxService.setLastError(error) }
         override fun persistVpnState(isRunning: Boolean) {
-            VpnTileService.persistVpnState(applicationContext, isRunning)
+            VpnTileService.persistVpnState(isRunning)
             if (isRunning) {
                 VpnStateStore.setMode(VpnStateStore.CoreMode.VPN)
             }
         }
         override fun persistVpnPending(pending: String) {
-            VpnTileService.persistVpnPending(applicationContext, pending)
+            VpnTileService.persistVpnPending(pending)
         }
 
         // 网络管理
@@ -381,10 +301,8 @@ class SingBoxService : VpnService() {
         override fun setNetworkCallbackReady(ready: Boolean) { networkCallbackReady = ready }
 
         override fun restoreUnderlyingNetwork(network: Network) {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP_MR1) {
-                setUnderlyingNetworks(arrayOf(network))
-                Log.i(SingBoxService.TAG, "Underlying network restored before libbox start: $network")
-            }
+            setUnderlyingNetworks(arrayOf(network))
+            Log.i(SingBoxService.TAG, "Underlying network restored before libbox start: $network")
         }
 
         // 清理
@@ -428,21 +346,26 @@ class SingBoxService : VpnService() {
             job?.cancel()
             return job
         }
-        override fun cancelVpnHealthJob() {
-            vpnHealthJob?.cancel()
-            vpnHealthJob = null
+        override fun cancelPostStartJob(): Job? {
+            postStartGeneration.incrementAndGet()
+            val job = postStartJob
+            postStartJob = null
+            job?.cancel()
+            return job
+        }
+        override fun cancelHotReloadJob(): Job? {
+            val job = hotReloadJob
+            hotReloadJob = null
+            job?.cancel()
+            return job
         }
         override fun cancelRemoteStateUpdateJob() {
             remoteStateUpdateJob?.cancel()
             remoteStateUpdateJob = null
         }
-        override fun cancelRouteGroupAutoSelectJob() {
-            routeGroupSelector.stop()
-        }
         override fun cancelAutoFailoverJob() {
             autoFailoverJob?.cancel()
             autoFailoverJob = null
-            isProxyIdleForAutoFailover = false
             autoFailoverServiceStartedAtMs = 0L
         }
 
@@ -454,14 +377,11 @@ class SingBoxService : VpnService() {
         override fun unregisterScreenStateReceiver() {
             screenStateManager.unregisterScreenStateReceiver()
         }
-        override fun closeDefaultInterfaceMonitor(listener: InterfaceUpdateListener?) {
-            platformInterfaceImpl.closeDefaultInterfaceMonitor(listener)
+        override fun closeDefaultInterfaceMonitor() {
+            platformInterfaceImpl.closeDefaultInterfaceMonitor(null)
         }
 
         // 获取状态
-        override fun isServiceRunning(): Boolean = coreManager.isServiceRunning()
-        override fun getVpnInterface(): ParcelFileDescriptor? = vpnInterface
-        override fun getCurrentInterfaceListener(): InterfaceUpdateListener? = currentInterfaceListener
         override fun getConnectivityManager(): ConnectivityManager? = connectivityManager
 
         // 设置状态
@@ -473,35 +393,32 @@ class SingBoxService : VpnService() {
                 pendingNodeName = null
             }
         }
-        override fun setVpnLinkValidated(validated: Boolean) { vpnLinkValidated = validated }
-        override fun setNoPhysicalNetworkWarningLogged(logged: Boolean) {
-            noPhysicalNetworkWarningLogged = logged
-        }
-        override fun setDefaultInterfaceName(name: String) { defaultInterfaceName = name }
         override fun setNetworkCallbackReady(ready: Boolean) { networkCallbackReady = ready }
         override fun setLastKnownNetwork(network: Network?) { lastKnownNetwork = network }
         override fun clearUnderlyingNetworks() {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP_MR1) {
-                runCatching { setUnderlyingNetworks(null) }
-            }
+            runCatching { setUnderlyingNetworks(null) }
         }
 
         // 获取配置路径用于重启
-        override fun getPendingStartConfigPath(): String? = synchronized(this@SingBoxService) {
-            val pending = pendingStartConfigPath
-            stopSelfRequested = false
-            pending
+        override fun hasPendingStartConfigPath(): Boolean = synchronized(this@SingBoxService) {
+            !pendingStartConfigPath.isNullOrBlank()
         }
-        override fun clearPendingStartConfigPath() = synchronized(this@SingBoxService) {
-            pendingStartConfigPath = null
-            isStopping = false
-        }
+        override fun completeStop(initialStopService: Boolean): ShutdownManager.StopCompletion =
+            synchronized(this@SingBoxService) {
+                val completion = ShutdownManager.resolveStopCompletion(
+                    initialStopService = initialStopService,
+                    hardStopRequested = stopSelfRequested,
+                    pendingStartConfigPath = pendingStartConfigPath
+                )
+                coreManager.completeStop()
+                stopSelfRequested = completion.stopService
+                pendingStartConfigPath = null
+                isStopping = false
+                completion
+            }
         override fun startVpn(configPath: String) {
             this@SingBoxService.startVpn(configPath)
         }
-
-        // 检查 VPN 接口是否可复用
-        override fun hasExistingTunInterface(): Boolean = vpnInterface != null
     }
 
     /**
@@ -523,14 +440,9 @@ class SingBoxService : VpnService() {
 
     protected val autoFailoverSupervisorJob = SupervisorJob()
 
-    protected val autoFailoverDispatcher = Executors.newSingleThreadExecutor { runnable ->
-        Thread(runnable, "vpn-auto-failover").apply {
-            isDaemon = true
-            priority = Thread.NORM_PRIORITY - 1
-        }
-    }.asCoroutineDispatcher()
-
-    protected val autoFailoverScope = CoroutineScope(autoFailoverDispatcher + autoFailoverSupervisorJob)
+    protected val autoFailoverScope = CoroutineScope(
+        Dispatchers.IO.limitedParallelism(1) + autoFailoverSupervisorJob
+    )
     @Volatile protected var isStopping: Boolean = false
     @Volatile protected var stopSelfRequested: Boolean = false
     @Volatile protected var cleanupJob: Job? = null
@@ -542,6 +454,9 @@ class SingBoxService : VpnService() {
     @Volatile protected var pendingCleanCache: Boolean = false
 
     @Volatile protected var startVpnJob: Job? = null
+    @Volatile protected var postStartJob: Job? = null
+    @Volatile protected var hotReloadJob: Job? = null
+    protected val postStartGeneration = AtomicLong(0L)
     @Volatile protected var realTimeNodeName: String? = null
     // @Volatile protected var nodePollingJob: Job? = null // Removed in favor of CommandClient
 
@@ -563,19 +478,14 @@ class SingBoxService : VpnService() {
 
     protected var currentDownloadSpeed: Long = 0L
 
-    // TrafficMonitor 实例 - 统一管理流量监控和卡死检测
+    // TrafficMonitor 实例 - 仅负责采样和展示流量
 
     protected val trafficMonitor = TrafficMonitor(serviceScope)
     private val healthSignalAggregator = HealthSignalAggregator()
     private val autoFailoverCandidateCache = AutoFailoverCandidateCache()
     @Volatile protected var lastMeaningfulTrafficAtMs: Long = 0L
-    @Volatile protected var isProxyIdleForAutoFailover: Boolean = false
     @Volatile protected var autoFailoverServiceStartedAtMs: Long = 0L
     @Volatile protected var lastAutoFailoverNetworkEventAtMs: Long = 0L
-    @Volatile protected var activeHealthProbeJob: Job? = null
-    @Volatile protected var lastFullActiveHealthProbeAtMs: Long = 0L
-    @Volatile protected var activeHealthProbeTrafficIgnoreUntilMs: Long = 0L
-    protected val activeHealthProbeRunning = AtomicBoolean(false)
     private val singleNodeRouteFailureNotificationTimes = ConcurrentHashMap<String, Long>()
 
     protected val trafficListener = object : TrafficMonitor.Listener {
@@ -587,84 +497,15 @@ class SingBoxService : VpnService() {
                 requestNotificationUpdate(force = false)
             }
         }
-
-        override fun onTrafficStall(consecutiveCount: Int) {
-            stallRefreshAttempts++
-            val maxAttempts = maxStallRefreshAttempts
-            Log.d(SingBoxService.TAG, "Traffic stall detected (count=$consecutiveCount, attempt=$stallRefreshAttempts/$maxAttempts)")
-
-            if (stallRefreshAttempts >= maxStallRefreshAttempts * 2) {
-                Log.w(SingBoxService.TAG, "Persistent traffic stall after $stallRefreshAttempts attempts")
-                LogRepository.getInstance().addLog(
-                    "WARN: Traffic stall detected, attempting gentle recovery..."
-                )
-                stallRefreshAttempts = 0
-                trafficMonitor.resetStallCounter()
-                serviceScope.launch {
-                    val closed = BoxWrapperManager.closeIdleConnections(30)
-                    Log.i(SingBoxService.TAG, "Closed $closed idle connections for traffic stall")
-                }
-            } else {
-                serviceScope.launch {
-                    try {
-                        val closed = BoxWrapperManager.closeIdleConnections(30)
-                        if (closed > 0) {
-                            Log.i(SingBoxService.TAG, "Closed $closed idle connections after stall")
-                        }
-                    } catch (e: Exception) {
-                        Log.w(SingBoxService.TAG, "Failed to close idle connections after stall", e)
-                    }
-                    trafficMonitor.resetStallCounter()
-                }
-            }
-
-            submitAutoFailoverSuspicion("traffic_stall:$consecutiveCount")
-        }
-
-        override fun onProxyIdle(idleDurationMs: Long) {
-            isProxyIdleForAutoFailover = true
-            val idleSeconds = idleDurationMs / 1000
-
-            // 条件化恢复：避免在“无连接/无需恢复”时触发重置导致抖动。
-            if (!BoxWrapperManager.isAvailable()) {
-                Log.d(SingBoxService.TAG, "Proxy idle detected (${idleSeconds}s) but Box not available, skip reset")
-                return
-            }
-
-            val connCount = runCatching { BoxWrapperManager.getConnectionCount() }.getOrDefault(0)
-            val needRecovery = runCatching { BoxWrapperManager.isNetworkRecoveryNeeded() }.getOrDefault(false)
-
-            if (connCount <= 0 && !needRecovery) {
-                Log.d(
-                    SingBoxService.TAG,
-                    "Proxy idle detected (${idleSeconds}s) but no active connections and recovery not needed"
-                )
-                return
-            }
-
-            Log.i(
-                SingBoxService.TAG,
-                "Proxy idle ($idleSeconds s), reset conn (cnt=$connCount need=$needRecovery)"
-            )
-            serviceScope.launch {
-                BoxWrapperManager.resetAllConnections(true)
-            }
-        }
     }
-
-    protected var stallRefreshAttempts: Int = 0
-
-    protected val maxStallRefreshAttempts: Int = 3 // 连续3次stall刷新后仍无流量则重启服务
-
-    protected var networkManager: NetworkManager? = null
 
     @Volatile protected var lastRuleSetCheckMs: Long = 0L
 
     protected val ruleSetCheckIntervalMs: Long = 6 * 60 * 60 * 1000L
 
-    protected val uidToPackageCache = ConcurrentHashMap<Int, String>()
+    private val uidToPackageCache = ConcurrentHashMap<Int, UidPackageCacheEntry>()
 
-    protected val maxUidToPackageCacheSize: Int = 512
+    private val maxUidToPackageCacheSize: Int = 512
 
     protected val isScreenOn: Boolean get() = screenStateManager.isScreenOn
 
@@ -674,96 +515,17 @@ class SingBoxService : VpnService() {
 
     protected var connectivityManager: ConnectivityManager? = null
 
-    protected var currentInterfaceListener: InterfaceUpdateListener? = null
-
-    protected var defaultInterfaceName: String = ""
-
     protected val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
 
     protected var lastKnownNetwork: Network? = null
 
-    protected var vpnHealthJob: Job? = null
-    @Volatile protected var vpnLinkValidated: Boolean = false
-
     // 网络就绪标志：确保 Libbox 启动前网络回调已完成初始采样
     @Volatile protected var networkCallbackReady: Boolean = false
-    @Volatile protected var noPhysicalNetworkWarningLogged: Boolean = false
-
-    // setUnderlyingNetworks 防抖机制 - 避免频繁调用触发系统提示音
-
-    protected val lastSetUnderlyingNetworksAtMs = AtomicLong(0)
-
-    protected val setUnderlyingNetworksDebounceMs: Long = 2000L // 2秒防抖
-
-    // VPN 启动窗口期保护
-    // 在 VPN 启动后的短时间内，updateDefaultInterface 跳过 setUnderlyingNetworks 调用
-
-    protected val vpnStartedAtMs = AtomicLong(0)
-
-    protected val vpnStartupWindowMs: Long = 3000L
-
-    @Volatile protected var lastConnectionsResetAtMs: Long = 0L
-
-    protected val connectionsResetDebounceMs: Long = 2000L
-
     // ACTION_PREPARE_RESTART 防抖：避免短时间内重复触发导致网络反复震荡
 
     protected val lastPrepareRestartAtMs = AtomicLong(0L)
 
     protected val prepareRestartDebounceMs: Long = 1500L
-
-    protected val recoveryGlobalDebounceMs: Long = 800L
-
-    protected val recoveryFastLaneGlobalDebounceMs: Long = 150L
-
-    protected val recoveryFastLaneSourceDebounceCapMs: Long = 400L
-
-    protected val recoveryMergeWindowMs: Long = 250L
-
-    @Volatile protected var recoveryInFlight: Boolean = false
-    @Volatile protected var pendingRecoveryRequest: RecoveryRequest? = null
-    @Volatile protected var recoveryMergeJob: Job? = null
-    @Volatile protected var pendingMergeRequest: RecoveryRequest? = null
-
-    protected val recoveryLastTriggeredAtMs = AtomicLong(0L)
-
-    protected val recoveryTriggerCount = AtomicLong(0L)
-
-    protected val recoveryMergedCount = AtomicLong(0L)
-
-    protected val recoverySkippedDebounceCount = AtomicLong(0L)
-
-    protected val recoverySoftCount = AtomicLong(0L)
-
-    protected val recoveryHardCount = AtomicLong(0L)
-
-    protected val recoverySuccessCount = AtomicLong(0L)
-
-    protected val recoveryFailureCount = AtomicLong(0L)
-
-    protected val recoveryConsecutiveFailureCount = AtomicInteger(0)
-
-    protected val recoveryReasonLastAtMs = ConcurrentHashMap<String, Long>()
-
-    protected val foregroundRecoveryGraceMs: Long = 3000L
-
-    protected var foregroundHardFallbackJob: Job? = null
-
-    protected val lastForegroundHardFallbackAtMs = AtomicLong(0L)
-
-    protected val foregroundHardFallbackDebounceMs: Long = 15000L
-
-    protected val networkTypeChangedRecoveryGraceMs: Long = 4000L
-
-    protected var networkTypeChangedFallbackJob: Job? = null
-
-    protected val lastNetworkTypeChangedHardFallbackAtMs = AtomicLong(0L)
-
-    protected val lastNetworkTypeChangedRestartAtMs = AtomicLong(0L)
-
-    protected val networkTypeChangedHardFallbackDebounceMs: Long = 8000L
-
-    protected val networkTypeChangedRestartDebounceMs: Long = 20000L
 
     protected fun tryRegisterRunningServiceForLibbox() {
         // No longer needed with new CommandServer API
@@ -782,35 +544,10 @@ class SingBoxService : VpnService() {
         coreManager.init(platformInterfaceImpl)
         Log.i(SingBoxService.TAG, "CoreManager initialized")
 
-        initConnectManager()
-        initServiceSelectorManager()
         initCommandManager()
         initSecondaryManagers()
 
         Log.i(SingBoxService.TAG, "All managers initialized")
-    }
-
-    protected fun initConnectManager() {
-        connectManager.init(
-            onNetworkChanged = { network ->
-                if (network != null) {
-                    Log.d(SingBoxService.TAG, "Network changed: $network")
-                }
-            },
-            onNetworkLost = {
-                Log.i(SingBoxService.TAG, "Network lost")
-            },
-            setUnderlyingNetworksFn = { nets ->
-                setUnderlyingNetworks(nets)
-            }
-        )
-        Log.i(SingBoxService.TAG, "ConnectManager initialized")
-    }
-
-    protected fun initServiceSelectorManager() {
-        // 3. 初始化节点选择管理器
-        serviceSelectorManager.init(commandManager.getCommandClient())
-        Log.i(SingBoxService.TAG, "ServiceSelectorManager initialized")
     }
 
     protected fun initCommandManager() {
@@ -852,49 +589,8 @@ class SingBoxService : VpnService() {
             override fun notifyRemoteStateUpdate(force: Boolean) {
                 this@SingBoxService.requestRemoteStateUpdate(force)
             }
-
-            override fun requestCoreNetworkRecovery(reason: String, force: Boolean) {
-                this@SingBoxService.requestCoreNetworkReset(reason, force)
-            }
         })
         Log.i(SingBoxService.TAG, "ScreenStateManager initialized")
-
-        // 初始化路由组自动选择管理器
-        routeGroupSelector.init(object : RouteGroupSelector.Callbacks {
-            override val isRunning: Boolean
-                get() = SingBoxService.isRunning
-            override val isStopping: Boolean
-                get() = coreManager.isStopping
-            override fun getCommandClient() = commandManager.getCommandClient()
-            override fun getSelectedOutbound(groupTag: String) = commandManager.getSelectedOutbound(groupTag)
-            override fun onRouteGroupFallback(groupTag: String, actualSelectedTag: String?) {
-                val targetTag = actualSelectedTag?.takeIf { it.isNotBlank() } ?: "当前全局节点"
-                val message =
-                    "配置分流 $groupTag 节点全部不可用，已临时回退到全局节点 $targetTag"
-                val notificationId = 2000 + (groupTag.hashCode().absoluteValue % 500)
-                val notification = notificationManager.createStartingNotification(message)
-                notificationManager.showTemporaryNotification(notificationId, notification)
-                serviceScope.launch {
-                    delay(8000)
-                    notificationManager.cancelNotification(VpnNotificationManager.NOTIFICATION_ID + notificationId)
-                }
-            }
-
-            override fun onRouteGroupImmediateSwitch(
-                groupTag: String,
-                previousSelectedTag: String,
-                newSelectedTag: String,
-                reason: String
-            ) {
-                this@SingBoxService.convergeConnectionsAfterImmediateRouteGroupSwitch(
-                    groupTag = groupTag,
-                    previousSelectedTag = previousSelectedTag,
-                    newSelectedTag = newSelectedTag,
-                    rawReason = reason
-                )
-            }
-        })
-        Log.i(SingBoxService.TAG, "RouteGroupSelector initialized")
 
         // 9. 初始化外部 VPN 监控器
         foreignVpnMonitor.init(object : ForeignVpnMonitor.Callbacks {
@@ -947,28 +643,16 @@ class SingBoxService : VpnService() {
 
         backgroundPowerManager.init(
             callbacks = object : BackgroundPowerManager.Callbacks {
-                override val isVpnRunning: Boolean
-                    get() = SingBoxService.isRunning
-
-                override val isVpnStarting: Boolean
-                    get() = SingBoxService.isStarting
-
-                override val isVpnStopping: Boolean
-                    get() = this@SingBoxService.isStopping
-
-                override val isManuallyStopped: Boolean
-                    get() = ServiceStateHolder.isManuallyStopped
-
-                override fun requestCoreNetworkRecovery(reason: String, force: Boolean) {
-                    this@SingBoxService.requestCoreNetworkReset(reason, force)
-                }
-
                 override fun suspendNonEssentialProcesses() {
-                    Log.d(SingBoxService.TAG, "[PowerSaving] suspendNonEssentialProcesses ignored")
+                    coreManager.enterPowerSavingMode().onFailure { e ->
+                        Log.w(SingBoxService.TAG, "[PowerSaving] Failed to release locks", e)
+                    }
                 }
 
                 override fun resumeNonEssentialProcesses() {
-                    Log.d(SingBoxService.TAG, "[PowerSaving] resumeNonEssentialProcesses ignored")
+                    coreManager.exitPowerSavingMode().onFailure { e ->
+                        Log.w(SingBoxService.TAG, "[PowerSaving] Failed to restore locks", e)
+                    }
                 }
             },
             thresholdMs = initialThresholdMs
@@ -1019,6 +703,48 @@ class SingBoxService : VpnService() {
         }
     }
 
+    protected fun launchPostStartTasks(configContent: String) {
+        val generation = postStartGeneration.incrementAndGet()
+        val previousJob = postStartJob
+        previousJob?.cancel()
+        postStartJob = serviceScope.launch {
+            try {
+                previousJob?.join()
+                if (!isPostStartTaskActive(generation)) return@launch
+
+                commandManager.getCommandServer()?.let { server ->
+                    BoxWrapperManager.init(server)
+                }
+                Log.i(SingBoxService.TAG, "BoxWrapperManager initialized")
+
+                commandManager.startClients().onFailure { error ->
+                    Log.e(SingBoxService.TAG, "Failed to start Command Clients", error)
+                }
+                if (!isPostStartTaskActive(generation)) return@launch
+
+                SelectorManager.updateCommandClient(commandManager.getCommandClient())
+                initSelectorManager(configContent)
+                trafficMonitor.start(Process.myUid(), trafficListener)
+                scheduleAsyncRuleSetUpdate()
+                warmAutoFailoverCandidateCache("vpn_started")
+
+                runCatching { VpnKeepaliveWorker.schedule(applicationContext) }
+                    .onSuccess { Log.i(SingBoxService.TAG, "VPN keepalive worker scheduled") }
+                    .onFailure { error -> Log.w(SingBoxService.TAG, "Failed to schedule VPN keepalive worker", error) }
+
+                Log.i(SingBoxService.TAG, "VPN post-start tasks completed")
+            } finally {
+                if (postStartGeneration.get() == generation) {
+                    postStartJob = null
+                }
+            }
+        }
+    }
+
+    private fun isPostStartTaskActive(generation: Long): Boolean {
+        return postStartGeneration.get() == generation && SingBoxService.isRunning && !isStopping
+    }
+
     /**
      * 使用统一离线临时服务测速路径并返回结果
      *
@@ -1054,22 +780,6 @@ class SingBoxService : VpnService() {
         if (closed > 0) {
             LogRepository.getInstance().addLog("INFO: closeConnection($reason) closed=$closed")
         }
-    }
-
-    /**
-     * 重置所有连接 - 渐进式降级策略
-     */
-
-    protected suspend fun resetConnectionsOptimal(reason: String, skipDebounce: Boolean) {
-        networkHelper.resetConnectionsOptimal(
-            reason = reason,
-            skipDebounce = skipDebounce,
-            lastResetAtMs = lastConnectionsResetAtMs,
-            debounceMs = connectionsResetDebounceMs,
-            commandManager = commandManager,
-            closeRecentFn = { r -> closeRecentConnectionsBestEffort(r) },
-            updateLastReset = { ms -> lastConnectionsResetAtMs = ms }
-        )
     }
 
     @Volatile protected var serviceState: ServiceState = ServiceState.STOPPED
@@ -1168,19 +878,15 @@ class SingBoxService : VpnService() {
 
             L.step("HotSwitch", 2, 2, "Calling SelectorManager.switchNode...")
 
-            when (val result = serviceSelectorManager.switchNode(nodeTag)) {
-                is com.kunk.singbox.service.manager.SelectorManager.SwitchResult.Success -> {
+            when (val result = SelectorManager.switchNode(nodeTag)) {
+                is SelectorManager.SwitchResult.Success -> {
                     L.result("HotSwitch", true, "Switched to $nodeTag via ${result.method}")
                     requestNotificationUpdate(force = true)
                     return true
                 }
-                is com.kunk.singbox.service.manager.SelectorManager.SwitchResult.NeedRestart -> {
+                is SelectorManager.SwitchResult.NeedRestart -> {
                     L.warn("HotSwitch", "Need restart: ${result.reason}")
                     // 需要完整重启，返回 false 让调用者处理
-                    return false
-                }
-                is com.kunk.singbox.service.manager.SelectorManager.SwitchResult.Failed -> {
-                    L.error("HotSwitch", "Failed: ${result.error}")
                     return false
                 }
             }
@@ -1190,171 +896,45 @@ class SingBoxService : VpnService() {
         }
     }
 
-    protected fun cacheUidToPackage(uid: Int, pkg: String) {
+    private fun cacheUidToPackage(uid: Int, pkg: String) {
         if (uid <= 0 || pkg.isBlank()) return
-        uidToPackageCache[uid] = pkg
+        uidToPackageCache[uid] = UidPackageCacheEntry(
+            packageName = pkg,
+            cachedAtMs = SystemClock.elapsedRealtime()
+        )
         if (uidToPackageCache.size > maxUidToPackageCacheSize) {
             uidToPackageCache.clear()
         }
     }
 
-    protected fun requestCoreNetworkReset(reason: String, force: Boolean) {
-        val now = SystemClock.elapsedRealtime()
-        val parsedReason = parseRecoveryReason(reason)
-        if (
-            parsedReason == RecoveryReason.NETWORK_TYPE_CHANGED ||
-            parsedReason == RecoveryReason.NETWORK_VALIDATED
-        ) {
-            lastAutoFailoverNetworkEventAtMs = System.currentTimeMillis()
+    private fun getCachedPackageForUid(uid: Int): String? {
+        val entry = uidToPackageCache[uid] ?: return null
+        if (!PlatformInterfaceImpl.isUidPackageCacheFresh(entry.cachedAtMs, SystemClock.elapsedRealtime())) {
+            uidToPackageCache.remove(uid, entry)
+            return null
         }
-        val request = RecoveryRequest(
-            reason = parsedReason,
-            rawReason = reason,
-            force = force,
-            requestedAtMs = now,
-            merged = false
-        )
-        submitRecoveryRequest(request)
+        return entry.packageName
     }
 
-    protected fun parseRecoveryReason(reason: String): RecoveryReason {
-        val normalized = reason.trim().lowercase()
-        return when {
-            normalized.contains("network_type_changed") ||
-                normalized.contains("typechange") -> RecoveryReason.NETWORK_TYPE_CHANGED
-            normalized.contains("doze_exit") -> RecoveryReason.DOZE_EXIT
-            normalized.contains("network_validated") -> RecoveryReason.NETWORK_VALIDATED
-            normalized.contains("vpnhealth") || normalized.contains("vpn_health") -> RecoveryReason.VPN_HEALTH
-            normalized.contains("app_foreground") -> RecoveryReason.APP_FOREGROUND
-            normalized.contains("screen_on") -> RecoveryReason.SCREEN_ON
-            else -> RecoveryReason.UNKNOWN
+    protected fun handleDefaultNetworkChanged() {
+        val serviceUnavailable = !SingBoxService.isRunning || SingBoxService.isStarting
+        val shutdownInProgress = isStopping || SingBoxService.isManuallyStopped
+        if (serviceUnavailable || shutdownInProgress) {
+            Log.d(SingBoxService.TAG, "Default network reset skipped because service is not runnable")
+            return
         }
+
+        lastAutoFailoverNetworkEventAtMs = System.currentTimeMillis()
+        val reset = BoxWrapperManager.resetNetwork()
+        Log.i(SingBoxService.TAG, "Default physical network changed, core reset=$reset")
     }
 
     protected fun handleTrafficUpdateForAutoFailover(snapshot: TrafficMonitor.TrafficSnapshot) {
         val totalSpeed = snapshot.uploadSpeed + snapshot.downloadSpeed
-        if (!SingBoxService.shouldRecordMeaningfulTrafficForAutoFailover(
-                totalSpeed = totalSpeed,
-                nowAtMs = System.currentTimeMillis(),
-                activeProbeTrafficIgnoreUntilMs = activeHealthProbeTrafficIgnoreUntilMs
-            )
-        ) {
+        if (!SingBoxService.shouldRecordMeaningfulTrafficForAutoFailover(totalSpeed)) {
             return
         }
         lastMeaningfulTrafficAtMs = System.currentTimeMillis()
-        isProxyIdleForAutoFailover = false
-    }
-
-    protected fun startActiveHealthProbeMonitor() {
-        if (activeHealthProbeJob?.isActive == true) {
-            return
-        }
-        activeHealthProbeJob = serviceScope.launch {
-            while (isActive) {
-                runActiveHealthProbeTick(System.currentTimeMillis())
-                delay(SingBoxService.ACTIVE_HEALTH_PROBE_CANARY_INTERVAL_MS)
-            }
-        }
-    }
-
-    private suspend fun runActiveHealthProbeTick(nowAtMs: Long) {
-        if (!shouldRunActiveHealthProbe(nowAtMs) || !activeHealthProbeRunning.compareAndSet(false, true)) {
-            return
-        }
-        try {
-            markActiveHealthProbeTrafficWindow(nowAtMs)
-            val fullSweep = shouldRunFullActiveHealthProbe(nowAtMs)
-            if (fullSweep) {
-                lastFullActiveHealthProbeAtMs = nowAtMs
-            }
-            val result = runActiveTunnelHealthProbe(fullSweep)
-            handleActiveProbeResult(result)
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            Log.w(SingBoxService.TAG, "[HealthProbe] active probe failed", e)
-        } finally {
-            markActiveHealthProbeTrafficWindow(System.currentTimeMillis())
-            activeHealthProbeRunning.set(false)
-        }
-    }
-
-    private fun markActiveHealthProbeTrafficWindow(nowAtMs: Long) {
-        val ignoreUntil = nowAtMs + SingBoxService.ACTIVE_HEALTH_PROBE_TRAFFIC_IGNORE_MS
-        if (ignoreUntil > activeHealthProbeTrafficIgnoreUntilMs) {
-            activeHealthProbeTrafficIgnoreUntilMs = ignoreUntil
-        }
-    }
-
-    protected fun stopActiveHealthProbeMonitor() {
-        activeHealthProbeJob?.cancel()
-        activeHealthProbeJob = null
-        activeHealthProbeRunning.set(false)
-        lastFullActiveHealthProbeAtMs = 0L
-    }
-
-    protected fun shouldRunActiveHealthProbe(nowAtMs: Long): Boolean {
-        if (!SingBoxService.shouldAllowRecoveryExecution(
-                isRunning = SingBoxService.isRunning,
-                isStarting = SingBoxService.isStarting,
-                isStopping = isStopping,
-                isManuallyStopped = SingBoxService.isManuallyStopped
-            )
-        ) {
-            return false
-        }
-        if (isAutoFailoverStartupGracePeriod(nowAtMs) || isAutoFailoverNetworkGracePeriod(nowAtMs)) {
-            return false
-        }
-        return SingBoxService.shouldRunActiveHealthProbeForSignals(
-            isAppInForeground = isAppInForeground,
-            lastMeaningfulTrafficAtMs = lastMeaningfulTrafficAtMs,
-            nowAtMs = nowAtMs
-        )
-    }
-
-    protected fun shouldRunFullActiveHealthProbe(nowAtMs: Long): Boolean {
-        val last = lastFullActiveHealthProbeAtMs
-        return last <= 0L || nowAtMs - last >= SingBoxService.ACTIVE_HEALTH_PROBE_FULL_INTERVAL_MS
-    }
-
-    private suspend fun runActiveTunnelHealthProbe(fullSweep: Boolean): ActiveProbeResult = coroutineScope {
-        val meta = async {
-            BoxWrapperManager.probeTunnelViaLocalProxy(
-                context = this@SingBoxService,
-                timeoutMs = SingBoxService.ACTIVE_HEALTH_PROBE_TIMEOUT_MS,
-                probeUrlOverride = BoxWrapperManager.META_TUNNEL_HEALTH_PROBE_URL,
-                headersOnly = true,
-                healthyWhenProxyUnavailable = false
-            )
-        }
-        if (!fullSweep) {
-            return@coroutineScope ActiveProbeResult(metaProbeOk = meta.await(), fullSweep = false)
-        }
-        val google = async {
-            BoxWrapperManager.probeTunnelViaLocalProxy(
-                context = this@SingBoxService,
-                timeoutMs = SingBoxService.ACTIVE_HEALTH_PROBE_TIMEOUT_MS,
-                probeUrlOverride = BoxWrapperManager.FOREGROUND_TUNNEL_HEALTH_PROBE_URL,
-                headersOnly = true,
-                healthyWhenProxyUnavailable = false
-            )
-        }
-        val cloudflare = async {
-            BoxWrapperManager.probeTunnelViaLocalProxy(
-                context = this@SingBoxService,
-                timeoutMs = SingBoxService.ACTIVE_HEALTH_PROBE_TIMEOUT_MS,
-                probeUrlOverride = BoxWrapperManager.CLOUDFLARE_TUNNEL_HEALTH_PROBE_URL,
-                headersOnly = true,
-                healthyWhenProxyUnavailable = false
-            )
-        }
-        ActiveProbeResult(
-            googleProbeOk = google.await(),
-            cloudflareProbeOk = cloudflare.await(),
-            metaProbeOk = meta.await(),
-            fullSweep = true
-        )
     }
 
     protected fun handleKernelLogForHealthSignal(message: String) {
@@ -1412,24 +992,6 @@ class SingBoxService : VpnService() {
         }
     }
 
-    private fun handleActiveProbeResult(result: ActiveProbeResult) {
-        if (!SingBoxService.shouldTreatActiveProbeAsNodeFailure(
-                googleProbeOk = result.googleProbeOk ?: true,
-                cloudflareProbeOk = result.cloudflareProbeOk ?: true,
-                metaProbeOk = result.metaProbeOk
-            )
-        ) {
-            return
-        }
-        LogRepository.getInstance().addLog(
-            SingBoxService.buildActiveProbeFailureSummary(
-                result = result,
-                coreAvailable = BoxWrapperManager.isAvailable()
-            )
-        )
-        submitAutoFailoverSuspicion("active_probe_failed")
-    }
-
     protected fun warmAutoFailoverCandidateCache(reason: String) {
         val currentTag = resolveCurrentProxyOutboundTag() ?: return
         val latencies = ConfigRepository.getInstance(this@SingBoxService)
@@ -1458,10 +1020,9 @@ class SingBoxService : VpnService() {
             isVpnRunning = SingBoxService.isRunning,
             isManuallyStopped = SingBoxService.isManuallyStopped,
             isAutoFailoverInFlight = autoFailoverJob?.isActive == true,
-            isRecoveryInFlight = recoveryInFlight,
             inStartupGracePeriod = isAutoFailoverStartupGracePeriod(now),
             inNetworkChangeGracePeriod = isAutoFailoverNetworkGracePeriod(now),
-            isProxyIdle = isProxyIdleForAutoFailover,
+            isProxyIdle = false,
             lastMeaningfulTrafficAtMs = SingBoxService.resolveAutoFailoverTrafficSignalAtMs(
                 trigger = trigger,
                 isAppInForeground = isAppInForeground,
@@ -1596,36 +1157,7 @@ class SingBoxService : VpnService() {
         currentTag: String,
         trigger: String
     ): NodeAutoFailoverPolicy.ProbeEvaluation {
-        var results = testGroupCandidatesLatency("PROXY", currentTag, trigger)
-        val currentHealthyInResults = UrlTestTagMatcher.resolveDelayDetail(results, currentTag)
-            ?.delay?.let { it > 0 } == true
-        if (currentHealthyInResults || SingBoxService.isHealthFastPathTrigger(trigger)) {
-            val tunnelOk = if (SingBoxService.isHealthFastPathTrigger(trigger)) {
-                val result = runActiveTunnelHealthProbe(fullSweep = true)
-                !SingBoxService.shouldTreatActiveProbeAsNodeFailure(
-                    googleProbeOk = result.googleProbeOk ?: true,
-                    cloudflareProbeOk = result.cloudflareProbeOk ?: true,
-                    metaProbeOk = result.metaProbeOk
-                )
-            } else {
-                BoxWrapperManager.probeTunnelViaLocalProxy(this@SingBoxService)
-            }
-            if (!tunnelOk) {
-                Log.w(
-                    SingBoxService.TAG,
-                    "[AutoFailover] currentTag=$currentTag has positive delay, " +
-                        "but tunnel probe failed. Mark it as failed."
-                )
-                val mutableResults = results.toMutableMap()
-                val keysToRemove = mutableResults.keys.filter {
-                    UrlTestTagMatcher.normalizeTag(it) == UrlTestTagMatcher.normalizeTag(currentTag)
-                }
-                for (key in keysToRemove) {
-                    mutableResults.remove(key)
-                }
-                results = mutableResults
-            }
-        }
+        val results = testGroupCandidatesLatency("PROXY", currentTag, trigger)
         val quarantined = loadActiveAutoFailoverQuarantine(System.currentTimeMillis())
         val evaluation = NodeAutoFailoverPolicy.evaluateProbe(
             currentTag = currentTag,
@@ -1727,7 +1259,6 @@ class SingBoxService : VpnService() {
             trigger = trigger,
             userTimeoutMs = settings.latencyTestTimeout
         )
-        val allowFallback = !SingBoxService.isHealthFastPathTrigger(trigger)
         val semaphore = Semaphore(concurrency)
         val core = SingBoxCore.getInstance(this@SingBoxService)
         val results = ConcurrentHashMap<String, Int>()
@@ -1738,8 +1269,7 @@ class SingBoxService : VpnService() {
                         core.testOutboundLatency(
                             outbound = outbound,
                             allOutbounds = outbounds,
-                            timeoutOverrideMs = timeoutMs,
-                            allowFallback = allowFallback
+                            timeoutOverrideMs = timeoutMs
                         )
                     }.getOrDefault(-1L)
                     if (latency > 0L && latency <= Int.MAX_VALUE) {
@@ -1838,15 +1368,10 @@ class SingBoxService : VpnService() {
             runCatching {
                 configRepository.syncActiveNodeFromProxySelection(displayName)
             }
-            trafficMonitor.resetStallCounter()
-            stallRefreshAttempts = 0
-            isProxyIdleForAutoFailover = false
             requestNotificationUpdate(force = true)
             requestRemoteStateUpdate(force = true)
-            routeGroupSelector.requestImmediateReselect("vpn_health_auto_failover")
-            if (SingBoxService.shouldResetAfterAutoFailover(trigger)) {
-                val closed = BoxWrapperManager.closeAllTrackedConnections()
-                BoxWrapperManager.resetNetwork()
+            if (SingBoxService.isHealthFastPathTrigger(trigger)) {
+                val closed = commandManager.closeConnections()
                 LogRepository.getInstance().addLog(
                     "INFO: Health failover converged connections, trigger=$trigger, closed=$closed"
                 )
@@ -1885,873 +1410,28 @@ class SingBoxService : VpnService() {
         return commandManager.getSelectedOutbound("PROXY")
             ?.takeIf { it.isNotBlank() }
             ?: SelectorManager.getSelectedOutbound()?.takeIf { it.isNotBlank() }
-            ?: BoxWrapperManager.getSelectedOutbound()?.takeIf { it.isNotBlank() }
-    }
-
-    protected fun submitRecoveryRequest(request: RecoveryRequest) {
-        val invalidState = recoveryInvalidStateSummary()
-        if (invalidState != null) {
-            logRecoveryEvent(
-                event = "skipped_invalid_state",
-                request = request,
-                mode = null,
-                merged = request.merged,
-                skipped = true,
-                outcome = "invalid_state($invalidState)"
-            )
-            return
-        }
-
-        synchronized(this) {
-            // 2025-fix-v7: APP_FOREGROUND + force 走快车道，不进合并窗口
-            // 直接 wake + resetNetwork，跳过 800ms 合并等待和多级探测
-            if (SingBoxService.shouldUseForegroundFastLane(request) && !recoveryInFlight) {
-                recoveryInFlight = true
-                serviceScope.launch {
-                    try {
-                        executeForegroundFastRecovery(request)
-                    } finally {
-                        val nextRequest = synchronized(this@SingBoxService) {
-                            recoveryInFlight = false
-                            val next = pendingRecoveryRequest
-                            pendingRecoveryRequest = null
-                            next
-                        }
-                        if (nextRequest != null) {
-                            executeRecoveryRequest(nextRequest)
-                        }
-                    }
-                }
-                return
-            }
-
-            if (recoveryInFlight) {
-                val current = pendingRecoveryRequest
-                pendingRecoveryRequest = if (current == null) {
-                    request.copy(merged = true)
-                } else {
-                    mergeRecoveryRequests(current, request)
-                }
-                recoveryMergedCount.incrementAndGet()
-                logRecoveryEvent(
-                    event = "merged_inflight",
-                    request = request,
-                    mode = null,
-                    merged = true,
-                    skipped = false,
-                    outcome = null
-                )
-                return
-            }
-
-            val existingMerge = pendingMergeRequest
-            pendingMergeRequest = if (existingMerge == null) {
-                request
-            } else {
-                mergeRecoveryRequests(existingMerge, request)
-            }
-
-            val hadExisting = existingMerge != null
-            if (hadExisting) {
-                recoveryMergedCount.incrementAndGet()
-                logRecoveryEvent(
-                    event = "merged_window",
-                    request = request,
-                    mode = null,
-                    merged = true,
-                    skipped = false,
-                    outcome = null
-                )
-            }
-
-            if (recoveryMergeJob?.isActive != true) {
-                recoveryMergeJob = serviceScope.launch {
-                    delay(recoveryMergeWindowMs)
-                    val toRun = synchronized(this@SingBoxService) {
-                        val r = pendingMergeRequest
-                        pendingMergeRequest = null
-                        r
-                    }
-                    if (toRun != null) {
-                        executeRecoveryRequest(toRun)
-                    }
-                }
-            }
-        }
-    }
-
-    protected fun mergeRecoveryRequests(
-        existing: RecoveryRequest,
-        incoming: RecoveryRequest
-    ): RecoveryRequest {
-        val winning = SingBoxService.chooseHigherPriorityRecovery(existing, incoming)
-        return if (winning.merged) winning else winning.copy(merged = true)
-    }
-
-    protected fun cancelPendingRecoveryWork() {
-        recoveryMergeJob?.cancel()
-        recoveryMergeJob = null
-        pendingMergeRequest = null
-        pendingRecoveryRequest = null
-
-        foregroundHardFallbackJob?.cancel()
-        foregroundHardFallbackJob = null
-
-        networkTypeChangedFallbackJob?.cancel()
-        networkTypeChangedFallbackJob = null
-    }
-
-    protected fun recoveryInvalidStateSummary(): String? {
-        return SingBoxService.buildRecoveryInvalidStateSummary(
-            isRunning = SingBoxService.isRunning,
-            isStarting = SingBoxService.isStarting,
-            isStopping = isStopping,
-            isManuallyStopped = SingBoxService.isManuallyStopped
-        )
-    }
-
-    protected fun buildRecoveryDebounceContext(request: RecoveryRequest): SingBoxServiceRecoveryDebounceContext {
-        val lane = if (request.reason.isFastLane) "fast" else "normal"
-        val effectiveGlobalDebounceMs = if (request.reason.isFastLane) {
-            recoveryFastLaneGlobalDebounceMs
-        } else {
-            recoveryGlobalDebounceMs
-        }
-        val effectiveSourceDebounceMs = if (request.reason.isFastLane) {
-            minOf(request.reason.sourceDebounceMs, recoveryFastLaneSourceDebounceCapMs)
-        } else {
-            request.reason.sourceDebounceMs
-        }
-        return SingBoxServiceRecoveryDebounceContext(
-            now = SystemClock.elapsedRealtime(),
-            lane = lane,
-            effectiveGlobalDebounceMs = effectiveGlobalDebounceMs,
-            effectiveSourceDebounceMs = effectiveSourceDebounceMs,
-            reasonKey = request.reason.name
-        )
-    }
-
-    protected fun shouldSkipByGlobalDebounce(
-        request: RecoveryRequest,
-        context: SingBoxServiceRecoveryDebounceContext
-    ): Boolean {
-        val lastGlobal = recoveryLastTriggeredAtMs.get()
-        if (!request.force && context.now - lastGlobal < context.effectiveGlobalDebounceMs) {
-            recoverySkippedDebounceCount.incrementAndGet()
-            logRecoveryEvent(
-                event = "skipped_global_debounce",
-                request = request,
-                mode = null,
-                merged = request.merged,
-                skipped = true,
-                outcome = "debounce(lane=${context.lane},threshold=${context.effectiveGlobalDebounceMs}ms)"
-            )
-            return true
-        }
-        return false
-    }
-
-    protected fun shouldSkipBySourceDebounce(
-        request: RecoveryRequest,
-        context: SingBoxServiceRecoveryDebounceContext
-    ): Boolean {
-        val reasonLast = recoveryReasonLastAtMs[context.reasonKey] ?: 0L
-        if (!request.force && context.now - reasonLast < context.effectiveSourceDebounceMs) {
-            recoverySkippedDebounceCount.incrementAndGet()
-            logRecoveryEvent(
-                event = "skipped_source_debounce",
-                request = request,
-                mode = null,
-                merged = request.merged,
-                skipped = true,
-                outcome = "debounce(lane=${context.lane},threshold=${context.effectiveSourceDebounceMs}ms)"
-            )
-            return true
-        }
-        return false
-    }
-
-    protected fun requestImmediateRouteGroupReselectIfNeeded(request: RecoveryRequest) {
-        if (!SingBoxService.shouldTriggerRouteGroupImmediateReselect(request.reason)) {
-            return
-        }
-        routeGroupSelector.requestImmediateReselect(request.rawReason)
-    }
-
-    protected fun convergeConnectionsAfterImmediateRouteGroupSwitch(
-        groupTag: String,
-        previousSelectedTag: String,
-        newSelectedTag: String,
-        rawReason: String
-    ) {
-        val reason = RecoveryReason.fromReasonString(rawReason)
-        if (!SingBoxService.shouldConvergeConnectionsAfterImmediateRouteGroupSwitch(reason)) {
-            return
-        }
-
-        val now = SystemClock.elapsedRealtime()
-        if (!SingBoxService.shouldRunRouteGroupSwitchConvergence(
-                lastTriggeredAtMs = lastConnectionsResetAtMs,
-                nowAtMs = now,
-                debounceMs = connectionsResetDebounceMs
-            )
-        ) {
-            Log.d(
-                SingBoxService.TAG,
-                "[RouteGroupConvergence] skipped by debounce, group=$groupTag, " +
-                    "from=$previousSelectedTag, to=$newSelectedTag, reason=$rawReason"
-            )
-            return
-        }
-
-        lastConnectionsResetAtMs = now
-        val closedTrackedConnections = BoxWrapperManager.closeAllTrackedConnections()
-        val resetAllTriggered = BoxWrapperManager.resetAllConnections(true)
-        Log.i(
-            SingBoxService.TAG,
-            "[RouteGroupConvergence] group=$groupTag from=$previousSelectedTag to=$newSelectedTag, " +
-                "reason=${reason.name}, closedTracked=$closedTrackedConnections, " +
-                "resetAllTriggered=$resetAllTriggered"
-        )
-    }
-
-    @Suppress("LongMethod", "CognitiveComplexMethod", "ReturnCount", "CyclomaticComplexMethod")
-    protected suspend fun executeRecoveryRequest(request: RecoveryRequest) {
-        synchronized(this) {
-            recoveryInFlight = true
-        }
-        try {
-            val invalidState = recoveryInvalidStateSummary()
-            if (invalidState != null) {
-                logRecoveryEvent(
-                    event = "skipped_invalid_state",
-                    request = request,
-                    mode = null,
-                    merged = request.merged,
-                    skipped = true,
-                    outcome = "invalid_state($invalidState)"
-                )
-                return
-            }
-
-            val recoveryProfile = getRecoveryProfile()
-            val forceDowngraded = SingBoxService.shouldDowngradeForceForHysteria2(
-                profile = recoveryProfile,
-                reason = request.reason,
-                force = request.force
-            )
-            val executionForce = if (forceDowngraded) false else request.force
-            val context = buildRecoveryDebounceContext(request)
-            if (shouldSkipByGlobalDebounce(request, context)) return
-            if (shouldSkipBySourceDebounce(request, context)) return
-
-            recoveryLastTriggeredAtMs.set(context.now)
-            recoveryReasonLastAtMs[context.reasonKey] = context.now
-            recoveryTriggerCount.incrementAndGet()
-
-            val smartResult = BoxWrapperManager.smartRecover(
-                context = this@SingBoxService,
-                source = request.rawReason,
-                skipProbe = executionForce
-            )
-
-            if (smartResult.needsKernelRestart) {
-                recoveryHardCount.incrementAndGet()
-                recoverySuccessCount.incrementAndGet()
-                recoveryConsecutiveFailureCount.set(0)
-                logRecoveryEvent(
-                    event = "executed",
-                    request = request,
-                    mode = BoxWrapperManager.RecoveryMode.HARD,
-                    merged = request.merged,
-                    skipped = false,
-                    outcome = "nuclear_kernel_restart"
-                )
-                Log.w(
-                    SingBoxService.TAG,
-                    "[Recovery] Nuclear recovery needs kernel restart. Restarting VPN service."
-                )
-                restartVpnService("nuclear_recovery")
-                return
-            }
-
-            val mode = when (smartResult.level) {
-                BoxWrapperManager.RecoveryLevel.NONE,
-                BoxWrapperManager.RecoveryLevel.PROBE -> BoxWrapperManager.RecoveryMode.SOFT
-                BoxWrapperManager.RecoveryLevel.SELECTIVE -> {
-                    recoverySoftCount.incrementAndGet()
-                    BoxWrapperManager.RecoveryMode.SOFT
-                }
-                BoxWrapperManager.RecoveryLevel.NUCLEAR -> {
-                    recoveryHardCount.incrementAndGet()
-                    BoxWrapperManager.RecoveryMode.HARD
-                }
-            }
-
-            val success = smartResult.success
-            if (success) {
-                recoverySuccessCount.incrementAndGet()
-                recoveryConsecutiveFailureCount.set(0)
-            } else {
-                recoveryFailureCount.incrementAndGet()
-                recoveryConsecutiveFailureCount.incrementAndGet()
-            }
-
-            val successRate = calculateRecoverySuccessRate()
-            val outcomeDetail = buildString {
-                append(if (success) "success" else "failed")
-                append("(level=${smartResult.level}")
-                smartResult.probeLatencyMs?.let { append(",probe=${it}ms") }
-                if (smartResult.closedConnections > 0) {
-                    append(",closed=${smartResult.closedConnections}")
-                }
-                if (forceDowngraded) {
-                    append(",force_downgraded=true")
-                }
-                append(",rate=$successRate)")
-            }
-            logRecoveryEvent(
-                event = "executed",
-                request = request,
-                mode = mode,
-                merged = request.merged,
-                skipped = false,
-                outcome = outcomeDetail
-            )
-
-            requestImmediateRouteGroupReselectIfNeeded(request)
-
-            if (smartResult.level == BoxWrapperManager.RecoveryLevel.PROBE) {
-                scheduleForegroundHardFallbackIfNeeded(request, mode, success)
-            }
-            scheduleNetworkTypeChangedFallbackIfNeeded(request, mode, success)
-        } finally {
-            val nextRequest = synchronized(this) {
-                recoveryInFlight = false
-                val next = pendingRecoveryRequest
-                pendingRecoveryRequest = null
-                next
-            }
-            if (nextRequest != null) {
-                executeRecoveryRequest(nextRequest)
-            }
-        }
-    }
-
-    protected fun calculateRecoverySuccessRate(): String {
-        val success = recoverySuccessCount.get()
-        val failure = recoveryFailureCount.get()
-        val total = success + failure
-        if (total <= 0L) return "n/a"
-        val percentage = (success * 100.0) / total.toDouble()
-        return "%.1f%%".format(java.util.Locale.US, percentage)
-    }
-
-    /**
-     * 2025-fix-v7: 前台快速恢复 - 跳过探测，直接 wake + resetNetwork
-     * 比 smartRecover 少 2-5 秒（不做 PROBE + SELECTIVE 的验证循环）
-     * 仅在 APP_FOREGROUND + force 时使用
-     */
-
-    protected fun isSelectedHysteria2Outbound(): Boolean {
-        val selectedTag = SelectorManager.getSelectedOutbound()
-            ?: BoxWrapperManager.getSelectedOutbound()
-            ?: return false
-
-        return try {
-            val configPath = SingBoxService.lastConfigPath ?: File(filesDir, "running_config.json").absolutePath
-            val configContent = File(configPath).takeIf { it.exists() }?.readText() ?: return false
-            val config = gson.fromJson(configContent, SingBoxConfig::class.java) ?: return false
-            config.outbounds
-                ?.firstOrNull { it.tag == selectedTag }
-                ?.type
-                ?.equals("hysteria2", ignoreCase = true) == true
-        } catch (e: Exception) {
-            Log.w(SingBoxService.TAG, "isSelectedHysteria2Outbound failed: ${e.message}")
-            false
-        }
-    }
-
-    protected fun getRecoveryProfile(): RecoveryProfile {
-        return if (isSelectedHysteria2Outbound()) RecoveryProfile.HYSTERIA2 else RecoveryProfile.DEFAULT
-    }
-
-    protected fun executeForegroundFastRecovery(request: RecoveryRequest) {
-        val invalidState = recoveryInvalidStateSummary()
-        if (invalidState != null) {
-            logRecoveryEvent(
-                event = "foreground_fast_recovery_skipped_state",
-                request = request,
-                mode = BoxWrapperManager.RecoveryMode.SOFT,
-                merged = false,
-                skipped = true,
-                outcome = "invalid_state($invalidState)"
-            )
-            return
-        }
-
-        val startMs = SystemClock.elapsedRealtime()
-        val isHy2 = isSelectedHysteria2Outbound()
-
-        val recoveryProfile = getRecoveryProfile()
-        BoxWrapperManager.wake()
-        if (SingBoxService.shouldCloseConnectionsDuringForegroundFastRecovery(recoveryProfile)) {
-            BoxWrapperManager.closeAllTrackedConnections()
-            BoxWrapperManager.resetAllConnections(true)
-        } else if (isHy2) {
-            Log.i(SingBoxService.TAG, "[ForegroundFastRecovery] hysteria2 selected, skip aggressive reset")
-        }
-        BoxWrapperManager.resetNetwork()
-
-        val elapsedMs = SystemClock.elapsedRealtime() - startMs
-        Log.i(SingBoxService.TAG, "[ForegroundFastRecovery] completed in ${elapsedMs}ms")
-
-        recoveryLastTriggeredAtMs.set(SystemClock.elapsedRealtime())
-        recoveryTriggerCount.incrementAndGet()
-        recoverySoftCount.incrementAndGet()
-        recoverySuccessCount.incrementAndGet()
-        recoveryConsecutiveFailureCount.set(0)
-
-        logRecoveryEvent(
-            event = "foreground_fast_recovery",
-            request = request,
-            mode = BoxWrapperManager.RecoveryMode.SOFT,
-            merged = false,
-            skipped = false,
-            outcome = if (isHy2) "hy2_fast_path(${elapsedMs}ms)" else "fast_path(${elapsedMs}ms)"
-        )
-
-        scheduleForegroundHardFallbackIfNeeded(
-            request = request,
-            mode = BoxWrapperManager.RecoveryMode.SOFT,
-            success = true
-        )
-    }
-
-    protected fun evaluateForegroundFallbackState(): SingBoxServiceForegroundFallbackState {
-        val invalidState = recoveryInvalidStateSummary()
-        val stateSkipOutcome = invalidState?.let { "state_$it" } ?: ""
-        val shouldSkipByState = invalidState != null
-
-        val now = SystemClock.elapsedRealtime()
-        val elapsed = now - lastForegroundHardFallbackAtMs.get()
-        val shouldSkipByDebounce = elapsed in 0 until foregroundHardFallbackDebounceMs
-
-        val skipReason = when {
-            shouldSkipByState -> "state"
-            vpnLinkValidated -> "validated"
-            shouldSkipByDebounce -> "debounce"
-            else -> null
-        }
-
-        return when (skipReason) {
-            "state" -> SingBoxServiceForegroundFallbackState(
-                shouldSkip = true,
-                event = "foreground_hard_fallback_skipped_state",
-                outcome = stateSkipOutcome
-            )
-            "validated" -> SingBoxServiceForegroundFallbackState(
-                shouldSkip = true,
-                event = "foreground_hard_fallback_skipped_validated",
-                outcome = "vpn_link_validated"
-            )
-            "debounce" -> SingBoxServiceForegroundFallbackState(
-                shouldSkip = true,
-                event = "foreground_hard_fallback_skipped_debounce",
-                outcome = "debounce(elapsed=${elapsed}ms," +
-                    "threshold=${foregroundHardFallbackDebounceMs}ms)"
-            )
-            else -> {
-                lastForegroundHardFallbackAtMs.set(now)
-                SingBoxServiceForegroundFallbackState(
-                    shouldSkip = false,
-                    event = "foreground_hard_fallback_enqueued",
-                    outcome = "grace=${foregroundRecoveryGraceMs}ms"
-                )
-            }
-        }
-    }
-
-    protected suspend fun collectForegroundHardFallbackProbeSignal(): SingBoxServiceForegroundHardFallbackProbeSignal {
-        return SingBoxService.collectForegroundHardFallbackProbeSignal(
-            physicalProbe = {
-                ProbeManager.probeFirstSuccessViaVpn(
-                    context = this@SingBoxService,
-                    timeoutMs = 1500L
-                ) != null
-            },
-            tunnelProbe = {
-                BoxWrapperManager.probeTunnelViaLocalProxy(
-                    context = this@SingBoxService,
-                    timeoutMs = 3000L,
-                    probeUrlOverride = BoxWrapperManager.FOREGROUND_TUNNEL_HEALTH_PROBE_URL,
-                    healthyWhenProxyUnavailable = false
-                )
-            }
-        )
-    }
-
-    protected fun scheduleForegroundHardFallbackIfNeeded(
-        request: RecoveryRequest,
-        mode: BoxWrapperManager.RecoveryMode,
-        success: Boolean
-    ) {
-        if (!SingBoxService.shouldScheduleForegroundHardFallback(request, mode, success)) {
-            return
-        }
-
-        foregroundHardFallbackJob?.cancel()
-        foregroundHardFallbackJob = serviceScope.launch {
-            delay(foregroundRecoveryGraceMs)
-
-            val signal = collectForegroundHardFallbackProbeSignal()
-
-            if (SingBoxService.shouldSkipForegroundHardFallbackAfterProbe(signal)) {
-                logRecoveryEvent(
-                    event = "foreground_hard_fallback_skipped_probe_ok",
-                    request = request,
-                    mode = BoxWrapperManager.RecoveryMode.HARD,
-                    merged = false,
-                    skipped = true,
-                    outcome = "physical_probe_ok_and_google_tunnel_probe_ok"
-                )
-                return@launch
-            }
-
-            Log.w(
-                TAG,
-                "[RecoveryGate] foreground HARD fallback probe did not prove tunnel healthy: " +
-                    "physicalProbeOk=${signal.physicalProbeOk}, " +
-                    "tunnelProbeOk=${signal.tunnelProbeOk}, " +
-                    "url=${BoxWrapperManager.FOREGROUND_TUNNEL_HEALTH_PROBE_URL}"
-            )
-
-            val state = evaluateForegroundFallbackState()
-            logRecoveryEvent(
-                event = state.event,
-                request = request,
-                mode = BoxWrapperManager.RecoveryMode.HARD,
-                merged = false,
-                skipped = state.shouldSkip,
-                outcome = state.outcome
-            )
-            if (state.shouldSkip) {
-                return@launch
-            }
-
-            val hardRequest = RecoveryRequest(
-                reason = RecoveryReason.APP_FOREGROUND,
-                rawReason = "app_foreground_hard_fallback",
-                force = true,
-                requestedAtMs = SystemClock.elapsedRealtime(),
-                merged = false
-            )
-
-            submitRecoveryRequest(hardRequest)
-        }
-    }
-
-    protected suspend fun collectNetworkTypeChangedRecoverySignal(): SingBoxServiceNetworkTypeChangedRecoverySignal {
-        val probeSucceeded = runCatching {
-            ProbeManager.probeFirstSuccessViaVpn(
-                context = this@SingBoxService,
-                timeoutMs = 1500L
-            )
-        }.getOrNull() != null
-
-        val tunnelProbeSucceeded = if (probeSucceeded) {
-            runCatching {
-                BoxWrapperManager.probeTunnelViaLocalProxy(
-                    context = this@SingBoxService,
-                    timeoutMs = 3000L,
-                    probeUrlOverride = BoxWrapperManager.FOREGROUND_TUNNEL_HEALTH_PROBE_URL,
-                    healthyWhenProxyUnavailable = false
-                )
-            }.getOrDefault(false)
-        } else {
-            false
-        }
-
-        val networkRecoveryNeeded = runCatching {
-            !BoxWrapperManager.isAvailable() || BoxWrapperManager.isNetworkRecoveryNeeded()
-        }.getOrDefault(true)
-
-        return SingBoxServiceNetworkTypeChangedRecoverySignal(
-            probeSucceeded = probeSucceeded,
-            tunnelProbeSucceeded = tunnelProbeSucceeded,
-            networkRecoveryNeeded = networkRecoveryNeeded,
-            strongSignal = SingBoxService.hasStrongNetworkTypeChangedRecoverySignal(
-                probeSucceeded = probeSucceeded,
-                tunnelProbeSucceeded = tunnelProbeSucceeded,
-                networkRecoveryNeeded = networkRecoveryNeeded
-            )
-        )
-    }
-
-    protected fun evaluateNetworkTypeChangedFallbackState(
-        mode: BoxWrapperManager.RecoveryMode,
-        signal: SingBoxServiceNetworkTypeChangedRecoverySignal
-    ): SingBoxServiceNetworkTypeChangedFallbackState {
-        val signalOutcome = "probe_ok=${signal.probeSucceeded}," +
-            "tunnel_probe_ok=${signal.tunnelProbeSucceeded}," +
-            "network_recovery_needed=${signal.networkRecoveryNeeded}"
-        val fallbackState = buildNetworkTypeChangedStateSkip()
-            ?: if (signal.strongSignal) {
-                SingBoxServiceNetworkTypeChangedFallbackState(
-                    shouldSkip = true,
-                    event = "network_type_changed_fallback_skipped_recovered",
-                    outcome = signalOutcome
-                )
-            } else {
-                buildTriggeredNetworkTypeChangedFallbackState(mode, signalOutcome)
-            }
-        return fallbackState
-    }
-
-    protected fun buildTriggeredNetworkTypeChangedFallbackState(
-        mode: BoxWrapperManager.RecoveryMode,
-        signalOutcome: String
-    ): SingBoxServiceNetworkTypeChangedFallbackState {
-        val action = SingBoxService.determineNetworkTypeChangedFallbackAction(mode)
-        val now = SystemClock.elapsedRealtime()
-        val debounceMs = resolveNetworkTypeChangedFallbackDebounceMs(action)
-        val lastActionAtMs = resolveLastNetworkTypeChangedFallbackAtMs(action)
-        return if (!SingBoxService.shouldRunNetworkTypeChangedFallback(lastActionAtMs, now, debounceMs)) {
-            SingBoxServiceNetworkTypeChangedFallbackState(
-                shouldSkip = true,
-                event = "network_type_changed_fallback_skipped_debounce",
-                outcome = "$signalOutcome,action=${action.name},debounce=${debounceMs}ms"
-            )
-        } else {
-            recordNetworkTypeChangedFallbackAt(action, now)
-            SingBoxServiceNetworkTypeChangedFallbackState(
-                shouldSkip = false,
-                event = "network_type_changed_fallback_triggered",
-                outcome = "$signalOutcome,action=${action.name}",
-                action = action
-            )
-        }
-    }
-
-    protected fun buildNetworkTypeChangedStateSkip(): SingBoxServiceNetworkTypeChangedFallbackState? {
-        val stateSkipOutcome = recoveryInvalidStateSummary()?.let { "state_$it" } ?: ""
-        val shouldSkipByState = SingBoxService.shouldSkipNetworkTypeChangedFallbackByState(
-            isRunning = SingBoxService.isRunning,
-            isStarting = SingBoxService.isStarting,
-            isStopping = isStopping,
-            isManuallyStopped = SingBoxService.isManuallyStopped
-        )
-        return if (shouldSkipByState) {
-            SingBoxServiceNetworkTypeChangedFallbackState(
-                shouldSkip = true,
-                event = "network_type_changed_fallback_skipped_state",
-                outcome = stateSkipOutcome
-            )
-        } else {
-            null
-        }
-    }
-
-    protected fun resolveLastNetworkTypeChangedFallbackAtMs(
-        action: NetworkTypeChangedFallbackAction
-    ): Long {
-        return if (action == NetworkTypeChangedFallbackAction.ESCALATE_HARD) {
-            lastNetworkTypeChangedHardFallbackAtMs.get()
-        } else {
-            lastNetworkTypeChangedRestartAtMs.get()
-        }
-    }
-
-    protected fun resolveNetworkTypeChangedFallbackDebounceMs(
-        action: NetworkTypeChangedFallbackAction
-    ): Long {
-        return if (action == NetworkTypeChangedFallbackAction.ESCALATE_HARD) {
-            networkTypeChangedHardFallbackDebounceMs
-        } else {
-            networkTypeChangedRestartDebounceMs
-        }
-    }
-
-    protected fun recordNetworkTypeChangedFallbackAt(
-        action: NetworkTypeChangedFallbackAction,
-        now: Long
-    ) {
-        if (action == NetworkTypeChangedFallbackAction.ESCALATE_HARD) {
-            lastNetworkTypeChangedHardFallbackAtMs.set(now)
-        } else {
-            lastNetworkTypeChangedRestartAtMs.set(now)
-        }
-    }
-
-    protected fun scheduleNetworkTypeChangedFallbackIfNeeded(
-        request: RecoveryRequest,
-        mode: BoxWrapperManager.RecoveryMode,
-        success: Boolean
-    ) {
-        if (!SingBoxService.shouldScheduleNetworkTypeChangedFallback(request, success)) {
-            return
-        }
-
-        networkTypeChangedFallbackJob?.cancel()
-        networkTypeChangedFallbackJob = serviceScope.launch {
-            delay(networkTypeChangedRecoveryGraceMs)
-
-            val signal = collectNetworkTypeChangedRecoverySignal()
-            val state = evaluateNetworkTypeChangedFallbackState(mode, signal)
-            logRecoveryEvent(
-                event = state.event,
-                request = request,
-                mode = mode,
-                merged = false,
-                skipped = state.shouldSkip,
-                outcome = state.outcome
-            )
-            if (state.shouldSkip) {
-                return@launch
-            }
-
-            when (state.action) {
-                NetworkTypeChangedFallbackAction.ESCALATE_HARD -> {
-                    val hardRequest = RecoveryRequest(
-                        reason = RecoveryReason.NETWORK_TYPE_CHANGED,
-                        rawReason = "network_type_changed_hard_fallback",
-                        force = true,
-                        requestedAtMs = SystemClock.elapsedRealtime(),
-                        merged = false
-                    )
-                    submitRecoveryRequest(hardRequest)
-                }
-
-                NetworkTypeChangedFallbackAction.RESTART_VPN -> {
-                    restartVpnService("network_type_changed_unrecovered")
-                }
-
-                null -> Unit
-            }
-        }
-    }
-
-    @Suppress("LongParameterList")
-    protected fun logRecoveryEvent(
-        event: String,
-        request: RecoveryRequest,
-        mode: BoxWrapperManager.RecoveryMode?,
-        merged: Boolean,
-        skipped: Boolean,
-        outcome: String?
-    ) {
-        val modeText = mode?.name ?: "n/a"
-        val lane = if (request.reason.isFastLane) "fast" else "normal"
-        val message = buildString {
-            append("[RecoveryGate] event=")
-            append(event)
-            append(" lane=")
-            append(lane)
-            append(" reason=")
-            append(request.reason.name)
-            append(" raw=")
-            append(request.rawReason)
-            append(" priority=")
-            append(request.reason.priority)
-            append(" mode=")
-            append(modeText)
-            append(" merged=")
-            append(merged)
-            append(" skipped=")
-            append(skipped)
-            append(" force=")
-            append(request.force)
-            append(" trigger_count=")
-            append(recoveryTriggerCount.get())
-            append(" merged_count=")
-            append(recoveryMergedCount.get())
-            append(" skipped_debounce=")
-            append(recoverySkippedDebounceCount.get())
-            append(" soft_count=")
-            append(recoverySoftCount.get())
-            append(" hard_count=")
-            append(recoveryHardCount.get())
-            append(" success_rate=")
-            append(calculateRecoverySuccessRate())
-            if (!outcome.isNullOrBlank()) {
-                append(" outcome=")
-                append(outcome)
-            }
-        }
-        Log.i(SingBoxService.TAG, message)
-        runCatching { LogRepository.getInstance().addLog("INFO: $message") }
-    }
-
-    /**
-     * 重启 VPN 服务以彻底清理网络状态
-     * 用于处理网络栈重置无效的严重情况
-     */
-
-    protected suspend fun restartVpnService(reason: String) = withContext(Dispatchers.Main) {
-        L.vpn("Restart", "Restarting: $reason")
-
-        // 保存当前配置路径
-        val configPath = SingBoxService.lastConfigPath ?: run {
-            L.warn("Restart", "Cannot restart: no config path")
-            return@withContext
-        }
-
-        try {
-            synchronized(this@SingBoxService) {
-                pendingStartConfigPath = configPath
-                stopSelfRequested = false
-                SingBoxService.lastConfigPath = configPath
-            }
-
-            // 停止当前服务，清理完成后由 ShutdownManager 接续启动
-            stopVpn(stopService = false)
-            L.result("Restart", true, "VPN restart queued")
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            L.error("Restart", "Failed to restart VPN", e)
-            SingBoxService.setLastError("Failed to restart VPN: ${e.message}")
-        }
     }
 
     // 屏幕/前台状态从 ScreenStateManager 读取
 
-    protected fun findBestPhysicalNetwork(): Network? {
-        // 优先使用 ConnectManager (新架构)
-        connectManager.getCurrentNetwork()?.let { return it }
-        // 回退到 NetworkManager
-        networkManager?.findBestPhysicalNetwork()?.let { return it }
-        // 当 networkManager 为 null 时（服务重启期间），使用 NetworkHelper 的回退逻辑
-        return networkHelper.findBestPhysicalNetworkFallback()
+    protected fun getCurrentPhysicalNetwork(): Network? {
+        return StateCache.getNetwork {
+            connectivityManager?.let { DefaultNetworkListener.selectBestPhysicalNetwork(it) }
+        }
     }
 
-    protected fun updateDefaultInterface(network: Network) {
-        networkHelper.updateDefaultInterface(
-            network = network,
-            vpnStartedAtMs = vpnStartedAtMs.get(),
-            startupWindowMs = vpnStartupWindowMs,
-            defaultInterfaceName = defaultInterfaceName,
-            lastKnownNetwork = lastKnownNetwork,
-            lastSetUnderlyingAtMs = lastSetUnderlyingNetworksAtMs.get(),
-            debounceMs = setUnderlyingNetworksDebounceMs,
-            isRunning = SingBoxService.isRunning,
-            setUnderlyingNetworks = { networks -> setUnderlyingNetworks(networks) },
-            updateInterfaceListener = { name, index, expensive, constrained ->
-                currentInterfaceListener?.updateDefaultInterface(name, index, expensive, constrained)
-            },
-            updateState = { net, iface, now ->
-                lastKnownNetwork = net
-                defaultInterfaceName = iface
-                lastSetUnderlyingNetworksAtMs.set(now)
-                noPhysicalNetworkWarningLogged = false
-            }
-        )
+    protected fun markPhysicalNetworkChanged() {
+        StateCache.invalidateNetworkCache()
+    }
+
+    protected fun findBestPhysicalNetwork(): Network? {
+        return getCurrentPhysicalNetwork()
     }
 
     override fun onCreate() {
         super.onCreate()
         Log.e(SingBoxService.TAG, "SingBoxService onCreate: pid=${android.os.Process.myPid()} SingBoxService.instance=${System.identityHashCode(this)}")
-        SingBoxService.instance = this as SingBoxService
+        SingBoxService.instance = this
 
         // Restore manually stopped state from persistent storage
         SingBoxService.isManuallyStopped = VpnStateStore.isManuallyStopped()
@@ -2760,6 +1440,13 @@ class SingBoxService : VpnService() {
         notificationManager.createNotificationChannel()
         // 初始化 ConnectivityManager
         connectivityManager = getSystemService(ConnectivityManager::class.java)
+
+        connectivityManager?.let { manager ->
+            // 保证 Start 消息先于 onDestroy 的 Stop 入队，避免监听器残留。
+            DefaultNetworkListener.start(manager, defaultNetworkListenerKey) {
+                markPhysicalNetworkChanged()
+            }
+        }
 
         // ===== 初始化新架构 Managers =====
         initManagers()
@@ -2798,10 +1485,6 @@ class SingBoxService : VpnService() {
         screenStateManager.registerActivityLifecycleCallbacks(application)
     }
 
-    /**
-     *
-     */
-
     override fun onTrimMemory(level: Int) {
         super.onTrimMemory(level)
 
@@ -2821,11 +1504,13 @@ class SingBoxService : VpnService() {
             handleStickyRestartIntent()
             return START_STICKY
         }
-        when (intent?.action) {
+        when (intent.action) {
             SingBoxService.ACTION_START -> {
                 SingBoxService.isManuallyStopped = false
                 VpnStateStore.setManuallyStopped(false)
-                VpnTileService.persistVpnPending(applicationContext, "starting")
+                SingBoxService.setLastError(null)
+                VpnStateStore.setLastError(null)
+                VpnTileService.persistVpnPending("starting")
 
                 // 性能优化: 预创建 TUN Builder (非阻塞)
                 coreManager.preallocateTunBuilder()
@@ -2925,7 +1610,7 @@ class SingBoxService : VpnService() {
                 Log.i(SingBoxService.TAG, "Received SingBoxService.ACTION_STOP (manual) -> stopping VPN")
                 SingBoxService.isManuallyStopped = true
                 VpnStateStore.setManuallyStopped(true)
-                VpnTileService.persistVpnPending(applicationContext, "stopping")
+                VpnTileService.persistVpnPending("stopping")
                 updateServiceState(ServiceState.STOPPING)
                 notificationManager.setSuppressUpdates(true)
                 notificationManager.cancelNotification()
@@ -3012,18 +1697,10 @@ class SingBoxService : VpnService() {
                 Log.i(SingBoxService.TAG, "Received SingBoxService.ACTION_RESET_CONNECTIONS -> user requested connection reset")
                 if (SingBoxService.isRunning) {
                     serviceScope.launch {
-                        BoxWrapperManager.resetAllConnections(true)
+                        commandManager.closeConnections()
                         runCatching {
                             LogRepository.getInstance().addLog("INFO: User triggered connection reset via notification")
                         }
-                    }
-                }
-            }
-            SingBoxService.ACTION_NETWORK_BUMP -> {
-                Log.i(SingBoxService.TAG, "Received SingBoxService.ACTION_NETWORK_BUMP -> triggering network bump")
-                if (SingBoxService.isRunning) {
-                    serviceScope.launch {
-                        BoxWrapperManager.closeIdleConnections(30)
                     }
                 }
             }
@@ -3056,7 +1733,7 @@ class SingBoxService : VpnService() {
         Log.w(SingBoxService.TAG, "Sticky restart recovering VPN from ${runningConfigFile.absolutePath}")
         SingBoxService.isManuallyStopped = false
         VpnStateStore.setManuallyStopped(false)
-        VpnTileService.persistVpnPending(applicationContext, "starting")
+        VpnTileService.persistVpnPending("starting")
         updateServiceState(ServiceState.STARTING)
         startVpn(runningConfigFile.absolutePath)
     }
@@ -3071,9 +1748,9 @@ class SingBoxService : VpnService() {
             stopSelfRequested = false
         }
         NetworkClient.onVpnStateChanged(false)
-        VpnTileService.persistVpnState(applicationContext, false)
+        VpnTileService.persistVpnState(false)
         VpnStateStore.setMode(VpnStateStore.CoreMode.NONE)
-        VpnTileService.persistVpnPending(applicationContext, "")
+        VpnTileService.persistVpnPending("")
         updateServiceState(ServiceState.STOPPED)
         updateTileState()
     }
@@ -3103,9 +1780,7 @@ class SingBoxService : VpnService() {
                 coreManager.wakeService()
 
                 Log.i(SingBoxService.TAG, "[PrepareRestart] Step 2/3: Disconnect underlying network")
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP_MR1) {
-                    setUnderlyingNetworks(null)
-                }
+                setUnderlyingNetworks(null)
 
                 // Step 3: 等待应用收到广播
                 // 不需要太长时间，因为VPN重启本身也需要时间
@@ -3157,46 +1832,65 @@ class SingBoxService : VpnService() {
         }
     }
 
+    @Suppress("CyclomaticComplexMethod", "CognitiveComplexMethod", "ReturnCount")
     protected fun performHotReload(configContent: String) {
-        if (!SingBoxService.isRunning) {
-            Log.w(SingBoxService.TAG, "performHotReload: VPN not running, skip")
-            return
-        }
+        synchronized(this) {
+            if (!SingBoxService.isRunning || isStopping) {
+                Log.w(SingBoxService.TAG, "performHotReload: VPN not running or stopping, skip")
+                return
+            }
+            val startToken = coreManager.captureStartToken()
+            if (startToken == null) {
+                Log.w(SingBoxService.TAG, "performHotReload: lifecycle token unavailable")
+                return
+            }
+            hotReloadJob?.cancel()
 
-        serviceScope.launch {
-            try {
-                Log.i(SingBoxService.TAG, "[HotReload] Starting kernel-level hot reload...")
+            val job = serviceScope.launch {
+                try {
+                    Log.i(SingBoxService.TAG, "[HotReload] Starting kernel-level hot reload...")
 
-                // 更新 CoreManager 的设置，确保后续操作使用最新设置
-                val settingsRepository = SettingsRepository.getInstance(applicationContext)
-                settingsRepository.reloadFromStorage()
-                val settings = settingsRepository.settings.first()
-                coreManager.setCurrentSettings(settings)
-                val runtimeConfigContent = prepareRuntimeConfigForLocalNetwork(configContent, settings)
+                    val settingsRepository = SettingsRepository.getInstance(applicationContext)
+                    settingsRepository.reloadFromStorage()
+                    val settings = settingsRepository.settings.first()
+                    coreManager.setCurrentSettings(settings)
+                    val runtimeConfigContent = prepareRuntimeConfigForLocalNetwork(configContent, settings)
 
-                val result = coreManager.hotReloadConfig(runtimeConfigContent, preserveSelector = true)
+                    val result = coreManager.hotReloadConfig(runtimeConfigContent, startToken)
 
-                result.onSuccess { success ->
-                    if (success) {
-                        Log.i(SingBoxService.TAG, "[HotReload] Kernel hot reload succeeded")
-                        LogRepository.getInstance().addLog("INFO [HotReload] Config reloaded successfully")
+                    result.onSuccess { success ->
+                        if (success) {
+                            Log.i(SingBoxService.TAG, "[HotReload] Kernel hot reload succeeded")
+                            LogRepository.getInstance().addLog("INFO [HotReload] Config reloaded successfully")
 
-                        // Re-init BoxWrapperManager with current CommandServer
-                        commandManager.getCommandServer()?.let { server ->
-                            BoxWrapperManager.init(server)
+                            commandManager.getCommandServer()?.let { server ->
+                                BoxWrapperManager.init(server)
+                            }
+
+                            requestNotificationUpdate(force = true)
+                        } else if (!isStopping && SingBoxService.isRunning) {
+                            handleHotReloadFailure("Kernel hot reload not available")
                         }
-
-                        // Update notification
-                        requestNotificationUpdate(force = true)
-                    } else {
-                        handleHotReloadFailure("Kernel hot reload not available")
+                    }.onFailure { e ->
+                        if (!isStopping && SingBoxService.isRunning) {
+                            handleHotReloadFailure("Hot reload failed: ${e.message}")
+                        }
                     }
-                }.onFailure { e ->
-                    handleHotReloadFailure("Hot reload failed: ${e.message}")
+                } catch (e: CancellationException) {
+                    Log.i(SingBoxService.TAG, "performHotReload cancelled")
+                    throw e
+                } catch (e: Exception) {
+                    Log.e(SingBoxService.TAG, "performHotReload error", e)
+                    if (!isStopping && SingBoxService.isRunning) {
+                        handleHotReloadFailure("Hot reload error: ${e.message}")
+                    }
                 }
-            } catch (e: Exception) {
-                Log.e(SingBoxService.TAG, "performHotReload error", e)
-                handleHotReloadFailure("Hot reload error: ${e.message}")
+            }
+            hotReloadJob = job
+            job.invokeOnCompletion {
+                synchronized(this@SingBoxService) {
+                    if (hotReloadJob === job) hotReloadJob = null
+                }
             }
         }
     }
@@ -3218,39 +1912,25 @@ class SingBoxService : VpnService() {
     }
 
     protected fun performFullRestart(configPath: String) {
-        if (!SingBoxService.isRunning) {
-            Log.w(SingBoxService.TAG, "performFullRestart: VPN not running, starting directly")
+        val startDirectly = synchronized(this) {
+            if (!SingBoxService.isRunning && !SingBoxService.isStarting && !isStopping) {
+                true
+            } else {
+                pendingStartConfigPath = configPath
+                stopSelfRequested = false
+                SingBoxService.lastConfigPath = configPath
+                false
+            }
+        }
+
+        if (startDirectly) {
+            Log.i(SingBoxService.TAG, "performFullRestart: VPN inactive, starting directly")
             startVpn(configPath)
             return
         }
 
-        serviceScope.launch {
-            try {
-                Log.i(SingBoxService.TAG, "[FullRestart] Step 1/3: Stopping VPN completely...")
-
-                coreManager.closeTunInterface()
-
-                stopVpn(stopService = false)
-
-                var waitCount = 0
-                while (isStopping && waitCount < 50) {
-                    delay(100)
-                    waitCount++
-                }
-
-                Log.i(SingBoxService.TAG, "[FullRestart] Step 2/3: VPN stopped, waiting for cleanup...")
-                delay(200)
-
-                Log.i(SingBoxService.TAG, "[FullRestart] Step 3/3: Restarting VPN with new config...")
-                SingBoxService.lastConfigPath = configPath
-                startVpn(configPath)
-
-                Log.i(SingBoxService.TAG, "[FullRestart] Complete")
-            } catch (e: Exception) {
-                Log.e(SingBoxService.TAG, "performFullRestart error", e)
-                SingBoxService.setLastError("Full restart failed: ${e.message}")
-            }
-        }
+        Log.i(SingBoxService.TAG, "performFullRestart: queued restart after unified cleanup")
+        stopVpn(stopService = false)
     }
 
     /**
@@ -3264,10 +1944,11 @@ class SingBoxService : VpnService() {
      */
 
     fun performHotReloadSync(configContent: String): Boolean {
-        if (!SingBoxService.isRunning) {
-            Log.w(SingBoxService.TAG, "performHotReloadSync: VPN not running")
+        if (!SingBoxService.isRunning || isStopping) {
+            Log.w(SingBoxService.TAG, "performHotReloadSync: VPN not running or stopping")
             return false
         }
+        val startToken = coreManager.captureStartToken() ?: return false
 
         return try {
             kotlinx.coroutines.runBlocking(kotlinx.coroutines.Dispatchers.IO) {
@@ -3279,7 +1960,7 @@ class SingBoxService : VpnService() {
                 coreManager.setCurrentSettings(settings)
                 val runtimeConfigContent = prepareRuntimeConfigForLocalNetwork(configContent, settings)
 
-                val result = coreManager.hotReloadConfig(runtimeConfigContent, preserveSelector = true)
+                val result = coreManager.hotReloadConfig(runtimeConfigContent, startToken)
 
                 result.getOrNull() == true && result.isSuccess.also { success ->
                     if (success && result.getOrNull() == true) {
@@ -3295,6 +1976,8 @@ class SingBoxService : VpnService() {
                     }
                 }
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Log.e(SingBoxService.TAG, "performHotReloadSync error", e)
             false
@@ -3306,9 +1989,14 @@ class SingBoxService : VpnService() {
      * 原方法 ~430 行，现在简化为 ~90 行
      */
 
+    @Suppress("LongMethod", "CognitiveComplexMethod", "ReturnCount")
     protected fun startVpn(configPath: String) {
         // 状态检查（保留在 Service 中，因为涉及多线程同步）
-        synchronized(this) {
+        val startToken = synchronized(this) {
+            if (SingBoxService.isManuallyStopped) {
+                Log.w(SingBoxService.TAG, "VPN was manually stopped, reject stale start request")
+                return
+            }
             if (SingBoxService.isRunning) {
                 Log.w(SingBoxService.TAG, "VPN already running, ignore start request")
                 return
@@ -3324,7 +2012,13 @@ class SingBoxService : VpnService() {
                 SingBoxService.lastConfigPath = configPath
                 return
             }
+            val token = coreManager.captureStartToken()
+            if (token == null) {
+                Log.w(SingBoxService.TAG, "VPN lifecycle is stopping, reject stale start request")
+                return
+            }
             SingBoxService.isStarting = true
+            token
         }
 
         SingBoxService.lastConfigPath = configPath
@@ -3362,11 +2056,11 @@ class SingBoxService : VpnService() {
             clearStartCommandFailureState()
             stopSelf()
         } else {
-            continueStartVpnAfterForeground(configPath)
+            continueStartVpnAfterForeground(configPath, startToken)
         }
     }
 
-    protected fun continueStartVpnAfterForeground(configPath: String) {
+    protected fun continueStartVpnAfterForeground(configPath: String, startToken: Long) {
         // 获取清理缓存标志
         val cleanCache = synchronized(this) {
             val c = pendingCleanCache
@@ -3380,8 +2074,8 @@ class SingBoxService : VpnService() {
             val result = startupManager.startVpn(
                 configPath = configPath,
                 cleanCache = cleanCache,
+                startToken = startToken,
                 coreManager = coreManager,
-                connectManager = connectManager,
                 callbacks = startupCallbacks
             )
 
@@ -3414,18 +2108,26 @@ class SingBoxService : VpnService() {
         }
     }
 
-    protected fun stopVpn(stopService: Boolean, broadcastStoppingState: Boolean = true) {
+    protected fun stopVpn(
+        stopService: Boolean,
+        broadcastStoppingState: Boolean = true
+    ) {
         // 状态同步检查（保留在 Service 中，因为涉及多线程同步）
-        synchronized(this) {
+        val startCleanup = synchronized(this) {
+            coreManager.beginStop()
             stopSelfRequested = stopSelfRequested || stopService
-            if (isStopping) {
-                return
+            if (stopService) {
+                pendingStartConfigPath = null
             }
-            isStopping = true
+            if (isStopping) {
+                false
+            } else {
+                isStopping = true
+                true
+            }
         }
+        if (!startCleanup) return
 
-        cancelPendingRecoveryWork()
-        stopActiveHealthProbeMonitor()
         autoFailoverCandidateCache.clear()
 
         // 更新状态
@@ -3447,18 +2149,7 @@ class SingBoxService : VpnService() {
         }
 
         // 重置 VPN 启动时间戳
-        vpnStartedAtMs.set(0)
-        stallRefreshAttempts = 0
         autoFailoverServiceStartedAtMs = 0L
-        isProxyIdleForAutoFailover = false
-
-        // 清理 networkManager (stopService 时释放)
-        if (stopService) {
-            networkManager?.reset()
-            networkManager = null
-        } else {
-            networkManager?.reset()
-        }
 
         Log.i(SingBoxService.TAG, "stopVpn(stopService=$stopService) SingBoxService.isManuallyStopped=$SingBoxService.isManuallyStopped")
 
@@ -3470,17 +2161,12 @@ class SingBoxService : VpnService() {
         cleanupJob = shutdownManager.stopVpn(
             options = ShutdownManager.ShutdownOptions(
                 stopService = stopService,
-                preserveTunInterface = !stopService,
-                proxyPort = proxyPort,
-                strictPortRelease = false
+                proxyPort = proxyPort
             ),
             coreManager = coreManager,
             commandManager = commandManager,
             trafficMonitor = trafficMonitor,
-            networkManager = networkManager,
             notificationManager = notificationManager,
-            selectorManager = serviceSelectorManager,
-            platformInterfaceImpl = platformInterfaceImpl,
             callbacks = shutdownCallbacks
         )
     }
@@ -3518,7 +2204,7 @@ class SingBoxService : VpnService() {
     }
 
     protected fun requestNotificationUpdate(force: Boolean) {
-        notificationManager.requestNotificationUpdate(buildNotificationState(), this as SingBoxService, force)
+        notificationManager.requestNotificationUpdate(buildNotificationState(), this, force)
     }
 
     protected fun createNotification(): Notification {
@@ -3527,7 +2213,6 @@ class SingBoxService : VpnService() {
 
     override fun onDestroy() {
         Log.i(SingBoxService.TAG, "onDestroy called -> stopVpn(stopService=false) pid=${android.os.Process.myPid()}")
-        TrafficRepository.getInstance(this).saveStats()
 
         // 清理省电管理器引用
         SingBoxIpcHub.setPowerManager(null)
@@ -3535,7 +2220,7 @@ class SingBoxService : VpnService() {
         backgroundPowerManager.cleanup()
 
         screenStateManager.unregisterActivityLifecycleCallbacks(application)
-        cancelPendingRecoveryWork()
+        DefaultNetworkListener.stop(defaultNetworkListenerKey)
 
         val shouldStop = runCatching {
             synchronized(this@SingBoxService) {
@@ -3547,8 +2232,8 @@ class SingBoxService : VpnService() {
         if (!SingBoxService.isManuallyStopped && shouldStop) {
             // If we are being destroyed but not manually stopped (e.g. app update or system kill),
             // keep the persisted intent recoverable for VpnKeepaliveWorker.
-            VpnTileService.persistVpnState(applicationContext, true)
-            VpnTileService.persistVpnPending(applicationContext, "")
+            VpnTileService.persistVpnState(true)
+            VpnTileService.persistVpnPending("")
             VpnStateStore.setMode(VpnStateStore.CoreMode.VPN)
             Log.i(SingBoxService.TAG, "onDestroy: Preserved recoverable VPN state")
         }
@@ -3560,18 +2245,16 @@ class SingBoxService : VpnService() {
             stopVpn(stopService = false)
         } else {
             runCatching { stopForeground(STOP_FOREGROUND_REMOVE) }
-            VpnTileService.persistVpnState(applicationContext, false)
-            VpnTileService.persistVpnPending(applicationContext, "")
+            VpnTileService.persistVpnState(false)
+            VpnTileService.persistVpnPending("")
             updateServiceState(ServiceState.STOPPED)
             updateTileState()
         }
 
         serviceSupervisorJob.cancel()
-        stopActiveHealthProbeMonitor()
         autoFailoverJob?.cancel()
         autoFailoverJob = null
         autoFailoverSupervisorJob.cancel()
-        autoFailoverDispatcher.close()
         // cleanupSupervisorJob.cancel() // Allow cleanup to finish naturally
 
         if (SingBoxService.instance == this) {
@@ -3586,11 +2269,9 @@ class SingBoxService : VpnService() {
         Log.i(SingBoxService.TAG, "onRevoke called -> stopVpn(stopService=true)")
         SingBoxService.isManuallyStopped = true
         VpnStateStore.setManuallyStopped(true)
-        // Another VPN took over. Persist OFF state immediately so QS tile won't stay active.
-        VpnTileService.persistVpnState(applicationContext, false)
-        VpnTileService.persistVpnPending(applicationContext, "")
+        VpnTileService.persistVpnPending("stopping")
         SingBoxService.setLastError("VPN revoked by system (another VPN may have started)")
-        updateServiceState(ServiceState.STOPPED)
+        updateServiceState(ServiceState.STOPPING)
         requestRemoteStateUpdate(force = true)
         updateTileState()
 
@@ -3632,7 +2313,6 @@ class SingBoxService : VpnService() {
         networkHelper.ensureNetworkCallbackReady(
             isCallbackReady = { networkCallbackReady },
             lastKnownNetwork = { lastKnownNetwork },
-            findBestPhysicalNetwork = { findBestPhysicalNetwork() },
             updateNetworkState = { network, ready ->
                 lastKnownNetwork = network
                 networkCallbackReady = ready
@@ -3688,15 +2368,21 @@ class SingBoxService : VpnService() {
     }
 
     protected suspend fun waitForUsablePhysicalNetwork(timeoutMs: Long): Network? {
-        return networkHelper.waitForUsablePhysicalNetwork(
-            lastKnownNetwork = lastKnownNetwork,
-            networkManager = networkManager,
-            findBestPhysicalNetwork = { findBestPhysicalNetwork() },
-            timeoutMs = timeoutMs
-        )
+        return networkHelper.waitForUsablePhysicalNetwork(timeoutMs)
     }
 
     companion object {
+        internal fun formatRestartFailure(error: Exception): String {
+            val detail = error.message?.takeIf { it.isNotBlank() }
+            return buildString {
+                append("Failed to restart VPN: ")
+                append(error.javaClass.simpleName)
+                if (detail != null) {
+                    append(": ")
+                    append(detail)
+                }
+            }
+        }
 
         internal val TAG = "SingBoxService"
 
@@ -3717,8 +2403,6 @@ class SingBoxService : VpnService() {
         val ACTION_HOT_RELOAD = ServiceStateHolder.ACTION_HOT_RELOAD
 
         val ACTION_FULL_RESTART = ServiceStateHolder.ACTION_FULL_RESTART
-
-        val ACTION_NETWORK_BUMP = "com.kunk.singbox.action.NETWORK_BUMP"
 
         val EXTRA_CONFIG_PATH = ServiceStateHolder.EXTRA_CONFIG_PATH
 
@@ -3751,16 +2435,6 @@ class SingBoxService : VpnService() {
         internal const val HEALTH_FAST_FAILOVER_PORT_READY_TIMEOUT_MS = 600L
 
         internal const val HEALTH_FAST_FAILOVER_CANDIDATE_CONCURRENCY = 3
-
-        internal const val ACTIVE_HEALTH_PROBE_CANARY_INTERVAL_MS = 2_000L
-
-        internal const val ACTIVE_HEALTH_PROBE_FULL_INTERVAL_MS = 10_000L
-
-        internal const val ACTIVE_HEALTH_PROBE_TIMEOUT_MS = 1_500L
-
-        internal const val ACTIVE_HEALTH_PROBE_TRAFFIC_IGNORE_MS = 3_000L
-
-        internal const val AUTO_FAILOVER_MEANINGFUL_TRAFFIC_DURING_PROBE_BPS = 64 * 1024L
 
         internal const val SINGLE_NODE_ROUTE_FAILURE_NOTIFICATION_DEBOUNCE_MS = 60_000L
 
@@ -3805,58 +2479,8 @@ class SingBoxService : VpnService() {
 
         fun resetConnectionOwnerStats() = ServiceStateHolder.resetConnectionOwnerStats()
 
-        internal fun chooseHigherPriorityRecovery(
-            a: RecoveryRequest,
-            b: RecoveryRequest
-        ): RecoveryRequest {
-            return when {
-                a.force != b.force -> if (a.force) a else b
-                a.reason.priority != b.reason.priority -> if (a.reason.priority >= b.reason.priority) a else b
-                else -> if (a.requestedAtMs >= b.requestedAtMs) a else b
-            }
-        }
-
-        internal fun shouldDowngradeForceForHysteria2(
-            profile: RecoveryProfile,
-            reason: RecoveryReason,
-            force: Boolean
-        ): Boolean {
-            return profile == RecoveryProfile.HYSTERIA2 &&
-                reason == RecoveryReason.NETWORK_TYPE_CHANGED &&
-                force
-        }
-
-        internal fun shouldTriggerRouteGroupImmediateReselect(reason: RecoveryReason): Boolean {
-            return reason == RecoveryReason.NETWORK_TYPE_CHANGED ||
-                reason == RecoveryReason.NETWORK_VALIDATED
-        }
-
-        internal fun shouldConvergeConnectionsAfterImmediateRouteGroupSwitch(reason: RecoveryReason): Boolean {
-            return shouldTriggerRouteGroupImmediateReselect(reason)
-        }
-
-        internal fun shouldRunRouteGroupSwitchConvergence(
-            lastTriggeredAtMs: Long,
-            nowAtMs: Long,
-            debounceMs: Long
-        ): Boolean {
-            return lastTriggeredAtMs <= 0L || nowAtMs - lastTriggeredAtMs >= debounceMs
-        }
-
-        internal fun shouldContinueCoreStartAfterForegroundResultForTest(foregroundStarted: Boolean): Boolean {
-            return shouldContinueCoreStartAfterForegroundResult(foregroundStarted)
-        }
-
         internal fun shouldContinueCoreStartAfterForegroundResult(foregroundStarted: Boolean): Boolean {
             return foregroundStarted
-        }
-
-        internal fun shouldRecoverFromStickyRestartForTest(
-            manuallyStopped: Boolean,
-            mode: VpnStateStore.CoreMode,
-            runningConfigUsable: Boolean
-        ): Boolean {
-            return shouldRecoverFromStickyRestart(manuallyStopped, mode, runningConfigUsable)
         }
 
         internal fun shouldRecoverFromStickyRestart(
@@ -3877,28 +2501,12 @@ class SingBoxService : VpnService() {
             return NodeAutoFailoverPolicy.isHealthFastPathTrigger(trigger)
         }
 
-        internal fun isHealthFastPathTriggerForTest(trigger: String): Boolean {
-            return isHealthFastPathTrigger(trigger)
-        }
-
         internal fun resolveAutoFailoverRetryDelayMs(trigger: String): Long {
             return if (isHealthFastPathTrigger(trigger)) {
                 DNS_FAILOVER_PROBE_RETRY_DELAY_MS
             } else {
                 AUTO_FAILOVER_PROBE_RETRY_DELAY_MS
             }
-        }
-
-        internal fun resolveAutoFailoverRetryDelayMsForTest(trigger: String): Long {
-            return resolveAutoFailoverRetryDelayMs(trigger)
-        }
-
-        internal fun resolveHealthFastFailoverTotalTimeoutMsForTest(): Long {
-            return HEALTH_FAST_FAILOVER_TOTAL_TIMEOUT_MS
-        }
-
-        internal fun resolveActiveHealthProbeTimeoutMsForTest(): Long {
-            return ACTIVE_HEALTH_PROBE_TIMEOUT_MS
         }
 
         internal fun resolveAutoFailoverCandidateTimeoutMs(trigger: String, userTimeoutMs: Int): Int {
@@ -3910,23 +2518,12 @@ class SingBoxService : VpnService() {
             }
         }
 
-        internal fun resolveAutoFailoverCandidateTimeoutMsForTest(
-            trigger: String,
-            userTimeoutMs: Int
-        ): Int {
-            return resolveAutoFailoverCandidateTimeoutMs(trigger, userTimeoutMs)
-        }
-
         internal fun resolveAutoFailoverPortReadyTimeoutMs(trigger: String): Long {
             return if (isHealthFastPathTrigger(trigger)) {
                 HEALTH_FAST_FAILOVER_PORT_READY_TIMEOUT_MS
             } else {
                 3_000L
             }
-        }
-
-        internal fun resolveAutoFailoverPortReadyTimeoutMsForTest(trigger: String): Long {
-            return resolveAutoFailoverPortReadyTimeoutMs(trigger)
         }
 
         internal fun resolveAutoFailoverCandidateConcurrency(
@@ -3941,14 +2538,6 @@ class SingBoxService : VpnService() {
                 userConcurrency.coerceIn(1, 20)
             }
             return desired.coerceAtMost(safeCandidateCount)
-        }
-
-        internal fun resolveAutoFailoverCandidateConcurrencyForTest(
-            trigger: String,
-            userConcurrency: Int,
-            candidateCount: Int
-        ): Int {
-            return resolveAutoFailoverCandidateConcurrency(trigger, userConcurrency, candidateCount)
         }
 
         internal fun resolveAutoFailoverCandidateProbeWaves(
@@ -3968,30 +2557,6 @@ class SingBoxService : VpnService() {
                 candidateCount = candidateCount
             )
             return (candidateCount + concurrency - 1) / concurrency
-        }
-
-        internal fun resolveAutoFailoverCandidateProbeWavesForTest(
-            trigger: String,
-            userConcurrency: Int,
-            candidateCount: Int
-        ): Int {
-            return resolveAutoFailoverCandidateProbeWaves(trigger, userConcurrency, candidateCount)
-        }
-
-        internal fun shouldResetAfterAutoFailover(trigger: String): Boolean {
-            return isHealthFastPathTrigger(trigger)
-        }
-
-        internal fun shouldResetAfterAutoFailoverForTest(trigger: String): Boolean {
-            return shouldResetAfterAutoFailover(trigger)
-        }
-
-        internal fun resolveSingleNodeRouteFailureTagForTest(
-            dnsServerTag: String?,
-            currentProxyTag: String?,
-            config: SingBoxConfig
-        ): String? {
-            return resolveSingleNodeRouteFailureTag(dnsServerTag, currentProxyTag, config)
         }
 
         internal fun resolveSingleNodeRouteFailureTag(
@@ -4019,14 +2584,6 @@ class SingBoxService : VpnService() {
                 outboundType.isBlank() || outboundType in LATENCY_SKIPPED_OUTBOUND_TYPES -> null
                 else -> detourTag
             }
-        }
-
-        internal fun shouldSubmitMainAutoFailoverForDnsSignalForTest(
-            dnsServerTag: String?,
-            currentProxyTag: String?,
-            config: SingBoxConfig
-        ): Boolean {
-            return shouldSubmitMainAutoFailoverForDnsSignal(dnsServerTag, currentProxyTag, config)
         }
 
         internal fun shouldSubmitMainAutoFailoverForDnsSignal(
@@ -4126,124 +2683,8 @@ class SingBoxService : VpnService() {
             return "单节点分流节点 $safeName 连接异常"
         }
 
-        internal fun shouldTreatActiveProbeAsNodeFailure(
-            googleProbeOk: Boolean,
-            cloudflareProbeOk: Boolean,
-            metaProbeOk: Boolean
-        ): Boolean {
-            val failedCount = listOf(googleProbeOk, cloudflareProbeOk, metaProbeOk).count { !it }
-            return failedCount >= 2
-        }
-
-        internal fun buildActiveProbeFailureSummary(
-            result: ActiveProbeResult,
-            coreAvailable: Boolean
-        ): String {
-            val googleProbeOk = result.googleProbeOk ?: true
-            val cloudflareProbeOk = result.cloudflareProbeOk ?: true
-            val diagnosis = resolveActiveProbeDiagnosis(
-                googleProbeOk = googleProbeOk,
-                cloudflareProbeOk = cloudflareProbeOk,
-                metaProbeOk = result.metaProbeOk,
-                coreAvailable = coreAvailable
-            )
-            return "INFO: Active health probe failed google=$googleProbeOk " +
-                "cloudflare=$cloudflareProbeOk meta=${result.metaProbeOk} " +
-                "dns_channel=remote core_available=$coreAvailable diagnosis=$diagnosis"
-        }
-
-        internal fun buildActiveProbeFailureSummaryForTest(
-            googleProbeOk: Boolean,
-            cloudflareProbeOk: Boolean,
-            metaProbeOk: Boolean,
-            coreAvailable: Boolean
-        ): String {
-            return buildActiveProbeFailureSummary(
-                result = ActiveProbeResult(
-                    googleProbeOk = googleProbeOk,
-                    cloudflareProbeOk = cloudflareProbeOk,
-                    metaProbeOk = metaProbeOk,
-                    fullSweep = true
-                ),
-                coreAvailable = coreAvailable
-            )
-        }
-
-        private fun resolveActiveProbeDiagnosis(
-            googleProbeOk: Boolean,
-            cloudflareProbeOk: Boolean,
-            metaProbeOk: Boolean,
-            coreAvailable: Boolean
-        ): String {
-            if (!coreAvailable) {
-                return "app_service_unavailable"
-            }
-            if (!googleProbeOk && !cloudflareProbeOk) {
-                return "node_unreachable"
-            }
-            if (!metaProbeOk) {
-                return "remote_dns_timeout"
-            }
-            return "unknown_health_probe_failure"
-        }
-
-        internal fun resolveActiveProbeTargetsForTest(fullSweep: Boolean): List<String> {
-            return if (fullSweep) {
-                listOf(
-                    BoxWrapperManager.FOREGROUND_TUNNEL_HEALTH_PROBE_URL,
-                    BoxWrapperManager.CLOUDFLARE_TUNNEL_HEALTH_PROBE_URL,
-                    BoxWrapperManager.META_TUNNEL_HEALTH_PROBE_URL
-                )
-            } else {
-                listOf(BoxWrapperManager.META_TUNNEL_HEALTH_PROBE_URL)
-            }
-        }
-
-        @Suppress("UNUSED_PARAMETER")
-        internal fun shouldRunActiveHealthProbeForSignals(
-            isAppInForeground: Boolean,
-            lastMeaningfulTrafficAtMs: Long,
-            nowAtMs: Long
-        ): Boolean {
-            // 前台状态不再单独制造探测流量，只保留最近有效流量作为主动探测条件。
-            return NodeAutoFailoverPolicy.hasRecentMeaningfulTraffic(lastMeaningfulTrafficAtMs, nowAtMs)
-        }
-
-        internal fun shouldRunActiveHealthProbeForSignalsForTest(
-            isAppInForeground: Boolean,
-            lastMeaningfulTrafficAtMs: Long,
-            nowAtMs: Long
-        ): Boolean {
-            return shouldRunActiveHealthProbeForSignals(
-                isAppInForeground = isAppInForeground,
-                lastMeaningfulTrafficAtMs = lastMeaningfulTrafficAtMs,
-                nowAtMs = nowAtMs
-            )
-        }
-
-        internal fun shouldRecordMeaningfulTrafficForAutoFailover(
-            totalSpeed: Long,
-            nowAtMs: Long,
-            activeProbeTrafficIgnoreUntilMs: Long
-        ): Boolean {
-            val threshold = if (nowAtMs <= activeProbeTrafficIgnoreUntilMs) {
-                AUTO_FAILOVER_MEANINGFUL_TRAFFIC_DURING_PROBE_BPS
-            } else {
-                AUTO_FAILOVER_MEANINGFUL_TRAFFIC_BPS
-            }
-            return totalSpeed >= threshold
-        }
-
-        internal fun shouldRecordMeaningfulTrafficForAutoFailoverForTest(
-            totalSpeed: Long,
-            nowAtMs: Long,
-            activeProbeTrafficIgnoreUntilMs: Long
-        ): Boolean {
-            return shouldRecordMeaningfulTrafficForAutoFailover(
-                totalSpeed = totalSpeed,
-                nowAtMs = nowAtMs,
-                activeProbeTrafficIgnoreUntilMs = activeProbeTrafficIgnoreUntilMs
-            )
+        internal fun shouldRecordMeaningfulTrafficForAutoFailover(totalSpeed: Long): Boolean {
+            return totalSpeed >= AUTO_FAILOVER_MEANINGFUL_TRAFFIC_BPS
         }
 
         internal fun resolveAutoFailoverTrafficSignalAtMs(
@@ -4259,27 +2700,12 @@ class SingBoxService : VpnService() {
             }
         }
 
-        internal fun selectAutoFailoverProbeCandidatesForTest(
-            currentTag: String,
-            cachedBackupTag: String?,
-            candidateTags: List<String>,
-            trigger: String
-        ): List<String> {
-            return selectAutoFailoverProbeCandidates(
-                currentTag = currentTag,
-                cachedBackupTag = cachedBackupTag,
-                candidateTags = candidateTags,
-                trigger = trigger,
-                quarantinedTags = emptySet()
-            )
-        }
-
         internal fun selectAutoFailoverProbeCandidates(
             currentTag: String,
             cachedBackupTag: String?,
             candidateTags: List<String>,
             trigger: String,
-            quarantinedTags: Set<String>
+            quarantinedTags: Set<String> = emptySet()
         ): List<String> {
             if (!isHealthFastPathTrigger(trigger)) {
                 return candidateTags.distinct()
@@ -4303,146 +2729,6 @@ class SingBoxService : VpnService() {
                 addCandidate(tag)
             }
             return selected.take(3)
-        }
-
-        internal fun shouldScheduleNetworkTypeChangedFallback(
-            request: RecoveryRequest,
-            success: Boolean
-        ): Boolean {
-            return request.reason == RecoveryReason.NETWORK_TYPE_CHANGED && success
-        }
-
-        internal fun shouldUseForegroundFastLane(request: RecoveryRequest): Boolean {
-            return request.reason == RecoveryReason.APP_FOREGROUND &&
-                request.force &&
-                request.rawReason == "app_foreground"
-        }
-
-        internal fun shouldScheduleForegroundHardFallback(
-            request: RecoveryRequest,
-            mode: BoxWrapperManager.RecoveryMode,
-            success: Boolean
-        ): Boolean {
-            return request.reason == RecoveryReason.APP_FOREGROUND &&
-                mode == BoxWrapperManager.RecoveryMode.SOFT &&
-                success
-        }
-
-        internal suspend fun collectForegroundHardFallbackProbeSignalForTest(
-            physicalProbe: suspend () -> Boolean,
-            tunnelProbe: suspend () -> Boolean
-        ): SingBoxServiceForegroundHardFallbackProbeSignal {
-            return collectForegroundHardFallbackProbeSignal(physicalProbe, tunnelProbe)
-        }
-
-        internal suspend fun collectForegroundHardFallbackProbeSignal(
-            physicalProbe: suspend () -> Boolean,
-            tunnelProbe: suspend () -> Boolean
-        ): SingBoxServiceForegroundHardFallbackProbeSignal {
-            val physicalProbeOk = runCatching { physicalProbe() }.getOrDefault(false)
-            val tunnelProbeOk = if (physicalProbeOk) {
-                runCatching { tunnelProbe() }.getOrDefault(false)
-            } else {
-                false
-            }
-            return SingBoxServiceForegroundHardFallbackProbeSignal(
-                physicalProbeOk = physicalProbeOk,
-                tunnelProbeOk = tunnelProbeOk
-            )
-        }
-
-        internal fun shouldSkipForegroundHardFallbackAfterProbe(
-            signal: SingBoxServiceForegroundHardFallbackProbeSignal
-        ): Boolean {
-            return signal.physicalProbeOk && signal.tunnelProbeOk
-        }
-
-        internal fun hasStrongNetworkTypeChangedRecoverySignal(
-            probeSucceeded: Boolean,
-            tunnelProbeSucceeded: Boolean,
-            networkRecoveryNeeded: Boolean
-        ): Boolean {
-            return probeSucceeded && tunnelProbeSucceeded && !networkRecoveryNeeded
-        }
-
-        internal fun shouldRunNetworkTypeChangedFallback(
-            lastTriggeredAtMs: Long,
-            nowAtMs: Long,
-            debounceMs: Long
-        ): Boolean {
-            return lastTriggeredAtMs <= 0L || nowAtMs - lastTriggeredAtMs >= debounceMs
-        }
-
-        internal fun shouldSkipNetworkTypeChangedFallbackByState(
-            isRunning: Boolean,
-            isStarting: Boolean,
-            isStopping: Boolean,
-            isManuallyStopped: Boolean
-        ): Boolean {
-            return !shouldAllowRecoveryExecution(
-                isRunning = isRunning,
-                isStarting = isStarting,
-                isStopping = isStopping,
-                isManuallyStopped = isManuallyStopped
-            )
-        }
-
-        internal fun shouldAllowRecoveryExecution(
-            isRunning: Boolean,
-            isStarting: Boolean,
-            isStopping: Boolean,
-            isManuallyStopped: Boolean
-        ): Boolean {
-            return isRunning && !isStarting && !isStopping && !isManuallyStopped
-        }
-
-        internal fun buildRecoveryInvalidStateSummary(
-            isRunning: Boolean,
-            isStarting: Boolean,
-            isStopping: Boolean,
-            isManuallyStopped: Boolean
-        ): String? {
-            if (shouldAllowRecoveryExecution(
-                    isRunning = isRunning,
-                    isStarting = isStarting,
-                    isStopping = isStopping,
-                    isManuallyStopped = isManuallyStopped
-                )
-            ) {
-                return null
-            }
-            return "running=$isRunning, starting=$isStarting, stopping=$isStopping, manuallyStopped=$isManuallyStopped"
-        }
-
-        internal fun shouldAllowUserReturnRecovery(
-            isRunning: Boolean,
-            isStarting: Boolean,
-            isStopping: Boolean,
-            isManuallyStopped: Boolean
-        ): Boolean {
-            return shouldAllowRecoveryExecution(
-                isRunning = isRunning,
-                isStarting = isStarting,
-                isStopping = isStopping,
-                isManuallyStopped = isManuallyStopped
-            )
-        }
-
-        internal fun determineNetworkTypeChangedFallbackAction(
-            mode: BoxWrapperManager.RecoveryMode
-        ): NetworkTypeChangedFallbackAction {
-            return if (mode == BoxWrapperManager.RecoveryMode.SOFT) {
-                NetworkTypeChangedFallbackAction.ESCALATE_HARD
-            } else {
-                NetworkTypeChangedFallbackAction.RESTART_VPN
-            }
-        }
-
-        internal fun shouldCloseConnectionsDuringForegroundFastRecovery(profile: RecoveryProfile): Boolean {
-            return when (profile) {
-                RecoveryProfile.DEFAULT,
-                RecoveryProfile.HYSTERIA2 -> false
-            }
         }
     }
 }

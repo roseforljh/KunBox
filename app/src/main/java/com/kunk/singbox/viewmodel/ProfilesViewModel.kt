@@ -7,20 +7,18 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.kunk.singbox.ipc.SingBoxRemote
 import com.kunk.singbox.model.ProfileUi
+import com.kunk.singbox.model.NodeUi
 import com.kunk.singbox.model.ProfileType
 import com.kunk.singbox.model.SubscriptionUpdateResult
 import com.kunk.singbox.repository.ConfigRepository
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 class ProfilesViewModel(application: Application) : AndroidViewModel(application) {
@@ -34,31 +32,11 @@ class ProfilesViewModel(application: Application) : AndroidViewModel(application
     private var importJob: Job? = null
 
     val profiles: StateFlow<List<ProfileUi>> = configRepository.profiles
-        .stateIn(
-            scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(5000),
-            initialValue = emptyList()
-        )
-
-    val allNodes: StateFlow<List<com.kunk.singbox.model.NodeUi>> = configRepository.allNodes
-        .stateIn(
-            scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(5000),
-            initialValue = emptyList()
-        )
-
+    val allNodes: StateFlow<List<NodeUi>> = configRepository.allNodes
     val activeProfileId: StateFlow<String?> = configRepository.activeProfileId
-        .stateIn(
-            scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(5000),
-            initialValue = null
-        )
 
     private val _importState = MutableStateFlow<ImportState>(ImportState.Idle)
     val importState: StateFlow<ImportState> = _importState.asStateFlow()
-
-    private val _updateStatus = MutableStateFlow<String?>(null)
-    val updateStatus: StateFlow<String?> = _updateStatus.asStateFlow()
 
     private val _toastEvents = MutableSharedFlow<String>(extraBufferCapacity = 8)
     val toastEvents: SharedFlow<String> = _toastEvents.asSharedFlow()
@@ -99,7 +77,7 @@ class ProfilesViewModel(application: Application) : AndroidViewModel(application
 
         val name = before?.name
         if (!name.isNullOrBlank()) {
-            val enabledAfter = !(before?.enabled ?: true)
+            val enabledAfter = !before.enabled
             val msg = if (enabledAfter) getApplication<Application>().getString(R.string.common_enable) else getApplication<Application>().getString(R.string.common_disable)
             emitToast("$msg: $name")
         }
@@ -110,8 +88,6 @@ class ProfilesViewModel(application: Application) : AndroidViewModel(application
         newName: String,
         newUrl: String?,
         autoUpdateInterval: Int = 0,
-        dnsPreResolve: Boolean = false,
-        dnsServer: String? = null,
         dnsOverride: String? = null
     ) {
         configRepository.updateProfileMetadata(
@@ -119,8 +95,6 @@ class ProfilesViewModel(application: Application) : AndroidViewModel(application
             newName,
             newUrl,
             autoUpdateInterval,
-            dnsPreResolve,
-            dnsServer,
             dnsOverride
         )
         emitToast(getApplication<Application>().getString(R.string.profiles_updated))
@@ -130,10 +104,10 @@ class ProfilesViewModel(application: Application) : AndroidViewModel(application
     @Suppress("CognitiveComplexMethod")
     fun updateProfile(profileId: String) {
         viewModelScope.launch {
-            _updateStatus.value = getApplication<Application>().getString(R.string.common_loading)
+            emitToast(getApplication<Application>().getString(R.string.common_loading))
             val result = configRepository.updateProfile(profileId)
 
-            _updateStatus.value = when (result) {
+            val message = when (result) {
                 is SubscriptionUpdateResult.SuccessWithChanges -> {
                     val changes = mutableListOf<String>()
                     if (result.addedCount > 0) changes.add("+${result.addedCount}")
@@ -143,36 +117,21 @@ class ProfilesViewModel(application: Application) : AndroidViewModel(application
                         changes.joinToString("/"),
                         result.totalCount
                     )
-                    if (result.dnsMovedToBackground) {
-                        getApplication<Application>().getString(
-                            R.string.subscription_update_success_background_dns,
-                            message
-                        )
-                    } else {
-                        message
-                    }
+                    message
                 }
                 is SubscriptionUpdateResult.SuccessNoChanges -> {
                     val message = getApplication<Application>().getString(
                         R.string.subscription_update_success_no_changes,
                         result.totalCount
                     )
-                    if (result.dnsMovedToBackground) {
-                        getApplication<Application>().getString(
-                            R.string.subscription_update_success_background_dns,
-                            message
-                        )
-                    } else {
-                        message
-                    }
+                    message
                 }
                 is SubscriptionUpdateResult.Failed -> {
                     getApplication<Application>().getString(R.string.settings_update_failed) + ": ${result.error}"
                 }
             }
 
-            delay(2500)
-            _updateStatus.value = null
+            emitToast(message)
         }
     }
 
@@ -192,14 +151,10 @@ class ProfilesViewModel(application: Application) : AndroidViewModel(application
         configRepository.reorderProfiles(newProfiles)
     }
 
-    /**
-     */
     fun importSubscription(
         name: String,
         url: String,
         autoUpdateInterval: Int = 0,
-        dnsPreResolve: Boolean = false,
-        dnsServer: String? = null,
         dnsOverride: String? = null
     ): Boolean {
 
@@ -214,8 +169,6 @@ class ProfilesViewModel(application: Application) : AndroidViewModel(application
                 name = name,
                 url = url,
                 autoUpdateInterval = autoUpdateInterval,
-                dnsPreResolve = dnsPreResolve,
-                dnsServer = dnsServer,
                 dnsOverride = dnsOverride,
                 onProgress = { progress ->
                     _importState.value = ImportState.Loading(progress)
@@ -330,8 +283,6 @@ class ProfilesViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
-    /**
-     */
     fun cancelImport() {
         importJob?.cancel()
         importJob = null

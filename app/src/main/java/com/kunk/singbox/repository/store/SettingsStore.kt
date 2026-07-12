@@ -21,9 +21,6 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
-/**
- *
- */
 class SettingsStore private constructor(context: Context) {
     companion object {
         private const val TAG = "SettingsStore"
@@ -31,6 +28,7 @@ class SettingsStore private constructor(context: Context) {
         private const val FAKE_IP_RANGE_MIGRATION_VERSION = 7
         private const val NETWORK_AUTO_SWITCH_MIGRATION_VERSION = 8
         private const val APP_THEME_STYLE_MIGRATION_VERSION = 9
+        private const val LOCAL_DNS_IP_DOH_MIGRATION_VERSION = 10
         private const val LEGACY_DEFAULT_FAKE_IP_RANGE = "198.18.0.0/15"
 
         @Volatile
@@ -42,49 +40,64 @@ class SettingsStore private constructor(context: Context) {
             }
         }
 
-        @Suppress("CognitiveComplexMethod")
+        @Suppress("CognitiveComplexMethod", "CyclomaticComplexMethod")
         internal fun migrateSettings(version: Int, settings: AppSettings): AppSettings {
-            var result = settings
+            var result = migrateEarlySettings(version, settings)
+            result = migrateRoutingAndDnsSettings(version, result)
+            result = migrateFakeIpRange(version, result)
+            result = migrateNetworkAutoSwitch(version, result)
+            result = migrateAppThemeStyle(version, result)
+            result = migrateLocalDnsIpDoh(version, result)
+            return recoverLatencyTestUrl(result)
+        }
 
+        private fun migrateEarlySettings(version: Int, settings: AppSettings): AppSettings {
+            var result = settings
             if (version < 2) {
                 result = result.copy(tunMtuAuto = true)
             }
-
             if (version < 3) {
-                val oldLocalDefaults = listOf(
-                    "https://dns.alidns.com/dns-query",
-                    "https://1.1.1.1/dns-query",
-                    "223.5.5.5",
-                    ""
-                )
-                val oldRemoteDefaults = listOf(
-                    "https://dns.google/dns-query",
-                    "https://1.1.1.1/dns-query",
-                    "8.8.8.8",
-                    "1.1.1.1",
-                    ""
-                )
-
-                var newLocal = result.localDns
-                var newRemote = result.remoteDns
-
-                if (result.localDns in oldLocalDefaults) {
-                    newLocal = AppSettings.DEFAULT_LOCAL_DNS
-                    Log.i(TAG, "Migrating localDns from '${result.localDns}' to '$newLocal'")
-                }
-                if (result.remoteDns in oldRemoteDefaults) {
-                    newRemote = AppSettings.DEFAULT_REMOTE_DNS
-                    Log.i(TAG, "Migrating remoteDns from '${result.remoteDns}' to '$newRemote'")
-                }
-
-                result = result.copy(localDns = newLocal, remoteDns = newRemote)
+                result = migrateLegacyDnsDefaults(result)
             }
-
             if (version < 4 && result.localDns.equals(AppSettings.LEGACY_LOCAL_DNS, ignoreCase = true)) {
                 result = result.copy(localDns = AppSettings.DEFAULT_LOCAL_DNS)
                 Log.i(TAG, "Migrating legacy localDns to '${AppSettings.DEFAULT_LOCAL_DNS}'")
             }
+            return result
+        }
 
+        private fun migrateLegacyDnsDefaults(settings: AppSettings): AppSettings {
+            val oldLocalDefaults = listOf(
+                "https://dns.alidns.com/dns-query",
+                "https://1.1.1.1/dns-query",
+                "223.5.5.5",
+                ""
+            )
+            val oldRemoteDefaults = listOf(
+                "https://dns.google/dns-query",
+                "https://1.1.1.1/dns-query",
+                "8.8.8.8",
+                "1.1.1.1",
+                ""
+            )
+
+            var newLocal = settings.localDns
+            var newRemote = settings.remoteDns
+
+            if (settings.localDns in oldLocalDefaults) {
+                newLocal = AppSettings.DEFAULT_LOCAL_DNS
+                Log.i(TAG, "Migrating localDns from '${settings.localDns}' to '$newLocal'")
+            }
+            if (settings.remoteDns in oldRemoteDefaults) {
+                newRemote = AppSettings.DEFAULT_REMOTE_DNS
+                Log.i(TAG, "Migrating remoteDns from '${settings.remoteDns}' to '$newRemote'")
+            }
+
+            return settings.copy(localDns = newLocal, remoteDns = newRemote)
+        }
+
+        private fun migrateRoutingAndDnsSettings(version: Int, settings: AppSettings): AppSettings {
+            var result = settings
             if (version < 5) {
                 result = result.copy(
                     appRules = result.appRules.map { rule ->
@@ -95,17 +108,30 @@ class SettingsStore private constructor(context: Context) {
                     }
                 )
             }
-
             if (version < AUTO_ROUTE_MIGRATION_VERSION && result.strictRoute && !result.autoRoute) {
                 result = result.copy(autoRoute = true)
                 Log.i(TAG, "Migrating legacy tun settings to enable autoRoute when strictRoute is enabled")
             }
-
-            result = migrateFakeIpRange(version, result)
-            result = migrateNetworkAutoSwitch(version, result)
-            result = migrateAppThemeStyle(version, result)
-
             return result
+        }
+
+        private fun migrateLocalDnsIpDoh(version: Int, settings: AppSettings): AppSettings {
+            if (
+                version < LOCAL_DNS_IP_DOH_MIGRATION_VERSION &&
+                settings.localDns.equals(AppSettings.LEGACY_DOMAIN_LOCAL_DNS, ignoreCase = true)
+            ) {
+                Log.i(TAG, "Migrating domain localDns to '${AppSettings.DEFAULT_LOCAL_DNS}'")
+                return settings.copy(localDns = AppSettings.DEFAULT_LOCAL_DNS)
+            }
+            return settings
+        }
+
+        private fun recoverLatencyTestUrl(settings: AppSettings): AppSettings {
+            val latencyTestUrl = AppSettings.validateLatencyTestUrl(settings.latencyTestUrl)
+            if (latencyTestUrl == null) {
+                Log.w(TAG, "Recovering invalid latency test URL to the official sing-box default")
+            }
+            return settings.copy(latencyTestUrl = latencyTestUrl ?: AppSettings.DEFAULT_LATENCY_TEST_URL)
         }
 
         private fun migrateFakeIpRange(version: Int, settings: AppSettings): AppSettings {
@@ -151,15 +177,7 @@ class SettingsStore private constructor(context: Context) {
             return version != SettingsEntity.CURRENT_VERSION || migrated != loaded
         }
 
-        internal fun resolveSettingsAfterPersistenceForTest(
-            previous: AppSettings,
-            updated: AppSettings,
-            persisted: Boolean
-        ): AppSettings {
-            return resolveSettingsAfterPersistence(previous, updated, persisted)
-        }
-
-        private fun resolveSettingsAfterPersistence(
+        internal fun resolveSettingsAfterPersistence(
             previous: AppSettings,
             updated: AppSettings,
             persisted: Boolean
@@ -213,16 +231,12 @@ class SettingsStore private constructor(context: Context) {
         }
     }
 
-    /**
-     */
     fun updateSettings(update: (AppSettings) -> AppSettings) {
         scope.launch {
             updateSettingsLocked(update)
         }
     }
 
-    /**
-     */
     suspend fun updateSettingsAndWait(update: (AppSettings) -> AppSettings): Boolean {
         return updateSettingsLocked(update)
     }
@@ -264,12 +278,8 @@ class SettingsStore private constructor(context: Context) {
         }
     }
 
-    /**
-     */
     fun getCurrentSettings(): AppSettings = _settings.value
 
-    /**
-     */
     suspend fun reload() {
         withContext(Dispatchers.IO) {
             loadSettings()
@@ -280,8 +290,6 @@ class SettingsStore private constructor(context: Context) {
         settingsDao.hasSettings()
     }
 
-    /**
-     */
     suspend fun resetSettings() {
         writeMutex.withLock {
             try {

@@ -1,13 +1,12 @@
 ﻿package com.kunk.singbox.utils.parser
 
+import com.google.gson.JsonPrimitive
 import com.kunk.singbox.model.MultiplexConfig
 import com.kunk.singbox.model.Outbound
 import com.kunk.singbox.model.TlsConfig
 import com.kunk.singbox.model.TransportConfig
+import com.kunk.singbox.model.UInt32JsonAdapter
 import com.kunk.singbox.model.UtlsConfig
-
-/**
- */
 
 @Suppress("TooManyFunctions")
 open class ClashYamlParserPart2 : ClashYamlParserPart1() {
@@ -62,32 +61,41 @@ open class ClashYamlParserPart2 : ClashYamlParserPart1() {
             serverPort = port,
             user = user,
             password = password,
-            privateKey = privateKey
+            privateKey = privateKey?.let(::listOf)
         )
     }
 
     protected override fun parseWireGuard(map: Map<*, *>, name: String, server: String?, port: Int?): Outbound? {
         if (server == null || port == null) return null
         val privateKey = asString(map["private-key"]) ?: return null
-        val publicKey = asString(map["public-key"]) ?: return null // Peer public key
-        val preSharedKey = asString(map["pre-shared-key"])
-        val address = asStringList(map["ip"]) // Local Address
-        val mtu = asInt(map["mtu"]) ?: 1420
+        val publicKey = asString(map["public-key"]) ?: return null
+        val localAddress = asStringList(map["ip"])?.takeIf { it.isNotEmpty() } ?: return null
+        val reserved = asStringList(map["reserved"])
+            ?.mapNotNull { it.toIntOrNull() }
+            ?.takeIf { it.isNotEmpty() }
 
         val peer = com.kunk.singbox.model.WireGuardPeer(
             server = server,
             serverPort = port,
             publicKey = publicKey,
-            preSharedKey = preSharedKey
+            preSharedKey = asString(map["pre-shared-key"]),
+            allowedIps = asStringList(map["allowed-ips"]),
+            persistentKeepaliveInterval = asInt(map["persistent-keepalive"]),
+            reserved = reserved
         )
 
         return Outbound(
             type = "wireguard",
             tag = name,
-            localAddress = address,
-            privateKey = privateKey,
+            localAddress = localAddress,
+            privateKey = listOf(privateKey),
             peers = listOf(peer),
-            mtu = mtu
+            mtu = asInt(map["mtu"]),
+            listenPort = asInt(map["listen-port"]),
+            udpTimeout = asString(map["udp-timeout"]),
+            workers = asInt(map["workers"]),
+            system = asBool(map["system"]),
+            endpointName = asString(map["interface-name"])
         )
     }
 
@@ -148,24 +156,24 @@ open class ClashYamlParserPart2 : ClashYamlParserPart1() {
             ?: asString((map["headers"] as? Map<*, *>)?.get("host"))
         val sni = asString(map["sni"]) ?: asString(map["servername"]) ?: host ?: server
 
-        val insecure = asBool(map["skip-cert-verify"]) == true ||
-            asBool(map["allow-insecure"]) == true ||
-            asBool(map["insecure"]) == true
-        val alpn = asStringList(map["alpn"])
-        val fingerprint = asString(map["client-fingerprint"]) ?: asString(map["fingerprint"]) ?: globalFingerprint
-        val tlsMinVersion = asString(map["tls-version"]) ?: asString(map["min-tls-version"]) ?: globalTlsMinVersion
-
         val rawNetwork = asString(map["network"]) ?: asString(map["proto"]) ?: asString(map["type"])
         val useQuic = rawNetwork.equals("quic", ignoreCase = true)
-        val pathRaw = asString(map["path"]) ?: asString(map["url"]) ?: "/"
-        val normalizedPath = if (pathRaw.startsWith("/")) pathRaw else "/$pathRaw"
 
         val congestionControl = asString(map["congestion-control"]) ?: asString(map["cc"])
         val uot = asBool(map["uot"]) == true ||
             asBool(map["udp-over-tcp"]) == true ||
             asBool(map["udp_over_tcp"]) == true
 
-        val headers = host?.takeIf { it.isNotBlank() }?.let { mapOf("Host" to it) }
+        val extraHeaders = (map["headers"] as? Map<*, *>)
+            ?.mapNotNull { (key, value) ->
+                val normalizedKey = asString(key)?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+                val normalizedValue = asString(value)?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+                normalizedKey to normalizedValue
+            }
+            ?.toMap()
+            ?.toMutableMap()
+            ?: mutableMapOf()
+        host?.takeIf { it.isNotBlank() }?.let { extraHeaders.putIfAbsent("Host", it) }
 
         return Outbound(
             type = "naive",
@@ -174,20 +182,17 @@ open class ClashYamlParserPart2 : ClashYamlParserPart1() {
             serverPort = port,
             username = username,
             password = password,
-            network = if (useQuic) "quic" else "h2",
-            path = normalizedPath,
-            headers = headers,
+            network = listOf(if (useQuic) "quic" else "h2"),
+            extraHeaders = extraHeaders.ifEmpty { null },
             quic = useQuic,
             quicCongestionControl = if (useQuic) congestionControl else null,
             congestionControl = if (useQuic) null else congestionControl,
             udpOverTcp = if (uot) com.kunk.singbox.model.UdpOverTcpConfig(enabled = true) else null,
-            tls = buildTlsConfig(
-                map = map,
+            tls = TlsConfig(
+                enabled = true,
                 serverName = sni,
-                insecure = insecure,
-                alpn = alpn,
-                minVersion = tlsMinVersion,
-                utls = fingerprint?.let { UtlsConfig(enabled = true, fingerprint = it) }
+                ca = firstNonEmptyStringList(map, "ca", "ca-cert", "ca_cert", "caPem", "ca_pem"),
+                caPath = firstNonBlankString(map, "ca_path", "ca-path")
             )
         )
     }
@@ -228,7 +233,11 @@ open class ClashYamlParserPart2 : ClashYamlParserPart1() {
                 minVersion = tlsMinVersion,
                 utls = fingerprint?.let { UtlsConfig(enabled = true, fingerprint = it) }
             ),
-            obfs = if (obfs != null) com.kunk.singbox.model.ObfsConfig(type = obfs) else null
+            obfs = if (obfs != null) {
+                com.kunk.singbox.model.ObfsConfig(type = obfs, stringValue = true)
+            } else {
+                null
+            }
         )
     }
 
@@ -293,21 +302,28 @@ open class ClashYamlParserPart2 : ClashYamlParserPart1() {
 
         val username = asString(map["username"])
         val password = asString(map["password"])
+        val version = asString(map["version"]) ?: "5"
+        val network = asString(map["network"])
+        val udpOverTcp = asBool(map["udp-over-tcp"]) == true || asBool(map["udp_over_tcp"]) == true
 
         return Outbound(
             type = "socks",
             tag = name,
             server = server,
             serverPort = port,
+            version = JsonPrimitive(version),
             username = username,
-            password = password
+            password = password,
+            network = network?.let(::listOf),
+            udpOverTcp = if (udpOverTcp) com.kunk.singbox.model.UdpOverTcpConfig(enabled = true) else null
         )
     }
 
     protected override fun parseShadowTLS(map: Map<*, *>, name: String, server: String?, port: Int?, globalFingerprint: String?): Outbound? {
         if (server == null || port == null) return null
-        val password = asString(map["password"]) ?: return null
         val version = asInt(map["version"]) ?: 3
+        val password = asString(map["password"])
+        if (version >= 2 && password.isNullOrBlank()) return null
         val sni = asString(map["sni"]) ?: server
         val fingerprint = asString(map["client-fingerprint"]) ?: globalFingerprint
 
@@ -316,7 +332,7 @@ open class ClashYamlParserPart2 : ClashYamlParserPart1() {
             tag = name,
             server = server,
             serverPort = port,
-            version = version,
+            version = JsonPrimitive(version),
             password = password,
             tls = buildTlsConfig(
                 map = map,
@@ -370,9 +386,9 @@ open class ClashYamlParserPart2 : ClashYamlParserPart1() {
             minVersion = minVersion,
             utls = utls,
             reality = reality,
-            ca = firstNonBlankString(map, "ca", "ca-cert", "ca_cert", "caPem", "ca_pem"),
+            ca = firstNonEmptyStringList(map, "ca", "ca-cert", "ca_cert", "caPem", "ca_pem"),
             caPath = firstNonBlankString(map, "ca_path", "ca-path"),
-            certificate = firstNonBlankString(
+            certificate = firstNonEmptyStringList(
                 map,
                 "certificate",
                 "cert",
@@ -388,7 +404,7 @@ open class ClashYamlParserPart2 : ClashYamlParserPart1() {
                 "client-cert-path",
                 "client_cert_path"
             ),
-            key = firstNonBlankString(map, "key", "client-key", "client_key"),
+            key = firstNonEmptyStringList(map, "key", "client-key", "client_key"),
             keyPath = firstNonBlankString(map, "key_path", "key-path", "client-key-path", "client_key_path")
         )
     }
@@ -396,6 +412,17 @@ open class ClashYamlParserPart2 : ClashYamlParserPart1() {
     protected override fun firstNonBlankString(map: Map<*, *>, vararg keys: String): String? {
         return keys.firstNotNullOfOrNull { key ->
             asString(map[key])?.takeIf { it.isNotBlank() }
+        }
+    }
+
+    private fun firstNonEmptyStringList(map: Map<*, *>, vararg keys: String): List<String>? {
+        return keys.firstNotNullOfOrNull { key ->
+            when (val value = map[key]) {
+                is List<*> -> value.mapNotNull { item ->
+                    asString(item)?.takeIf { it.isNotBlank() }
+                }.takeIf { it.isNotEmpty() }
+                else -> asString(value)?.takeIf { it.isNotBlank() }?.let(::listOf)
+            }
         }
     }
 
@@ -443,25 +470,35 @@ open class ClashYamlParserPart2 : ClashYamlParserPart1() {
         }
     }
 
+    @Suppress("CognitiveComplexMethod")
     protected override fun buildWsOrHttpUpgradeTransport(
         wsOpts: Map<*, *>?,
         path: String,
         headers: Map<String, String>,
-        host: String?
-    ): TransportConfig {
-        val maxEarlyData = asInt(wsOpts?.get("max-early-data"))?.takeIf { it > 0 }
+        host: String?,
+        forceHttpUpgrade: Boolean
+    ): TransportConfig? {
+        val isHttpUpgrade = forceHttpUpgrade || asBool(wsOpts?.get("v2ray-http-upgrade")) == true
+        val rawMaxEarlyData = asString(wsOpts?.get("max-early-data")).takeUnless { isHttpUpgrade }
+        val maxEarlyData = rawMaxEarlyData?.toLongOrNull()?.let { value ->
+            runCatching { UInt32JsonAdapter.requireValue(value) }.getOrNull()
+        }
+        if (rawMaxEarlyData != null && maxEarlyData == null) return null
         val earlyDataHeaderName = if (maxEarlyData != null) {
             asString(wsOpts?.get("early-data-header-name")) ?: "Sec-WebSocket-Protocol"
         } else {
             null
         }
-        val isHttpUpgrade = asBool(wsOpts?.get("v2ray-http-upgrade")) == true
+        val httpUpgradeHost = host
+            ?.split(',')
+            ?.firstOrNull { it.isNotBlank() }
+            ?.trim()
 
         return TransportConfig(
             type = if (isHttpUpgrade) "httpupgrade" else "ws",
             path = path,
             headers = if (isHttpUpgrade) headers.withoutHostHeader().ifEmpty { null } else headers,
-            host = if (isHttpUpgrade) host?.takeIf { it.isNotBlank() }?.let { listOf(it) } else null,
+            host = if (isHttpUpgrade) httpUpgradeHost?.let { listOf(it) } else null,
             maxEarlyData = if (isHttpUpgrade) null else maxEarlyData,
             earlyDataHeaderName = if (isHttpUpgrade) null else earlyDataHeaderName
         )

@@ -13,9 +13,9 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.automirrored.rounded.CallSplit
+import androidx.compose.material.icons.automirrored.rounded.CompareArrows
 import androidx.compose.material.icons.rounded.Bolt
-import androidx.compose.material.icons.rounded.CallSplit
-import androidx.compose.material.icons.rounded.CompareArrows
 import androidx.compose.material.icons.rounded.Dns
 import androidx.compose.material.icons.rounded.Fingerprint
 import androidx.compose.material.icons.rounded.Key
@@ -62,6 +62,8 @@ import com.kunk.singbox.model.MultiplexConfig
 import com.kunk.singbox.model.Outbound
 import com.kunk.singbox.model.TlsConfig
 import com.kunk.singbox.model.TransportConfig
+import com.kunk.singbox.model.allHeaderValues
+import com.kunk.singbox.model.asHttpHeaderMap
 import com.kunk.singbox.repository.ConfigRepository
 import com.kunk.singbox.ui.components.AppNotificationManager
 import com.kunk.singbox.ui.components.EditableSelectionItem
@@ -102,9 +104,13 @@ internal fun updateTransportTypeForEditor(transport: TransportConfig, newType: S
             val host = updated.headers?.get("Host")
                 ?: updated.headers?.get("host")
                 ?: updated.host?.firstOrNull()
-            val headers = updated.headers.withoutHostHeader().orEmpty().toMutableMap()
-            if (!host.isNullOrBlank()) headers["Host"] = host
-            updated.copy(host = null, headers = headers.takeIf { it.isNotEmpty() })
+            val headers = updated.headers
+                .withoutHostHeader()
+                ?.allHeaderValues()
+                ?.toMutableMap()
+                ?: mutableMapOf()
+            if (!host.isNullOrBlank()) headers["Host"] = listOf(host)
+            updated.copy(host = null, headers = headers.takeIf { it.isNotEmpty() }?.asHttpHeaderMap())
         }
         "httpupgrade" -> updated.copy(
             host = updated.host?.takeIf { it.isNotEmpty() }
@@ -133,16 +139,22 @@ internal fun updateWebSocketTransportHostForEditor(
     transport: TransportConfig,
     value: String
 ): TransportConfig {
-    val headers = transport.headers.withoutHostHeader().orEmpty().toMutableMap()
+    val headers = transport.headers
+        .withoutHostHeader()
+        ?.allHeaderValues()
+        ?.toMutableMap()
+        ?: mutableMapOf()
     val trimmedValue = value.trim()
-    if (trimmedValue.isNotEmpty()) headers["Host"] = trimmedValue
-    return transport.copy(host = null, headers = headers.takeIf { it.isNotEmpty() })
+    if (trimmedValue.isNotEmpty()) headers["Host"] = listOf(trimmedValue)
+    return transport.copy(host = null, headers = headers.takeIf { it.isNotEmpty() }?.asHttpHeaderMap())
 }
 
 private fun Map<String, String>?.withoutHostHeader(): Map<String, String>? {
     return this
+        ?.allHeaderValues()
         ?.filterKeys { !it.equals("Host", ignoreCase = true) }
         ?.takeIf { it.isNotEmpty() }
+        ?.asHttpHeaderMap()
 }
 
 private val outboundEditorGson = Gson()
@@ -371,7 +383,7 @@ fun NodeDetailScreen(
                 Spacer(modifier = Modifier.height(16.dp))
 
                 // --- Transport ---
-                if (type in listOf("vmess", "vless", "trojan", "shadowsocks")) {
+                if (type in listOf("vmess", "vless", "trojan")) {
                     SectionHeader(stringResource(R.string.node_detail_transport_settings))
                     StandardCard {
                         val transport = outbound.transport ?: TransportConfig(type = "tcp")
@@ -410,8 +422,12 @@ fun NodeDetailScreen(
                             EditableTextItem(
                                 title = stringResource(R.string.node_detail_max_early_data),
                                 value = transport.maxEarlyData?.toString() ?: "",
-                                icon = Icons.Rounded.CompareArrows,
-                                onValueChange = { editingOutbound = outbound.copy(transport = transport.copy(maxEarlyData = it.toIntOrNull())) }
+                                icon = Icons.AutoMirrored.Rounded.CompareArrows,
+                                onValueChange = {
+                                    editingOutbound = outbound.copy(
+                                        transport = transport.copy(maxEarlyData = it.toLongOrNull())
+                                    )
+                                }
                             )
                             EditableTextItem(
                                 title = stringResource(R.string.node_detail_early_data_header),
@@ -464,18 +480,16 @@ fun NodeDetailScreen(
                                 options = listOf("auto", "packet-up", "stream-up"),
                                 icon = Icons.Rounded.Tune,
                                 onValueChange = {
-                                    editingOutbound = outbound.copy(
-                                        transport = transport.copy(mode = it)
-                                    )
+                                    editingOutbound = outbound.copy(transport = transport.copy(mode = it))
                                 }
                             )
                             EditableTextItem(
                                 title = stringResource(R.string.node_detail_xpadding_bytes),
                                 value = transport.xPaddingBytes ?: "",
-                                icon = Icons.Rounded.CompareArrows,
+                                icon = Icons.AutoMirrored.Rounded.CompareArrows,
                                 onValueChange = {
                                     editingOutbound = outbound.copy(
-                                        transport = transport.copy(xPaddingBytes = if (it.isEmpty()) null else it)
+                                        transport = transport.copy(xPaddingBytes = it.ifBlank { null })
                                     )
                                 }
                             )
@@ -536,10 +550,12 @@ fun NodeDetailScreen(
                     SectionHeader(stringResource(R.string.node_detail_tls_settings))
                     StandardCard {
                         val tls = outbound.tls ?: TlsConfig(enabled = false)
-                        val isTlsIntrinsic = type in listOf("hysteria2", "hysteria", "tuic", "anytls")
+                        val isTlsIntrinsic = type in listOf("hysteria2", "hysteria", "tuic", "naive", "anytls")
 
                         // Security type selector
-                        val securityType = if (isTlsIntrinsic || tls.enabled == true) {
+                        val securityType = if (type == "naive") {
+                            "tls"
+                        } else if (isTlsIntrinsic || tls.enabled == true) {
                             if (tls.reality?.enabled == true) "reality" else "tls"
                         } else "none"
 
@@ -569,56 +585,82 @@ fun NodeDetailScreen(
                                 onValueChange = { editingOutbound = outbound.copy(tls = tls.copy(serverName = it)) }
                             )
 
-                            EditableTextItem(
-                                title = stringResource(R.string.node_detail_alpn),
-                                value = tls.alpn?.joinToString(", ") ?: "",
-                                icon = Icons.Rounded.Merge,
-                                onValueChange = {
-                                    val alpnList = it.split(",").map { s -> s.trim() }.filter { s -> s.isNotEmpty() }
-                                    editingOutbound = outbound.copy(tls = tls.copy(alpn = alpnList))
-                                }
-                            )
+                            if (type != "naive") {
+                                EditableTextItem(
+                                    title = stringResource(R.string.node_detail_alpn),
+                                    value = tls.alpn?.joinToString(", ") ?: "",
+                                    icon = Icons.Rounded.Merge,
+                                    onValueChange = {
+                                        val alpnList = it.split(",")
+                                            .map { s -> s.trim() }
+                                            .filter { s -> s.isNotEmpty() }
+                                        editingOutbound = outbound.copy(tls = tls.copy(alpn = alpnList))
+                                    }
+                                )
 
-                            SettingSwitchItem(
-                                title = stringResource(R.string.node_detail_allow_insecure),
-                                subtitle = stringResource(R.string.node_detail_allow_insecure_subtitle),
-                                checked = tls.insecure == true,
-                                icon = Icons.Rounded.Lock,
-                                onCheckedChange = { editingOutbound = outbound.copy(tls = tls.copy(insecure = it)) }
-                            )
+                                SettingSwitchItem(
+                                    title = stringResource(R.string.node_detail_allow_insecure),
+                                    subtitle = stringResource(R.string.node_detail_allow_insecure_subtitle),
+                                    checked = tls.insecure == true,
+                                    icon = Icons.Rounded.Lock,
+                                    onCheckedChange = { editingOutbound = outbound.copy(tls = tls.copy(insecure = it)) }
+                                )
+                            }
                             EditableTextItem(
                                 title = stringResource(R.string.node_detail_ca_cert),
-                                value = tls.ca ?: "",
+                                value = tls.ca?.joinToString("\n") ?: "",
                                 icon = Icons.Rounded.Security,
-                                onValueChange = { editingOutbound = outbound.copy(tls = tls.copy(ca = if (it.isEmpty()) null else it)) }
-                            )
-
-                            EditableTextItem(
-                                title = stringResource(R.string.node_detail_client_cert),
-                                value = tls.certificate ?: "",
-                                icon = Icons.Rounded.Security,
-                                onValueChange = { editingOutbound = outbound.copy(tls = tls.copy(certificate = if (it.isEmpty()) null else it)) }
-                            )
-
-                            EditableTextItem(
-                                title = stringResource(R.string.node_detail_client_key),
-                                value = tls.key ?: "",
-                                icon = Icons.Rounded.Key,
-                                onValueChange = { editingOutbound = outbound.copy(tls = tls.copy(key = if (it.isEmpty()) null else it)) }
-                            )
-
-                            // uTLS
-                            Spacer(modifier = Modifier.height(8.dp))
-                            EditableSelectionItem(
-                                title = stringResource(R.string.node_detail_utls_fingerprint),
-                                value = tls.utls?.fingerprint ?: "",
-                                options = listOf("") + listOf("chrome", "firefox", "safari", "ios", "android", "edge", "360", "qq", "random", "randomized"),
-                                icon = Icons.Rounded.Fingerprint,
-                                onValueChange = { fp ->
-                                    val newUtls = if (fp.isEmpty()) null else com.kunk.singbox.model.UtlsConfig(enabled = true, fingerprint = fp)
-                                    editingOutbound = outbound.copy(tls = tls.copy(utls = newUtls))
+                                onValueChange = {
+                                    editingOutbound = outbound.copy(
+                                        tls = tls.copy(ca = it.takeIf(String::isNotEmpty)?.let(::listOf))
+                                    )
                                 }
                             )
+
+                            if (type != "naive") {
+                                EditableTextItem(
+                                    title = stringResource(R.string.node_detail_client_cert),
+                                    value = tls.certificate?.joinToString("\n") ?: "",
+                                    icon = Icons.Rounded.Security,
+                                    onValueChange = {
+                                        editingOutbound = outbound.copy(
+                                            tls = tls.copy(
+                                                certificate = it.takeIf(String::isNotEmpty)?.let(::listOf)
+                                            )
+                                        )
+                                    }
+                                )
+
+                                EditableTextItem(
+                                    title = stringResource(R.string.node_detail_client_key),
+                                    value = tls.key?.joinToString("\n") ?: "",
+                                    icon = Icons.Rounded.Key,
+                                    onValueChange = {
+                                        editingOutbound = outbound.copy(
+                                            tls = tls.copy(key = it.takeIf(String::isNotEmpty)?.let(::listOf))
+                                        )
+                                    }
+                                )
+
+                                Spacer(modifier = Modifier.height(8.dp))
+                                EditableSelectionItem(
+                                    title = stringResource(R.string.node_detail_utls_fingerprint),
+                                    value = tls.utls?.fingerprint ?: "",
+                                    options = listOf("") + listOf(
+                                        "chrome", "firefox", "safari", "ios", "android",
+                                        "edge", "360", "qq", "random", "randomized"
+                                    ),
+                                    icon = Icons.Rounded.Fingerprint,
+                                    onValueChange = { fp ->
+                                        val newUtls = if (fp.isEmpty()) {
+                                            null
+                                        } else {
+                                            com.kunk.singbox.model.UtlsConfig(enabled = true, fingerprint = fp)
+                                        }
+                                        editingOutbound = outbound.copy(tls = tls.copy(utls = newUtls))
+                                    }
+                                )
+                            }
 
                             // Reality Specific
                             if (securityType == "reality") {
@@ -660,15 +702,6 @@ fun NodeDetailScreen(
                                         editingOutbound = outbound.copy(tls = tls.copy(ech = ech.copy(config = configs)))
                                     }
                                 )
-                                EditableTextItem(
-                                    title = stringResource(R.string.node_detail_ech_key),
-                                    value = ech.key?.joinToString("\n") ?: "",
-                                    icon = Icons.Rounded.Key,
-                                    onValueChange = {
-                                        val keys = it.split("\n").map { s -> s.trim() }.filter { s -> s.isNotEmpty() }
-                                        editingOutbound = outbound.copy(tls = tls.copy(ech = ech.copy(key = keys)))
-                                    }
-                                )
                             }
                         }
                     }
@@ -687,7 +720,7 @@ fun NodeDetailScreen(
                             title = stringResource(R.string.node_detail_mux_enable),
                             subtitle = stringResource(R.string.node_detail_mux_subtitle),
                             checked = mux.enabled == true,
-                            icon = Icons.Rounded.CallSplit,
+                            icon = Icons.AutoMirrored.Rounded.CallSplit,
                             onCheckedChange = { enabled ->
                                 editingOutbound = outbound.copy(multiplex = mux.copy(enabled = enabled))
                             }
@@ -748,7 +781,7 @@ fun NodeDetailScreen(
                                 "${selectedNode.name} ($profileName)"
                             }
                         }
-                        else -> outbound.detour ?: noneText
+                        else -> outbound.detour
                     }
                     val detourNodesForSelection = (allNodes.takeIf { it.isNotEmpty() } ?: nodes)
                         .filterNot {

@@ -1,14 +1,13 @@
 package com.kunk.singbox.ui.screens
 
 import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
@@ -29,7 +28,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.ArrowBack
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.ArrowDownward
 import androidx.compose.material.icons.rounded.ArrowUpward
 import androidx.compose.material.icons.rounded.Delete
@@ -56,7 +55,6 @@ import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
@@ -75,6 +73,7 @@ import com.kunk.singbox.ui.theme.LiquidGlassFilterChip
 import com.kunk.singbox.ui.theme.isLiquidGlassTheme
 import com.kunk.singbox.ui.theme.liquidGlassIconButtonPanel
 import com.kunk.singbox.ui.theme.liquidGlassPanel
+import com.kunk.singbox.ui.theme.liquidGlassPressFeedback
 import com.kunk.singbox.ui.theme.liquidGlassProgressColor
 import com.kunk.singbox.ui.theme.liquidGlassProgressTrackColor
 import com.kunk.singbox.viewmodel.TrafficStatsViewModel
@@ -135,32 +134,9 @@ private fun Modifier.trafficLegendMarkerPanel(defaultColor: Color): Modifier {
     }
 }
 
-@Composable
-private fun Modifier.trafficRefreshPressFeedback(
-    useLiquidGlass: Boolean,
-    isPressed: Boolean,
-    interactionSource: MutableInteractionSource,
-    onClick: () -> Unit
-): Modifier {
-    val scale by animateFloatAsState(
-        targetValue = if (useLiquidGlass && isPressed) 0.96f else 1f,
-        animationSpec = tween(durationMillis = 150),
-        label = "liquid_glass_traffic_refresh_scale"
-    )
-
-    return graphicsLayer {
-        scaleX = scale
-        scaleY = scale
-    }.clickable(
-        interactionSource = interactionSource,
-        indication = null,
-        onClick = onClick
-    )
-}
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-@Suppress("LongMethod", "CognitiveComplexMethod")
+@Suppress("LongMethod", "CyclomaticComplexMethod", "CognitiveComplexMethod")
 fun TrafficStatsScreen(
     navController: NavController,
     viewModel: TrafficStatsViewModel = viewModel()
@@ -172,18 +148,26 @@ fun TrafficStatsScreen(
 
     // Refresh button interaction
     val refreshInteractionSource = remember { MutableInteractionSource() }
-    val isRefreshPressed by refreshInteractionSource.collectIsPressedAsState()
+    val isRefreshPressed = if (useLiquidGlass) {
+        refreshInteractionSource.collectIsPressedAsState().value
+    } else {
+        false
+    }
 
-    // Refresh animation
-    val infiniteTransition = rememberInfiniteTransition(label = "refresh")
-    val refreshRotation by infiniteTransition.animateFloat(
-        initialValue = 0f,
-        targetValue = 360f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 1000, easing = LinearEasing)
-        ),
-        label = "refresh_rotation"
-    )
+    val refreshRotation = if (uiState.isLoading) {
+        val transition = rememberInfiniteTransition(label = "refresh")
+        val rotation by transition.animateFloat(
+            initialValue = 0f,
+            targetValue = 360f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(durationMillis = 1000, easing = LinearEasing)
+            ),
+            label = "refresh_rotation"
+        )
+        rotation
+    } else {
+        0f
+    }
 
     if (showClearDialog) {
         ConfirmDialog(
@@ -215,7 +199,7 @@ fun TrafficStatsScreen(
                         onClick = { navController.popBackStack() }
                     ) {
                         Icon(
-                            Icons.Rounded.ArrowBack,
+                            Icons.AutoMirrored.Rounded.ArrowBack,
                             contentDescription = stringResource(R.string.common_back),
                             tint = MaterialTheme.colorScheme.onBackground
                         )
@@ -241,9 +225,11 @@ fun TrafficStatsScreen(
                                         Color.Transparent
                                     }
                                 )
-                                .trafficRefreshPressFeedback(
+                                .liquidGlassPressFeedback(
                                     useLiquidGlass = useLiquidGlass,
-                                    isPressed = isRefreshPressed,
+                                    pressedScale = 0.96f,
+                                    animationSpec = tween(durationMillis = 150),
+                                    label = "liquid_glass_traffic_refresh_scale",
                                     interactionSource = refreshInteractionSource,
                                     onClick = viewModel::refresh
                                 ),

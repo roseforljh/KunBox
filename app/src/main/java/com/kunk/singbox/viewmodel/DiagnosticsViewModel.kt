@@ -175,7 +175,7 @@ class DiagnosticsViewModel(application: Application) : AndroidViewModel(applicat
         val pkgRules = rules.filter { !it.packageName.isNullOrEmpty() }
         val finalOutbound = runConfig?.route?.finalOutbound ?: "(null)"
 
-        val findProcess = runConfig?.route?.findProcess ?: false
+        val findProcess = runConfig?.route?.findProcess
         val hasSniffRule = rules.any { it.action == "sniff" }
         val hasInboundSniff = runConfig?.inbounds?.any { it.sniff == true } ?: false
         val tunInboundMtu = runConfig?.inbounds
@@ -200,7 +200,7 @@ class DiagnosticsViewModel(application: Application) : AndroidViewModel(applicat
             appendLine("MTU effective: $effectiveMtu")
             appendLine("MTU in running_config tun inbound: ${tunInboundMtu ?: "(null)"}")
             appendLine("QUIC blocked: ${settings.blockQuic}")
-            appendLine("find_process (route): $findProcess")
+            appendLine("find_process (route): ${findProcess ?: "auto (kernel)"}")
             appendLine("sniff enabled (inbound): $hasInboundSniff")
             appendLine("sniff enabled (route rule): $hasSniffRule")
             appendLine("\n=== Routing Summary ===")
@@ -264,10 +264,11 @@ class DiagnosticsViewModel(application: Application) : AndroidViewModel(applicat
                 val report = withContext(Dispatchers.IO) {
                     val settings = settingsRepository.settings.first()
                     val coreActive = com.kunk.singbox.ipc.VpnStateStore.getActive()
-                    val request = Request.Builder().url("https://www.google.com/generate_204").build()
+                    val targetUrl = AppSettings.requireLatencyTestUrl(settings.latencyTestUrl)
+                    val request = Request.Builder().url(targetUrl).build()
 
                     fun runOnce(clientLabel: String, clientProvider: () -> okhttp3.OkHttpClient): Pair<String, Long> {
-                        val startedAt = System.currentTimeMillis()
+                        val startedAt = System.nanoTime()
                         return try {
                             clientProvider().newCall(request).execute().use { resp ->
                                 val ok = resp.isSuccessful || resp.code == 204
@@ -276,11 +277,11 @@ class DiagnosticsViewModel(application: Application) : AndroidViewModel(applicat
                                 } else {
                                     "FAILED (${resp.code})"
                                 }
-                                val duration = System.currentTimeMillis() - startedAt
+                                val duration = (System.nanoTime() - startedAt) / 1_000_000L
                                 "$clientLabel: $status" to duration
                             }
                         } catch (e: Exception) {
-                            val duration = System.currentTimeMillis() - startedAt
+                            val duration = (System.nanoTime() - startedAt) / 1_000_000L
                             "$clientLabel: ERROR (${e.javaClass.simpleName}: ${e.message})" to duration
                         }
                     }
@@ -299,7 +300,7 @@ class DiagnosticsViewModel(application: Application) : AndroidViewModel(applicat
                     }
 
                     buildString {
-                        appendLine("Target: www.google.com/generate_204")
+                        appendLine("Target: $targetUrl")
                         appendLine("Core active: $coreActive")
                         appendLine()
                         appendLine("$directLine")
@@ -319,7 +320,7 @@ class DiagnosticsViewModel(application: Application) : AndroidViewModel(applicat
 
                 _resultMessage.value = report
             } catch (e: Exception) {
-                _resultMessage.value = "Target: www.google.com\nStatus: Error\nError: ${e.message}"
+                _resultMessage.value = "Status: Error\nError: ${e.message}"
             } finally {
                 _isConnectivityLoading.value = false
                 _showResultDialog.value = true
@@ -332,9 +333,12 @@ class DiagnosticsViewModel(application: Application) : AndroidViewModel(applicat
         viewModelScope.launch {
             _isPingLoading.value = true
             _resultTitle.value = "TCP Ping Test"
-            val host = "8.8.8.8"
-            val port = 53
             try {
+                val settings = settingsRepository.settings.first()
+                val target = AppSettings.latencyTestUri(settings.latencyTestUrl)
+                val host = target.host
+                val port = target.port.takeIf { it > 0 }
+                    ?: if (target.scheme.equals("https", true)) 443 else 80
                 val results = mutableListOf<Long>()
                 val count = 4
                 repeat(count) {
@@ -356,7 +360,7 @@ class DiagnosticsViewModel(application: Application) : AndroidViewModel(applicat
                     "Sent: $count, Received: 0, Loss: 100%"
                 }
 
-                _resultMessage.value = "Target: $host:$port (Google DNS)\nMethod: TCP Ping (Java Socket)\n\n$summary"
+                _resultMessage.value = "Target: $host:$port\nMethod: TCP Ping (Java Socket)\n\n$summary"
             } catch (e: Exception) {
                 _resultMessage.value = "TCP Ping failed: ${e.message}"
             } finally {
@@ -371,8 +375,9 @@ class DiagnosticsViewModel(application: Application) : AndroidViewModel(applicat
         viewModelScope.launch {
             _isDnsLoading.value = true
             _resultTitle.value = "DNS Query"
-            val host = "www.google.com"
             try {
+                val settings = settingsRepository.settings.first()
+                val host = AppSettings.latencyTestUri(settings.latencyTestUrl).host
                 // Use Java's built-in DNS resolver (which uses system/VPN DNS)
                 val ips = withContext(Dispatchers.IO) {
                     InetAddress.getAllByName(host)
@@ -380,7 +385,7 @@ class DiagnosticsViewModel(application: Application) : AndroidViewModel(applicat
                 val ipList = ips.mapNotNull { it.hostAddress ?: "(null)" }
                 _resultMessage.value = buildDnsQuerySuccessMessage(host, ipList)
             } catch (e: Exception) {
-                _resultMessage.value = buildDnsQueryFailureMessage(host, e.message ?: "unknown")
+                _resultMessage.value = buildDnsQueryFailureMessage("invalid target", e.message ?: "unknown")
             } finally {
                 _isDnsLoading.value = false
                 _showResultDialog.value = true
@@ -400,7 +405,7 @@ class DiagnosticsViewModel(application: Application) : AndroidViewModel(applicat
                     runConfig = runConfig
                 )
             } catch (e: Exception) {
-                _resultMessage.value = "DNS 泄露: 是\n\n原因:\n- DNS 泄露检测失败: ${e.message ?: "unknown"}"
+                _resultMessage.value = "DNS 静态风险: 无法判定\n\n原因:\n- 运行配置检查失败: ${e.message ?: "unknown"}"
             } finally {
                 _isDnsLeakCheckLoading.value = false
                 _showResultDialog.value = true
@@ -544,7 +549,7 @@ class DiagnosticsViewModel(application: Application) : AndroidViewModel(applicat
 
         val quicSupported = LibboxCompat.isNaiveQuicSupported()
         val details = naiveOutbounds.joinToString("\n") { outbound ->
-            val network = outbound.network ?: "h2"
+            val network = outbound.network?.firstOrNull() ?: "h2"
             val hasHost = !outbound.headers?.get("Host").isNullOrBlank()
             val hasSni = !outbound.tls?.serverName.isNullOrBlank()
             val usesQuic = network.equals("quic", ignoreCase = true)
@@ -596,6 +601,6 @@ class DiagnosticsViewModel(application: Application) : AndroidViewModel(applicat
             }
         }
 
-        return MatchResult("Final (No match)", config.route?.finalOutbound ?: "direct")
+        return MatchResult("Final (No match)", config.route.finalOutbound ?: "direct")
     }
 }

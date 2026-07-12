@@ -5,10 +5,7 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -88,34 +85,11 @@ private fun Modifier.ruleSetInboundOptionPanel(isSelected: Boolean): Modifier {
 private fun Modifier.ruleSetSortItemPressFeedback(
     enabled: Boolean,
     onClick: () -> Unit
-): Modifier {
-    val useLiquidGlass = isLiquidGlassTheme()
-    val interactionSource = remember { MutableInteractionSource() }
-    val isPressed by interactionSource.collectIsPressedAsState()
-    val scale by animateFloatAsState(
-        targetValue = if (useLiquidGlass && enabled && isPressed) 0.98f else 1f,
-        animationSpec = spring(stiffness = 520f, dampingRatio = 0.72f),
-        label = "liquid_glass_rule_set_sort_item_scale"
-    )
-    val clickModifier = if (useLiquidGlass) {
-        Modifier.clickable(
-            enabled = enabled,
-            interactionSource = interactionSource,
-            indication = null,
-            onClick = onClick
-        )
-    } else {
-        Modifier.clickable(
-            enabled = enabled,
-            onClick = onClick
-        )
-    }
-
-    return graphicsLayer {
-        scaleX = scale
-        scaleY = scale
-    }.then(clickModifier)
-}
+): Modifier = liquidGlassPressFeedback(
+    enabled = enabled,
+    label = "liquid_glass_rule_set_sort_item_scale",
+    onClick = onClick
+)
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -220,10 +194,10 @@ fun RuleSetsScreen(
     }
 
     var draggingItemIndex by remember { mutableStateOf<Int?>(null) }
-    var draggingItemOffset by remember { mutableStateOf(0f) }
+    var draggingItemOffset by remember { mutableFloatStateOf(0f) }
     var draggingItemId by remember { mutableStateOf<String?>(null) }
     var settlingItemId by remember { mutableStateOf<String?>(null) }
-    var itemHeightPx by remember { mutableStateOf(0f) }
+    var itemHeightPx by remember { mutableFloatStateOf(0f) }
 
     val density = androidx.compose.ui.platform.LocalDensity.current
     val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
@@ -324,7 +298,6 @@ fun RuleSetsScreen(
                             targetSelectionTitle = selectProfileMsg
                             targetOptions = profiles.map { it.name to it.id }
                         }
-                        else -> {}
                     }
                     if (selectedMode != RuleSetOutboundMode.NODE) {
                         showTargetSelectionDialog = true

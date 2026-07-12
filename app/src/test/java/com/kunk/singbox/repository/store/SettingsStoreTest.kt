@@ -38,6 +38,16 @@ class SettingsStoreTest {
     }
 
     @Test
+    fun testMigrateSettingsReplacesDomainLocalDnsWithIpDoh() {
+        val migrated = SettingsStore.migrateSettings(
+            version = 9,
+            settings = AppSettings(localDns = AppSettings.LEGACY_DOMAIN_LOCAL_DNS)
+        )
+
+        assertEquals(AppSettings.DEFAULT_LOCAL_DNS, migrated.localDns)
+    }
+
+    @Test
     fun testMigrateSettingsReplacesOldVersionLocalDefaultWithDoh() {
         val migrated = SettingsStore.migrateSettings(
             version = 2,
@@ -123,6 +133,71 @@ class SettingsStoreTest {
     }
 
     @Test
+    fun testMigrateSettingsNormalizesLatencyTestUrlAtCurrentVersion() {
+        val missing = Gson().fromJson("""{"latencyTestUrl":null}""", AppSettings::class.java)
+        val invalid = AppSettings(latencyTestUrl = "ftp://probe.example/file")
+        val valid = AppSettings(latencyTestUrl = "  http://probe.example/204  ")
+        val unsafeValues = listOf(
+            "http://user@probe.example/204",
+            "http://localhost/204",
+            "http://127.0.0.1/204",
+            "http://192.168.1.2/204",
+            "http://[::1]/204"
+        )
+
+        assertEquals(
+            AppSettings.DEFAULT_LATENCY_TEST_URL,
+            SettingsStore.migrateSettings(SettingsEntity.CURRENT_VERSION, missing).latencyTestUrl
+        )
+        assertEquals(
+            AppSettings.DEFAULT_LATENCY_TEST_URL,
+            SettingsStore.migrateSettings(SettingsEntity.CURRENT_VERSION, invalid).latencyTestUrl
+        )
+        assertEquals(
+            "http://probe.example/204",
+            SettingsStore.migrateSettings(SettingsEntity.CURRENT_VERSION, valid).latencyTestUrl
+        )
+        unsafeValues.forEach { value ->
+            assertEquals(
+                AppSettings.DEFAULT_LATENCY_TEST_URL,
+                SettingsStore.migrateSettings(
+                    SettingsEntity.CURRENT_VERSION,
+                    AppSettings(latencyTestUrl = value)
+                ).latencyTestUrl
+            )
+        }
+        assertEquals(true, runCatching { AppSettings.latencyTestUri("ftp://probe.example/file") }.isFailure)
+    }
+
+    @Test
+    fun testRemovedLegacySettingsAreIgnoredAndNotReserialized() {
+        val gson = Gson()
+        val settings = gson.fromJson(
+            """
+            {
+              "wakeResetConnections": false,
+              "tunInterfaceName": "custom0",
+              "tunAddress": {"ipv4":"10.0.0.1/30","ipv6":"fd10::1/126"},
+              "endpointIndependentNat": false,
+              "proxyPort": 3080
+            }
+            """.trimIndent(),
+            AppSettings::class.java
+        )
+
+        assertEquals(3080, settings.proxyPort)
+        val serialized = gson.toJson(settings)
+        listOf(
+            "wakeResetConnections",
+            "tunInterfaceName",
+            "tunAddress",
+            "endpointIndependentNat"
+        ).forEach { removedField ->
+            assertFalse(serialized.contains(removedField))
+        }
+    }
+
+    @Test
     fun testMigrateSettingsRecoversNullTrustedWifiSsids() {
         val settings = Gson().fromJson("""{"trustedWifiSsids":null}""", AppSettings::class.java)
 
@@ -173,7 +248,7 @@ class SettingsStoreTest {
         val previous = AppSettings(localDns = "https://old.example/dns-query")
         val updated = previous.copy(localDns = "https://new.example/dns-query")
 
-        val result = SettingsStore.resolveSettingsAfterPersistenceForTest(
+        val result = SettingsStore.resolveSettingsAfterPersistence(
             previous = previous,
             updated = updated,
             persisted = false
@@ -187,7 +262,7 @@ class SettingsStoreTest {
         val previous = AppSettings(localDns = "https://old.example/dns-query")
         val updated = previous.copy(localDns = "https://new.example/dns-query")
 
-        val result = SettingsStore.resolveSettingsAfterPersistenceForTest(
+        val result = SettingsStore.resolveSettingsAfterPersistence(
             previous = previous,
             updated = updated,
             persisted = true

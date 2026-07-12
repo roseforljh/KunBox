@@ -32,8 +32,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-/**
- */
 class QrScannerActivity : AppCompatActivity() {
 
     private lateinit var capture: CaptureManager

@@ -28,6 +28,7 @@ object VpnStateStore {
     // Sender-side throttle for ACTION_PREPARE_RESTART to reduce repeated network oscillations.
     private const val KEY_LAST_PREPARE_RESTART_AT_MS = "last_prepare_restart_at_ms"
     private const val KEY_TRAFFIC_CLEAR_TIMESTAMP = "traffic_clear_timestamp"
+    private const val KEY_LOG_CLEAR_GENERATION = "log_clear_generation"
     private const val KEY_LAST_MANUAL_STOP_AT_MS = "last_manual_stop_at_ms"
     private const val KEY_LAST_AUTO_FAILOVER_AT_MS = "last_auto_failover_at_ms"
     private const val KEY_AUTO_FAILOVER_WINDOW_START_AT_MS = "auto_failover_window_start_at_ms"
@@ -201,6 +202,12 @@ object VpnStateStore {
 
     fun setTrafficClearTimestamp(timestamp: Long) {
         mmkv.encode(KEY_TRAFFIC_CLEAR_TIMESTAMP, timestamp)
+    }
+
+    fun getLogClearGeneration(): Long = mmkv.decodeLong(KEY_LOG_CLEAR_GENERATION, 0L)
+
+    fun setLogClearGeneration(generation: Long) {
+        mmkv.encode(KEY_LOG_CLEAR_GENERATION, generation)
     }
 
     fun getLastAutoFailoverAtMs(): Long = mmkv.decodeLong(KEY_LAST_AUTO_FAILOVER_AT_MS, 0L)

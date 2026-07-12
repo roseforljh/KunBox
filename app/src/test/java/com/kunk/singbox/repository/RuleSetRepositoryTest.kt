@@ -39,7 +39,7 @@ class RuleSetRepositoryTest {
         """.trimIndent()
 
         assertTrue(
-            RuleSetRepository.isDownloadedRuleSetValidForTest(
+            RuleSetRepository.isDownloadedRuleSetContentValid(
                 header = content,
                 fileLength = content.toByteArray().size.toLong(),
                 format = "source"
@@ -60,7 +60,7 @@ class RuleSetRepositoryTest {
         """.trimIndent()
 
         assertTrue(
-            RuleSetRepository.isDownloadedRuleSetValidForTest(
+            RuleSetRepository.isDownloadedRuleSetContentValid(
                 header = content,
                 fileLength = content.toByteArray().size.toLong(),
                 format = "source"
@@ -73,7 +73,7 @@ class RuleSetRepositoryTest {
         val content = """{"message":"not found"}"""
 
         assertFalse(
-            RuleSetRepository.isDownloadedRuleSetValidForTest(
+            RuleSetRepository.isDownloadedRuleSetContentValid(
                 header = content,
                 fileLength = content.toByteArray().size.toLong(),
                 format = "binary"
@@ -86,7 +86,7 @@ class RuleSetRepositoryTest {
         val content = "429 Too Many Requests\nrate limit exceeded"
 
         assertFalse(
-            RuleSetRepository.isDownloadedRuleSetValidForTest(
+            RuleSetRepository.isDownloadedRuleSetContentValid(
                 header = content,
                 fileLength = content.toByteArray().size.toLong(),
                 format = "binary"
@@ -99,7 +99,7 @@ class RuleSetRepositoryTest {
         val content = "SRS\u0001binary-payload"
 
         assertTrue(
-            RuleSetRepository.isDownloadedRuleSetValidForTest(
+            RuleSetRepository.isDownloadedRuleSetContentValid(
                 header = content,
                 fileLength = content.toByteArray().size.toLong(),
                 format = "binary"
@@ -112,7 +112,7 @@ class RuleSetRepositoryTest {
         val content = "<!DOCTYPE html><html></html>"
 
         assertFalse(
-            RuleSetRepository.isDownloadedRuleSetValidForTest(
+            RuleSetRepository.isDownloadedRuleSetContentValid(
                 header = content,
                 fileLength = content.toByteArray().size.toLong(),
                 format = "source"
@@ -123,7 +123,7 @@ class RuleSetRepositoryTest {
     @Test
     fun forceUpdateDownloadsEvenWhenCacheIsFresh() {
         assertTrue(
-            RuleSetRepository.shouldDownloadRemoteRuleSetForTest(
+            RuleSetRepository.shouldDownloadRemoteRuleSet(
                 fileExists = true,
                 allowNetwork = true,
                 forceUpdate = true,
@@ -135,7 +135,7 @@ class RuleSetRepositoryTest {
     @Test
     fun nonForcedUpdateSkipsFreshCache() {
         assertFalse(
-            RuleSetRepository.shouldDownloadRemoteRuleSetForTest(
+            RuleSetRepository.shouldDownloadRemoteRuleSet(
                 fileExists = true,
                 allowNetwork = true,
                 forceUpdate = false,
@@ -147,7 +147,7 @@ class RuleSetRepositoryTest {
     @Test
     fun missingCacheDownloadsWhenNetworkAllowed() {
         assertTrue(
-            RuleSetRepository.shouldDownloadRemoteRuleSetForTest(
+            RuleSetRepository.shouldDownloadRemoteRuleSet(
                 fileExists = false,
                 allowNetwork = true,
                 forceUpdate = false,
@@ -159,13 +159,13 @@ class RuleSetRepositoryTest {
     @Test
     fun forcedUpdateFailureIsNotReadyJustBecauseOldCacheExists() {
         assertFalse(
-            RuleSetRepository.isRemoteRuleSetReadyAfterDownloadFailureForTest(
+            RuleSetRepository.isRemoteRuleSetReadyAfterDownloadFailure(
                 fileExists = true,
                 forceUpdate = true
             )
         )
         assertTrue(
-            RuleSetRepository.isRemoteRuleSetReadyAfterDownloadFailureForTest(
+            RuleSetRepository.isRemoteRuleSetReadyAfterDownloadFailure(
                 fileExists = true,
                 forceUpdate = false
             )
@@ -177,8 +177,8 @@ class RuleSetRepositoryTest {
         val tempDir = java.nio.file.Files.createTempDirectory("ruleset_download_").toFile()
         val target = java.io.File(tempDir, "geosite-cn.srs")
 
-        val first = RuleSetRepository.createDownloadTempFileForTest(target)
-        val second = RuleSetRepository.createDownloadTempFileForTest(target)
+        val first = RuleSetRepository.createDownloadTempFile(target)
+        val second = RuleSetRepository.createDownloadTempFile(target)
 
         assertTrue(first.name.startsWith("geosite-cn.srs."))
         assertTrue(second.name.startsWith("geosite-cn.srs."))

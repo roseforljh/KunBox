@@ -16,10 +16,23 @@ import java.net.InetSocketAddress
 import java.net.ServerSocket
 import java.util.concurrent.ConcurrentHashMap
 
-/**
- *
- *
- */
+internal class TrafficStatusGate {
+    private val lock = Any()
+    private var accepting = false
+
+    fun start() = synchronized(lock) {
+        accepting = true
+    }
+
+    fun stopAndWait() = synchronized(lock) {
+        accepting = false
+    }
+
+    fun runIfActive(block: () -> Unit) = synchronized(lock) {
+        if (accepting) block()
+    }
+}
+
 @Suppress("TooManyFunctions")
 class CommandManager(
     private val context: Context,
@@ -31,14 +44,7 @@ class CommandManager(
         private const val PORT_RELEASE_TIMEOUT_MS = 10000L
         private const val PORT_CHECK_INTERVAL_MS = 50L
 
-        internal fun dispatchKernelLogForTest(
-            message: String,
-            uiLogsEnabled: Boolean,
-            observer: ((String) -> Unit)?,
-            addToRepository: (String) -> Unit
-        ) = dispatchKernelLog(message, uiLogsEnabled, observer, addToRepository)
-
-        private fun dispatchKernelLog(
+        internal fun dispatchKernelLog(
             message: String,
             uiLogsEnabled: Boolean,
             observer: ((String) -> Unit)?,
@@ -71,6 +77,7 @@ class CommandManager(
     @Volatile
     private var isNonEssentialSuspended: Boolean = false
 
+    private val trafficStatusGate = TrafficStatusGate()
     private var connectionsSnapshot: Connections? = null
 
     private val groupSelectedOutbounds = ConcurrentHashMap<String, String>()
@@ -88,8 +95,6 @@ class CommandManager(
     private var lastSpeedUpdateTime: Long = 0L
     private var lastConnectionsLabelLogged: String? = null
 
-    /**
-     */
     interface Callbacks {
         fun requestNotificationUpdate(force: Boolean)
         fun resolveEgressNodeName(tagOrSelector: String?): String?
@@ -107,8 +112,6 @@ class CommandManager(
         kernelLogObserver = observer
     }
 
-    /**
-     */
     @Suppress("UNUSED_PARAMETER")
     fun createServer(platformInterface: PlatformInterface): Result<CommandServer> = runCatching {
         val serverHandler = object : CommandServerHandler {
@@ -139,8 +142,6 @@ class CommandManager(
         server
     }
 
-    /**
-     */
     fun startServer(): Result<Unit> = runCatching {
         commandServer?.start() ?: throw IllegalStateException("CommandServer not created")
         Log.i(TAG, "CommandServer started")
@@ -149,8 +150,6 @@ class CommandManager(
         // 避免 Libbox.hasSelector() 在 box 未运行时超时阻塞 ~1.5s
     }
 
-    /**
-     */
     fun startService(configContent: String, platformInterface: PlatformInterface): Result<Unit> = runCatching {
         val overrideOptions = OverrideOptions().apply {
             autoRedirect = false
@@ -160,18 +159,14 @@ class CommandManager(
         Log.i(TAG, "CommandServer service started")
     }
 
-    /**
-     */
     fun closeService(): Result<Unit> = runCatching {
         commandServer?.closeService()
             ?: throw IllegalStateException("CommandServer not created")
         Log.i(TAG, "CommandServer service closed")
     }
 
-    /**
-     */
     fun startClients(): Result<Unit> = runCatching {
-
+        trafficStatusGate.start()
         val handler = createClientHandler()
         clientHandler = handler
 
@@ -215,8 +210,6 @@ class CommandManager(
         }
     }
 
-    /**
-     */
     @Suppress("CognitiveComplexMethod")
     suspend fun stopAndWaitPortRelease(
         proxyPort: Int,
@@ -225,6 +218,7 @@ class CommandManager(
         enforceReleaseOnTimeout: Boolean = false
     ): Result<Unit> = runCatching {
         Log.i(TAG, "stopAndWaitPortRelease: port=$proxyPort, timeout=${waitTimeoutMs}ms, forceKill=$forceKillOnTimeout")
+        stopTrafficUpdatesAndWait()
 
         commandClient?.disconnect()
         commandClient = null
@@ -284,9 +278,8 @@ class CommandManager(
         }
     }
 
-    /**
-     */
     fun stop(): Result<Unit> = runCatching {
+        stopTrafficUpdatesAndWait()
         commandClient?.disconnect()
         commandClient = null
         commandClientGroup?.disconnect()
@@ -309,8 +302,10 @@ class CommandManager(
         Log.i(TAG, "Command Server/Client stopped")
     }
 
-    /**
-     */
+    fun stopTrafficUpdatesAndWait() {
+        trafficStatusGate.stopAndWait()
+    }
+
     private suspend fun waitForPortRelease(port: Int, timeoutMs: Long): Boolean {
         val startTime = SystemClock.elapsedRealtime()
         while (SystemClock.elapsedRealtime() - startTime < timeoutMs) {
@@ -322,8 +317,6 @@ class CommandManager(
         return false
     }
 
-    /**
-     */
     private fun isPortAvailable(port: Int): Boolean {
         return try {
             ServerSocket().use { socket ->
@@ -336,25 +329,15 @@ class CommandManager(
         }
     }
 
-    /**
-     */
     fun getCommandServer(): CommandServer? = commandServer
 
-    /**
-     */
     fun getCommandClient(): CommandClient? = commandClient
     fun getConnectionsClient(): CommandClient? = commandClientConnections
 
-    /**
-     */
     fun getSelectedOutbound(groupTag: String): String? = groupSelectedOutbounds[groupTag]
 
-    /**
-     */
     fun getGroupsCount(): Int = groupSelectedOutbounds.size
 
-    /**
-     */
     fun closeConnections(): Boolean {
         val clients = listOfNotNull(commandClientConnections, commandClient)
         for (client in clients) {
@@ -369,8 +352,6 @@ class CommandManager(
         return false
     }
 
-    /**
-     */
     fun closeConnection(connId: String): Boolean {
         val client = commandClientConnections ?: commandClient ?: return false
         return try {
@@ -421,85 +402,46 @@ class CommandManager(
         @Suppress("LongMethod")
         override fun writeStatus(message: StatusMessage?) {
             if (message == null) return
-            try {
-                val currentUp = message.uplinkTotal
-                val currentDown = message.downlinkTotal
-                val currentTime = System.currentTimeMillis()
+            trafficStatusGate.runIfActive {
+                try {
+                    val currentUp = message.uplinkTotal
+                    val currentDown = message.downlinkTotal
+                    val currentTime = System.currentTimeMillis()
 
-                if (lastSpeedUpdateTime == 0L || currentTime < lastSpeedUpdateTime) {
-                    lastSpeedUpdateTime = currentTime
-                    lastUplinkTotal = currentUp
-                    lastDownlinkTotal = currentDown
-                    return
-                }
-
-                if (currentUp < lastUplinkTotal || currentDown < lastDownlinkTotal) {
-                    lastUplinkTotal = currentUp
-                    lastDownlinkTotal = currentDown
-                    lastSpeedUpdateTime = currentTime
-                    return
-                }
-
-                val diffUp = currentUp - lastUplinkTotal
-                val diffDown = currentDown - lastDownlinkTotal
-
-                if (diffUp > 0 || diffDown > 0) {
-                    val trafficRepo = TrafficRepository.getInstance(context)
-                    val configRepo = ConfigRepository.getInstance(context)
-
-                    val perOutboundTraffic = try {
-                        BoxWrapperManager.getTrafficByOutbound()
-                            .filterKeys { tag ->
-                                !tag.equals("direct", ignoreCase = true) &&
-                                    !tag.equals("block", ignoreCase = true)
-                            }
-                    } catch (e: Exception) {
-                        Log.w(TAG, "getTrafficByOutbound failed, fallback to activeNode", e)
-                        emptyMap()
+                    if (lastSpeedUpdateTime == 0L || currentTime < lastSpeedUpdateTime) {
+                        lastSpeedUpdateTime = currentTime
+                        lastUplinkTotal = currentUp
+                        lastDownlinkTotal = currentDown
+                        return@runIfActive
                     }
 
-                    if (perOutboundTraffic.isNotEmpty()) {
-                        var totalOutboundUp = 0L
-                        var totalOutboundDown = 0L
-                        perOutboundTraffic.forEach { (_, traffic) ->
-                            totalOutboundUp += traffic.first
-                            totalOutboundDown += traffic.second
-                        }
+                    if (currentUp < lastUplinkTotal || currentDown < lastDownlinkTotal) {
+                        lastUplinkTotal = currentUp
+                        lastDownlinkTotal = currentDown
+                        lastSpeedUpdateTime = currentTime
+                        return@runIfActive
+                    }
 
-                        if (totalOutboundUp > 0 || totalOutboundDown > 0) {
-                            perOutboundTraffic.forEach { (nodeTag, traffic) ->
-                                val (outboundUp, outboundDown) = traffic
-                                val allocUp = if (totalOutboundUp > 0) {
-                                    (diffUp * outboundUp / totalOutboundUp)
-                                } else 0L
-                                val allocDown = if (totalOutboundDown > 0) {
-                                    (diffDown * outboundDown / totalOutboundDown)
-                                } else 0L
+                    val diffUp = currentUp - lastUplinkTotal
+                    val diffDown = currentDown - lastDownlinkTotal
 
-                                if (allocUp > 0 || allocDown > 0) {
-                                    val node = configRepo.getNodeByName(nodeTag)
-                                    if (node != null) {
-                                        trafficRepo.addTraffic(node.id, allocUp, allocDown, node.name)
-                                    } else {
-                                        trafficRepo.addTraffic(nodeTag, allocUp, allocDown, nodeTag)
-                                    }
-                                }
-                            }
-                        }
-                    } else {
+                    if (diffUp > 0 || diffDown > 0) {
+                        val trafficRepo = TrafficRepository.getInstance(context)
+                        val configRepo = ConfigRepository.getInstance(context)
+
                         val activeNodeId = configRepo.activeNodeId.value
                         if (activeNodeId != null) {
                             val nodeName = configRepo.getNodeById(activeNodeId)?.name
                             trafficRepo.addTraffic(activeNodeId, diffUp, diffDown, nodeName)
                         }
                     }
-                }
 
-                lastUplinkTotal = currentUp
-                lastDownlinkTotal = currentDown
-                lastSpeedUpdateTime = currentTime
-            } catch (e: Exception) {
-                Log.e(TAG, "writeStatus callback error", e)
+                    lastUplinkTotal = currentUp
+                    lastDownlinkTotal = currentDown
+                    lastSpeedUpdateTime = currentTime
+                } catch (e: Exception) {
+                    Log.e(TAG, "writeStatus callback error", e)
+                }
             }
         }
 

@@ -11,7 +11,7 @@ open class ConfigRepositoryTestPart9 : ConfigRepositoryTestPart8() {
     override fun testDetectRuleSetRuleTypeUsesGeositeTagForBinaryRuleSet() {
         val tempFile = createTempRuleSetBytes(byteArrayOf(0, 1, 2, 3))
 
-        val ruleType = ConfigRepository.detectRuleSetRuleTypeForTest(tempFile, "geosite-cn")
+        val ruleType = ConfigRepository.detectRuleSetRuleTypeStatic(tempFile, "geosite-cn")
 
         assertEquals(ConfigRepository.RuleSetRuleType.DOMAIN, ruleType)
     }
@@ -20,7 +20,7 @@ open class ConfigRepositoryTestPart9 : ConfigRepositoryTestPart8() {
     override fun testDetectRuleSetRuleTypeKeepsUnknownBinaryAsUnknownWithoutTagHint() {
         val tempFile = createTempRuleSetBytes(byteArrayOf('S'.code.toByte(), 'R'.code.toByte(), 'S'.code.toByte(), 1))
 
-        val ruleType = ConfigRepository.detectRuleSetRuleTypeForTest(tempFile, "ads")
+        val ruleType = ConfigRepository.detectRuleSetRuleTypeStatic(tempFile, "ads")
 
         assertEquals(ConfigRepository.RuleSetRuleType.UNKNOWN, ruleType)
     }
@@ -44,7 +44,7 @@ open class ConfigRepositoryTestPart9 : ConfigRepositoryTestPart8() {
         val server = com.kunk.singbox.model.DnsServer(
             tag = "ad-block", type = "udp", server = "8.8.8.8"
         )
-        val result = ConfigRepository.sanitizeInjectedDnsServerForTest(
+        val result = ConfigRepository.sanitizeInjectedDnsServerForRuntime(
             server = server,
             routingMode = RoutingMode.GLOBAL_PROXY,
             proxyDetourTag = "node-hk"
@@ -57,7 +57,7 @@ open class ConfigRepositoryTestPart9 : ConfigRepositoryTestPart8() {
         val server = com.kunk.singbox.model.DnsServer(
             tag = "custom", type = "https", server = "dns.google", detour = "my-proxy"
         )
-        val result = ConfigRepository.sanitizeInjectedDnsServerForTest(
+        val result = ConfigRepository.sanitizeInjectedDnsServerForRuntime(
             server = server,
             routingMode = RoutingMode.GLOBAL_PROXY,
             proxyDetourTag = "node-hk"
@@ -68,7 +68,7 @@ open class ConfigRepositoryTestPart9 : ConfigRepositoryTestPart8() {
     @Test
     override fun testSanitizeInjectedDnsServerSkipsFakeip() {
         val server = com.kunk.singbox.model.DnsServer(tag = "fakeip-dns", type = "fakeip")
-        val result = ConfigRepository.sanitizeInjectedDnsServerForTest(
+        val result = ConfigRepository.sanitizeInjectedDnsServerForRuntime(
             server = server,
             routingMode = RoutingMode.GLOBAL_PROXY,
             proxyDetourTag = "node-hk"
@@ -81,7 +81,7 @@ open class ConfigRepositoryTestPart9 : ConfigRepositoryTestPart8() {
         val server = com.kunk.singbox.model.DnsServer(
             tag = "leak", type = "udp", server = "1.1.1.1"
         )
-        val result = ConfigRepository.sanitizeInjectedDnsServerForTest(
+        val result = ConfigRepository.sanitizeInjectedDnsServerForRuntime(
             server = server,
             routingMode = RoutingMode.GLOBAL_DIRECT,
             proxyDetourTag = "node-hk"

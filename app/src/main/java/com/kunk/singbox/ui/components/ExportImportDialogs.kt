@@ -77,8 +77,6 @@ private fun ExportImportCard(
     )
 }
 
-/**
- */
 @Composable
 fun ExportProgressDialog(
     state: ExportState,
@@ -189,15 +187,12 @@ fun ExportProgressDialog(
                             )
                         }
                     }
-                    else -> {}
                 }
             }
         }
     }
 }
 
-/**
- */
 @Composable
 fun ImportPreviewDialog(
     summary: ExportDataSummary,
@@ -351,8 +346,6 @@ private fun SummaryRow(label: String, value: String) {
     }
 }
 
-/**
- */
 @Composable
 fun ImportProgressDialog(
     state: ImportState,
@@ -440,7 +433,7 @@ fun ImportProgressDialog(
                         }
                         Spacer(modifier = Modifier.height(16.dp))
                         Text(
-                            text = stringResource(R.string.main_restart), // TODO: better string for "restart VPN"
+                            text = stringResource(R.string.main_restart),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.primary,
                             textAlign = TextAlign.Center
@@ -502,8 +495,6 @@ fun ImportProgressDialog(
     }
 }
 
-/**
- */
 @Composable
 fun ValidatingDialog() {
     Dialog(

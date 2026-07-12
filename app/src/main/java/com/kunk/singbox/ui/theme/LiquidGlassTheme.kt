@@ -23,7 +23,7 @@ import androidx.compose.ui.composed
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.ClipOp
 import androidx.compose.ui.graphics.Color
@@ -89,7 +89,8 @@ fun Modifier.liquidGlassPanel(
         .background(liquidGlassPanelBrush(selected = selected))
         .border(
             border = BorderStroke(
-                width = if (selected) 1.2.dp else 0.8.dp,
+                // 固定线宽，避免选中态切换/位移时边框与卡片不同步
+                width = 1.dp,
                 brush = liquidGlassPanelBorderBrush(selected = selected)
             ),
             shape = shape
@@ -103,7 +104,7 @@ fun Modifier.hollowShadow(
     alpha: Float = 0.08f,
     blurRadius: Dp = 12.dp,
     offsetY: Dp = 6.dp
-): Modifier = this.drawBehind {
+): Modifier = this.drawWithCache {
     val outline = shape.createOutline(size, layoutDirection, this)
     val path = Path()
     when (outline) {
@@ -112,22 +113,26 @@ fun Modifier.hollowShadow(
         is Outline.Generic -> path.addPath(outline.path)
     }
 
-    clipPath(path, clipOp = ClipOp.Difference) {
-        drawIntoCanvas { canvas ->
-            val paint = Paint().apply {
-                this.color = color.copy(alpha = alpha)
-            }
-            if (blurRadius.toPx() > 0) {
-                paint.asFrameworkPaint().maskFilter = BlurMaskFilter(
-                    blurRadius.toPx(),
-                    BlurMaskFilter.Blur.NORMAL
-                )
-            }
+    val blurRadiusPx = blurRadius.toPx()
+    val offsetYPx = offsetY.toPx()
+    val paint = Paint().apply {
+        this.color = color.copy(alpha = alpha)
+        if (blurRadiusPx > 0) {
+            asFrameworkPaint().maskFilter = BlurMaskFilter(
+                blurRadiusPx,
+                BlurMaskFilter.Blur.NORMAL
+            )
+        }
+    }
 
-            canvas.save()
-            canvas.translate(0f, offsetY.toPx())
-            canvas.drawPath(path, paint)
-            canvas.restore()
+    onDrawBehind {
+        clipPath(path, clipOp = ClipOp.Difference) {
+            drawIntoCanvas { canvas ->
+                canvas.save()
+                canvas.translate(0f, offsetYPx)
+                canvas.drawPath(path, paint)
+                canvas.restore()
+            }
         }
     }
 }

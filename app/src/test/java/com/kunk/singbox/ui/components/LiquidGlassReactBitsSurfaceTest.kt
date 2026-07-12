@@ -10,19 +10,20 @@ class LiquidGlassReactBitsSurfaceTest {
     @Test
     fun liquidGlassPanelKeepsSharedThemeEntryWithoutInternalDrawLayers() {
         val source = liquidGlassThemeSource()
+        val panelBody = source.extractFunctionBody("liquidGlassPanel")
 
         listOf(
             "drawWithContent",
-            "drawWithCache",
             "BlendMode.Screen",
             "Color(0xFFFF3B30)",
             "Color(0xFF0A84FF)",
             "float3 channel = float3(redMap, greenMap, blueMap) * channelAlpha;"
         ).forEach { token ->
-            assertFalse(source.contains(token))
+            assertFalse(panelBody.contains(token))
         }
         assertTrue(source.contains(".background(liquidGlassPanelBrush(selected = selected))"))
         assertTrue(source.contains("liquidGlassPanelBorderBrush(selected = selected)"))
+        assertTrue(source.extractFunctionBody("hollowShadow").contains("drawWithCache"))
     }
 
     @Test
@@ -91,13 +92,13 @@ class LiquidGlassReactBitsSurfaceTest {
     }
 
     @Test
-    fun mainActivityUsesCurrentSettingsAsInitialStateToAvoidThemeFlash() {
+    fun mainActivityCollectsSettingsWithoutReadingStateFlowValueInComposition() {
         val source = File("src/main/java/com/kunk/singbox/MainActivity.kt")
             .readText()
             .replace("\r\n", "\n")
 
-        assertTrue(source.contains("initialValue = settingsRepository.settings.value"))
-        assertTrue(!source.contains("settings?.appThemeStyle ?: AppThemeStyle.DEFAULT"))
+        assertTrue(source.contains("settings.collectAsStateWithLifecycle()"))
+        assertFalse(source.contains("initialValue = settingsRepository.settings.value"))
     }
 
     private fun String.extractFunctionBody(functionName: String): String {
@@ -114,7 +115,7 @@ class LiquidGlassReactBitsSurfaceTest {
                 '{' -> depth++
                 '}' -> {
                     depth--
-                    if (depth == 0) return substring(bodyStart, index + 1)
+                    if (depth == 0) return substring(start, index + 1)
                 }
             }
         }

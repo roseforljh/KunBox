@@ -9,8 +9,8 @@ class ConfigRepositoryNodeAddPolicyTest {
 
     @Test
     fun createdNodeActivatesOnlyWhenThereIsNoCurrentProfile() {
-        assertTrue(ConfigRepository.shouldActivateCreatedNodeForTest(null))
-        assertFalse(ConfigRepository.shouldActivateCreatedNodeForTest("profile-a"))
+        assertTrue(ConfigRepository.shouldActivateCreatedNode(null))
+        assertFalse(ConfigRepository.shouldActivateCreatedNode("profile-a"))
     }
 
     @Test

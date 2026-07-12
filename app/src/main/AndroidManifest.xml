@@ -17,8 +17,6 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-    <!-- 电池优化豁免权限,防止息屏时 VPN 服务被系统杀死 -->
-    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <!-- Required to query all installed apps on Android 11+ -->
     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES"
@@ -40,7 +38,6 @@
         <activity
             android:name=".MainActivity"
             android:exported="true"
-            android:label="@string/app_name"
             android:launchMode="singleTask"
             android:theme="@style/Theme.SingBoxAndroid">
             <intent-filter>
@@ -69,7 +66,7 @@
             android:name=".ui.scanner.QrScannerActivity"
             android:exported="false"
             android:screenOrientation="fullSensor"
-            android:theme="@style/Theme.AppCompat.NoActionBar" />
+            android:theme="@style/Theme.SingBoxAndroid.Scanner" />
 
         <!-- 快捷方式切换 Activity (透明，不显示 UI) -->
         <!-- 运行在 :bg 进程,与服务同进程,消除 IPC 延迟 -->

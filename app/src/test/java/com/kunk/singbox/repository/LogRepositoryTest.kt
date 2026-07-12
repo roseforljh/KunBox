@@ -2,6 +2,7 @@ package com.kunk.singbox.repository
 
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -22,7 +23,7 @@ class LogRepositoryTest {
 
         repository.addLog("INFO test log")
 
-        assertTrue(repository.getFilteredLogs().isEmpty())
+        assertFalse(repository.getLogsAsText().contains("INFO test log"))
     }
 
     @Test
@@ -32,8 +33,8 @@ class LogRepositoryTest {
 
         repository.addLog("INFO test log")
 
-        val logs = repository.getFilteredLogs()
-        assertEquals(1, logs.size)
-        assertTrue(logs.first().contains("INFO test log"))
+        val logs = repository.getLogsAsText()
+        assertEquals(1, logs.lineSequence().count { it.contains("INFO test log") })
+        assertTrue(logs.contains("INFO test log"))
     }
 }

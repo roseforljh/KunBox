@@ -60,9 +60,13 @@ fun TunSettingsScreen(
 
     val context = LocalContext.current
     val installedAppsRepo = remember { InstalledAppsRepository.getInstance(context) }
-    val installedApps by installedAppsRepo.installedApps.collectAsStateWithLifecycle()
+    val installedApps by installedAppsRepo.appItems.collectAsStateWithLifecycle()
 
-    LaunchedEffect(Unit) { installedAppsRepo.refreshApps() }
+    LaunchedEffect(Unit) {
+        if (installedAppsRepo.needsLoading()) {
+            installedAppsRepo.loadApps()
+        }
+    }
 
     val installedPackageNames = remember(installedApps) {
         installedApps.map { it.packageName }.toSet()
@@ -72,7 +76,6 @@ fun TunSettingsScreen(
     var showStackDialog by remember { mutableStateOf(false) }
     var showIpVersionDialog by remember { mutableStateOf(false) }
     var showMtuDialog by remember { mutableStateOf(false) }
-    var showInterfaceDialog by remember { mutableStateOf(false) }
     var showRouteModeDialog by remember { mutableStateOf(false) }
     var showRouteCidrsDialog by remember { mutableStateOf(false) }
     var showAppModeDialog by remember { mutableStateOf(false) }
@@ -116,18 +119,6 @@ fun TunSettingsScreen(
                 showMtuDialog = false
             },
             onDismiss = { showMtuDialog = false }
-        )
-    }
-
-    if (showInterfaceDialog) {
-        InputDialog(
-            title = stringResource(R.string.tun_settings_interface_name),
-            initialValue = settings.tunInterfaceName,
-            onConfirm = {
-                settingsViewModel.setTunInterfaceName(it)
-                showInterfaceDialog = false
-            },
-            onDismiss = { showInterfaceDialog = false }
         )
     }
 
@@ -219,13 +210,22 @@ fun TunSettingsScreen(
         containerColor = liquidGlassTopAppBarContainerColor(MaterialTheme.colorScheme.background),
         topBar = {
             TopAppBar(
-                title = { Text(stringResource(R.string.tun_settings_title), color = MaterialTheme.colorScheme.onBackground) },
+                title = {
+                    Text(
+                        stringResource(R.string.tun_settings_title),
+                        color = MaterialTheme.colorScheme.onBackground
+                    )
+                },
                 navigationIcon = {
                     IconButton(
                         modifier = Modifier.liquidGlassIconButtonPanel(),
                         onClick = { navController.popBackStack() }
                     ) {
-                        Icon(Icons.Rounded.ArrowBack, contentDescription = stringResource(R.string.common_back), tint = MaterialTheme.colorScheme.onBackground)
+                        Icon(
+                            Icons.Rounded.ArrowBack,
+                            contentDescription = stringResource(R.string.common_back),
+                            tint = MaterialTheme.colorScheme.onBackground
+                        )
                     }
                 },
                 colors = liquidGlassTopAppBarColors(defaultContainerColor = MaterialTheme.colorScheme.background)
@@ -252,7 +252,11 @@ fun TunSettingsScreen(
             Spacer(modifier = Modifier.height(16.dp))
 
             StandardCard {
-                SettingItem(title = stringResource(R.string.tun_settings_stack), value = stringResource(settings.tunStack.displayNameRes), onClick = { showStackDialog = true })
+                SettingItem(
+                    title = stringResource(R.string.tun_settings_stack),
+                    value = stringResource(settings.tunStack.displayNameRes),
+                    onClick = { showStackDialog = true }
+                )
                 SettingItem(
                     title = stringResource(R.string.tun_settings_ip_version_mode),
                     value = stringResource(settings.ipVersionMode.displayNameRes),
@@ -274,11 +278,6 @@ fun TunSettingsScreen(
                     enabled = !settings.tunMtuAuto,
                     onClick = { showMtuDialog = true }
                 )
-                SettingItem(
-                    title = stringResource(R.string.tun_settings_interface_name),
-                    value = settings.tunInterfaceName,
-                    onClick = { showInterfaceDialog = true }
-                )
             }
 
             Spacer(modifier = Modifier.height(16.dp))
@@ -289,12 +288,6 @@ fun TunSettingsScreen(
                     subtitle = stringResource(R.string.tun_settings_auto_route_subtitle),
                     checked = settings.autoRoute,
                     onCheckedChange = { settingsViewModel.setAutoRoute(it) }
-                )
-                SettingSwitchItem(
-                    title = stringResource(R.string.tun_settings_endpoint_independent_nat),
-                    subtitle = stringResource(R.string.tun_settings_endpoint_independent_nat_subtitle),
-                    checked = settings.endpointIndependentNat,
-                    onCheckedChange = { settingsViewModel.setEndpointIndependentNat(it) }
                 )
                 SettingSwitchItem(
                     title = stringResource(R.string.tun_settings_strict_route),
@@ -327,7 +320,11 @@ fun TunSettingsScreen(
                 )
                 SettingItem(
                     title = stringResource(R.string.tun_settings_route_cidrs),
-                    value = if (settings.vpnRouteMode == VpnRouteMode.CUSTOM) stringResource(R.string.tun_settings_route_cidrs_configured, cidrCount) else "-",
+                    value = if (settings.vpnRouteMode == VpnRouteMode.CUSTOM) {
+                        stringResource(R.string.tun_settings_route_cidrs_configured, cidrCount)
+                    } else {
+                        "-"
+                    },
                     onClick = { if (settings.vpnRouteMode == VpnRouteMode.CUSTOM) showRouteCidrsDialog = true }
                 )
                 SettingItem(

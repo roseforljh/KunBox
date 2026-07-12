@@ -14,7 +14,6 @@ import com.kunk.singbox.model.SingBoxConfig
 import com.kunk.singbox.repository.ConfigRepository
 import com.kunk.singbox.repository.SettingsRepository
 import com.kunk.singbox.utils.NetworkClient
-import com.kunk.singbox.utils.dns.DnsResolver
 import kotlinx.coroutines.flow.first
 import okhttp3.Request
 
@@ -24,8 +23,6 @@ internal class DiagnosticsNodeLineQueryRunner(
     private val settingsRepository: SettingsRepository
 ) {
     private val gson = Gson()
-
-    private val dnsResolver = DnsResolver()
 
     suspend fun buildReport(): String {
         val activeLabel = SingBoxRemote.activeLabel.value.trim()
@@ -48,7 +45,6 @@ internal class DiagnosticsNodeLineQueryRunner(
             activeLabel = activeLabel,
             storedActiveLabel = storedActiveLabel,
             outbound = outbound,
-            resolvedServerIps = resolveServerAddresses(outbound?.server),
             delay = queryNodeDelay(
                 node = nodeResolution.node
             ),
@@ -76,15 +72,6 @@ internal class DiagnosticsNodeLineQueryRunner(
         }
     }
 
-    private suspend fun resolveServerAddresses(server: String?): List<String> {
-        if (server.isNullOrBlank()) return emptyList()
-        if (DnsResolver.isIpAddress(server)) return listOf(server)
-        val result = dnsResolver.resolveViaDoH(server, DnsResolver.DOH_ALIDNS)
-        if (result.isSuccess && result.ip != null) return listOf(result.ip)
-        val fallback = dnsResolver.resolveViaDoH(server, DnsResolver.DOH_CLOUDFLARE)
-        return if (fallback.isSuccess && fallback.ip != null) listOf(fallback.ip) else emptyList()
-    }
-
     private suspend fun queryNodeDelay(node: NodeUi): Int? {
         val latency = configRepository.testNodeLatency(node.id)
         return latency.takeIf { it > 0L && it <= Int.MAX_VALUE }?.toInt()
@@ -106,7 +93,7 @@ internal class DiagnosticsNodeLineQueryRunner(
                 callTimeoutSeconds = 12
             ).newCall(request).execute().use { response ->
                 if (!response.isSuccessful) return@use null
-                val body = response.body?.string().orEmpty()
+                val body = response.body.string()
                 if (body.isBlank()) return@use null
                 gson.fromJson(body, IpSbGeoIpResponse::class.java)?.toExitPortrait(
                     unknownText = application.getString(R.string.common_unknown)
@@ -134,7 +121,7 @@ internal fun buildDnsQueryFailureMessage(host: String, errorMessage: String?): S
 internal fun buildDnsLeakCheckReport(coreActive: Boolean, runConfig: SingBoxConfig?): String {
     if (!coreActive) {
         return buildString {
-            appendLine("DNS 泄露: 是")
+            appendLine("DNS 静态风险: 存在")
             appendLine()
             appendLine("原因:")
             appendLine("- 核心未运行，当前连接未被 KunBox VPN 接管。")
@@ -142,7 +129,7 @@ internal fun buildDnsLeakCheckReport(coreActive: Boolean, runConfig: SingBoxConf
     }
     if (runConfig == null) {
         return buildString {
-            appendLine("DNS 泄露: 是")
+            appendLine("DNS 静态风险: 存在")
             appendLine()
             appendLine("原因:")
             appendLine("- 无法读取运行配置，不能确认 DNS 已被接管。")
@@ -151,7 +138,7 @@ internal fun buildDnsLeakCheckReport(coreActive: Boolean, runConfig: SingBoxConf
 
     val reasons = buildDnsLeakReasons(runConfig)
     return buildString {
-        appendLine("DNS 泄露: ${if (reasons.isEmpty()) "否" else "是"}")
+        appendLine("DNS 静态风险: ${if (reasons.isEmpty()) "未发现明显配置缺口" else "存在"}")
         appendLine()
         if (reasons.isEmpty()) {
             appendLine("检查结果:")
@@ -159,6 +146,7 @@ internal fun buildDnsLeakCheckReport(coreActive: Boolean, runConfig: SingBoxConf
             appendLine("- route.rules 已包含覆盖 tun-in:53 或 protocol=dns 的 hijack-dns。")
             appendLine("- DNS final 指向有效且安全的 server tag。")
             appendLine("- 未发现系统 DNS 或明文直连 DNS server。")
+            appendLine("- 此结果仅检查静态配置，不能替代设备抓包或证明不存在 DoH、IPv6、分应用绕过。")
         } else {
             appendLine("原因:")
             reasons.forEach { appendLine("- $it") }
@@ -171,8 +159,6 @@ private fun buildDnsLeakReasons(runConfig: SingBoxConfig): List<String> {
     val tunInbound = runConfig.inbounds.orEmpty().firstOrNull { it.type == "tun" }
     if (tunInbound == null) {
         reasons.add("运行配置缺少 TUN 入站，系统 DNS 流量不会进入 KunBox VPN。")
-    } else if (tunInbound.autoRoute == false) {
-        reasons.add("TUN 入站 auto_route 未启用，系统 DNS 路由可能不会进入 KunBox VPN。")
     }
 
     val routeRules = runConfig.route?.rules.orEmpty()
@@ -258,7 +244,6 @@ private data class NodeLineQueryData(
     val activeLabel: String,
     val storedActiveLabel: String,
     val outbound: Outbound?,
-    val resolvedServerIps: List<String>,
     val delay: Int?,
     val exitPortrait: NodeExitPortrait?,
     val coreActive: Boolean,
@@ -321,9 +306,6 @@ private fun StringBuilder.appendNodeSection(data: NodeLineQueryData, unknownText
         val outboundType = outbound.type.ifBlank { unknownText }
         appendLine("出站类型: $outboundType")
         appendServerLine(outbound = outbound, unknownText = unknownText)
-    }
-    if (data.resolvedServerIps.isNotEmpty()) {
-        appendLine("服务器解析: ${data.resolvedServerIps.joinToString()}")
     }
 }
 

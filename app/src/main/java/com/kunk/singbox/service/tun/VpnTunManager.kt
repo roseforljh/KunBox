@@ -3,6 +3,7 @@
 import android.content.Context
 import android.content.pm.PackageManager
 import android.net.ConnectivityManager
+import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.ProxyInfo
 import android.net.VpnService
@@ -18,48 +19,126 @@ import com.kunk.singbox.model.TunStack
 import com.kunk.singbox.model.VpnAppMode
 import com.kunk.singbox.model.VpnRouteMode
 import com.kunk.singbox.repository.LogRepository
+import com.kunk.singbox.utils.DefaultNetworkListener
+import io.nekohasekai.libbox.RoutePrefixIterator
 import io.nekohasekai.libbox.TunOptions
 import java.net.InetAddress
+import java.net.Inet6Address
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 
-/**
- */
 class VpnTunManager(
     private val context: Context,
     private val vpnService: VpnService
 ) {
     companion object {
         private const val TAG = "VpnTunManager"
+        private const val MIN_IPV4_TUN_MTU = 1200
+        private const val MIN_IPV6_TUN_MTU = 1280
+        private const val MAX_TUN_MTU = 1500
 
-        internal fun resolveVpnDnsServersForTest(
+        internal fun resolveAutoMtu(
+            configuredMtu: Int,
+            physicalMtu: Int?,
+            includesIpv6: Boolean
+        ): Int {
+            val minimumMtu = if (includesIpv6) MIN_IPV6_TUN_MTU else MIN_IPV4_TUN_MTU
+            val configuredLimit = configuredMtu.coerceIn(minimumMtu, MAX_TUN_MTU)
+            val linkLimit = physicalMtu
+                ?.takeIf { it > 0 }
+                ?.coerceIn(minimumMtu, MAX_TUN_MTU)
+                ?: return configuredLimit
+            return minOf(configuredLimit, linkLimit)
+        }
+
+        internal fun resolveVpnDnsServers(
             settings: AppSettings?,
             dnsServerAddress: String? = null,
             tunPlan: VpnTunAddressPlan = VpnTunAddressPlanner.build(settings?.ipVersionMode ?: IpVersionMode.DUAL_STACK)
         ): List<String> {
             val explicitDns = dnsServerAddress?.trim().orEmpty()
-            if (explicitDns.isNotEmpty() && !isTunLocalAddress(explicitDns, tunPlan)) {
+            if (explicitDns in tunPlan.defaultDnsServers) {
                 return listOf(explicitDns)
+            }
+            if (explicitDns.isNotEmpty()) {
+                Log.w(TAG, "Ignoring DNS server outside the active TUN prefix: $explicitDns")
             }
             return tunPlan.defaultDnsServers
         }
 
-        private fun isTunLocalAddress(address: String, tunPlan: VpnTunAddressPlan): Boolean {
-            return tunPlan.addresses.any { it.first == address }
+        internal fun addVpnRoutesFailClosed(
+            routes: List<Pair<String, Int>>,
+            requiredRoutes: Set<Pair<String, Int>>,
+            addRoute: (String, Int) -> Boolean
+        ) {
+            routes.forEach { route ->
+                if (!addRoute(route.first, route.second) && route in requiredRoutes) {
+                    throw IllegalStateException("Failed to add required VPN route: ${route.first}/${route.second}")
+                }
+            }
         }
 
-        internal fun resolveVpnRoutesForTest(
+        internal fun addVpnDnsServersFailClosed(
+            dnsServers: List<String>,
+            internalDnsServers: Set<String>,
+            addDnsServer: (String) -> Boolean
+        ) {
+            var addedInternalDnsCount = 0
+            dnsServers.distinct().forEach { dns ->
+                if (addDnsServer(dns) && dns in internalDnsServers) addedInternalDnsCount++
+            }
+            if (addedInternalDnsCount == 0) {
+                throw IllegalStateException("Failed to add an internal VPN DNS server")
+            }
+        }
+
+        internal fun validateKernelTunAddresses(
+            kernelAddresses: List<Pair<String, Int>>
+        ): List<Pair<String, Int>> {
+            require(kernelAddresses.isNotEmpty()) { "libbox returned no TUN addresses" }
+            kernelAddresses.forEach { (address, prefix) ->
+                val parsedAddress = parseNumericAddress(address)
+                require(parsedAddress != null) { "libbox returned invalid TUN address: $address/$prefix" }
+                require(prefix in 0..(parsedAddress.address.size * Byte.SIZE_BITS)) {
+                    "libbox returned invalid TUN prefix: $address/$prefix"
+                }
+            }
+            return kernelAddresses
+        }
+
+        private fun readKernelTunAddresses(options: TunOptions): List<Pair<String, Int>> {
+            return buildList {
+                appendRoutePrefixes(this, options.getInet4Address())
+                appendRoutePrefixes(this, options.getInet6Address())
+            }
+        }
+
+        private fun appendRoutePrefixes(
+            destination: MutableList<Pair<String, Int>>,
+            iterator: RoutePrefixIterator?
+        ) {
+            if (iterator == null) return
+            while (iterator.hasNext()) {
+                val prefix = iterator.next() ?: continue
+                destination.add(prefix.address() to prefix.prefix())
+            }
+        }
+
+        internal fun resolveVpnRoutes(
             settings: AppSettings?,
             tunPlan: VpnTunAddressPlan = VpnTunAddressPlanner.build(settings?.ipVersionMode ?: IpVersionMode.DUAL_STACK)
         ): List<Pair<String, Int>> {
-            return resolveVpnRoutes(settings, tunPlan)
-        }
-
-        private fun resolveVpnRoutes(settings: AppSettings?, tunPlan: VpnTunAddressPlan): List<Pair<String, Int>> {
             val routeMode = settings?.vpnRouteMode ?: VpnRouteMode.GLOBAL
-            val customRoutes = settings?.vpnRouteIncludeCidrs.orEmpty()
+            val customRouteInputs = settings?.vpnRouteIncludeCidrs.orEmpty()
                 .split("\n", "\r", ",", ";", " ", "\t")
+                .map(String::trim)
+                .filter(String::isNotEmpty)
+            val customRoutes = customRouteInputs
                 .mapNotNull { parseCidrRoute(it) }
+
+            require(routeMode != VpnRouteMode.CUSTOM || customRouteInputs.isEmpty() || customRoutes.isNotEmpty()) {
+                "Custom VPN routes contain no valid CIDR"
+            }
 
             val baseRoutes = if (routeMode == VpnRouteMode.CUSTOM && customRoutes.isNotEmpty()) {
                 customRoutes + resolveDnsServerRoutes(tunPlan)
@@ -69,11 +148,53 @@ class VpnTunManager(
             return baseRoutes + resolveFakeIpRoutes(settings)
         }
 
+        internal fun resolveRequiredVpnRoutes(
+            settings: AppSettings?,
+            tunPlan: VpnTunAddressPlan,
+            routes: List<Pair<String, Int>>
+        ): Set<Pair<String, Int>> {
+            return if (settings?.vpnRouteMode == VpnRouteMode.CUSTOM) {
+                routes.toSet()
+            } else {
+                tunPlan.globalRoutes.toSet()
+            }
+        }
+
         private fun parseCidrRoute(cidr: String): Pair<String, Int>? {
             val parts = cidr.trim().split("/")
             val ip = parts.getOrNull(0)?.trim().orEmpty()
             val prefix = parts.getOrNull(1)?.trim()?.toIntOrNull()
-            return if (parts.size == 2 && ip.isNotEmpty() && prefix != null) ip to prefix else null
+            if (parts.size != 2 || prefix == null) return null
+            val address = parseNumericAddress(ip) ?: return null
+            return if (prefix in 0..(address.address.size * Byte.SIZE_BITS)) ip to prefix else null
+        }
+
+        private fun parseNumericAddress(address: String): InetAddress? {
+            return if (address.contains(':')) parseNumericIpv6Address(address) else parseNumericIpv4Address(address)
+        }
+
+        private fun parseNumericIpv6Address(address: String): InetAddress? {
+            val containsOnlyAddressCharacters = address.all { it in "0123456789abcdefABCDEF:." }
+            return if (containsOnlyAddressCharacters) {
+                runCatching { InetAddress.getByName(address) }.getOrNull()?.takeIf { it is Inet6Address }
+            } else {
+                null
+            }
+        }
+
+        private fun parseNumericIpv4Address(address: String): InetAddress? {
+            val octets = address.split('.')
+            val values = octets
+                .takeIf { it.size == 4 }
+                ?.mapNotNull(::parseCanonicalIpv4Octet)
+                ?.takeIf { it.size == 4 }
+                ?: return null
+            return InetAddress.getByAddress(values.map(Int::toByte).toByteArray())
+        }
+
+        private fun parseCanonicalIpv4Octet(octet: String): Int? {
+            val value = octet.toIntOrNull()?.takeIf { it in 0..255 }
+            return value?.takeIf { octet == it.toString() }
         }
 
         private fun resolveFakeIpRoutes(settings: AppSettings?): List<Pair<String, Int>> {
@@ -113,11 +234,7 @@ class VpnTunManager(
             val disallowedPackages: List<String>
         )
 
-        internal fun resolvePerAppVpnPlanForTest(settings: AppSettings?, selfPackage: String): PerAppVpnPlan {
-            return resolvePerAppVpnPlan(settings, selfPackage)
-        }
-
-        private fun resolvePerAppVpnPlan(settings: AppSettings?, selfPackage: String): PerAppVpnPlan {
+        internal fun resolvePerAppVpnPlan(settings: AppSettings?, selfPackage: String): PerAppVpnPlan {
             val appMode = settings?.vpnAppMode ?: VpnAppMode.ALL
             val allowPkgs = parsePackageList(settings?.vpnAllowlist.orEmpty()).filterNot { it == selfPackage }
             val blockPkgs = parsePackageList(settings?.vpnBlocklist.orEmpty()).filterNot { it == selfPackage }
@@ -148,6 +265,24 @@ class VpnTunManager(
         internal fun shouldAppendHttpProxy(settings: AppSettings?): Boolean {
             return settings?.appendHttpProxy == true && settings.proxyPort > 0 && !settings.tunEnabled
         }
+
+        internal fun hasUsablePerAppAllowlist(settings: AppSettings?, addedAllowedCount: Int): Boolean {
+            return settings?.vpnAppMode != VpnAppMode.ALLOWLIST || addedAllowedCount > 0
+        }
+
+        internal fun addAllowedApplicationsFailClosed(
+            packages: List<String>,
+            addAllowedApplication: (String) -> Unit
+        ): Int {
+            packages.forEach { packageName ->
+                try {
+                    addAllowedApplication(packageName)
+                } catch (e: Exception) {
+                    throw IllegalStateException("Failed to add allowed application: $packageName", e)
+                }
+            }
+            return packages.size
+        }
     }
 
     @Volatile
@@ -160,8 +295,6 @@ class VpnTunManager(
     @Volatile private var lastLoggedMtu: Int = -1
     private val mtuLogDebounceMs: Long = 10_000L
 
-    /**
-     */
     fun preallocateBuilder() {
         if (preallocatedBuilder != null) return
         try {
@@ -175,8 +308,6 @@ class VpnTunManager(
         }
     }
 
-    /**
-     */
     fun consumePreallocatedBuilder(): VpnService.Builder? {
         return preallocatedBuilder?.also {
             preallocatedBuilder = null
@@ -196,17 +327,20 @@ class VpnTunManager(
         val effectiveMtu = resolveEffectiveMtu(options, settings)
         logEffectiveMtuIfNeeded(options, settings, effectiveMtu)
         val tunPlan = VpnTunAddressPlanner.build(settings?.ipVersionMode ?: IpVersionMode.DUAL_STACK)
+        val tunAddresses = options?.let {
+            validateKernelTunAddresses(readKernelTunAddresses(it))
+        } ?: tunPlan.addresses
 
         builder.setSession("KunBox VPN")
             .setMtu(effectiveMtu)
 
-        tunPlan.addresses.forEach { (address, prefix) ->
+        tunAddresses.forEach { (address, prefix) ->
             builder.addAddress(address, prefix)
         }
 
         configureRoutes(builder, settings, tunPlan)
 
-        configureDns(builder, settings, options)
+        configureDns(builder, settings, options, tunPlan)
 
         configurePerAppVpn(builder, settings)
 
@@ -251,14 +385,9 @@ class VpnTunManager(
         val autoEnabled = settings?.tunMtuAuto == true
 
         val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
-        val physicalCaps = cm?.allNetworks
-            ?.asSequence()
-            ?.mapNotNull { cm.getNetworkCapabilities(it) }
-            ?.firstOrNull {
-                it.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
-                    !it.hasTransport(NetworkCapabilities.TRANSPORT_VPN)
-            }
-        val caps = physicalCaps ?: cm?.activeNetwork?.let { cm.getNetworkCapabilities(it) }
+        val physicalNetwork = cm?.let { DefaultNetworkListener.selectBestPhysicalNetwork(it) }
+        val caps = physicalNetwork?.let { cm.getNetworkCapabilities(it) }
+        val physicalMtu = physicalNetwork?.let { readLinkMtu(cm, it) }
         val networkType = when {
             caps == null -> "unknown"
             caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) -> "wifi"
@@ -268,43 +397,34 @@ class VpnTunManager(
         }
 
         val msg = "INFO [VPN] Effective MTU=$effectiveMtu " +
-            "(auto=$autoEnabled, configured=$configuredMtu) network=$networkType"
+            "(auto=$autoEnabled, configured=$configuredMtu, physical=${physicalMtu ?: "unknown"}) " +
+            "network=$networkType"
         Log.i(TAG, msg)
         runCatching { LogRepository.getInstance().addLog(msg) }
     }
 
     private fun resolveEffectiveMtu(options: TunOptions?, settings: AppSettings?): Int {
-        val configuredMtu = if (options != null && options.mtu > 0) options.mtu else (settings?.tunMtu ?: 1500)
+        options?.mtu?.takeIf { it > 0 }?.let { return it }
+        val configuredMtu = settings?.tunMtu ?: 1500
         if (settings?.tunMtuAuto != true) return configuredMtu
 
-        val caps = getNetworkCapabilities() ?: return configuredMtu
-
-        // Throughput-first for Wi-Fi/Ethernet; conservative for cellular.
-        // QUIC-based proxies (Hysteria2/TUIC) + YouTube QUIC = double encapsulation,
-        // requiring higher MTU to avoid fragmentation blackholes.
-        val recommendedMtu = when {
-            caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) -> 1480
-            caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) -> 1480
-            caps.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) -> 1400
-            else -> configuredMtu
-        }
-
-        // Auto MTU should never be more aggressive than user-configured MTU.
-        return minOf(configuredMtu, recommendedMtu)
+        val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+        val physicalMtu = cm
+            ?.let { DefaultNetworkListener.selectBestPhysicalNetwork(it) }
+            ?.let { readLinkMtu(cm, it) }
+        return resolveAutoMtu(
+            configuredMtu = configuredMtu,
+            physicalMtu = physicalMtu,
+            includesIpv6 = settings.ipVersionMode != IpVersionMode.IPV4_ONLY
+        )
     }
 
-    private fun getNetworkCapabilities(): NetworkCapabilities? {
-        val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
-            ?: return null
-
-        val physicalCaps = cm.allNetworks
-            .asSequence()
-            .mapNotNull { cm.getNetworkCapabilities(it) }
-            .firstOrNull {
-                it.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
-                    !it.hasTransport(NetworkCapabilities.TRANSPORT_VPN)
-            }
-        return physicalCaps ?: cm.activeNetwork?.let { cm.getNetworkCapabilities(it) }
+    private fun readLinkMtu(
+        connectivityManager: ConnectivityManager,
+        network: Network
+    ): Int? {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return null
+        return connectivityManager.getLinkProperties(network)?.mtu?.takeIf { it > 0 }
     }
 
     private fun configureRoutes(
@@ -312,16 +432,26 @@ class VpnTunManager(
         settings: AppSettings?,
         tunPlan: VpnTunAddressPlan
     ) {
-        resolveVpnRoutes(settings, tunPlan).forEach { (route, prefix) ->
+        val routes = resolveVpnRoutes(settings, tunPlan)
+        addVpnRoutesFailClosed(
+            routes = routes,
+            requiredRoutes = resolveRequiredVpnRoutes(settings, tunPlan, routes)
+        ) { route, prefix ->
             addRoute(builder, route, prefix)
         }
     }
 
     private fun addRoute(builder: VpnService.Builder, route: String, prefix: Int): Boolean {
+        val address = parseNumericAddress(route)
+        if (address == null || prefix !in 0..(address.address.size * Byte.SIZE_BITS)) {
+            Log.w(TAG, "Ignoring invalid VPN route: $route/$prefix")
+            return false
+        }
         return try {
-            builder.addRoute(InetAddress.getByName(route), prefix)
+            builder.addRoute(address, prefix)
             true
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to add VPN route: $route/$prefix", e)
             false
         }
     }
@@ -329,16 +459,22 @@ class VpnTunManager(
     private fun configureDns(
         builder: VpnService.Builder,
         settings: AppSettings?,
-        options: TunOptions?
+        options: TunOptions?,
+        tunPlan: VpnTunAddressPlan
     ) {
         val dnsServerAddress = runCatching { options?.getDNSServerAddress()?.getValue() }.getOrNull()
-        val dnsServers = resolveVpnDnsServersForTest(settings, dnsServerAddress)
+        val dnsServers = resolveVpnDnsServers(settings, dnsServerAddress, tunPlan)
 
-        dnsServers.distinct().forEach { dns ->
+        addVpnDnsServersFailClosed(
+            dnsServers = dnsServers,
+            internalDnsServers = tunPlan.defaultDnsServers.toSet()
+        ) { dns ->
             try {
                 builder.addDnsServer(dns)
+                true
             } catch (e: Exception) {
                 Log.w(TAG, "Failed to add DNS server: $dns", e)
+                false
             }
         }
     }
@@ -346,49 +482,39 @@ class VpnTunManager(
     private fun configurePerAppVpn(builder: VpnService.Builder, settings: AppSettings?) {
         val plan = resolvePerAppVpnPlan(settings, context.packageName)
 
-        try {
-            var addedAllowedCount = 0
-            plan.allowedPackages.forEach { pkg ->
-                try {
-                    builder.addAllowedApplication(pkg)
-                    addedAllowedCount++
-                } catch (e: PackageManager.NameNotFoundException) {
-                    Log.w(TAG, "Allowed app not found: $pkg")
-                }
+        val addedAllowedCount = try {
+            addAllowedApplicationsFailClosed(plan.allowedPackages) { packageName ->
+                builder.addAllowedApplication(packageName)
             }
+        } catch (e: IllegalStateException) {
+            Log.w(TAG, "Failed to apply VPN allowlist", e)
+            throw e
+        }
+        if (!hasUsablePerAppAllowlist(settings, addedAllowedCount)) {
+            throw IllegalStateException("VPN allowlist contains no installed applications")
+        }
 
-            if (settings?.vpnAppMode == VpnAppMode.ALLOWLIST && addedAllowedCount == 0) {
-                Log.w(TAG, "No valid apps in allowlist, falling back to ALL mode")
-                builder.addDisallowedApplication(context.packageName)
-                return
+        plan.disallowedPackages.forEach { pkg ->
+            try {
+                builder.addDisallowedApplication(pkg)
+            } catch (e: PackageManager.NameNotFoundException) {
+                Log.w(TAG, "Disallowed app not found: $pkg")
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to disallow app: $pkg", e)
             }
-
-            plan.disallowedPackages.forEach { pkg ->
-                try {
-                    builder.addDisallowedApplication(pkg)
-                } catch (e: PackageManager.NameNotFoundException) {
-                    Log.w(TAG, "Disallowed app not found: $pkg")
-                }
-            }
-        } catch (e: Exception) {
-            Log.w(TAG, "Failed to apply per-app VPN settings", e)
         }
     }
 
     private fun configureSecuritySettings(builder: VpnService.Builder) {
-        // Kill Switch: NOT calling allowBypass() means bypass disabled by default
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            Log.i(TAG, "Kill switch enabled: NOT calling allowBypass()")
-        }
+        // 不调用 allowBypass()，避免应用主动绕过当前 VPN。
+        Log.i(TAG, "VPN bypass disabled")
 
-        // Blocking mode: blocks network until VPN established
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            try {
-                builder.setBlocking(true)
-                Log.i(TAG, "Blocking mode enabled: setBlocking(true)")
-            } catch (e: Exception) {
-                Log.w(TAG, "setBlocking not supported on this device", e)
-            }
+        // setBlocking 控制 TUN 文件描述符的读写模式，不代表系统 Always-on lockdown。
+        try {
+            builder.setBlocking(true)
+            Log.i(TAG, "TUN file descriptor configured for blocking I/O")
+        } catch (e: Exception) {
+            Log.w(TAG, "setBlocking not supported on this device", e)
         }
     }
 
@@ -432,20 +558,16 @@ class VpnTunManager(
     }
 
     fun isOtherVpnActive(connectivityManager: ConnectivityManager?): Boolean {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && connectivityManager != null) {
-            return runCatching {
-                @Suppress("DEPRECATION")
-                connectivityManager.allNetworks.any { network ->
-                    val caps = connectivityManager.getNetworkCapabilities(network) ?: return@any false
-                    caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN)
-                }
-            }.getOrDefault(false)
-        }
-        return false
+        connectivityManager ?: return false
+        return runCatching {
+            @Suppress("DEPRECATION")
+            connectivityManager.allNetworks.any { network ->
+                val caps = connectivityManager.getNetworkCapabilities(network) ?: return@any false
+                caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN)
+            }
+        }.getOrDefault(false)
     }
 
-    /**
-     */
     fun establishWithRetry(
         builder: VpnService.Builder,
         isStopping: () -> Boolean
@@ -476,8 +598,6 @@ class VpnTunManager(
         return null
     }
 
-    /**
-     */
     fun cleanup() {
         preallocatedBuilder = null
         isConnecting.set(false)

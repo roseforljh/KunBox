@@ -10,6 +10,10 @@
         <item name="android:windowTranslucentNavigation">false</item>
     </style>
 
+    <style name="Theme.SingBoxAndroid.Scanner" parent="Theme.AppCompat.NoActionBar">
+        <item name="android:windowBackground">@android:color/black</item>
+    </style>
+
     <!-- 透明主题用于快捷方式 Activity -->
     <style name="Theme.SingBoxAndroid.Transparent" parent="android:Theme.Material.NoActionBar">
         <item name="android:windowIsTranslucent">true</item>

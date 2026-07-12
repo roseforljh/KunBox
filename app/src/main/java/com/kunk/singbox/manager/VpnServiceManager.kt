@@ -12,10 +12,6 @@ import com.kunk.singbox.repository.SettingsRepository
 import com.kunk.singbox.service.ProxyOnlyService
 import com.kunk.singbox.service.SingBoxService
 
-/**
- *
- *
- */
 object VpnServiceManager {
     private const val TAG = "VpnServiceManager"
 
@@ -41,9 +37,6 @@ object VpnServiceManager {
     @Volatile
     private var pendingRestartVersion: Long = 0L
 
-    /**
-     *
-     */
     fun isRunning(): Boolean {
         val persistedActive = VpnStateStore.getActive()
         val pending = VpnStateStore.getPending()
@@ -59,8 +52,6 @@ object VpnServiceManager {
         return SingBoxRemote.isRunning.value || SingBoxRemote.isStarting.value
     }
 
-    /**
-     */
     fun isStarting(): Boolean {
         return SingBoxRemote.isStarting.value
     }
@@ -75,9 +66,6 @@ object VpnServiceManager {
         return if (isTunEnabled(context)) "tun" else "proxy"
     }
 
-    /**
-     *
-     */
     fun toggleVpn(context: Context): Result<Unit> {
         return if (isRunning()) {
             stopVpn(context)
@@ -86,9 +74,6 @@ object VpnServiceManager {
         }
     }
 
-    /**
-     *
-     */
     fun startVpn(context: Context): Result<Unit> {
         val tunEnabled = isTunEnabled(context)
         return startVpn(context, tunEnabled)
@@ -116,9 +101,6 @@ object VpnServiceManager {
         }
     }
 
-    /**
-     *
-     */
     fun startVpn(context: Context, tunMode: Boolean): Result<Unit> {
         Log.d(TAG, "startVpn: tunMode=$tunMode")
 
@@ -142,9 +124,6 @@ object VpnServiceManager {
             .onFailure { Log.e(TAG, "Failed to start VPN service", it) }
     }
 
-    /**
-     *
-     */
     fun stopVpn(context: Context): Result<Unit> {
         Log.d(TAG, "stopVpn")
 
@@ -170,9 +149,6 @@ object VpnServiceManager {
             .onFailure { Log.e(TAG, "Failed to stop VPN service", it) }
     }
 
-    /**
-     *
-     */
     fun restartVpn(context: Context) {
         Log.d(TAG, "restartVpn")
 
@@ -193,9 +169,6 @@ object VpnServiceManager {
         restartHandler.postDelayed(restartTask, 500)
     }
 
-    /**
-     *
-     */
     private fun isTunEnabled(context: Context? = null): Boolean {
         val now = System.currentTimeMillis()
         val cached = cachedTunEnabled
@@ -233,8 +206,6 @@ object VpnServiceManager {
         Log.d(TAG, "refreshTunSetting: tunEnabled=$tunEnabled")
     }
 
-    /**
-     */
     fun getCurrentConfig(context: Context): String {
         return buildString {
             append("isRunning: ${isRunning()}\n")

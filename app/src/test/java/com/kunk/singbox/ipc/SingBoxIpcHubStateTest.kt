@@ -60,7 +60,7 @@ class SingBoxIpcHubStateTest {
     fun `stale running cache becomes stopped when core service is gone`() {
         assertEquals(
             ServiceState.STOPPED.ordinal,
-            SingBoxIpcHub.resolveVisibleStateOrdinalForTest(
+            SingBoxIpcHub.resolveVisibleStateOrdinal(
                 cachedStateOrdinal = ServiceState.RUNNING.ordinal,
                 liveCoreState = null
             )
@@ -71,7 +71,7 @@ class SingBoxIpcHubStateTest {
     fun `stale starting cache becomes stopped when core service is gone`() {
         assertEquals(
             ServiceState.STOPPED.ordinal,
-            SingBoxIpcHub.resolveVisibleStateOrdinalForTest(
+            SingBoxIpcHub.resolveVisibleStateOrdinal(
                 cachedStateOrdinal = ServiceState.STARTING.ordinal,
                 liveCoreState = null
             )
@@ -82,14 +82,14 @@ class SingBoxIpcHubStateTest {
     fun `live vpn and proxy states stay visible`() {
         assertEquals(
             ServiceState.RUNNING.ordinal,
-            SingBoxIpcHub.resolveVisibleStateOrdinalForTest(
+            SingBoxIpcHub.resolveVisibleStateOrdinal(
                 cachedStateOrdinal = ServiceState.RUNNING.ordinal,
                 liveCoreState = ServiceState.RUNNING
             )
         )
         assertEquals(
             ServiceState.STARTING.ordinal,
-            SingBoxIpcHub.resolveVisibleStateOrdinalForTest(
+            SingBoxIpcHub.resolveVisibleStateOrdinal(
                 cachedStateOrdinal = ServiceState.STARTING.ordinal,
                 liveCoreState = ServiceState.STARTING
             )

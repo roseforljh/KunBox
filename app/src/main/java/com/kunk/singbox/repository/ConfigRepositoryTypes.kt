@@ -8,7 +8,8 @@ data class ConfigRepositoryNodeTestInfo(
     val outbound: Outbound,
     val nodeId: String,
     val profileId: String,
-    val dnsConfig: DnsConfig?
+    val dnsConfig: DnsConfig?,
+    val allOutbounds: List<Outbound>
 )
 
 data class ConfigRepositoryLatencyRuntimeContext(

@@ -4,6 +4,7 @@ import com.kunk.singbox.R
 import android.Manifest
 import android.content.pm.PackageManager
 import android.net.Uri
+import com.kunk.singbox.utils.parser.NodeLinkParser
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.animateFloatAsState
@@ -32,9 +33,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -51,6 +49,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -80,10 +79,10 @@ import com.kunk.singbox.ui.components.InputDialog
 import com.kunk.singbox.ui.components.ProfileCard
 import com.kunk.singbox.ui.navigation.Screen
 import com.kunk.singbox.ui.theme.LiquidGlassFloatingActionButton
-import com.kunk.singbox.ui.theme.isLiquidGlassTheme
 import com.kunk.singbox.ui.theme.liquidGlassFloatingActionContainerColor
 import com.kunk.singbox.ui.theme.liquidGlassFloatingActionContentColor
 import com.kunk.singbox.ui.theme.liquidGlassIconButtonPanel
+import com.kunk.singbox.ui.theme.liquidGlassPressFeedback
 import com.kunk.singbox.ui.theme.liquidGlassScreenContainerColor
 import com.kunk.singbox.utils.DeepLinkHandler
 import kotlinx.coroutines.Dispatchers
@@ -98,34 +97,11 @@ import java.util.Locale
 private fun Modifier.profileSortItemPressFeedback(
     enabled: Boolean,
     onClick: () -> Unit
-): Modifier {
-    val useLiquidGlass = isLiquidGlassTheme()
-    val interactionSource = remember { MutableInteractionSource() }
-    val isPressed by interactionSource.collectIsPressedAsState()
-    val scale by animateFloatAsState(
-        targetValue = if (useLiquidGlass && enabled && isPressed) 0.98f else 1f,
-        animationSpec = spring(stiffness = 520f, dampingRatio = 0.72f),
-        label = "liquid_glass_profile_sort_item_scale"
-    )
-    val clickModifier = if (useLiquidGlass) {
-        Modifier.clickable(
-            enabled = enabled,
-            interactionSource = interactionSource,
-            indication = null,
-            onClick = onClick
-        )
-    } else {
-        Modifier.clickable(
-            enabled = enabled,
-            onClick = onClick
-        )
-    }
-
-    return graphicsLayer {
-        scaleX = scale
-        scaleY = scale
-    }.then(clickModifier)
-}
+): Modifier = liquidGlassPressFeedback(
+    enabled = enabled,
+    label = "liquid_glass_profile_sort_item_scale",
+    onClick = onClick
+)
 
 private suspend fun readImportContentSafely(
     context: android.content.Context,
@@ -162,7 +138,6 @@ fun ProfilesScreen(
     val allNodes by viewModel.allNodes.collectAsStateWithLifecycle()
     val activeProfileId by viewModel.activeProfileId.collectAsStateWithLifecycle()
     val importState by viewModel.importState.collectAsStateWithLifecycle()
-    val updateStatus by viewModel.updateStatus.collectAsStateWithLifecycle()
 
     var showSearchDialog by remember { mutableStateOf(false) }
     var showImportSelection by remember { mutableStateOf(false) }
@@ -207,10 +182,10 @@ fun ProfilesScreen(
     }
 
     var draggingItemIndex by remember { mutableStateOf<Int?>(null) }
-    var draggingItemOffset by remember { mutableStateOf(0f) }
+    var draggingItemOffset by remember { mutableFloatStateOf(0f) }
     var draggingItemId by remember { mutableStateOf<String?>(null) }
     var settlingItemId by remember { mutableStateOf<String?>(null) }
-    var itemHeightPx by remember { mutableStateOf(0f) }
+    var itemHeightPx by remember { mutableFloatStateOf(0f) }
 
     val density = androidx.compose.ui.platform.LocalDensity.current
     val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
@@ -249,12 +224,6 @@ fun ProfilesScreen(
     }
 
     // Handle update state feedback
-    androidx.compose.runtime.LaunchedEffect(updateStatus) {
-        updateStatus?.let {
-            AppNotificationManager.showMessage(context, it)
-        }
-    }
-
     val importSuccessMessage = (importState as? com.kunk.singbox.viewmodel.ProfilesViewModel.ImportState.Success)
         ?.let { stringResource(R.string.profiles_import_success, it.profile.name) }
     val importFailedMessage = (importState as? com.kunk.singbox.viewmodel.ProfilesViewModel.ImportState.Error)
@@ -308,7 +277,7 @@ fun ProfilesScreen(
         }
     }
 
-    var lastY by remember { mutableStateOf(0f) }
+    var lastY by remember { mutableFloatStateOf(0f) }
 
     val filePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
@@ -366,15 +335,7 @@ fun ProfilesScreen(
         if (result.contents != null) {
             val scannedContent = result.contents
 
-            val isNodeLink = scannedContent.let {
-                it.startsWith("vmess://") || it.startsWith("vless://") ||
-                    it.startsWith("ss://") || it.startsWith("ssr://") ||
-                    it.startsWith("trojan://") || it.startsWith("hysteria://") ||
-                    it.startsWith("hysteria2://") || it.startsWith("hy2://") ||
-                    it.startsWith("tuic://") || it.startsWith("wireguard://") ||
-                    it.startsWith("ssh://") || it.startsWith("anytls://") ||
-                    it.startsWith("naive://") || it.startsWith("naive+https://")
-            }
+            val isNodeLink = NodeLinkParser.isSupportedLink(scannedContent)
 
             val isSubscriptionUrl = scannedContent.startsWith("http://") ||
                 scannedContent.startsWith("https://")
@@ -474,8 +435,8 @@ fun ProfilesScreen(
     if (showSubscriptionInput) {
         SubscriptionInputDialog(
             onDismiss = { showSubscriptionInput = false },
-            onConfirm = { name, url, autoUpdateInterval, dnsPreResolve, dnsServer, dnsOverride ->
-                viewModel.importSubscription(name, url, autoUpdateInterval, dnsPreResolve, dnsServer, dnsOverride)
+            onConfirm = { name, url, autoUpdateInterval, dnsOverride ->
+                viewModel.importSubscription(name, url, autoUpdateInterval, dnsOverride)
                 showSubscriptionInput = false
             }
         )
@@ -554,19 +515,15 @@ fun ProfilesScreen(
             initialName = profile.name,
             initialUrl = profile.url ?: "",
             initialAutoUpdateInterval = profile.autoUpdateInterval,
-            initialDnsPreResolve = profile.dnsPreResolve,
-            initialDnsServer = profile.dnsServer,
             initialDnsOverride = profile.dnsOverride,
             title = stringResource(R.string.profiles_edit_profile),
             onDismiss = { editingProfile = null },
-            onConfirm = { name, url, autoUpdateInterval, dnsPreResolve, dnsServer, dnsOverride ->
+            onConfirm = { name, url, autoUpdateInterval, dnsOverride ->
                 viewModel.updateProfileMetadata(
                     profile.id,
                     name,
                     url,
                     autoUpdateInterval,
-                    dnsPreResolve,
-                    dnsServer,
                     dnsOverride
                 )
                 editingProfile = null
@@ -694,11 +651,12 @@ fun ProfilesScreen(
                             animationSpec = spring(dampingRatio = 0.8f, stiffness = 260f),
                             label = "dragScale"
                         )
+                        // 非拖拽时 elevation 必须为 0，否则 graphicsLayer 矩形阴影会透出圆角卡片底部灰边
                         val dragShadow by animateFloatAsState(
                             targetValue = when {
                                 isDraggingItem && isCurrentlyDragging -> 8f
                                 isSettlingItem -> 4f
-                                else -> 2f
+                                else -> 0f
                             },
                             animationSpec = spring(dampingRatio = 0.82f, stiffness = 260f),
                             label = "dragShadow"
@@ -828,15 +786,13 @@ fun ProfilesScreen(
                                 type = profile.type.name,
                                 isSelected = profile.id == activeProfileId,
                                 isEnabled = profile.enabled,
-                                isUpdating = profile.updateStatus == UpdateStatus.Updating &&
-                                    profile.updateStage?.isBackground != true,
+                                isUpdating = profile.updateStatus == UpdateStatus.Updating,
                                 updateStatus = profile.updateStatus,
                                 updateStage = profile.updateStage,
                                 expireDate = profile.expireDate,
                                 totalTraffic = profile.totalTraffic,
                                 usedTraffic = profile.usedTraffic,
                                 lastUpdated = profile.lastUpdated,
-                                dnsPreResolve = profile.dnsPreResolve,
                                 onClick = { viewModel.setActiveProfile(profile.id) },
                                 onUpdate = { viewModel.updateProfile(profile.id) },
                                 onToggle = { viewModel.toggleProfileEnabled(profile.id) },

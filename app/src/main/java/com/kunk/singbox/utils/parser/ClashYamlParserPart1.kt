@@ -1,16 +1,17 @@
 ﻿package com.kunk.singbox.utils.parser
 
+import com.google.gson.JsonPrimitive
+import com.kunk.singbox.model.AppSettings
 import com.kunk.singbox.model.Outbound
 import com.kunk.singbox.model.SingBoxConfig
 import com.kunk.singbox.model.TransportConfig
 import com.kunk.singbox.model.UtlsConfig
 import org.yaml.snakeyaml.Yaml
 import org.yaml.snakeyaml.error.YAMLException
-import java.net.InetAddress
-import java.net.URI
 
-/**
- */
+private val CLASH_V2RAY_NETWORKS = setOf(
+    "tcp", "http", "h2", "ws", "quic", "grpc", "httpupgrade", "xhttp", "splithttp"
+)
 
 @Suppress("TooManyFunctions")
 abstract class ClashYamlParserPart1 : ClashYamlParserBase() {
@@ -20,7 +21,7 @@ abstract class ClashYamlParserPart1 : ClashYamlParserBase() {
         val nodeLinkPrefixes = listOf(
             "vmess://", "vless://", "ss://", "trojan://",
             "hysteria2://", "hy2://", "hysteria://",
-            "tuic://", "anytls://", "wireguard://", "ssh://"
+            "tuic://", "anytls://", "wireguard://", "wg://", "ssh://"
         )
         if (nodeLinkPrefixes.any { trimmed.startsWith(it) }) {
             return false
@@ -115,37 +116,7 @@ abstract class ClashYamlParserPart1 : ClashYamlParserBase() {
     }
 
     protected override fun sanitizeUrlTestUrl(rawUrl: String?): String {
-        val trimmed = rawUrl?.trim().orEmpty()
-        val uri = runCatching { URI(trimmed) }.getOrNull()
-        return if (trimmed.isNotBlank() && uri != null && isSafeUrlTestUri(uri)) {
-            trimmed
-        } else {
-            ClashYamlParser.DEFAULT_URL_TEST_URL
-        }
-    }
-
-    protected override fun isSafeUrlTestUri(uri: URI): Boolean {
-        val scheme = uri.scheme?.lowercase()
-        val host = uri.host?.trim()?.lowercase().orEmpty()
-        return (scheme == "http" || scheme == "https") &&
-            host.isNotBlank() &&
-            host != "localhost" &&
-            !isUnsafeLiteralAddress(host)
-    }
-
-    protected override fun isUnsafeLiteralAddress(host: String): Boolean {
-        val literalHost = host.removePrefix("[").removeSuffix("]")
-        if (!looksLikeIpLiteral(literalHost)) return false
-
-        val address = runCatching { InetAddress.getByName(literalHost) }.getOrNull() ?: return true
-        return address.isAnyLocalAddress ||
-            address.isLoopbackAddress ||
-            address.isLinkLocalAddress ||
-            address.isSiteLocalAddress
-    }
-
-    protected override fun looksLikeIpLiteral(host: String): Boolean {
-        return host.contains(":") || host.all { it.isDigit() || it == '.' }
+        return AppSettings.normalizeLatencyTestUrl(rawUrl)
     }
 
     protected override fun normalizeProxyGroupRefs(rawProxies: Any?, knownOutboundTags: Set<String>): List<String> {
@@ -213,10 +184,80 @@ abstract class ClashYamlParserPart1 : ClashYamlParserBase() {
         return outbound?.let { listOf(it) }
     }
 
-    protected override fun parseVLess(map: Map<*, *>, name: String, server: String?, port: Int?, globalFingerprint: String?, globalTlsMinVersion: String?): Outbound? {
+    private fun buildDirectHttpUpgradeTransport(
+        map: Map<*, *>,
+        fallbackHost: String,
+        fingerprint: String?
+    ): TransportConfig? {
+        val opts = map["http-upgrade-opts"] as? Map<*, *> ?: map["ws-opts"] as? Map<*, *>
+        val path = asString(opts?.get("path")) ?: "/"
+        val headers = mutableMapOf<String, String>()
+        (opts?.get("headers") as? Map<*, *>)?.forEach { (key, value) ->
+            val headerName = asString(key) ?: return@forEach
+            val headerValue = asString(value) ?: return@forEach
+            headers[headerName] = headerValue
+        }
+        val host = headers["Host"]
+            ?: headers["host"]
+            ?: asString(opts?.get("host"))
+            ?: fallbackHost
+        if (!headers.containsKey("User-Agent")) {
+            headers["User-Agent"] = getUserAgent(fingerprint)
+        }
+        return buildWsOrHttpUpgradeTransport(
+            wsOpts = opts,
+            path = path,
+            headers = headers,
+            host = host,
+            forceHttpUpgrade = true
+        )
+    }
+
+    private fun buildXhttpTransport(map: Map<*, *>): TransportConfig? {
+        val opts = map["xhttp-opts"] as? Map<*, *>
+            ?: map["splithttp-opts"] as? Map<*, *>
+            ?: return null
+        val extra = asNestedMap(opts["extra"])
+        val encryption = asString(extra?.get("encryption"))
+        if (!encryption.isNullOrBlank() && !encryption.equals("none", ignoreCase = true)) {
+            return null
+        }
+        return TransportConfig(
+            type = "xhttp",
+            path = asString(opts["path"]) ?: "/",
+            host = asStringList(opts["host"]),
+            mode = asString(opts["mode"]),
+            xPaddingBytes = asString(opts["xPaddingBytes"]) ?: asString(opts["x-padding-bytes"])
+                ?: asString(opts["x_padding_bytes"]),
+            scMaxEachPostBytes = asLong(opts["scMaxEachPostBytes"] ?: opts["sc_max_each_post_bytes"]),
+            scMinPostsIntervalMs = asLong(opts["scMinPostsIntervalMs"] ?: opts["sc_min_posts_interval_ms"]),
+            scMaxBufferedPosts = asLong(opts["scMaxBufferedPosts"] ?: opts["sc_max_buffered_posts"]),
+            noGRPCHeader = asBool(opts["noGRPCHeader"] ?: opts["no_grpc_header"]),
+            noSSEHeader = asBool(opts["noSSEHeader"] ?: opts["no_sse_header"])
+        )
+    }
+
+    private fun asLong(value: Any?): Long? {
+        return when (value) {
+            is Number -> value.toLong()
+            is String -> value.trim().toLongOrNull()
+            else -> null
+        }
+    }
+
+    @Suppress("ReturnCount", "LongMethod", "CyclomaticComplexMethod", "CognitiveComplexMethod")
+    protected override fun parseVLess(
+        map: Map<*, *>,
+        name: String,
+        server: String?,
+        port: Int?,
+        globalFingerprint: String?,
+        globalTlsMinVersion: String?
+    ): Outbound? {
         if (server == null || port == null) return null
         val uuid = asString(map["uuid"]) ?: return null
-        val network = asString(map["network"])?.lowercase()
+        val network = asString(map["network"])?.trim()?.lowercase()?.takeIf { it.isNotEmpty() }
+        if (network != null && network !in CLASH_V2RAY_NETWORKS) return null
         val tlsEnabled = asBool(map["tls"]) == true
         val serverName = asString(map["servername"]) ?: asString(map["sni"]) ?: server
 
@@ -224,8 +265,7 @@ abstract class ClashYamlParserPart1 : ClashYamlParserBase() {
         val insecure = asBool(map["skip-cert-verify"]) == true
         val alpn = asStringList(map["alpn"])
         val flow = asString(map["flow"])
-        val packetEncoding = asString(map["packet-encoding"]) ?: "xudp"
-        val encryption = extractXhttpExtraEncryption(map)
+        val packetEncoding = asString(map["packet-encoding"])?.takeIf { it.isNotBlank() }
 
         val tlsMinVersion = asString(map["tls-version"]) ?: asString(map["min-tls-version"]) ?: globalTlsMinVersion
 
@@ -278,7 +318,7 @@ abstract class ClashYamlParserPart1 : ClashYamlParserBase() {
                     path = path,
                     headers = headers,
                     host = host
-                )
+                ) ?: return null
             }
             "grpc" -> {
                 val grpcOpts = map["grpc-opts"] as? Map<*, *>
@@ -294,24 +334,12 @@ abstract class ClashYamlParserPart1 : ClashYamlParserBase() {
                 val host = asString(map["host"])?.let { listOf(it) } ?: asStringList(h2Opts?.get("host"))
                 TransportConfig(type = "http", path = path, host = host)
             }
-            "xhttp", "splithttp" -> {
-                val xhttpOpts = map["xhttp-opts"] as? Map<*, *>
-                    ?: map["splithttp-opts"] as? Map<*, *>
-                val path = asString(xhttpOpts?.get("path")) ?: "/"
-                val host = asString(xhttpOpts?.get("host"))?.let { listOf(it) }
-                val mode = asString(xhttpOpts?.get("mode"))
-                val xPaddingBytes = asString(xhttpOpts?.get("xPaddingBytes"))
-                    ?: asString(xhttpOpts?.get("x-padding-bytes"))
-                TransportConfig(
-                    type = "xhttp",
-                    path = path,
-                    host = host,
-                    mode = mode,
-                    xPaddingBytes = xPaddingBytes
-                )
-            }
+            "xhttp", "splithttp" -> buildXhttpTransport(map) ?: return null
+            "quic" -> TransportConfig(type = "quic")
+            "httpupgrade" -> buildDirectHttpUpgradeTransport(map, serverName, fingerprint) ?: return null
             else -> null
         }
+        if (network == "quic" && tlsConfig?.enabled != true) return null
 
         val multiplex = parseSmux(map)
 
@@ -325,42 +353,35 @@ abstract class ClashYamlParserPart1 : ClashYamlParserBase() {
             tls = tlsConfig,
             transport = transport,
             packetEncoding = packetEncoding,
-            encryption = encryption,
             multiplex = multiplex
         )
     }
 
-    protected override fun extractXhttpExtraEncryption(map: Map<*, *>): String? {
-        val xhttpOpts = map["xhttp-opts"] as? Map<*, *>
-            ?: map["splithttp-opts"] as? Map<*, *>
-            ?: return null
-        val extra = xhttpOpts["extra"] as? Map<*, *> ?: return null
-        return asString(extra["encryption"])
-    }
-
-    protected override fun parseVMess(map: Map<*, *>, name: String, server: String?, port: Int?, globalFingerprint: String?, globalTlsMinVersion: String?): Outbound? {
+    @Suppress("ReturnCount", "LongMethod", "CyclomaticComplexMethod", "CognitiveComplexMethod")
+    protected override fun parseVMess(
+        map: Map<*, *>,
+        name: String,
+        server: String?,
+        port: Int?,
+        globalFingerprint: String?,
+        globalTlsMinVersion: String?
+    ): Outbound? {
         if (server == null || port == null) return null
         val uuid = asString(map["uuid"]) ?: return null
 
         val alterId = asInt(map["alterId"]) ?: 0
         android.util.Log.i("ClashYamlParser", "VMess node '$name': alterId=$alterId (raw=${map["alterId"]})")
         val cipher = asString(map["cipher"]) ?: "auto"
-        val network = asString(map["network"])?.lowercase()
+        val network = asString(map["network"])?.trim()?.lowercase()?.takeIf { it.isNotEmpty() }
+        if (network != null && network !in CLASH_V2RAY_NETWORKS) return null
         val tlsEnabled = asBool(map["tls"]) == true
         val serverName = asString(map["servername"]) ?: asString(map["sni"]) ?: server
 
         val fingerprint = asString(map["client-fingerprint"]) ?: globalFingerprint
 
-        val skipCertVerifyValue = map["skip-cert-verify"]
-        val insecure = when {
-            skipCertVerifyValue == null -> true
-            asBool(skipCertVerifyValue) == true -> true
-
-            server.count { it == '-' } >= 2 && server.split(".").firstOrNull()?.length ?: 0 > 10 -> true
-            else -> false
-        }
+        val insecure = asBool(map["skip-cert-verify"]) == true
         val alpn = asStringList(map["alpn"])
-        val packetEncoding = asString(map["packet-encoding"]) ?: "xudp"
+        val packetEncoding = asString(map["packet-encoding"])?.takeIf { it.isNotBlank() }
 
         val tlsMinVersion = asString(map["tls-version"]) ?: asString(map["min-tls-version"]) ?: globalTlsMinVersion
 
@@ -399,7 +420,7 @@ abstract class ClashYamlParserPart1 : ClashYamlParserBase() {
                     path = path,
                     headers = headers,
                     host = host
-                )
+                ) ?: return null
             }
             "grpc" -> {
                 val grpcOpts = map["grpc-opts"] as? Map<*, *>
@@ -412,24 +433,12 @@ abstract class ClashYamlParserPart1 : ClashYamlParserBase() {
                 val host = asStringList(h2Opts?.get("host"))
                 TransportConfig(type = "http", path = path, host = host)
             }
-            "xhttp", "splithttp" -> {
-                val xhttpOpts = map["xhttp-opts"] as? Map<*, *>
-                    ?: map["splithttp-opts"] as? Map<*, *>
-                val path = asString(xhttpOpts?.get("path")) ?: "/"
-                val host = asString(xhttpOpts?.get("host"))?.let { listOf(it) }
-                val mode = asString(xhttpOpts?.get("mode"))
-                val xPaddingBytes = asString(xhttpOpts?.get("xPaddingBytes"))
-                    ?: asString(xhttpOpts?.get("x-padding-bytes"))
-                TransportConfig(
-                    type = "xhttp",
-                    path = path,
-                    host = host,
-                    mode = mode,
-                    xPaddingBytes = xPaddingBytes
-                )
-            }
+            "xhttp", "splithttp" -> buildXhttpTransport(map) ?: return null
+            "quic" -> TransportConfig(type = "quic")
+            "httpupgrade" -> buildDirectHttpUpgradeTransport(map, serverName, fingerprint) ?: return null
             else -> null
         }
+        if (network == "quic" && tlsConfig?.enabled != true) return null
 
         val multiplex = parseSmux(map)
 
@@ -472,6 +481,14 @@ abstract class ClashYamlParserPart1 : ClashYamlParserBase() {
         val password = asString(map["password"]) ?: return null
         val plugin = asString(map["plugin"])?.lowercase()
         val pluginOpts = map["plugin-opts"] as? Map<*, *>
+        val serializedPluginOpts = pluginOpts
+            ?.mapNotNull { (key, value) ->
+                val optionName = asString(key)?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+                val optionValue = asString(value)?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+                "$optionName=$optionValue"
+            }
+            ?.joinToString(";")
+            ?.takeIf { it.isNotBlank() }
 
         val multiplex = parseSmux(map)
         val udpEnabled = asBool(map["udp"]) != false
@@ -495,7 +512,7 @@ abstract class ClashYamlParserPart1 : ClashYamlParserBase() {
                     tag = shadowTlsTag,
                     server = server,
                     serverPort = port,
-                    version = stlsVersion,
+                    version = JsonPrimitive(stlsVersion),
                     password = stlsPassword,
                     tls = buildTlsConfig(
                         map = pluginOpts,
@@ -513,25 +530,13 @@ abstract class ClashYamlParserPart1 : ClashYamlParserBase() {
                     password = password,
                     detour = shadowTlsTag,
                     multiplex = multiplex,
-                    network = if (!udpEnabled) "tcp" else null
+                    network = if (!udpEnabled) listOf("tcp") else null
                 )
 
                 return listOf(ssOutbound, shadowTlsOutbound)
             }
 
             "obfs", "obfs-local", "simple-obfs" -> {
-                val obfsMode = asString(pluginOpts?.get("mode"))?.lowercase()
-                val obfsHost = asString(pluginOpts?.get("host")) ?: server
-
-                val transport = when (obfsMode) {
-                    "http" -> TransportConfig(
-                        type = "http",
-                        host = listOf(obfsHost)
-                    )
-                    "tls" -> null
-                    else -> null
-                }
-
                 return listOf(Outbound(
                     type = "shadowsocks",
                     tag = name,
@@ -540,40 +545,13 @@ abstract class ClashYamlParserPart1 : ClashYamlParserBase() {
                     method = cipher,
                     password = password,
                     multiplex = multiplex,
-                    transport = transport,
-                    network = if (!udpEnabled) "tcp" else null
+                    plugin = plugin,
+                    pluginOpts = serializedPluginOpts,
+                    network = if (!udpEnabled) listOf("tcp") else null
                 ))
             }
 
             "v2ray-plugin" -> {
-                val mode = asString(pluginOpts?.get("mode"))?.lowercase() ?: "websocket"
-                val tlsEnabled = asBool(pluginOpts?.get("tls")) == true
-                val host = asString(pluginOpts?.get("host")) ?: server
-                val path = asString(pluginOpts?.get("path")) ?: "/"
-                val fingerprint = asString(map["client-fingerprint"]) ?: globalFingerprint
-
-                val transport = when (mode) {
-                    "websocket", "ws" -> TransportConfig(
-                        type = "ws",
-                        path = path,
-                        headers = mapOf("Host" to host)
-                    )
-                    "quic" -> TransportConfig(type = "quic")
-                    "grpc" -> TransportConfig(
-                        type = "grpc",
-                        serviceName = asString(pluginOpts?.get("grpc-service-name")) ?: ""
-                    )
-                    else -> null
-                }
-
-                val tlsConfig = if (tlsEnabled) {
-                    buildTlsConfig(
-                        map = pluginOpts ?: emptyMap<Any, Any>(),
-                        serverName = host,
-                        utls = fingerprint?.let { UtlsConfig(enabled = true, fingerprint = it) }
-                    )
-                } else null
-
                 return listOf(Outbound(
                     type = "shadowsocks",
                     tag = name,
@@ -582,9 +560,9 @@ abstract class ClashYamlParserPart1 : ClashYamlParserBase() {
                     method = cipher,
                     password = password,
                     multiplex = multiplex,
-                    transport = transport,
-                    tls = tlsConfig,
-                    network = if (!udpEnabled) "tcp" else null
+                    plugin = plugin,
+                    pluginOpts = serializedPluginOpts,
+                    network = if (!udpEnabled) listOf("tcp") else null
                 ))
             }
 
@@ -597,7 +575,9 @@ abstract class ClashYamlParserPart1 : ClashYamlParserBase() {
                     method = cipher,
                     password = password,
                     multiplex = multiplex,
-                    network = if (!udpEnabled) "tcp" else null
+                    plugin = plugin,
+                    pluginOpts = serializedPluginOpts,
+                    network = if (!udpEnabled) listOf("tcp") else null
                 ))
             }
 
@@ -611,7 +591,7 @@ abstract class ClashYamlParserPart1 : ClashYamlParserBase() {
                     method = cipher,
                     password = password,
                     multiplex = multiplex,
-                    network = if (!udpEnabled) "tcp" else null
+                    network = if (!udpEnabled) listOf("tcp") else null
                 ))
             }
         }
@@ -620,7 +600,8 @@ abstract class ClashYamlParserPart1 : ClashYamlParserBase() {
     protected override fun parseTrojan(map: Map<*, *>, name: String, server: String?, port: Int?, globalFingerprint: String?, globalTlsMinVersion: String?): Outbound? {
         if (server == null || port == null) return null
         val password = asString(map["password"]) ?: return null
-        val network = asString(map["network"])?.lowercase()
+        val network = asString(map["network"])?.trim()?.lowercase()?.takeIf { it.isNotEmpty() }
+        if (network != null && network !in CLASH_V2RAY_NETWORKS) return null
         val sni = asString(map["sni"]) ?: server
 
         val fingerprint = asString(map["client-fingerprint"]) ?: globalFingerprint
@@ -639,6 +620,7 @@ abstract class ClashYamlParserPart1 : ClashYamlParserBase() {
         )
 
         val transport = parseTrojanTransport(network, map, sni, fingerprint)
+        if (network != null && network != "tcp" && transport == null) return null
 
         val multiplex = parseSmux(map)
 
@@ -678,29 +660,22 @@ abstract class ClashYamlParserPart1 : ClashYamlParserBase() {
                     path = path,
                     headers = headers,
                     host = host
-                )
+                ) ?: return null
             }
             "grpc" -> {
                 val grpcOpts = map["grpc-opts"] as? Map<*, *>
                 val serviceName = asString(grpcOpts?.get("grpc-service-name")) ?: ""
                 TransportConfig(type = "grpc", serviceName = serviceName)
             }
-            "xhttp", "splithttp" -> {
-                val xhttpOpts = map["xhttp-opts"] as? Map<*, *>
-                    ?: map["splithttp-opts"] as? Map<*, *>
-                val path = asString(xhttpOpts?.get("path")) ?: "/"
-                val host = asString(xhttpOpts?.get("host"))?.let { listOf(it) }
-                val mode = asString(xhttpOpts?.get("mode"))
-                val xPaddingBytes = asString(xhttpOpts?.get("xPaddingBytes"))
-                    ?: asString(xhttpOpts?.get("x-padding-bytes"))
-                TransportConfig(
-                    type = "xhttp",
-                    path = path,
-                    host = host,
-                    mode = mode,
-                    xPaddingBytes = xPaddingBytes
-                )
+            "h2", "http" -> {
+                val h2Opts = map["h2-opts"] as? Map<*, *>
+                val path = asString(map["path"]) ?: asString(h2Opts?.get("path"))
+                val host = asString(map["host"])?.let { listOf(it) } ?: asStringList(h2Opts?.get("host"))
+                TransportConfig(type = "http", path = path, host = host)
             }
+            "xhttp", "splithttp" -> buildXhttpTransport(map) ?: return null
+            "quic" -> TransportConfig(type = "quic")
+            "httpupgrade" -> buildDirectHttpUpgradeTransport(map, sni, fingerprint)
             else -> null
         }
     }
@@ -733,7 +708,7 @@ abstract class ClashYamlParserPart1 : ClashYamlParserBase() {
             server = server,
             serverPort = port,
             password = password,
-            network = network,
+            network = network?.let(::listOf),
             upMbps = upMbps,
             downMbps = downMbps,
             serverPorts = serverPorts,

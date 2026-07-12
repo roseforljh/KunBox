@@ -30,12 +30,16 @@ import com.kunk.singbox.repository.ConfigRepository
 import com.kunk.singbox.viewmodel.shared.NodeDisplaySettings
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -45,6 +49,8 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.onCompletion
+import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -52,13 +58,37 @@ import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class DashboardViewModel(application: Application) : AndroidViewModel(application) {
 
     companion object {
         private const val TAG = "DashboardViewModel"
+        internal const val START_STOPPED_CONFIRM_MS = 5_000L
+        internal const val START_MONITOR_TIMEOUT_MS = 60_000L
+        private const val START_REBIND_INTERVAL_MS = 2_000L
 
-        internal fun resolveTrustedConnectionStateForTest(serviceState: ServiceState, ipcBound: Boolean): ConnectionState =
-            resolveTrustedDashboardConnectionState(serviceState, ipcBound)
+        internal fun shouldReportStartError(currentError: String?): Boolean {
+            return !currentError.isNullOrBlank()
+        }
+
+        internal fun shouldPresentServiceError(connectionState: ConnectionState, error: String?): Boolean {
+            return !error.isNullOrBlank() && connectionState != ConnectionState.Connecting
+        }
+
+        internal fun shouldFinishStartAsStopped(
+            serviceState: ServiceState,
+            ipcBound: Boolean,
+            observedActiveState: Boolean,
+            elapsedMs: Long
+        ): Boolean {
+            return ipcBound &&
+                serviceState == ServiceState.STOPPED &&
+                (observedActiveState || elapsedMs >= START_STOPPED_CONFIRM_MS)
+        }
+
+        internal fun hasStartMonitorTimedOut(elapsedMs: Long): Boolean {
+            return elapsedMs >= START_MONITOR_TIMEOUT_MS
+        }
     }
 
     private val configRepository = ConfigRepository.getInstance(application)
@@ -75,6 +105,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
     // Stats
     private val _statsBase = MutableStateFlow(ConnectionStats(0, 0, 0, 0, 0))
     private val _connectedAtElapsedMs = MutableStateFlow<Long?>(null)
+    @Volatile private var statsUiActive = false
     private val trafficMonitor = DashboardTrafficMonitor(viewModelScope) { snapshot ->
         _statsBase.update { current ->
             current.copy(
@@ -104,14 +135,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         configRepository.setActiveProfile(profileId)
         val name = profiles.value.find { it.id == profileId }?.name
         if (!name.isNullOrBlank()) {
-            viewModelScope.launch {
-                val msg = getApplication<Application>().getString(R.string.node_switch_success, name)
-                _actionStatus.value = msg
-                delay(1500)
-                if (_actionStatus.value == msg) {
-                    _actionStatus.value = null
-                }
-            }
+            emitToast(getApplication<Application>().getString(R.string.node_switch_success, name))
         }
 
         // 否则VPN仍然使用旧配置，导致用户看到"选中"了新配置的节点但实际没联网
@@ -140,17 +164,19 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                     is ConfigRepository.NodeSwitchResult.Failed ->
                         getApplication<Application>().getString(R.string.node_switch_failed, node.name)
                 }
-                _actionStatus.value = msg
-                delay(1500)
-                if (_actionStatus.value == msg) {
-                    _actionStatus.value = null
-                }
+                emitToast(msg)
             }
         }
     }
 
     val stats: StateFlow<ConnectionStats> = combine(_statsBase, durationMsFlow) { base, duration ->
         base.copy(duration = duration)
+    }.onStart {
+        statsUiActive = true
+        startTrafficMonitor()
+    }.onCompletion {
+        statsUiActive = false
+        stopTrafficMonitor()
     }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5000),
@@ -162,24 +188,12 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
     val isPingTesting: StateFlow<Boolean> = _isPingTesting.asStateFlow()
 
     private var pingTestJob: Job? = null
-    private var lastErrorToastJob: Job? = null
     private var startMonitorJob: Job? = null
     private var stopConfirmJob: Job? = null
 
     // Active profile and node from ConfigRepository
     val activeProfileId: StateFlow<String?> = configRepository.activeProfileId
-        .stateIn(
-            scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(5000),
-            initialValue = null
-        )
-
     val activeNodeId: StateFlow<String?> = configRepository.activeNodeId
-        .stateIn(
-            scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(5000),
-            initialValue = null
-        )
 
     val activeNodeLatency = kotlinx.coroutines.flow.combine(configRepository.nodes, activeNodeId) { nodes, id ->
         nodes.find { it.id == id }?.latencyMs
@@ -190,19 +204,13 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
     )
 
     val profiles: StateFlow<List<ProfileUi>> = configRepository.profiles
-        .stateIn(
-            scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(5000),
-            initialValue = emptyList()
-        )
 
     val nodes: StateFlow<List<NodeUi>> = combine(
         configRepository.nodes,
         displaySettings.nodeFilter,
         displaySettings.sortType,
-        displaySettings.customOrder,
-        configRepository.activeNodeId
-    ) { nodes, filter, sortType, customOrder, _ ->
+        displaySettings.customOrder
+    ) { nodes, filter, sortType, customOrder ->
         buildDashboardNodes(nodes, filter, sortType, customOrder)
     }.flowOn(Dispatchers.Default).stateIn(
         scope = viewModelScope,
@@ -210,15 +218,12 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         initialValue = emptyList()
     )
 
-    // Status
-    private val _updateStatus = MutableStateFlow<String?>(null)
-    val updateStatus: StateFlow<String?> = _updateStatus.asStateFlow()
+    private val _toastEvents = MutableSharedFlow<String>(extraBufferCapacity = 8)
+    val toastEvents: SharedFlow<String> = _toastEvents.asSharedFlow()
 
-    private val _testStatus = MutableStateFlow<String?>(null)
-    val testStatus: StateFlow<String?> = _testStatus.asStateFlow()
-
-    private val _actionStatus = MutableStateFlow<String?>(null)
-    val actionStatus: StateFlow<String?> = _actionStatus.asStateFlow()
+    private fun emitToast(message: String) {
+        _toastEvents.tryEmit(message)
+    }
 
     // VPN 权限请求结果
     private val _vpnPermissionNeeded = MutableStateFlow(false)
@@ -251,14 +256,11 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
             runCatching {
                 val context = getApplication<Application>()
                 val cm = context.getSystemService(ConnectivityManager::class.java)
-                val hasSystemVpn = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                    cm?.allNetworks?.any { network ->
-                        val caps = cm.getNetworkCapabilities(network) ?: return@any false
-                        caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN)
-                    } == true
-                } else {
-                    false
-                }
+                @Suppress("DEPRECATION")
+                val hasSystemVpn = cm?.allNetworks?.any { network ->
+                    val caps = cm.getNetworkCapabilities(network) ?: return@any false
+                    caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN)
+                } == true
 
                 if (hasSystemVpn) {
                     systemVpnDetectedOnBoot = true
@@ -267,7 +269,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                 val persisted = VpnStateStore.getActive()
 
                 if (!hasSystemVpn && persisted && VpnStateStore.getMode() == VpnStateStore.CoreMode.VPN) {
-                    VpnTileService.persistVpnState(context, false)
+                    VpnTileService.persistVpnState(false)
                 }
 
                 val trustedInitialState = resolveTrustedDashboardConnectionState(
@@ -291,15 +293,8 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         // Surface service-level startup errors on UI
         viewModelScope.launch {
             SingBoxRemote.lastError.collect { err ->
-                if (!err.isNullOrBlank()) {
-                    _testStatus.value = err
-                    lastErrorToastJob?.cancel()
-                    lastErrorToastJob = viewModelScope.launch {
-                        delay(3000)
-                        if (_testStatus.value == err) {
-                            _testStatus.value = null
-                        }
-                    }
+                if (DashboardViewModel.shouldPresentServiceError(_connectionState.value, err)) {
+                    emitToast(err.orEmpty())
                 }
             }
         }
@@ -380,8 +375,6 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         Log.i(TAG, "startStateCollector: collectors launched")
     }
 
-    /**
-     */
     private fun setConnectionState(newState: ConnectionState) {
         if (newState == ConnectionState.Disconnecting && _connectionState.value == ConnectionState.Connecting) {
             val graceUntil = startGraceUntilElapsedMs
@@ -565,9 +558,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
             }
 
             if (configResult == null) {
-                _testStatus.value = getApplication<Application>().getString(R.string.dashboard_config_generation_failed)
-                delay(2000)
-                _testStatus.value = null
+                emitToast(getApplication<Application>().getString(R.string.dashboard_config_generation_failed))
                 return@launch
             }
 
@@ -786,9 +777,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                 }
                 if (configResult == null) {
                     _connectionState.value = ConnectionState.Error
-                    _testStatus.value = getApplication<Application>().getString(R.string.dashboard_config_generation_failed)
-                    delay(2000)
-                    _testStatus.value = null
+                    emitToast(getApplication<Application>().getString(R.string.dashboard_config_generation_failed))
                     return@launch
                 }
 
@@ -809,6 +798,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                         putExtra(SingBoxService.EXTRA_CLEAN_CACHE, true)
                     }
                 }
+                SingBoxRemote.clearLastErrorForNewStart()
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                     context.startForegroundService(intent)
                 } else {
@@ -818,52 +808,78 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                 // 2) 后续只在服务端明确失败（lastErrorFlow）或服务异常退出时才置 Error
                 startMonitorJob?.cancel()
                 startMonitorJob = viewModelScope.launch {
-                    val startTime = System.currentTimeMillis()
+                    val startTime = SystemClock.elapsedRealtime()
                     val quickFeedbackMs = 1000L
                     var showedStartingHint = false
+                    var observedActiveState = false
+                    var lastRebindAttemptMs = -START_REBIND_INTERVAL_MS
 
-                    while (true) {
-                        if (SingBoxRemote.isRunning.value) {
+                    while (!DashboardViewModel.hasStartMonitorTimedOut(SystemClock.elapsedRealtime() - startTime)) {
+                        val elapsed = SystemClock.elapsedRealtime() - startTime
+                        val serviceState = SingBoxRemote.state.value
+                        val ipcBound = SingBoxRemote.isBound()
+                        if (serviceState == ServiceState.STARTING || serviceState == ServiceState.RUNNING) {
+                            observedActiveState = true
+                        }
+
+                        if (SingBoxRemote.isRunning.value || serviceState == ServiceState.RUNNING) {
                             _connectionState.value = ConnectionState.Connected
                             startTrafficMonitor()
                             return@launch
                         }
 
                         val err = SingBoxRemote.lastError.value
-                        if (!err.isNullOrBlank()) {
+                            .takeIf { it.isNotBlank() }
+                            ?: VpnStateStore.getLastError().takeIf { it.isNotBlank() }
+                        if (DashboardViewModel.shouldReportStartError(err)) {
                             _connectionState.value = ConnectionState.Error
-                            _testStatus.value = err
-                            delay(3000)
-                            _testStatus.value = null
+                            emitToast(err.orEmpty())
                             return@launch
                         }
 
-                        val elapsed = System.currentTimeMillis() - startTime
+                        if (DashboardViewModel.shouldFinishStartAsStopped(
+                                serviceState = serviceState,
+                                ipcBound = ipcBound,
+                                observedActiveState = observedActiveState,
+                                elapsedMs = elapsed
+                            )
+                        ) {
+                            performDisconnect()
+                            return@launch
+                        }
+
+                        if (!ipcBound && elapsed - lastRebindAttemptMs >= START_REBIND_INTERVAL_MS) {
+                            lastRebindAttemptMs = elapsed
+                            SingBoxRemote.ensureBound(context)
+                        }
+
                         if (!showedStartingHint && elapsed >= quickFeedbackMs) {
                             showedStartingHint = true
-                            _testStatus.value = getApplication<Application>().getString(R.string.connection_connecting)
-                            lastErrorToastJob?.cancel()
-                            lastErrorToastJob = viewModelScope.launch {
-                                delay(1200)
-                                if (_testStatus.value == getApplication<Application>().getString(R.string.connection_connecting)) {
-                                    _testStatus.value = null
-                                }
-                            }
+                            emitToast(getApplication<Application>().getString(R.string.connection_connecting))
                         }
 
                         val intervalMs = when {
                             elapsed < 10_000L -> 200L
-                            elapsed < 60_000L -> 1000L
-                            else -> 5000L
+                            else -> 1000L
                         }
                         delay(intervalMs)
                     }
+
+                    VpnTileService.persistVpnPending("")
+                    VpnServiceManager.stopVpn(context).onFailure { error ->
+                        Log.e(TAG, "Failed to stop timed-out VPN start", error)
+                    }
+                    _connectionState.value = ConnectionState.Error
+                    emitToast(
+                        getApplication<Application>().getString(
+                            R.string.node_start_failed,
+                            getApplication<Application>().getString(R.string.common_timeout)
+                        )
+                    )
                 }
             } catch (e: Exception) {
                 _connectionState.value = ConnectionState.Error
-                _testStatus.value = getApplication<Application>().getString(R.string.node_start_failed, e.message ?: "")
-                delay(2000)
-                _testStatus.value = null
+                emitToast(getApplication<Application>().getString(R.string.node_start_failed, e.message ?: ""))
             }
         }
     }
@@ -877,7 +893,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         _connectionState.value = ConnectionState.Disconnecting
         _connectedAtElapsedMs.value = null
         _statsBase.value = ConnectionStats(0, 0, 0, 0, 0)
-        VpnTileService.persistVpnPending(context, "stopping")
+        VpnTileService.persistVpnPending("stopping")
 
         val stopResult = VpnServiceManager.stopVpn(context)
         if (stopResult.isFailure) {
@@ -907,7 +923,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
             }
 
             if (SingBoxRemote.state.value == ServiceState.STOPPED) {
-                VpnTileService.persistVpnPending(context, "")
+                VpnTileService.persistVpnPending("")
                 performDisconnect()
             } else {
                 setConnectionState(ConnectionState.Disconnecting)
@@ -965,34 +981,28 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
 
     fun updateAllSubscriptions() {
         viewModelScope.launch {
-            _updateStatus.value = getApplication<Application>().getString(R.string.common_loading)
+            emitToast(getApplication<Application>().getString(R.string.common_loading))
 
             val result = configRepository.updateAllProfiles()
 
-            // 根据结果显示不同的提示
-            _updateStatus.value = result.toDisplayMessage(getApplication())
-            delay(2500)
-            _updateStatus.value = null
+            emitToast(result.toDisplayMessage(getApplication()))
         }
     }
 
     fun testAllNodesLatency() {
         viewModelScope.launch {
-            _testStatus.value = getApplication<Application>().getString(R.string.common_loading)
             val targetNodeIds = configRepository.nodes.value.map { it.id }
-            if (targetNodeIds.isEmpty()) {
-                _testStatus.value = null
-                return@launch
-            }
+            if (targetNodeIds.isEmpty()) return@launch
+            emitToast(getApplication<Application>().getString(R.string.common_loading))
             configRepository.testAllNodesLatency(targetNodeIds = targetNodeIds)
-            _testStatus.value = getApplication<Application>().getString(R.string.dashboard_test_complete)
-            delay(2000)
-            _testStatus.value = null
+            emitToast(getApplication<Application>().getString(R.string.dashboard_test_complete))
         }
     }
 
     private fun startTrafficMonitor() {
-        trafficMonitor.start()
+        if (statsUiActive && _connectionState.value == ConnectionState.Connected) {
+            trafficMonitor.start()
+        }
     }
 
     private fun stopTrafficMonitor() {
@@ -1006,7 +1016,6 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         activeNodeId.value?.let { activeId -> configRepository.getNodeById(activeId)?.displayName }
 
     override fun onCleared() {
-        super.onCleared()
         startMonitorJob?.cancel()
         startMonitorJob = null
         stopConfirmJob?.cancel()

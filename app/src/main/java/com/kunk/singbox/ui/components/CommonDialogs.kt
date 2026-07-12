@@ -31,6 +31,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -183,6 +184,7 @@ fun ConfirmDialog(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
+@Suppress("LongMethod")
 fun InputDialog(
     title: String,
     initialValue: String = "",
@@ -191,6 +193,7 @@ fun InputDialog(
     singleLine: Boolean = true,
     minLines: Int = 1,
     maxLines: Int = if (singleLine) 1 else 6,
+    isConfirmEnabled: (String) -> Boolean = { true },
     onConfirm: (String) -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -280,6 +283,7 @@ fun InputDialog(
 
             Button(
                 onClick = { onConfirm(text) },
+                enabled = isConfirmEnabled(text),
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(50.dp)
@@ -338,7 +342,7 @@ fun SingleSelectDialog(
     onDismiss: () -> Unit
 ) {
     // 以 selectedIndex 作为初始值，并在外部选中项变化时同步。
-    var tempSelectedIndex by remember(selectedIndex) { mutableStateOf(selectedIndex) }
+    var tempSelectedIndex by remember(selectedIndex) { mutableIntStateOf(selectedIndex) }
     val canConfirm = tempSelectedIndex in options.indices
 
     Dialog(onDismissRequest = onDismiss) {

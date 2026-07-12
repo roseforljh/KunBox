@@ -4,6 +4,7 @@ import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.Call
+import okhttp3.ConnectionPool
 import okhttp3.EventListener
 import okhttp3.OkHttpClient
 import okhttp3.Protocol
@@ -15,15 +16,10 @@ import java.net.Proxy
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
 
-/**
- *
- *
- */
 object PreciseLatencyTester {
     private const val TAG = "PreciseLatencyTester"
+    private val handshakeConnectionPool = ConnectionPool(0, 1, TimeUnit.MILLISECONDS)
 
-    /**
-     */
     enum class Standard {
         RTT,
         HANDSHAKE,
@@ -31,8 +27,6 @@ object PreciseLatencyTester {
         TOTAL
     }
 
-    /**
-     */
     data class LatencyResult(
         val latencyMs: Long,
         val dnsTimeMs: Long = 0,
@@ -44,9 +38,6 @@ object PreciseLatencyTester {
         val isSuccess: Boolean get() = latencyMs >= 0
     }
 
-    /**
-     *
-     */
     suspend fun test(
         proxyPort: Int,
         url: String,
@@ -74,19 +65,16 @@ object PreciseLatencyTester {
         } catch (e: Exception) {
             Log.w(TAG, "Latency test failed: ${e.message}")
             LatencyResult(-1L)
-        } finally {
-            client.connectionPool.evictAll()
-            client.dispatcher.executorService.shutdown()
         }
     }
 
-    private fun buildClient(
+    internal fun buildClient(
         proxyPort: Int,
         timeoutMs: Int,
         standard: Standard,
-        timingListener: TimingEventListener
+        timingListener: EventListener = EventListener.NONE
     ): OkHttpClient {
-        return OkHttpClient.Builder()
+        return NetworkClient.newBuilder()
             .proxy(Proxy(Proxy.Type.HTTP, InetSocketAddress("127.0.0.1", proxyPort)))
             .connectTimeout(1000L, TimeUnit.MILLISECONDS)
             .readTimeout(timeoutMs.toLong(), TimeUnit.MILLISECONDS)
@@ -95,7 +83,7 @@ object PreciseLatencyTester {
             .eventListener(timingListener)
             .apply {
                 if (standard == Standard.HANDSHAKE) {
-                    connectionPool(okhttp3.ConnectionPool(0, 1, TimeUnit.MILLISECONDS))
+                    connectionPool(handshakeConnectionPool)
                 }
             }
             .followRedirects(false)
@@ -110,7 +98,7 @@ object PreciseLatencyTester {
         try {
             timingListener.reset()
             client.newCall(request).execute().use { resp ->
-                resp.body?.close()
+                resp.body.close()
             }
         } catch (e: Exception) {
             Log.d(TAG, "Warmup request failed: ${e.message}")
@@ -189,15 +177,7 @@ object PreciseLatencyTester {
         )
     }
 
-    internal fun buildRequestForTest(url: String, headersOnly: Boolean): Request {
-        return buildRequest(url, headersOnly)
-    }
-
-    internal fun buildHeadersOnlyFallbackRequestForTest(url: String): Request {
-        return buildHeadersOnlyFallbackRequest(url)
-    }
-
-    private fun buildRequest(url: String, headersOnly: Boolean): Request {
+    internal fun buildRequest(url: String, headersOnly: Boolean): Request {
         val builder = Request.Builder().url(url)
         if (headersOnly) {
             builder.head()
@@ -208,7 +188,7 @@ object PreciseLatencyTester {
         return builder.build()
     }
 
-    private fun buildHeadersOnlyFallbackRequest(url: String): Request {
+    internal fun buildHeadersOnlyFallbackRequest(url: String): Request {
         return Request.Builder()
             .url(url)
             .get()
@@ -217,8 +197,6 @@ object PreciseLatencyTester {
             .build()
     }
 
-    /**
-     */
     suspend fun testSimple(
         proxyPort: Int,
         url: String,
@@ -228,8 +206,6 @@ object PreciseLatencyTester {
         return if (result.isSuccess) result.latencyMs else -1L
     }
 
-    /**
-     */
     private class TimingEventListener : EventListener() {
         val callStart = AtomicLong(0)
         val callEnd = AtomicLong(0)

@@ -3,16 +3,104 @@ package com.kunk.singbox.repository
 import android.annotation.TargetApi
 import android.content.Context
 import android.os.Build
+import android.system.Os
 import android.util.Log
 import com.google.gson.Gson
+import com.google.gson.annotations.SerializedName
 import com.google.gson.reflect.TypeToken
 import com.kunk.singbox.ipc.VpnStateStore
 import java.io.File
 import java.io.IOException
+import java.io.RandomAccessFile
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
 import java.util.Calendar
-import java.util.concurrent.ConcurrentHashMap
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+
+internal class MergedTrafficSaveScheduler(
+    private val scope: CoroutineScope,
+    private val delayMs: Long,
+    private val save: () -> Boolean
+) {
+    private val stateLock = Any()
+    private val executionLock = Any()
+    private var scheduledJob: Job? = null
+    private var dirty = false
+    private var generation = 0L
+
+    fun requestSave() {
+        synchronized(stateLock) {
+            dirty = true
+            scheduleLocked()
+        }
+    }
+
+    fun flush(): Boolean {
+        val job = synchronized(stateLock) {
+            generation++
+            dirty = false
+            scheduledJob.also { scheduledJob = null }
+        }
+        job?.cancel()
+
+        val success = synchronized(executionLock) { save() }
+        if (!success) {
+            synchronized(stateLock) {
+                dirty = true
+                scheduleLocked()
+            }
+        }
+        return success
+    }
+
+    fun cancel() {
+        val job = synchronized(stateLock) {
+            generation++
+            dirty = false
+            scheduledJob.also { scheduledJob = null }
+        }
+        job?.cancel()
+        synchronized(executionLock) { Unit }
+    }
+
+    private fun scheduleLocked() {
+        if (scheduledJob?.isActive == true) return
+        val expectedGeneration = generation
+        scheduledJob = scope.launch {
+            delay(delayMs)
+            runScheduledSave(expectedGeneration)
+        }
+    }
+
+    private fun runScheduledSave(expectedGeneration: Long) {
+        val shouldSave = synchronized(stateLock) {
+            if (expectedGeneration != generation) {
+                false
+            } else {
+                dirty = false
+                true
+            }
+        }
+        if (!shouldSave) return
+
+        val success = synchronized(executionLock) {
+            val stillCurrent = synchronized(stateLock) { expectedGeneration == generation }
+            stillCurrent && save()
+        }
+
+        synchronized(stateLock) {
+            if (expectedGeneration != generation) return
+            scheduledJob = null
+            if (!success) dirty = true
+            if (dirty) scheduleLocked()
+        }
+    }
+}
 
 data class NodeTrafficStats(
     val nodeId: String? = null,
@@ -47,16 +135,280 @@ data class TrafficSummary(
     val period: TrafficPeriod
 )
 
-/**
- */
+internal data class TrafficPersistenceSnapshot(
+    val generation: Long,
+    @SerializedName("monthly")
+    val traffic: Map<String, NodeTrafficStats>,
+    val daily: Map<String, DailyTrafficRecord>,
+    val monthKey: String? = null
+)
+
+internal fun canCommitTrafficSnapshot(snapshotGeneration: Long, clearCutoffGeneration: Long): Boolean {
+    return snapshotGeneration >= clearCutoffGeneration
+}
+
+private fun nextTrafficGenerationAfter(generation: Long): Long {
+    return if (generation == Long.MAX_VALUE) Long.MAX_VALUE else generation + 1L
+}
+
+internal class TrafficSnapshotFileStore(
+    private val directory: File,
+    private val gson: Gson = Gson()
+) {
+    companion object {
+        private const val TAG = "TrafficSnapshotStore"
+        private const val SNAPSHOT_FILE_NAME = "traffic_snapshot.json"
+        private const val LOCK_FILE_NAME = "traffic_snapshot.lock"
+        private const val GENERATION_FILE_NAME = "traffic_clear_generation"
+        private const val LEGACY_STATS_FILE_NAME = "traffic_stats.json"
+        private const val LEGACY_DAILY_FILE_NAME = "traffic_daily.json"
+        private val LEGACY_STATS_TYPE = object : TypeToken<Map<String, NodeTrafficStats>>() {}.type
+        private val LEGACY_DAILY_TYPE = object : TypeToken<Map<String, DailyTrafficRecord>>() {}.type
+        private val processFileLock = Any()
+    }
+
+    private data class StoredSnapshot(
+        val generation: Long = 0L,
+        @SerializedName("monthly")
+        val traffic: Map<String, NodeTrafficStats>? = null,
+        val daily: Map<String, DailyTrafficRecord>? = null,
+        val monthKey: String? = null
+    )
+
+    private val snapshotFile = File(directory, SNAPSHOT_FILE_NAME)
+    private val lockFile = File(directory, LOCK_FILE_NAME)
+    private val generationFile = File(directory, GENERATION_FILE_NAME)
+    private val legacyStatsFile = File(directory, LEGACY_STATS_FILE_NAME)
+    private val legacyDailyFile = File(directory, LEGACY_DAILY_FILE_NAME)
+
+    fun load(
+        clearCutoffGeneration: Long,
+        transform: (TrafficPersistenceSnapshot) -> TrafficPersistenceSnapshot = { it }
+    ): TrafficPersistenceSnapshot? = withFileLock {
+        var effectiveCutoff = persistCutoffLocked(clearCutoffGeneration)
+        val snapshotExists = snapshotFile.exists()
+        val snapshot = if (snapshotExists) {
+            readSnapshotLocked()
+        } else {
+            readLegacySnapshotLocked(effectiveCutoff)
+        } ?: return@withFileLock null
+        if (snapshot.generation > effectiveCutoff) {
+            effectiveCutoff = persistCutoffLocked(snapshot.generation)
+        }
+        if (!canCommitTrafficSnapshot(snapshot.generation, effectiveCutoff)) {
+            return@withFileLock null
+        }
+
+        val transformed = transform(snapshot)
+        if (!snapshotExists || transformed != snapshot) {
+            writeSnapshotLocked(transformed)
+        }
+        deleteLegacyFilesLocked()
+        transformed
+    }
+
+    fun save(snapshot: TrafficPersistenceSnapshot, clearCutoffGeneration: Long): Boolean {
+        val content = gson.toJson(snapshot)
+        return withFileLock {
+            val effectiveCutoff = persistCutoffLocked(
+                maxOf(clearCutoffGeneration, snapshot.generation)
+            )
+            if (!canCommitTrafficSnapshot(snapshot.generation, effectiveCutoff)) {
+                return@withFileLock false
+            }
+
+            writeTextFileAtomically(snapshotFile, content)
+            deleteLegacyFilesLocked()
+            true
+        }
+    }
+
+    fun clear(
+        minimumGeneration: Long,
+        monthKey: String,
+        publishCutoff: (Long) -> Unit
+    ): Long = withFileLock {
+        val persistedGeneration = readPersistedGenerationLocked()
+        val snapshotGeneration = readSnapshotLocked()?.generation ?: 0L
+        val nextGeneration = maxOf(
+            minimumGeneration,
+            nextTrafficGenerationAfter(persistedGeneration),
+            nextTrafficGenerationAfter(snapshotGeneration)
+        )
+
+        publishCutoff(nextGeneration)
+        writeTextFileAtomically(generationFile, nextGeneration.toString())
+        writeSnapshotLocked(
+            TrafficPersistenceSnapshot(
+                generation = nextGeneration,
+                traffic = emptyMap(),
+                daily = emptyMap(),
+                monthKey = monthKey
+            )
+        )
+        deleteLegacyFilesLocked()
+        nextGeneration
+    }
+
+    private fun readLegacySnapshotLocked(generation: Long): TrafficPersistenceSnapshot? {
+        if (!legacyStatsFile.exists() && !legacyDailyFile.exists()) return null
+
+        return TrafficPersistenceSnapshot(
+            generation = generation,
+            traffic = readLegacyStatsLocked(),
+            daily = readLegacyDailyLocked()
+        )
+    }
+
+    private fun readSnapshotLocked(): TrafficPersistenceSnapshot? {
+        if (!snapshotFile.exists()) return null
+        return try {
+            val stored = gson.fromJson(snapshotFile.readText(Charsets.UTF_8), StoredSnapshot::class.java)
+                ?: return null
+            TrafficPersistenceSnapshot(
+                generation = stored.generation,
+                traffic = cleanTraffic(stored.traffic.orEmpty()),
+                daily = cleanDaily(stored.daily.orEmpty()),
+                monthKey = stored.monthKey
+            )
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to read traffic snapshot", e)
+            null
+        }
+    }
+
+    private fun readLegacyStatsLocked(): Map<String, NodeTrafficStats> {
+        if (!legacyStatsFile.exists()) return emptyMap()
+        return try {
+            val loaded: Map<String, NodeTrafficStats>? = gson.fromJson(
+                legacyStatsFile.readText(Charsets.UTF_8),
+                LEGACY_STATS_TYPE
+            )
+            cleanTraffic(loaded.orEmpty())
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to read legacy monthly traffic", e)
+            emptyMap()
+        }
+    }
+
+    private fun readLegacyDailyLocked(): Map<String, DailyTrafficRecord> {
+        if (!legacyDailyFile.exists()) return emptyMap()
+        return try {
+            val loaded: Map<String, DailyTrafficRecord>? = gson.fromJson(
+                legacyDailyFile.readText(Charsets.UTF_8),
+                LEGACY_DAILY_TYPE
+            )
+            cleanDaily(loaded.orEmpty())
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to read legacy daily traffic", e)
+            emptyMap()
+        }
+    }
+
+    private fun cleanTraffic(source: Map<String, NodeTrafficStats>): Map<String, NodeTrafficStats> {
+        return source.filterValues { stats -> runCatching { stats.isValid() }.getOrDefault(false) }
+    }
+
+    private fun cleanDaily(source: Map<String, DailyTrafficRecord>): Map<String, DailyTrafficRecord> {
+        return buildMap {
+            source.forEach { (dateKey, record) ->
+                val validStats = runCatching { cleanTraffic(record.nodeStats) }.getOrNull()
+                    ?: return@forEach
+                if (validStats.isNotEmpty()) {
+                    val cleanRecord = DailyTrafficRecord(dateKey)
+                    cleanRecord.nodeStats.putAll(validStats)
+                    put(dateKey, cleanRecord)
+                }
+            }
+        }
+    }
+
+    private fun writeSnapshotLocked(snapshot: TrafficPersistenceSnapshot) {
+        writeTextFileAtomically(snapshotFile, gson.toJson(snapshot))
+    }
+
+    private fun persistCutoffLocked(requestedGeneration: Long): Long {
+        val persistedGeneration = readPersistedGenerationLocked()
+        val effectiveGeneration = maxOf(requestedGeneration, persistedGeneration)
+        if (effectiveGeneration > persistedGeneration) {
+            writeTextFileAtomically(generationFile, effectiveGeneration.toString())
+        }
+        return effectiveGeneration
+    }
+
+    private fun readPersistedGenerationLocked(): Long {
+        if (!generationFile.exists()) return 0L
+        return generationFile.readText(Charsets.UTF_8).trim().toLongOrNull() ?: 0L
+    }
+
+    private fun deleteLegacyFilesLocked() {
+        listOf(legacyStatsFile, legacyDailyFile).forEach { file ->
+            if (file.exists() && !file.delete()) {
+                Log.w(TAG, "Failed to delete legacy traffic file: ${file.absolutePath}")
+            }
+        }
+    }
+
+    private fun <T> withFileLock(block: () -> T): T {
+        return synchronized(processFileLock) {
+            check(directory.exists() || directory.mkdirs()) {
+                "无法创建流量持久化目录: ${directory.absolutePath}"
+            }
+            RandomAccessFile(lockFile, "rw").use { lockAccess ->
+                lockAccess.channel.lock().use { block() }
+            }
+        }
+    }
+}
+
+private fun writeTextFileAtomically(targetFile: File, content: String) {
+    targetFile.parentFile?.mkdirs()
+    val tempFile = File.createTempFile("${targetFile.name.take(64)}.", ".tmp", targetFile.parentFile)
+    try {
+        tempFile.writeText(content, Charsets.UTF_8)
+        moveTempFileIntoPlace(tempFile, targetFile)
+    } finally {
+        if (tempFile.isFile && !tempFile.delete()) {
+            Log.w("TrafficSnapshotStore", "Failed to delete traffic temp file: ${tempFile.absolutePath}")
+        }
+    }
+}
+
+private fun moveTempFileIntoPlace(tempFile: File, targetFile: File) {
+    if (Build.VERSION.SDK_INT == 0 || Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+        try {
+            moveTempFileWithNio(tempFile, targetFile, atomic = true)
+        } catch (_: IOException) {
+            moveTempFileWithNio(tempFile, targetFile, atomic = false)
+        }
+    } else {
+        Os.rename(tempFile.absolutePath, targetFile.absolutePath)
+    }
+}
+
+@TargetApi(Build.VERSION_CODES.O)
+private fun moveTempFileWithNio(tempFile: File, targetFile: File, atomic: Boolean) {
+    if (atomic) {
+        Files.move(
+            tempFile.toPath(),
+            targetFile.toPath(),
+            StandardCopyOption.REPLACE_EXISTING,
+            StandardCopyOption.ATOMIC_MOVE
+        )
+    } else {
+        Files.move(
+            tempFile.toPath(),
+            targetFile.toPath(),
+            StandardCopyOption.REPLACE_EXISTING
+        )
+    }
+}
+
 class TrafficRepository private constructor(private val context: Context) {
 
     companion object {
         private const val TAG = "TrafficRepository"
-        private const val FILE_NAME = "traffic_stats.json"
-        private const val DAILY_FILE_NAME = "traffic_daily.json"
-        private val TRAFFIC_STATS_MAP_TYPE = object : TypeToken<Map<String, NodeTrafficStats>>() {}.type
-        private val DAILY_RECORDS_TYPE = object : TypeToken<Map<String, DailyTrafficRecord>>() {}.type
+        private const val SAVE_DELAY_MS = 30_000L
 
         @Volatile
         private var instance: TrafficRepository? = null
@@ -72,185 +424,121 @@ class TrafficRepository private constructor(private val context: Context) {
             return "${cal.get(Calendar.YEAR)}-${cal.get(Calendar.MONTH) + 1}-${cal.get(Calendar.DAY_OF_MONTH)}"
         }
 
-        private fun writeTextFileAtomically(targetFile: File, content: String) {
-            targetFile.parentFile?.mkdirs()
-            val tempFile = File.createTempFile("${targetFile.name.take(64)}.", ".tmp", targetFile.parentFile)
-            try {
-                tempFile.writeText(content, Charsets.UTF_8)
-                moveTempFileIntoPlace(tempFile, targetFile)
-            } finally {
-                if (tempFile.isFile && !tempFile.delete()) {
-                    Log.w(TAG, "Failed to delete traffic temp file: ${tempFile.absolutePath}")
-                }
-            }
-        }
-
-        private fun moveTempFileIntoPlace(tempFile: File, targetFile: File) {
-            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
-                moveTempFileWithFileApi(tempFile, targetFile)
-                return
-            }
-
-            try {
-                moveTempFileWithNio(tempFile, targetFile, atomic = true)
-            } catch (_: IOException) {
-                moveTempFileWithNio(tempFile, targetFile, atomic = false)
-            }
-        }
-
-        @TargetApi(Build.VERSION_CODES.O)
-        private fun moveTempFileWithNio(tempFile: File, targetFile: File, atomic: Boolean) {
-            if (atomic) {
-                Files.move(
-                    tempFile.toPath(),
-                    targetFile.toPath(),
-                    StandardCopyOption.REPLACE_EXISTING,
-                    StandardCopyOption.ATOMIC_MOVE
-                )
-            } else {
-                Files.move(
-                    tempFile.toPath(),
-                    targetFile.toPath(),
-                    StandardCopyOption.REPLACE_EXISTING
-                )
-            }
-        }
-
-        private fun moveTempFileWithFileApi(tempFile: File, targetFile: File) {
-            if (targetFile.exists() && !targetFile.delete()) {
-                throw IOException("Failed to delete old traffic file: ${targetFile.absolutePath}")
-            }
-            if (tempFile.renameTo(targetFile)) return
-
-            tempFile.copyTo(targetFile, overwrite = true)
-            if (!tempFile.delete()) {
-                Log.w(TAG, "Failed to delete moved traffic temp file: ${tempFile.absolutePath}")
-            }
+        private fun getCurrentMonthKey(): String {
+            val cal = Calendar.getInstance()
+            return "${cal.get(Calendar.YEAR)}-${cal.get(Calendar.MONTH) + 1}"
         }
     }
 
-    private val gson = Gson()
     private val statsLock = Any()
-    private val trafficMap = ConcurrentHashMap<String, NodeTrafficStats>()
-    private val dailyRecords = ConcurrentHashMap<String, DailyTrafficRecord>()
-    private val statsFile: File get() = File(context.filesDir, FILE_NAME)
-    private val dailyFile: File get() = File(context.filesDir, DAILY_FILE_NAME)
-    private var lastSaveTime = 0L
+    private val trafficMap = mutableMapOf<String, NodeTrafficStats>()
+    private val dailyRecords = mutableMapOf<String, DailyTrafficRecord>()
+    private val snapshotStore = TrafficSnapshotFileStore(context.filesDir)
     private var lastKnownClearTimestamp = 0L
+    private var lastKnownMonthKey = getCurrentMonthKey()
+    private val saveScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val saveScheduler = MergedTrafficSaveScheduler(saveScope, SAVE_DELAY_MS) {
+        persistCurrentSnapshot()
+    }
 
     init {
         lastKnownClearTimestamp = VpnStateStore.getTrafficClearTimestamp()
-        loadStatsLocked()
-        loadDailyRecordsLocked()
-        checkMonthlyReset()
-        cleanOldRecords()
+        loadSnapshotLocked()
     }
 
-    private fun loadStatsLocked() {
-        if (!statsFile.exists()) return
+    private fun loadSnapshotLocked() {
+        val clearCutoff = VpnStateStore.getTrafficClearTimestamp()
+        lastKnownClearTimestamp = maxOf(lastKnownClearTimestamp, clearCutoff)
         try {
-            val json = statsFile.readText()
-            val loaded: Map<String, NodeTrafficStats>? = gson.fromJson(json, TRAFFIC_STATS_MAP_TYPE)
-            if (loaded != null) {
-                loaded.filterValues { it.isValid() }.forEach { (key, value) ->
-                    trafficMap[key] = value
-                }
+            val currentMonthKey = getCurrentMonthKey()
+            val resetLegacyMonthly = shouldResetLegacyMonthly(currentMonthKey)
+            val snapshot = snapshotStore.load(clearCutoff) { stored ->
+                val shouldResetMonthly = stored.monthKey?.takeIf { it.isNotBlank() }
+                    ?.let { it != currentMonthKey }
+                    ?: resetLegacyMonthly
+                stored.copy(
+                    traffic = if (shouldResetMonthly) emptyMap() else stored.traffic,
+                    daily = removeExpiredDailyRecords(stored.daily),
+                    monthKey = currentMonthKey
+                )
+            } ?: return
+            if (snapshot.generation > clearCutoff) {
+                VpnStateStore.setTrafficClearTimestamp(snapshot.generation)
             }
+            lastKnownClearTimestamp = maxOf(lastKnownClearTimestamp, snapshot.generation)
+            lastKnownMonthKey = snapshot.monthKey ?: currentMonthKey
+            trafficMap.putAll(snapshot.traffic)
+            dailyRecords.putAll(snapshot.daily)
         } catch (e: Exception) {
             Log.e(TAG, "Failed to load traffic stats", e)
         }
     }
 
-    @Suppress("NestedBlockDepth")
-    private fun loadDailyRecordsLocked() {
-        if (!dailyFile.exists()) return
-        try {
-            val json = dailyFile.readText()
-            val loaded: Map<String, DailyTrafficRecord>? = gson.fromJson(json, DAILY_RECORDS_TYPE)
-            if (loaded != null) {
-                loaded.forEach { (dateKey, record) ->
-                    val validStats = record.nodeStats.filterValues { it.isValid() }
-                    if (validStats.isNotEmpty()) {
-                        val cleanRecord = DailyTrafficRecord(dateKey)
-                        cleanRecord.nodeStats.putAll(validStats)
-                        dailyRecords[dateKey] = cleanRecord
-                    }
-                }
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to load daily records", e)
+    private fun shouldResetLegacyMonthly(currentMonthKey: String): Boolean {
+        val prefs = context.getSharedPreferences("traffic_prefs", Context.MODE_PRIVATE)
+        val currentMonth = Calendar.getInstance().get(Calendar.MONTH)
+        val lastMonthKey = prefs.getString("last_month_key", null)
+        val legacyLastMonth = prefs.getInt("last_month", -1)
+        val shouldReset = when {
+            !lastMonthKey.isNullOrBlank() -> lastMonthKey != currentMonthKey
+            legacyLastMonth >= 0 -> legacyLastMonth != currentMonth
+            else -> false
+        }
+        prefs.edit()
+            .putString("last_month_key", currentMonthKey)
+            .putInt("last_month", currentMonth)
+            .apply()
+        return shouldReset
+    }
+
+    private fun removeExpiredDailyRecords(
+        records: Map<String, DailyTrafficRecord>
+    ): Map<String, DailyTrafficRecord> {
+        val cutoff = Calendar.getInstance().apply { add(Calendar.DAY_OF_YEAR, -60) }.timeInMillis
+        return records.filterKeys { dateKey ->
+            runCatching {
+                val parts = dateKey.split("-")
+                parts.size != 3 || Calendar.getInstance().apply {
+                    set(parts[0].toInt(), parts[1].toInt() - 1, parts[2].toInt())
+                }.timeInMillis >= cutoff
+            }.getOrDefault(true)
         }
     }
 
     fun saveStats() {
-        synchronized(statsLock) {
-            saveStatsLocked(force = false)
-        }
+        saveScheduler.flush()
     }
 
-    private fun saveStatsLocked(force: Boolean) {
-        val now = System.currentTimeMillis()
-        if (!force && now - lastSaveTime < 10000) return
-
-        try {
-            val json = gson.toJson(trafficMap.mapValues { it.value.snapshot() })
-            writeTextFileAtomically(statsFile, json)
-            lastSaveTime = now
-
-            val dailyJson = gson.toJson(dailyRecords.mapValues { it.value.snapshot() })
-            writeTextFileAtomically(dailyFile, dailyJson)
+    private fun persistCurrentSnapshot(): Boolean {
+        val currentClearTimestamp = VpnStateStore.getTrafficClearTimestamp()
+        val snapshot = synchronized(statsLock) {
+            checkCrossProcessClearLocked(currentClearTimestamp)
+            checkMonthChangedLocked(getCurrentMonthKey())
+            TrafficPersistenceSnapshot(
+                generation = lastKnownClearTimestamp,
+                traffic = trafficMap.mapValues { it.value.snapshot() },
+                daily = dailyRecords.mapValues { it.value.snapshot() },
+                monthKey = getCurrentMonthKey()
+            )
+        }
+        return try {
+            snapshotStore.save(
+                snapshot = snapshot,
+                clearCutoffGeneration = VpnStateStore.getTrafficClearTimestamp()
+            )
         } catch (e: Exception) {
             Log.e(TAG, "Failed to save traffic stats", e)
-        }
-    }
-
-    private fun checkMonthlyReset() {
-        val prefs = context.getSharedPreferences("traffic_prefs", Context.MODE_PRIVATE)
-        val lastMonth = prefs.getInt("last_month", -1)
-        val currentMonth = Calendar.getInstance().get(Calendar.MONTH)
-
-        if (lastMonth != -1 && lastMonth != currentMonth) {
-            Log.i(TAG, "New month detected ($lastMonth -> $currentMonth), resetting traffic stats")
-            synchronized(statsLock) {
-                trafficMap.clear()
-                saveStatsLocked(force = true)
-            }
-        }
-
-        if (lastMonth != currentMonth) {
-            prefs.edit().putInt("last_month", currentMonth).apply()
-        }
-    }
-
-    private fun cleanOldRecords() {
-        val cal = Calendar.getInstance()
-        cal.add(Calendar.DAY_OF_YEAR, -60)
-        val cutoffTime = cal.timeInMillis
-
-        val keysToRemove = dailyRecords.keys.filter { dateKey ->
-            try {
-                val parts = dateKey.split("-")
-                if (parts.size == 3) {
-                    val recordCal = Calendar.getInstance()
-                    recordCal.set(parts[0].toInt(), parts[1].toInt() - 1, parts[2].toInt())
-                    recordCal.timeInMillis < cutoffTime
-                } else false
-            } catch (_: Exception) {
-                false
-            }
-        }
-
-        keysToRemove.forEach { dailyRecords.remove(it) }
-        if (keysToRemove.isNotEmpty()) {
-            Log.i(TAG, "Cleaned ${keysToRemove.size} old daily records")
+            false
         }
     }
 
     fun addTraffic(nodeId: String, uploadDiff: Long, downloadDiff: Long, nodeName: String? = null) {
         if (uploadDiff <= 0 && downloadDiff <= 0) return
+        val currentClearTimestamp = VpnStateStore.getTrafficClearTimestamp()
 
         synchronized(statsLock) {
-            checkCrossProcessClearLocked()
+            checkCrossProcessClearLocked(currentClearTimestamp)
+            checkMonthChangedLocked(getCurrentMonthKey())
 
             val stats = trafficMap.getOrPut(nodeId) { NodeTrafficStats(nodeId) }
             stats.upload += uploadDiff
@@ -269,19 +557,24 @@ class TrafficRepository private constructor(private val context: Context) {
             if (!nodeName.isNullOrBlank()) {
                 dailyStats.nodeName = nodeName
             }
-
-            saveStatsLocked(force = false)
         }
+        saveScheduler.requestSave()
     }
 
-    private fun checkCrossProcessClearLocked() {
-        val currentClearTs = VpnStateStore.getTrafficClearTimestamp()
+    private fun checkCrossProcessClearLocked(currentClearTs: Long) {
         if (currentClearTs > lastKnownClearTimestamp) {
             Log.i(TAG, "Cross-process clear detected, clearing local data")
             trafficMap.clear()
             dailyRecords.clear()
             lastKnownClearTimestamp = currentClearTs
         }
+    }
+
+    private fun checkMonthChangedLocked(currentMonthKey: String) {
+        if (currentMonthKey == lastKnownMonthKey) return
+        Log.i(TAG, "Month changed ($lastKnownMonthKey -> $currentMonthKey), resetting monthly traffic")
+        trafficMap.clear()
+        lastKnownMonthKey = currentMonthKey
     }
 
     fun getStats(nodeId: String): NodeTrafficStats? {
@@ -292,31 +585,15 @@ class TrafficRepository private constructor(private val context: Context) {
 
     fun getMonthlyTotal(nodeId: String): Long {
         return synchronized(statsLock) {
+            checkMonthChangedLocked(getCurrentMonthKey())
             val stats = trafficMap[nodeId] ?: return@synchronized 0L
             stats.upload + stats.download
         }
     }
 
-    fun getAllNodeStats(): List<NodeTrafficStats> {
-        return synchronized(statsLock) {
-            trafficMap.values.map { it.snapshot() }.sortedByDescending { it.upload + it.download }
-        }
-    }
-
-    fun getTotalTraffic(): Pair<Long, Long> {
-        return synchronized(statsLock) {
-            var totalUpload = 0L
-            var totalDownload = 0L
-            trafficMap.values.forEach {
-                totalUpload += it.upload
-                totalDownload += it.download
-            }
-            Pair(totalUpload, totalDownload)
-        }
-    }
-
     fun getTrafficSummary(period: TrafficPeriod): TrafficSummary {
         return synchronized(statsLock) {
+            checkMonthChangedLocked(getCurrentMonthKey())
             when (period) {
                 TrafficPeriod.TODAY -> getTodayTrafficLocked()
                 TrafficPeriod.THIS_WEEK -> getWeekTrafficLocked()
@@ -485,36 +762,46 @@ class TrafficRepository private constructor(private val context: Context) {
             }
     }
 
-    fun forceSave() {
-        synchronized(statsLock) {
-            lastSaveTime = 0L
-            saveStatsLocked(force = true)
-        }
-    }
-
-    /**
-     */
     fun reloadFromDisk() {
+        saveScheduler.cancel()
         synchronized(statsLock) {
             trafficMap.clear()
             dailyRecords.clear()
-            loadStatsLocked()
-            loadDailyRecordsLocked()
+            loadSnapshotLocked()
             Log.i(TAG, "Reloaded traffic stats from disk: ${trafficMap.size} nodes")
         }
     }
 
     fun clearAllStats() {
-        val clearTs = synchronized(statsLock) {
+        saveScheduler.cancel()
+        var clearFailure: Exception? = null
+        val clearGeneration = synchronized(statsLock) {
+            val minimumGeneration = maxOf(
+                System.currentTimeMillis(),
+                nextTrafficGenerationAfter(lastKnownClearTimestamp)
+            )
+            var publishedGeneration = minimumGeneration
+            val appliedGeneration = try {
+                snapshotStore.clear(minimumGeneration, getCurrentMonthKey()) { generation ->
+                    publishedGeneration = generation
+                    VpnStateStore.setTrafficClearTimestamp(generation)
+                }
+            } catch (e: Exception) {
+                clearFailure = e
+                VpnStateStore.setTrafficClearTimestamp(publishedGeneration)
+                publishedGeneration
+            }
             trafficMap.clear()
             dailyRecords.clear()
-            val clearTs = System.currentTimeMillis()
-            lastKnownClearTimestamp = clearTs
-            VpnStateStore.setTrafficClearTimestamp(clearTs)
-            saveStatsLocked(force = true)
-            clearTs
+            lastKnownClearTimestamp = appliedGeneration
+            lastKnownMonthKey = getCurrentMonthKey()
+            appliedGeneration
         }
-        Log.i(TAG, "All traffic stats cleared, timestamp=$clearTs")
+        clearFailure?.let { error ->
+            Log.e(TAG, "Failed to persist cleared traffic snapshot", error)
+            saveScheduler.requestSave()
+        }
+        Log.i(TAG, "All traffic stats cleared, generation=$clearGeneration")
     }
 
     private fun NodeTrafficStats.snapshot(): NodeTrafficStats {

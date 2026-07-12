@@ -138,16 +138,6 @@ object SingBoxIpcHub {
         return resolvedDelay
     }
 
-    internal fun resolveVisibleStateOrdinalForTest(
-        cachedStateOrdinal: Int,
-        liveCoreState: ServiceState?
-    ): Int {
-        return resolveVisibleStateOrdinal(
-            cachedStateOrdinal = cachedStateOrdinal,
-            liveCoreState = liveCoreState
-        )
-    }
-
     private fun currentVisibleStateOrdinal(): Int {
         return resolveVisibleStateOrdinal(
             cachedStateOrdinal = stateOrdinal,
@@ -166,7 +156,7 @@ object SingBoxIpcHub {
         }
     }
 
-    private fun resolveVisibleStateOrdinal(
+    internal fun resolveVisibleStateOrdinal(
         cachedStateOrdinal: Int,
         liveCoreState: ServiceState?
     ): Int {

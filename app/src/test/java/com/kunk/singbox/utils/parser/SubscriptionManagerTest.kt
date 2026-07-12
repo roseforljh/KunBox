@@ -88,6 +88,42 @@ class SubscriptionManagerTest {
     }
 
     @Test
+    fun singBoxParserPreservesWireGuardEndpointOnlyConfig() {
+        val json = """
+            {
+              "endpoints": [
+                {
+                  "type": "wireguard",
+                  "tag": "wg-endpoint",
+                  "mtu": 1380,
+                  "address": ["10.0.0.2/32"],
+                  "private_key": "private",
+                  "workers": 2,
+                  "peers": [
+                    {
+                      "address": "wg.example.com",
+                      "port": 51820,
+                      "public_key": "public",
+                      "allowed_ips": ["0.0.0.0/0", "::/0"],
+                      "persistent_keepalive_interval": 25,
+                      "reserved": [1, 2, 3]
+                    }
+                  ]
+                }
+              ]
+            }
+        """.trimIndent()
+
+        val config = SingBoxParser(Gson()).parse(json)
+
+        assertNotNull(config)
+        assertEquals("wg-endpoint", config?.endpoints?.single()?.tag)
+        assertEquals("wg.example.com", config?.endpoints?.single()?.peers?.single()?.server)
+        assertEquals(listOf("0.0.0.0/0", "::/0"), config?.endpoints?.single()?.peers?.single()?.allowedIps)
+        assertEquals(25, config?.endpoints?.single()?.peers?.single()?.persistentKeepaliveInterval)
+    }
+
+    @Test
     fun base64ParserDecodesUnpaddedBase64Subscription() {
         val rawLink = "vless://uuid@example.com:443?type=ws&path=%2F&host=cdn.example.com#B64"
         val encoded = java.util.Base64.getEncoder()

@@ -1,12 +1,7 @@
 package com.kunk.singbox.ui.screens
 
 import com.kunk.singbox.R
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -26,7 +21,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
-import androidx.compose.material.icons.rounded.ArrowBack
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -52,7 +47,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -106,30 +100,11 @@ private fun Modifier.domainRuleSelectorPanel(): Modifier {
 }
 
 @Composable
-private fun Modifier.domainRuleItemPressFeedback(onClick: () -> Unit): Modifier {
-    val useLiquidGlass = isLiquidGlassTheme()
-    val interactionSource = remember { MutableInteractionSource() }
-    val isPressed by interactionSource.collectIsPressedAsState()
-    val scale by animateFloatAsState(
-        targetValue = if (useLiquidGlass && isPressed) 0.98f else 1f,
-        animationSpec = spring(stiffness = 520f, dampingRatio = 0.72f),
-        label = "liquid_glass_domain_rule_item_scale"
+private fun Modifier.domainRuleItemPressFeedback(onClick: () -> Unit): Modifier =
+    liquidGlassPressFeedback(
+        label = "liquid_glass_domain_rule_item_scale",
+        onClick = onClick
     )
-    val clickModifier = if (useLiquidGlass) {
-        Modifier.clickable(
-            interactionSource = interactionSource,
-            indication = null,
-            onClick = onClick
-        )
-    } else {
-        Modifier.clickable(onClick = onClick)
-    }
-
-    return graphicsLayer {
-        scaleX = scale
-        scaleY = scale
-    }.then(clickModifier)
-}
 
 @Composable
 private fun resolveOutboundText(
@@ -272,7 +247,11 @@ fun DomainRulesScreen(
                         modifier = Modifier.liquidGlassIconButtonPanel(),
                         onClick = { navController.popBackStack() }
                     ) {
-                        Icon(Icons.Rounded.ArrowBack, contentDescription = stringResource(R.string.common_back), tint = MaterialTheme.colorScheme.onBackground)
+                        Icon(
+                            Icons.AutoMirrored.Rounded.ArrowBack,
+                            contentDescription = stringResource(R.string.common_back),
+                            tint = MaterialTheme.colorScheme.onBackground
+                        )
                     }
                 },
                 actions = {
@@ -446,7 +425,6 @@ private fun DomainRuleEditorDialog(
                             targetSelectionTitle = selectProfileTitle
                             targetOptions = profiles.map { it.name to it.id }
                         }
-                        else -> {}
                     }
                     if (selectedMode != RuleSetOutboundMode.NODE) {
                         showTargetSelectionDialog = true
@@ -668,7 +646,7 @@ private fun DomainRuleEditorDialog(
             OutlinedButton(
                 onClick = onDismiss,
                 modifier = Modifier.liquidGlassButtonPanel(shape = RoundedCornerShape(20.dp)),
-                border = liquidGlassOutlinedButtonBorder(ButtonDefaults.outlinedButtonBorder),
+                border = liquidGlassOutlinedButtonBorder(ButtonDefaults.outlinedButtonBorder(enabled = true)),
                 colors = liquidGlassOutlinedButtonColors(
                     defaultContainerColor = Color.Transparent,
                     defaultContentColor = MaterialTheme.colorScheme.primary

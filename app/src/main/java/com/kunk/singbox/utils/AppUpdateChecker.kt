@@ -100,8 +100,6 @@ object AppUpdateChecker {
         }
     }
 
-    /**
-     */
     private fun getCurrentVersion(context: Context): String {
         return try {
             val packageInfo = context.packageManager.getPackageInfo(context.packageName, 0)
@@ -112,8 +110,6 @@ object AppUpdateChecker {
         }
     }
 
-    /**
-     */
     private suspend fun fetchLatestReleaseWithFallback(context: Context): GitHubRelease? {
         val request = Request.Builder()
             .url(GITHUB_API_URL)
@@ -155,7 +151,7 @@ object AppUpdateChecker {
             Log.w(TAG, "$source request failed with ${response.code}")
             return null
         }
-        val json = response.body?.string() ?: return null
+        val json = response.body.string()
         Log.d(TAG, "$source request succeeded for update check")
         return gson.fromJson(json, GitHubRelease::class.java)
     }
@@ -182,9 +178,6 @@ object AppUpdateChecker {
         )
     }
 
-    /**
-     *
-     */
     private fun isNewerVersion(newVersion: String, currentVersion: String): Boolean {
         try {
             val newParts = parseVersion(newVersion)
@@ -205,8 +198,6 @@ object AppUpdateChecker {
         }
     }
 
-    /**
-     */
     private fun parseVersion(version: String): List<Int> {
 
         val cleanVersion = version
@@ -216,8 +207,6 @@ object AppUpdateChecker {
         return cleanVersion.split(".").mapNotNull { it.toIntOrNull() }
     }
 
-    /**
-     */
     private fun showUpdateNotification(context: Context, release: GitHubRelease): Boolean {
         if (!canPostNotifications(context)) {
             Log.w(TAG, "Notification permission not granted, update notification skipped")
@@ -278,8 +267,6 @@ object AppUpdateChecker {
             ) == PackageManager.PERMISSION_GRANTED
     }
 
-    /**
-     */
     private fun createNotificationChannel(context: Context) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val name = context.getString(R.string.update_channel_name)
@@ -295,22 +282,16 @@ object AppUpdateChecker {
         }
     }
 
-    /**
-     */
     private fun getLastNotifiedVersion(context: Context): String? {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         return prefs.getString(KEY_LAST_NOTIFIED_VERSION, null)
     }
 
-    /**
-     */
     private fun setLastNotifiedVersion(context: Context, version: String) {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         prefs.edit().putString(KEY_LAST_NOTIFIED_VERSION, version).apply()
     }
 
-    /**
-     */
     fun clearLastNotifiedVersion(context: Context) {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         prefs.edit().remove(KEY_LAST_NOTIFIED_VERSION).apply()

@@ -4,6 +4,7 @@ import com.kunk.singbox.model.DnsConfig
 import com.kunk.singbox.model.DnsServer
 import com.kunk.singbox.model.Outbound
 import com.kunk.singbox.model.SingBoxConfig
+import java.io.File
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -13,15 +14,34 @@ import org.junit.Test
 class HealthAutoFailoverLogicTest {
 
     @Test
+    fun autoFailoverUsesSharedBoundedDispatcher() {
+        val source = File("src/main/java/com/kunk/singbox/service/SingBoxService.kt").readText()
+
+        assertFalse(source.contains("newSingleThreadExecutor"))
+        assertTrue(source.contains("Dispatchers.IO.limitedParallelism(1)"))
+    }
+
+    @Test
+    fun healthMonitoringDoesNotSchedulePeriodicExternalRequests() {
+        val serviceSource = File("src/main/java/com/kunk/singbox/service/SingBoxService.kt").readText()
+        val wrapperSource = File("src/main/java/com/kunk/singbox/core/BoxWrapperManager.kt").readText()
+
+        assertFalse(serviceSource.contains("runActiveHealthProbeTick"))
+        assertFalse(serviceSource.contains("ACTIVE_HEALTH_PROBE_CANARY_INTERVAL_MS"))
+        assertFalse(wrapperSource.contains("connect.facebook.net"))
+        assertFalse(wrapperSource.contains("www.cloudflare.com/cdn-cgi/trace"))
+    }
+
+    @Test
     fun dnsAndActiveProbeFastPathsUseOneSecondRetry() {
-        assertEquals(1_000L, SingBoxService.resolveAutoFailoverRetryDelayMsForTest("dns_remote_timeout"))
-        assertEquals(1_000L, SingBoxService.resolveAutoFailoverRetryDelayMsForTest("active_probe_failed"))
-        assertEquals(2_500L, SingBoxService.resolveAutoFailoverRetryDelayMsForTest("traffic_stall:3"))
+        assertEquals(1_000L, SingBoxService.resolveAutoFailoverRetryDelayMs("dns_remote_timeout"))
+        assertEquals(1_000L, SingBoxService.resolveAutoFailoverRetryDelayMs("active_probe_failed"))
+        assertEquals(2_500L, SingBoxService.resolveAutoFailoverRetryDelayMs("traffic_stall:3"))
     }
 
     @Test
     fun fastPathLimitsCandidateProbeCountAndKeepsCurrent() {
-        val selected = SingBoxService.selectAutoFailoverProbeCandidatesForTest(
+        val selected = SingBoxService.selectAutoFailoverProbeCandidates(
             currentTag = "current",
             cachedBackupTag = "backup",
             candidateTags = listOf("current", "a", "backup", "b", "c", "d"),
@@ -35,30 +55,34 @@ class HealthAutoFailoverLogicTest {
 
     @Test
     fun healthSignalTriggerNamesAreRecognized() {
-        assertTrue(SingBoxService.isHealthFastPathTriggerForTest("dns_remote_timeout"))
-        assertTrue(SingBoxService.isHealthFastPathTriggerForTest("active_probe_failed"))
-        assertFalse(SingBoxService.isHealthFastPathTriggerForTest("traffic_stall:3"))
+        assertTrue(SingBoxService.isHealthFastPathTrigger("dns_remote_timeout"))
+        assertTrue(SingBoxService.isHealthFastPathTrigger("active_probe_failed"))
+        assertFalse(SingBoxService.isHealthFastPathTrigger("traffic_stall:3"))
     }
 
     @Test
     fun fastPathClosesConnectionsAfterSwitch() {
-        assertTrue(SingBoxService.shouldResetAfterAutoFailoverForTest("dns_remote_timeout"))
-        assertTrue(SingBoxService.shouldResetAfterAutoFailoverForTest("active_probe_failed"))
-        assertFalse(SingBoxService.shouldResetAfterAutoFailoverForTest("traffic_stall:3"))
+        val source = File("src/main/java/com/kunk/singbox/service/SingBoxService.kt").readText()
+        val start = source.indexOf("protected suspend fun performAutoFailoverSwitch")
+        val end = source.indexOf("protected fun loadActiveAutoFailoverQuarantine", start)
+        val body = source.substring(start, end)
+
+        assertTrue(body.contains("commandManager.closeConnections()"))
+        assertFalse(body.contains("BoxWrapperManager.resetNetwork()"))
     }
 
     @Test
     fun fastPathCandidateLatencyUsesBoundedTimeoutAndParallelism() {
         assertEquals(
             1_200,
-            SingBoxService.resolveAutoFailoverCandidateTimeoutMsForTest(
+            SingBoxService.resolveAutoFailoverCandidateTimeoutMs(
                 trigger = "active_probe_failed",
                 userTimeoutMs = 5_000
             )
         )
         assertEquals(
             3,
-            SingBoxService.resolveAutoFailoverCandidateConcurrencyForTest(
+            SingBoxService.resolveAutoFailoverCandidateConcurrency(
                 trigger = "active_probe_failed",
                 userConcurrency = 1,
                 candidateCount = 5
@@ -66,7 +90,7 @@ class HealthAutoFailoverLogicTest {
         )
         assertEquals(
             1,
-            SingBoxService.resolveAutoFailoverCandidateConcurrencyForTest(
+            SingBoxService.resolveAutoFailoverCandidateConcurrency(
                 trigger = "active_probe_failed",
                 userConcurrency = 1,
                 candidateCount = 1
@@ -74,7 +98,7 @@ class HealthAutoFailoverLogicTest {
         )
         assertEquals(
             5_000,
-            SingBoxService.resolveAutoFailoverCandidateTimeoutMsForTest(
+            SingBoxService.resolveAutoFailoverCandidateTimeoutMs(
                 trigger = "traffic_stall:3",
                 userTimeoutMs = 5_000
             )
@@ -85,7 +109,7 @@ class HealthAutoFailoverLogicTest {
     fun fastPathCandidateLatencyRunsInSingleBatchWave() {
         assertEquals(
             1,
-            SingBoxService.resolveAutoFailoverCandidateProbeWavesForTest(
+            SingBoxService.resolveAutoFailoverCandidateProbeWaves(
                 trigger = "active_probe_failed",
                 userConcurrency = 1,
                 candidateCount = 3
@@ -93,7 +117,7 @@ class HealthAutoFailoverLogicTest {
         )
         assertEquals(
             3,
-            SingBoxService.resolveAutoFailoverCandidateProbeWavesForTest(
+            SingBoxService.resolveAutoFailoverCandidateProbeWaves(
                 trigger = "traffic_stall:3",
                 userConcurrency = 1,
                 candidateCount = 3
@@ -102,126 +126,28 @@ class HealthAutoFailoverLogicTest {
     }
 
     @Test
-    fun activeProbeDoesNotRunForForegroundOnlyWithoutRecentTraffic() {
+    fun meaningfulTrafficUsesOnlyObservedApplicationTraffic() {
         assertFalse(
-            SingBoxService.shouldRunActiveHealthProbeForSignalsForTest(
-                isAppInForeground = true,
-                lastMeaningfulTrafficAtMs = 0L,
-                nowAtMs = 100_000L
-            )
+            SingBoxService.shouldRecordMeaningfulTrafficForAutoFailover(totalSpeed = 512L)
         )
         assertTrue(
-            SingBoxService.shouldRunActiveHealthProbeForSignalsForTest(
-                isAppInForeground = false,
-                lastMeaningfulTrafficAtMs = 99_000L,
-                nowAtMs = 100_000L
-            )
-        )
-    }
-
-    @Test
-    fun activeProbeTrafficDoesNotRefreshMeaningfulTrafficByItself() {
-        assertFalse(
-            SingBoxService.shouldRecordMeaningfulTrafficForAutoFailoverForTest(
-                totalSpeed = 8_000L,
-                nowAtMs = 10_000L,
-                activeProbeTrafficIgnoreUntilMs = 12_000L
-            )
-        )
-        assertTrue(
-            SingBoxService.shouldRecordMeaningfulTrafficForAutoFailoverForTest(
-                totalSpeed = 128_000L,
-                nowAtMs = 10_000L,
-                activeProbeTrafficIgnoreUntilMs = 12_000L
-            )
-        )
-        assertTrue(
-            SingBoxService.shouldRecordMeaningfulTrafficForAutoFailoverForTest(
-                totalSpeed = 8_000L,
-                nowAtMs = 13_000L,
-                activeProbeTrafficIgnoreUntilMs = 12_000L
-            )
+            SingBoxService.shouldRecordMeaningfulTrafficForAutoFailover(totalSpeed = 8_000L)
         )
     }
 
     @Test
     fun healthFastPathHasNineSecondTotalBudget() {
-        assertEquals(9_000L, SingBoxService.resolveHealthFastFailoverTotalTimeoutMsForTest())
+        assertEquals(9_000L, SingBoxService.HEALTH_FAST_FAILOVER_TOTAL_TIMEOUT_MS)
     }
 
     @Test
-    fun activeProbeUsesMobileSafeTimeout() {
-        assertEquals(1_500L, SingBoxService.resolveActiveHealthProbeTimeoutMsForTest())
-    }
-
-    @Test
-    fun healthFastPathBudgetCoversTwoProbeRoundsBeforeTotalBudget() {
-        val perRoundMs = SingBoxService.resolveAutoFailoverPortReadyTimeoutMsForTest("active_probe_failed") +
-            SingBoxService.resolveAutoFailoverCandidateTimeoutMsForTest("active_probe_failed", 5_000) +
-            SingBoxService.resolveActiveHealthProbeTimeoutMsForTest()
+    fun healthFastPathBudgetCoversTwoNativeLatencyRoundsBeforeTotalBudget() {
+        val perRoundMs = SingBoxService.resolveAutoFailoverPortReadyTimeoutMs("active_probe_failed") +
+            SingBoxService.resolveAutoFailoverCandidateTimeoutMs("active_probe_failed", 5_000)
         val twoRoundProbeMs = perRoundMs * 2 +
-            SingBoxService.resolveAutoFailoverRetryDelayMsForTest("active_probe_failed")
+            SingBoxService.resolveAutoFailoverRetryDelayMs("active_probe_failed")
 
-        assertTrue(twoRoundProbeMs < SingBoxService.resolveHealthFastFailoverTotalTimeoutMsForTest())
-    }
-
-    @Test
-    fun activeProbeFailureSummaryIncludesDiagnosis() {
-        val remoteDnsSummary = SingBoxService.buildActiveProbeFailureSummaryForTest(
-            googleProbeOk = true,
-            cloudflareProbeOk = true,
-            metaProbeOk = false,
-            coreAvailable = true
-        )
-        val nodeSummary = SingBoxService.buildActiveProbeFailureSummaryForTest(
-            googleProbeOk = false,
-            cloudflareProbeOk = false,
-            metaProbeOk = false,
-            coreAvailable = true
-        )
-        val appServiceSummary = SingBoxService.buildActiveProbeFailureSummaryForTest(
-            googleProbeOk = false,
-            cloudflareProbeOk = false,
-            metaProbeOk = false,
-            coreAvailable = false
-        )
-
-        assertTrue(remoteDnsSummary.contains("diagnosis=remote_dns_timeout"))
-        assertTrue(nodeSummary.contains("diagnosis=node_unreachable"))
-        assertTrue(appServiceSummary.contains("diagnosis=app_service_unavailable"))
-        assertTrue(remoteDnsSummary.contains("dns_channel=remote"))
-    }
-
-    @Test
-    fun activeProbeRequiresAtLeastTwoFailedTargetsBeforeMainFailover() {
-        assertFalse(
-            SingBoxService.shouldTreatActiveProbeAsNodeFailure(
-                googleProbeOk = true,
-                cloudflareProbeOk = true,
-                metaProbeOk = false
-            )
-        )
-        assertFalse(
-            SingBoxService.shouldTreatActiveProbeAsNodeFailure(
-                googleProbeOk = true,
-                cloudflareProbeOk = false,
-                metaProbeOk = true
-            )
-        )
-        assertTrue(
-            SingBoxService.shouldTreatActiveProbeAsNodeFailure(
-                googleProbeOk = false,
-                cloudflareProbeOk = false,
-                metaProbeOk = true
-            )
-        )
-        assertTrue(
-            SingBoxService.shouldTreatActiveProbeAsNodeFailure(
-                googleProbeOk = false,
-                cloudflareProbeOk = true,
-                metaProbeOk = false
-            )
-        )
+        assertTrue(twoRoundProbeMs < SingBoxService.HEALTH_FAST_FAILOVER_TOTAL_TIMEOUT_MS)
     }
 
     @Test
@@ -230,42 +156,42 @@ class HealthAutoFailoverLogicTest {
 
         assertEquals(
             "node-b",
-            SingBoxService.resolveSingleNodeRouteFailureTagForTest(
+            SingBoxService.resolveSingleNodeRouteFailureTag(
                 dnsServerTag = "dns-remote-node-b",
                 currentProxyTag = "node-a",
                 config = config
             )
         )
         assertNull(
-            SingBoxService.resolveSingleNodeRouteFailureTagForTest(
+            SingBoxService.resolveSingleNodeRouteFailureTag(
                 dnsServerTag = "dns-remote-profile",
                 currentProxyTag = "node-a",
                 config = config
             )
         )
         assertNull(
-            SingBoxService.resolveSingleNodeRouteFailureTagForTest(
+            SingBoxService.resolveSingleNodeRouteFailureTag(
                 dnsServerTag = "dns-remote-current",
                 currentProxyTag = "node-a",
                 config = config
             )
         )
         assertNull(
-            SingBoxService.resolveSingleNodeRouteFailureTagForTest(
+            SingBoxService.resolveSingleNodeRouteFailureTag(
                 dnsServerTag = "dns-remote-current",
                 currentProxyTag = "node-b",
                 config = config
             )
         )
         assertNull(
-            SingBoxService.resolveSingleNodeRouteFailureTagForTest(
+            SingBoxService.resolveSingleNodeRouteFailureTag(
                 dnsServerTag = "dns-remote-nested-current",
                 currentProxyTag = "P:HK",
                 config = config
             )
         )
         assertNull(
-            SingBoxService.resolveSingleNodeRouteFailureTagForTest(
+            SingBoxService.resolveSingleNodeRouteFailureTag(
                 dnsServerTag = "dns-remote-node-b",
                 currentProxyTag = null,
                 config = config
@@ -278,35 +204,35 @@ class HealthAutoFailoverLogicTest {
         val config = routeFailureConfig()
 
         assertTrue(
-            SingBoxService.shouldSubmitMainAutoFailoverForDnsSignalForTest(
+            SingBoxService.shouldSubmitMainAutoFailoverForDnsSignal(
                 dnsServerTag = "dns-remote-current",
                 currentProxyTag = "node-a",
                 config = config
             )
         )
         assertTrue(
-            SingBoxService.shouldSubmitMainAutoFailoverForDnsSignalForTest(
+            SingBoxService.shouldSubmitMainAutoFailoverForDnsSignal(
                 dnsServerTag = "dns-remote-nested-current",
                 currentProxyTag = "P:HK",
                 config = config
             )
         )
         assertFalse(
-            SingBoxService.shouldSubmitMainAutoFailoverForDnsSignalForTest(
+            SingBoxService.shouldSubmitMainAutoFailoverForDnsSignal(
                 dnsServerTag = "dns-remote-node-b",
                 currentProxyTag = "node-a",
                 config = config
             )
         )
         assertFalse(
-            SingBoxService.shouldSubmitMainAutoFailoverForDnsSignalForTest(
+            SingBoxService.shouldSubmitMainAutoFailoverForDnsSignal(
                 dnsServerTag = "dns-remote-profile",
                 currentProxyTag = "node-a",
                 config = config
             )
         )
         assertTrue(
-            SingBoxService.shouldSubmitMainAutoFailoverForDnsSignalForTest(
+            SingBoxService.shouldSubmitMainAutoFailoverForDnsSignal(
                 dnsServerTag = "dns-remote-unknown",
                 currentProxyTag = "node-a",
                 config = config

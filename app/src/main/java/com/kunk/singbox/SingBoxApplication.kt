@@ -41,10 +41,13 @@ class SingBoxApplication : Application(), Configuration.Provider {
             val settingsRepository = withContext(Dispatchers.IO) {
                 SettingsRepository.getInstance(this@SingBoxApplication)
             }
-            LogRepository.getInstance().setEnabled(settingsRepository.settings.value.debugLoggingEnabled)
-            launch {
+            val logRepository = LogRepository.getInstance()
+            withContext(Dispatchers.IO) {
+                logRepository.setEnabled(settingsRepository.settings.value.debugLoggingEnabled)
+            }
+            launch(Dispatchers.IO) {
                 settingsRepository.settings.collect { settings ->
-                    LogRepository.getInstance().setEnabled(settings.debugLoggingEnabled)
+                    logRepository.setEnabled(settings.debugLoggingEnabled)
                 }
             }
 
@@ -84,8 +87,6 @@ class SingBoxApplication : Application(), Configuration.Provider {
         return processName == packageName
     }
 
-    /**
-     */
     private fun cleanupOrphanedTempFiles() {
         try {
             val tempDir = java.io.File(cacheDir, "singbox_temp")

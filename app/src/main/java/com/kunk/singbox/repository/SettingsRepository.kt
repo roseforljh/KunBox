@@ -32,9 +32,6 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.StateFlow
 
-/**
- *
- */
 class SettingsRepository(private val context: Context) {
 
     private val settingsStore = SettingsStore.getInstance(context)
@@ -81,12 +78,8 @@ class SettingsRepository(private val context: Context) {
         )
     }
 
-    /**
-     */
     val settings: StateFlow<AppSettings> = settingsStore.settings
 
-    /**
-     */
     suspend fun reloadFromStorage() {
         settingsStore.reload()
     }
@@ -159,20 +152,12 @@ class SettingsRepository(private val context: Context) {
         updateSettingsAndNotifyRestart { it.copy(tunMtuAuto = value) }
     }
 
-    suspend fun setTunInterfaceName(value: String) {
-        updateSettingsAndNotifyRestart { it.copy(tunInterfaceName = value) }
-    }
-
     suspend fun setAutoRoute(value: Boolean) {
         updateSettingsAndNotifyRestart { it.copy(autoRoute = value) }
     }
 
     suspend fun setStrictRoute(value: Boolean) {
         updateSettingsAndNotifyRestart { it.copy(strictRoute = value) }
-    }
-
-    suspend fun setEndpointIndependentNat(value: Boolean) {
-        updateSettingsAndNotifyRestart { it.copy(endpointIndependentNat = value) }
     }
 
     suspend fun setVpnRouteMode(value: VpnRouteMode) {
@@ -262,7 +247,10 @@ class SettingsRepository(private val context: Context) {
     }
 
     suspend fun setLatencyTestUrl(value: String) {
-        settingsStore.updateSettingsAndWait { it.copy(latencyTestUrl = value) }
+        val normalized = AppSettings.validateLatencyTestUrl(value) ?: return
+        updateSettingsAndNotifyRestart {
+            it.copy(latencyTestUrl = normalized)
+        }
     }
 
     suspend fun setLatencyTestTimeout(value: Int) {
@@ -279,10 +267,6 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun setIcmpEchoRoutingEnabled(value: Boolean) {
         updateSettingsAndNotifyRestart { it.copy(icmpEchoRoutingEnabled = value) }
-    }
-
-    suspend fun setWakeResetConnections(value: Boolean) {
-        settingsStore.updateSettingsAndWait { it.copy(wakeResetConnections = value) }
     }
 
     suspend fun setGhProxyMirror(value: GhProxyMirror) {
@@ -526,23 +510,7 @@ class SettingsRepository(private val context: Context) {
             }
         }
 
-        internal fun sanitizeProxyPortForTest(value: Int): Int {
-            return sanitizeProxyPort(value)
-        }
-
-        internal fun sanitizeLatencyTestConcurrencyForTest(value: Int): Int {
-            return sanitizeLatencyTestConcurrency(value)
-        }
-
-        internal fun buildImportedSettingsForTest(
-            current: AppSettings,
-            imported: AppSettings,
-            importRules: Boolean
-        ): AppSettings {
-            return buildImportedSettings(current = current, imported = imported, importRules = importRules)
-        }
-
-        private fun buildImportedSettings(
+        internal fun buildImportedSettings(
             current: AppSettings,
             imported: AppSettings,
             importRules: Boolean
@@ -555,6 +523,8 @@ class SettingsRepository(private val context: Context) {
                 appThemeStyle = normalizeAppThemeStyle(imported),
                 fakeIpRange = normalizeFakeIpRange(imported),
                 proxyPort = sanitizeProxyPort(imported.proxyPort),
+                latencyTestUrl = AppSettings.validateLatencyTestUrl(imported.latencyTestUrl)
+                    ?: current.latencyTestUrl,
                 latencyTestConcurrency = sanitizeLatencyTestConcurrency(imported.latencyTestConcurrency),
                 ruleSetAutoUpdateInterval = normalizedRuleSetAutoUpdateInterval
             )
@@ -582,11 +552,11 @@ class SettingsRepository(private val context: Context) {
             return runCatching { settings.appThemeStyle }.getOrNull() ?: AppThemeStyle.DEFAULT
         }
 
-        private fun sanitizeProxyPort(value: Int): Int {
+        internal fun sanitizeProxyPort(value: Int): Int {
             return value.coerceIn(MIN_PROXY_PORT, MAX_PROXY_PORT)
         }
 
-        private fun sanitizeLatencyTestConcurrency(value: Int): Int {
+        internal fun sanitizeLatencyTestConcurrency(value: Int): Int {
             return value.coerceIn(MIN_LATENCY_TEST_CONCURRENCY, MAX_LATENCY_TEST_CONCURRENCY)
         }
     }

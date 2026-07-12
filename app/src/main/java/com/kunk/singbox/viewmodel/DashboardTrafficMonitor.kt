@@ -3,7 +3,6 @@ package com.kunk.singbox.viewmodel
 import android.net.TrafficStats
 import android.os.Process
 import android.os.SystemClock
-import com.kunk.singbox.core.BoxWrapperManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -30,8 +29,6 @@ internal class DashboardTrafficMonitor(
     private var lastTrafficTxBytes: Long = 0
     private var lastTrafficRxBytes: Long = 0
     private var lastTrafficSampleAtElapsedMs: Long = 0
-    private var wrapperBaseUpload: Long = 0
-    private var wrapperBaseDownload: Long = 0
 
     fun start() {
         stop()
@@ -43,9 +40,6 @@ internal class DashboardTrafficMonitor(
         lastTrafficTxBytes = tx0
         lastTrafficRxBytes = rx0
         lastTrafficSampleAtElapsedMs = SystemClock.elapsedRealtime()
-        wrapperBaseUpload = readWrapperUpload()
-        wrapperBaseDownload = readWrapperDownload()
-
         job = scope.launch(Dispatchers.Default) {
             while (true) {
                 delay(1000)
@@ -64,8 +58,6 @@ internal class DashboardTrafficMonitor(
         lastTrafficTxBytes = 0
         lastTrafficRxBytes = 0
         lastTrafficSampleAtElapsedMs = 0
-        wrapperBaseUpload = 0
-        wrapperBaseDownload = 0
     }
 
     private fun publishSample(uid: Int, nowElapsed: Long) {
@@ -104,19 +96,6 @@ internal class DashboardTrafficMonitor(
     }
 
     private fun readTrafficSample(uid: Int): DashboardTrafficSample {
-        if (BoxWrapperManager.isAvailable()) {
-            val wrapperUp = BoxWrapperManager.getUploadTotal()
-            val wrapperDown = BoxWrapperManager.getDownloadTotal()
-            if (wrapperUp >= 0 && wrapperDown >= 0) {
-                return DashboardTrafficSample(
-                    tx = wrapperUp,
-                    rx = wrapperDown,
-                    totalTx = (wrapperUp - wrapperBaseUpload).coerceAtLeast(0L),
-                    totalRx = (wrapperDown - wrapperBaseDownload).coerceAtLeast(0L)
-                )
-            }
-        }
-
         val sysTx = readUidTx(uid)
         val sysRx = readUidRx(uid)
         return DashboardTrafficSample(
@@ -125,14 +104,6 @@ internal class DashboardTrafficMonitor(
             totalTx = (sysTx - trafficBaseTxBytes).coerceAtLeast(0L),
             totalRx = (sysRx - trafficBaseRxBytes).coerceAtLeast(0L)
         )
-    }
-
-    private fun readWrapperUpload(): Long {
-        return if (BoxWrapperManager.isAvailable()) BoxWrapperManager.getUploadTotal().coerceAtLeast(0L) else 0L
-    }
-
-    private fun readWrapperDownload(): Long {
-        return if (BoxWrapperManager.isAvailable()) BoxWrapperManager.getDownloadTotal().coerceAtLeast(0L) else 0L
     }
 
     private fun readUidTx(uid: Int): Long = TrafficStats.getUidTxBytes(uid).coerceAtLeast(0L)

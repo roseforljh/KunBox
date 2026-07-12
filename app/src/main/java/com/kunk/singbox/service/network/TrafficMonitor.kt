@@ -15,11 +15,6 @@ class TrafficMonitor(
     companion object {
         private const val TAG = "TrafficMonitor"
         private const val SAMPLE_INTERVAL_MS = 3000L
-
-        private const val STALL_CHECK_INTERVAL_MS = 30_000L
-        private const val STALL_MIN_BYTES_DELTA = 5120L
-        private const val STALL_MIN_SAMPLES = 3
-        private const val PROXY_IDLE_THRESHOLD_MS = 120_000L
     }
 
     data class TrafficSnapshot(
@@ -31,8 +26,6 @@ class TrafficMonitor(
 
     interface Listener {
         fun onTrafficUpdate(snapshot: TrafficSnapshot)
-        fun onTrafficStall(consecutiveCount: Int)
-        fun onProxyIdle(idleDurationMs: Long) {}
     }
 
     private var monitorJob: Job? = null
@@ -41,13 +34,6 @@ class TrafficMonitor(
     private var lastTxBytes: Long = 0L
     private var lastRxBytes: Long = 0L
     private var lastSampleTime: Long = 0L
-
-    private var lastStallCheckAtMs: Long = 0L
-    private var stallConsecutiveCount: Int = 0
-    private var lastStallTrafficBytes: Long = 0L
-
-    private var lastTrafficActiveAtMs: Long = 0L
-    private var proxyIdleNotified: Boolean = false
 
     @Volatile
     private var isPaused: Boolean = false
@@ -88,11 +74,6 @@ class TrafficMonitor(
         lastTxBytes = tx0
         lastRxBytes = rx0
         lastSampleTime = SystemClock.elapsedRealtime()
-        stallConsecutiveCount = 0
-        lastStallTrafficBytes = 0L
-        lastStallCheckAtMs = 0L
-        lastTrafficActiveAtMs = SystemClock.elapsedRealtime()
-        proxyIdleNotified = false
     }
 
     private fun startMonitorLoop(uid: Int, listener: Listener) {
@@ -129,9 +110,6 @@ class TrafficMonitor(
             totalDownload = totalRx
         ))
 
-        checkForStall(tx + rx, listener)
-        checkForProxyIdle(dTx + dRx, nowElapsed, listener)
-
         lastTxBytes = tx
         lastRxBytes = rx
         lastSampleTime = nowElapsed
@@ -147,62 +125,14 @@ class TrafficMonitor(
         lastTxBytes = 0L
         lastRxBytes = 0L
         lastSampleTime = 0L
-        stallConsecutiveCount = 0
+        cachedUid = 0
+        cachedListener = null
+        isPaused = false
         Log.i(TAG, "Traffic monitor stopped")
     }
 
     fun getTotalBytes(): Long {
         return (lastTxBytes + lastRxBytes).coerceAtLeast(0L)
-    }
-
-    fun resetStallCounter() {
-        stallConsecutiveCount = 0
-        lastStallTrafficBytes = 0L
-    }
-
-    private fun checkForStall(currentTotalBytes: Long, listener: Listener) {
-        val now = SystemClock.elapsedRealtime()
-        if (now - lastStallCheckAtMs < STALL_CHECK_INTERVAL_MS) {
-            return
-        }
-        lastStallCheckAtMs = now
-
-        val delta = currentTotalBytes - lastStallTrafficBytes
-        lastStallTrafficBytes = currentTotalBytes
-
-        if (delta < STALL_MIN_BYTES_DELTA) {
-            stallConsecutiveCount++
-            if (stallConsecutiveCount >= STALL_MIN_SAMPLES) {
-                Log.w(TAG, "Traffic stall detected: consecutiveCount=$stallConsecutiveCount")
-                listener.onTrafficStall(stallConsecutiveCount)
-            }
-        } else {
-            if (stallConsecutiveCount > 0) {
-                Log.i(TAG, "Traffic resumed, resetting stall counter")
-            }
-            stallConsecutiveCount = 0
-        }
-    }
-
-    private fun checkForProxyIdle(bytesDelta: Long, nowElapsedMs: Long, listener: Listener) {
-        if (bytesDelta > 0) {
-            val idleDuration = nowElapsedMs - lastTrafficActiveAtMs
-            lastTrafficActiveAtMs = nowElapsedMs
-
-            // If resumed from significant idle (15s+), notify listener
-            if (proxyIdleNotified) {
-                Log.i(TAG, "Proxy traffic resumed after idle")
-                proxyIdleNotified = false
-            }
-            return
-        }
-
-        val idleDuration = nowElapsedMs - lastTrafficActiveAtMs
-        if (idleDuration >= PROXY_IDLE_THRESHOLD_MS && !proxyIdleNotified) {
-            proxyIdleNotified = true
-            Log.i(TAG, "Proxy idle detected: ${idleDuration}ms")
-            listener.onProxyIdle(idleDuration)
-        }
     }
 
     fun pause() {

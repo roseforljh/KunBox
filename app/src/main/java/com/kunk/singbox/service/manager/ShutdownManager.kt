@@ -4,25 +4,34 @@ import android.app.NotificationManager
 import android.content.Context
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
-import android.os.Build
-import android.os.ParcelFileDescriptor
 import android.os.SystemClock
 import android.util.Log
-import com.kunk.singbox.core.SelectorManager as CoreSelectorManager
+import com.kunk.singbox.core.SelectorManager
 import com.kunk.singbox.ipc.VpnStateStore
+import com.kunk.singbox.repository.TrafficRepository
 import com.kunk.singbox.service.ServiceState
 import com.kunk.singbox.service.VpnKeepaliveWorker
 import com.kunk.singbox.service.VpnTileService
-import com.kunk.singbox.service.notification.VpnNotificationManager
-import com.kunk.singbox.service.network.NetworkManager
 import com.kunk.singbox.service.network.TrafficMonitor
+import com.kunk.singbox.service.notification.VpnNotificationManager
 import com.kunk.singbox.utils.NetworkClient
-import io.nekohasekai.libbox.InterfaceUpdateListener
 import kotlinx.coroutines.*
 
-/**
- *
- */
+internal suspend fun stopTrafficProducerThenFlush(
+    stopProducer: suspend () -> Unit,
+    stopUpdatesAndWait: () -> Unit,
+    flush: () -> Unit,
+    stopTransport: suspend () -> Unit
+) {
+    try {
+        stopProducer()
+        stopUpdatesAndWait()
+        withContext(Dispatchers.IO) { flush() }
+    } finally {
+        stopTransport()
+    }
+}
+
 class ShutdownManager(
     private val context: Context,
     private val cleanupScope: CoroutineScope
@@ -30,10 +39,26 @@ class ShutdownManager(
     companion object {
         private const val TAG = "ShutdownManager"
         private const val FAST_PORT_RELEASE_WAIT_MS = 1500L
+
+        internal fun resolveStopCompletion(
+            initialStopService: Boolean,
+            hardStopRequested: Boolean,
+            pendingStartConfigPath: String?
+        ): StopCompletion {
+            val stopService = initialStopService || hardStopRequested
+            return StopCompletion(
+                stopService = stopService,
+                restartConfigPath = pendingStartConfigPath
+                    ?.takeIf { it.isNotBlank() && !stopService }
+            )
+        }
     }
 
-    /**
-     */
+    data class StopCompletion(
+        val stopService: Boolean,
+        val restartConfigPath: String?
+    )
+
     interface Callbacks {
         fun updateServiceState(state: ServiceState)
         fun updateTileState()
@@ -41,99 +66,71 @@ class ShutdownManager(
         fun stopSelf()
 
         fun cancelStartVpnJob(): Job?
-        fun cancelVpnHealthJob()
+        fun cancelPostStartJob(): Job?
+        fun cancelHotReloadJob(): Job?
         fun cancelRemoteStateUpdateJob()
-        fun cancelRouteGroupAutoSelectJob()
         fun cancelAutoFailoverJob()
 
         fun stopForeignVpnMonitor()
         fun tryClearRunningServiceForLibbox()
         fun unregisterScreenStateReceiver()
-        fun closeDefaultInterfaceMonitor(listener: InterfaceUpdateListener?)
+        fun closeDefaultInterfaceMonitor()
 
-        fun isServiceRunning(): Boolean
-        fun getVpnInterface(): ParcelFileDescriptor?
-        fun getCurrentInterfaceListener(): InterfaceUpdateListener?
         fun getConnectivityManager(): ConnectivityManager?
 
-        fun setVpnInterface(fd: ParcelFileDescriptor?)
+        fun setVpnInterface(fd: android.os.ParcelFileDescriptor?)
         fun setIsRunning(running: Boolean)
         fun setRealTimeNodeName(name: String?)
-        fun setVpnLinkValidated(validated: Boolean)
-        fun setNoPhysicalNetworkWarningLogged(logged: Boolean)
-        fun setDefaultInterfaceName(name: String)
         fun setNetworkCallbackReady(ready: Boolean)
         fun setLastKnownNetwork(network: android.net.Network?)
         fun clearUnderlyingNetworks()
 
-        fun getPendingStartConfigPath(): String?
-        fun clearPendingStartConfigPath()
+        fun hasPendingStartConfigPath(): Boolean
+        fun completeStop(initialStopService: Boolean): StopCompletion
         fun startVpn(configPath: String)
-
-        fun hasExistingTunInterface(): Boolean
     }
 
-    /**
-     */
     data class ShutdownOptions(
         val stopService: Boolean,
-        val preserveTunInterface: Boolean = !stopService,
-        val proxyPort: Int = 0,
-        val strictPortRelease: Boolean = false
+        val proxyPort: Int = 0
     )
 
-    /**
-     */
     @Suppress("LongParameterList", "LongMethod", "CognitiveComplexMethod", "CyclomaticComplexMethod")
     fun stopVpn(
         options: ShutdownOptions,
         coreManager: CoreManager,
         commandManager: CommandManager,
         trafficMonitor: TrafficMonitor,
-        networkManager: NetworkManager?,
         notificationManager: VpnNotificationManager,
-        selectorManager: SelectorManager,
-        platformInterfaceImpl: PlatformInterfaceImpl,
         callbacks: Callbacks
     ): Job {
         val stopService = options.stopService
         val proxyPort = options.proxyPort
 
-        val jobToJoin = callbacks.cancelStartVpnJob()
-        callbacks.cancelVpnHealthJob()
+        val jobsToJoin = listOfNotNull(
+            callbacks.cancelStartVpnJob(),
+            callbacks.cancelPostStartJob(),
+            callbacks.cancelHotReloadJob()
+        )
         callbacks.cancelRemoteStateUpdateJob()
-        callbacks.cancelRouteGroupAutoSelectJob()
         callbacks.cancelAutoFailoverJob()
 
-        if (stopService) {
-            VpnKeepaliveWorker.cancel(context)
-            Log.i(TAG, "VPN keepalive worker cancelled")
-        }
+        VpnKeepaliveWorker.cancel(context)
+        Log.i(TAG, "VPN keepalive worker cancelled")
 
         notificationManager.resetState()
 
         trafficMonitor.stop()
 
-        networkManager?.reset()
-
         callbacks.stopForeignVpnMonitor()
 
-        callbacks.setVpnLinkValidated(false)
-        callbacks.setNoPhysicalNetworkWarningLogged(false)
-        callbacks.setDefaultInterfaceName("")
-
-        if (stopService) {
-            callbacks.setNetworkCallbackReady(false)
-            callbacks.setLastKnownNetwork(null)
-            callbacks.clearUnderlyingNetworks()
-        } else {
-            callbacks.setNetworkCallbackReady(false)
-        }
+        callbacks.setNetworkCallbackReady(false)
+        callbacks.setLastKnownNetwork(null)
+        callbacks.clearUnderlyingNetworks()
 
         callbacks.tryClearRunningServiceForLibbox()
 
-        CoreSelectorManager.clear()
-        selectorManager.clear()
+        SelectorManager.clear()
 
         Log.i(TAG, "stopVpn(stopService=$stopService, proxyPort=$proxyPort)")
 
@@ -141,110 +138,86 @@ class ShutdownManager(
         callbacks.setIsRunning(false)
         NetworkClient.onVpnStateChanged(false)
 
-        val listener = callbacks.getCurrentInterfaceListener()
+        callbacks.setVpnInterface(null)
+        callbacks.unregisterScreenStateReceiver()
 
-        val interfaceToClose: ParcelFileDescriptor?
-        if (stopService) {
-            interfaceToClose = callbacks.getVpnInterface()
-            callbacks.setVpnInterface(null)
-            coreManager.setVpnInterface(null)
-        } else {
-            interfaceToClose = null
-            Log.i(TAG, "Keeping vpnInterface for reuse")
-        }
-
-        if (stopService) {
-            coreManager.releaseLocks()
-            callbacks.unregisterScreenStateReceiver()
-        }
-
-        return cleanupScope.launch(NonCancellable) {
-            try {
-                jobToJoin?.join()
-            } catch (e: Exception) {
-                Log.w(TAG, "Failed to wait for startup job before shutdown", e)
-            }
-
-            if (stopService) {
-                withContext(Dispatchers.Main) {
-                    callbacks.stopForegroundService()
-                    runCatching {
-                        val manager = context.getSystemService(NotificationManager::class.java)
-                        manager.cancel(VpnNotificationManager.NOTIFICATION_ID)
-                    }
-                    VpnTileService.persistVpnState(context, false)
-                    VpnStateStore.setMode(VpnStateStore.CoreMode.NONE)
-                    VpnTileService.persistVpnPending(context, "")
-                    callbacks.updateServiceState(ServiceState.STOPPED)
-                    callbacks.updateTileState()
-                }
-            }
-
-            val serviceCloseStart = SystemClock.elapsedRealtime()
-            runCatching { coreManager.stopService() }
-                .onFailure { e -> Log.w(TAG, "CoreManager.stopService failed: ${e.message}") }
-            Log.i(TAG, "CoreManager service stopped in ${SystemClock.elapsedRealtime() - serviceCloseStart}ms")
-
-            commandManager.stopAndWaitPortRelease(
-                proxyPort = proxyPort,
-                waitTimeoutMs = FAST_PORT_RELEASE_WAIT_MS,
-                forceKillOnTimeout = stopService,
-                enforceReleaseOnTimeout = false
-            ).onFailure { e ->
-                Log.w(TAG, "Error closing command server/client", e)
-            }
-
-            if (stopService) {
+        val cleanupJob = cleanupScope.launch {
+            withContext(NonCancellable) {
                 try {
-                    platformInterfaceImpl.closeDefaultInterfaceMonitor(listener)
+                    jobsToJoin.forEach { it.join() }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Failed to wait for startup tasks before shutdown", e)
+                }
+
+                stopTrafficProducerThenFlush(
+                    stopProducer = {
+                        val serviceCloseStart = SystemClock.elapsedRealtime()
+                        coreManager.stopFully(completeLifecycle = false)
+                            .onFailure { e -> Log.w(TAG, "CoreManager.stopFully failed: ${e.message}") }
+                        Log.i(
+                            TAG,
+                            "CoreManager fully stopped in ${SystemClock.elapsedRealtime() - serviceCloseStart}ms"
+                        )
+                    },
+                    stopUpdatesAndWait = commandManager::stopTrafficUpdatesAndWait,
+                    flush = {
+                        runCatching { TrafficRepository.getInstance(context).saveStats() }
+                            .onFailure { error -> Log.w(TAG, "Failed to persist final traffic", error) }
+                    },
+                    stopTransport = {
+                        commandManager.stopAndWaitPortRelease(
+                            proxyPort = proxyPort,
+                            waitTimeoutMs = FAST_PORT_RELEASE_WAIT_MS,
+                            forceKillOnTimeout = stopService,
+                            enforceReleaseOnTimeout = false
+                        ).onFailure { e ->
+                            Log.w(TAG, "Error closing command server/client", e)
+                        }
+                    }
+                )
+
+                try {
+                    callbacks.closeDefaultInterfaceMonitor()
                 } catch (e: Exception) {
                     Log.w(TAG, "Failed to close default interface monitor", e)
                 }
-            }
 
-            try {
-                withTimeout(2000L) {
-                    if (interfaceToClose != null) {
-                        try {
-                            interfaceToClose.close()
-                        } catch (e: Exception) {
-                            Log.w(TAG, "Failed to close VPN interface", e)
-                        }
-                    }
-                }
-            } catch (e: Exception) {
-                Log.w(TAG, "Graceful close failed or timed out", e)
-            }
-
-            withContext(Dispatchers.Main) {
-                if (stopService) {
-                    callbacks.stopSelf()
-                    Log.i(TAG, "VPN stopped")
-                } else {
-                    Log.i(TAG, "Config reload: boxService closed, keeping TUN and foreground")
-                }
-            }
-
-            val startAfterStop = callbacks.getPendingStartConfigPath()
-            callbacks.clearPendingStartConfigPath()
-
-            if (!startAfterStop.isNullOrBlank()) {
-
-                val hasExistingTun = callbacks.hasExistingTunInterface()
-                if (!hasExistingTun) {
+                if (!stopService && callbacks.hasPendingStartConfigPath()) {
                     waitForSystemVpnDown(callbacks.getConnectivityManager(), 1500L)
-                } else {
-                    Log.i(TAG, "Skipping waitForSystemVpnDown: TUN interface preserved")
                 }
+
                 withContext(Dispatchers.Main) {
-                    callbacks.startVpn(startAfterStop)
+                    val completion = callbacks.completeStop(stopService)
+                    val restartConfigPath = completion.restartConfigPath
+                    when {
+                        restartConfigPath != null -> {
+                            Log.i(TAG, "Cleanup complete, restarting VPN")
+                            callbacks.startVpn(restartConfigPath)
+                        }
+                        completion.stopService -> {
+                            callbacks.stopForegroundService()
+                            runCatching {
+                                val manager = context.getSystemService(NotificationManager::class.java)
+                                manager.cancel(VpnNotificationManager.NOTIFICATION_ID)
+                            }
+                            VpnTileService.persistVpnState(false)
+                            VpnStateStore.setMode(VpnStateStore.CoreMode.NONE)
+                            VpnTileService.persistVpnPending("")
+                            callbacks.updateServiceState(ServiceState.STOPPED)
+                            callbacks.updateTileState()
+                            callbacks.stopSelf()
+                            Log.i(TAG, "VPN stopped")
+                        }
+                        else -> Log.i(TAG, "Cleanup complete without restart")
+                    }
                 }
             }
         }
+        return cleanupJob
     }
 
     private suspend fun waitForSystemVpnDown(cm: ConnectivityManager?, timeoutMs: Long) {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M || cm == null) return
+        if (cm == null) return
 
         val start = SystemClock.elapsedRealtime()
         while (SystemClock.elapsedRealtime() - start < timeoutMs) {

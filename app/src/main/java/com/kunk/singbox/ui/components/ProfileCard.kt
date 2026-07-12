@@ -1,13 +1,8 @@
 package com.kunk.singbox.ui.components
 
 import com.kunk.singbox.R
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -46,7 +41,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.material3.CircularProgressIndicator
@@ -56,6 +50,7 @@ import com.kunk.singbox.ui.theme.isLiquidGlassTheme
 import com.kunk.singbox.ui.theme.liquidGlassDropdownMenuItemColors
 import com.kunk.singbox.ui.theme.liquidGlassIconButtonPanel
 import com.kunk.singbox.ui.theme.liquidGlassPanel
+import com.kunk.singbox.ui.theme.liquidGlassPressFeedback
 import com.kunk.singbox.ui.theme.liquidGlassProgressColor
 import com.kunk.singbox.ui.theme.liquidGlassProgressTrackColor
 import java.text.SimpleDateFormat
@@ -110,30 +105,12 @@ private fun Modifier.profileCardPressFeedback(
     useLiquidGlass: Boolean,
     isEnabled: Boolean,
     onClick: () -> Unit
-): Modifier {
-    val interactionSource = remember { MutableInteractionSource() }
-    val isPressed by interactionSource.collectIsPressedAsState()
-    val scale by animateFloatAsState(
-        targetValue = if (useLiquidGlass && isEnabled && isPressed) 0.98f else 1f,
-        animationSpec = spring(stiffness = 520f, dampingRatio = 0.72f),
-        label = "liquid_glass_profile_card_scale"
-    )
-    val clickModifier = if (useLiquidGlass) {
-        Modifier.clickable(
-            enabled = isEnabled,
-            interactionSource = interactionSource,
-            indication = null,
-            onClick = onClick
-        )
-    } else {
-        Modifier.clickable(enabled = isEnabled, onClick = onClick)
-    }
-
-    return graphicsLayer {
-        scaleX = scale
-        scaleY = scale
-    }.then(clickModifier)
-}
+): Modifier = liquidGlassPressFeedback(
+    enabled = isEnabled,
+    useLiquidGlass = useLiquidGlass,
+    label = "liquid_glass_profile_card_scale",
+    onClick = onClick
+)
 
 @Suppress("LongMethod", "CyclomaticComplexMethod", "CognitiveComplexMethod", "LongParameterList")
 @Composable
@@ -149,7 +126,6 @@ fun ProfileCard(
     totalTraffic: Long = 0,
     usedTraffic: Long = 0,
     lastUpdated: Long = 0,
-    dnsPreResolve: Boolean = false,
     onClick: () -> Unit,
     onUpdate: () -> Unit,
     onEdit: () -> Unit,
@@ -177,18 +153,8 @@ fun ProfileCard(
     val noExpiryMsg = stringResource(R.string.profile_card_no_expiry)
     val neverUpdatedMsg = stringResource(R.string.profile_card_never_updated)
     val unlimitedTrafficMsg = stringResource(R.string.profile_card_traffic_unlimited)
-    val stageContainerColor = if (updateStage?.isBackground == true) {
-        MaterialTheme.colorScheme.secondaryContainer
-    } else {
-        MaterialTheme.colorScheme.primaryContainer
-    }
-    val stageTextColor = profileBadgeContentColor(
-        if (updateStage?.isBackground == true) {
-            MaterialTheme.colorScheme.onSecondaryContainer
-        } else {
-            MaterialTheme.colorScheme.primary
-        }
-    )
+    val stageContainerColor = MaterialTheme.colorScheme.primaryContainer
+    val stageTextColor = profileBadgeContentColor(MaterialTheme.colorScheme.primary)
     val shape = RoundedCornerShape(16.dp)
     val useLiquidGlass = isLiquidGlassTheme()
     val cardModifier = if (useLiquidGlass) {
@@ -335,23 +301,6 @@ fun ProfileCard(
                             modifier = Modifier
                                 .profileBadgePanel(
                                     defaultColor = MaterialTheme.colorScheme.surfaceVariant,
-                                    shape = RoundedCornerShape(4.dp)
-                                )
-                                .padding(horizontal = 4.dp, vertical = 1.dp)
-                        )
-                    }
-
-                    if (dnsPreResolve) {
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = "DNS",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = profileBadgeContentColor(MaterialTheme.colorScheme.primary),
-                            maxLines = 1,
-                            softWrap = false,
-                            modifier = Modifier
-                                .profileBadgePanel(
-                                    defaultColor = MaterialTheme.colorScheme.primaryContainer,
                                     shape = RoundedCornerShape(4.dp)
                                 )
                                 .padding(horizontal = 4.dp, vertical = 1.dp)

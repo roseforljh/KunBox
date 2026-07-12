@@ -13,8 +13,6 @@ import com.kunk.singbox.model.AppThemeStyle
 import com.kunk.singbox.repository.SettingsRepository
 import kotlin.math.min
 
-/**
- */
 class SquareViewFinderView @JvmOverloads constructor(
     context: Context,
     attrs: AttributeSet? = null
@@ -82,13 +80,19 @@ class SquareViewFinderView @JvmOverloads constructor(
             return
         }
 
-        val width = canvas.width
-        val height = canvas.height
+        val viewWidth = width
+        val viewHeight = height
 
-        canvas.drawRect(0f, 0f, width.toFloat(), frame.top.toFloat(), maskPaint)
+        canvas.drawRect(0f, 0f, viewWidth.toFloat(), frame.top.toFloat(), maskPaint)
         canvas.drawRect(0f, frame.top.toFloat(), frame.left.toFloat(), (frame.bottom + 1).toFloat(), maskPaint)
-        canvas.drawRect((frame.right + 1).toFloat(), frame.top.toFloat(), width.toFloat(), (frame.bottom + 1).toFloat(), maskPaint)
-        canvas.drawRect(0f, (frame.bottom + 1).toFloat(), width.toFloat(), height.toFloat(), maskPaint)
+        canvas.drawRect(
+            (frame.right + 1).toFloat(),
+            frame.top.toFloat(),
+            viewWidth.toFloat(),
+            (frame.bottom + 1).toFloat(),
+            maskPaint
+        )
+        canvas.drawRect(0f, (frame.bottom + 1).toFloat(), viewWidth.toFloat(), viewHeight.toFloat(), maskPaint)
 
         canvas.drawRect(
             frame.left.toFloat(),

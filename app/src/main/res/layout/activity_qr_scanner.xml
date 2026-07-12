@@ -2,8 +2,7 @@
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
-    android:layout_height="match_parent"
-    android:background="@android:color/black">
+    android:layout_height="match_parent">
 
     <com.journeyapps.barcodescanner.DecoratedBarcodeView
         android:id="@+id/barcode_scanner"
@@ -28,7 +27,7 @@
             android:layout_height="48dp"
             android:background="?android:attr/selectableItemBackgroundBorderless"
             android:src="@android:drawable/ic_menu_close_clear_cancel"
-            android:contentDescription="返回"
+            android:contentDescription="@string/common_back"
             android:padding="12dp" />
 
         <TextView
@@ -36,7 +35,7 @@
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:text="扫描二维码"
+            android:text="@string/profiles_scan_qrcode"
             android:textColor="@android:color/white"
             android:textSize="18sp"
             android:gravity="center" />
@@ -47,7 +46,7 @@
             android:layout_height="48dp"
             android:background="?android:attr/selectableItemBackgroundBorderless"
             android:src="@android:drawable/ic_menu_gallery"
-            android:contentDescription="相册"
+            android:contentDescription="@string/qr_scanner_gallery"
             android:padding="12dp" />
 
         <ImageButton
@@ -56,7 +55,7 @@
             android:layout_height="48dp"
             android:background="?android:attr/selectableItemBackgroundBorderless"
             android:src="@android:drawable/ic_menu_view"
-            android:contentDescription="闪光灯"
+            android:contentDescription="@string/qr_scanner_flash"
             android:padding="12dp" />
 
     </LinearLayout>
@@ -69,7 +68,7 @@
         android:layout_gravity="bottom"
         android:layout_marginBottom="100dp"
         android:gravity="center"
-        android:text="将二维码放入框内，即可自动扫描"
+        android:text="@string/qr_scanner_hint"
         android:textColor="#B0FFFFFF"
         android:textSize="14sp" />
 

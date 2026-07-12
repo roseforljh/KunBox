@@ -36,11 +36,9 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
@@ -74,11 +72,6 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     val importState: StateFlow<ImportState> = _importState.asStateFlow()
 
     val settings: StateFlow<AppSettings> = repository.settings
-        .stateIn(
-            scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(5000),
-            initialValue = AppSettings()
-        )
 
     fun ensureDefaultRuleSetsReady() {
         viewModelScope.launch {
@@ -266,20 +259,12 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         viewModelScope.launch { repository.setTunMtuAuto(value) }
     }
 
-    fun setTunInterfaceName(value: String) {
-        viewModelScope.launch { repository.setTunInterfaceName(value) }
-    }
-
     fun setAutoRoute(value: Boolean) {
         viewModelScope.launch { repository.setAutoRoute(value) }
     }
 
     fun setStrictRoute(value: Boolean) {
         viewModelScope.launch { repository.setStrictRoute(value) }
-    }
-
-    fun setEndpointIndependentNat(value: Boolean) {
-        viewModelScope.launch { repository.setEndpointIndependentNat(value) }
     }
 
     fun setVpnRouteMode(value: VpnRouteMode) {
@@ -376,10 +361,6 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 
     fun setIcmpEchoRoutingEnabled(value: Boolean) {
         viewModelScope.launch { repository.setIcmpEchoRoutingEnabled(value) }
-    }
-
-    fun setWakeResetConnections(value: Boolean) {
-        viewModelScope.launch { repository.setWakeResetConnections(value) }
     }
 
     fun updateLatencyTestConcurrency(value: Int) {
@@ -678,8 +659,6 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
-    /**
-     */
     fun exportData(uri: Uri) {
         viewModelScope.launch {
             _exportState.value = ExportState.Exporting
@@ -694,8 +673,6 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
-    /**
-     */
     fun validateImportFile(uri: Uri) {
         viewModelScope.launch {
             _importState.value = ImportState.Validating
@@ -712,8 +689,6 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
-    /**
-     */
     fun confirmImport(uri: Uri, options: ImportOptions = ImportOptions()) {
         viewModelScope.launch {
             _importState.value = ImportState.Importing
@@ -735,21 +710,15 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
-    /**
-     */
     fun resetExportState() {
         _exportState.value = ExportState.Idle
     }
 
-    /**
-     */
     fun resetImportState() {
         _importState.value = ImportState.Idle
     }
 }
 
-/**
- */
 sealed class ExportState {
     object Idle : ExportState()
     object Exporting : ExportState()
@@ -757,8 +726,6 @@ sealed class ExportState {
     data class Error(val message: String) : ExportState()
 }
 
-/**
- */
 sealed class ImportState {
     object Idle : ImportState()
     object Validating : ImportState()

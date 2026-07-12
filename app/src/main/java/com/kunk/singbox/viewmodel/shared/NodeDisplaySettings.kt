@@ -11,9 +11,6 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
 
-/**
- *
- */
 class NodeDisplaySettings private constructor(
     settingsRepository: SettingsRepository,
     scope: CoroutineScope

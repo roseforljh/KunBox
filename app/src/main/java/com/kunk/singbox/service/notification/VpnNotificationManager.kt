@@ -22,8 +22,6 @@ import kotlinx.coroutines.launch
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 
-/**
- */
 class VpnNotificationManager(
     private val context: Context,
     private val serviceScope: CoroutineScope
@@ -52,8 +50,6 @@ class VpnNotificationManager(
     @Volatile
     private var lastTextLogged: String? = null
 
-    /**
-     */
     data class NotificationState(
         val isRunning: Boolean = false,
         val isStopping: Boolean = false,
@@ -63,8 +59,6 @@ class VpnNotificationManager(
         val downloadSpeed: Long = 0L
     )
 
-    /**
-     */
     fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
 
@@ -87,8 +81,6 @@ class VpnNotificationManager(
         }
     }
 
-    /**
-     */
     fun updateNotification(state: NotificationState, service: SingBoxService) {
         val notification = createNotification(state)
 
@@ -118,8 +110,6 @@ class VpnNotificationManager(
         }
     }
 
-    /**
-     */
     fun requestNotificationUpdate(
         state: NotificationState,
         service: SingBoxService,
@@ -156,8 +146,6 @@ class VpnNotificationManager(
         }
     }
 
-    /**
-     */
     fun createNotification(state: NotificationState): Notification {
 
         if (state.isStopping) {
@@ -241,8 +229,6 @@ class VpnNotificationManager(
             .build()
     }
 
-    /**
-     */
     fun createStartingNotification(message: String): Notification {
         return buildNotificationBuilder()
             .setContentTitle("KunBox VPN")
@@ -252,26 +238,18 @@ class VpnNotificationManager(
             .build()
     }
 
-    /**
-     */
     fun showTemporaryNotification(id: Int, notification: Notification) {
         notificationManager.notify(NOTIFICATION_ID + id, notification)
     }
 
-    /**
-     */
     fun cancelNotification(id: Int = NOTIFICATION_ID) {
         notificationManager.cancel(id)
     }
 
-    /**
-     */
     fun setSuppressUpdates(suppress: Boolean) {
         suppressUpdates = suppress
     }
 
-    /**
-     */
     fun resetState() {
         updateJob?.cancel()
         updateJob = null
@@ -282,8 +260,6 @@ class VpnNotificationManager(
 
     fun hasForegroundStarted(): Boolean = hasForegroundStarted.get()
 
-    /**
-     */
     fun markForegroundStarted() {
         hasForegroundStarted.set(true)
     }

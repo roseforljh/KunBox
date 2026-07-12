@@ -163,9 +163,7 @@ fun SingBoxApp() {
     }
 
     val settingsRepository = remember { SettingsRepository.getInstance(context) }
-    val settings by settingsRepository.settings.collectAsStateWithLifecycle(
-        initialValue = settingsRepository.settings.value
-    )
+    val settings by settingsRepository.settings.collectAsStateWithLifecycle()
     val dashboardViewModel: DashboardViewModel = viewModel()
 
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
@@ -203,7 +201,7 @@ fun SingBoxApp() {
 
     // Handle App Shortcuts - need navController reference
     var pendingNavigation by remember { mutableStateOf<String?>(null) }
-    val intentEvent by MainIntentEvents.events.collectAsStateWithLifecycle(initialValue = null)
+    val intentEvent by MainIntentEvents.events.collectAsStateWithLifecycle()
 
     LaunchedEffect(intentEvent?.id) {
         val intent = intentEvent?.intent ?: return@LaunchedEffect

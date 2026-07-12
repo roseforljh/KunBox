@@ -1,11 +1,7 @@
 package com.kunk.singbox.service.manager
 
-import com.kunk.singbox.model.DomainResolveConfig
-import com.kunk.singbox.model.Outbound
-import com.kunk.singbox.model.SingBoxConfig
-import com.kunk.singbox.model.TlsConfig
-import com.kunk.singbox.model.TransportConfig
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
@@ -19,119 +15,6 @@ class StartupManagerTest {
     }
 
     @Test
-    fun applyPrewarmedDomainIpsReplacesMatchingOutboundServers() {
-        val config = SingBoxConfig(
-            outbounds = listOf(
-                Outbound(
-                    type = "hysteria2",
-                    tag = "hy2",
-                    server = "hy2.example.com",
-                    serverPort = 443,
-                    tls = TlsConfig(enabled = true, serverName = "hy2.example.com")
-                ),
-                Outbound(type = "vless", tag = "vl", server = "vl.example.com", serverPort = 443)
-            )
-        )
-
-        val patched = StartupManager.applyPrewarmedDomainIps(
-            config,
-            mapOf("hy2.example.com" to "1.2.3.4")
-        )
-
-        assertEquals("1.2.3.4", patched.outbounds?.get(0)?.server)
-        assertEquals("vl.example.com", patched.outbounds?.get(1)?.server)
-    }
-
-    @Test
-    fun applyPrewarmedDomainIpsSkipsIpLiteralsAndMissingEntries() {
-        val config = SingBoxConfig(
-            outbounds = listOf(
-                Outbound(type = "hysteria2", tag = "hy2", server = "1.2.3.4", serverPort = 443),
-                Outbound(type = "vless", tag = "vl", server = "vl.example.com", serverPort = 443)
-            )
-        )
-
-        val patched = StartupManager.applyPrewarmedDomainIps(
-            config,
-            mapOf("other.example.com" to "5.6.7.8")
-        )
-
-        assertEquals("1.2.3.4", patched.outbounds?.get(0)?.server)
-        assertEquals("vl.example.com", patched.outbounds?.get(1)?.server)
-    }
-
-    @Test
-    fun applyPrewarmedDomainIpsSkipsTlsOutboundsWithoutExplicitRemoteIdentity() {
-        val config = SingBoxConfig(
-            outbounds = listOf(
-                Outbound(
-                    type = "hysteria2",
-                    tag = "hy2",
-                    server = "hy2.example.com",
-                    serverPort = 443,
-                    tls = TlsConfig(enabled = true)
-                )
-            )
-        )
-
-        val patched = StartupManager.applyPrewarmedDomainIps(
-            config,
-            mapOf("hy2.example.com" to "1.2.3.4")
-        )
-
-        assertEquals("hy2.example.com", patched.outbounds?.firstOrNull()?.server)
-    }
-
-    @Test
-    fun applyPrewarmedDomainIpsSkipsTlsOutboundsWithOnlyHttpHostHeader() {
-        val config = SingBoxConfig(
-            outbounds = listOf(
-                Outbound(
-                    type = "vless",
-                    tag = "ws",
-                    server = "node.example.com",
-                    serverPort = 443,
-                    tls = TlsConfig(enabled = true),
-                    transport = TransportConfig(
-                        type = "ws",
-                        headers = mapOf("Host" to "cdn.example.com")
-                    )
-                )
-            )
-        )
-
-        val patched = StartupManager.applyPrewarmedDomainIps(
-            config,
-            mapOf("node.example.com" to "1.2.3.4")
-        )
-
-        assertEquals("node.example.com", patched.outbounds?.firstOrNull()?.server)
-    }
-
-    @Test
-    fun applyPrewarmedDomainIpsSkipsOutboundsWithDomainResolver() {
-        val config = SingBoxConfig(
-            outbounds = listOf(
-                Outbound(
-                    type = "vless",
-                    tag = "airport-node",
-                    server = "fly-nnca.bestvmr.com",
-                    serverPort = 443,
-                    tls = TlsConfig(enabled = true, serverName = "fly-nnca.bestvmr.com"),
-                    domainResolver = DomainResolveConfig(server = "airport-dns")
-                )
-            )
-        )
-
-        val patched = StartupManager.applyPrewarmedDomainIps(
-            config,
-            mapOf("fly-nnca.bestvmr.com" to "1.2.3.4")
-        )
-
-        assertEquals("fly-nnca.bestvmr.com", patched.outbounds?.firstOrNull()?.server)
-    }
-
-    @Test
     fun startupManagerBlocksLocalNetworkSettingsAndRestrictsWildcardListen() {
         val source = File("src/main/java/com/kunk/singbox/service/manager/StartupManager.kt")
             .readText(Charsets.UTF_8)
@@ -141,5 +24,80 @@ class StartupManagerTest {
         assertTrue(source.contains("throw IllegalStateException(LocalNetworkPermission.MISSING_PERMISSION_ERROR)"))
         assertTrue(source.contains("restrictLanListen -> LocalNetworkPermission.restrictInboundListen(inbound)"))
         assertTrue(source.contains("Start failed: \${LocalNetworkPermission.MISSING_PERMISSION_ERROR}"))
+    }
+
+    @Test
+    fun successfulCoreStartDoesNotWaitForOptionalPostStartTasks() {
+        val source = File("src/main/java/com/kunk/singbox/service/manager/StartupManager.kt")
+            .readText(Charsets.UTF_8)
+
+        val markRunning = source.indexOf("callbacks.setIsRunning(true)")
+        val launchPostStart = source.indexOf("callbacks.launchPostStartTasks(configContent)")
+        assertTrue(markRunning >= 0)
+        assertTrue(launchPostStart > markRunning)
+        assertTrue(!source.contains("callbacks.startCommandClients()"))
+        assertTrue(!source.contains("callbacks.startHealthMonitor()"))
+        assertTrue(!source.contains("callbacks.scheduleKeepaliveWorker()"))
+    }
+
+    @Test
+    fun shutdownCancelsAndWaitsForPostStartTasks() {
+        val serviceSource = File("src/main/java/com/kunk/singbox/service/SingBoxService.kt")
+            .readText(Charsets.UTF_8)
+        val shutdownSource = File("src/main/java/com/kunk/singbox/service/manager/ShutdownManager.kt")
+            .readText(Charsets.UTF_8)
+
+        assertTrue(serviceSource.contains("override fun cancelPostStartJob(): Job?"))
+        assertTrue(shutdownSource.contains("callbacks.cancelPostStartJob()"))
+        assertTrue(shutdownSource.contains("jobsToJoin.forEach { it.join() }"))
+    }
+
+    @Test
+    fun serviceCapturesLifecycleTokenBeforeSchedulingAndTracksFullRestart() {
+        val source = File("src/main/java/com/kunk/singbox/service/SingBoxService.kt")
+            .readText(Charsets.UTF_8)
+        val startBody = source
+            .substringAfter("protected fun startVpn(configPath: String) {")
+            .substringBefore("protected fun continueStartVpnAfterForeground")
+        val tokenIndex = startBody.indexOf("coreManager.captureStartToken()")
+        val scheduleIndex = startBody.indexOf("continueStartVpnAfterForeground(configPath, startToken)")
+        assertTrue(tokenIndex >= 0)
+        assertTrue(scheduleIndex > tokenIndex)
+
+        val continueBody = source
+            .substringAfter("protected fun continueStartVpnAfterForeground(configPath: String, startToken: Long)")
+            .substringBefore("protected fun stopVpn(")
+        assertTrue(continueBody.contains("startToken = startToken"))
+
+        val stopBody = source
+            .substringAfter("protected fun stopVpn(")
+            .substringBefore("protected fun updateTileState()")
+        val beginStopIndex = stopBody.indexOf("coreManager.beginStop()")
+        val alreadyStoppingIndex = stopBody.indexOf("if (isStopping)")
+        assertTrue(beginStopIndex >= 0)
+        assertTrue(alreadyStoppingIndex > beginStopIndex)
+
+        val restartBody = source
+            .substringAfter("protected fun performFullRestart(configPath: String) {")
+            .substringBefore("fun performHotReloadSync")
+        assertTrue(restartBody.contains("pendingStartConfigPath = configPath"))
+        assertTrue(restartBody.contains("stopVpn(stopService = false)"))
+        assertFalse(restartBody.contains("serviceScope.launch"))
+    }
+
+    @Test
+    fun defaultNetworkListenerStartIsOrderedBeforeServiceDestroyStop() {
+        val source = File("src/main/java/com/kunk/singbox/service/SingBoxService.kt")
+            .readText(Charsets.UTF_8)
+        val onCreateBody = source
+            .substringAfter("override fun onCreate() {")
+            .substringBefore("override fun onStartCommand")
+
+        assertTrue(onCreateBody.contains("DefaultNetworkListener.start(manager, defaultNetworkListenerKey)"))
+        assertFalse(
+            onCreateBody.contains(
+                "serviceScope.launch {\n                DefaultNetworkListener.start"
+            )
+        )
     }
 }

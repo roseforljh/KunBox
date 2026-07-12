@@ -2,13 +2,11 @@
 <SmellBaseline>
   <ManuallySuppressedIssues></ManuallySuppressedIssues>
   <CurrentIssues>
-    <ID>CognitiveComplexMethod:AppGroupsScreen.kt$@OptIn(ExperimentalMaterial3Api::class) @Composable fun AppGroupsScreen( navController: NavController, settingsViewModel: SettingsViewModel = viewModel(), nodesViewModel: NodesViewModel = viewModel(), profilesViewModel: ProfilesViewModel = viewModel(), installedAppsViewModel: InstalledAppsViewModel = viewModel() )</ID>
     <ID>CognitiveComplexMethod:AppMultiSelectDialog.kt$@Composable fun AppMultiSelectDialog( title: String, selectedPackages: Set&lt;String&gt;, confirmText: String = stringResource(R.string.common_ok), enableQuickSelectCommonApps: Boolean = false, quickSelectExcludeCommonApps: Boolean = false, onConfirm: (List&lt;String&gt;) -&gt; Unit, onDismiss: () -&gt; Unit )</ID>
     <ID>CognitiveComplexMethod:AppRoutingComponents.kt$@Composable fun AppGroupCard( group: AppGroup, outboundText: String, onClick: () -&gt; Unit, onToggle: () -&gt; Unit, onDelete: () -&gt; Unit )</ID>
     <ID>CognitiveComplexMethod:AppRoutingComponents.kt$@OptIn(ExperimentalMaterial3Api::class) @Composable fun AppGroupEditorDialog( initialGroup: AppGroup? = null, installedApps: List&lt;InstalledApp&gt;, nodes: List&lt;NodeUi&gt;, nodesForSelection: List&lt;NodeUi&gt;? = null, profiles: List&lt;ProfileUi&gt;, onDismiss: () -&gt; Unit, onConfirm: (AppGroup) -&gt; Unit )</ID>
     <ID>CognitiveComplexMethod:AppRoutingComponents.kt$@OptIn(ExperimentalMaterial3Api::class) @Composable fun AppRuleEditorDialog( initialRule: AppRule? = null, installedApps: List&lt;InstalledApp&gt;, existingPackages: Set&lt;String&gt;, nodes: List&lt;NodeUi&gt;, nodesForSelection: List&lt;NodeUi&gt;? = null, profiles: List&lt;ProfileUi&gt;, onDismiss: () -&gt; Unit, onConfirm: (AppRule) -&gt; Unit )</ID>
     <ID>CognitiveComplexMethod:AppRoutingScreen.kt$@OptIn(ExperimentalMaterial3Api::class) @Composable fun AppRoutingScreen( navController: NavController, settingsViewModel: SettingsViewModel = viewModel(), nodesViewModel: NodesViewModel = viewModel(), profilesViewModel: ProfilesViewModel = viewModel(), installedAppsViewModel: InstalledAppsViewModel = viewModel() )</ID>
-    <ID>CognitiveComplexMethod:AppRulesScreen.kt$@OptIn(ExperimentalMaterial3Api::class) @Composable fun AppRulesScreen( navController: NavController, settingsViewModel: SettingsViewModel = viewModel(), nodesViewModel: NodesViewModel = viewModel(), profilesViewModel: ProfilesViewModel = viewModel() )</ID>
     <ID>CognitiveComplexMethod:AppUpdateChecker.kt$AppUpdateChecker$suspend fun checkAndNotify( context: Context, forceNotify: Boolean = false ): UpdateCheckResult</ID>
     <ID>CognitiveComplexMethod:BigToggle.kt$@Composable fun BigToggle( isRunning: Boolean, onClick: () -&gt; Unit, modifier: Modifier = Modifier )</ID>
     <ID>CognitiveComplexMethod:ClashYamlParserPart1.kt$ClashYamlParserPart1$override fun parse(content: String): SingBoxConfig?</ID>
@@ -43,8 +41,6 @@
     <ID>CognitiveComplexMethod:MainActivity.kt$@Composable fun SingBoxApp()</ID>
     <ID>CognitiveComplexMethod:NetworkHelper.kt$NetworkHelper$fun findBestPhysicalNetworkFallback(): Network?</ID>
     <ID>CognitiveComplexMethod:NetworkHelper.kt$NetworkHelper$suspend fun waitForUsablePhysicalNetwork( lastKnownNetwork: Network?, networkManager: com.kunk.singbox.service.network.NetworkManager?, findBestPhysicalNetwork: () -&gt; Network?, timeoutMs: Long ): Network?</ID>
-    <ID>CognitiveComplexMethod:NetworkManager.kt$NetworkManager$fun findBestPhysicalNetwork(): Network?</ID>
-    <ID>CognitiveComplexMethod:NetworkManager.kt$NetworkManager$fun updateDefaultInterface(network: Network, vpnStartedAtMs: Long, vpnStartupWindowMs: Long): Boolean</ID>
     <ID>CognitiveComplexMethod:NodeDetailScreen.kt$@OptIn(ExperimentalMaterial3Api::class) @Composable fun NodeDetailScreen( navController: NavController, nodeId: String, createProtocol: String = "" )</ID>
     <ID>CognitiveComplexMethod:NodeLinkParser.kt$NodeLinkParser$protected fun parseShadowsocksLink(link: String): Outbound?</ID>
     <ID>CognitiveComplexMethod:NodeLinkParser.kt$NodeLinkParser$protected fun parseVMessLink(link: String): Outbound?</ID>
@@ -74,14 +70,11 @@
     <ID>ComplexCondition:PlatformInterfaceImpl.kt$PlatformInterfaceImpl$sourceIp == null || sourcePort &lt;= 0 || destinationIp == null || destinationPort &lt;= 0</ID>
     <ID>ComplexCondition:PlatformInterfaceImpl.kt$PlatformInterfaceImpl.&lt;no name provided&gt;$callbacks.isRunning() &amp;&amp; !callbacks.isStarting() &amp;&amp; !callbacks.isManuallyStopped() &amp;&amp; callbacks.getLastConfigPath() != null</ID>
     <ID>ComplexCondition:ProxyOnlyService.kt$ProxyOnlyService.&lt;no name provided&gt;$sourceIp == null || sourcePort &lt;= 0 || destinationIp == null || destinationPort &lt;= 0</ID>
-    <ID>ComplexCondition:SubscriptionFetcher.kt$SubscriptionFetcher$upload &gt; 0 || download &gt; 0 || total &gt; 0 || expire &gt; 0</ID>
     <ID>ComplexCondition:SubscriptionParser.kt$SubscriptionManager.Companion$type == "selector" || type == "urltest" || type == "direct" || type == "block" || type == "dns"</ID>
     <ID>ConstructorParameterNaming:GithubFile.kt$GithubFile$@SerializedName("download_url") val download_url: String?</ID>
-    <ID>CyclomaticComplexMethod:AppGroupsScreen.kt$@OptIn(ExperimentalMaterial3Api::class) @Composable fun AppGroupsScreen( navController: NavController, settingsViewModel: SettingsViewModel = viewModel(), nodesViewModel: NodesViewModel = viewModel(), profilesViewModel: ProfilesViewModel = viewModel(), installedAppsViewModel: InstalledAppsViewModel = viewModel() )</ID>
     <ID>CyclomaticComplexMethod:AppMultiSelectDialog.kt$@Composable fun AppMultiSelectDialog( title: String, selectedPackages: Set&lt;String&gt;, confirmText: String = stringResource(R.string.common_ok), enableQuickSelectCommonApps: Boolean = false, quickSelectExcludeCommonApps: Boolean = false, onConfirm: (List&lt;String&gt;) -&gt; Unit, onDismiss: () -&gt; Unit )</ID>
     <ID>CyclomaticComplexMethod:AppRoutingComponents.kt$@OptIn(ExperimentalMaterial3Api::class) @Composable fun AppGroupEditorDialog( initialGroup: AppGroup? = null, installedApps: List&lt;InstalledApp&gt;, nodes: List&lt;NodeUi&gt;, nodesForSelection: List&lt;NodeUi&gt;? = null, profiles: List&lt;ProfileUi&gt;, onDismiss: () -&gt; Unit, onConfirm: (AppGroup) -&gt; Unit )</ID>
     <ID>CyclomaticComplexMethod:AppRoutingComponents.kt$@OptIn(ExperimentalMaterial3Api::class) @Composable fun AppRuleEditorDialog( initialRule: AppRule? = null, installedApps: List&lt;InstalledApp&gt;, existingPackages: Set&lt;String&gt;, nodes: List&lt;NodeUi&gt;, nodesForSelection: List&lt;NodeUi&gt;? = null, profiles: List&lt;ProfileUi&gt;, onDismiss: () -&gt; Unit, onConfirm: (AppRule) -&gt; Unit )</ID>
-    <ID>CyclomaticComplexMethod:AppRulesScreen.kt$@OptIn(ExperimentalMaterial3Api::class) @Composable fun AppRulesScreen( navController: NavController, settingsViewModel: SettingsViewModel = viewModel(), nodesViewModel: NodesViewModel = viewModel(), profilesViewModel: ProfilesViewModel = viewModel() )</ID>
     <ID>CyclomaticComplexMethod:ClashYamlParserPart1.kt$ClashYamlParserPart1$override fun parse(content: String): SingBoxConfig?</ID>
     <ID>CyclomaticComplexMethod:ClashYamlParserPart1.kt$ClashYamlParserPart1$protected override fun parseShadowsocksWithPlugin( map: Map&lt;*, *&gt;, name: String, server: String?, port: Int?, globalFingerprint: String? ): List&lt;Outbound&gt;?</ID>
     <ID>CyclomaticComplexMethod:ClashYamlParserPart1.kt$ClashYamlParserPart1$protected override fun parseVLess(map: Map&lt;*, *&gt;, name: String, server: String?, port: Int?, globalFingerprint: String?, globalTlsMinVersion: String?): Outbound?</ID>
@@ -105,8 +98,6 @@
     <ID>CyclomaticComplexMethod:DomainRulesScreen.kt$@Composable private fun DomainRuleEditorDialog( initialRule: CustomRule? = null, nodes: List&lt;com.kunk.singbox.model.NodeUi&gt;, nodesForSelection: List&lt;com.kunk.singbox.model.NodeUi&gt;? = null, profiles: List&lt;com.kunk.singbox.model.ProfileUi&gt;, onDismiss: () -&gt; Unit, onConfirm: (CustomRule) -&gt; Unit, onDelete: (() -&gt; Unit)? = null )</ID>
     <ID>CyclomaticComplexMethod:MainActivity.kt$@Composable fun SingBoxApp()</ID>
     <ID>CyclomaticComplexMethod:NetworkHelper.kt$NetworkHelper$fun findBestPhysicalNetworkFallback(): Network?</ID>
-    <ID>CyclomaticComplexMethod:NetworkManager.kt$NetworkManager$fun findBestPhysicalNetwork(): Network?</ID>
-    <ID>CyclomaticComplexMethod:NetworkManager.kt$NetworkManager$fun updateDefaultInterface(network: Network, vpnStartedAtMs: Long, vpnStartupWindowMs: Long): Boolean</ID>
     <ID>CyclomaticComplexMethod:NodeDetailScreen.kt$@OptIn(ExperimentalMaterial3Api::class) @Composable fun NodeDetailScreen( navController: NavController, nodeId: String, createProtocol: String = "" )</ID>
     <ID>CyclomaticComplexMethod:NodeLinkParser.kt$NodeLinkParser$protected fun parseNaiveLink(link: String): Outbound?</ID>
     <ID>CyclomaticComplexMethod:NodeLinkParser.kt$NodeLinkParser$protected fun parseShadowsocksLink(link: String): Outbound?</ID>
@@ -122,8 +113,6 @@
     <ID>EmptyCatchBlock:ConfigRepository.kt$ConfigRepository${ }</ID>
     <ID>EmptyFunctionBlock:SingBoxCore.kt$SingBoxCore${}</ID>
     <ID>EmptyIfBlock:SettingsScreen.kt${ }</ID>
-    <ID>FunctionOnlyReturningConstant:SubscriptionFetcher.kt$SubscriptionFetcher$private fun parseUserInfoFromBody(body: String): SubscriptionUserInfo?</ID>
-    <ID>ImplicitDefaultLocale:NetworkClient.kt$NetworkClient.PoolStatus$String.format("%.1f", successRate)</ID>
     <ID>LargeClass:ClashYamlParserPart1.kt$ClashYamlParserPart1 : ClashYamlParserBase</ID>
     <ID>LargeClass:ConfigRepositoryTestPart1.kt$ConfigRepositoryTestPart1 : ConfigRepositoryTestBase</ID>
     <ID>LargeClass:ConfigRepositoryTestPart2.kt$ConfigRepositoryTestPart2 : ConfigRepositoryTestPart1</ID>
@@ -134,7 +123,6 @@
     <ID>LargeClass:ConfigRepositoryTestPart8.kt$ConfigRepositoryTestPart8 : ConfigRepositoryTestPart7</ID>
     <ID>LargeClass:DashboardViewModel.kt$DashboardViewModel : AndroidViewModel</ID>
     <ID>LargeClass:SingBoxCore.kt$SingBoxCore</ID>
-    <ID>LongMethod:AppGroupsScreen.kt$@OptIn(ExperimentalMaterial3Api::class) @Composable fun AppGroupsScreen( navController: NavController, settingsViewModel: SettingsViewModel = viewModel(), nodesViewModel: NodesViewModel = viewModel(), profilesViewModel: ProfilesViewModel = viewModel(), installedAppsViewModel: InstalledAppsViewModel = viewModel() )</ID>
     <ID>LongMethod:AppMultiSelectDialog.kt$@Composable fun AppMultiSelectDialog( title: String, selectedPackages: Set&lt;String&gt;, confirmText: String = stringResource(R.string.common_ok), enableQuickSelectCommonApps: Boolean = false, quickSelectExcludeCommonApps: Boolean = false, onConfirm: (List&lt;String&gt;) -&gt; Unit, onDismiss: () -&gt; Unit )</ID>
     <ID>LongMethod:AppRoutingComponents.kt$@Composable fun AppGroupCard( group: AppGroup, outboundText: String, onClick: () -&gt; Unit, onToggle: () -&gt; Unit, onDelete: () -&gt; Unit )</ID>
     <ID>LongMethod:AppRoutingComponents.kt$@OptIn(ExperimentalMaterial3Api::class) @Composable fun AppGroupEditorDialog( initialGroup: AppGroup? = null, installedApps: List&lt;InstalledApp&gt;, nodes: List&lt;NodeUi&gt;, nodesForSelection: List&lt;NodeUi&gt;? = null, profiles: List&lt;ProfileUi&gt;, onDismiss: () -&gt; Unit, onConfirm: (AppGroup) -&gt; Unit )</ID>
@@ -142,7 +130,6 @@
     <ID>LongMethod:AppRoutingComponents.kt$@OptIn(ExperimentalMaterial3Api::class) @Composable fun AppRuleEditorDialog( initialRule: AppRule? = null, installedApps: List&lt;InstalledApp&gt;, existingPackages: Set&lt;String&gt;, nodes: List&lt;NodeUi&gt;, nodesForSelection: List&lt;NodeUi&gt;? = null, profiles: List&lt;ProfileUi&gt;, onDismiss: () -&gt; Unit, onConfirm: (AppRule) -&gt; Unit )</ID>
     <ID>LongMethod:AppRoutingComponents.kt$@OptIn(ExperimentalMaterial3Api::class) @Composable fun MultiAppSelectorDialog( installedApps: List&lt;InstalledApp&gt;, selectedApps: Set&lt;AppInfo&gt;, onConfirm: (Set&lt;AppInfo&gt;) -&gt; Unit, onDismiss: () -&gt; Unit )</ID>
     <ID>LongMethod:AppRoutingScreen.kt$@OptIn(ExperimentalMaterial3Api::class) @Composable fun AppRoutingScreen( navController: NavController, settingsViewModel: SettingsViewModel = viewModel(), nodesViewModel: NodesViewModel = viewModel(), profilesViewModel: ProfilesViewModel = viewModel(), installedAppsViewModel: InstalledAppsViewModel = viewModel() )</ID>
-    <ID>LongMethod:AppRulesScreen.kt$@OptIn(ExperimentalMaterial3Api::class) @Composable fun AppRulesScreen( navController: NavController, settingsViewModel: SettingsViewModel = viewModel(), nodesViewModel: NodesViewModel = viewModel(), profilesViewModel: ProfilesViewModel = viewModel() )</ID>
     <ID>LongMethod:BigToggle.kt$@Composable fun BigToggle( isRunning: Boolean, onClick: () -&gt; Unit, modifier: Modifier = Modifier )</ID>
     <ID>LongMethod:ClashYamlParserPart1.kt$ClashYamlParserPart1$override fun parse(content: String): SingBoxConfig?</ID>
     <ID>LongMethod:ClashYamlParserPart1.kt$ClashYamlParserPart1$protected override fun parseShadowsocksWithPlugin( map: Map&lt;*, *&gt;, name: String, server: String?, port: Int?, globalFingerprint: String? ): List&lt;Outbound&gt;?</ID>
@@ -171,7 +158,6 @@
     <ID>LongMethod:ExportImportDialogs.kt$@Composable fun ImportProgressDialog( state: ImportState, onDismiss: () -&gt; Unit )</ID>
     <ID>LongMethod:LogsScreen.kt$@OptIn(ExperimentalMaterial3Api::class) @Composable fun LogsScreen(navController: NavController, viewModel: LogViewModel = viewModel())</ID>
     <ID>LongMethod:MainActivity.kt$@Composable fun SingBoxApp()</ID>
-    <ID>LongMethod:NetworkManager.kt$NetworkManager$fun findBestPhysicalNetwork(): Network?</ID>
     <ID>LongMethod:NodeDetailScreen.kt$@OptIn(ExperimentalMaterial3Api::class) @Composable fun NodeDetailScreen( navController: NavController, nodeId: String, createProtocol: String = "" )</ID>
     <ID>LongMethod:NodeLinkParser.kt$NodeLinkParser$protected fun parseNaiveLink(link: String): Outbound?</ID>
     <ID>LongMethod:NodeLinkParser.kt$NodeLinkParser$protected fun parseShadowsocksLink(link: String): Outbound?</ID>
@@ -192,7 +178,6 @@
     <ID>LongMethod:SettingsRepository.kt$SettingsRepository$suspend fun checkAndMigrateRuleSets()</ID>
     <ID>LongMethod:SingBoxService.kt$SingBoxService$override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int</ID>
     <ID>LongMethod:SingBoxService.kt$SingBoxService$protected fun submitRecoveryRequest(request: RecoveryRequest)</ID>
-    <ID>LongMethod:SplashScreen.kt$@Composable fun SplashScreen( onSplashComplete: () -&gt; Unit )</ID>
     <ID>LongMethod:VpnNotificationManager.kt$VpnNotificationManager$fun createNotification(state: NotificationState): Notification</ID>
     <ID>LongParameterList:AppRoutingComponents.kt$( initialRule: AppRule? = null, installedApps: List&lt;InstalledApp&gt;, existingPackages: Set&lt;String&gt;, nodes: List&lt;NodeUi&gt;, nodesForSelection: List&lt;NodeUi&gt;? = null, profiles: List&lt;ProfileUi&gt;, onDismiss: () -&gt; Unit, onConfirm: (AppRule) -&gt; Unit )</ID>
     <ID>LongParameterList:NetworkHelper.kt$NetworkHelper$( networkCallbackReady: Boolean, lastKnownNetwork: Network?, networkManager: com.kunk.singbox.service.network.NetworkManager?, findBestPhysicalNetwork: () -&gt; Network?, updateNetworkState: (Network?, Boolean) -&gt; Unit, lastRuleSetCheckMs: Long, ruleSetCheckIntervalMs: Long, onRuleSetChecked: (Long) -&gt; Unit )</ID>
@@ -208,11 +193,6 @@
     <ID>MatchingDeclarationName:AppNavigation.kt$Screen</ID>
     <ID>MatchingDeclarationName:SelectProfileDialog.kt$SelectProfileTarget</ID>
     <ID>MatchingDeclarationName:StructuredLogger.kt$L</ID>
-    <ID>MaxLineLength:AppGroupsScreen.kt$Icon(Icons.Rounded.Add, contentDescription = stringResource(R.string.app_groups_add), tint = MaterialTheme.colorScheme.onBackground)</ID>
-    <ID>MaxLineLength:AppGroupsScreen.kt$Icon(Icons.Rounded.ArrowBack, contentDescription = stringResource(R.string.common_back), tint = MaterialTheme.colorScheme.onBackground)</ID>
-    <ID>MaxLineLength:AppGroupsScreen.kt$RuleSetOutboundMode.PROFILE -&gt; profiles.find { it.id == group.outboundValue }?.name ?: stringResource(R.string.app_rules_unknown_profile)</ID>
-    <ID>MaxLineLength:AppGroupsScreen.kt$Text(stringResource(R.string.app_groups_empty), color = MaterialTheme.colorScheme.onSurfaceVariant)</ID>
-    <ID>MaxLineLength:AppGroupsScreen.kt$title = { Text(stringResource(R.string.app_rules_title), color = MaterialTheme.colorScheme.onBackground) }</ID>
     <ID>MaxLineLength:AppMultiSelectDialog.kt$Text(stringResource(R.string.app_list_show_no_launcher), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)</ID>
     <ID>MaxLineLength:AppMultiSelectDialog.kt$Text(stringResource(R.string.app_list_show_system), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)</ID>
     <ID>MaxLineLength:AppMultiSelectDialog.kt$placeholder = { Text(stringResource(R.string.app_list_search_hint), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)) }</ID>
@@ -245,14 +225,6 @@
     <ID>MaxLineLength:AppRoutingScreen.kt$RuleSetOutboundMode.PROFILE -&gt; profiles.find { it.id == value }?.name ?: stringResource(R.string.app_rules_unknown_profile)</ID>
     <ID>MaxLineLength:AppRoutingScreen.kt$if (node != null &amp;&amp; profileName != null) "${node.name} ($profileName)" else stringResource(R.string.app_rules_not_selected)</ID>
     <ID>MaxLineLength:AppRoutingScreen.kt$title = { Text(stringResource(R.string.app_rules_title), color = MaterialTheme.colorScheme.onBackground) }</ID>
-    <ID>MaxLineLength:AppRulesScreen.kt$Icon(Icons.Rounded.Add, contentDescription = stringResource(R.string.common_add), tint = MaterialTheme.colorScheme.onBackground)</ID>
-    <ID>MaxLineLength:AppRulesScreen.kt$Icon(Icons.Rounded.ArrowBack, contentDescription = stringResource(R.string.common_back), tint = MaterialTheme.colorScheme.onBackground)</ID>
-    <ID>MaxLineLength:AppRulesScreen.kt$RuleSetOutboundMode.PROFILE -&gt; profiles.find { it.id == rule.outboundValue }?.name ?: stringResource(R.string.app_rules_unknown_profile)</ID>
-    <ID>MaxLineLength:AppRulesScreen.kt$RuleSetOutboundMode.PROXY, RuleSetOutboundMode.NODE, RuleSetOutboundMode.PROFILE -&gt; Icons.Rounded.Shield to Color(0xFF4CAF50)</ID>
-    <ID>MaxLineLength:AppRulesScreen.kt$Text(stringResource(R.string.app_rules_description), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)</ID>
-    <ID>MaxLineLength:AppRulesScreen.kt$Text(stringResource(R.string.app_rules_empty), color = MaterialTheme.colorScheme.onSurfaceVariant)</ID>
-    <ID>MaxLineLength:AppRulesScreen.kt$if (node != null &amp;&amp; profileName != null) "${node.name} ($profileName)" else stringResource(R.string.app_rules_not_selected)</ID>
-    <ID>MaxLineLength:AppRulesScreen.kt$title = { Text(stringResource(R.string.app_rules_title), color = MaterialTheme.colorScheme.onBackground) }</ID>
     <ID>MaxLineLength:BackgroundPowerManager.kt$BackgroundPowerManager$val thresholdDisplay = if (backgroundThresholdMs == Long.MAX_VALUE) "NEVER" else "${backgroundThresholdMs / 1000 / 60}min"</ID>
     <ID>MaxLineLength:ClashYamlParserBase.kt$ClashYamlParserBase$protected abstract fun parseAnyTLS(map: Map&lt;*, *&gt;, name: String, server: String?, port: Int?, globalFingerprint: String? = null, globalTlsMinVersion: String? = null): Outbound?</ID>
     <ID>MaxLineLength:ClashYamlParserBase.kt$ClashYamlParserBase$protected abstract fun parseHttp(map: Map&lt;*, *&gt;, name: String, server: String?, port: Int?, globalFingerprint: String? = null, globalTlsMinVersion: String? = null): Outbound?</ID>
@@ -316,7 +288,6 @@
     <ID>MaxLineLength:CustomRulesScreen.kt$Icon(Icons.Rounded.ArrowBack, contentDescription = stringResource(R.string.common_back), tint = MaterialTheme.colorScheme.onBackground)</ID>
     <ID>MaxLineLength:CustomRulesScreen.kt$text = if (initialRule == null) stringResource(R.string.custom_rules_add) else stringResource(R.string.custom_rules_edit)</ID>
     <ID>MaxLineLength:CustomRulesScreen.kt$title = { Text(stringResource(R.string.custom_rules_title), color = MaterialTheme.colorScheme.onBackground) }</ID>
-    <ID>MaxLineLength:DashboardViewModel.kt$DashboardViewModel$_testStatus.value = getApplication&lt;Application&gt;().getString(R.string.dashboard_config_generation_failed)</ID>
     <ID>MaxLineLength:DashboardViewModel.kt$DashboardViewModel$if</ID>
     <ID>MaxLineLength:DashboardViewModel.kt$DashboardViewModel$is ConfigRepository.NodeSwitchResult.NotRunning</ID>
     <ID>MaxLineLength:DashboardViewModel.kt$DashboardViewModel.Companion$internal</ID>
@@ -367,7 +338,6 @@
     <ID>MaxLineLength:ExportImportDialogs.kt$SummaryRow(stringResource(R.string.import_node_count), stringResource(R.string.import_count_items, summary.totalNodeCount))</ID>
     <ID>MaxLineLength:ExportImportDialogs.kt$SummaryRow(stringResource(R.string.import_profile_count), stringResource(R.string.import_count_items, summary.profileCount))</ID>
     <ID>MaxLineLength:InstalledAppsRepository.kt$InstalledAppsRepository$_loadingState.value = LoadingState.Error(e.message ?: context.getString(R.string.common_loading))</ID>
-    <ID>MaxLineLength:LibboxCompat.kt$LibboxCompat$Log.i(TAG, "LibboxCompat: version=${getVersion()}, extensionVersion=${getExtensionVersion()}, hasResetAllConnections=$hasResetAllConnections, hasExtensionApi=$hasExtensionApi")</ID>
     <ID>MaxLineLength:NodeDetailScreen.kt$"reality" -&gt; tls.copy(enabled = true, reality = com.kunk.singbox.model.RealityConfig(enabled = true))</ID>
     <ID>MaxLineLength:NodeDetailScreen.kt$Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = stringResource(R.string.common_back), tint = MaterialTheme.colorScheme.onBackground)</ID>
     <ID>MaxLineLength:NodeDetailScreen.kt$Icon(Icons.Rounded.Save, contentDescription = stringResource(R.string.common_save), tint = MaterialTheme.colorScheme.onBackground)</ID>
@@ -515,22 +485,17 @@
     <ID>MayBeConst:SingBoxService.kt$SingBoxService.Companion$val EXTRA_PENDING_NODE_NAME = "pending_node_name"</ID>
     <ID>MissingPackageDeclaration:AppDatabase.kt$.AppDatabase.kt</ID>
     <ID>MissingPackageDeclaration:AppUpdateChecker.kt$.AppUpdateChecker.kt</ID>
-    <ID>MissingPackageDeclaration:BatteryOptimizationHelper.kt$.BatteryOptimizationHelper.kt</ID>
     <ID>MissingPackageDeclaration:ClashYamlParserBase.kt$.ClashYamlParserBase.kt</ID>
     <ID>MissingPackageDeclaration:ClashYamlParserCompanionBase.kt$.ClashYamlParserCompanionBase.kt</ID>
     <ID>MissingPackageDeclaration:ClashYamlParserPart1.kt$.ClashYamlParserPart1.kt</ID>
     <ID>MissingPackageDeclaration:ClashYamlParserPart2.kt$.ClashYamlParserPart2.kt</ID>
     <ID>MissingPackageDeclaration:CommandManager.kt$.CommandManager.kt</ID>
     <ID>MissingPackageDeclaration:CommonParsers.kt$.CommonParsers.kt</ID>
-    <ID>MissingPackageDeclaration:ConnectManager.kt$.ConnectManager.kt</ID>
     <ID>MissingPackageDeclaration:CoreManager.kt$.CoreManager.kt</ID>
     <ID>MissingPackageDeclaration:DefaultNetworkListener.kt$.DefaultNetworkListener.kt</ID>
     <ID>MissingPackageDeclaration:DiagnosticsViewModel.kt$.DiagnosticsViewModel.kt</ID>
     <ID>MissingPackageDeclaration:ExportData.kt$.ExportData.kt</ID>
     <ID>MissingPackageDeclaration:InstalledAppsRepository.kt$.InstalledAppsRepository.kt</ID>
-    <ID>MissingPackageDeclaration:KernelHttpClient.kt$.KernelHttpClient.kt</ID>
-    <ID>MissingPackageDeclaration:LatencyCache.kt$.LatencyCache.kt</ID>
-    <ID>MissingPackageDeclaration:LatencyTester.kt$.LatencyTester.kt</ID>
     <ID>MissingPackageDeclaration:LocaleHelper.kt$.LocaleHelper.kt</ID>
     <ID>MissingPackageDeclaration:LogRepository.kt$.LogRepository.kt</ID>
     <ID>MissingPackageDeclaration:NetworkClient.kt$.NetworkClient.kt</ID>
@@ -567,7 +532,6 @@
     <ID>MissingPackageDeclaration:VpnServiceManager.kt$.VpnServiceManager.kt</ID>
     <ID>MissingPackageDeclaration:VpnTileService.kt$.VpnTileService.kt</ID>
     <ID>MissingPackageDeclaration:VpnTunManager.kt$.VpnTunManager.kt</ID>
-    <ID>NestedBlockDepth:BatteryOptimizationHelper.kt$BatteryOptimizationHelper$fun requestIgnoreBatteryOptimizations(context: Context): Boolean</ID>
     <ID>NestedBlockDepth:CommandManager.kt$CommandManager$private fun createClientHandler(): CommandClientHandler</ID>
     <ID>NestedBlockDepth:ConfigRepository.kt$ConfigRepository$protected fun buildRunOutbounds( baseConfig: SingBoxConfig, activeNode: NodeUi?, settings: AppSettings, allNodes: List&lt;NodeUi&gt;, dnsPreResolve: Boolean = false, profileId: String? = null, dnsOverrideConfig: DnsConfig? = null): ConfigRepositoryRunOutboundsContext</ID>
     <ID>NestedBlockDepth:ConfigRepository.kt$ConfigRepository$protected fun parseSubscriptionResponse(content: String): SingBoxConfig?</ID>
@@ -576,7 +540,6 @@
     <ID>NestedBlockDepth:LogRepository.kt$LogRepository$fun setLogUiActive(active: Boolean)</ID>
     <ID>NestedBlockDepth:NetworkHelper.kt$NetworkHelper$fun findBestPhysicalNetworkFallback(): Network?</ID>
     <ID>NestedBlockDepth:NetworkHelper.kt$NetworkHelper$suspend fun waitForUsablePhysicalNetwork( lastKnownNetwork: Network?, networkManager: com.kunk.singbox.service.network.NetworkManager?, findBestPhysicalNetwork: () -&gt; Network?, timeoutMs: Long ): Network?</ID>
-    <ID>NestedBlockDepth:NetworkManager.kt$NetworkManager$fun findBestPhysicalNetwork(): Network?</ID>
     <ID>NestedBlockDepth:NodeLinkParser.kt$NodeLinkParser$protected fun parseAnyTLSLink(link: String): Outbound?</ID>
     <ID>NestedBlockDepth:NodeLinkParser.kt$NodeLinkParser$protected fun parseShadowsocksLink(link: String): Outbound?</ID>
     <ID>NestedBlockDepth:PlatformInterfaceImpl.kt$PlatformInterfaceImpl$override fun getInterfaces(): NetworkInterfaceIterator?</ID>
@@ -585,7 +548,6 @@
     <ID>NestedBlockDepth:SingBoxCore.kt$SingBoxCore$private fun getPhysicalNetworkInterface(): String?</ID>
     <ID>NestedBlockDepth:SingBoxCoreTestPlatform.kt$TestPlatformInterface$override fun getInterfaces(): NetworkInterfaceIterator?</ID>
     <ID>NestedBlockDepth:SingBoxCoreTestPlatform.kt$TestPlatformInterface$override fun startDefaultInterfaceMonitor(listener: InterfaceUpdateListener?)</ID>
-    <ID>NestedBlockDepth:SubscriptionFetcher.kt$SubscriptionFetcher$private fun parseUserInfoHeader(header: String): SubscriptionUserInfo?</ID>
     <ID>NestedBlockDepth:SubscriptionParser.kt$SubscriptionManager$fun parse(content: String): SingBoxConfig?</ID>
     <ID>ProtectedMemberInFinalClass:NodeLinkParser.kt$NodeLinkParser$@Suppress("CognitiveComplexMethod", "CyclomaticComplexMethod", "LongMethod") protected fun parseVLessLink(link: String): Outbound?</ID>
     <ID>ProtectedMemberInFinalClass:NodeLinkParser.kt$NodeLinkParser$protected fun buildHttpTlsConfig(useTls: Boolean, server: String): TlsConfig?</ID>
@@ -638,29 +600,20 @@
     <ID>ReturnCount:ConfigRepository.kt$ConfigRepository$suspend fun testNodeLatency(nodeId: String): Long</ID>
     <ID>ReturnCount:DashboardViewModel.kt$DashboardViewModel$private fun setConnectionState(newState: ConnectionState)</ID>
     <ID>ReturnCount:DiagnosticsViewModel.kt$DiagnosticsViewModel$private fun findMatch(config: SingBoxConfig, domain: String): MatchResult</ID>
-    <ID>ReturnCount:LatencyTester.kt$LatencyTester$suspend fun testNode( nodeId: String, outbound: Outbound, allOutbounds: List&lt;Outbound&gt; = emptyList(), onResult: ((Long) -&gt; Unit)? = null ): Long</ID>
     <ID>ReturnCount:NetworkHelper.kt$NetworkHelper$suspend fun waitForUsablePhysicalNetwork( lastKnownNetwork: Network?, networkManager: com.kunk.singbox.service.network.NetworkManager?, findBestPhysicalNetwork: () -&gt; Network?, timeoutMs: Long ): Network?</ID>
-    <ID>ReturnCount:NetworkManager.kt$NetworkManager$fun findBestPhysicalNetwork(): Network?</ID>
-    <ID>ReturnCount:NetworkManager.kt$NetworkManager$fun updateDefaultInterface(network: Network, vpnStartedAtMs: Long, vpnStartupWindowMs: Long): Boolean</ID>
     <ID>ReturnCount:NodeLinkParser.kt$NodeLinkParser$protected fun parseShadowsocksLink(link: String): Outbound?</ID>
     <ID>ReturnCount:NodeLinkParser.kt$NodeLinkParser$protected fun tryDecodeBase64(content: String): String?</ID>
     <ID>ReturnCount:SingBoxRemote.kt$SingBoxRemote$fun queryAndSyncState(context: Context): Boolean</ID>
     <ID>ReturnCount:SingBoxService.kt$SingBoxService$override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int</ID>
     <ID>ReturnCount:SingBoxService.kt$SingBoxService$suspend fun hotSwitchNode(nodeTag: String): Boolean</ID>
     <ID>SwallowedException:AppRoutingComponents.kt$e: Exception</ID>
-    <ID>SwallowedException:AppRulesScreen.kt$e: PackageManager.NameNotFoundException</ID>
     <ID>SwallowedException:BoxWrapperManager.kt$BoxWrapperManager$e: Exception</ID>
     <ID>SwallowedException:CommandManager.kt$CommandManager$e: Exception</ID>
     <ID>SwallowedException:ConfigRepository.kt$ConfigRepository$e: Exception</ID>
     <ID>SwallowedException:CoreManager.kt$CoreManager$e: CancellationException</ID>
     <ID>SwallowedException:DashboardViewModel.kt$DashboardViewModel$e: TimeoutCancellationException</ID>
     <ID>SwallowedException:InstalledAppsRepository.kt$InstalledAppsRepository$e: Exception</ID>
-    <ID>SwallowedException:LatencyTester.kt$LatencyTester$e: Exception</ID>
-    <ID>SwallowedException:LibboxCompat.kt$LibboxCompat$e2: NoSuchMethodException</ID>
-    <ID>SwallowedException:LibboxCompat.kt$LibboxCompat$e: Exception</ID>
-    <ID>SwallowedException:LibboxCompat.kt$LibboxCompat$e: NoSuchMethodException</ID>
     <ID>SwallowedException:MainActivity.kt$MainActivity$e: Exception</ID>
-    <ID>SwallowedException:NetworkManager.kt$NetworkManager$e: Exception</ID>
     <ID>SwallowedException:NodeEntity.kt$NodeEntity.Companion$e: Exception</ID>
     <ID>SwallowedException:NodeLinkParser.kt$NodeLinkParser$e: Exception</ID>
     <ID>SwallowedException:NodeSelectionDialogs.kt$t: Throwable</ID>
@@ -681,9 +634,6 @@
     <ID>TooGenericExceptionThrown:SingBoxCore.kt$SingBoxCore$throw RuntimeException("Failed to allocate $count ports (allocated ${ports.size})", e)</ID>
     <ID>TooGenericExceptionThrown:SingBoxCore.kt$SingBoxCore$throw RuntimeException("Failed to allocate local port after $maxAttempts attempts")</ID>
     <ID>TooGenericExceptionThrown:StartupManager.kt$StartupManager$throw Exception("Libbox start failed: ${result.error}", result.exception)</ID>
-    <ID>TooGenericExceptionThrown:SubscriptionFetcher.kt$SubscriptionFetcher$throw Exception("HTTP ${response.code}: ${response.message}")</ID>
-    <ID>TooGenericExceptionThrown:SubscriptionFetcher.kt$SubscriptionFetcher$throw Exception("Subscription response body is empty")</ID>
-    <ID>TooManyFunctions:AppLogger.kt$AppLogger</ID>
     <ID>TooManyFunctions:BoxWrapperManager.kt$BoxWrapperManager</ID>
     <ID>TooManyFunctions:CoreManager.kt$CoreManager</ID>
     <ID>TooManyFunctions:NodeDao.kt$NodeDao</ID>
@@ -696,11 +646,9 @@
     <ID>UnusedParameter:CommandManager.kt$CommandManager$platformInterface: PlatformInterface</ID>
     <ID>UnusedParameter:ProfileCard.kt$type: String</ID>
     <ID>UnusedParameter:RuleSetHubScreen.kt$ruleSetViewModel: RuleSetViewModel = viewModel()</ID>
-    <ID>UnusedParameter:SecurityUtils.kt$SecurityUtils$context: Context</ID>
     <ID>UnusedParameter:SingBoxCore.kt$SingBoxCore$fallbackUrl: String? = null</ID>
     <ID>UnusedParameter:SingBoxCore.kt$SingBoxCore$method: LatencyTestMethod</ID>
     <ID>UnusedParameter:StartupManager.kt$StartupManager$connectManager: ConnectManager</ID>
-    <ID>UnusedParameter:SubscriptionFetcher.kt$SubscriptionFetcher$body: String</ID>
     <ID>UnusedPrivateMember:SingBoxCore.kt$SingBoxCore$private fun getPhysicalNetworkInterface(): String?</ID>
     <ID>UnusedPrivateMember:SingBoxRemote.kt$SingBoxRemote$private fun cleanupConnection()</ID>
     <ID>UnusedPrivateProperty:CommandManager.kt$CommandManager.Companion$private const val MAX_LOG_LINES = 300</ID>

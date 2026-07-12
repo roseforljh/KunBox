@@ -30,13 +30,11 @@ data class ProfileUi(
 
 @Keep
 enum class SubscriptionUpdateStage(
-    @StringRes val labelRes: Int,
-    val isBackground: Boolean = false
+    @StringRes val labelRes: Int
 ) {
     Requesting(R.string.subscription_update_stage_requesting),
     Parsing(R.string.subscription_update_stage_parsing),
-    Saving(R.string.subscription_update_stage_saving),
-    DnsBackground(R.string.subscription_update_stage_dns_background, isBackground = true)
+    Saving(R.string.subscription_update_stage_saving)
 }
 
 @Keep
@@ -55,37 +53,25 @@ enum class UpdateStatus {
     @SerializedName("Failed") Failed
 }
 
-/**
- */
 sealed class SubscriptionUpdateResult {
-    /**
-     */
     data class SuccessWithChanges(
         val profileName: String,
         val addedCount: Int,
         val removedCount: Int,
-        val totalCount: Int,
-        val dnsMovedToBackground: Boolean = false
+        val totalCount: Int
     ) : SubscriptionUpdateResult()
 
-    /**
-     */
     data class SuccessNoChanges(
         val profileName: String,
-        val totalCount: Int,
-        val dnsMovedToBackground: Boolean = false
+        val totalCount: Int
     ) : SubscriptionUpdateResult()
 
-    /**
-     */
     data class Failed(
         val profileName: String,
         val error: String
     ) : SubscriptionUpdateResult()
 }
 
-/**
- */
 data class BatchUpdateResult(
     val successWithChanges: Int = 0,
     val successNoChanges: Int = 0,
@@ -123,8 +109,6 @@ data class NodeUi(
     val displayName: String
         get() = name
 
-    /**
-     */
     val protocolDisplay: String
         get() = when (protocol.lowercase()) {
             "http" -> "HTTPS"
@@ -143,33 +127,19 @@ data class NodeUi(
         }
 }
 
-data class RuleSetUi(
-    val id: String,
-    val name: String,
-    val type: String, // Remote, Local
-    val sourceUrl: String?,
-    val enabled: Boolean,
-    val lastUpdated: Long,
-    val ruleCount: Int
-)
-
-enum class LogLevel {
-    DEBUG, INFO, WARN, ERROR
-}
-
-data class LogEntryUi(
-    val timestamp: Long,
-    val level: LogLevel,
-    val tag: String,
-    val message: String
-)
-
 data class ConnectionStats(
     val uploadSpeed: Long, // bytes/s
     val downloadSpeed: Long, // bytes/s
     val uploadTotal: Long, // bytes
     val downloadTotal: Long, // bytes
     val duration: Long // ms
+)
+
+data class InstalledAppUi(
+    val packageName: String,
+    val appName: String,
+    val isSystemApp: Boolean,
+    val hasLauncher: Boolean
 )
 
 enum class ConnectionState(@StringRes val displayNameRes: Int) {
@@ -188,8 +158,6 @@ data class SavedProfilesData(
     @SerializedName("nodeLatencies") val nodeLatencies: Map<String, Long> = emptyMap()
 )
 
-/**
- */
 @Keep
 data class VMessLinkConfig(
     @SerializedName("v") val v: String? = null,
@@ -207,5 +175,12 @@ data class VMessLinkConfig(
     @SerializedName("sni") val sni: String? = null, // SNI
     @SerializedName("alpn") val alpn: String? = null,
     @SerializedName("fp") val fp: String? = null, // fingerprint
-    @SerializedName("packetEncoding") val packetEncoding: String? = null // packet encoding
+    @SerializedName("packetEncoding") val packetEncoding: String? = null, // packet encoding
+    @SerializedName("mode") val mode: String? = null,
+    @SerializedName("xPaddingBytes") val xPaddingBytes: String? = null,
+    @SerializedName("scMaxEachPostBytes") val scMaxEachPostBytes: Long? = null,
+    @SerializedName("scMinPostsIntervalMs") val scMinPostsIntervalMs: Long? = null,
+    @SerializedName("scMaxBufferedPosts") val scMaxBufferedPosts: Long? = null,
+    @SerializedName("noGRPCHeader") val noGRPCHeader: Boolean? = null,
+    @SerializedName("noSSEHeader") val noSSEHeader: Boolean? = null
 )

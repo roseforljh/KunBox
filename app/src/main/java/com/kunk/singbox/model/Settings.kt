@@ -3,20 +3,9 @@ package com.kunk.singbox.model
 import androidx.annotation.StringRes
 import com.google.gson.annotations.SerializedName
 import com.kunk.singbox.R
+import java.net.InetAddress
+import java.net.URI
 
-data class TunAddressConfig(
-    @SerializedName("ipv4") val ipv4: String = DEFAULT_IPV4,
-    @SerializedName("ipv6") val ipv6: String = DEFAULT_IPV6
-) {
-    companion object {
-        const val DEFAULT_IPV4 = "172.19.0.1/30"
-        const val DEFAULT_IPV6 = "fd00::1/126"
-        val DEFAULT = TunAddressConfig()
-    }
-}
-
-/**
- */
 data class AppSettings(
 
     @SerializedName("autoConnect") val autoConnect: Boolean = false,
@@ -37,11 +26,8 @@ data class AppSettings(
     // Higher MTU for QUIC-based proxies (Hysteria2/TUIC) to avoid fragmentation blackholes.
     // Note: For existing installs, Gson may deserialize missing boolean fields as false.
     @SerializedName("tunMtuAuto") val tunMtuAuto: Boolean = true,
-    @SerializedName("tunInterfaceName") val tunInterfaceName: String = "tun0",
-    @SerializedName("tunAddress") val tunAddress: TunAddressConfig? = null,
     @SerializedName("autoRoute") val autoRoute: Boolean = false,
     @SerializedName("strictRoute") val strictRoute: Boolean = true,
-    @SerializedName("endpointIndependentNat") val endpointIndependentNat: Boolean = true,
     @SerializedName("vpnRouteMode") val vpnRouteMode: VpnRouteMode = VpnRouteMode.GLOBAL,
     @SerializedName("vpnRouteIncludeCidrs") val vpnRouteIncludeCidrs: String = "",
     @SerializedName("vpnAppMode") val vpnAppMode: VpnAppMode = VpnAppMode.ALL,
@@ -73,8 +59,6 @@ data class AppSettings(
     @SerializedName("blockQuic") val blockQuic: Boolean = false,
     @SerializedName("debugLoggingEnabled") val debugLoggingEnabled: Boolean = false,
 
-    @SerializedName("wakeResetConnections") val wakeResetConnections: Boolean = true,
-
     @SerializedName("tcpKeepAliveEnabled") val tcpKeepAliveEnabled: Boolean = true,
 
     @SerializedName("tcpKeepAliveInterval") val tcpKeepAliveInterval: Int = 15,
@@ -82,7 +66,7 @@ data class AppSettings(
     @SerializedName("connectTimeout") val connectTimeout: Int = 10,
 
     @SerializedName("latencyTestMethod") val latencyTestMethod: LatencyTestMethod = LatencyTestMethod.REAL_RTT,
-    @SerializedName("latencyTestUrl") val latencyTestUrl: String = "https://www.google.com/generate_204",
+    @SerializedName("latencyTestUrl") val latencyTestUrl: String = DEFAULT_LATENCY_TEST_URL,
     @SerializedName("latencyTestTimeout") val latencyTestTimeout: Int = 5000,
     @SerializedName("latencyTestConcurrency") val latencyTestConcurrency: Int = 5,
 
@@ -109,13 +93,73 @@ data class AppSettings(
     @SerializedName("nodeColumnCount") val nodeColumnCount: Int = 1
 ) {
     companion object {
-        const val DEFAULT_LOCAL_DNS = "https://dns.alidns.com/dns-query"
+        const val DEFAULT_LOCAL_DNS = "https://223.5.5.5/dns-query"
         const val DEFAULT_REMOTE_DNS = "https://1.1.1.1/dns-query"
+        const val DEFAULT_LATENCY_TEST_URL = "https://www.gstatic.com/generate_204"
         const val DEFAULT_FAKE_IP_RANGE = "198.18.0.0/15,fc00::/18"
         const val LEGACY_LOCAL_DNS = "local"
+        const val LEGACY_DOMAIN_LOCAL_DNS = "https://dns.alidns.com/dns-query"
         const val DEFAULT_FAKE_DNS_EXCLUDED_DOMAINS = "accounts.google.com\noauth.googleusercontent.com\n" +
             "appleid.apple.com\nidmsa.apple.com\nlogin.microsoftonline.com\nlogin.live.com\n" +
             "lan\nlocal\nlocalhost\nlocaldomain\narpa"
+
+        fun validateLatencyTestUrl(value: String?): String? {
+            val candidate = value?.trim().orEmpty()
+            if (candidate.isEmpty()) return null
+
+            return runCatching {
+                val uri = URI(candidate)
+                require(
+                    uri.scheme.equals("http", ignoreCase = true) ||
+                        uri.scheme.equals("https", ignoreCase = true)
+                )
+                require(!uri.host.isNullOrBlank())
+                require(uri.userInfo == null)
+                require(uri.port == -1 || uri.port in 1..65535)
+                require(!isUnsafeLatencyTestHost(uri.host))
+                uri.toString()
+            }.getOrNull()
+        }
+
+        fun normalizeLatencyTestUrl(value: String?): String =
+            validateLatencyTestUrl(value) ?: DEFAULT_LATENCY_TEST_URL
+
+        fun requireLatencyTestUrl(value: String?): String =
+            requireNotNull(validateLatencyTestUrl(value)) { "Invalid latency test URL" }
+
+        fun latencyTestUri(value: String?): URI = URI(requireLatencyTestUrl(value))
+
+        private fun isUnsafeLatencyTestHost(rawHost: String): Boolean {
+            val host = rawHost.removePrefix("[").removeSuffix("]")
+            val isLocalhost = host.equals("localhost", ignoreCase = true) ||
+                host.endsWith(".localhost", ignoreCase = true)
+            val ipv4 = parseIpv4Host(host)
+            return isLocalhost || (ipv4?.let(::isUnsafeIpv4Host) ?: isUnsafeIpv6Host(host))
+        }
+
+        private fun parseIpv4Host(host: String): List<Int>? {
+            val parts = host.split('.')
+            if (parts.size != 4) return null
+            return parts.mapNotNull(String::toIntOrNull).takeIf { values ->
+                values.size == 4 && values.all { it in 0..255 }
+            }
+        }
+
+        private fun isUnsafeIpv4Host(parts: List<Int>): Boolean {
+            val first = parts[0]
+            val second = parts[1]
+            return first == 0 || first == 10 || first == 127 || first >= 224 ||
+                (first == 169 && second == 254) ||
+                (first == 172 && second in 16..31) ||
+                (first == 192 && second == 168)
+        }
+
+        private fun isUnsafeIpv6Host(host: String): Boolean {
+            if (!host.contains(':')) return false
+            val address = runCatching { InetAddress.getByName(host) }.getOrNull() ?: return true
+            return address.isAnyLocalAddress || address.isLoopbackAddress ||
+                address.isLinkLocalAddress || address.isSiteLocalAddress || address.isMulticastAddress
+        }
     }
 }
 

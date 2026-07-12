@@ -37,6 +37,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import com.kunk.singbox.model.DefaultRule
+import com.kunk.singbox.model.AppSettings
 import com.kunk.singbox.model.RoutingMode
 import com.kunk.singbox.model.GhProxyMirror
 import com.kunk.singbox.model.LatencyTestMethod
@@ -134,7 +135,8 @@ fun RoutingSettingsScreen(
         InputDialog(
             title = stringResource(R.string.routing_settings_latency_test_url),
             initialValue = settings.latencyTestUrl,
-            placeholder = "e.g. https://www.gstatic.com/generate_204",
+            placeholder = "e.g. ${AppSettings.DEFAULT_LATENCY_TEST_URL}",
+            isConfirmEnabled = { AppSettings.validateLatencyTestUrl(it) != null },
             onConfirm = { url ->
                 settingsViewModel.setLatencyTestUrl(url.trim())
                 showLatencyUrlDialog = false
@@ -294,7 +296,7 @@ fun RoutingSettingsScreen(
                 SettingItem(
                     title = stringResource(R.string.routing_settings_app_routing),
                     value = stringResource(R.string.routing_settings_app_routing_rules, settings.appRules.size + settings.appGroups.size),
-                    onClick = { navController.navigate(Screen.AppRules.route) }
+                    onClick = { navController.navigate(Screen.AppRouting.route) }
                 )
                 val domainRuleCount = settings.customRules.count {
                     it.enabled && it.type in listOf(

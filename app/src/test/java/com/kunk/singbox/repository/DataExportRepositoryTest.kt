@@ -8,7 +8,7 @@ class DataExportRepositoryTest {
 
     @Test
     fun `profile export completeness fails when any profile is skipped`() {
-        val result = DataExportRepository.validateProfileExportCompletenessForTest(
+        val result = DataExportRepository.validateProfileExportCompleteness(
             totalProfiles = 3,
             exportedProfiles = 2
         )
@@ -19,7 +19,7 @@ class DataExportRepositoryTest {
 
     @Test
     fun `profile export completeness succeeds when all profiles are exported`() {
-        val result = DataExportRepository.validateProfileExportCompletenessForTest(
+        val result = DataExportRepository.validateProfileExportCompleteness(
             totalProfiles = 3,
             exportedProfiles = 3
         )
