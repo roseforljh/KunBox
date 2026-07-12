@@ -1,5 +1,15 @@
 # Changelog
 
+## [2.19.1](https://github.com/roseforljh/KunBox/compare/v2.19.0...v2.19.1) (2026-07-12)
+
+
+### Bug Fixes
+
+* 修复 urltest idle_timeout、端口区间与本地假节点过滤 ([ae1d716](https://github.com/roseforljh/KunBox/commit/ae1d7165a8f5eb78cb8b0aa71e1db34a01366ca8))
+* 修复国内 DNS、配置卡灰边与延迟即时刷新 ([4a8af9c](https://github.com/roseforljh/KunBox/commit/4a8af9cbc11f6b375d4415f050d06a186a781ab4))
+* 修复节点排序时选中边框滞后 ([3d7e0fc](https://github.com/roseforljh/KunBox/commit/3d7e0fcd0d139d4fe61a3bf322ba99f1b3c0733a))
+* 清理冗余 SelectorManager/ConnectManager，提取 StringIteratorImpl，修复 WireGuard 默认路由与复杂度检测 ([4f1a89a](https://github.com/roseforljh/KunBox/commit/4f1a89ab80cef8af693942fee3ab770a4255fc3b))
+
 ## [2.19.0](https://github.com/roseforljh/KunBox/compare/v2.18.1...v2.19.0) (2026-07-08)
 
 
