@@ -6,14 +6,14 @@ import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.os.SystemClock
 import android.util.Log
-import com.kunk.singbox.core.SelectorManager as CoreSelectorManager
+import com.kunk.singbox.core.SelectorManager
 import com.kunk.singbox.ipc.VpnStateStore
 import com.kunk.singbox.repository.TrafficRepository
 import com.kunk.singbox.service.ServiceState
 import com.kunk.singbox.service.VpnKeepaliveWorker
 import com.kunk.singbox.service.VpnTileService
-import com.kunk.singbox.service.notification.VpnNotificationManager
 import com.kunk.singbox.service.network.TrafficMonitor
+import com.kunk.singbox.service.notification.VpnNotificationManager
 import com.kunk.singbox.utils.NetworkClient
 import kotlinx.coroutines.*
 
@@ -102,7 +102,6 @@ class ShutdownManager(
         commandManager: CommandManager,
         trafficMonitor: TrafficMonitor,
         notificationManager: VpnNotificationManager,
-        selectorManager: SelectorManager,
         callbacks: Callbacks
     ): Job {
         val stopService = options.stopService
@@ -131,8 +130,7 @@ class ShutdownManager(
 
         callbacks.tryClearRunningServiceForLibbox()
 
-        CoreSelectorManager.clear()
-        selectorManager.clear()
+        SelectorManager.clear()
 
         Log.i(TAG, "stopVpn(stopService=$stopService, proxyPort=$proxyPort)")
 

@@ -87,7 +87,6 @@ class ConfigRepositoryBatchLatencyPolicyTest {
         assertFalse(batchLatencyBody.contains("saveProfiles()"))
     }
 
-
     @Test
     fun latencyProbeTagsAreUniqueForSameNamedOutbounds() {
         val first = ConfigRepository.buildLatencyProbeTag("node-a")

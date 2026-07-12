@@ -15,6 +15,7 @@ import android.util.Log
 import com.google.gson.Gson
 import com.kunk.singbox.core.LibboxCompat
 import com.kunk.singbox.core.SingBoxCore
+import com.kunk.singbox.core.StringIteratorImpl
 import com.kunk.singbox.ipc.SingBoxIpcHub
 import com.kunk.singbox.ipc.VpnStateStore
 import com.kunk.singbox.model.SingBoxConfig
@@ -354,13 +355,6 @@ class ProxyOnlyService : Service() {
         }
 
         override fun systemCertificates(): StringIterator? = null
-    }
-
-    private class StringIteratorImpl(private val list: List<String>) : StringIterator {
-        private var index = 0
-        override fun hasNext(): Boolean = index < list.size
-        override fun next(): String = list[index++]
-        override fun len(): Int = list.size
     }
 
     override fun onBind(intent: Intent?): IBinder? = null

@@ -344,6 +344,8 @@
     <string name="node_detail_peer_public_key">Peer Public Key</string>
     <string name="node_detail_pre_shared_key">Pre-Shared Key</string>
     <string name="node_detail_local_address">Local Address (CIDR)</string>
+    <string name="node_detail_allowed_ips">AllowedIPs</string>
+    <string name="node_detail_persistent_keepalive">Keepalive (seconds)</string>
     <string name="node_detail_mtu">MTU</string>
     <string name="node_detail_reserved">Reserved (WARP)</string>
     <string name="node_detail_passphrase">Passphrase</string>

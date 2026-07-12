@@ -30,11 +30,6 @@ object BoxWrapperManager {
         return commandServer != null
     }
 
-    fun getSelectedOutbound(): String? {
-        if (!isAvailable()) return null
-        return SelectorManager.getSelectedOutbound()
-    }
-
     fun pause(): Boolean {
         val server = commandServer ?: return false
         return try {

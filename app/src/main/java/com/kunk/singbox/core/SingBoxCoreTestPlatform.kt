@@ -154,10 +154,3 @@ internal class TestCommandServerHandler : io.nekohasekai.libbox.CommandServerHan
     override fun setSystemProxyEnabled(isEnabled: Boolean) {}
     override fun writeDebugMessage(message: String?) {}
 }
-
-internal class StringIteratorImpl(private val list: List<String>) : StringIterator {
-    private var index = 0
-    override fun hasNext(): Boolean = index < list.size
-    override fun next(): String = list[index++]
-    override fun len(): Int = list.size
-}

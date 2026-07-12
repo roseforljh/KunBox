@@ -21,6 +21,7 @@ import androidx.compose.material.icons.rounded.SettingsInputAntenna
 import androidx.compose.material.icons.rounded.Speed
 import androidx.compose.material.icons.rounded.SwapHoriz
 import androidx.compose.material.icons.rounded.Tag
+import androidx.compose.material.icons.rounded.Timer
 import androidx.compose.material.icons.rounded.Waves
 import androidx.compose.ui.res.stringResource
 import androidx.compose.runtime.Composable
@@ -368,6 +369,29 @@ internal fun NodeProtocolFields(
             onValueChange = {
                 val addresses = it.split(",").map { value -> value.trim() }.filter { value -> value.isNotEmpty() }
                 editingOutbound = outbound.copy(localAddress = addresses.takeIf { values -> values.isNotEmpty() })
+            }
+        )
+        EditableTextItem(
+            title = stringResource(R.string.node_detail_allowed_ips),
+            value = peer.allowedIps?.joinToString(", ") ?: "",
+            icon = Icons.Rounded.Route,
+            onValueChange = {
+                val allowedIps = it.split(",").map { value -> value.trim() }.filter { value -> value.isNotEmpty() }
+                editingOutbound = outbound.copy(
+                    peers = listOf(peer.copy(allowedIps = allowedIps.takeIf { values -> values.isNotEmpty() }))
+                )
+            }
+        )
+        EditableTextItem(
+            title = stringResource(R.string.node_detail_persistent_keepalive),
+            value = peer.persistentKeepaliveInterval?.toString() ?: "",
+            icon = Icons.Rounded.Timer,
+            onValueChange = {
+                editingOutbound = outbound.copy(
+                    peers = listOf(
+                        peer.copy(persistentKeepaliveInterval = it.trim().takeIf(String::isNotEmpty)?.toIntOrNull())
+                    )
+                )
             }
         )
         EditableTextItem(

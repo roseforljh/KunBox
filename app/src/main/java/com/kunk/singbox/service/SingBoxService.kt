@@ -30,14 +30,12 @@ import com.kunk.singbox.repository.RuleSetRepository
 import com.kunk.singbox.repository.SettingsRepository
 import com.kunk.singbox.service.manager.BackgroundPowerManager
 import com.kunk.singbox.service.manager.CommandManager
-import com.kunk.singbox.service.manager.ConnectManager
 import com.kunk.singbox.service.manager.CoreManager
 import com.kunk.singbox.service.manager.ForeignVpnMonitor
 import com.kunk.singbox.service.manager.NetworkHelper
 import com.kunk.singbox.service.manager.NodeSwitchManager
 import com.kunk.singbox.service.manager.PlatformInterfaceImpl
 import com.kunk.singbox.service.manager.ScreenStateManager
-import com.kunk.singbox.service.manager.SelectorManager as ServiceSelectorManager
 import com.kunk.singbox.service.manager.ServiceStateHolder
 import com.kunk.singbox.service.manager.ShutdownManager
 import com.kunk.singbox.service.manager.UrlTestTagMatcher
@@ -48,6 +46,7 @@ import com.kunk.singbox.utils.DefaultNetworkListener
 import com.kunk.singbox.utils.L
 import com.kunk.singbox.utils.LocalNetworkPermission
 import com.kunk.singbox.utils.NetworkClient
+import com.kunk.singbox.utils.perf.StateCache
 import io.nekohasekai.libbox.*
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
@@ -78,18 +77,6 @@ class SingBoxService : VpnService() {
 
     protected val coreManager: CoreManager by lazy {
         CoreManager(this, this, serviceScope)
-    }
-
-    // 连接管理器
-
-    protected val connectManager: ConnectManager by lazy {
-        ConnectManager(this)
-    }
-
-    // 节点选择管理器
-
-    protected val serviceSelectorManager: ServiceSelectorManager by lazy {
-        ServiceSelectorManager()
     }
 
     // Command 管理器 (Server/Client 交互)
@@ -158,13 +145,13 @@ class SingBoxService : VpnService() {
         override fun openTun(options: TunOptions): Result<Int> {
             isConnectingTun.set(true)
             return try {
-                val network = connectManager.getCurrentNetwork()
+                val network = getCurrentPhysicalNetwork()
                 val result = coreManager.openTun(options, network, reuseExisting = true)
                 result.onSuccess { _ ->
                     vpnInterface = coreManager.vpnInterface
                     if (network != null) {
                         lastKnownNetwork = network
-                        connectManager.markVpnStarted()
+                        markPhysicalNetworkChanged()
                     }
                 }
                 result
@@ -174,10 +161,10 @@ class SingBoxService : VpnService() {
         }
 
         override fun getConnectivityManager(): ConnectivityManager? = connectivityManager
-        override fun getCurrentNetwork(): Network? = connectManager.getCurrentNetwork()
+        override fun getCurrentNetwork(): Network? = getCurrentPhysicalNetwork()
         override fun getLastKnownNetwork(): Network? = lastKnownNetwork
         override fun setLastKnownNetwork(network: Network?) { lastKnownNetwork = network }
-        override fun markVpnStarted() { connectManager.markVpnStarted() }
+        override fun markVpnStarted() { markPhysicalNetworkChanged() }
 
         override fun onDefaultNetworkChanged() {
             this@SingBoxService.handleDefaultNetworkChanged()
@@ -557,17 +544,10 @@ class SingBoxService : VpnService() {
         coreManager.init(platformInterfaceImpl)
         Log.i(SingBoxService.TAG, "CoreManager initialized")
 
-        initServiceSelectorManager()
         initCommandManager()
         initSecondaryManagers()
 
         Log.i(SingBoxService.TAG, "All managers initialized")
-    }
-
-    protected fun initServiceSelectorManager() {
-        // 3. 初始化节点选择管理器
-        serviceSelectorManager.init(commandManager.getCommandClient())
-        Log.i(SingBoxService.TAG, "ServiceSelectorManager initialized")
     }
 
     protected fun initCommandManager() {
@@ -742,7 +722,7 @@ class SingBoxService : VpnService() {
                 }
                 if (!isPostStartTaskActive(generation)) return@launch
 
-                serviceSelectorManager.updateCommandClient(commandManager.getCommandClient())
+                SelectorManager.updateCommandClient(commandManager.getCommandClient())
                 initSelectorManager(configContent)
                 trafficMonitor.start(Process.myUid(), trafficListener)
                 scheduleAsyncRuleSetUpdate()
@@ -898,19 +878,15 @@ class SingBoxService : VpnService() {
 
             L.step("HotSwitch", 2, 2, "Calling SelectorManager.switchNode...")
 
-            when (val result = serviceSelectorManager.switchNode(nodeTag)) {
-                is com.kunk.singbox.service.manager.SelectorManager.SwitchResult.Success -> {
+            when (val result = SelectorManager.switchNode(nodeTag)) {
+                is SelectorManager.SwitchResult.Success -> {
                     L.result("HotSwitch", true, "Switched to $nodeTag via ${result.method}")
                     requestNotificationUpdate(force = true)
                     return true
                 }
-                is com.kunk.singbox.service.manager.SelectorManager.SwitchResult.NeedRestart -> {
+                is SelectorManager.SwitchResult.NeedRestart -> {
                     L.warn("HotSwitch", "Need restart: ${result.reason}")
                     // 需要完整重启，返回 false 让调用者处理
-                    return false
-                }
-                is com.kunk.singbox.service.manager.SelectorManager.SwitchResult.Failed -> {
-                    L.error("HotSwitch", "Failed: ${result.error}")
                     return false
                 }
             }
@@ -1434,13 +1410,22 @@ class SingBoxService : VpnService() {
         return commandManager.getSelectedOutbound("PROXY")
             ?.takeIf { it.isNotBlank() }
             ?: SelectorManager.getSelectedOutbound()?.takeIf { it.isNotBlank() }
-            ?: BoxWrapperManager.getSelectedOutbound()?.takeIf { it.isNotBlank() }
     }
 
     // 屏幕/前台状态从 ScreenStateManager 读取
 
+    protected fun getCurrentPhysicalNetwork(): Network? {
+        return StateCache.getNetwork {
+            connectivityManager?.let { DefaultNetworkListener.selectBestPhysicalNetwork(it) }
+        }
+    }
+
+    protected fun markPhysicalNetworkChanged() {
+        StateCache.invalidateNetworkCache()
+    }
+
     protected fun findBestPhysicalNetwork(): Network? {
-        return connectManager.getCurrentNetwork()
+        return getCurrentPhysicalNetwork()
     }
 
     override fun onCreate() {
@@ -1459,7 +1444,7 @@ class SingBoxService : VpnService() {
         connectivityManager?.let { manager ->
             // 保证 Start 消息先于 onDestroy 的 Stop 入队，避免监听器残留。
             DefaultNetworkListener.start(manager, defaultNetworkListenerKey) {
-                connectManager.markVpnStarted()
+                markPhysicalNetworkChanged()
             }
         }
 
@@ -2182,7 +2167,6 @@ class SingBoxService : VpnService() {
             commandManager = commandManager,
             trafficMonitor = trafficMonitor,
             notificationManager = notificationManager,
-            selectorManager = serviceSelectorManager,
             callbacks = shutdownCallbacks
         )
     }

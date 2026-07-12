@@ -1,4 +1,4 @@
-﻿package com.kunk.singbox.core
+package com.kunk.singbox.core
 
 import android.util.Log
 import io.nekohasekai.libbox.CommandClient
@@ -8,6 +8,7 @@ import kotlinx.coroutines.flow.asStateFlow
 
 object SelectorManager {
     private const val TAG = "SelectorManager"
+    private const val PROXY_SELECTOR_TAG = "PROXY"
 
     @Volatile
     private var currentSelectorSignature: String? = null
@@ -15,11 +16,23 @@ object SelectorManager {
     @Volatile
     private var currentOutboundTags: List<String> = emptyList()
 
+    @Volatile
+    private var commandClient: CommandClient? = null
+
     private val _selectedOutbound = MutableStateFlow<String?>(null)
     val selectedOutbound: StateFlow<String?> = _selectedOutbound.asStateFlow()
 
     private val _canHotSwitch = MutableStateFlow(false)
     val canHotSwitchFlow: StateFlow<Boolean> = _canHotSwitch.asStateFlow()
+
+    sealed class SwitchResult {
+        data class Success(val method: String) : SwitchResult()
+        data class NeedRestart(val reason: String) : SwitchResult()
+    }
+
+    fun updateCommandClient(client: CommandClient?) {
+        commandClient = client
+    }
 
     fun recordSelectorSignature(outboundTags: List<String>, selectedTag: String? = null) {
         currentOutboundTags = outboundTags.toList()
@@ -39,23 +52,20 @@ object SelectorManager {
         return canSwitch
     }
 
-    fun isNodeInCurrentSelector(nodeTag: String): Boolean {
-        return currentOutboundTags.contains(nodeTag)
-    }
+    fun switchNode(nodeTag: String): SwitchResult {
+        if (!hasSelector() || !currentOutboundTags.contains(nodeTag)) {
+            return SwitchResult.NeedRestart("Node not in current selector")
+        }
 
-    /**
-     *
-     * @return true if successful
-     */
-    fun selectOutbound(client: CommandClient, selectorTag: String, outboundTag: String): Boolean {
+        val client = commandClient ?: return SwitchResult.NeedRestart("CommandClient hot switch unavailable")
         return try {
-            client.selectOutbound(selectorTag, outboundTag)
-            _selectedOutbound.value = outboundTag
-            Log.i(TAG, "Hot switch via CommandClient: $selectorTag -> $outboundTag")
-            true
+            client.selectOutbound(PROXY_SELECTOR_TAG, nodeTag)
+            _selectedOutbound.value = nodeTag
+            Log.i(TAG, "Hot switch via CommandClient: $PROXY_SELECTOR_TAG -> $nodeTag")
+            SwitchResult.Success("CommandClient")
         } catch (e: Exception) {
             Log.e(TAG, "Hot switch via CommandClient failed: ${e.message}")
-            false
+            SwitchResult.NeedRestart("CommandClient hot switch unavailable")
         }
     }
 
@@ -70,6 +80,7 @@ object SelectorManager {
         currentOutboundTags = emptyList()
         _selectedOutbound.value = null
         _canHotSwitch.value = false
+        commandClient = null
         Log.d(TAG, "Selector state cleared")
     }
 

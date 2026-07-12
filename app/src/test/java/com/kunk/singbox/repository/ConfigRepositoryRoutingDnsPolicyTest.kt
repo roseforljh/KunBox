@@ -259,6 +259,31 @@ class ConfigRepositoryRoutingDnsPolicyTest {
     }
 
     @Test
+    fun wireGuardRuntimeFillsDefaultAllowedIpsWhenMissing() {
+        val outbound = Outbound(
+            type = "wireguard",
+            tag = "wg-manual",
+            localAddress = listOf("10.2.0.2/32"),
+            privateKey = listOf("private"),
+            peers = listOf(
+                WireGuardPeer(
+                    server = "2a02:6ea0:d802:5519::10",
+                    serverPort = 51820,
+                    publicKey = "public"
+                )
+            )
+        )
+
+        val endpoint = ConfigRepository.convertWireGuardOutboundToEndpoint(outbound)
+
+        assertEquals(
+            listOf("0.0.0.0/0", "::/0"),
+            endpoint?.peers?.single()?.allowedIps
+        )
+        assertEquals("2a02:6ea0:d802:5519::10", endpoint?.peers?.single()?.server)
+    }
+
+    @Test
     fun endpointOnlyWireGuardNormalizesForUiAndRuntimeProducesSingleEndpoint() {
         val endpoint = Endpoint(
             type = "wireguard",

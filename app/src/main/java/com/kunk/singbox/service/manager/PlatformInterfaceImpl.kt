@@ -10,6 +10,7 @@ import android.os.SystemClock
 import android.provider.Settings
 import android.util.Log
 import com.kunk.singbox.core.LibboxCompat
+import com.kunk.singbox.core.StringIteratorImpl
 import com.kunk.singbox.model.AppSettings
 import com.kunk.singbox.model.RoutingMode
 import com.kunk.singbox.utils.DefaultNetworkListener
@@ -733,12 +734,5 @@ class PlatformInterfaceImpl(
     private fun updateDefaultInterface(network: Network) {
 
         networkSwitchManager.handleNetworkUpdate(network)
-    }
-
-    private class StringIteratorImpl(private val list: List<String>) : StringIterator {
-        private var index = 0
-        override fun hasNext(): Boolean = index < list.size
-        override fun next(): String = list[index++]
-        override fun len(): Int = list.size
     }
 }

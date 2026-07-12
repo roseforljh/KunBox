@@ -1963,6 +1963,15 @@ class ConfigRepository(protected val context: Context) {
         }
     }
 
+    /** 订阅信息位 / 占位地址，不当作可测节点。 */
+    private fun isPlaceholderNodeServer(server: String): Boolean {
+        return when {
+            server.equals("localhost", ignoreCase = true) -> true
+            server in PLACEHOLDER_NODE_SERVERS -> true
+            else -> false
+        }
+    }
+
     protected fun createNodeUi(
         outbound: Outbound,
         profileId: String,
@@ -1973,12 +1982,7 @@ class ConfigRepository(protected val context: Context) {
 
         // 订阅信息位（剩余流量/套餐到期）常写成 127.0.0.1，不当作可测节点
         val server = outbound.server?.trim().orEmpty()
-        if (
-            server == "127.0.0.1" ||
-            server.equals("localhost", ignoreCase = true) ||
-            server == "0.0.0.0" ||
-            server == "::1"
-        ) {
+        if (isPlaceholderNodeServer(server)) {
             return null
         }
 
@@ -4663,6 +4667,8 @@ class ConfigRepository(protected val context: Context) {
 
         internal val TAG = "ConfigRepository"
 
+        private val PLACEHOLDER_NODE_SERVERS = setOf("127.0.0.1", "0.0.0.0", "::1")
+
         private const val TAILSCALE_UNSUPPORTED_MESSAGE =
             "Tailscale 不受支持：为控制 APK 体积，当前 Android 内核未编译 with_tailscale，" +
                 "请移除 Tailscale endpoint 或 DNS server 后重试"
@@ -5082,6 +5088,20 @@ class ConfigRepository(protected val context: Context) {
                 .toList()
         }
 
+        /** WireGuard 缺 allowed_ips 时隧道无路由，手填节点常见遗漏。 */
+        internal val DEFAULT_WIREGUARD_ALLOWED_IPS = listOf("0.0.0.0/0", "::/0")
+
+        internal fun normalizeWireGuardPeersForRuntime(peers: List<WireGuardPeer>?): List<WireGuardPeer>? {
+            if (peers.isNullOrEmpty()) return peers
+            return peers.map { peer ->
+                if (!peer.allowedIps.isNullOrEmpty()) {
+                    peer
+                } else {
+                    peer.copy(allowedIps = DEFAULT_WIREGUARD_ALLOWED_IPS)
+                }
+            }
+        }
+
         internal fun convertWireGuardOutboundToEndpoint(
             outbound: Outbound,
             runtimeTag: String = outbound.tag
@@ -5096,7 +5116,7 @@ class ConfigRepository(protected val context: Context) {
                 address = outbound.localAddress,
                 privateKey = outbound.privateKey?.firstOrNull(),
                 listenPort = outbound.listenPort,
-                peers = outbound.peers,
+                peers = normalizeWireGuardPeersForRuntime(outbound.peers),
                 udpTimeout = outbound.udpTimeout,
                 workers = outbound.workers,
                 detour = outbound.detour,
@@ -5135,7 +5155,7 @@ class ConfigRepository(protected val context: Context) {
                 localAddress = endpoint.address,
                 privateKey = endpoint.privateKey?.let(::listOf),
                 listenPort = endpoint.listenPort,
-                peers = endpoint.peers,
+                peers = normalizeWireGuardPeersForRuntime(endpoint.peers),
                 udpTimeout = endpoint.udpTimeout,
                 workers = endpoint.workers,
                 detour = endpoint.detour,
