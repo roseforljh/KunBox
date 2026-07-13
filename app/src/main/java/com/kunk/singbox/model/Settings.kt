@@ -47,7 +47,8 @@ data class AppSettings(
     @SerializedName("fakeDnsExcludedDomains") val fakeDnsExcludedDomains: String = "",
     @SerializedName("dnsStrategy") val dnsStrategy: DnsStrategy = DnsStrategy.PREFER_IPV4,
     @SerializedName("remoteDnsStrategy") val remoteDnsStrategy: DnsStrategy = DnsStrategy.AUTO,
-    @SerializedName("directDnsStrategy") val directDnsStrategy: DnsStrategy = DnsStrategy.AUTO,
+    // 直连 DNS 默认仅 IPv4：双栈 TUN 下 prefer/auto 仍会返回 AAAA，底层无 IPv6 时国内直连会失败
+    @SerializedName("directDnsStrategy") val directDnsStrategy: DnsStrategy = DnsStrategy.ONLY_IPV4,
     @SerializedName("serverAddressStrategy") val serverAddressStrategy: DnsStrategy = DnsStrategy.AUTO,
     @SerializedName("dnsCacheEnabled") val dnsCacheEnabled: Boolean = true,
 

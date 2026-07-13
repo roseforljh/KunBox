@@ -37,4 +37,9 @@ class IpVersionModeRulesTest {
         assertEquals("prefer_ipv6", IpVersionMode.PREFER_IPV6.resolveDnsStrategy(DnsStrategy.AUTO))
         assertEquals("prefer_ipv4", IpVersionMode.DUAL_STACK.resolveDnsStrategy(DnsStrategy.AUTO))
     }
+
+    @Test
+    fun appSettingsDefaultDirectDnsStrategyIsOnlyIpv4() {
+        assertEquals(DnsStrategy.ONLY_IPV4, AppSettings().directDnsStrategy)
+    }
 }

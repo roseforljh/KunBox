@@ -136,6 +136,26 @@ abstract class ConfigRepositoryTestPart4 : ConfigRepositoryTestPart3() {
     }
 
     @Test
+    fun directDnsAutoOnDualStackResolvesToIpv4Only() {
+        assertEquals(
+            "ipv4_only",
+            ConfigRepository.resolveDirectDnsStrategy(DnsStrategy.AUTO, IpVersionMode.DUAL_STACK)
+        )
+        assertEquals(
+            "prefer_ipv4",
+            ConfigRepository.resolveDirectDnsStrategy(DnsStrategy.PREFER_IPV4, IpVersionMode.DUAL_STACK)
+        )
+        assertEquals(
+            "prefer_ipv6",
+            ConfigRepository.resolveDirectDnsStrategy(DnsStrategy.AUTO, IpVersionMode.PREFER_IPV6)
+        )
+        assertEquals(
+            "ipv4_only",
+            ConfigRepository.resolveDirectDnsStrategy(DnsStrategy.AUTO, IpVersionMode.IPV4_ONLY)
+        )
+    }
+
+    @Test
     fun outboundServerAddressAutoKeepsDualStackDefault() {
         assertEquals(
             "prefer_ipv4",
