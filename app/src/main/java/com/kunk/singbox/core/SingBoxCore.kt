@@ -9,6 +9,7 @@ import com.kunk.singbox.model.DnsConfig
 import com.kunk.singbox.model.DnsRule
 import com.kunk.singbox.model.DnsServer
 import com.kunk.singbox.model.DomainResolveConfig
+import com.kunk.singbox.model.Endpoint
 import com.kunk.singbox.model.Outbound
 import com.kunk.singbox.model.SingBoxConfig
 import com.kunk.singbox.model.LatencyTestMethod
@@ -34,6 +35,11 @@ import java.net.Socket
 import com.kunk.singbox.utils.PreciseLatencyTester
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
+
+internal data class LatencyProbeParts(
+    val outbounds: List<Outbound>,
+    val endpoints: List<Endpoint>
+)
 
 class SingBoxCore private constructor(private val context: Context) {
 
@@ -147,6 +153,86 @@ class SingBoxCore private constructor(private val context: Context) {
                     server = ConfigRepository.DEFAULT_ROUTE_DOMAIN_RESOLVER_TAG
                 )
             )
+        }
+
+        internal fun isWireGuardOutbound(outbound: Outbound): Boolean {
+            return outbound.type.equals("wireguard", ignoreCase = true)
+        }
+
+        /** WireGuard 延迟探测：规范化 peers，域名 peer 补 bootstrap resolver。 */
+        internal fun prepareWireGuardLatencyTarget(outbound: Outbound): Outbound? {
+            if (!isWireGuardOutbound(outbound)) return null
+            val normalizedPeers = ConfigRepository.normalizeWireGuardPeersForRuntime(outbound.peers)
+            val withPeers = outbound.copy(peers = normalizedPeers)
+            val needsResolver = normalizedPeers.orEmpty().any { peer ->
+                val host = peer.server?.trim().orEmpty()
+                host.isNotBlank() && !isIpLiteral(host)
+            }
+            if (!needsResolver) return withPeers
+            val existing = withPeers.domainResolver
+            val existingServer = existing?.server?.trim().orEmpty()
+            if (
+                existingServer.isNotBlank() &&
+                existingServer != ConfigRepository.DEFAULT_ROUTE_DOMAIN_RESOLVER_TAG
+            ) {
+                return withPeers
+            }
+            return withPeers.copy(
+                domainResolver = (existing ?: DomainResolveConfig()).copy(
+                    server = ConfigRepository.DEFAULT_ROUTE_DOMAIN_RESOLVER_TAG
+                )
+            )
+        }
+
+        /**
+         * 组装延迟临时配置：非 WG 进 outbounds，WG 转 endpoint。
+         * 任一目标无法转换时返回 null。
+         */
+        internal fun buildLatencyProbeParts(
+            targets: List<Outbound>,
+            resolveDependencies: (Outbound) -> List<Outbound> = { emptyList() }
+        ): LatencyProbeParts? {
+            if (targets.isEmpty()) return null
+            val endpoints = ArrayList<Endpoint>()
+            val outbounds = ArrayList<Outbound>()
+            val addedTags = mutableSetOf<String>()
+
+            for (target in targets) {
+                if (!appendLatencyProbeNode(target, endpoints, outbounds, addedTags)) {
+                    return null
+                }
+                for (dep in resolveDependencies(target)) {
+                    if (!appendLatencyProbeNode(dep, endpoints, outbounds, addedTags)) {
+                        return null
+                    }
+                }
+            }
+
+            if (outbounds.none { it.tag == "direct" }) {
+                outbounds.add(Outbound(type = "direct", tag = "direct"))
+            }
+            return LatencyProbeParts(outbounds = outbounds, endpoints = endpoints)
+        }
+
+        private fun appendLatencyProbeNode(
+            node: Outbound,
+            endpoints: MutableList<Endpoint>,
+            outbounds: MutableList<Outbound>,
+            addedTags: MutableSet<String>
+        ): Boolean {
+            if (!addedTags.add(node.tag)) return true
+            return if (isWireGuardOutbound(node)) {
+                val endpoint = ConfigRepository.convertWireGuardOutboundToEndpoint(node)
+                if (endpoint == null) {
+                    false
+                } else {
+                    endpoints.add(endpoint)
+                    true
+                }
+            } else {
+                outbounds.add(node)
+                true
+            }
         }
 
         private fun isIpLiteral(value: String): Boolean {
@@ -330,32 +416,27 @@ class SingBoxCore private constructor(private val context: Context) {
         )
 
         return try {
-            val fixedOutbound = prepareLatencyTestOutbound(outbound) ?: return -1L
-            val fixedDependencies = dependencyOutbounds.mapNotNull { prepareLatencyTestOutbound(it) }
-            val direct = com.kunk.singbox.model.Outbound(type = "direct", tag = "direct")
-
-            val allOutbounds = mutableListOf(fixedOutbound)
-            val addedTags = mutableSetOf(fixedOutbound.tag)
-            fixedDependencies.forEach { dependency ->
-                if (addedTags.add(dependency.tag)) {
-                    allOutbounds.add(dependency)
-                }
-            }
-            allOutbounds.add(direct)
+            // WireGuard 仅作为 endpoint；逻辑 outbound 仅用于路由 tag
+            val preparedTarget = prepareLatencyProbeTarget(outbound) ?: return -1L
+            val preparedDependencies = dependencyOutbounds.mapNotNull { prepareLatencyProbeTarget(it) }
+            val probeParts = assembleLatencyProbeParts(
+                targets = listOf(preparedTarget),
+                dependencySourceOutbounds = preparedDependencies
+            ) ?: return -1L
 
             val testDbPath = File(tempDir, "test_${UUID.randomUUID()}.db").absolutePath
-
+            val dnsOutbounds = probeParts.outbounds + listOf(preparedTarget)
             val config = SingBoxConfig(
                 log = com.kunk.singbox.model.LogConfig(level = "debug", timestamp = true),
-
                 // sing-box 1.13+: 不设 detour 即为直连
-                dns = dnsConfig ?: buildLatencyTestDnsConfig(settings, allOutbounds),
+                dns = dnsConfig ?: buildLatencyTestDnsConfig(settings, dnsOutbounds),
                 inbounds = listOf(inbound),
-                outbounds = allOutbounds,
+                outbounds = probeParts.outbounds,
+                endpoints = probeParts.endpoints.takeIf { it.isNotEmpty() },
                 route = com.kunk.singbox.model.RouteConfig(
                     rules = listOf(
                         com.kunk.singbox.model.RouteRule(protocolRaw = listOf("dns"), outbound = "direct"),
-                        com.kunk.singbox.model.RouteRule(inbound = listOf("test-in"), outbound = fixedOutbound.tag)
+                        com.kunk.singbox.model.RouteRule(inbound = listOf("test-in"), outbound = preparedTarget.tag)
                     ),
                     finalOutbound = "direct",
                     autoDetectInterface = true,
@@ -364,7 +445,6 @@ class SingBoxCore private constructor(private val context: Context) {
                         strategy = "prefer_ipv4"
                     )
                 ),
-
                 experimental = com.kunk.singbox.model.ExperimentalConfig(
                     cacheFile = com.kunk.singbox.model.CacheFileConfig(
                         enabled = false,
@@ -431,7 +511,11 @@ class SingBoxCore private constructor(private val context: Context) {
         }
     }
 
-    private fun prepareLatencyTestOutbound(outbound: Outbound): Outbound? {
+    /** 非 WireGuard 走 OutboundFixer；WireGuard 保留逻辑 outbound 供路由 tag / endpoint 转换。 */
+    private fun prepareLatencyProbeTarget(outbound: Outbound): Outbound? {
+        if (isWireGuardOutbound(outbound)) {
+            return prepareWireGuardLatencyTarget(outbound)
+        }
         return OutboundFixer.buildForRuntime(context, outbound)?.let { applyLatencyBootstrapDomainResolver(it) }
     }
 
@@ -477,7 +561,8 @@ class SingBoxCore private constructor(private val context: Context) {
             )
         }
     }
-    @Suppress("CognitiveComplexMethod", "LongMethod", "LongParameterList")
+
+    @Suppress("LongParameterList")
     private suspend fun testOutboundsLatencyBatchInternal(
         batchOutbounds: List<Outbound>,
         targetUrl: String,
@@ -490,36 +575,88 @@ class SingBoxCore private constructor(private val context: Context) {
     ) {
         if (batchOutbounds.isEmpty()) return
 
+        val prepared = prepareLatencyBatchTargets(batchOutbounds, dependencySourceOutbounds, onResult)
+            ?: return
+        val ports = allocateLatencyBatchPorts(prepared.targets.size, batchOutbounds, onResult)
+            ?: return
+
+        val portToTagMap = ports.zip(prepared.targets.map { it.tag }).toMap()
+        val config = buildBatchTestConfig(
+            prepared.targets,
+            ports,
+            settings,
+            dnsConfig,
+            prepared.dependencySources
+        )
+        if (config == null) {
+            batchOutbounds.forEach { onResult(it.tag, -1L) }
+            return
+        }
+        runLatencyBatchService(
+            config = config,
+            ports = ports,
+            portToTagMap = portToTagMap,
+            targetUrl = targetUrl,
+            timeoutMs = timeoutMs,
+            settings = settings,
+            portReadyTimeoutMs = portReadyTimeoutMs,
+            batchOutbounds = batchOutbounds,
+            onResult = onResult
+        )
+    }
+
+    private data class LatencyBatchPrepared(
+        val targets: List<Outbound>,
+        val dependencySources: List<Outbound>
+    )
+
+    private fun prepareLatencyBatchTargets(
+        batchOutbounds: List<Outbound>,
+        dependencySourceOutbounds: List<Outbound>,
+        onResult: (tag: String, latency: Long) -> Unit
+    ): LatencyBatchPrepared? {
         val fixedOutbounds = batchOutbounds.mapNotNull { outbound ->
-            val fixed = prepareLatencyTestOutbound(outbound)
+            val fixed = prepareLatencyProbeTarget(outbound)
             if (fixed == null) {
                 onResult(outbound.tag, -1L)
             }
             fixed
         }
-        if (fixedOutbounds.isEmpty()) return
-        val fixedDependencySourceOutbounds = dependencySourceOutbounds.mapNotNull { prepareLatencyTestOutbound(it) }
+        if (fixedOutbounds.isEmpty()) return null
+        val fixedDependencySourceOutbounds = dependencySourceOutbounds.mapNotNull {
+            prepareLatencyProbeTarget(it)
+        }
+        return LatencyBatchPrepared(fixedOutbounds, fixedDependencySourceOutbounds)
+    }
 
-        val ports: List<Int>
-        try {
-            ports = allocateMultipleLocalPorts(fixedOutbounds.size)
+    private fun allocateLatencyBatchPorts(
+        count: Int,
+        batchOutbounds: List<Outbound>,
+        onResult: (tag: String, latency: Long) -> Unit
+    ): List<Int>? {
+        return try {
+            allocateMultipleLocalPorts(count)
         } catch (e: Exception) {
             Log.e(TAG, "Failed to allocate ports for batch test", e)
             batchOutbounds.forEach { onResult(it.tag, -1L) }
-            return
+            null
         }
+    }
 
-        val portToTagMap = ports.zip(fixedOutbounds.map { it.tag }).toMap()
-        val config = buildBatchTestConfig(
-            fixedOutbounds,
-            ports,
-            settings,
-            dnsConfig,
-            fixedDependencySourceOutbounds
-        )
+    @Suppress("LongParameterList")
+    private suspend fun runLatencyBatchService(
+        config: SingBoxConfig,
+        ports: List<Int>,
+        portToTagMap: Map<Int, String>,
+        targetUrl: String,
+        timeoutMs: Int,
+        settings: AppSettings,
+        portReadyTimeoutMs: Long,
+        batchOutbounds: List<Outbound>,
+        onResult: (tag: String, latency: Long) -> Unit
+    ) {
         val configJson = gson.toJson(stripLatencyRuntimeMetadata(config))
         val batchTestDbPath = config.experimental?.cacheFile?.path
-
         var commandServer: CommandServer? = null
         try {
             ensureLibboxSetup(context)
@@ -527,19 +664,16 @@ class SingBoxCore private constructor(private val context: Context) {
             val serverHandler = TestCommandServerHandler()
             commandServer = Libbox.newCommandServer(serverHandler, platformInterface)
             commandServer.start()
-
             val overrideOptions = OverrideOptions().apply {
                 autoRedirect = false
             }
             commandServer.startOrReloadService(configJson, overrideOptions)
-
             val portsReady = waitForPortsReady(ports, portReadyTimeoutMs)
             if (!portsReady) {
                 Log.e(TAG, "Batch test: ports not ready")
                 batchOutbounds.forEach { onResult(it.tag, -1L) }
                 return
             }
-
             runPreciseLatencyTests(portToTagMap, targetUrl, timeoutMs, settings, onResult)
         } catch (e: Exception) {
             Log.e(TAG, "Batch test failed", e)
@@ -555,55 +689,47 @@ class SingBoxCore private constructor(private val context: Context) {
         }
     }
 
-    @Suppress("LongMethod")
     private fun buildBatchTestConfig(
         batchOutbounds: List<Outbound>,
         ports: List<Int>,
         settings: AppSettings,
         dnsConfig: DnsConfig? = null,
         dependencySourceOutbounds: List<Outbound> = batchOutbounds
-    ): SingBoxConfig {
+    ): SingBoxConfig? {
+        val probeParts = assembleLatencyProbeParts(batchOutbounds, dependencySourceOutbounds)
+            ?: return null
+
         val inbounds = ArrayList<com.kunk.singbox.model.Inbound>()
         val rules = ArrayList<com.kunk.singbox.model.RouteRule>()
-
         batchOutbounds.forEachIndexed { index, outbound ->
             val port = ports[index]
             val inboundTag = "test-in-$index"
-            inbounds.add(com.kunk.singbox.model.Inbound(
-                type = "mixed",
-                tag = inboundTag,
-                listen = "127.0.0.1",
-                listenPort = port
-            ))
-            rules.add(com.kunk.singbox.model.RouteRule(
-                inbound = listOf(inboundTag),
-                outbound = outbound.tag
-            ))
+            inbounds.add(
+                com.kunk.singbox.model.Inbound(
+                    type = "mixed",
+                    tag = inboundTag,
+                    listen = "127.0.0.1",
+                    listenPort = port
+                )
+            )
+            rules.add(
+                com.kunk.singbox.model.RouteRule(
+                    inbound = listOf(inboundTag),
+                    outbound = outbound.tag
+                )
+            )
         }
 
-        val safeOutbounds = ArrayList(batchOutbounds)
-        val addedTags = batchOutbounds.map { it.tag }.toMutableSet()
-
-        for (outbound in batchOutbounds) {
-            val dependencies = resolveDependencyOutbounds(outbound, dependencySourceOutbounds)
-            for (dep in dependencies) {
-                if (addedTags.add(dep.tag)) {
-                    safeOutbounds.add(dep)
-                }
-            }
-        }
-
-        if (safeOutbounds.none { it.tag == "direct" }) safeOutbounds.add(com.kunk.singbox.model.Outbound(type = "direct", tag = "direct"))
-        // sing-box 1.13.0+: "block" outbound type removed, no longer needed
-        val latencyDnsConfig = dnsConfig ?: buildLatencyTestDnsConfig(settings, safeOutbounds)
-
+        val dnsSourceOutbounds = probeParts.outbounds + batchOutbounds
+        val latencyDnsConfig = dnsConfig ?: buildLatencyTestDnsConfig(settings, dnsSourceOutbounds)
         val batchTestDbPath = File(tempDir, "batch_test_${UUID.randomUUID()}.db").absolutePath
 
         return SingBoxConfig(
             log = com.kunk.singbox.model.LogConfig(level = "debug", timestamp = true),
             dns = latencyDnsConfig,
             inbounds = inbounds,
-            outbounds = safeOutbounds,
+            outbounds = probeParts.outbounds,
+            endpoints = probeParts.endpoints.takeIf { it.isNotEmpty() },
             route = com.kunk.singbox.model.RouteConfig(
                 rules = listOf(
                     com.kunk.singbox.model.RouteRule(protocolRaw = listOf("dns"), outbound = "direct")
@@ -622,6 +748,22 @@ class SingBoxCore private constructor(private val context: Context) {
                     storeFakeip = false
                 )
             )
+        )
+    }
+
+    /**
+     * 将延迟探测目标拆成 outbounds + endpoints。
+     * WireGuard 不得出现在 outbounds（sing-box 1.13 仅 endpoint）。
+     */
+    private fun assembleLatencyProbeParts(
+        targets: List<Outbound>,
+        dependencySourceOutbounds: List<Outbound>
+    ): LatencyProbeParts? {
+        return buildLatencyProbeParts(
+            targets = targets,
+            resolveDependencies = { target ->
+                resolveDependencyOutbounds(target, dependencySourceOutbounds)
+            }
         )
     }
 

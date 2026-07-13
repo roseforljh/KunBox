@@ -7,6 +7,7 @@ import com.kunk.singbox.model.DnsServer
 import com.kunk.singbox.model.DomainResolveConfig
 import com.kunk.singbox.model.Outbound
 import com.kunk.singbox.model.RoutingMode
+import com.kunk.singbox.model.WireGuardPeer
 import com.kunk.singbox.repository.ConfigRepository
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -125,5 +126,65 @@ class SingBoxCoreLatencyPathTest {
         assertTrue(localFallbackIndex >= 0)
         assertTrue(nodeRuleIndex < localFallbackIndex)
         assertEquals("prefer_ipv4", config.rules?.get(nodeRuleIndex)?.strategy)
+    }
+
+    @Test
+    fun latencyProbePartsMovesWireGuardToEndpoints() {
+        val wireguard = Outbound(
+            type = "wireguard",
+            tag = "wg-us",
+            localAddress = listOf("10.2.0.2/32"),
+            privateKey = listOf("private"),
+            peers = listOf(
+                WireGuardPeer(
+                    server = "149.22.88.129",
+                    serverPort = 51820,
+                    publicKey = "public",
+                    allowedIps = listOf("0.0.0.0/0", "::/0")
+                )
+            )
+        )
+        val vless = Outbound(
+            type = "vless",
+            tag = "vless-node",
+            server = "1.2.3.4",
+            serverPort = 443
+        )
+
+        val parts = SingBoxCore.buildLatencyProbeParts(listOf(wireguard, vless))
+
+        assertNotNull(parts)
+        assertEquals(listOf("wg-us"), parts?.endpoints?.map { it.tag })
+        assertEquals("wireguard", parts?.endpoints?.single()?.type)
+        assertTrue(parts?.outbounds.orEmpty().none { it.type.equals("wireguard", ignoreCase = true) })
+        assertEquals(setOf("vless-node", "direct"), parts?.outbounds?.map { it.tag }?.toSet())
+    }
+
+    @Test
+    fun wireGuardLatencyTargetFillsAllowedIpsAndDomainResolver() {
+        val outbound = Outbound(
+            type = "wireguard",
+            tag = "wg-domain",
+            localAddress = listOf("10.2.0.2/32"),
+            privateKey = listOf("private"),
+            peers = listOf(
+                WireGuardPeer(
+                    server = "vpn.example.com",
+                    serverPort = 51820,
+                    publicKey = "public"
+                )
+            )
+        )
+
+        val prepared = SingBoxCore.prepareWireGuardLatencyTarget(outbound)
+
+        assertEquals(
+            listOf("0.0.0.0/0", "::/0"),
+            prepared?.peers?.single()?.allowedIps
+        )
+        assertEquals(
+            ConfigRepository.DEFAULT_ROUTE_DOMAIN_RESOLVER_TAG,
+            prepared?.domainResolver?.server
+        )
     }
 }

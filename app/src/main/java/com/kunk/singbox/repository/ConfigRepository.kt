@@ -811,7 +811,10 @@ class ConfigRepository(protected val context: Context) {
         config: SingBoxConfig,
         settings: AppSettings
     ): ConfigRepositoryLatencyRuntimeContext {
-        val rawOutbounds = config.outbounds.orEmpty().mapNotNull { buildOutboundForRuntime(it) }
+        // WireGuard 在 sing-box 1.13 仅为 endpoint；延迟 runtime 仍保留逻辑 outbound 供节点匹配与探测
+        val rawOutbounds = ConfigRepository.buildLatencyRuntimeOutbounds(config) { outbound ->
+            buildOutboundForRuntime(outbound)
+        }
         val dnsOverrideConfig = parseDnsOverride(_profiles.value.find { it.id == profileId }?.dnsOverride)
         val serverAddressStrategy = ConfigRepository.resolveOutboundServerAddressStrategy(
             settings.serverAddressStrategy,
@@ -2407,11 +2410,13 @@ class ConfigRepository(protected val context: Context) {
                             return@withContext -1L
                         }
 
-                        val config = loadConfig(node.sourceProfileId)
-                        if (config == null) {
+                        val loadedConfig = loadConfig(node.sourceProfileId)
+                        if (loadedConfig == null) {
                             Log.e(ConfigRepository.TAG, "Config not found for profile: ${node.sourceProfileId}")
                             return@withContext -1L
                         }
+                        // endpoint-only WireGuard 归一为逻辑 outbound，避免测延迟时找不到节点
+                        val config = ConfigRepository.normalizeWireGuardEndpointsForInternalUse(loadedConfig)
 
                         val rawOutbound = config.outbounds?.find { it.tag == node.name }
                         if (rawOutbound == null) {
@@ -3340,7 +3345,7 @@ class ConfigRepository(protected val context: Context) {
         val localServer = ConfigRepository.buildDnsServer(
             address = localDnsAddr,
             tag = "local",
-            domainStrategy = resolveDnsStrategy(settings.directDnsStrategy, settings.ipVersionMode),
+            domainStrategy = resolveDirectDnsStrategy(settings.directDnsStrategy, settings.ipVersionMode),
             domainResolver = localResolver
         )
         dnsServers.add(localServer)
@@ -4183,6 +4188,15 @@ class ConfigRepository(protected val context: Context) {
         return mode.resolveDnsStrategy(strategy)
     }
 
+    /**
+     * 直连 DNS 策略：双栈 + AUTO 时强制 ipv4_only。
+     * prefer_ipv4 仍会返回 AAAA，无公网 IPv6 时 geosite-cn 直连会 network unreachable。
+     * 已保存为 AUTO 的旧配置也会走此路径。
+     */
+    protected fun resolveDirectDnsStrategy(strategy: DnsStrategy, mode: IpVersionMode): String {
+        return ConfigRepository.resolveDirectDnsStrategy(strategy, mode)
+    }
+
     protected fun logOutboundServerAddressStrategy(
         scope: String,
         strategy: DnsStrategy,
@@ -4743,6 +4757,27 @@ class ConfigRepository(protected val context: Context) {
             return "latency-probe-$nodeId"
         }
 
+        /** 延迟探测用：WireGuard 不走 OutboundFixer，仅规范化 peers 后保留逻辑 outbound。 */
+        internal fun prepareLatencyRuntimeOutbound(
+            outbound: Outbound,
+            buildNonWireGuard: (Outbound) -> Outbound?
+        ): Outbound? {
+            if (outbound.type.equals("wireguard", ignoreCase = true)) {
+                return outbound.copy(peers = normalizeWireGuardPeersForRuntime(outbound.peers))
+            }
+            return buildNonWireGuard(outbound)
+        }
+
+        internal fun buildLatencyRuntimeOutbounds(
+            config: SingBoxConfig,
+            buildNonWireGuard: (Outbound) -> Outbound?
+        ): List<Outbound> {
+            val normalized = normalizeWireGuardEndpointsForInternalUse(config)
+            return normalized.outbounds.orEmpty().mapNotNull { outbound ->
+                prepareLatencyRuntimeOutbound(outbound, buildNonWireGuard)
+            }
+        }
+
         internal fun buildNodeTestInfosFromContexts(
             nodes: List<NodeUi>,
             loadContext: (String) -> ConfigRepositoryLatencyRuntimeContext?
@@ -4780,6 +4815,20 @@ class ConfigRepository(protected val context: Context) {
             strategy: DnsStrategy,
             ipVersionMode: IpVersionMode
         ): String {
+            return ipVersionMode.resolveDnsStrategy(strategy)
+        }
+
+        /**
+         * 直连 DNS：双栈下 AUTO 映射为 ipv4_only，避免无 IPv6 出口时国内站 AAAA 直连失败。
+         * 用户显式选择 PREFER_IPV4/PREFER_IPV6 等时仍按原规则解析。
+         */
+        internal fun resolveDirectDnsStrategy(
+            strategy: DnsStrategy,
+            ipVersionMode: IpVersionMode
+        ): String {
+            if (ipVersionMode == IpVersionMode.DUAL_STACK && strategy == DnsStrategy.AUTO) {
+                return "ipv4_only"
+            }
             return ipVersionMode.resolveDnsStrategy(strategy)
         }
 
