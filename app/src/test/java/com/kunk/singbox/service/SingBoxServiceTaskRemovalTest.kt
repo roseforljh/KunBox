@@ -13,6 +13,7 @@ class SingBoxServiceTaskRemovalTest {
     fun vpnCoreServicesStayRunningWhenTaskIsRemoved() {
         val manifest = readManifest()
 
+        // stopWithTask=false：任务被移除时服务继续跑
         assertTrue(serviceDeclaresStopWithTaskFalse(manifest, ".service.SingBoxService"))
         assertTrue(serviceDeclaresStopWithTaskFalse(manifest, ".service.ProxyOnlyService"))
     }

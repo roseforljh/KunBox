@@ -41,6 +41,25 @@ class StartupManagerTest {
     }
 
     @Test
+    fun postStartAppliesConfigSelectionAfterCommandClientsWithoutStaleActiveNode() {
+        val source = File("src/main/java/com/kunk/singbox/service/SingBoxService.kt")
+            .readText(Charsets.UTF_8)
+        val body = source
+            .substringAfter("protected fun launchPostStartTasks(configContent: String) {")
+            .substringBefore("private fun isPostStartTaskActive(generation: Long): Boolean {")
+
+        val startClients = body.indexOf("commandManager.startClients()")
+        val applyPreferred = body.indexOf("applyPreferredProxySelection(initSelectorManager(configContent))")
+        assertTrue(startClients >= 0)
+        assertTrue(applyPreferred > startClients)
+        val preferredBody = source
+            .substringAfter("protected fun resolvePreferredProxyTag(")
+            .substringBefore("protected fun applyPreferredProxySelection(preferredTag: String?)")
+        assertFalse(preferredBody.contains("VpnStateStore.getSelectedNodeLabel()"))
+        assertFalse(preferredBody.contains("activeNodeId"))
+    }
+
+    @Test
     fun shutdownCancelsAndWaitsForPostStartTasks() {
         val serviceSource = File("src/main/java/com/kunk/singbox/service/SingBoxService.kt")
             .readText(Charsets.UTF_8)

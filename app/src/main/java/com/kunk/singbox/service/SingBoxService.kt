@@ -681,25 +681,70 @@ class SingBoxService : VpnService() {
      * StartupManager 回调实现
      */
 
-    protected fun initSelectorManager(configContent: String) {
-        try {
-            val config = gson.fromJson(configContent, SingBoxConfig::class.java) ?: return
+    protected fun initSelectorManager(configContent: String): String? {
+        return try {
+            val config = gson.fromJson(configContent, SingBoxConfig::class.java) ?: return null
             val proxySelector = config.outbounds?.find {
                 it.type == "selector" && it.tag.equals("PROXY", ignoreCase = true)
             }
 
             if (proxySelector == null) {
                 Log.w(SingBoxService.TAG, "No PROXY selector found in config")
-                return
+                return null
             }
 
             val outboundTags = proxySelector.outbounds?.filter { it.isNotBlank() } ?: emptyList()
-            val selectedTag = proxySelector.default ?: outboundTags.firstOrNull()
+            val preferredTag = resolvePreferredProxyTag(outboundTags, proxySelector.default)
 
-            SelectorManager.recordSelectorSignature(outboundTags, selectedTag)
-            Log.i(SingBoxService.TAG, "SelectorManager initialized: ${outboundTags.size} outbounds, selected=$selectedTag")
+            SelectorManager.recordSelectorSignature(outboundTags, preferredTag)
+            Log.i(
+                SingBoxService.TAG,
+                "SelectorManager initialized: ${outboundTags.size} outbounds, selected=$preferredTag"
+            )
+            preferredTag
         } catch (e: Exception) {
             Log.e(SingBoxService.TAG, "Failed to init SelectorManager", e)
+            null
+        }
+    }
+
+    /**
+     * 启动后强制 PROXY 到手选节点。
+     * 优先使用 intent 指定节点，其次使用主进程生成配置时写入的 default。
+     */
+    protected fun resolvePreferredProxyTag(
+        outboundTags: List<String>,
+        configDefault: String?
+    ): String? {
+        fun pick(name: String?): String? {
+            if (name.isNullOrBlank()) return null
+            if (name in outboundTags) return name
+            return outboundTags.firstOrNull { it.equals(name, ignoreCase = true) }
+        }
+
+        return pick(pendingNodeName) ?: pick(configDefault) ?: outboundTags.firstOrNull()
+    }
+
+    protected fun applyPreferredProxySelection(preferredTag: String?) {
+        if (preferredTag.isNullOrBlank()) return
+
+        val result = SelectorManager.switchNode(preferredTag)
+        realTimeNodeName = preferredTag
+        commandManager.realTimeNodeName = preferredTag
+        VpnStateStore.setActiveLabel(preferredTag)
+        when (result) {
+            is SelectorManager.SwitchResult.Success -> {
+                if (pendingNodeName == preferredTag) {
+                    pendingNodeName = null
+                }
+                requestNotificationUpdate(force = true)
+                requestRemoteStateUpdate(force = true)
+                Log.i(SingBoxService.TAG, "Applied preferred PROXY selection: $preferredTag")
+            }
+            is SelectorManager.SwitchResult.NeedRestart -> Log.w(
+                SingBoxService.TAG,
+                "Preferred PROXY selection not applied: ${result.reason}, tag=$preferredTag"
+            )
         }
     }
 
@@ -723,7 +768,9 @@ class SingBoxService : VpnService() {
                 if (!isPostStartTaskActive(generation)) return@launch
 
                 SelectorManager.updateCommandClient(commandManager.getCommandClient())
-                initSelectorManager(configContent)
+                applyPreferredProxySelection(initSelectorManager(configContent))
+                if (!isPostStartTaskActive(generation)) return@launch
+
                 trafficMonitor.start(Process.myUid(), trafficListener)
                 scheduleAsyncRuleSetUpdate()
                 warmAutoFailoverCandidateCache("vpn_started")
@@ -1215,6 +1262,7 @@ class SingBoxService : VpnService() {
      * 2) 节点列表里已有正延迟的 PROXY 组成员
      * 3) 任意非当前、未隔离的 PROXY 组成员（合成 delay=Int.MAX_VALUE-1）
      */
+    @Suppress("CyclomaticComplexMethod", "CognitiveComplexMethod", "LoopWithTooManyJumpStatements")
     private fun resolveAutoFailoverFallbackDelays(
         currentTag: String,
         quarantinedTags: Set<String>
@@ -1432,6 +1480,7 @@ class SingBoxService : VpnService() {
         }.getOrNull()
     }
 
+    @Suppress("LongMethod")
     protected suspend fun performAutoFailoverSwitch(
         currentTag: String,
         targetTag: String,
@@ -2175,13 +2224,17 @@ class SingBoxService : VpnService() {
 
         SingBoxService.lastConfigPath = configPath
 
-        // fix: 启动前同步当前选中节点名到 VpnStateStore，避免通知显示上次运行的旧节点
+        // 启动前同步节点展示名。禁止优先读 :bg 的 ConfigRepository（可能仍是旧 activeNodeId）。
         runCatching {
-            val repo = ConfigRepository.getInstance(this)
-            val nodeId = repo.activeNodeId.value
-            val name = repo.nodes.value.find { it.id == nodeId }?.name
-            if (!name.isNullOrBlank()) {
-                VpnStateStore.setActiveLabel(name)
+            val preferred = pendingNodeName?.takeIf { it.isNotBlank() }
+                ?: VpnStateStore.getSelectedNodeLabel().takeIf { it.isNotBlank() }
+                ?: run {
+                    val repo = ConfigRepository.getInstance(this)
+                    val nodeId = repo.activeNodeId.value
+                    repo.nodes.value.find { it.id == nodeId }?.name
+                }
+            if (!preferred.isNullOrBlank()) {
+                VpnStateStore.setActiveLabel(preferred)
             }
         }
 
@@ -2447,14 +2500,6 @@ class SingBoxService : VpnService() {
         // 停止服务
         stopVpn(stopService = true, broadcastStoppingState = false)
         super.onRevoke()
-    }
-
-    override fun onTaskRemoved(rootIntent: Intent?) {
-        super.onTaskRemoved(rootIntent)
-        // If the user swiped away the app, we might want to keep the VPN running
-        // as a foreground service, but some users expect it to stop.
-        // Usually, a foreground service continues running.
-        // However, if we want to ensure no "zombie" states, we can at least log or check health.
     }
 
     /**
