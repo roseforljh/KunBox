@@ -394,7 +394,10 @@ class VpnTileService : TileService() {
                 }
 
                 val configRepository = ConfigRepository.getInstance(applicationContext)
-                val configResult = configRepository.generateConfigFile()
+                val configResult = configRepository.generateConfigFile(
+                    selectedProfileId = VpnStateStore.getSelectedProfileId(),
+                    selectedNodeId = VpnStateStore.getSelectedNodeId()
+                )
 
                 if (configResult != null) {
                     val command = VpnServiceManager.buildStartCommand(
@@ -405,6 +408,9 @@ class VpnTileService : TileService() {
                     val intent = Intent(this@VpnTileService, command.serviceClass).apply {
                         action = command.action
                         command.configPath?.let { putExtra(SingBoxService.EXTRA_CONFIG_PATH, it) }
+                        configResult.activeNodeName?.let {
+                            putExtra(SingBoxService.EXTRA_PENDING_NODE_NAME, it)
+                        }
                         if (command.cleanCache) {
                             putExtra(SingBoxService.EXTRA_CLEAN_CACHE, true)
                         }

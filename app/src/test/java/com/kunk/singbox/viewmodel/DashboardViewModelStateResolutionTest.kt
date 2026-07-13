@@ -150,6 +150,38 @@ class DashboardViewModelStateResolutionTest {
     }
 
     @Test
+    fun runtimeChangesRequireFullRestart() {
+        assertTrue(
+            DashboardViewModel.requiresFullRestart(
+                perAppSettingsChanged = true,
+                tunSettingsChanged = false,
+                routingModeChanged = false
+            )
+        )
+        assertTrue(
+            DashboardViewModel.requiresFullRestart(
+                perAppSettingsChanged = false,
+                tunSettingsChanged = true,
+                routingModeChanged = false
+            )
+        )
+        assertTrue(
+            DashboardViewModel.requiresFullRestart(
+                perAppSettingsChanged = false,
+                tunSettingsChanged = false,
+                routingModeChanged = true
+            )
+        )
+        assertFalse(
+            DashboardViewModel.requiresFullRestart(
+                perAppSettingsChanged = false,
+                tunSettingsChanged = false,
+                routingModeChanged = false
+            )
+        )
+    }
+
+    @Test
     fun startMonitorClearsOldErrorsAndStopsTimedOutService() {
         val source = File("src/main/java/com/kunk/singbox/viewmodel/DashboardViewModel.kt")
             .readText(Charsets.UTF_8)

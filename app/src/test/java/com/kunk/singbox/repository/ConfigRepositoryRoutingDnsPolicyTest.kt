@@ -178,7 +178,7 @@ class ConfigRepositoryRoutingDnsPolicyTest {
         assertFalse(ConfigRepository.shouldApplyRuleSetRules(RoutingMode.GLOBAL_DIRECT))
 
         assertFalse(ConfigRepository.shouldApplyCustomAndAppRules(RoutingMode.GLOBAL_PROXY))
-        assertTrue(ConfigRepository.shouldApplyRuleSetRules(RoutingMode.GLOBAL_PROXY))
+        assertFalse(ConfigRepository.shouldApplyRuleSetRules(RoutingMode.GLOBAL_PROXY))
 
         assertTrue(ConfigRepository.shouldApplyCustomAndAppRules(RoutingMode.RULE))
         assertTrue(ConfigRepository.shouldApplyRuleSetRules(RoutingMode.RULE))

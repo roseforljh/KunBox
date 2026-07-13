@@ -88,6 +88,14 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         internal fun hasStartMonitorTimedOut(elapsedMs: Long): Boolean {
             return elapsedMs >= START_MONITOR_TIMEOUT_MS
         }
+
+        internal fun requiresFullRestart(
+            perAppSettingsChanged: Boolean,
+            tunSettingsChanged: Boolean,
+            routingModeChanged: Boolean
+        ): Boolean {
+            return perAppSettingsChanged || tunSettingsChanged || routingModeChanged
+        }
     }
 
     private val configRepository = ConfigRepository.getInstance(application)
@@ -570,7 +578,12 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                 proxyPort = settings.proxyPort
             )
 
-            val requiresFullRestart = perAppSettingsChanged || tunSettingsChanged
+            val routingModeChanged = VpnStateStore.hasRoutingModeChanged(settings.routingMode.name)
+            val requiresFullRestart = DashboardViewModel.requiresFullRestart(
+                perAppSettingsChanged = perAppSettingsChanged,
+                tunSettingsChanged = tunSettingsChanged,
+                routingModeChanged = routingModeChanged
+            )
 
             if (useTun && SingBoxRemote.isRunning.value && !requiresFullRestart) {
                 Log.i(TAG, "Settings are hot-reloadable, attempting kernel hot reload")
@@ -583,12 +596,13 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                 if (requiresFullRestart) {
                     Log.i(
                         TAG,
-                        "Full restart required: perAppChanged=$perAppSettingsChanged, tunChanged=$tunSettingsChanged"
+                        "Full restart required: perAppChanged=$perAppSettingsChanged, " +
+                            "tunChanged=$tunSettingsChanged, routingModeChanged=$routingModeChanged"
                     )
                 }
             }
 
-            performRestart(context, configResult.path, useTun, perAppSettingsChanged)
+            performRestart(context, configResult.path, useTun, requiresFullRestart)
         }
     }
 
@@ -636,10 +650,10 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         context: Context,
         configPath: String,
         useTun: Boolean,
-        perAppSettingsChanged: Boolean
+        requiresFullRestart: Boolean
     ) {
-        if (perAppSettingsChanged && useTun && SingBoxRemote.isRunning.value) {
-            Log.i(TAG, "Per-app settings changed, using full restart to rebuild TUN")
+        if (requiresFullRestart && useTun && SingBoxRemote.isRunning.value) {
+            Log.i(TAG, "Runtime settings changed, using full restart to rebuild core")
             val intent = Intent(context, SingBoxService::class.java).apply {
                 action = SingBoxService.ACTION_FULL_RESTART
                 putExtra(SingBoxService.EXTRA_CONFIG_PATH, configPath)
@@ -713,6 +727,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                 }
             }
 
+            SingBoxRemote.clearLastErrorForNewStart()
             _connectionState.value = ConnectionState.Connecting
 
             // Ensure only one core instance is running at a time to avoid local port conflicts.
@@ -789,7 +804,6 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                         putExtra(SingBoxService.EXTRA_CLEAN_CACHE, true)
                     }
                 }
-                SingBoxRemote.clearLastErrorForNewStart()
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                     context.startForegroundService(intent)
                 } else {

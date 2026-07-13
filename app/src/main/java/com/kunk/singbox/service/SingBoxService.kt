@@ -173,7 +173,7 @@ class SingBoxService : VpnService() {
             this@SingBoxService.setUnderlyingNetworks(networks)
         }
 
-        override fun getCurrentSettings(): AppSettings? = currentSettings
+        override fun getCurrentSettings(): AppSettings? = coreManager.currentSettings
 
         override fun incrementConnectionOwnerCalls() { ServiceStateHolder.incrementConnectionOwnerCalls() }
         override fun incrementConnectionOwnerInvalidArgs() { ServiceStateHolder.incrementConnectionOwnerInvalidArgs() }
@@ -426,8 +426,6 @@ class SingBoxService : VpnService() {
      */
 
     protected var vpnInterface: ParcelFileDescriptor? = null
-
-    protected var currentSettings: AppSettings? = null
 
     protected val serviceSupervisorJob = SupervisorJob()
 
@@ -2354,7 +2352,7 @@ class SingBoxService : VpnService() {
         Log.i(SingBoxService.TAG, "stopVpn(stopService=$stopService) SingBoxService.isManuallyStopped=$SingBoxService.isManuallyStopped")
 
         // 获取代理端口用于等待释放
-        val proxyPort = currentSettings?.proxyPort ?: 2080
+        val proxyPort = coreManager.currentSettings?.proxyPort ?: 2080
 
         // 委托给 ShutdownManager
         // 不需要严格等待端口释放，启动时会强杀进程确保端口可用

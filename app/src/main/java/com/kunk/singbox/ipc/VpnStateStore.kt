@@ -17,6 +17,8 @@ object VpnStateStore {
     private const val KEY_VPN_PENDING = "vpn_pending"
     private const val KEY_VPN_ACTIVE_LABEL = "vpn_active_label"
     private const val KEY_SELECTED_NODE_LABEL = "selected_node_label"
+    private const val KEY_SELECTED_PROFILE_ID = "selected_profile_id"
+    private const val KEY_SELECTED_NODE_ID = "selected_node_id"
     private const val KEY_VPN_LAST_ERROR = "vpn_last_error"
     private const val KEY_VPN_MANUALLY_STOPPED = "vpn_manually_stopped"
     private const val KEY_CORE_MODE = "core_mode"
@@ -24,6 +26,7 @@ object VpnStateStore {
     private const val KEY_LAST_ALLOWLIST_HASH = "last_allowlist_hash"
     private const val KEY_LAST_BLOCKLIST_HASH = "last_blocklist_hash"
     private const val KEY_LAST_TUN_SETTINGS_HASH = "last_tun_settings_hash"
+    private const val KEY_LAST_ROUTING_MODE = "last_routing_mode"
 
     // Sender-side throttle for ACTION_PREPARE_RESTART to reduce repeated network oscillations.
     private const val KEY_LAST_PREPARE_RESTART_AT_MS = "last_prepare_restart_at_ms"
@@ -68,6 +71,15 @@ object VpnStateStore {
 
     fun setSelectedNodeLabel(label: String?) {
         mmkv.encode(KEY_SELECTED_NODE_LABEL, label ?: "")
+    }
+
+    fun getSelectedProfileId(): String = mmkv.decodeString(KEY_SELECTED_PROFILE_ID, "") ?: ""
+
+    fun getSelectedNodeId(): String = mmkv.decodeString(KEY_SELECTED_NODE_ID, "") ?: ""
+
+    fun setSelectedNode(profileId: String?, nodeId: String?) {
+        mmkv.encode(KEY_SELECTED_PROFILE_ID, profileId ?: "")
+        mmkv.encode(KEY_SELECTED_NODE_ID, nodeId ?: "")
     }
 
     fun getLastError(): String = mmkv.decodeString(KEY_VPN_LAST_ERROR, "") ?: ""
@@ -140,6 +152,17 @@ object VpnStateStore {
             "hasPerAppVpnSettingsChanged: lastMode=$lastMode, appMode=$appMode, " +
                 "lastAllowHash=$lastAllowHash, currentAllowHash=$currentAllowHash, changed=$changed"
         )
+        return changed
+    }
+
+    fun saveRoutingMode(mode: String) {
+        mmkv.encode(KEY_LAST_ROUTING_MODE, mode)
+    }
+
+    fun hasRoutingModeChanged(mode: String): Boolean {
+        val lastMode = mmkv.decodeString(KEY_LAST_ROUTING_MODE, "").orEmpty()
+        val changed = lastMode.isBlank() || lastMode != mode
+        Log.d(TAG, "hasRoutingModeChanged: last=$lastMode, current=$mode, changed=$changed")
         return changed
     }
 
@@ -261,6 +284,7 @@ object VpnStateStore {
         mmkv.removeValueForKey(KEY_LAST_ALLOWLIST_HASH)
         mmkv.removeValueForKey(KEY_LAST_BLOCKLIST_HASH)
         mmkv.removeValueForKey(KEY_LAST_TUN_SETTINGS_HASH)
+        mmkv.removeValueForKey(KEY_LAST_ROUTING_MODE)
         mmkv.removeValueForKey(KEY_LAST_MANUAL_STOP_AT_MS)
         clearAutoFailoverRuntimeState()
     }

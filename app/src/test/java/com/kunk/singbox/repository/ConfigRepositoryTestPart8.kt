@@ -17,7 +17,6 @@ import com.kunk.singbox.model.TlsConfig
 import com.kunk.singbox.model.resolveDnsStrategy
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -370,7 +369,7 @@ abstract class ConfigRepositoryTestPart8 : ConfigRepositoryTestPart7() {
     }
 
     @Test
-    override fun testRoutingModeGlobalProxyStillBuildsProfileRuleSetRouteRules() {
+    override fun testRoutingModeGlobalProxySkipsProfileRuleSetRouteRules() {
         val rules = ConfigRepository.buildRunRouteRulesForTest(
             settings = AppSettings(
                 routingMode = RoutingMode.GLOBAL_PROXY,
@@ -404,8 +403,7 @@ abstract class ConfigRepositoryTestPart8 : ConfigRepositoryTestPart7() {
         )
 
         val googleRule = rules.firstOrNull { it.ruleSet == listOf("geosite-google") }
-        assertNotNull(googleRule)
-        assertEquals("P:鹰#profile-1", googleRule?.outbound)
+        assertNull(googleRule)
     }
 
     @Test
