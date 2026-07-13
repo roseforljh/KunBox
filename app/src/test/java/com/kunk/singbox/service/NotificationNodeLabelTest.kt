@@ -1,5 +1,7 @@
 package com.kunk.singbox.service
 
+import com.kunk.singbox.model.Outbound
+import com.kunk.singbox.model.SingBoxConfig
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -7,57 +9,67 @@ import org.junit.Test
 class NotificationNodeLabelTest {
 
     @Test
-    fun resolveNodeLabel_prefersSelectedNodeOverStaleRuntimeLabel() {
+    fun resolveNodeLabel_prefersRuntimeOverSelectedAndStored() {
         val label = resolveNotificationNodeLabel(
-            selectedNodeName = "节点1"
+            selectedNodeName = "手选节点",
+            selectedNodeStoreLabel = "存储节点",
+            runtimeNodeName = "运行态节点"
         )
 
-        assertEquals("节点1", label)
+        assertEquals("运行态节点", label)
     }
 
     @Test
-    fun resolveNodeLabel_ignoresRuntimeLabelWhenSelectedNodeMissing() {
+    fun resolveNodeLabel_fallsBackToStoredWhenRuntimeBlank() {
         val label = resolveNotificationNodeLabel(
-            selectedNodeName = null
+            selectedNodeName = "手选节点",
+            selectedNodeStoreLabel = "存储节点",
+            runtimeNodeName = "  "
+        )
+
+        assertEquals("存储节点", label)
+    }
+
+    @Test
+    fun resolveNodeLabel_fallsBackToSelectedWhenRuntimeAndStoredMissing() {
+        val label = resolveNotificationNodeLabel(
+            selectedNodeName = "手选节点"
+        )
+
+        assertEquals("手选节点", label)
+    }
+
+    @Test
+    fun resolveNodeLabel_returnsNullWhenAllBlank() {
+        val label = resolveNotificationNodeLabel(
+            selectedNodeName = null,
+            selectedNodeStoreLabel = "",
+            runtimeNodeName = null
         )
 
         assertNull(label)
     }
 
     @Test
-    fun resolveNodeLabel_ignoresStoredLabelWhenSelectedNodeMissing() {
-        val label = resolveNotificationNodeLabel(
-            selectedNodeName = null
-        )
+    fun resolveStartupProxyTagPrefersExplicitThenDefaultThenFirstOutbound() {
+        val proxy = Outbound(type = "selector", tag = "PROXY", outbounds = listOf("node-a"))
 
-        assertNull(label)
+        assertEquals("node-c", resolveStartupProxyTag(SingBoxConfig(), explicitTag = "node-c"))
+        assertEquals(
+            "node-b",
+            resolveStartupProxyTag(SingBoxConfig(outbounds = listOf(proxy.copy(default = "node-b"))))
+        )
+        assertEquals("node-a", resolveStartupProxyTag(SingBoxConfig(outbounds = listOf(proxy))))
     }
 
     @Test
-    fun resolveNodeLabel_prefersSelectedNodeOverStalePendingNode() {
-        val label = resolveNotificationNodeLabel(
-            selectedNodeName = "节点3"
+    fun resolveStartupProxyTagReturnsNullWithoutUsableProxySelector() {
+        assertNull(resolveStartupProxyTag(SingBoxConfig()))
+        assertNull(
+            resolveStartupProxyTag(
+                SingBoxConfig(outbounds = listOf(Outbound(type = "selector", tag = "PROXY")))
+            )
         )
-
-        assertEquals("节点3", label)
-    }
-
-    @Test
-    fun resolveNodeLabel_prefersRuntimeAfterHotSwitchOverStalePendingNode() {
-        val label = resolveNotificationNodeLabel(
-            selectedNodeName = "配置2节点2"
-        )
-
-        assertEquals("配置2节点2", label)
-    }
-
-    @Test
-    fun resolveNodeLabel_ignoresRuntimeWhenSelectedNullAndPendingStale() {
-        val label = resolveNotificationNodeLabel(
-            selectedNodeName = null
-        )
-
-        assertNull(label)
     }
 
     @Test

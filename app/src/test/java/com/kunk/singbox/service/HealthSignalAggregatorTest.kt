@@ -8,6 +8,42 @@ import org.junit.Test
 class HealthSignalAggregatorTest {
 
     @Test
+    fun recentRemoteDnsFailureCountSurvivesSignalEmissionAndClear() {
+        val aggregator = HealthSignalAggregator(
+            dnsWindowMs = 7_000L,
+            minDnsFailures = 3,
+            minDnsQueryIds = 2
+        )
+
+        aggregator.observeKernelLog(
+            "[11:36:45] DEBUG[1358] [74 0ms] dns: match[27] => route(dns-remote-hy2-aliyun-a6d30110)",
+            nowMs = 1_000L
+        )
+        aggregator.observeKernelLog(
+            "[11:36:45] DEBUG[1358] [31 0ms] dns: match[27] => route(dns-remote-hy2-aliyun-a6d30110)",
+            nowMs = 1_100L
+        )
+        aggregator.observeKernelLog(
+            "[11:36:49] ERROR[1362] [74 10.0s] dns: exchange failed for a.com. IN A: context deadline exceeded",
+            nowMs = 2_000L
+        )
+        aggregator.observeKernelLog(
+            "[11:36:49] ERROR[1362] [31 10.0s] dns: exchange failed for a.com. IN AAAA: context deadline exceeded",
+            nowMs = 2_100L
+        )
+        aggregator.observeKernelLog(
+            "[11:36:49] ERROR[1362] [74 10.0s] dns: exchange failed for b.com. IN A: context deadline exceeded",
+            nowMs = 2_200L
+        )
+
+        // 信号已 emit 并消费 dnsFailures，但 live 观察计数仍保留
+        assertEquals(3, aggregator.recentRemoteDnsFailureCount(nowMs = 2_300L, windowMs = 7_000L))
+
+        aggregator.clearDnsFailures()
+        assertEquals(0, aggregator.recentRemoteDnsFailureCount(nowMs = 2_400L, windowMs = 7_000L))
+    }
+
+    @Test
     fun emitsDnsSignalAfterThreeRemoteDnsFailuresAcrossTwoQueries() {
         val aggregator = HealthSignalAggregator(
             dnsWindowMs = 7_000L,

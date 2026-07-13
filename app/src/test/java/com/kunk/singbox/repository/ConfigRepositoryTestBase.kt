@@ -312,7 +312,7 @@ abstract class ConfigRepositoryTestBase {
 
     abstract fun testHijackDnsRulesCatchTunDnsPortBeforeProtocolSniffing()
 
-    abstract fun testRoutingModeGlobalProxyStillBuildsProfileRuleSetRouteRules()
+    abstract fun testRoutingModeGlobalProxySkipsProfileRuleSetRouteRules()
 
     abstract fun testGlobalProxyDnsFinalUsesRemoteServerWhenFakeDnsEnabled()
 

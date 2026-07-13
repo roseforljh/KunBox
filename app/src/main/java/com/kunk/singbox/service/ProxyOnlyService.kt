@@ -504,6 +504,7 @@ class ProxyOnlyService : Service() {
         }
 
         setLastError(null)
+        initializeStartupNodeLabel(configPath)
 
         notifyRemoteState(state = ServiceState.STARTING)
         updateTileState()
@@ -810,15 +811,18 @@ class ProxyOnlyService : Service() {
         currentInterfaceListener?.updateDefaultInterface(ifaceName, 0, isExpensive, isConstrained)
     }
 
+    private fun initializeStartupNodeLabel(configPath: String) {
+        val startupTag = runCatching {
+            resolveStartupProxyTag(configPath, gson)
+        }.onFailure { e ->
+            Log.w(TAG, "Failed to resolve startup node label", e)
+        }.getOrNull()
+        VpnStateStore.setActiveLabel(startupTag)
+    }
+
     private fun notifyRemoteState(state: ServiceState? = null) {
         val st = state ?: if (isRunning) ServiceState.RUNNING else ServiceState.STOPPED
-        val repo = runCatching { ConfigRepository.getInstance(applicationContext) }.getOrNull()
-        val activeId = repo?.activeNodeId?.value
-
-        val activeLabel = runCatching {
-            VpnStateStore.getActiveLabel().takeIf { it.isNotBlank() }
-                ?: if (repo != null && activeId != null) repo.nodes.value.find { it.id == activeId }?.name else ""
-        }.getOrNull().orEmpty()
+        val activeLabel = VpnStateStore.getActiveLabel()
 
         SingBoxIpcHub.update(
             state = st,

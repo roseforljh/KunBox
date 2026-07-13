@@ -1,6 +1,8 @@
 package com.kunk.singbox.ui.components
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -10,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ArrowDownward
@@ -19,33 +22,24 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.kunk.singbox.R
 import com.kunk.singbox.ui.theme.isLiquidGlassTheme
 import com.kunk.singbox.ui.theme.liquidGlassPanel
-import com.kunk.singbox.ui.theme.liquidGlassPressFeedback
 import com.kunk.singbox.ui.theme.liquidGlassProgressColor
 import com.kunk.singbox.ui.theme.liquidGlassProgressTrackColor
 
-@Composable
-private fun Modifier.infoCardPingPressFeedback(
-    enabled: Boolean,
-    onClick: () -> Unit
-): Modifier = liquidGlassPressFeedback(
-    enabled = enabled,
-    pressedScale = 0.96f,
-    label = "liquid_glass_info_card_ping_scale",
-    onClick = onClick
-)
-
+@Suppress("LongMethod")
 @Composable
 fun InfoCard(
     modifier: Modifier = Modifier,
@@ -68,34 +62,62 @@ fun InfoCard(
 
     Row(
         modifier = containerModifier
-            .padding(20.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
+            .padding(horizontal = 12.dp, vertical = 6.dp),
+        horizontalArrangement = Arrangement.SpaceEvenly,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        InfoItem(
-            icon = Icons.Rounded.ArrowUpward,
-            label = stringResource(R.string.info_card_upload),
-            value = uploadSpeed
-        )
-        InfoItem(
-            icon = Icons.Rounded.ArrowDownward,
-            label = stringResource(R.string.info_card_download),
-            value = downloadSpeed
-        )
-        InfoItem(
-            modifier = if (onPingClick != null) {
-                Modifier.infoCardPingPressFeedback(
-                    enabled = !isPingLoading,
-                    onClick = onPingClick
+        // 三等分，保证水平间距一致且整体居中
+        Box(
+            modifier = Modifier.weight(1f),
+            contentAlignment = Alignment.Center
+        ) {
+            InfoItem(
+                icon = Icons.Rounded.ArrowUpward,
+                label = stringResource(R.string.info_card_upload),
+                value = uploadSpeed
+            )
+        }
+        Box(
+            modifier = Modifier.weight(1f),
+            contentAlignment = Alignment.Center
+        ) {
+            InfoItem(
+                icon = Icons.Rounded.ArrowDownward,
+                label = stringResource(R.string.info_card_download),
+                value = downloadSpeed
+            )
+        }
+        Box(
+            modifier = Modifier.weight(1f),
+            contentAlignment = Alignment.Center
+        ) {
+            // 固定正圆点击区，加载态不变成圆角矩形
+            Box(
+                modifier = Modifier
+                    .size(72.dp)
+                    .clip(CircleShape)
+                    .then(
+                        if (onPingClick != null) {
+                            Modifier.clickable(
+                                enabled = !isPingLoading,
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = ripple(bounded = true),
+                                onClick = onPingClick
+                            )
+                        } else {
+                            Modifier
+                        }
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
+                InfoItem(
+                    icon = Icons.Rounded.Speed,
+                    label = stringResource(R.string.info_card_ping),
+                    value = ping,
+                    isLoading = isPingLoading
                 )
-            } else {
-                Modifier
-            },
-            icon = Icons.Rounded.Speed,
-            label = stringResource(R.string.info_card_ping),
-            value = ping,
-            isLoading = isPingLoading
-        )
+            }
+        }
     }
 }
 

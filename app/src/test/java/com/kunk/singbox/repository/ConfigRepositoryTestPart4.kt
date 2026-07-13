@@ -17,7 +17,6 @@ import com.kunk.singbox.model.TlsConfig
 import com.kunk.singbox.model.resolveDnsStrategy
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -132,6 +131,26 @@ abstract class ConfigRepositoryTestPart4 : ConfigRepositoryTestPart3() {
         assertEquals(
             "prefer_ipv4",
             IpVersionMode.PREFER_IPV6.resolveDnsStrategy(DnsStrategy.PREFER_IPV4)
+        )
+    }
+
+    @Test
+    fun directDnsAutoOnDualStackResolvesToIpv4Only() {
+        assertEquals(
+            "ipv4_only",
+            ConfigRepository.resolveDirectDnsStrategy(DnsStrategy.AUTO, IpVersionMode.DUAL_STACK)
+        )
+        assertEquals(
+            "prefer_ipv4",
+            ConfigRepository.resolveDirectDnsStrategy(DnsStrategy.PREFER_IPV4, IpVersionMode.DUAL_STACK)
+        )
+        assertEquals(
+            "prefer_ipv6",
+            ConfigRepository.resolveDirectDnsStrategy(DnsStrategy.AUTO, IpVersionMode.PREFER_IPV6)
+        )
+        assertEquals(
+            "ipv4_only",
+            ConfigRepository.resolveDirectDnsStrategy(DnsStrategy.AUTO, IpVersionMode.IPV4_ONLY)
         )
     }
 
@@ -424,7 +443,7 @@ abstract class ConfigRepositoryTestPart4 : ConfigRepositoryTestPart3() {
     }
 
     @Test
-    override fun testRoutingModeGlobalProxyStillBuildsProfileRuleSetRouteRules() {
+    override fun testRoutingModeGlobalProxySkipsProfileRuleSetRouteRules() {
         val rules = ConfigRepository.buildRunRouteRulesForTest(
             settings = AppSettings(
                 routingMode = RoutingMode.GLOBAL_PROXY,
@@ -458,8 +477,7 @@ abstract class ConfigRepositoryTestPart4 : ConfigRepositoryTestPart3() {
         )
 
         val googleRule = rules.firstOrNull { it.ruleSet == listOf("geosite-google") }
-        assertNotNull(googleRule)
-        assertEquals("P:鹰#profile-1", googleRule?.outbound)
+        assertNull(googleRule)
     }
 
     @Test

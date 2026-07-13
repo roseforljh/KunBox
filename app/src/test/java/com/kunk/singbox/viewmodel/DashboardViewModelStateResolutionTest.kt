@@ -54,6 +54,42 @@ class DashboardViewModelStateResolutionTest {
     }
 
     @Test
+    fun connectedUiPrefersRuntimeLabelOverUserSelection() {
+        assertEquals(
+            "麒麟",
+            resolveDashboardDisplayedNodeName(
+                connectionState = ConnectionState.Connected,
+                runtimeLabel = "麒麟",
+                selectedNodeDisplayName = "...24"
+            )
+        )
+        assertEquals(
+            "...24",
+            resolveDashboardDisplayedNodeName(
+                connectionState = ConnectionState.Idle,
+                runtimeLabel = "麒麟",
+                selectedNodeDisplayName = "...24"
+            )
+        )
+        assertEquals(
+            "...24",
+            resolveDashboardDisplayedNodeName(
+                connectionState = ConnectionState.Connecting,
+                runtimeLabel = "旧节点",
+                selectedNodeDisplayName = "...24"
+            )
+        )
+        assertEquals(
+            "...24",
+            resolveDashboardDisplayedNodeName(
+                connectionState = ConnectionState.Connecting,
+                runtimeLabel = "",
+                selectedNodeDisplayName = "...24"
+            )
+        )
+    }
+
+    @Test
     fun newStartReportsAnyErrorAfterTheOldErrorWasCleared() {
         assertFalse(
             DashboardViewModel.shouldPresentServiceError(
@@ -117,6 +153,38 @@ class DashboardViewModelStateResolutionTest {
         assertTrue(
             DashboardViewModel.hasStartMonitorTimedOut(
                 DashboardViewModel.START_MONITOR_TIMEOUT_MS
+            )
+        )
+    }
+
+    @Test
+    fun runtimeChangesRequireFullRestart() {
+        assertTrue(
+            DashboardViewModel.requiresFullRestart(
+                perAppSettingsChanged = true,
+                tunSettingsChanged = false,
+                routingModeChanged = false
+            )
+        )
+        assertTrue(
+            DashboardViewModel.requiresFullRestart(
+                perAppSettingsChanged = false,
+                tunSettingsChanged = true,
+                routingModeChanged = false
+            )
+        )
+        assertTrue(
+            DashboardViewModel.requiresFullRestart(
+                perAppSettingsChanged = false,
+                tunSettingsChanged = false,
+                routingModeChanged = true
+            )
+        )
+        assertFalse(
+            DashboardViewModel.requiresFullRestart(
+                perAppSettingsChanged = false,
+                tunSettingsChanged = false,
+                routingModeChanged = false
             )
         )
     }

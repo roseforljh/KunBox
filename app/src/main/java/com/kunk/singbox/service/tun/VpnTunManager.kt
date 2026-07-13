@@ -319,6 +319,7 @@ class VpnTunManager(
      * @param builder VpnService.Builder
      * @param options TunOptions from libbox
      */
+    @Suppress("CyclomaticComplexMethod")
     fun configureBuilder(
         builder: VpnService.Builder,
         options: TunOptions?,
@@ -358,6 +359,9 @@ class VpnTunManager(
             blocklist = blocklist
         )
 
+        VpnStateStore.saveRoutingMode(
+            mode = (settings?.routingMode ?: com.kunk.singbox.model.RoutingMode.RULE).name
+        )
         VpnStateStore.saveTunSettings(
             tunStack = (settings?.tunStack ?: TunStack.MIXED).name,
             tunMtu = settings?.tunMtu ?: 1500,

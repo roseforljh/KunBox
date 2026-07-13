@@ -50,6 +50,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.res.stringResource
 import androidx.navigation.NavController
+import com.kunk.singbox.ipc.SingBoxRemote
 import com.kunk.singbox.model.ConnectionState
 import com.kunk.singbox.model.PingDisplayText
 import com.kunk.singbox.model.RoutingMode
@@ -108,6 +109,7 @@ fun DashboardScreen(
     val isPingTesting by viewModel.isPingTesting.collectAsStateWithLifecycle()
     val nodes by viewModel.nodes.collectAsStateWithLifecycle()
     val settings by settingsViewModel.settings.collectAsStateWithLifecycle()
+    val runtimeNodeLabel by SingBoxRemote.activeLabel.collectAsStateWithLifecycle()
 
     val nodesForSelector by nodesViewModel.nodes.collectAsStateWithLifecycle()
     val testingNodeIds by nodesViewModel.testingNodeIds.collectAsStateWithLifecycle()
@@ -118,7 +120,8 @@ fun DashboardScreen(
         }
     }
 
-    val activeNodeName by remember(activeNodeId, nodes) {
+    // 连接态优先显示运行态标签，避免自动切换后主页仍显示手选旧节点
+    val activeNodeName by remember(activeNodeId, nodes, connectionState, runtimeNodeLabel) {
         derivedStateOf {
             viewModel.getActiveNodeName()
         }
@@ -480,14 +483,12 @@ fun DashboardScreen(
                     }
                 )
 
-                Spacer(modifier = Modifier.height(24.dp))
-
                 // Quick Actions Card
                 StandardCard(modifier = Modifier.fillMaxWidth(), border = null) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(vertical = 16.dp, horizontal = 8.dp),
+                            .padding(vertical = 8.dp, horizontal = 8.dp),
                         horizontalArrangement = Arrangement.SpaceEvenly,
                         verticalAlignment = Alignment.CenterVertically
                     ) {

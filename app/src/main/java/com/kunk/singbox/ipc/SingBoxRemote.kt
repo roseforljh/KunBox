@@ -245,6 +245,7 @@ object SingBoxRemote {
 
     fun clearLastErrorForNewStart() {
         _lastError.value = ""
+        _activeLabel.value = ""
         VpnStateStore.setLastError(null)
     }
 

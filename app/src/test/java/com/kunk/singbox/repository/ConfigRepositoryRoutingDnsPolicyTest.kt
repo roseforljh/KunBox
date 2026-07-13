@@ -178,7 +178,7 @@ class ConfigRepositoryRoutingDnsPolicyTest {
         assertFalse(ConfigRepository.shouldApplyRuleSetRules(RoutingMode.GLOBAL_DIRECT))
 
         assertFalse(ConfigRepository.shouldApplyCustomAndAppRules(RoutingMode.GLOBAL_PROXY))
-        assertTrue(ConfigRepository.shouldApplyRuleSetRules(RoutingMode.GLOBAL_PROXY))
+        assertFalse(ConfigRepository.shouldApplyRuleSetRules(RoutingMode.GLOBAL_PROXY))
 
         assertTrue(ConfigRepository.shouldApplyCustomAndAppRules(RoutingMode.RULE))
         assertTrue(ConfigRepository.shouldApplyRuleSetRules(RoutingMode.RULE))
@@ -315,6 +315,70 @@ class ConfigRepositoryRoutingDnsPolicyTest {
         )
 
         assertEquals(listOf("wg-main"), sanitized.first().outbounds)
+    }
+
+    @Test
+    fun latencyRuntimeOutboundsKeepsWireGuardWithoutOutboundFixer() {
+        val config = SingBoxConfig(
+            outbounds = listOf(
+                Outbound(
+                    type = "wireguard",
+                    tag = "wg-manual",
+                    localAddress = listOf("10.2.0.2/32"),
+                    privateKey = listOf("private"),
+                    peers = listOf(
+                        WireGuardPeer(
+                            server = "149.22.88.129",
+                            serverPort = 51820,
+                            publicKey = "public"
+                        )
+                    )
+                ),
+                Outbound(type = "direct", tag = "direct")
+            )
+        )
+
+        val runtime = ConfigRepository.buildLatencyRuntimeOutbounds(config) {
+            // 模拟 OutboundFixer：运行时拒绝 WireGuard outbound
+            if (it.type.equals("wireguard", ignoreCase = true)) null else it
+        }
+
+        val wg = runtime.firstOrNull { it.tag == "wg-manual" }
+        assertEquals("wireguard", wg?.type)
+        assertEquals(
+            listOf("0.0.0.0/0", "::/0"),
+            wg?.peers?.single()?.allowedIps
+        )
+        assertTrue(runtime.any { it.tag == "direct" })
+    }
+
+    @Test
+    fun latencyRuntimeOutboundsNormalizesEndpointOnlyWireGuard() {
+        val config = SingBoxConfig(
+            endpoints = listOf(
+                Endpoint(
+                    type = "wireguard",
+                    tag = "wg-only",
+                    address = listOf("10.0.0.2/32"),
+                    privateKey = "private",
+                    peers = listOf(
+                        WireGuardPeer(
+                            server = "1.1.1.1",
+                            serverPort = 51820,
+                            publicKey = "public",
+                            allowedIps = listOf("0.0.0.0/0")
+                        )
+                    )
+                )
+            )
+        )
+
+        val runtime = ConfigRepository.buildLatencyRuntimeOutbounds(config) {
+            if (it.type.equals("wireguard", ignoreCase = true)) null else it
+        }
+
+        assertEquals(listOf("wg-only"), runtime.map { it.tag })
+        assertEquals("wireguard", runtime.single().type)
     }
 
     @Test

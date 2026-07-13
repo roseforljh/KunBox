@@ -44,7 +44,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
-import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
@@ -88,6 +87,14 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
 
         internal fun hasStartMonitorTimedOut(elapsedMs: Long): Boolean {
             return elapsedMs >= START_MONITOR_TIMEOUT_MS
+        }
+
+        internal fun requiresFullRestart(
+            perAppSettingsChanged: Boolean,
+            tunSettingsChanged: Boolean,
+            routingModeChanged: Boolean
+        ): Boolean {
+            return perAppSettingsChanged || tunSettingsChanged || routingModeChanged
         }
     }
 
@@ -362,15 +369,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
             }
         }
 
-        viewModelScope.launch {
-            SingBoxRemote.activeLabel
-                .filter { it.isNotBlank() }
-                .distinctUntilChanged()
-                .collect { nodeName ->
-                    Log.d(TAG, "activeLabel changed from service: $nodeName")
-                    configRepository.syncActiveNodeFromProxySelection(nodeName)
-                }
-        }
+        // 运行态 activeLabel 只用于展示，不写回用户手选节点（auto-failover 不得持久化选择）
 
         Log.i(TAG, "startStateCollector: collectors launched")
     }
@@ -579,7 +578,12 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                 proxyPort = settings.proxyPort
             )
 
-            val requiresFullRestart = perAppSettingsChanged || tunSettingsChanged
+            val routingModeChanged = VpnStateStore.hasRoutingModeChanged(settings.routingMode.name)
+            val requiresFullRestart = DashboardViewModel.requiresFullRestart(
+                perAppSettingsChanged = perAppSettingsChanged,
+                tunSettingsChanged = tunSettingsChanged,
+                routingModeChanged = routingModeChanged
+            )
 
             if (useTun && SingBoxRemote.isRunning.value && !requiresFullRestart) {
                 Log.i(TAG, "Settings are hot-reloadable, attempting kernel hot reload")
@@ -592,12 +596,13 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                 if (requiresFullRestart) {
                     Log.i(
                         TAG,
-                        "Full restart required: perAppChanged=$perAppSettingsChanged, tunChanged=$tunSettingsChanged"
+                        "Full restart required: perAppChanged=$perAppSettingsChanged, " +
+                            "tunChanged=$tunSettingsChanged, routingModeChanged=$routingModeChanged"
                     )
                 }
             }
 
-            performRestart(context, configResult.path, useTun, perAppSettingsChanged)
+            performRestart(context, configResult.path, useTun, requiresFullRestart)
         }
     }
 
@@ -645,10 +650,10 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         context: Context,
         configPath: String,
         useTun: Boolean,
-        perAppSettingsChanged: Boolean
+        requiresFullRestart: Boolean
     ) {
-        if (perAppSettingsChanged && useTun && SingBoxRemote.isRunning.value) {
-            Log.i(TAG, "Per-app settings changed, using full restart to rebuild TUN")
+        if (requiresFullRestart && useTun && SingBoxRemote.isRunning.value) {
+            Log.i(TAG, "Runtime settings changed, using full restart to rebuild core")
             val intent = Intent(context, SingBoxService::class.java).apply {
                 action = SingBoxService.ACTION_FULL_RESTART
                 putExtra(SingBoxService.EXTRA_CONFIG_PATH, configPath)
@@ -722,6 +727,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                 }
             }
 
+            SingBoxRemote.clearLastErrorForNewStart()
             _connectionState.value = ConnectionState.Connecting
 
             // Ensure only one core instance is running at a time to avoid local port conflicts.
@@ -798,7 +804,6 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                         putExtra(SingBoxService.EXTRA_CLEAN_CACHE, true)
                     }
                 }
-                SingBoxRemote.clearLastErrorForNewStart()
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                     context.startForegroundService(intent)
                 } else {
@@ -1012,8 +1017,16 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
     fun getActiveProfileName(): String? =
         activeProfileId.value?.let { activeId -> profiles.value.find { it.id == activeId }?.name }
 
-    fun getActiveNodeName(): String? =
-        activeNodeId.value?.let { activeId -> configRepository.getNodeById(activeId)?.displayName }
+    fun getActiveNodeName(): String? {
+        val selectedName = activeNodeId.value?.let { activeId ->
+            configRepository.getNodeById(activeId)?.displayName
+        }
+        return resolveDashboardDisplayedNodeName(
+            connectionState = _connectionState.value,
+            runtimeLabel = SingBoxRemote.activeLabel.value,
+            selectedNodeDisplayName = selectedName
+        )
+    }
 
     override fun onCleared() {
         startMonitorJob?.cancel()

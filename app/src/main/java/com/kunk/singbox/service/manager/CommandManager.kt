@@ -82,7 +82,8 @@ class CommandManager(
 
     private val groupSelectedOutbounds = ConcurrentHashMap<String, String>()
     @Volatile var realTimeNodeName: String? = null
-        private set
+        internal set
+
     @Volatile var activeConnectionNode: String? = null
         private set
     @Volatile var activeConnectionLabel: String? = null
@@ -472,14 +473,13 @@ class CommandManager(
     }
 
     private fun processGroups(groups: OutboundGroupIterator) {
-        val configRepo = ConfigRepository.getInstance(context)
         var changed = false
 
         Log.d(TAG, "writeGroups called")
 
         while (groups.hasNext()) {
             val group = groups.next()
-            val groupChanged = processGroup(group, configRepo)
+            val groupChanged = processGroup(group)
             if (groupChanged) changed = true
         }
 
@@ -488,10 +488,7 @@ class CommandManager(
         }
     }
 
-    private fun processGroup(
-        group: OutboundGroup,
-        configRepo: ConfigRepository
-    ): Boolean {
+    private fun processGroup(group: OutboundGroup): Boolean {
         val tag = group.tag
         val selected = group.selected
         var changed = false
@@ -503,25 +500,23 @@ class CommandManager(
             if (prev != selected) changed = true
         }
 
-        changed = updateProxyGroupSelection(tag, selected, configRepo) || changed
+        changed = updateProxyGroupSelection(tag, selected) || changed
 
         return changed
     }
 
     private fun updateProxyGroupSelection(
         tag: String?,
-        selected: String?,
-        configRepo: ConfigRepository
+        selected: String?
     ): Boolean {
         if (!tag.equals("PROXY", ignoreCase = true)) return false
         if (selected.isNullOrBlank() || selected == realTimeNodeName) return false
 
+        // 只更新运行态展示，不写回用户手选节点。
+        // writeGroups 会在 urltest/自动切换时频繁回调，写回 activeNodeId 会造成节点乱飞。
         realTimeNodeName = selected
         VpnStateStore.setActiveLabel(selected)
         Log.i(TAG, "Real-time node update: $selected")
-        serviceScope.launch {
-            configRepo.syncActiveNodeFromProxySelection(selected)
-        }
         return true
     }
 

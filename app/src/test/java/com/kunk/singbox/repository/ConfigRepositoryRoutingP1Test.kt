@@ -9,6 +9,7 @@ import com.kunk.singbox.model.RuleSet
 import com.kunk.singbox.model.RuleSetConfig
 import com.kunk.singbox.model.RuleSetOutboundMode
 import com.kunk.singbox.model.RuleSetType
+import com.kunk.singbox.model.RouteRule
 import com.kunk.singbox.model.RuleType
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
@@ -91,6 +92,62 @@ class ConfigRepositoryRoutingP1Test {
     }
 
     @Test
+    fun specificServiceRuleSetsPrecedeGeolocationGenericRules() {
+        val ruleSets = listOf(
+            RuleSet(
+                tag = "geosite-geolocation-!cn",
+                type = RuleSetType.LOCAL,
+                outboundMode = RuleSetOutboundMode.PROXY
+            ),
+            RuleSet(
+                tag = "geosite-cn",
+                type = RuleSetType.LOCAL,
+                outboundMode = RuleSetOutboundMode.DIRECT
+            ),
+            RuleSet(
+                tag = "geosite-openai",
+                type = RuleSetType.LOCAL,
+                outboundMode = RuleSetOutboundMode.PROFILE,
+                outboundValue = "profile-1"
+            ),
+            RuleSet(
+                tag = "geosite-google",
+                type = RuleSetType.LOCAL,
+                outboundMode = RuleSetOutboundMode.PROFILE,
+                outboundValue = "profile-1"
+            ),
+            RuleSet(
+                tag = "geosite-category-ads-all",
+                type = RuleSetType.LOCAL,
+                outboundMode = RuleSetOutboundMode.BLOCK
+            )
+        )
+        val profileTag = ConfigRepository.buildProfileRouteTag("profile-1", "鹰")
+        val rules = ConfigRepository.buildRunRouteRulesForTest(
+            settings = AppSettings(routingMode = RoutingMode.RULE, ruleSets = ruleSets),
+            selectorTag = "PROXY",
+            outbounds = listOf(
+                Outbound(type = "selector", tag = "PROXY"),
+                Outbound(type = "selector", tag = profileTag)
+            ),
+            profiles = listOf(profile(id = "profile-1", name = "鹰")),
+            validRuleSets = ruleSets.map { RuleSetConfig(tag = it.tag) }
+        ).filter { !it.ruleSet.isNullOrEmpty() }
+            .map { it.ruleSet?.single() }
+
+        assertEquals(
+            listOf(
+                "geosite-openai",
+                "geosite-google",
+                "geosite-category-ads-all",
+                "geosite-cn",
+                "geosite-geolocation-!cn"
+            ),
+            rules
+        )
+    }
+
+    @Test
     fun dnsRuleSetsKeepPersistedDragOrderWhenBlockComesFirst() {
         val rules = ConfigRepository.buildOrderedDnsRules(
             entries = listOf(
@@ -117,6 +174,60 @@ class ConfigRepositoryRoutingP1Test {
         )
 
         assertEquals(listOf("cn", "private"), rule?.geosite)
+    }
+
+    @Test
+    fun routingModeRuleKeepsEveryUserRuleBeforeProxyFallback() {
+        val base = listOf(RouteRule(action = "sniff"))
+        val bypass = listOf(RouteRule(ipIsPrivate = true, outbound = "direct"))
+        val custom = listOf(RouteRule(domain = listOf("example.cn"), outbound = "direct"))
+        val app = listOf(RouteRule(packageName = listOf("com.example.app"), outbound = "direct"))
+        val ruleSet = listOf(RouteRule(ruleSet = listOf("geosite-cn"), outbound = "direct"))
+        val fallback = listOf(RouteRule(outbound = "PROXY"))
+
+        val rules = ConfigRepository.selectRunRouteRulesStatic(
+            settings = AppSettings(routingMode = RoutingMode.RULE),
+            baseRules = base,
+            bypassLanRules = bypass,
+            customDomainRules = custom,
+            appRoutingRules = app,
+            customRuleSetRules = ruleSet,
+            defaultRuleCatchAll = fallback
+        )
+
+        assertEquals(base + bypass + custom + app + ruleSet + fallback, rules)
+        val fallbackIndex = rules.indexOf(fallback.single())
+        assertTrue(rules.indexOf(custom.single()) < fallbackIndex)
+        assertTrue(rules.indexOf(app.single()) < fallbackIndex)
+        assertTrue(rules.indexOf(ruleSet.single()) < fallbackIndex)
+    }
+
+    @Test
+    fun globalModesIgnoreEveryUserRuleFamily() {
+        val base = listOf(RouteRule(action = "sniff"))
+        val userRule = listOf(RouteRule(domain = listOf("example.cn"), outbound = "direct"))
+
+        val proxyRules = ConfigRepository.selectRunRouteRulesStatic(
+            settings = AppSettings(routingMode = RoutingMode.GLOBAL_PROXY),
+            baseRules = base,
+            bypassLanRules = userRule,
+            customDomainRules = userRule,
+            appRoutingRules = userRule,
+            customRuleSetRules = userRule,
+            defaultRuleCatchAll = listOf(RouteRule(outbound = "PROXY"))
+        )
+        val directRules = ConfigRepository.selectRunRouteRulesStatic(
+            settings = AppSettings(routingMode = RoutingMode.GLOBAL_DIRECT),
+            baseRules = base,
+            bypassLanRules = userRule,
+            customDomainRules = userRule,
+            appRoutingRules = userRule,
+            customRuleSetRules = userRule,
+            defaultRuleCatchAll = listOf(RouteRule(outbound = "PROXY"))
+        )
+
+        assertEquals(base, proxyRules)
+        assertEquals(base + RouteRule(outbound = "direct"), directRules)
     }
 
     @Test
