@@ -36,6 +36,8 @@ internal class HealthSignalAggregator(
 
     private val queryDnsServer = mutableMapOf<String, DnsRouteBinding>()
     private val dnsFailures = ArrayDeque<DnsFailure>()
+    // live 验收独立计数：不被 emit 信号时的 removeAll 消费
+    private val observedDnsFailureAtMs = ArrayDeque<Long>()
 
     @Synchronized
     fun observeKernelLog(line: String, nowMs: Long): HealthSignal? {
@@ -44,8 +46,30 @@ internal class HealthSignalAggregator(
         observeDnsRoute(normalizedLine, nowMs)
         val failure = parseDnsFailure(normalizedLine, nowMs) ?: return null
         dnsFailures.addLast(failure)
+        observedDnsFailureAtMs.addLast(nowMs)
         trimFailures(nowMs)
+        trimObservedFailures(nowMs)
         return resolveDnsSignal(nowMs)
+    }
+
+    /** live 验收观察窗：统计最近远程 DNS 超时次数，不消费失败队列。 */
+    @Synchronized
+    fun recentRemoteDnsFailureCount(nowMs: Long, windowMs: Long = dnsWindowMs): Int {
+        trimObservedFailures(nowMs, windowMs)
+        return observedDnsFailureAtMs.size
+    }
+
+    /** 切换后开始 live 观察前清空，避免把旧超时算到新节点头上。 */
+    @Synchronized
+    fun clearDnsFailures() {
+        dnsFailures.clear()
+        observedDnsFailureAtMs.clear()
+    }
+
+    private fun trimObservedFailures(nowMs: Long, windowMs: Long = dnsWindowMs) {
+        while (observedDnsFailureAtMs.isNotEmpty() && nowMs - observedDnsFailureAtMs.first > windowMs) {
+            observedDnsFailureAtMs.removeFirst()
+        }
     }
 
     private fun observeDnsRoute(line: String, nowMs: Long) {

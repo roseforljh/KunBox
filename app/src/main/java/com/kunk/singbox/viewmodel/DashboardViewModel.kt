@@ -44,7 +44,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
-import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
@@ -362,15 +361,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
             }
         }
 
-        viewModelScope.launch {
-            SingBoxRemote.activeLabel
-                .filter { it.isNotBlank() }
-                .distinctUntilChanged()
-                .collect { nodeName ->
-                    Log.d(TAG, "activeLabel changed from service: $nodeName")
-                    configRepository.syncActiveNodeFromProxySelection(nodeName)
-                }
-        }
+        // 运行态 activeLabel 只用于展示，不写回用户手选节点（auto-failover 不得持久化选择）
 
         Log.i(TAG, "startStateCollector: collectors launched")
     }
@@ -1012,8 +1003,18 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
     fun getActiveProfileName(): String? =
         activeProfileId.value?.let { activeId -> profiles.value.find { it.id == activeId }?.name }
 
-    fun getActiveNodeName(): String? =
-        activeNodeId.value?.let { activeId -> configRepository.getNodeById(activeId)?.displayName }
+    fun getActiveNodeName(): String? {
+        val selectedName = activeNodeId.value?.let { activeId ->
+            configRepository.getNodeById(activeId)?.displayName
+        }
+        return resolveDashboardDisplayedNodeName(
+            connectionState = _connectionState.value,
+            runtimeLabel = SingBoxRemote.activeLabel.value.ifBlank {
+                VpnStateStore.getActiveLabel()
+            },
+            selectedNodeDisplayName = selectedName
+        )
+    }
 
     override fun onCleared() {
         startMonitorJob?.cancel()

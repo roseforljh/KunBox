@@ -808,7 +808,8 @@ class SingBoxService : VpnService() {
             val activeNodeId = repo.activeNodeId.value
             val nodeName = resolveNotificationNodeLabel(
                 selectedNodeName = repo.nodes.value.find { it.id == activeNodeId }?.name,
-                selectedNodeStoreLabel = VpnStateStore.getSelectedNodeLabel()
+                selectedNodeStoreLabel = VpnStateStore.getSelectedNodeLabel(),
+                runtimeNodeName = realTimeNodeName ?: VpnStateStore.getActiveLabel()
             )
             nodeName.orEmpty()
         }.getOrDefault("")
@@ -1358,37 +1359,118 @@ class SingBoxService : VpnService() {
         VpnStateStore.setAutoFailoverQuarantinedTags(NodeAutoFailoverPolicy.encodeQuarantine(cleanedQuarantine))
         VpnStateStore.setLastAutoFailoverNodeTag(currentTag)
 
+        LogRepository.getInstance().addLog(
+            "INFO: Auto failover screened from=$currentTag to=$targetTag trigger=$trigger"
+        )
+
         val success = hotSwitchNode(targetTag)
-        if (success) {
-            val configRepository = ConfigRepository.getInstance(this@SingBoxService)
-            val node = configRepository.getNodeByName(targetTag)
-            val displayName = node?.name ?: targetTag
-            VpnStateStore.setActiveLabel(displayName)
-            realTimeNodeName = displayName
-            runCatching {
-                configRepository.syncActiveNodeFromProxySelection(displayName)
-            }
-            requestNotificationUpdate(force = true)
-            requestRemoteStateUpdate(force = true)
-            if (SingBoxService.isHealthFastPathTrigger(trigger)) {
-                val closed = commandManager.closeConnections()
-                LogRepository.getInstance().addLog(
-                    "INFO: Health failover converged connections, trigger=$trigger, closed=$closed"
-                )
-            }
-            val elapsedMs = SystemClock.elapsedRealtime() - startedAtMs
+        if (!success) {
             LogRepository.getInstance().addLog(
-                "INFO: Auto failover switched from $currentTag to $displayName trigger=$trigger elapsed=${elapsedMs}ms"
+                "WARN: Auto failover escalate restart reason=hot_switch_failed target=$targetTag"
             )
-            Log.i(SingBoxService.TAG, "[AutoFailover] switched from $currentTag to $displayName, trigger=$trigger")
+            restartVpnForAutoFailoverRecovery(targetTag)
             return
         }
 
-        Log.w(SingBoxService.TAG, "[AutoFailover] hot switch failed, falling back to restart: $targetTag")
+        // L2/L3：收敛连接 + 重置网络栈，缩小与冷启动恢复能力的差距
+        val closed = commandManager.closeConnections()
+        LogRepository.getInstance().addLog(
+            "INFO: Health failover converged connections, trigger=$trigger, closed=$closed"
+        )
+        val reset = BoxWrapperManager.resetNetwork()
+        LogRepository.getInstance().addLog(
+            "INFO: Auto failover escalate resetNetwork result=$reset trigger=$trigger"
+        )
+
+        // live 终验：选中正确 + 观察窗远程 DNS + 离线延迟初筛
+        healthSignalAggregator.clearDnsFailures()
+        delay(SingBoxService.AUTO_FAILOVER_LIVE_OBSERVE_MS)
+        val selectedTag = resolveCurrentProxyOutboundTag()
+        val offlineDelayMs = measureAutoFailoverPostCheckDelay(targetTag, trigger)
+        val recentDnsFailures = healthSignalAggregator.recentRemoteDnsFailureCount(
+            nowMs = SystemClock.elapsedRealtime(),
+            windowMs = SingBoxService.AUTO_FAILOVER_LIVE_OBSERVE_MS
+        )
+        val failReason = evaluateAutoFailoverLiveCheck(
+            targetTag = targetTag,
+            selectedTag = selectedTag,
+            offlineDelayMs = offlineDelayMs,
+            recentRemoteDnsFailures = recentDnsFailures
+        )
+        if (failReason != null) {
+            quarantineAutoFailoverNode(targetTag)
+            val rolledBack = hotSwitchNode(currentTag)
+            commandManager.closeConnections()
+            BoxWrapperManager.resetNetwork()
+            LogRepository.getInstance().addLog(
+                "WARN: Auto failover liveCheck FAIL node=$targetTag reason=$failReason " +
+                    "offlineDelay=${offlineDelayMs ?: -1} dnsFails=$recentDnsFailures " +
+                    "selected=${selectedTag ?: "(none)"} " +
+                    "rollback=${if (rolledBack) "ok" else "failed"}"
+            )
+            if (!rolledBack) {
+                LogRepository.getInstance().addLog(
+                    "WARN: Auto failover escalate restart reason=rollback_failed from=$currentTag"
+                )
+                restartVpnForAutoFailoverRecovery(currentTag)
+            }
+            return
+        }
+
+        val configRepository = ConfigRepository.getInstance(this@SingBoxService)
+        val displayName = configRepository.getNodeByName(targetTag)?.name ?: targetTag
+        // 自动切换只更新运行态标签，不改用户手选偏好
+        VpnStateStore.setActiveLabel(displayName)
+        realTimeNodeName = displayName
+        requestNotificationUpdate(force = true)
+        requestRemoteStateUpdate(force = true)
+        val elapsedMs = SystemClock.elapsedRealtime() - startedAtMs
+        LogRepository.getInstance().addLog(
+            "INFO: Auto failover committed $currentTag -> $displayName trigger=$trigger " +
+                "elapsed=${elapsedMs}ms offlineDelay=${offlineDelayMs ?: -1} dnsFails=$recentDnsFailures"
+        )
+        Log.i(SingBoxService.TAG, "[AutoFailover] switched from $currentTag to $displayName, trigger=$trigger")
+    }
+
+    /** 切换后对目标节点再测一次延迟，仅作初筛，不单独决定 commit。 */
+    private suspend fun measureAutoFailoverPostCheckDelay(
+        targetTag: String,
+        trigger: String
+    ): Long? {
+        val config = loadLastRunningConfig() ?: return null
+        val outbounds = config.outbounds.orEmpty()
+        val target = outbounds.firstOrNull { it.tag == targetTag } ?: return null
+        val settings = SettingsRepository.getInstance(this@SingBoxService).settings.first()
+        val timeoutMs = SingBoxService.resolveAutoFailoverCandidateTimeoutMs(
+            trigger = trigger,
+            userTimeoutMs = settings.latencyTestTimeout
+        )
+        val latency = runCatching {
+            SingBoxCore.getInstance(this@SingBoxService).testOutboundLatency(
+                outbound = target,
+                allOutbounds = outbounds,
+                timeoutOverrideMs = timeoutMs
+            )
+        }.getOrDefault(-1L)
+        return latency.takeIf { it > 0L }
+    }
+
+    private fun quarantineAutoFailoverNode(tag: String) {
+        val now = System.currentTimeMillis()
+        val current = loadActiveAutoFailoverQuarantine(now).toMutableList()
+        current.add(NodeAutoFailoverPolicy.createQuarantineRecord(tag, now))
+        val cleaned = NodeAutoFailoverPolicy.cleanupExpiredQuarantine(current, now)
+        VpnStateStore.setAutoFailoverQuarantinedTags(NodeAutoFailoverPolicy.encodeQuarantine(cleaned))
+    }
+
+    private fun restartVpnForAutoFailoverRecovery(preferredTag: String?) {
         val configPath = pendingHotSwitchFallbackConfigPath ?: File(filesDir, "running_config.json").absolutePath
         val restartIntent = Intent(this@SingBoxService, SingBoxService::class.java).apply {
             action = SingBoxService.ACTION_START
             putExtra(SingBoxService.EXTRA_CONFIG_PATH, configPath)
+            preferredTag?.takeIf { it.isNotBlank() }?.let {
+                putExtra(SingBoxService.EXTRA_PENDING_NODE_NAME, it)
+            }
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             startForegroundService(restartIntent)
@@ -2190,7 +2272,8 @@ class SingBoxService : VpnService() {
         val activeNodeId = configRepository.activeNodeId.value
         val nodeName = resolveNotificationNodeLabel(
             selectedNodeName = configRepository.nodes.value.find { it.id == activeNodeId }?.name,
-            selectedNodeStoreLabel = VpnStateStore.getSelectedNodeLabel()
+            selectedNodeStoreLabel = VpnStateStore.getSelectedNodeLabel(),
+            runtimeNodeName = realTimeNodeName ?: VpnStateStore.getActiveLabel()
         )
 
         return VpnNotificationManager.NotificationState(
@@ -2435,6 +2518,9 @@ class SingBoxService : VpnService() {
         internal const val HEALTH_FAST_FAILOVER_PORT_READY_TIMEOUT_MS = 600L
 
         internal const val HEALTH_FAST_FAILOVER_CANDIDATE_CONCURRENCY = 3
+
+        /** 切换后 live 观察窗：等内核日志暴露远程 DNS 超时。 */
+        internal const val AUTO_FAILOVER_LIVE_OBSERVE_MS = 2_000L
 
         internal const val SINGLE_NODE_ROUTE_FAILURE_NOTIFICATION_DEBOUNCE_MS = 60_000L
 

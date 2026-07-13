@@ -7,54 +7,42 @@ import org.junit.Test
 class NotificationNodeLabelTest {
 
     @Test
-    fun resolveNodeLabel_prefersSelectedNodeOverStaleRuntimeLabel() {
+    fun resolveNodeLabel_prefersRuntimeOverSelectedAndStored() {
         val label = resolveNotificationNodeLabel(
-            selectedNodeName = "节点1"
+            selectedNodeName = "手选节点",
+            selectedNodeStoreLabel = "存储节点",
+            runtimeNodeName = "运行态节点"
         )
 
-        assertEquals("节点1", label)
+        assertEquals("运行态节点", label)
     }
 
     @Test
-    fun resolveNodeLabel_ignoresRuntimeLabelWhenSelectedNodeMissing() {
+    fun resolveNodeLabel_fallsBackToStoredWhenRuntimeBlank() {
         val label = resolveNotificationNodeLabel(
-            selectedNodeName = null
+            selectedNodeName = "手选节点",
+            selectedNodeStoreLabel = "存储节点",
+            runtimeNodeName = "  "
         )
 
-        assertNull(label)
+        assertEquals("存储节点", label)
     }
 
     @Test
-    fun resolveNodeLabel_ignoresStoredLabelWhenSelectedNodeMissing() {
+    fun resolveNodeLabel_fallsBackToSelectedWhenRuntimeAndStoredMissing() {
         val label = resolveNotificationNodeLabel(
-            selectedNodeName = null
+            selectedNodeName = "手选节点"
         )
 
-        assertNull(label)
+        assertEquals("手选节点", label)
     }
 
     @Test
-    fun resolveNodeLabel_prefersSelectedNodeOverStalePendingNode() {
+    fun resolveNodeLabel_returnsNullWhenAllBlank() {
         val label = resolveNotificationNodeLabel(
-            selectedNodeName = "节点3"
-        )
-
-        assertEquals("节点3", label)
-    }
-
-    @Test
-    fun resolveNodeLabel_prefersRuntimeAfterHotSwitchOverStalePendingNode() {
-        val label = resolveNotificationNodeLabel(
-            selectedNodeName = "配置2节点2"
-        )
-
-        assertEquals("配置2节点2", label)
-    }
-
-    @Test
-    fun resolveNodeLabel_ignoresRuntimeWhenSelectedNullAndPendingStale() {
-        val label = resolveNotificationNodeLabel(
-            selectedNodeName = null
+            selectedNodeName = null,
+            selectedNodeStoreLabel = "",
+            runtimeNodeName = null
         )
 
         assertNull(label)

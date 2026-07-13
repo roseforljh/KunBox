@@ -54,6 +54,34 @@ class DashboardViewModelStateResolutionTest {
     }
 
     @Test
+    fun connectedUiPrefersRuntimeLabelOverUserSelection() {
+        assertEquals(
+            "麒麟",
+            resolveDashboardDisplayedNodeName(
+                connectionState = ConnectionState.Connected,
+                runtimeLabel = "麒麟",
+                selectedNodeDisplayName = "...24"
+            )
+        )
+        assertEquals(
+            "...24",
+            resolveDashboardDisplayedNodeName(
+                connectionState = ConnectionState.Idle,
+                runtimeLabel = "麒麟",
+                selectedNodeDisplayName = "...24"
+            )
+        )
+        assertEquals(
+            "...24",
+            resolveDashboardDisplayedNodeName(
+                connectionState = ConnectionState.Connected,
+                runtimeLabel = "",
+                selectedNodeDisplayName = "...24"
+            )
+        )
+    }
+
+    @Test
     fun newStartReportsAnyErrorAfterTheOldErrorWasCleared() {
         assertFalse(
             DashboardViewModel.shouldPresentServiceError(

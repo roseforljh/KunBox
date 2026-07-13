@@ -68,7 +68,18 @@ class HealthAutoFailoverLogicTest {
         val body = source.substring(start, end)
 
         assertTrue(body.contains("commandManager.closeConnections()"))
-        assertFalse(body.contains("BoxWrapperManager.resetNetwork()"))
+        assertTrue(body.contains("BoxWrapperManager.resetNetwork()"))
+        assertTrue(body.contains("evaluateAutoFailoverLiveCheck"))
+        assertTrue(body.contains("Auto failover liveCheck FAIL"))
+        assertTrue(body.contains("Auto failover escalate resetNetwork"))
+        assertTrue(body.contains("AUTO_FAILOVER_LIVE_OBSERVE_MS"))
+        // 自动切换不得把运行态写回用户手选节点
+        assertFalse(body.contains("syncActiveNodeFromProxySelection"))
+    }
+
+    @Test
+    fun liveObserveWindowIsBounded() {
+        assertEquals(2_000L, SingBoxService.AUTO_FAILOVER_LIVE_OBSERVE_MS)
     }
 
     @Test

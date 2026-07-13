@@ -21,6 +21,22 @@ internal fun resolveTrustedDashboardConnectionState(
     }
 }
 
+/**
+ * 主页节点名：连接中/已连接优先运行态标签，否则回退用户选择。
+ */
+internal fun resolveDashboardDisplayedNodeName(
+    connectionState: ConnectionState,
+    runtimeLabel: String?,
+    selectedNodeDisplayName: String?
+): String? {
+    val useRuntime = connectionState == ConnectionState.Connected ||
+        connectionState == ConnectionState.Connecting
+    if (useRuntime) {
+        runtimeLabel?.takeIf { it.isNotBlank() }?.let { return it }
+    }
+    return selectedNodeDisplayName?.takeIf { it.isNotBlank() }
+}
+
 internal fun buildDashboardNodes(
     nodes: List<NodeUi>,
     filter: NodeFilter,
