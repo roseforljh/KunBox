@@ -1009,9 +1009,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         }
         return resolveDashboardDisplayedNodeName(
             connectionState = _connectionState.value,
-            runtimeLabel = SingBoxRemote.activeLabel.value.ifBlank {
-                VpnStateStore.getActiveLabel()
-            },
+            runtimeLabel = SingBoxRemote.activeLabel.value,
             selectedNodeDisplayName = selectedName
         )
     }

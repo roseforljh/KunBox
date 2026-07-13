@@ -220,7 +220,6 @@ class SingBoxService : VpnService() {
         // 状态回调
         override fun onStarting() {
             updateServiceState(ServiceState.STARTING)
-            realTimeNodeName = null
         }
 
         override fun onStarted(configContent: String) {
@@ -896,6 +895,16 @@ class SingBoxService : VpnService() {
             lastRemoteStateUpdateAtMs.set(SystemClock.elapsedRealtime())
             notifyRemoteStateNow()
         }
+    }
+
+    protected fun initializeStartupNodeLabel(configPath: String, explicitTag: String? = pendingNodeName) {
+        val startupTag = runCatching {
+            resolveStartupProxyTag(configPath, gson, explicitTag)
+        }.onFailure { e ->
+            Log.w(SingBoxService.TAG, "Failed to resolve startup node label", e)
+        }.getOrNull()
+        realTimeNodeName = startupTag
+        VpnStateStore.setActiveLabel(startupTag)
     }
 
     protected fun updateServiceState(state: ServiceState) {
@@ -1718,13 +1727,7 @@ class SingBoxService : VpnService() {
 
                 val configPath = intent.getStringExtra(SingBoxService.EXTRA_CONFIG_PATH)
                 val pendingNode = intent.getStringExtra(SingBoxService.EXTRA_PENDING_NODE_NAME)
-                if (!pendingNode.isNullOrBlank()) {
-                    pendingNodeName = pendingNode
-                    realTimeNodeName = null
-                    VpnStateStore.setActiveLabel(pendingNode)
-                    requestNotificationUpdate(force = true)
-                    requestRemoteStateUpdate(force = true)
-                }
+                pendingNodeName = pendingNode?.takeIf { it.isNotBlank() }
                 val cleanCache = intent.getBooleanExtra(SingBoxService.EXTRA_CLEAN_CACHE, false)
 
                 // P0 Optimization: If config path is missing (Shortcut/Headless), generate it inside Service
@@ -1741,6 +1744,9 @@ class SingBoxService : VpnService() {
                                     action = SingBoxService.ACTION_START
                                     putExtra(SingBoxService.EXTRA_CONFIG_PATH, result.path)
                                     putExtra(SingBoxService.EXTRA_CLEAN_CACHE, cleanCache)
+                                    pendingNodeName?.let {
+                                        putExtra(SingBoxService.EXTRA_PENDING_NODE_NAME, it)
+                                    }
                                 }
                                 startService(newIntent)
                             } else {
@@ -1763,6 +1769,7 @@ class SingBoxService : VpnService() {
                     return START_STICKY
                 }
 
+                initializeStartupNodeLabel(configPath)
                 updateServiceState(ServiceState.STARTING)
                 synchronized(this) {
                     // FIX: Ensure pendingCleanCache is set from intent even for cold start
@@ -1935,6 +1942,7 @@ class SingBoxService : VpnService() {
         SingBoxService.isManuallyStopped = false
         VpnStateStore.setManuallyStopped(false)
         VpnTileService.persistVpnPending("starting")
+        initializeStartupNodeLabel(runningConfigFile.absolutePath, explicitTag = null)
         updateServiceState(ServiceState.STARTING)
         startVpn(runningConfigFile.absolutePath)
     }
@@ -2223,20 +2231,7 @@ class SingBoxService : VpnService() {
         }
 
         SingBoxService.lastConfigPath = configPath
-
-        // 启动前同步节点展示名。禁止优先读 :bg 的 ConfigRepository（可能仍是旧 activeNodeId）。
-        runCatching {
-            val preferred = pendingNodeName?.takeIf { it.isNotBlank() }
-                ?: VpnStateStore.getSelectedNodeLabel().takeIf { it.isNotBlank() }
-                ?: run {
-                    val repo = ConfigRepository.getInstance(this)
-                    val nodeId = repo.activeNodeId.value
-                    repo.nodes.value.find { it.id == nodeId }?.name
-                }
-            if (!preferred.isNullOrBlank()) {
-                VpnStateStore.setActiveLabel(preferred)
-            }
-        }
+        initializeStartupNodeLabel(configPath)
 
         // 启动前台通知（必须在协程前调用）
         var foregroundStarted = false

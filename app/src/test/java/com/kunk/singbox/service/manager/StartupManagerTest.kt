@@ -59,6 +59,36 @@ class StartupManagerTest {
         assertFalse(preferredBody.contains("activeNodeId"))
     }
 
+    private fun assertOrdered(
+        source: String,
+        scopeStart: String,
+        first: String,
+        second: String
+    ) {
+        val scope = source.substringAfter(scopeStart)
+        assertTrue(scope.indexOf(first) in 0 until scope.indexOf(second))
+    }
+
+    @Test
+    fun startupLabelIsInitializedBeforeStartingStateIsPublished() {
+        val vpnSource = File("src/main/java/com/kunk/singbox/service/SingBoxService.kt").readText(Charsets.UTF_8)
+        assertOrdered(vpnSource, "SingBoxService.ACTION_START -> {", "initializeStartupNodeLabel", "updateServiceState")
+        assertOrdered(
+            vpnSource,
+            "protected fun handleStickyRestartIntent() {",
+            "initializeStartupNodeLabel",
+            "updateServiceState"
+        )
+
+        val proxySource = File("src/main/java/com/kunk/singbox/service/ProxyOnlyService.kt").readText(Charsets.UTF_8)
+        assertOrdered(
+            proxySource,
+            "private fun startCore(configPath: String) {",
+            "initializeStartupNodeLabel",
+            "notifyRemoteState"
+        )
+    }
+
     @Test
     fun shutdownCancelsAndWaitsForPostStartTasks() {
         val serviceSource = File("src/main/java/com/kunk/singbox/service/SingBoxService.kt")

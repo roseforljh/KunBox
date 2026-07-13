@@ -1,5 +1,7 @@
 package com.kunk.singbox.service
 
+import com.kunk.singbox.model.Outbound
+import com.kunk.singbox.model.SingBoxConfig
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -46,6 +48,28 @@ class NotificationNodeLabelTest {
         )
 
         assertNull(label)
+    }
+
+    @Test
+    fun resolveStartupProxyTagPrefersExplicitThenDefaultThenFirstOutbound() {
+        val proxy = Outbound(type = "selector", tag = "PROXY", outbounds = listOf("node-a"))
+
+        assertEquals("node-c", resolveStartupProxyTag(SingBoxConfig(), explicitTag = "node-c"))
+        assertEquals(
+            "node-b",
+            resolveStartupProxyTag(SingBoxConfig(outbounds = listOf(proxy.copy(default = "node-b"))))
+        )
+        assertEquals("node-a", resolveStartupProxyTag(SingBoxConfig(outbounds = listOf(proxy))))
+    }
+
+    @Test
+    fun resolveStartupProxyTagReturnsNullWithoutUsableProxySelector() {
+        assertNull(resolveStartupProxyTag(SingBoxConfig()))
+        assertNull(
+            resolveStartupProxyTag(
+                SingBoxConfig(outbounds = listOf(Outbound(type = "selector", tag = "PROXY")))
+            )
+        )
     }
 
     @Test
