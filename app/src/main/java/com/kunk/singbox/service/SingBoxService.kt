@@ -1092,28 +1092,49 @@ class SingBoxService : VpnService() {
     private suspend fun runAutoFailoverProbeSequenceBody(trigger: String) {
         val currentTag = resolveCurrentProxyOutboundTag()
         if (currentTag.isNullOrBlank()) {
-            Log.d(SingBoxService.TAG, "[AutoFailover] skip, no current PROXY selection: $trigger")
+            LogRepository.getInstance().addLog(
+                "WARN: Health failover probe skipped reason=no_proxy_selection trigger=$trigger"
+            )
             return
         }
 
-        if (SingBoxService.isHealthFastPathTrigger(trigger)) {
-            LogRepository.getInstance().addLog(
-                "INFO: Health failover probe started current=$currentTag trigger=$trigger"
-            )
-        }
+        LogRepository.getInstance().addLog(
+            "INFO: Health failover probe started current=$currentTag trigger=$trigger"
+        )
 
         val firstEvaluation = runAutoFailoverProbeRound(currentTag, trigger)
         when {
             firstEvaluation.outcome == NodeAutoFailoverPolicy.ProbeOutcome.CURRENT_HEALTHY -> {
-                Log.i(SingBoxService.TAG, "[AutoFailover] current node healthy on first probe: $currentTag")
+                LogRepository.getInstance().addLog(
+                    "INFO: Health failover probe keep current=$currentTag reason=offline_healthy " +
+                        "delay=${firstEvaluation.currentDelayMs ?: -1} trigger=$trigger"
+                )
             }
 
             firstEvaluation.outcome !=
                 NodeAutoFailoverPolicy.ProbeOutcome.CURRENT_FAILED_WITH_ALTERNATIVE -> {
-                Log.i(
-                    SingBoxService.TAG,
-                    "[AutoFailover] probe did not find a healthy alternative: ${firstEvaluation.outcome}"
+                LogRepository.getInstance().addLog(
+                    "WARN: Health failover probe no switch current=$currentTag " +
+                        "outcome=${firstEvaluation.outcome} " +
+                        "delay=${firstEvaluation.currentDelayMs ?: -1} trigger=$trigger"
                 )
+            }
+
+            // 运行态已死（远程 DNS 超时等）：有候选就立刻切，不再做第二轮离线确认
+            SingBoxService.isHealthFastPathTrigger(trigger) -> {
+                val targetTag = firstEvaluation.alternativeTag.orEmpty()
+                if (targetTag.isBlank()) {
+                    LogRepository.getInstance().addLog(
+                        "WARN: Health failover probe no switch current=$currentTag " +
+                            "outcome=no_target trigger=$trigger"
+                    )
+                    return
+                }
+                LogRepository.getInstance().addLog(
+                    "INFO: Health failover fast switch current=$currentTag " +
+                        "to=$targetTag altDelay=${firstEvaluation.alternativeDelayMs ?: -1} trigger=$trigger"
+                )
+                performAutoFailoverSwitch(currentTag, targetTag, trigger)
             }
 
             else -> {
@@ -1136,14 +1157,16 @@ class SingBoxService : VpnService() {
         when {
             secondEvaluation.outcome !=
                 NodeAutoFailoverPolicy.ProbeOutcome.CURRENT_FAILED_WITH_ALTERNATIVE -> {
-                Log.i(
-                    SingBoxService.TAG,
-                    "[AutoFailover] second probe recovered or no alternative: ${secondEvaluation.outcome}"
+                LogRepository.getInstance().addLog(
+                    "INFO: Health failover second probe no switch current=$currentTag " +
+                        "outcome=${secondEvaluation.outcome} trigger=$trigger"
                 )
             }
 
             secondEvaluation.alternativeTag.isNullOrBlank() && firstEvaluation.alternativeTag.isNullOrBlank() -> {
-                Log.i(SingBoxService.TAG, "[AutoFailover] second probe has no target alternative")
+                LogRepository.getInstance().addLog(
+                    "WARN: Health failover second probe no target current=$currentTag trigger=$trigger"
+                )
             }
 
             else -> {
@@ -1158,19 +1181,91 @@ class SingBoxService : VpnService() {
         currentTag: String,
         trigger: String
     ): NodeAutoFailoverPolicy.ProbeEvaluation {
-        val results = testGroupCandidatesLatency("PROXY", currentTag, trigger)
         val quarantined = loadActiveAutoFailoverQuarantine(System.currentTimeMillis())
+        val quarantinedTags = quarantined.map { it.tag }.toSet()
+        var results = testGroupCandidatesLatency("PROXY", currentTag, trigger)
+        var sampleSource = "live_probe"
+
+        // 离线测速空结果时，用缓存/历史延迟兜底，避免 dns 已死却 NO_RESULTS 不切
+        if (results.isEmpty() && SingBoxService.isHealthFastPathTrigger(trigger)) {
+            results = resolveAutoFailoverFallbackDelays(currentTag, quarantinedTags)
+            sampleSource = "fallback_saved"
+        }
+
+        // dns/active 失败已证明运行态挂了，离线测速不得把当前节点判回健康
         val evaluation = NodeAutoFailoverPolicy.evaluateProbe(
             currentTag = currentTag,
             urlTestResults = results,
-            quarantinedTags = quarantined.map { it.tag }.toSet()
+            quarantinedTags = quarantinedTags,
+            treatCurrentAsFailed = SingBoxService.isHealthFastPathTrigger(trigger)
         )
-        Log.i(
-            SingBoxService.TAG,
-            "[AutoFailover] probe current=$currentTag outcome=${evaluation.outcome} " +
-                "alt=${evaluation.alternativeTag ?: "(none)"} delays=${results.size}"
+        LogRepository.getInstance().addLog(
+            "INFO: Health failover probe result current=$currentTag outcome=${evaluation.outcome} " +
+                "currentDelay=${evaluation.currentDelayMs ?: -1} " +
+                "alt=${evaluation.alternativeTag ?: "(none)"} " +
+                "altDelay=${evaluation.alternativeDelayMs ?: -1} " +
+                "samples=${results.size} source=$sampleSource trigger=$trigger"
         )
         return evaluation
+    }
+
+    /**
+     * 快路径离线测速失败时的候选兜底：
+     * 1) 缓存备份节点
+     * 2) 节点列表里已有正延迟的 PROXY 组成员
+     * 3) 任意非当前、未隔离的 PROXY 组成员（合成 delay=Int.MAX_VALUE-1）
+     */
+    private fun resolveAutoFailoverFallbackDelays(
+        currentTag: String,
+        quarantinedTags: Set<String>
+    ): Map<String, Int> {
+        val config = loadLastRunningConfig() ?: return emptyMap()
+        val outbounds = config.outbounds.orEmpty()
+        val byTag = outbounds.associateBy { it.tag }
+        val groupTags = resolveAutoFailoverGroupCandidates("PROXY", outbounds, byTag)
+            .map { it.tag }
+            .filter { tag ->
+                tag.isNotBlank() &&
+                    UrlTestTagMatcher.normalizeTag(tag) != UrlTestTagMatcher.normalizeTag(currentTag) &&
+                    quarantinedTags.none { q ->
+                        UrlTestTagMatcher.normalizeTag(q) == UrlTestTagMatcher.normalizeTag(tag)
+                    }
+            }
+        if (groupTags.isEmpty()) return emptyMap()
+
+        val result = linkedMapOf<String, Int>()
+        val cached = autoFailoverCandidateCache.resolve(
+            currentTag = currentTag,
+            nowMs = System.currentTimeMillis(),
+            quarantinedTags = quarantinedTags
+        )
+        if (!cached.isNullOrBlank() && groupTags.any {
+                UrlTestTagMatcher.normalizeTag(it) == UrlTestTagMatcher.normalizeTag(cached)
+            }
+        ) {
+            result[cached] = 1
+        }
+
+        val saved = ConfigRepository.getInstance(this@SingBoxService).nodes.value
+        for (node in saved) {
+            val latency = node.latencyMs ?: continue
+            if (latency <= 0L || latency > Int.MAX_VALUE) continue
+            val tag = node.name.trim()
+            if (tag.isBlank()) continue
+            if (groupTags.none { UrlTestTagMatcher.normalizeTag(it) == UrlTestTagMatcher.normalizeTag(tag) }) {
+                continue
+            }
+            val existing = result[tag]
+            if (existing == null || latency.toInt() < existing) {
+                result[tag] = latency.toInt()
+            }
+        }
+
+        if (result.isEmpty()) {
+            // 最后兜底：随便挑一个组成员，让切换发生，live 终验再决定去留
+            result[groupTags.first()] = Int.MAX_VALUE - 1
+        }
+        return result
     }
 
     protected suspend fun testGroupCandidatesLatency(groupTag: String): Map<String, Int> {
@@ -1382,11 +1477,10 @@ class SingBoxService : VpnService() {
             "INFO: Auto failover escalate resetNetwork result=$reset trigger=$trigger"
         )
 
-        // live 终验：选中正确 + 观察窗远程 DNS + 离线延迟初筛
+        // live 终验：只看选中正确 + 观察窗远程 DNS，不再依赖离线延迟
         healthSignalAggregator.clearDnsFailures()
         delay(SingBoxService.AUTO_FAILOVER_LIVE_OBSERVE_MS)
         val selectedTag = resolveCurrentProxyOutboundTag()
-        val offlineDelayMs = measureAutoFailoverPostCheckDelay(targetTag, trigger)
         val recentDnsFailures = healthSignalAggregator.recentRemoteDnsFailureCount(
             nowMs = SystemClock.elapsedRealtime(),
             windowMs = SingBoxService.AUTO_FAILOVER_LIVE_OBSERVE_MS
@@ -1394,7 +1488,6 @@ class SingBoxService : VpnService() {
         val failReason = evaluateAutoFailoverLiveCheck(
             targetTag = targetTag,
             selectedTag = selectedTag,
-            offlineDelayMs = offlineDelayMs,
             recentRemoteDnsFailures = recentDnsFailures
         )
         if (failReason != null) {
@@ -1404,7 +1497,7 @@ class SingBoxService : VpnService() {
             BoxWrapperManager.resetNetwork()
             LogRepository.getInstance().addLog(
                 "WARN: Auto failover liveCheck FAIL node=$targetTag reason=$failReason " +
-                    "offlineDelay=${offlineDelayMs ?: -1} dnsFails=$recentDnsFailures " +
+                    "dnsFails=$recentDnsFailures " +
                     "selected=${selectedTag ?: "(none)"} " +
                     "rollback=${if (rolledBack) "ok" else "failed"}"
             )
@@ -1427,32 +1520,9 @@ class SingBoxService : VpnService() {
         val elapsedMs = SystemClock.elapsedRealtime() - startedAtMs
         LogRepository.getInstance().addLog(
             "INFO: Auto failover committed $currentTag -> $displayName trigger=$trigger " +
-                "elapsed=${elapsedMs}ms offlineDelay=${offlineDelayMs ?: -1} dnsFails=$recentDnsFailures"
+                "elapsed=${elapsedMs}ms dnsFails=$recentDnsFailures"
         )
         Log.i(SingBoxService.TAG, "[AutoFailover] switched from $currentTag to $displayName, trigger=$trigger")
-    }
-
-    /** 切换后对目标节点再测一次延迟，仅作初筛，不单独决定 commit。 */
-    private suspend fun measureAutoFailoverPostCheckDelay(
-        targetTag: String,
-        trigger: String
-    ): Long? {
-        val config = loadLastRunningConfig() ?: return null
-        val outbounds = config.outbounds.orEmpty()
-        val target = outbounds.firstOrNull { it.tag == targetTag } ?: return null
-        val settings = SettingsRepository.getInstance(this@SingBoxService).settings.first()
-        val timeoutMs = SingBoxService.resolveAutoFailoverCandidateTimeoutMs(
-            trigger = trigger,
-            userTimeoutMs = settings.latencyTestTimeout
-        )
-        val latency = runCatching {
-            SingBoxCore.getInstance(this@SingBoxService).testOutboundLatency(
-                outbound = target,
-                allOutbounds = outbounds,
-                timeoutOverrideMs = timeoutMs
-            )
-        }.getOrDefault(-1L)
-        return latency.takeIf { it > 0L }
     }
 
     private fun quarantineAutoFailoverNode(tag: String) {

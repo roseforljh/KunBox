@@ -152,13 +152,38 @@ class HealthAutoFailoverLogicTest {
     }
 
     @Test
-    fun healthFastPathBudgetCoversTwoNativeLatencyRoundsBeforeTotalBudget() {
+    fun healthFastPathBudgetCoversSingleNativeLatencyRoundBeforeTotalBudget() {
+        // dns/active 快路径：一轮离线候选 + 立即切换，不再二次确认
         val perRoundMs = SingBoxService.resolveAutoFailoverPortReadyTimeoutMs("active_probe_failed") +
             SingBoxService.resolveAutoFailoverCandidateTimeoutMs("active_probe_failed", 5_000)
-        val twoRoundProbeMs = perRoundMs * 2 +
-            SingBoxService.resolveAutoFailoverRetryDelayMs("active_probe_failed")
 
-        assertTrue(twoRoundProbeMs < SingBoxService.HEALTH_FAST_FAILOVER_TOTAL_TIMEOUT_MS)
+        assertTrue(perRoundMs < SingBoxService.HEALTH_FAST_FAILOVER_TOTAL_TIMEOUT_MS)
+    }
+
+    @Test
+    fun dnsFastPathSwitchesOnFirstProbeWithoutSecondRound() {
+        val source = File("src/main/java/com/kunk/singbox/service/SingBoxService.kt").readText()
+        val bodyStart = source.indexOf("private suspend fun runAutoFailoverProbeSequenceBody")
+        val bodyEnd = source.indexOf("protected suspend fun handleSecondAutoFailoverProbe", bodyStart)
+        val body = source.substring(bodyStart, bodyEnd)
+        val roundStart = source.indexOf("protected suspend fun runAutoFailoverProbeRound")
+        val roundEnd = source.indexOf("protected suspend fun testGroupCandidatesLatency(groupTag: String)", roundStart)
+        val roundBody = source.substring(roundStart, roundEnd)
+
+        assertTrue(body.contains("isHealthFastPathTrigger(trigger)"))
+        assertTrue(body.contains("Health failover fast switch"))
+        assertTrue(body.contains("performAutoFailoverSwitch"))
+        assertTrue(roundBody.contains("treatCurrentAsFailed"))
+        assertTrue(roundBody.contains("resolveAutoFailoverFallbackDelays"))
+        assertTrue(roundBody.contains("fallback_saved"))
+    }
+
+    @Test
+    fun liveCheckNoLongerHardDependsOnOfflineDelay() {
+        val source = File("src/main/java/com/kunk/singbox/service/LiveNodeHealthChecker.kt").readText()
+        assertFalse(source.contains("offline_delay_failed"))
+        assertTrue(source.contains("live_remote_dns_timeout"))
+        assertTrue(source.contains("selected_mismatch"))
     }
 
     @Test

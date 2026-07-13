@@ -114,6 +114,21 @@ class NodeAutoFailoverPolicyTest {
     }
 
     @Test
+    fun evaluateProbeIgnoresOfflineDelayWhenCurrentMarkedFailedByLiveSignal() {
+        // 远程 DNS 已超时：即使离线测速仍有 60ms，也必须切走
+        val evaluation = NodeAutoFailoverPolicy.evaluateProbe(
+            currentTag = "node-a",
+            urlTestResults = mapOf("node-a" to 60, "node-b" to 95, "node-c" to 140),
+            treatCurrentAsFailed = true
+        )
+
+        assertEquals(NodeAutoFailoverPolicy.ProbeOutcome.CURRENT_FAILED_WITH_ALTERNATIVE, evaluation.outcome)
+        assertEquals("node-b", evaluation.alternativeTag)
+        assertEquals(95, evaluation.alternativeDelayMs)
+        assertEquals(60, evaluation.currentDelayMs)
+    }
+
+    @Test
     fun evaluateProbePicksBestHealthyAlternativeWhenCurrentNodeFails() {
         val evaluation = NodeAutoFailoverPolicy.evaluateProbe(
             currentTag = "node-a",

@@ -133,10 +133,15 @@ object NodeAutoFailoverPolicy {
         return BudgetState(windowStartAtMs = windowStartAtMs, count = count + 1)
     }
 
+    /**
+ * @param treatCurrentAsFailed 运行态已判定当前节点失效（如远程 DNS 超时）时为 true。
+ * 此时忽略离线延迟，避免“测速有延迟但实际上网死”挡住自动切换。
+ */
     internal fun evaluateProbe(
         currentTag: String?,
         urlTestResults: Map<String, Int>,
-        quarantinedTags: Set<String> = emptySet()
+        quarantinedTags: Set<String> = emptySet(),
+        treatCurrentAsFailed: Boolean = false
     ): ProbeEvaluation {
         val normalizedCurrentTag = currentTag?.trim().orEmpty()
         val alternative = urlTestResults.asSequence()
@@ -158,18 +163,21 @@ object NodeAutoFailoverPolicy {
                 outcome = ProbeOutcome.NO_RESULTS,
                 currentTag = normalizedCurrentTag
             )
-            currentDelay != null -> ProbeEvaluation(
+            // 离线延迟仅作初筛；运行态已失败时不得因假活延迟放行当前节点
+            !treatCurrentAsFailed && currentDelay != null -> ProbeEvaluation(
                 outcome = ProbeOutcome.CURRENT_HEALTHY,
                 currentTag = normalizedCurrentTag,
                 currentDelayMs = currentDelay
             )
             alternative == null -> ProbeEvaluation(
                 outcome = ProbeOutcome.NETWORK_FAILURE,
-                currentTag = normalizedCurrentTag
+                currentTag = normalizedCurrentTag,
+                currentDelayMs = currentDelay
             )
             else -> ProbeEvaluation(
                 outcome = ProbeOutcome.CURRENT_FAILED_WITH_ALTERNATIVE,
                 currentTag = normalizedCurrentTag,
+                currentDelayMs = currentDelay,
                 alternativeTag = alternative.first,
                 alternativeDelayMs = alternative.second
             )
