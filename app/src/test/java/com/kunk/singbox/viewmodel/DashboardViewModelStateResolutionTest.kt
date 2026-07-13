@@ -75,6 +75,14 @@ class DashboardViewModelStateResolutionTest {
             "...24",
             resolveDashboardDisplayedNodeName(
                 connectionState = ConnectionState.Connecting,
+                runtimeLabel = "旧节点",
+                selectedNodeDisplayName = "...24"
+            )
+        )
+        assertEquals(
+            "...24",
+            resolveDashboardDisplayedNodeName(
+                connectionState = ConnectionState.Connecting,
                 runtimeLabel = "",
                 selectedNodeDisplayName = "...24"
             )
