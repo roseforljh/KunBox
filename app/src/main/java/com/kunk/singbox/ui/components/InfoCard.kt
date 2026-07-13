@@ -39,6 +39,7 @@ import com.kunk.singbox.ui.theme.liquidGlassPanel
 import com.kunk.singbox.ui.theme.liquidGlassProgressColor
 import com.kunk.singbox.ui.theme.liquidGlassProgressTrackColor
 
+@Suppress("LongMethod")
 @Composable
 fun InfoCard(
     modifier: Modifier = Modifier,
