@@ -483,14 +483,12 @@ fun DashboardScreen(
                     }
                 )
 
-                Spacer(modifier = Modifier.height(24.dp))
-
                 // Quick Actions Card
                 StandardCard(modifier = Modifier.fillMaxWidth(), border = null) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(vertical = 16.dp, horizontal = 8.dp),
+                            .padding(vertical = 8.dp, horizontal = 8.dp),
                         horizontalArrangement = Arrangement.SpaceEvenly,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
