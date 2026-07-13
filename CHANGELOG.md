@@ -1,5 +1,22 @@
 # Changelog
 
+## [2.19.2](https://github.com/roseforljh/KunBox/compare/v2.19.1...v2.19.2) (2026-07-13)
+
+
+### Bug Fixes
+
+* 修复 WireGuard 延迟探测 endpoint 组装与 runtime 归一 ([f2ea945](https://github.com/roseforljh/KunBox/commit/f2ea945115afac5ae6eccd55a76d06eb1a3a29a0))
+* 修复启动时首页闪现旧节点 ([aa02eae](https://github.com/roseforljh/KunBox/commit/aa02eaefe96c627e9fb4e194ff41f2f604345975))
+* 修复规则模式分流与跨进程节点同步 ([b8653e6](https://github.com/roseforljh/KunBox/commit/b8653e627683bd30d7a19df04bd3bd315165398c))
+* 启动前同步本次节点标签 ([4fd9c48](https://github.com/roseforljh/KunBox/commit/4fd9c489be9b701cd1df0363bf53cf70731db8ed))
+* 启动后保持手选节点并隔离运行态切换 ([16813b4](https://github.com/roseforljh/KunBox/commit/16813b4716806852297b97b17ea920efcc8a8759))
+* 标注首页统计卡片布局复杂度 ([2ba20af](https://github.com/roseforljh/KunBox/commit/2ba20afd380aff936f43e1b7799a9865afdd8f86))
+* 清理自动切换终验冗余参数 ([101579f](https://github.com/roseforljh/KunBox/commit/101579f38d69f0139e42d0d56b10e827daa9afe4))
+* 直连 DNS 双栈默认仅 IPv4，避免国内站 AAAA 失败 ([5cb7f0c](https://github.com/roseforljh/KunBox/commit/5cb7f0c73620067feaf70e49547f4c31e83c5051))
+* 自动切换加 live 验收与升级恢复，主页显示运行态节点 ([4f30727](https://github.com/roseforljh/KunBox/commit/4f30727916ca9ee433781f40139135d491f9f9d7))
+* 远程 DNS 超时强制自动切换，空测速结果回退历史候选 ([5dfe55b](https://github.com/roseforljh/KunBox/commit/5dfe55b6c21229f6a3bbd7ac35a3bfdca10f0213))
+* 首页统计行下移对齐，延迟点击改为圆形反馈 ([fa77689](https://github.com/roseforljh/KunBox/commit/fa776893368f1e9f53c2c2bed17f6d2f2086b38d))
+
 ## [2.19.1](https://github.com/roseforljh/KunBox/compare/v2.19.0...v2.19.1) (2026-07-12)
 
 
