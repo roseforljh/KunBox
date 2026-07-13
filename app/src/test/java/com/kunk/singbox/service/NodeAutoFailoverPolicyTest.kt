@@ -230,5 +230,4 @@ class NodeAutoFailoverPolicyTest {
 
         assertFalse(NodeAutoFailoverPolicy.shouldStartProbe(context, trigger = "dns_remote_timeout"))
     }
-
-    }
+}

@@ -134,9 +134,9 @@ object NodeAutoFailoverPolicy {
     }
 
     /**
- * @param treatCurrentAsFailed 运行态已判定当前节点失效（如远程 DNS 超时）时为 true。
- * 此时忽略离线延迟，避免“测速有延迟但实际上网死”挡住自动切换。
- */
+     * @param treatCurrentAsFailed 运行态已判定当前节点失效（如远程 DNS 超时）时为 true。
+     * 此时忽略离线延迟，避免“测速有延迟但实际上网死”挡住自动切换。
+     */
     internal fun evaluateProbe(
         currentTag: String?,
         urlTestResults: Map<String, Int>,

@@ -30,26 +30,12 @@ class LiveNodeHealthCheckerTest {
     }
 
     @Test
-    fun evaluateDoesNotRequireOfflineDelay() {
-        // 离线延迟假活不可信，live 终验不再依赖它
-        assertNull(
-            evaluateAutoFailoverLiveCheck(
-                targetTag = "node-b",
-                selectedTag = "node-b",
-                offlineDelayMs = null,
-                recentRemoteDnsFailures = 0
-            )
-        )
-    }
-
-    @Test
     fun evaluateFailsWhenLiveRemoteDnsTimeoutsSpike() {
         assertEquals(
             "live_remote_dns_timeout",
             evaluateAutoFailoverLiveCheck(
                 targetTag = "node-b",
                 selectedTag = "node-b",
-                offlineDelayMs = 50L,
                 recentRemoteDnsFailures = 3
             )
         )
@@ -61,7 +47,6 @@ class LiveNodeHealthCheckerTest {
             evaluateAutoFailoverLiveCheck(
                 targetTag = " node-a ",
                 selectedTag = "node-a",
-                offlineDelayMs = 10L,
                 recentRemoteDnsFailures = 0
             )
         )

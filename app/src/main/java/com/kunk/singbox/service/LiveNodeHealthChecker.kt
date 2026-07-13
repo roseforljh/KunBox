@@ -11,7 +11,6 @@ import com.kunk.singbox.service.manager.UrlTestTagMatcher
 internal fun evaluateAutoFailoverLiveCheck(
     targetTag: String,
     selectedTag: String?,
-    offlineDelayMs: Long? = null,
     recentRemoteDnsFailures: Int,
     maxAllowedDnsFailures: Int = 1
 ): String? {
