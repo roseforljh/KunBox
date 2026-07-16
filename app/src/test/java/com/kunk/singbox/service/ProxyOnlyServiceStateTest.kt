@@ -10,6 +10,7 @@ class ProxyOnlyServiceStateTest {
 
     @Test
     fun `destroy keeps recovery markers when proxy mode is still active`() {
+        // 意外销毁不得清 mode：shouldClear=false，onDestroy 走保留意图分支
         assertFalse(
             ProxyOnlyService.shouldClearRuntimeStateOnDestroy(
                 isRunning = false,
@@ -19,6 +20,29 @@ class ProxyOnlyServiceStateTest {
                 mode = VpnStateStore.CoreMode.PROXY
             )
         )
+        assertFalse(
+            ProxyOnlyService.shouldClearRuntimeStateOnDestroy(
+                isRunning = true,
+                isStarting = false,
+                isStopping = false,
+                pending = "",
+                mode = VpnStateStore.CoreMode.PROXY
+            )
+        )
+    }
+
+    @Test
+    fun unexpectedDestroySourcePreservesModeIntent() {
+        val source = File("src/main/java/com/kunk/singbox/service/ProxyOnlyService.kt")
+            .readText(Charsets.UTF_8)
+        assertTrue(source.contains("preserveRecoveryIntentOnUnexpectedDestroy"))
+        assertTrue(source.contains("mode == VpnStateStore.CoreMode.PROXY"))
+        // 意外路径不得 setMode(NONE)
+        val preserveBody = source
+            .substringAfter("private fun preserveRecoveryIntentOnUnexpectedDestroy()")
+            .substringBefore("override fun onTaskRemoved")
+        assertFalse(preserveBody.contains("setMode(VpnStateStore.CoreMode.NONE)"))
+        assertFalse(preserveBody.contains("clearRuntimeState()"))
     }
 
     @Test

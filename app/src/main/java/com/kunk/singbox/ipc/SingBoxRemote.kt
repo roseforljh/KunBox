@@ -250,7 +250,9 @@ object SingBoxRemote {
     }
 
     private fun syncStateFromStore() {
-        val state = resolvePersistedState(hasVpnTransport = false)
+        // 有 context 就查真实 VPN transport，避免把运行中的 VPN 误判成 STOPPED
+        val hasVpnTransport = contextRef?.get()?.let { hasSystemVpn(it) } ?: false
+        val state = resolvePersistedState(hasVpnTransport = hasVpnTransport)
         val storedLabel = VpnStateStore.getActiveLabel()
         val storedError = VpnStateStore.getLastError()
         val storedManuallyStopped = VpnStateStore.isManuallyStopped()

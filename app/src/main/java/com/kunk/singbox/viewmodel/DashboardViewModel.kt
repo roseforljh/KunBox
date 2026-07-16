@@ -275,7 +275,15 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
 
                 val persisted = VpnStateStore.getActive()
 
-                if (!hasSystemVpn && persisted && VpnStateStore.getMode() == VpnStateStore.CoreMode.VPN) {
+                // 收紧：仅当 IPC 已确认 STOPPED 才清运行态；IPC 未可信时不写，避免"假停"窗口
+                if (shouldClearPersistedActiveOnBoot(
+                        hasSystemVpn = hasSystemVpn,
+                        persistedActive = persisted,
+                        mode = VpnStateStore.getMode(),
+                        ipcBound = SingBoxRemote.isBound(),
+                        serviceState = SingBoxRemote.state.value
+                    )
+                ) {
                     VpnTileService.persistVpnState(false)
                 }
 

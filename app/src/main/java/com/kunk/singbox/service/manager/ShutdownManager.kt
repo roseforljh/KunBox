@@ -201,7 +201,18 @@ class ShutdownManager(
                                 manager.cancel(VpnNotificationManager.NOTIFICATION_ID)
                             }
                             VpnTileService.persistVpnState(false)
-                            VpnStateStore.setMode(VpnStateStore.CoreMode.NONE)
+                            val preserveMode = RecoveryPolicy.shouldPreserveModeOnStartFailure(
+                                ServiceStateHolder.preserveRecoveryIntentOnFailure
+                            )
+                            if (preserveMode) {
+                                // 恢复路径启动失败：保留 mode，只清 runtime + claim
+                                VpnStateStore.clearRuntimeState(preserveLastError = true)
+                                VpnStateStore.clearRecoveryClaim()
+                                ServiceStateHolder.preserveRecoveryIntentOnFailure = false
+                                Log.w(TAG, "Recovery start failed, mode preserved for next issuer")
+                            } else {
+                                VpnStateStore.setMode(VpnStateStore.CoreMode.NONE)
+                            }
                             VpnTileService.persistVpnPending("")
                             callbacks.updateServiceState(ServiceState.STOPPED)
                             callbacks.updateTileState()

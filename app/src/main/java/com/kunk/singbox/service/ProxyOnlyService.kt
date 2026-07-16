@@ -1,4 +1,4 @@
-﻿package com.kunk.singbox.service
+package com.kunk.singbox.service
 
 import android.app.NotificationManager
 import android.app.Service
@@ -23,6 +23,8 @@ import com.kunk.singbox.repository.ConfigRepository
 import com.kunk.singbox.repository.LogRepository
 import com.kunk.singbox.repository.SettingsRepository
 import com.kunk.singbox.repository.RuleSetRepository
+import com.kunk.singbox.service.manager.RecoveryPolicy
+import com.kunk.singbox.service.manager.ServiceStateHolder
 import com.kunk.singbox.utils.LocalNetworkPermission
 import com.kunk.singbox.utils.NetworkClient
 import io.nekohasekai.libbox.CommandServer
@@ -389,6 +391,14 @@ class ProxyOnlyService : Service() {
 
         when (intent?.action) {
             ACTION_START -> {
+                // 恢复 START 幂等：核心已在跑/正在起时只刷新状态，不重置 pending
+                val isRecoveryStart = intent.getBooleanExtra(SingBoxService.EXTRA_RECOVERY, false)
+                if (RecoveryPolicy.shouldIgnoreRecoveryStart(isRunning, isStarting)) {
+                    Log.i(TAG, "Duplicate START ignored: proxy core already active (recovery=$isRecoveryStart)")
+                    notifyRemoteState(state = if (isRunning) ServiceState.RUNNING else ServiceState.STARTING)
+                    return START_NOT_STICKY
+                }
+                ServiceStateHolder.preserveRecoveryIntentOnFailure = isRecoveryStart
                 VpnTileService.persistVpnPending("starting")
                 val configPath = intent.getStringExtra(EXTRA_CONFIG_PATH)
 
@@ -441,6 +451,7 @@ class ProxyOnlyService : Service() {
                 }
             }
             ACTION_STOP -> {
+                ServiceStateHolder.preserveRecoveryIntentOnFailure = false
                 VpnTileService.persistVpnPending("stopping")
                 stopCore(stopService = true)
             }
@@ -610,6 +621,8 @@ class ProxyOnlyService : Service() {
                 VpnTileService.persistVpnState(true)
                 VpnStateStore.setMode(VpnStateStore.CoreMode.PROXY)
                 VpnTileService.persistVpnPending("")
+                ServiceStateHolder.preserveRecoveryIntentOnFailure = false
+                VpnStateStore.clearRecoveryClaim()
                 setLastError(null)
                 notifyRemoteState(state = ServiceState.RUNNING)
                 updateTileState()
@@ -659,12 +672,21 @@ class ProxyOnlyService : Service() {
     }
 
     private fun clearStartupFailureState() {
+        val preserveMode = RecoveryPolicy.shouldPreserveModeOnStartFailure(
+            ServiceStateHolder.preserveRecoveryIntentOnFailure
+        )
         isRunning = false
         isStarting = false
         NetworkClient.onVpnStateChanged(false)
         VpnTileService.persistVpnState(false)
-        VpnStateStore.setMode(VpnStateStore.CoreMode.NONE)
+        if (preserveMode) {
+            VpnStateStore.clearRuntimeState(preserveLastError = true)
+        } else {
+            VpnStateStore.setMode(VpnStateStore.CoreMode.NONE)
+        }
         VpnTileService.persistVpnPending("")
+        VpnStateStore.clearRecoveryClaim()
+        ServiceStateHolder.preserveRecoveryIntentOnFailure = false
         notifyRemoteState(state = ServiceState.STOPPED)
         updateTileState()
     }
@@ -740,7 +762,17 @@ class ProxyOnlyService : Service() {
                     }
                     if (shouldClearRuntimeStateAfterStop(stopService = stopSelfRequested)) {
                         VpnTileService.persistVpnState(false)
-                        VpnStateStore.setMode(VpnStateStore.CoreMode.NONE)
+                        val preserveMode = RecoveryPolicy.shouldPreserveModeOnStartFailure(
+                            ServiceStateHolder.preserveRecoveryIntentOnFailure
+                        )
+                        if (preserveMode) {
+                            VpnStateStore.clearRuntimeState(preserveLastError = true)
+                            VpnStateStore.clearRecoveryClaim()
+                            ServiceStateHolder.preserveRecoveryIntentOnFailure = false
+                            Log.w(TAG, "Recovery start failed, mode preserved for next issuer")
+                        } else {
+                            VpnStateStore.setMode(VpnStateStore.CoreMode.NONE)
+                        }
                         VpnTileService.persistVpnPending("")
                     }
                     notifyRemoteState(state = ServiceState.STOPPED)
@@ -925,13 +957,32 @@ class ProxyOnlyService : Service() {
         updateTileState()
     }
 
+    /** 意外销毁：只落"当前不在跑"，mode 意图留给 keepalive/冷启动恢复。 */
+    private fun preserveRecoveryIntentOnUnexpectedDestroy() {
+        isRunning = false
+        isStarting = false
+        NetworkClient.onVpnStateChanged(false)
+        VpnTileService.persistVpnState(false)
+        VpnTileService.persistVpnPending("")
+        notifyRemoteState(state = ServiceState.STOPPED)
+        updateTileState()
+        Log.i(TAG, "onDestroy: unexpected death, recovery intent preserved")
+    }
+
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        // 划任务语义写死：不 stop、不改 manuallyStopped/mode；激进 ROM 杀进程由恢复链路兜底
+        Log.i(TAG, "onTaskRemoved: task swiped away, proxy keeps running")
+        super.onTaskRemoved(rootIntent)
+    }
+
     override fun onDestroy() {
+        val mode = VpnStateStore.getMode()
         val shouldClearRuntimeState = shouldClearRuntimeStateOnDestroy(
             isRunning = isRunning,
             isStarting = isStarting,
             isStopping = isStopping,
             pending = VpnStateStore.getPending(),
-            mode = VpnStateStore.getMode()
+            mode = mode
         )
         val serverToClose = commandServer
         commandServer = null
@@ -943,7 +994,11 @@ class ProxyOnlyService : Service() {
         suppressNotificationUpdates = true
 
         if (shouldClearRuntimeState) {
+            // 用户停/收尾：清运行态与 mode
             clearRuntimeStateOnDestroy()
+        } else if (mode == VpnStateStore.CoreMode.PROXY) {
+            // 意外死亡：与 VPN 一致，保留 mode，只清 active/pending
+            preserveRecoveryIntentOnUnexpectedDestroy()
         }
 
         runCatching {

@@ -1,6 +1,6 @@
 package com.kunk.singbox.viewmodel
 
-import com.kunk.singbox.shouldBlockAutoConnectForPersistedRuntime
+import com.kunk.singbox.ipc.VpnStateStore
 import com.kunk.singbox.model.ConnectionState
 import com.kunk.singbox.service.ServiceState
 import org.junit.Assert.assertEquals
@@ -201,50 +201,56 @@ class DashboardViewModelStateResolutionTest {
     }
 
     @Test
-    fun persistedRuntimeBlocksAutoConnectUntilIpcResolves() {
-        assertTrue(
-            shouldBlockAutoConnectForPersistedRuntime(
+    fun mainActivityGatesAutoConnectOnRecoveryPolicy() {
+        val source = File("src/main/java/com/kunk/singbox/MainActivity.kt")
+            .readText(Charsets.UTF_8)
+
+        assertTrue(source.contains("RecoveryPolicy.shouldAllowAutoConnectStart"))
+        assertTrue(source.contains("RecoveryPolicy.hasRecoverableIntent"))
+        assertFalse(source.contains("shouldBlockAutoConnectForPersistedRuntime"))
+    }
+
+    @Test
+    fun persistedActiveIsClearedOnBootOnlyWhenIpcConfirmsStopped() {
+        // IPC 未绑定：无权清，避免"假停"窗口
+        assertFalse(
+            shouldClearPersistedActiveOnBoot(
+                hasSystemVpn = false,
                 persistedActive = true,
+                mode = VpnStateStore.CoreMode.VPN,
                 ipcBound = false,
                 serviceState = ServiceState.STOPPED
             )
         )
-        assertTrue(
-            shouldBlockAutoConnectForPersistedRuntime(
+        // IPC 绑定但服务仍在跑：不清
+        assertFalse(
+            shouldClearPersistedActiveOnBoot(
+                hasSystemVpn = false,
                 persistedActive = true,
+                mode = VpnStateStore.CoreMode.VPN,
                 ipcBound = true,
                 serviceState = ServiceState.RUNNING
             )
         )
+        // 系统 VPN 仍在：不清
         assertFalse(
-            shouldBlockAutoConnectForPersistedRuntime(
+            shouldClearPersistedActiveOnBoot(
+                hasSystemVpn = true,
                 persistedActive = true,
+                mode = VpnStateStore.CoreMode.VPN,
                 ipcBound = true,
                 serviceState = ServiceState.STOPPED
             )
         )
-        assertFalse(
-            shouldBlockAutoConnectForPersistedRuntime(
-                persistedActive = false,
-                ipcBound = false,
+        // IPC 确认 STOPPED + 无系统 VPN + persisted active：允许清
+        assertTrue(
+            shouldClearPersistedActiveOnBoot(
+                hasSystemVpn = false,
+                persistedActive = true,
+                mode = VpnStateStore.CoreMode.VPN,
+                ipcBound = true,
                 serviceState = ServiceState.STOPPED
             )
         )
-    }
-
-    @Test
-    fun autoConnectWaitsForIpcBeforeTrustingPersistedActiveState() {
-        val source = File("src/main/java/com/kunk/singbox/MainActivity.kt")
-            .readText(Charsets.UTF_8)
-        val conditionBody = source
-            .substringAfter("fun shouldAutoConnect(persistedManuallyStopped: Boolean): Boolean")
-            .substringBefore("val persistedManuallyStopped")
-        val effectBody = source
-            .substringAfter("LaunchedEffect(settings.autoConnect")
-            .substringBefore("LaunchedEffect(settings.excludeFromRecent)")
-
-        assertFalse(conditionBody.contains("VpnStateStore.getActive()"))
-        assertTrue(effectBody.contains("while (VpnStateStore.getActive() && !SingBoxRemote.isBound()"))
-        assertTrue(effectBody.contains("persistedRuntimeBlocksStart = shouldBlockAutoConnectForPersistedRuntime("))
     }
 }

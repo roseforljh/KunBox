@@ -11,12 +11,14 @@ import com.kunk.singbox.repository.SettingsRepository
 import com.kunk.singbox.service.RuleSetAutoUpdateWorker
 import com.kunk.singbox.service.SubscriptionAutoUpdateWorker
 import com.kunk.singbox.service.VpnKeepaliveWorker
+import com.kunk.singbox.service.manager.VpnRecoveryManager
 import com.kunk.singbox.service.manager.NetworkAutoSwitchManager
 import com.kunk.singbox.utils.DefaultNetworkListener
 import com.tencent.mmkv.MMKV
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -72,6 +74,12 @@ class SingBoxApplication : Application(), Configuration.Provider {
                 RuleSetAutoUpdateWorker.rescheduleAll(this@SingBoxApplication)
 
                 VpnKeepaliveWorker.schedule(this@SingBoxApplication)
+
+                // 冷启动单路恢复：被杀且恢复意图仍在时补一枪，与 sticky/keepalive 共用互斥
+                launch(Dispatchers.IO) {
+                    delay(VpnRecoveryManager.COLD_START_RECOVERY_DELAY_MS)
+                    VpnRecoveryManager.attemptOnce(this@SingBoxApplication, source = "app_cold_start")
+                }
             }
         }
 

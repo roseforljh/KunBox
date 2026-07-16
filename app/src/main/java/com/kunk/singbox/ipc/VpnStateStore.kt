@@ -30,6 +30,11 @@ object VpnStateStore {
 
     // Sender-side throttle for ACTION_PREPARE_RESTART to reduce repeated network oscillations.
     private const val KEY_LAST_PREPARE_RESTART_AT_MS = "last_prepare_restart_at_ms"
+
+    // Cross-process mutex for recovery issuers (sticky / keepalive / cold-start recovery).
+    private const val KEY_LAST_RECOVERY_ISSUED_AT_MS = "last_recovery_issued_at_ms"
+    private const val KEY_LAST_RECOVERY_CLAIM_TOKEN = "last_recovery_claim_token"
+    private val recoveryClaimLock = Any()
     private const val KEY_TRAFFIC_CLEAR_TIMESTAMP = "traffic_clear_timestamp"
     private const val KEY_LOG_CLEAR_GENERATION = "log_clear_generation"
     private const val KEY_LAST_MANUAL_STOP_AT_MS = "last_manual_stop_at_ms"
@@ -219,6 +224,33 @@ object VpnStateStore {
         }
         mmkv.encode(KEY_LAST_PREPARE_RESTART_AT_MS, now)
         return true
+    }
+
+    /**
+     * 恢复互斥：进程内 synchronized，写入 token 后二次确认，降低跨进程叠枪概率。
+     * 非严格 CAS（MMKV 无原生 compare-and-swap），服务侧幂等仍是最终兜底。
+     */
+    fun tryClaimRecovery(windowMs: Long): Boolean {
+        if (windowMs <= 0) return true
+        val now = System.currentTimeMillis()
+        val token = "${android.os.Process.myPid()}:$now:${System.identityHashCode(Thread.currentThread())}"
+        synchronized(recoveryClaimLock) {
+            val last = mmkv.decodeLong(KEY_LAST_RECOVERY_ISSUED_AT_MS, 0L)
+            if (now - last in 0 until windowMs) return false
+            mmkv.encode(KEY_LAST_RECOVERY_ISSUED_AT_MS, now)
+            mmkv.encode(KEY_LAST_RECOVERY_CLAIM_TOKEN, token)
+            val storedAt = mmkv.decodeLong(KEY_LAST_RECOVERY_ISSUED_AT_MS, 0L)
+            val storedToken = mmkv.decodeString(KEY_LAST_RECOVERY_CLAIM_TOKEN, null)
+            return storedAt == now && storedToken == token
+        }
+    }
+
+    /** Releases the recovery claim, e.g. when the issued start failed immediately. */
+    fun clearRecoveryClaim() {
+        synchronized(recoveryClaimLock) {
+            mmkv.removeValueForKey(KEY_LAST_RECOVERY_ISSUED_AT_MS)
+            mmkv.removeValueForKey(KEY_LAST_RECOVERY_CLAIM_TOKEN)
+        }
     }
 
     fun getTrafficClearTimestamp(): Long = mmkv.decodeLong(KEY_TRAFFIC_CLEAR_TIMESTAMP, 0L)

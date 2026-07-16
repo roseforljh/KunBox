@@ -1,12 +1,17 @@
 package com.kunk.singbox.service
 
-import android.app.ActivityManager
 import android.content.Context
-import android.content.Intent
-import android.os.Build
 import android.util.Log
-import androidx.work.*
+import androidx.work.Constraints
+import androidx.work.CoroutineWorker
+import androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.NetworkType
+import androidx.work.PeriodicWorkRequestBuilder
+import androidx.work.WorkManager
+import androidx.work.WorkerParameters
 import com.kunk.singbox.ipc.VpnStateStore
+import com.kunk.singbox.service.manager.RecoveryPolicy
+import com.kunk.singbox.service.manager.VpnRecoveryManager
 import java.io.File
 import java.util.concurrent.TimeUnit
 
@@ -22,8 +27,12 @@ class VpnKeepaliveWorker(
         private const val CHECK_INTERVAL_MINUTES = 15L
         private const val RUNNING_CONFIG_FILE = "running_config.json"
 
+        /**
+         * KEEP：已有周期任务时不重置计时。
+         * 冷启动/频繁进 App 若用 UPDATE + initialDelay，会把下次检查不断推后 15 分钟。
+         */
         internal fun existingWorkPolicyForSchedule(): ExistingPeriodicWorkPolicy {
-            return ExistingPeriodicWorkPolicy.UPDATE
+            return ExistingPeriodicWorkPolicy.KEEP
         }
 
         fun schedule(context: Context) {
@@ -37,7 +46,8 @@ class VpnKeepaliveWorker(
                 repeatIntervalTimeUnit = TimeUnit.MINUTES
             )
                 .setConstraints(constraints)
-                .setInitialDelay(15, TimeUnit.MINUTES)
+                // 仅首次 enqueue 生效；KEEP 下后续 schedule 不会用它重置周期
+                .setInitialDelay(CHECK_INTERVAL_MINUTES, TimeUnit.MINUTES)
                 .build()
 
             WorkManager.getInstance(context).enqueueUniquePeriodicWork(
@@ -46,7 +56,7 @@ class VpnKeepaliveWorker(
                 workRequest
             )
 
-            Log.i(TAG, "VPN keepalive worker scheduled (interval: ${CHECK_INTERVAL_MINUTES}min)")
+            Log.i(TAG, "VPN keepalive worker scheduled (interval: ${CHECK_INTERVAL_MINUTES}min, policy=KEEP)")
         }
 
         fun cancel(context: Context) {
@@ -54,18 +64,8 @@ class VpnKeepaliveWorker(
             Log.i(TAG, "VPN keepalive worker cancelled")
         }
 
-        @Suppress("DEPRECATION")
         private fun isCoreServiceAlive(context: Context, mode: VpnStateStore.CoreMode): Boolean {
-            val activityManager = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
-            val expectedServiceName = when (mode) {
-                VpnStateStore.CoreMode.VPN -> SingBoxService::class.java.name
-                VpnStateStore.CoreMode.PROXY -> ProxyOnlyService::class.java.name
-                else -> return false
-            }
-            val services = activityManager.getRunningServices(Int.MAX_VALUE) ?: return false
-            return services.any { running ->
-                running.service.className == expectedServiceName
-            }
+            return VpnRecoveryManager.isCoreServiceAlive(context, mode)
         }
 
         internal fun shouldAttemptRecovery(
@@ -74,10 +74,7 @@ class VpnKeepaliveWorker(
             coreServiceAlive: Boolean,
             runningConfigUsable: Boolean
         ): Boolean {
-            return !manuallyStopped &&
-                mode != VpnStateStore.CoreMode.NONE &&
-                !coreServiceAlive &&
-                runningConfigUsable
+            return RecoveryPolicy.shouldAttemptRecovery(manuallyStopped, mode, coreServiceAlive, runningConfigUsable)
         }
 
         internal fun shouldClearStaleRecoveryState(
@@ -97,11 +94,6 @@ class VpnKeepaliveWorker(
             foregroundStartDenied: Boolean
         ): Boolean {
             return foregroundStartDenied || runAttemptCount >= 3
-        }
-
-        private fun isForegroundStartDenied(error: Exception): Boolean {
-            return Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
-                error.javaClass.name == "android.app.ForegroundServiceStartNotAllowedException"
         }
 
         private fun isRunningConfigUsable(file: File): Boolean {
@@ -150,7 +142,7 @@ class VpnKeepaliveWorker(
             }
             shouldAttemptRecovery(isManuallyStopped, currentMode, coreServiceAlive, runningConfigUsable) -> {
                 Log.w(TAG, "Detected core service died unexpectedly, attempting recovery...")
-                val recovered = attemptVpnRecovery(currentMode, runningConfigFile.absolutePath)
+                val recovered = attemptVpnRecovery()
                 handleRecoveryResult(recovered)
             }
             else -> Result.success()
@@ -167,7 +159,7 @@ class VpnKeepaliveWorker(
         }
 
         if (shouldClearAfterRecoveryFailure(runAttemptCount = runAttemptCount, foregroundStartDenied = false)) {
-            clearStaleRecoveryState("VPN recovery failed after retries")
+            clearRuntimeAfterFailedRecovery("VPN recovery failed after retries")
             return Result.failure()
         }
 
@@ -183,43 +175,8 @@ class VpnKeepaliveWorker(
         }
     }
 
-    private fun attemptVpnRecovery(mode: VpnStateStore.CoreMode, runningConfigPath: String): Boolean {
-        return try {
-            Log.i(TAG, "Attempting to recover VPN service (mode: $mode)...")
-
-            val intent = when (mode) {
-                VpnStateStore.CoreMode.VPN -> {
-                    Intent(applicationContext, SingBoxService::class.java).apply {
-                        action = SingBoxService.ACTION_START
-                        putExtra(SingBoxService.EXTRA_CONFIG_PATH, runningConfigPath)
-                    }
-                }
-                VpnStateStore.CoreMode.PROXY -> {
-                    Intent(applicationContext, ProxyOnlyService::class.java).apply {
-                        action = ProxyOnlyService.ACTION_START
-                        putExtra(ProxyOnlyService.EXTRA_CONFIG_PATH, runningConfigPath)
-                    }
-                }
-                else -> {
-                    Log.w(TAG, "Unknown mode: $mode, skip recovery")
-                    return false
-                }
-            }
-
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-                applicationContext.startForegroundService(intent)
-            } else {
-                applicationContext.startService(intent)
-            }
-            Log.i(TAG, "VPN service recovery triggered successfully")
-            true
-        } catch (e: Exception) {
-            Log.e(TAG, "VPN recovery failed", e)
-            if (isForegroundStartDenied(e)) {
-                clearStaleRecoveryState("VPN recovery blocked by Android background service restrictions")
-            }
-            false
-        }
+    private fun attemptVpnRecovery(): Boolean {
+        return VpnRecoveryManager.attemptOnce(applicationContext, source = "keepalive")
     }
 
     private fun clearStaleRecoveryState(reason: String) {
@@ -227,6 +184,14 @@ class VpnKeepaliveWorker(
         VpnTileService.persistVpnPending("")
         VpnStateStore.clearRuntimeState()
         VpnStateStore.setMode(VpnStateStore.CoreMode.NONE)
+        VpnStateStore.setLastError(reason)
+    }
+
+    /** 恢复失败只清运行态，保留 mode 意图，留给下一次触发源再试。 */
+    private fun clearRuntimeAfterFailedRecovery(reason: String) {
+        VpnTileService.persistVpnState(false)
+        VpnTileService.persistVpnPending("")
+        VpnStateStore.clearRuntimeState()
         VpnStateStore.setLastError(reason)
     }
 }

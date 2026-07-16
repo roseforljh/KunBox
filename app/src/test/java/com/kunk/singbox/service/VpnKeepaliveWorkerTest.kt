@@ -10,8 +10,9 @@ import org.junit.Test
 class VpnKeepaliveWorkerTest {
 
     @Test
-    fun keepaliveScheduleUpdatesExistingWorkWithoutResettingEnqueueTime() {
-        assertEquals(ExistingPeriodicWorkPolicy.UPDATE, VpnKeepaliveWorker.existingWorkPolicyForSchedule())
+    fun keepaliveScheduleKeepsExistingWorkWithoutResettingEnqueueTime() {
+        // KEEP：冷启动反复 schedule 不得把 15min 周期推后
+        assertEquals(ExistingPeriodicWorkPolicy.KEEP, VpnKeepaliveWorker.existingWorkPolicyForSchedule())
     }
 
     @Test
@@ -158,7 +159,11 @@ class VpnKeepaliveWorkerTest {
                 "private fun isCoreServiceAlive(context: Context, mode: VpnStateStore.CoreMode): Boolean"
             )
         )
-        assertTrue(source.contains("running.service.className == expectedServiceName"))
+        assertTrue(source.contains("VpnRecoveryManager.isCoreServiceAlive"))
+        val managerSource = java.io.File(
+            "src/main/java/com/kunk/singbox/service/manager/VpnRecoveryManager.kt"
+        ).readText()
+        assertTrue(managerSource.contains("running.service.className == expectedServiceName"))
         assertFalse(source.contains("private fun isBackgroundProcessAlive"))
         assertFalse(source.contains("bgProcessName"))
     }

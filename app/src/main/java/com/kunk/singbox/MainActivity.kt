@@ -59,8 +59,8 @@ import com.kunk.singbox.utils.LocaleHelper
 import com.kunk.singbox.utils.DeepLinkHandler
 import com.kunk.singbox.ipc.SingBoxRemote
 import com.kunk.singbox.ipc.VpnStateStore
-import com.kunk.singbox.service.ServiceState
 import com.kunk.singbox.service.VpnTileService
+import com.kunk.singbox.service.manager.RecoveryPolicy
 import com.kunk.singbox.ui.components.AppNotificationManager
 import com.kunk.singbox.ui.components.AppNavBar
 import com.kunk.singbox.ui.navigation.AppNavigation
@@ -80,14 +80,6 @@ private data class MainIntentEvent(
     val id: Long,
     val intent: Intent
 )
-
-internal fun shouldBlockAutoConnectForPersistedRuntime(
-    persistedActive: Boolean,
-    ipcBound: Boolean,
-    serviceState: ServiceState
-): Boolean {
-    return persistedActive && (!ipcBound || serviceState != ServiceState.STOPPED)
-}
 
 private object MainIntentEvents {
     private val nextIntentEventId = AtomicLong()
@@ -260,32 +252,26 @@ fun SingBoxApp() {
     }
 
     LaunchedEffect(settings.autoConnect, connectionState, isRunning, isStarting, manuallyStopped) {
-        fun shouldAutoConnect(persistedManuallyStopped: Boolean): Boolean {
-            return settings.autoConnect &&
-                connectionState == ConnectionState.Idle &&
-                !isRunning &&
-                !isStarting &&
-                !manuallyStopped &&
-                !persistedManuallyStopped
+        // 有恢复意图（被杀待恢复）时不点火：恢复由 sticky/keepalive/冷启动单路负责
+        fun shouldAutoConnectNow(): Boolean {
+            val persistedStopped = VpnStateStore.isManuallyStopped()
+            return RecoveryPolicy.shouldAllowAutoConnectStart(
+                autoConnect = settings.autoConnect,
+                connectionIdle = connectionState == ConnectionState.Idle,
+                isRunning = isRunning,
+                isStarting = isStarting,
+                manuallyStopped = manuallyStopped || persistedStopped,
+                hasRecoverableIntent = RecoveryPolicy.hasRecoverableIntent(
+                    manuallyStopped = persistedStopped,
+                    mode = VpnStateStore.getMode()
+                )
+            )
         }
 
-        val persistedManuallyStopped = VpnStateStore.isManuallyStopped()
-        val shouldAutoConnectNow = shouldAutoConnect(persistedManuallyStopped)
-        if (shouldAutoConnectNow) {
+        if (shouldAutoConnectNow()) {
             // Delay a bit to ensure everything is initialized
             delay(1000)
-            var ipcWaitAttempts = 0
-            while (VpnStateStore.getActive() && !SingBoxRemote.isBound() && ipcWaitAttempts < 80) {
-                delay(100)
-                ipcWaitAttempts++
-            }
-            val persistedRuntimeBlocksStart = shouldBlockAutoConnectForPersistedRuntime(
-                persistedActive = VpnStateStore.getActive(),
-                ipcBound = SingBoxRemote.isBound(),
-                serviceState = SingBoxRemote.state.value
-            )
-            val shouldAutoConnectAfterDelay = shouldAutoConnect(VpnStateStore.isManuallyStopped())
-            if (shouldAutoConnectAfterDelay && !persistedRuntimeBlocksStart) {
+            if (shouldAutoConnectNow()) {
                 dashboardViewModel.toggleConnection()
             }
         }

@@ -1,5 +1,6 @@
 package com.kunk.singbox.viewmodel
 
+import com.kunk.singbox.ipc.VpnStateStore
 import com.kunk.singbox.model.ConnectionState
 import com.kunk.singbox.model.FilterMode
 import com.kunk.singbox.model.NodeFilter
@@ -19,6 +20,23 @@ internal fun resolveTrustedDashboardConnectionState(
         ServiceState.STOPPING -> ConnectionState.Disconnecting
         ServiceState.STOPPED -> ConnectionState.Idle
     }
+}
+
+/**
+ * 启动同步时是否允许清掉 persisted active：
+ * 仅当无系统 VPN、persisted active、VPN 模式，且 IPC 已确认服务 STOPPED。
+ * IPC 未可信（未绑定/冷起）时只显示同步中，不写运行态，避免加宽"假停"窗口。
+ */
+internal fun shouldClearPersistedActiveOnBoot(
+    hasSystemVpn: Boolean,
+    persistedActive: Boolean,
+    mode: VpnStateStore.CoreMode,
+    ipcBound: Boolean,
+    serviceState: ServiceState
+): Boolean {
+    if (hasSystemVpn || !persistedActive) return false
+    if (mode != VpnStateStore.CoreMode.VPN) return false
+    return ipcBound && serviceState == ServiceState.STOPPED
 }
 
 /**

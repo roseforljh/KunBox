@@ -30,6 +30,9 @@ object ServiceStateHolder {
 
     const val EXTRA_PREPARE_RESTART_REASON = "prepare_restart_reason"
 
+    // Marks an ACTION_START as a recovery start: must be idempotent, never a clean restart
+    const val EXTRA_RECOVERY = "recovery"
+
     @Volatile
     var instance: com.kunk.singbox.service.SingBoxService? = null
         internal set
@@ -59,6 +62,14 @@ object ServiceStateHolder {
 
     @Volatile
     var isManuallyStopped: Boolean = false
+        internal set
+
+    /**
+     * 当前这次启动是否为恢复路径（EXTRA_RECOVERY / sticky）。
+     * 失败收尾时若为 true，只清 runtime + claim，保留 mode 意图。
+     */
+    @Volatile
+    var preserveRecoveryIntentOnFailure: Boolean = false
         internal set
 
     @Volatile
