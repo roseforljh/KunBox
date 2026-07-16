@@ -14,6 +14,7 @@ import com.google.gson.JsonParser
 import com.google.gson.JsonPrimitive
 import com.google.gson.reflect.TypeToken
 import com.kunk.singbox.R
+import com.kunk.singbox.SingBoxApplication
 import com.kunk.singbox.core.SingBoxCore
 import com.kunk.singbox.database.AppDatabase
 import com.kunk.singbox.database.entity.ActiveStateEntity
@@ -76,6 +77,28 @@ internal suspend fun runLatencyBatchAndApply(
         withContext(NonCancellable) { applyResults() }
         throw e
     }
+}
+
+internal fun resolveRestoredProfileSelection(
+    availableProfileIds: Set<String>,
+    databaseProfileId: String?,
+    databaseNodeId: String?,
+    persistedProfileId: String?,
+    persistedNodeId: String?
+): Pair<String?, String?> {
+    val usePersistedSelection = !persistedProfileId.isNullOrBlank() && persistedProfileId in availableProfileIds
+    val profileId = if (usePersistedSelection) {
+        persistedProfileId
+    } else {
+        databaseProfileId?.takeIf { it in availableProfileIds }
+    }
+    val nodeId = if (usePersistedSelection) {
+        persistedNodeId?.takeIf { it.isNotBlank() }
+            ?: databaseNodeId?.takeIf { databaseProfileId == profileId }
+    } else {
+        databaseNodeId
+    }
+    return profileId to nodeId
 }
 
 @Suppress("TooManyFunctions", "LargeClass", "ProtectedMemberInFinalClass")
@@ -234,6 +257,10 @@ class ConfigRepository(protected val context: Context) {
 
     protected val profilesFileJson: File
         get() = File(context.filesDir, "profiles.json")
+
+    private val isMainProcess: Boolean by lazy {
+        (context.applicationContext as? SingBoxApplication)?.isMainProcess() == true
+    }
 
     init {
         startConfigCacheCleanup()
@@ -474,6 +501,12 @@ class ConfigRepository(protected val context: Context) {
         return profileLastSelectedNode[profileId]
     }
 
+    private fun persistMainProcessSelection(profileId: String, nodeId: String?, nodeName: String?) {
+        if (!isMainProcess) return
+        VpnStateStore.setSelectedNode(profileId, nodeId)
+        VpnStateStore.setSelectedNodeLabel(nodeName)
+    }
+
     protected fun applyActiveProfileNodes(
         profileId: String,
         nodes: List<NodeUi>,
@@ -495,13 +528,7 @@ class ConfigRepository(protected val context: Context) {
         val selectedName = _activeNodeId.value?.let { activeId ->
             nodes.find { it.id == activeId }?.name
         }
-        val storedProfileId = VpnStateStore.getSelectedProfileId()
-        if (storedProfileId.isBlank() ||
-            storedProfileId == profileId && VpnStateStore.getSelectedNodeId().isBlank()
-        ) {
-            VpnStateStore.setSelectedNode(profileId, _activeNodeId.value)
-        }
-        VpnStateStore.setSelectedNodeLabel(selectedName)
+        persistMainProcessSelection(profileId, _activeNodeId.value, selectedName)
     }
 
     protected suspend fun loadProfileNodesWithLatency(profileId: String): List<NodeUi>? {
@@ -889,6 +916,7 @@ class ConfigRepository(protected val context: Context) {
         }
     }
 
+    @Suppress("LongMethod")
     protected suspend fun loadSavedProfiles() {
         try {
             val startTime = System.currentTimeMillis()
@@ -898,14 +926,21 @@ class ConfigRepository(protected val context: Context) {
 
             if (profileEntities.isNotEmpty()) {
                 val profiles = profileEntities.map { it.toUiModel().copy(updateStatus = UpdateStatus.Idle) }
+                val (restoredProfileId, restoredNodeId) = resolveRestoredProfileSelection(
+                    availableProfileIds = profiles.mapTo(mutableSetOf()) { it.id },
+                    databaseProfileId = activeState?.activeProfileId,
+                    databaseNodeId = activeState?.activeNodeId,
+                    persistedProfileId = VpnStateStore.getSelectedProfileId(),
+                    persistedNodeId = VpnStateStore.getSelectedNodeId()
+                )
                 _profiles.value = profiles
-                _activeProfileId.value = activeState?.activeProfileId
+                _activeProfileId.value = restoredProfileId
                 savedNodeLatencies.clear()
                 latencyEntities.forEach { savedNodeLatencies[it.nodeId] = it.latencyMs }
 
                 val elapsed = System.currentTimeMillis() - startTime
                 Log.i(ConfigRepository.TAG, "Loaded ${profiles.size} profiles from Room in ${elapsed}ms")
-                loadActiveProfileNodes(activeState?.activeProfileId, activeState?.activeNodeId)
+                loadActiveProfileNodes(restoredProfileId, restoredNodeId)
                 cleanupLegacyProfileFiles()
                 return
             }
@@ -919,8 +954,15 @@ class ConfigRepository(protected val context: Context) {
 
             if (savedData != null) {
                 val profiles = savedData.profiles.map { it.copy(updateStatus = UpdateStatus.Idle) }
+                val (restoredProfileId, restoredNodeId) = resolveRestoredProfileSelection(
+                    availableProfileIds = profiles.mapTo(mutableSetOf()) { it.id },
+                    databaseProfileId = savedData.activeProfileId,
+                    databaseNodeId = savedData.activeNodeId,
+                    persistedProfileId = VpnStateStore.getSelectedProfileId(),
+                    persistedNodeId = VpnStateStore.getSelectedNodeId()
+                )
                 _profiles.value = profiles
-                _activeProfileId.value = savedData.activeProfileId
+                _activeProfileId.value = restoredProfileId
 
                 savedNodeLatencies.clear()
                 savedNodeLatencies.putAll(savedData.nodeLatencies)
@@ -944,7 +986,7 @@ class ConfigRepository(protected val context: Context) {
 
                 val elapsed = System.currentTimeMillis() - startTime
                 Log.i(ConfigRepository.TAG, "Migrated ${profiles.size} profiles to Room in ${elapsed}ms")
-                loadActiveProfileNodes(savedData.activeProfileId, savedData.activeNodeId)
+                loadActiveProfileNodes(restoredProfileId, restoredNodeId)
                 cleanupLegacyProfileFiles()
             }
         } catch (e: Exception) {
@@ -952,31 +994,29 @@ class ConfigRepository(protected val context: Context) {
         }
     }
 
-    protected fun loadActiveProfileNodes(activeProfileId: String?, activeNodeId: String?) {
+    protected suspend fun loadActiveProfileNodes(activeProfileId: String?, activeNodeId: String?) {
         if (activeProfileId == null) return
         val configFile = File(configDir, "$activeProfileId.json")
         if (!configFile.exists()) return
 
-        scope.launch {
-            try {
-                val configJson = configFile.readText()
-                val config = deduplicateTags(gson.fromJson(configJson, SingBoxConfig::class.java))
-                val nodes = extractNodesFromConfig(config, activeProfileId)
-                val nodesWithLatency = nodes.map { node ->
-                    val latency = savedNodeLatencies[node.id]
-                    if (latency != null) node.copy(latencyMs = latency) else node
-                }
-                profileNodes[activeProfileId] = nodesWithLatency
-                cacheConfig(activeProfileId, config)
-                if (activeProfileId == _activeProfileId.value) {
-                    applyActiveProfileNodes(activeProfileId, nodesWithLatency, activeNodeId)
-                }
-                if (allNodesUiActiveCount.get() > 0) {
-                    updateAllNodesAndGroups()
-                }
-            } catch (e: Exception) {
-                Log.e(ConfigRepository.TAG, "Failed to load config for profile: $activeProfileId", e)
+        try {
+            val configJson = configFile.readText()
+            val config = deduplicateTags(gson.fromJson(configJson, SingBoxConfig::class.java))
+            val nodes = extractNodesFromConfig(config, activeProfileId)
+            val nodesWithLatency = nodes.map { node ->
+                val latency = savedNodeLatencies[node.id]
+                if (latency != null) node.copy(latencyMs = latency) else node
             }
+            profileNodes[activeProfileId] = nodesWithLatency
+            cacheConfig(activeProfileId, config)
+            if (activeProfileId == _activeProfileId.value) {
+                applyActiveProfileNodes(activeProfileId, nodesWithLatency, activeNodeId)
+            }
+            if (allNodesUiActiveCount.get() > 0) {
+                updateAllNodesAndGroups()
+            }
+        } catch (e: Exception) {
+            Log.e(ConfigRepository.TAG, "Failed to load config for profile: $activeProfileId", e)
         }
     }
 
@@ -2008,7 +2048,7 @@ class ConfigRepository(protected val context: Context) {
             name = outbound.tag,
             protocol = outbound.type,
             group = group,
-            latencyMs = null,
+            latencyMs = savedNodeLatencies[id],
             isFavorite = false,
             sourceProfileId = profileId,
             trafficUsed = trafficRepo.getMonthlyTotal(id),
@@ -2049,7 +2089,8 @@ class ConfigRepository(protected val context: Context) {
                     ?: nodes.firstOrNull()?.id
             }
             ?: getProfileLastSelectedNode(profileId)
-        VpnStateStore.setSelectedNode(profileId, selectedNodeId)
+        val selectedNodeName = cached?.firstOrNull { it.id == selectedNodeId }?.name
+        persistMainProcessSelection(profileId, selectedNodeId, selectedNodeName)
 
         fun updateState(nodes: List<NodeUi>) {
             applyActiveProfileNodes(profileId, nodes, targetNodeId)
@@ -2282,6 +2323,8 @@ class ConfigRepository(protected val context: Context) {
         val candidates = _nodes.value
         val matched = candidates.firstOrNull { it.name == proxyName } ?: return false
         if (matched.sourceProfileId != activeProfileId) return false
+        VpnStateStore.setSelectedNode(activeProfileId, matched.id)
+        VpnStateStore.setSelectedNodeLabel(matched.name)
         if (_activeNodeId.value == matched.id) {
             saveProfileNodeMemory(activeProfileId, matched.id)
             return true
@@ -2672,7 +2715,7 @@ class ConfigRepository(protected val context: Context) {
             profileNodes[profile.id] = newNodes
             updateAllNodesAndGroups()
             if (_activeProfileId.value == profile.id) {
-                _nodes.value = newNodes
+                applyActiveProfileNodes(profile.id, newNodes)
             }
             val defaultQrName = context.getString(R.string.profiles_qrcode_subscription)
             val finalName = resolveSubscriptionProfileName(
@@ -2773,6 +2816,7 @@ class ConfigRepository(protected val context: Context) {
             val dnsOverrideConfig = parseDnsOverride(activeProfile?.dnsOverride)
             val rawOutboundsContext = buildRunOutbounds(
                 config,
+                activeId,
                 activeNode,
                 sanitizedSettings,
                 allNodesSnapshot
@@ -2801,6 +2845,7 @@ class ConfigRepository(protected val context: Context) {
             )
             val endpoints = buildRunEndpoints(
                 baseConfig = config,
+                activeProfileId = activeId,
                 allNodes = allNodesSnapshot,
                 nodeTagMap = outboundsContext.nodeTagMap
             )
@@ -3678,6 +3723,7 @@ class ConfigRepository(protected val context: Context) {
 
     protected fun buildRunEndpoints(
         baseConfig: SingBoxConfig,
+        activeProfileId: String,
         allNodes: List<NodeUi>,
         nodeTagMap: Map<String, String>
     ): List<Endpoint>? {
@@ -3686,7 +3732,6 @@ class ConfigRepository(protected val context: Context) {
             ConfigRepository.convertWireGuardOutboundToEndpoint(it)
         }
 
-        val activeProfileId = _activeProfileId.value
         val sourceConfigs = mutableMapOf<String, SingBoxConfig?>()
         nodeTagMap.forEach { (nodeId, runtimeTag) ->
             val node = allNodes.firstOrNull { it.id == nodeId } ?: return@forEach
@@ -3711,6 +3756,7 @@ class ConfigRepository(protected val context: Context) {
     @Suppress("LongMethod", "CyclomaticComplexMethod", "CognitiveComplexMethod", "NestedBlockDepth")
     protected fun buildRunOutbounds(
         baseConfig: SingBoxConfig,
+        activeProfileId: String,
         activeNode: NodeUi?,
         settings: AppSettings,
         allNodes: List<NodeUi>
@@ -3739,7 +3785,6 @@ class ConfigRepository(protected val context: Context) {
         if (fixedOutbounds.none { it.tag == "direct" }) {
             fixedOutbounds.add(Outbound(type = "direct", tag = "direct"))
         }
-        val activeProfileId = _activeProfileId.value
         val requiredNodeIds = mutableSetOf<String>()
         val requiredProfileIds = mutableSetOf<String>()
 
@@ -3752,12 +3797,8 @@ class ConfigRepository(protected val context: Context) {
                 return allNodes.firstOrNull { it.sourceProfileId == refProfileId && it.name == nodeName }?.id
             }
             if (allNodes.any { it.id == value }) return value
-            val node = if (activeProfileId != null) {
-                allNodes.firstOrNull { it.sourceProfileId == activeProfileId && it.name == value }
-                    ?: allNodes.firstOrNull { it.name == value }
-            } else {
-                allNodes.firstOrNull { it.name == value }
-            }
+            val node = allNodes.firstOrNull { it.sourceProfileId == activeProfileId && it.name == value }
+                ?: allNodes.firstOrNull { it.name == value }
             return node?.id
         }
         settings.appRules
@@ -3810,20 +3851,18 @@ class ConfigRepository(protected val context: Context) {
         val existingTags = (fixedOutbounds.map { it.tag } + runtimeEndpointTags).toMutableSet()
         Log.d(ConfigRepository.TAG, "buildRunOutbounds: activeProfileId=$activeProfileId, existingTags count=${existingTags.size}")
         Log.d(ConfigRepository.TAG, "  existingTags (first 10): ${existingTags.take(10)}")
-        if (activeProfileId != null) {
-            val profileNodes = allNodes.filter { it.sourceProfileId == activeProfileId }
-            Log.d(ConfigRepository.TAG, "  profileNodes count=${profileNodes.size}")
-            profileNodes.forEach { node ->
-                if (existingTags.contains(node.name)) {
-                    nodeTagMap[node.id] = node.name
+        val profileNodes = allNodes.filter { it.sourceProfileId == activeProfileId }
+        Log.d(ConfigRepository.TAG, "  profileNodes count=${profileNodes.size}")
+        profileNodes.forEach { node ->
+            if (existingTags.contains(node.name)) {
+                nodeTagMap[node.id] = node.name
+            } else {
+                val fuzzyMatch = existingTags.find { it.equals(node.name, ignoreCase = true) }
+                if (fuzzyMatch != null) {
+                    nodeTagMap[node.id] = fuzzyMatch
+                    Log.w(ConfigRepository.TAG, "  Fuzzy matched node '${node.name}' to tag '$fuzzyMatch'")
                 } else {
-                    val fuzzyMatch = existingTags.find { it.equals(node.name, ignoreCase = true) }
-                    if (fuzzyMatch != null) {
-                        nodeTagMap[node.id] = fuzzyMatch
-                        Log.w(ConfigRepository.TAG, "  Fuzzy matched node '${node.name}' to tag '$fuzzyMatch'")
-                    } else {
-                        Log.w(ConfigRepository.TAG, "  WARNING: Node '${node.name}' (id=${node.id.take(8)}) not found in existingTags!")
-                    }
+                    Log.w(ConfigRepository.TAG, "  WARNING: Node '${node.name}' (id=${node.id.take(8)}) not found in existingTags!")
                 }
             }
         }

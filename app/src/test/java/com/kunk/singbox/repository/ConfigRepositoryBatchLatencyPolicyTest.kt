@@ -155,6 +155,31 @@ class ConfigRepositoryBatchLatencyPolicyTest {
         assertTrue(source.contains("delay(ConfigRepository.CONFIG_CACHE_CLEANUP_INTERVAL_MINUTES * 60_000L)"))
     }
 
+    @Test
+    fun rebuiltNodesRestorePersistedLatenciesAtCreation() {
+        val source = File(
+            "src/main/java/com/kunk/singbox/repository/ConfigRepository.kt"
+        ).readText()
+        val body = source
+            .substringAfter("protected fun createNodeUi(")
+            .substringBefore("suspend fun setActiveProfileAndWait")
+
+        assertTrue(body.contains("latencyMs = savedNodeLatencies[id]"))
+    }
+
+    @Test
+    fun subscriptionRefreshUsesSharedActiveNodeResolution() {
+        val source = File(
+            "src/main/java/com/kunk/singbox/repository/ConfigRepository.kt"
+        ).readText()
+        val body = source
+            .substringAfter("protected suspend fun importFromSubscriptionUpdate(")
+            .substringBefore("protected fun buildSubscriptionUpdateSuccessResult")
+
+        assertTrue(body.contains("applyActiveProfileNodes(profile.id, newNodes)"))
+        assertFalse(body.contains("_nodes.value = newNodes"))
+    }
+
     private fun node(id: String, name: String, profileId: String): NodeUi {
         return NodeUi(
             id = id,

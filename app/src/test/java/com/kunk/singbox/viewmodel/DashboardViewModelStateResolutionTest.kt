@@ -1,5 +1,6 @@
 package com.kunk.singbox.viewmodel
 
+import com.kunk.singbox.shouldBlockAutoConnectForPersistedRuntime
 import com.kunk.singbox.model.ConnectionState
 import com.kunk.singbox.service.ServiceState
 import org.junit.Assert.assertEquals
@@ -197,5 +198,53 @@ class DashboardViewModelStateResolutionTest {
         assertTrue(source.contains("SingBoxRemote.clearLastErrorForNewStart()"))
         assertTrue(source.contains("VpnTileService.persistVpnPending(\"\")"))
         assertTrue(source.contains("VpnServiceManager.stopVpn(context)"))
+    }
+
+    @Test
+    fun persistedRuntimeBlocksAutoConnectUntilIpcResolves() {
+        assertTrue(
+            shouldBlockAutoConnectForPersistedRuntime(
+                persistedActive = true,
+                ipcBound = false,
+                serviceState = ServiceState.STOPPED
+            )
+        )
+        assertTrue(
+            shouldBlockAutoConnectForPersistedRuntime(
+                persistedActive = true,
+                ipcBound = true,
+                serviceState = ServiceState.RUNNING
+            )
+        )
+        assertFalse(
+            shouldBlockAutoConnectForPersistedRuntime(
+                persistedActive = true,
+                ipcBound = true,
+                serviceState = ServiceState.STOPPED
+            )
+        )
+        assertFalse(
+            shouldBlockAutoConnectForPersistedRuntime(
+                persistedActive = false,
+                ipcBound = false,
+                serviceState = ServiceState.STOPPED
+            )
+        )
+    }
+
+    @Test
+    fun autoConnectWaitsForIpcBeforeTrustingPersistedActiveState() {
+        val source = File("src/main/java/com/kunk/singbox/MainActivity.kt")
+            .readText(Charsets.UTF_8)
+        val conditionBody = source
+            .substringAfter("fun shouldAutoConnect(persistedManuallyStopped: Boolean): Boolean")
+            .substringBefore("val persistedManuallyStopped")
+        val effectBody = source
+            .substringAfter("LaunchedEffect(settings.autoConnect")
+            .substringBefore("LaunchedEffect(settings.excludeFromRecent)")
+
+        assertFalse(conditionBody.contains("VpnStateStore.getActive()"))
+        assertTrue(effectBody.contains("while (VpnStateStore.getActive() && !SingBoxRemote.isBound()"))
+        assertTrue(effectBody.contains("persistedRuntimeBlocksStart = shouldBlockAutoConnectForPersistedRuntime("))
     }
 }

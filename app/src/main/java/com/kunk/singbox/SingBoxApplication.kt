@@ -80,7 +80,7 @@ class SingBoxApplication : Application(), Configuration.Provider {
         }
     }
 
-    private fun isMainProcess(): Boolean {
+    internal fun isMainProcess(): Boolean {
         val pid = Process.myPid()
         val activityManager = getSystemService(ACTIVITY_SERVICE) as ActivityManager
         val processName = activityManager.runningAppProcesses?.find { it.pid == pid }?.processName
