@@ -239,6 +239,24 @@
     <string name="profiles_camera_permission_required">Camera permission required to scan QR code</string>
     <string name="profiles_import_success">Import successful: %s</string>
     <string name="profiles_import_failed">Import failed: %s</string>
+    <string name="profiles_add_config">Add Profile</string>
+    <string name="profiles_custom_config">Custom Profile</string>
+    <string name="profiles_custom_config_subtitle">Combine nodes selected from existing subscriptions</string>
+    <string name="profiles_imported_subscription_default_name">Imported Subscription</string>
+    <string name="subscription_import_fetching">Fetching subscription content...</string>
+    <string name="subscription_import_requesting">Trying subscription request with User-Agent (%1$d/%2$d)...</string>
+    <string name="subscription_import_parsing">Parsing subscription response...</string>
+    <string name="subscription_import_empty_response">Subscription response body is empty</string>
+    <string name="subscription_import_http_error">Subscription request failed (HTTP %1$d: %2$s)</string>
+    <string name="subscription_import_timeout">Connection timeout, please check your network</string>
+    <string name="subscription_import_dns_failed">Failed to resolve domain, please check the subscription link</string>
+    <string name="subscription_import_ssl_failed">SSL certificate validation failed</string>
+    <string name="subscription_import_failed_generic">Subscription import failed</string>
+    <string name="custom_profile_name_nodes_required">Name is required and at least one node must be selected</string>
+    <string name="custom_profile_creating">Creating custom profile...</string>
+    <string name="custom_profile_create_failed">Failed to create custom profile</string>
+    <string name="custom_profile_nodes_required">No available nodes selected</string>
+    <string name="custom_profile_extract_failed">Failed to extract node configuration</string>
     <string name="profiles_parse_failed">Failed to parse content</string>
     <string name="profiles_content_empty">Content is empty</string>
     <string name="profiles_updated">Profile updated</string>
@@ -578,6 +596,8 @@
     <string name="notification_reset_connections">Reset</string>
     <string name="notification_disconnect">Disconnect</string>
     <string name="notification_speed_format">↑ %1$s  ↓ %2$s</string>
+    <string name="proxy_only_channel_name">KunBox Proxy Service</string>
+    <string name="proxy_only_notification_text">Proxy-only mode is running</string>
 
     <!-- Connection Settings -->
     <string name="connection_settings_show_notification_speed">Show Speed in Notification</string>

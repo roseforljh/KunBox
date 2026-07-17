@@ -54,7 +54,6 @@ import com.kunk.singbox.repository.SettingsRepository
 import com.kunk.singbox.viewmodel.DashboardViewModel
 import com.kunk.singbox.model.ConnectionState
 import com.kunk.singbox.model.AppThemeStyle
-import com.kunk.singbox.model.AppLanguage
 import com.kunk.singbox.utils.LocaleHelper
 import com.kunk.singbox.utils.DeepLinkHandler
 import com.kunk.singbox.ipc.SingBoxRemote
@@ -101,21 +100,7 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun attachBaseContext(newBase: Context) {
-
-        val prefs = newBase.getSharedPreferences("settings", Context.MODE_PRIVATE)
-        val languageName = prefs.getString("app_language_cache", null)
-        val language = if (languageName != null) {
-            try {
-                AppLanguage.valueOf(languageName)
-            } catch (e: Exception) {
-                AppLanguage.SYSTEM
-            }
-        } else {
-            AppLanguage.SYSTEM
-        }
-
-        val context = LocaleHelper.wrap(newBase, language)
-        super.attachBaseContext(context)
+        super.attachBaseContext(LocaleHelper.wrapFromCache(newBase))
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -222,7 +207,8 @@ fun SingBoxApp() {
 
                     if ((scheme == "singbox" || scheme == "kunbox") && host == "install-config") {
                         val url = uri.getQueryParameter("url")
-                        val name = uri.getQueryParameter("name") ?: "Imported Subscription"
+                        val name = uri.getQueryParameter("name")
+                            ?: context.getString(R.string.profiles_imported_subscription_default_name)
                         val intervalStr = uri.getQueryParameter("interval")
                         val interval = intervalStr?.toIntOrNull() ?: 0
 

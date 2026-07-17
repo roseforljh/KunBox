@@ -75,8 +75,9 @@ class ConfigRepositoryEntryRegressionTest {
         assertEquals(1, repository.profiles.value.size)
         assertEquals(imported?.id, repository.profiles.value.single().id)
         assertEquals(imported?.id, repository.activeProfileId.value)
-        assertTrue(progressMessages.any { it.contains("Fetching subscription content") })
-        assertTrue(progressMessages.any { it.contains("Pre-resolving domains for imported profile") })
+        assertTrue(progressMessages.contains(application.getString(R.string.subscription_import_fetching)))
+        assertTrue(progressMessages.any { it.contains("User-Agent") })
+        assertTrue(progressMessages.contains(application.getString(R.string.subscription_import_parsing)))
         assertTrue(
             progressMessages.any {
                 it.contains(application.getString(R.string.profiles_import_success, "1"))

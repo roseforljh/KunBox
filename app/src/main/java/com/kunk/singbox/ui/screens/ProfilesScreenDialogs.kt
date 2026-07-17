@@ -456,7 +456,7 @@ internal fun ImportSelectionDialog(
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             Text(
-                text = "添加配置",
+                text = stringResource(R.string.profiles_add_config),
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onSurface
@@ -491,8 +491,8 @@ internal fun ImportSelectionDialog(
                 )
                 ImportOptionCard(
                     icon = Icons.Rounded.DashboardCustomize,
-                    title = "自定义配置",
-                    subtitle = "从现有订阅选择节点组合",
+                    title = stringResource(R.string.profiles_custom_config),
+                    subtitle = stringResource(R.string.profiles_custom_config_subtitle),
                     onClick = { onTypeSelected(ProfileImportType.Custom) }
                 )
             }

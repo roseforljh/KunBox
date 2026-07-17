@@ -3,6 +3,7 @@ package com.kunk.singbox.service
 import android.app.Notification
 import android.app.NotificationManager
 import android.content.ComponentName
+import android.content.Context
 import android.content.Intent
 import android.net.ConnectivityManager
 import android.net.Network
@@ -47,6 +48,7 @@ import com.kunk.singbox.ui.components.AppNotificationManager
 import com.kunk.singbox.utils.DefaultNetworkListener
 import com.kunk.singbox.utils.L
 import com.kunk.singbox.utils.LocalNetworkPermission
+import com.kunk.singbox.utils.LocaleHelper
 import com.kunk.singbox.utils.NetworkClient
 import com.kunk.singbox.utils.perf.StateCache
 import io.nekohasekai.libbox.*
@@ -70,6 +72,10 @@ internal data class UidPackageCacheEntry(
 
 @Suppress("TooManyFunctions", "LargeClass", "ProtectedMemberInFinalClass")
 class SingBoxService : VpnService() {
+
+    override fun attachBaseContext(newBase: Context) {
+        super.attachBaseContext(LocaleHelper.wrapFromCache(newBase))
+    }
 
     protected val gson = Gson()
     private val defaultNetworkListenerKey = Any()

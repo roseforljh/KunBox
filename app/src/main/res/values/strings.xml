@@ -242,6 +242,24 @@
     <string name="profiles_camera_permission_required">需要相机权限才能扫描二维码</string>
     <string name="profiles_import_success">导入成功: %s</string>
     <string name="profiles_import_failed">导入失败: %s</string>
+    <string name="profiles_add_config">添加配置</string>
+    <string name="profiles_custom_config">自定义配置</string>
+    <string name="profiles_custom_config_subtitle">从现有订阅选择节点组合</string>
+    <string name="profiles_imported_subscription_default_name">导入的订阅</string>
+    <string name="subscription_import_fetching">正在获取订阅内容...</string>
+    <string name="subscription_import_requesting">正在尝试订阅请求（User-Agent %1$d/%2$d）...</string>
+    <string name="subscription_import_parsing">正在解析订阅响应...</string>
+    <string name="subscription_import_empty_response">订阅响应内容为空</string>
+    <string name="subscription_import_http_error">订阅请求失败（HTTP %1$d：%2$s）</string>
+    <string name="subscription_import_timeout">连接超时，请检查网络</string>
+    <string name="subscription_import_dns_failed">域名解析失败，请检查订阅链接</string>
+    <string name="subscription_import_ssl_failed">SSL 证书校验失败</string>
+    <string name="subscription_import_failed_generic">订阅导入失败</string>
+    <string name="custom_profile_name_nodes_required">名称不能为空，且至少选择一个节点</string>
+    <string name="custom_profile_creating">正在创建自定义配置...</string>
+    <string name="custom_profile_create_failed">创建自定义配置失败</string>
+    <string name="custom_profile_nodes_required">未选择可用节点</string>
+    <string name="custom_profile_extract_failed">无法提取节点配置</string>
     <string name="profiles_parse_failed">无法解析内容</string>
     <string name="profiles_content_empty">内容为空</string>
     <string name="profiles_updated">配置已更新</string>
@@ -578,6 +596,8 @@
     <string name="notification_reset_connections">重置连接</string>
     <string name="notification_disconnect">断开</string>
     <string name="notification_speed_format">↑ %1$s  ↓ %2$s</string>
+    <string name="proxy_only_channel_name">KunBox 代理服务</string>
+    <string name="proxy_only_notification_text">仅代理模式运行中</string>
 
     <!-- Connection Settings -->
     <string name="connection_settings_show_notification_speed">通知栏显示速度</string>

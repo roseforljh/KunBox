@@ -268,6 +268,22 @@ class UiCleanupStructureTest {
     }
 
     @Test
+    fun backgroundLocaleDialogBlurAndImportTextStayCentralized() {
+        val localeSource = mainSource("utils/LocaleHelper.kt").readNormalizedText()
+        assertTrue(localeSource.contains("fun wrapFromCache(context: Context)"))
+
+        listOf("service/SingBoxService.kt", "service/ProxyOnlyService.kt").forEach { path ->
+            val source = mainSource(path).readNormalizedText()
+            assertTrue(source.contains("override fun attachBaseContext(newBase: Context)"))
+            assertTrue(source.contains("LocaleHelper.wrapFromCache(newBase)"))
+        }
+
+        val dialogSource = mainSource("ui/screens/NodeDetailDialogs.kt").readNormalizedText()
+        val detourDialog = dialogSource.extractFunctionBody("DetourNodeSelectDialog")
+        assertTrue(detourDialog.contains("LiquidGlassDialogEffect()"))
+    }
+
+    @Test
     fun trafficRefreshAnimationExistsOnlyWhileLoading() {
         val source = mainSource("ui/screens/TrafficStatsScreen.kt").readNormalizedText()
         val infiniteTransition = source.indexOf("rememberInfiniteTransition(")

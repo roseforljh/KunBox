@@ -2,6 +2,7 @@ package com.kunk.singbox.service
 
 import android.app.NotificationManager
 import android.app.Service
+import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.net.ConnectivityManager
@@ -27,6 +28,7 @@ import com.kunk.singbox.repository.RuleSetRepository
 import com.kunk.singbox.service.manager.RecoveryPolicy
 import com.kunk.singbox.service.manager.ServiceStateHolder
 import com.kunk.singbox.utils.LocalNetworkPermission
+import com.kunk.singbox.utils.LocaleHelper
 import com.kunk.singbox.utils.NetworkClient
 import io.nekohasekai.libbox.CommandServer
 import io.nekohasekai.libbox.CommandServerHandler
@@ -59,6 +61,10 @@ import java.net.ServerSocket
 
 @Suppress("LargeClass")
 class ProxyOnlyService : Service() {
+
+    override fun attachBaseContext(newBase: Context) {
+        super.attachBaseContext(LocaleHelper.wrapFromCache(newBase))
+    }
 
     companion object {
         private const val TAG = "ProxyOnlyService"

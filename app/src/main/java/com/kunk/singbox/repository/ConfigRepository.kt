@@ -1387,7 +1387,9 @@ class ConfigRepository(protected val context: Context) {
         costMs: Long
     ): ConfigRepositorySubscriptionAttemptResult {
         val shouldStopFallback = ConfigRepository.shouldStopSubscriptionFallback(httpStatusCode = responseCode)
-        val error = Exception("HTTP $responseCode: $responseMessage")
+        val error = Exception(
+            this.context.getString(R.string.subscription_import_http_error, responseCode, responseMessage)
+        )
         logSubscriptionAttempt(
             level = Log.WARN,
             message = if (shouldStopFallback) {
@@ -1434,11 +1436,13 @@ class ConfigRepository(protected val context: Context) {
                     context = context,
                     costMs = costMs
                 )
-                throw Exception("Subscription response body is empty")
+                throw IllegalStateException(
+                    this@ConfigRepository.context.getString(R.string.subscription_import_empty_response)
+                )
             }
 
             onStageChanged(SubscriptionUpdateStage.Parsing)
-            onProgress("Parsing subscription response...")
+            onProgress(this@ConfigRepository.context.getString(R.string.subscription_import_parsing))
 
             val contentType = response.header("Content-Type")
             val attemptResult = parseSubscriptionResponse(
@@ -1491,7 +1495,13 @@ class ConfigRepository(protected val context: Context) {
 
             try {
                 onStageChanged(SubscriptionUpdateStage.Requesting)
-                onProgress("Trying subscription request with User-Agent (${index + 1}/${userAgents.size})...")
+                onProgress(
+                    context.getString(
+                        R.string.subscription_import_requesting,
+                        index + 1,
+                        userAgents.size
+                    )
+                )
                 val attemptContext = ConfigRepositorySubscriptionAttemptContext(
                     host = host,
                     userAgent = userAgent,
@@ -1554,7 +1564,7 @@ class ConfigRepository(protected val context: Context) {
         val normalizedAutoUpdateInterval =
             com.kunk.singbox.service.SubscriptionAutoUpdateWorker.normalizeIntervalMinutes(autoUpdateInterval)
         try {
-            onProgress("Fetching subscription content...")
+            onProgress(context.getString(R.string.subscription_import_fetching))
             val fetchResult = try {
                 fetchAndParseSubscription(url, onProgress)
             } catch (e: Exception) {
@@ -1623,10 +1633,10 @@ class ConfigRepository(protected val context: Context) {
             profileId?.let { rollbackTransientProfileFile(it) }
             Log.e(ConfigRepository.TAG, "Subscription import failed", e)
             val msg = when (e) {
-                is java.net.SocketTimeoutException -> "Connection timeout, please check your network"
-                is java.net.UnknownHostException -> "Failed to resolve domain, please check the link"
-                is javax.net.ssl.SSLHandshakeException -> "SSL certificate validation failed"
-                else -> e.message ?: context.getString(R.string.profiles_import_failed)
+                is java.net.SocketTimeoutException -> context.getString(R.string.subscription_import_timeout)
+                is java.net.UnknownHostException -> context.getString(R.string.subscription_import_dns_failed)
+                is javax.net.ssl.SSLHandshakeException -> context.getString(R.string.subscription_import_ssl_failed)
+                else -> e.message ?: context.getString(R.string.subscription_import_failed_generic)
             }
             Result.failure(Exception(msg))
         }
@@ -1666,12 +1676,16 @@ class ConfigRepository(protected val context: Context) {
         try {
             val targetNodes = loadSelectedCustomNodes(selectedNodeIds)
             if (targetNodes.isEmpty()) {
-                return@withContext Result.failure(Exception("No nodes selected or found"))
+                return@withContext Result.failure(
+                    Exception(context.getString(R.string.custom_profile_nodes_required))
+                )
             }
 
             val outbounds = collectCustomOutbounds(targetNodes)
             if (outbounds.isEmpty()) {
-                return@withContext Result.failure(Exception("Failed to extract any outbound data"))
+                return@withContext Result.failure(
+                    Exception(context.getString(R.string.custom_profile_extract_failed))
+                )
             }
 
             val newConfig = com.kunk.singbox.model.SingBoxConfig(outbounds = outbounds)
@@ -1679,7 +1693,9 @@ class ConfigRepository(protected val context: Context) {
             val deduplicatedConfig = deduplicateTags(newConfig)
             val nodes = extractNodesFromConfig(deduplicatedConfig, profileId, {})
             if (nodes.isEmpty()) {
-                return@withContext Result.failure(Exception("Failed to process extracted nodes"))
+                return@withContext Result.failure(
+                    Exception(context.getString(R.string.nodes_no_valid_found))
+                )
             }
 
             writeConfigFileOrThrow(profileId, deduplicatedConfig)

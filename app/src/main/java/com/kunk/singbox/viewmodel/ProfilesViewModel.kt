@@ -209,12 +209,16 @@ class ProfilesViewModel(application: Application) : AndroidViewModel(application
             return
         }
         if (name.isBlank() || selectedNodeIds.isEmpty()) {
-            _importState.value = ImportState.Error("名称不能为空，且至少选择一个节点")
+            _importState.value = ImportState.Error(
+                getApplication<Application>().getString(R.string.custom_profile_name_nodes_required)
+            )
             return
         }
 
         importJob = viewModelScope.launch {
-            _importState.value = ImportState.Loading("创建自定义配置中...")
+            _importState.value = ImportState.Loading(
+                getApplication<Application>().getString(R.string.custom_profile_creating)
+            )
 
             val result = configRepository.createCustomProfile(
                 name = name,
@@ -231,7 +235,10 @@ class ProfilesViewModel(application: Application) : AndroidViewModel(application
                     if (error is kotlinx.coroutines.CancellationException) {
                         _importState.value = ImportState.Idle
                     } else {
-                        _importState.value = ImportState.Error(error.message ?: "创建失败")
+                        _importState.value = ImportState.Error(
+                            error.message
+                                ?: getApplication<Application>().getString(R.string.custom_profile_create_failed)
+                        )
                     }
                 }
             )
