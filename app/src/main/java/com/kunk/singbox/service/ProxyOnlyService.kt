@@ -56,6 +56,7 @@ import java.net.InetSocketAddress
 import java.net.NetworkInterface
 import java.net.ServerSocket
 
+@Suppress("LargeClass")
 class ProxyOnlyService : Service() {
 
     companion object {
@@ -384,9 +385,14 @@ class ProxyOnlyService : Service() {
 
     @Suppress("ReturnCount", "LongMethod", "CyclomaticComplexMethod", "CognitiveComplexMethod")
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        Log.i(TAG, "onStartCommand action=${intent?.action}")
-        runCatching {
-            LogRepository.getInstance().addLog("INFO ProxyOnlyService: onStartCommand action=${intent?.action}")
+        val recoveryFlag = intent?.getBooleanExtra(SingBoxService.EXTRA_RECOVERY, false) == true
+        Log.i(TAG, "onStartCommand action=${intent?.action} recovery=$recoveryFlag")
+        if (recoveryFlag) {
+            runCatching {
+                LogRepository.getInstance().addAlwaysLog(
+                    "INFO [Recovery] Proxy START running=$isRunning starting=$isStarting"
+                )
+            }
         }
 
         when (intent?.action) {
@@ -395,7 +401,22 @@ class ProxyOnlyService : Service() {
                 val isRecoveryStart = intent.getBooleanExtra(SingBoxService.EXTRA_RECOVERY, false)
                 if (RecoveryPolicy.shouldIgnoreRecoveryStart(isRunning, isStarting)) {
                     Log.i(TAG, "Duplicate START ignored: proxy core already active (recovery=$isRecoveryStart)")
+                    runCatching {
+                        LogRepository.getInstance().addAlwaysLog(
+                            "INFO [Recovery] Proxy START ignored: already active " +
+                                "recovery=$isRecoveryStart running=$isRunning starting=$isStarting"
+                        )
+                    }
+                    if (isRecoveryStart) VpnStateStore.clearRecoveryClaim()
                     notifyRemoteState(state = if (isRunning) ServiceState.RUNNING else ServiceState.STARTING)
+                    return START_NOT_STICKY
+                }
+                if (isRecoveryStart &&
+                    (VpnStateStore.isManuallyStopped() || VpnStateStore.getMode() != VpnStateStore.CoreMode.PROXY)
+                ) {
+                    Log.w(TAG, "Proxy recovery intent no longer matches persisted intent")
+                    VpnTileService.persistVpnPending("")
+                    VpnStateStore.clearRecoveryClaim()
                     return START_NOT_STICKY
                 }
                 ServiceStateHolder.preserveRecoveryIntentOnFailure = isRecoveryStart
@@ -972,6 +993,12 @@ class ProxyOnlyService : Service() {
     override fun onTaskRemoved(rootIntent: Intent?) {
         // 划任务语义写死：不 stop、不改 manuallyStopped/mode；激进 ROM 杀进程由恢复链路兜底
         Log.i(TAG, "onTaskRemoved: task swiped away, proxy keeps running")
+        runCatching {
+            LogRepository.getInstance().addAlwaysLog(
+                "INFO [Recovery] Proxy onTaskRemoved: task swiped, keeps running " +
+                    "mode=${VpnStateStore.getMode()} active=${VpnStateStore.getActive()}"
+            )
+        }
         super.onTaskRemoved(rootIntent)
     }
 
@@ -999,6 +1026,11 @@ class ProxyOnlyService : Service() {
         } else if (mode == VpnStateStore.CoreMode.PROXY) {
             // 意外死亡：与 VPN 一致，保留 mode，只清 active/pending
             preserveRecoveryIntentOnUnexpectedDestroy()
+            runCatching {
+                LogRepository.getInstance().addAlwaysLog(
+                    "INFO [Recovery] Proxy onDestroy unexpectedDeath mode=$mode preserveIntent=true"
+                )
+            }
         }
 
         runCatching {

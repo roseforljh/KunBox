@@ -18,17 +18,6 @@ object RecoveryPolicy {
         return !manuallyStopped && mode != VpnStateStore.CoreMode.NONE
     }
 
-    fun shouldAttemptRecovery(
-        manuallyStopped: Boolean,
-        mode: VpnStateStore.CoreMode,
-        coreServiceAlive: Boolean,
-        runningConfigUsable: Boolean
-    ): Boolean {
-        return hasRecoverableIntent(manuallyStopped, mode) &&
-            !coreServiceAlive &&
-            runningConfigUsable
-    }
-
     /**
      * Sticky 恢复只适用于 VPN(tun) 模式。
      * ProxyOnlyService 返回 START_NOT_STICKY，收不到 null intent。

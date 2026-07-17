@@ -16,20 +16,6 @@ class RecoveryPolicyTest {
     }
 
     @Test
-    fun recoveryAttemptsOnlyWhenIntentAliveCoreDeadAndConfigUsable() {
-        // 用户没点断开 + 服务真死 + 配置可用 → 恢复
-        assertTrue(RecoveryPolicy.shouldAttemptRecovery(false, VpnStateStore.CoreMode.VPN, false, true))
-        // 服务还活着 → 不恢复
-        assertFalse(RecoveryPolicy.shouldAttemptRecovery(false, VpnStateStore.CoreMode.VPN, true, true))
-        // 用户手动停过 → 永不恢复
-        assertFalse(RecoveryPolicy.shouldAttemptRecovery(true, VpnStateStore.CoreMode.VPN, false, true))
-        // 无意图 → 不恢复
-        assertFalse(RecoveryPolicy.shouldAttemptRecovery(false, VpnStateStore.CoreMode.NONE, false, true))
-        // 配置不可用 → 不恢复
-        assertFalse(RecoveryPolicy.shouldAttemptRecovery(false, VpnStateStore.CoreMode.VPN, false, false))
-    }
-
-    @Test
     fun stickyRecoveryOnlyForVpnMode() {
         assertTrue(RecoveryPolicy.shouldRecoverFromStickyRestart(false, VpnStateStore.CoreMode.VPN, true))
         assertFalse(RecoveryPolicy.shouldRecoverFromStickyRestart(false, VpnStateStore.CoreMode.PROXY, true))
