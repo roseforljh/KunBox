@@ -5,6 +5,7 @@ package com.kunk.singbox.ui.theme
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -29,47 +30,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
-import androidx.compose.foundation.gestures.awaitFirstDown
-import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
-import androidx.compose.ui.composed
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.material3.FloatingActionButtonDefaults
 import androidx.compose.material3.FloatingActionButtonElevation
 import androidx.compose.ui.semantics.Role
-
-fun Modifier.liquidGlassPressBounceEffect(): Modifier = composed {
-    if (!isLiquidGlassTheme()) return@composed this
-
-    var isPressed by remember { mutableStateOf(false) }
-    val scale by animateFloatAsState(
-        targetValue = if (isPressed) 0.90f else 1f,
-        animationSpec = spring(
-            dampingRatio = Spring.DampingRatioMediumBouncy,
-            stiffness = Spring.StiffnessMedium
-        )
-    )
-
-    this
-        .graphicsLayer {
-            scaleX = scale
-            scaleY = scale
-        }
-        .pointerInput(Unit) {
-            awaitPointerEventScope {
-                while (true) {
-                    awaitFirstDown(requireUnconsumed = false)
-                    isPressed = true
-                    waitForUpOrCancellation()
-                    isPressed = false
-                }
-            }
-        }
-}
 
 @Composable
 fun Modifier.liquidGlassFloatingActionPanel(
@@ -80,9 +46,7 @@ fun Modifier.liquidGlassFloatingActionPanel(
         return this
     }
 
-    return this
-        .liquidGlassPanel(shape = shape, selected = true, shadowElevation = shadowElevation)
-        .liquidGlassPressBounceEffect()
+    return this.liquidGlassPanel(shape = shape, selected = true, shadowElevation = shadowElevation)
 }
 
 private data class LiquidGlassFloatingActionSurfaceSpec(
@@ -99,11 +63,24 @@ private fun LiquidGlassFloatingActionSurface(
     content: @Composable () -> Unit
 ) {
     val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (isPressed) 0.90f else 1f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessMedium
+        ),
+        label = "liquid_glass_floating_action_scale"
+    )
 
     Box(
         modifier = modifier
             .size(spec.size)
             .liquidGlassFloatingActionPanel(shadowElevation = spec.shadowElevation)
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+            }
             .clickable(
                 interactionSource = interactionSource,
                 indication = null,
@@ -222,7 +199,6 @@ fun Modifier.liquidGlassButtonPanel(
 ): Modifier {
     return if (isLiquidGlassTheme()) {
         liquidGlassPanel(shape = shape, selected = true, shadowElevation = shadowElevation)
-            .liquidGlassPressBounceEffect()
     } else {
         this
     }
@@ -253,7 +229,6 @@ fun Modifier.liquidGlassTextButtonPanel(
 ): Modifier {
     return if (isLiquidGlassTheme()) {
         liquidGlassPanel(shape = shape, enabled = enabled, shadowElevation = shadowElevation)
-            .liquidGlassPressBounceEffect()
     } else {
         this
     }
@@ -285,7 +260,7 @@ fun Modifier.liquidGlassIconButtonPanel(
             selected = selected,
             enabled = enabled,
             shadowElevation = shadowElevation
-        ).liquidGlassPressBounceEffect()
+        )
     } else {
         val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
         val bgAlpha = if (selected) { if (isDark) 0.14f else 0.10f } else { if (isDark) 0.06f else 0.04f }
