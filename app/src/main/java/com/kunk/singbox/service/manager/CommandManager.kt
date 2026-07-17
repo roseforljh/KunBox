@@ -374,7 +374,9 @@ class CommandManager(
         }
 
         override fun clearLogs() {
-            runCatching { LogRepository.getInstance().clearLogs() }
+            runCatching {
+                LogRepository.getInstance().clearLogs(preserveRecoveryDiagnostics = true)
+            }
         }
 
         override fun setDefaultLogLevel(level: Int) {}

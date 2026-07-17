@@ -17,6 +17,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
@@ -288,7 +289,7 @@ class LogRepository private constructor() {
             addDebugModeEnabledLog()
         } else {
             enabled = false
-            clearLogs()
+            clearLogs(preserveRecoveryDiagnostics = true)
             stopFileSyncLoop()
         }
     }
@@ -321,9 +322,21 @@ class LogRepository private constructor() {
         }
     }
 
+    /**
+     * 恢复链路诊断：调试开关关闭时也要落盘，否则远程只能看到内核流量。
+     */
+    fun addAlwaysLog(message: String) {
+        appendLogLine(message, requireEnabled = false)
+    }
+
     @Suppress("CyclomaticComplexMethod", "ComplexCondition", "ReturnCount")
     fun addLog(message: String) {
-        if (!enabled) return
+        appendLogLine(message, requireEnabled = true)
+    }
+
+    @Suppress("CognitiveComplexMethod", "CyclomaticComplexMethod", "ComplexCondition", "ReturnCount")
+    private fun appendLogLine(message: String, requireEnabled: Boolean) {
+        if (requireEnabled && !enabled) return
 
         val timestamp = synchronized(dateFormat) { dateFormat.format(Date()) }
 
@@ -346,7 +359,11 @@ class LogRepository private constructor() {
         }
 
         synchronized(buffer) {
-            if (!enabled) return
+            if (requireEnabled && !enabled) return
+            // 诊断日志在调试关时也要写；生成号未初始化时先从文件补齐
+            if (currentLogGeneration() == UNINITIALIZED_GENERATION) {
+                refreshKnownFileGeneration()
+            }
             val fileGeneration = currentLogGeneration()
             if (fileGeneration == UNINITIALIZED_GENERATION) return
             knownFileGeneration.set(fileGeneration)
@@ -403,22 +420,27 @@ class LogRepository private constructor() {
         }
     }
 
-    fun clearLogs() {
+    @Suppress("CognitiveComplexMethod")
+    fun clearLogs(preserveRecoveryDiagnostics: Boolean = false) {
         var memoryCleared = false
         try {
             val locked = withLogFileLock { file, generationFile ->
-                val nextGeneration = readLogGeneration(generationFile) + 1L
+                val currentGeneration = readLogGeneration(generationFile)
+                val preserved = preservedLogs(file, currentGeneration, preserveRecoveryDiagnostics)
+                val nextGeneration = currentGeneration + 1L
                 writeTextAtomically(generationFile, "$nextGeneration\n")
                 VpnStateStore.setLogClearGeneration(nextGeneration)
                 knownFileGeneration.set(nextGeneration)
-                clearMemoryLogs()
+                replaceMemoryLogs(preserved)
                 memoryCleared = true
-                writeLogLinesAtomically(file, nextGeneration, emptyList())
+                writeLogLinesAtomically(file, nextGeneration, preserved)
                 lastSyncedFileSize = -1L
                 lastSyncedFileMtime = -1L
                 lastSyncedFileGeneration = UNINITIALIZED_GENERATION
             }
-            if (locked == null) clearMemoryLogs()
+            if (locked == null) {
+                replaceMemoryLogs(preservedLogs(null, 0L, preserveRecoveryDiagnostics))
+            }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -427,16 +449,40 @@ class LogRepository private constructor() {
         }
     }
 
-    private fun clearMemoryLogs() {
+    private fun preservedLogs(file: File?, generation: Long, preserve: Boolean): List<String> {
+        if (!preserve) return emptyList()
+        val fromFile = file?.let { readPersistedLogLines(it, generation, maxLogSize) }.orEmpty()
+        val fromMemory = synchronized(buffer) { buffer.toList() }
+        return (fromFile + fromMemory)
+            .filter { isPreservedDiagnosticLine(it) }
+            .distinct()
+            .takeLast(maxLogSize)
+    }
+
+    private fun replaceMemoryLogs(lines: List<String>) {
         synchronized(buffer) {
             persistenceQueue.clear()
             buffer.clear()
+            buffer.addAll(lines)
             logVersion.incrementAndGet()
         }
-        _logs.value = emptyList()
+        _logs.value = lines
+    }
+
+    private fun clearMemoryLogs() {
+        replaceMemoryLogs(emptyList())
     }
 
     fun getLogsAsText(): String {
+        return buildLogsText()
+    }
+
+    suspend fun getLogsAsTextForExport(): String = withContext(Dispatchers.IO) {
+        reloadFromFileBestEffort()
+        buildLogsText()
+    }
+
+    private fun buildLogsText(): String {
         val exportDateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
         val header = buildString {
             appendLine("=== KunBox Logs ===")
@@ -463,6 +509,7 @@ class LogRepository private constructor() {
         private const val EXPORTS_DIR = "exports"
         private const val FILE_WRITE_BATCH_DELAY_MS = 100L
         private const val UNINITIALIZED_GENERATION = -1L
+        private const val PRESERVED_DIAGNOSTIC_MARKER = "[Recovery]"
 
         private val processFileLock = Any()
 
@@ -480,6 +527,10 @@ class LogRepository private constructor() {
             return instance ?: synchronized(this) {
                 instance ?: LogRepository().also { instance = it }
             }
+        }
+
+        internal fun isPreservedDiagnosticLine(line: String): Boolean {
+            return line.contains(PRESERVED_DIAGNOSTIC_MARKER)
         }
     }
 
