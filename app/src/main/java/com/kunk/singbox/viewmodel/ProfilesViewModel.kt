@@ -88,14 +88,18 @@ class ProfilesViewModel(application: Application) : AndroidViewModel(application
         newName: String,
         newUrl: String?,
         autoUpdateInterval: Int = 0,
+        dnsPreResolve: Boolean = false,
+        dnsServer: String? = null,
         dnsOverride: String? = null
     ) {
         configRepository.updateProfileMetadata(
-            profileId,
-            newName,
-            newUrl,
-            autoUpdateInterval,
-            dnsOverride
+            profileId = profileId,
+            newName = newName,
+            newUrl = newUrl,
+            autoUpdateInterval = autoUpdateInterval,
+            dnsPreResolve = dnsPreResolve,
+            dnsServer = dnsServer,
+            dnsOverride = dnsOverride
         )
         emitToast(getApplication<Application>().getString(R.string.profiles_updated))
         emitDnsOverrideCompatibilityWarning(dnsOverride)
@@ -155,6 +159,8 @@ class ProfilesViewModel(application: Application) : AndroidViewModel(application
         name: String,
         url: String,
         autoUpdateInterval: Int = 0,
+        dnsPreResolve: Boolean = false,
+        dnsServer: String? = null,
         dnsOverride: String? = null
     ): Boolean {
 
@@ -169,6 +175,8 @@ class ProfilesViewModel(application: Application) : AndroidViewModel(application
                 name = name,
                 url = url,
                 autoUpdateInterval = autoUpdateInterval,
+                dnsPreResolve = dnsPreResolve,
+                dnsServer = dnsServer,
                 dnsOverride = dnsOverride,
                 onProgress = { progress ->
                     _importState.value = ImportState.Loading(progress)

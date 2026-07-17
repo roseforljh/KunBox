@@ -249,6 +249,12 @@
     <string name="profiles_auto_update">自动更新</string>
     <string name="profiles_auto_update_interval">更新间隔（分钟）</string>
     <string name="profiles_auto_update_hint">建议设置 30 分钟以上</string>
+    <string name="profiles_dns_preresolve">DNS 预解析</string>
+    <string name="profiles_dns_preresolve_hint">将节点域名预解析为 IP，绕过 DNS 污染</string>
+    <string name="profiles_dns_server">DNS 服务器</string>
+    <string name="profiles_dns_server_cloudflare">Cloudflare (1.1.1.1)</string>
+    <string name="profiles_dns_server_google">Google (8.8.8.8)</string>
+    <string name="profiles_dns_server_alidns">阿里 DNS (223.5.5.5)</string>
     <string name="profiles_dns_override">DNS 覆写</string>
     <string name="profiles_dns_override_hint">追加自定义 DNS 配置（JSON 格式，包含 servers 和 rules 字段）</string>
     <string name="profiles_name_label">名称</string>
@@ -707,6 +713,7 @@
     <string name="subscription_update_stage_requesting">请求中</string>
     <string name="subscription_update_stage_parsing">解析中</string>
     <string name="subscription_update_stage_saving">保存中</string>
+    <string name="subscription_update_stage_dns_background">后台 DNS 预解析中</string>
     <string name="ruleset_update_network_error">更新失败，请检查网络</string>
 
     <!-- App Groups -->

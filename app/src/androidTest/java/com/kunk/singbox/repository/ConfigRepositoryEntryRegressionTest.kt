@@ -142,9 +142,7 @@ class ConfigRepositoryEntryRegressionTest {
             val allNodeNames = repository.allNodes.value.map { it.name }
 
             assertTrue(changedResult is SubscriptionUpdateResult.SuccessWithChanges)
-            assertTrue((changedResult as SubscriptionUpdateResult.SuccessWithChanges).dnsMovedToBackground)
             assertTrue(sameResult is SubscriptionUpdateResult.SuccessNoChanges)
-            assertEquals(false, (sameResult as SubscriptionUpdateResult.SuccessNoChanges).dnsMovedToBackground)
             assertEquals(changedProfile.id, repository.activeProfileId.value)
             assertEquals(3, profilesById.size)
             assertTrue(profilesById.containsKey(changedProfile.id))

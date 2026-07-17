@@ -31,6 +31,8 @@ import com.kunk.singbox.service.ProxyOnlyService
 import com.kunk.singbox.service.SingBoxService
 import com.kunk.singbox.service.tun.VpnTunManager
 import com.kunk.singbox.utils.NetworkClient
+import com.kunk.singbox.utils.dns.DnsResolveStore
+import com.kunk.singbox.utils.dns.DnsResolver
 import com.kunk.singbox.utils.parser.Base64Parser
 import com.kunk.singbox.utils.parser.NodeLinkParser
 import com.kunk.singbox.utils.parser.SingBoxParser
@@ -174,6 +176,10 @@ class ConfigRepository(protected val context: Context) {
         com.kunk.singbox.utils.parser.ClashYamlParser(),
         Base64Parser { nodeLinkParser.parse(it) }
     ))
+
+    protected val dnsResolver = DnsResolver()
+
+    protected val dnsResolveStore = DnsResolveStore.getInstance()
 
     protected val _profiles = MutableStateFlow<List<ProfileUi>>(emptyList())
 
@@ -699,6 +705,19 @@ class ConfigRepository(protected val context: Context) {
             Log.w(ConfigRepository.TAG, "Failed to parse dnsOverride JSON, skipping", e)
             null
         }
+    }
+
+    protected suspend fun preResolveDomainsForProfileBestEffort(
+        profileId: String,
+        config: SingBoxConfig,
+        dnsServer: String?
+    ): Boolean {
+        return runCatching {
+            preResolveDomainsForProfile(profileId, config, dnsServer)
+            true
+        }.onFailure { error ->
+            Log.w(ConfigRepository.TAG, "DNS pre-resolve failed for profile $profileId", error)
+        }.getOrDefault(false)
     }
 
     protected fun rollbackTransientProfileFile(profileId: String) {
@@ -1527,6 +1546,8 @@ class ConfigRepository(protected val context: Context) {
         name: String,
         url: String,
         autoUpdateInterval: Int = 0,
+        dnsPreResolve: Boolean = false,
+        dnsServer: String? = null,
         dnsOverride: String? = null,
         onProgress: (String) -> Unit = {}): Result<ProfileUi> = withContext(Dispatchers.IO) {
         var profileId: String? = null
@@ -1573,6 +1594,8 @@ class ConfigRepository(protected val context: Context) {
                 expireDate = userInfo?.expire ?: 0,
                 totalTraffic = userInfo?.total ?: 0,
                 usedTraffic = (userInfo?.upload ?: 0) + (userInfo?.download ?: 0),
+                dnsPreResolve = dnsPreResolve,
+                dnsServer = dnsServer,
                 dnsOverride = dnsOverride
             )
             cacheConfig(profileId, deduplicatedConfig)
@@ -1589,6 +1612,9 @@ class ConfigRepository(protected val context: Context) {
                     profileId,
                     normalizedAutoUpdateInterval
                 )
+            }
+            if (dnsPreResolve) {
+                preResolveDomainsForProfileBestEffort(profileId, deduplicatedConfig, dnsServer)
             }
             onProgress(context.getString(R.string.profiles_import_success, nodes.size.toString()))
 
@@ -2344,6 +2370,7 @@ class ConfigRepository(protected val context: Context) {
 
         _profiles.update { list -> list.filter { it.id != profileId } }
         removeCachedConfig(profileId)
+        dnsResolveStore.removeAllForProfile(profileId)
         profileNodes.remove(profileId)
         removeNodeLatencies(removedNodeIds)
         updateAllNodesAndGroups()
@@ -2428,6 +2455,8 @@ class ConfigRepository(protected val context: Context) {
         newName: String,
         newUrl: String?,
         autoUpdateInterval: Int = 0,
+        dnsPreResolve: Boolean = false,
+        dnsServer: String? = null,
         dnsOverride: String? = null) {
         val normalizedAutoUpdateInterval =
             com.kunk.singbox.service.SubscriptionAutoUpdateWorker.normalizeIntervalMinutes(autoUpdateInterval)
@@ -2438,6 +2467,8 @@ class ConfigRepository(protected val context: Context) {
                         name = newName,
                         url = newUrl,
                         autoUpdateInterval = normalizedAutoUpdateInterval,
+                        dnsPreResolve = dnsPreResolve,
+                        dnsServer = dnsServer,
                         dnsOverride = dnsOverride
                     )
                 } else {
@@ -2652,7 +2683,11 @@ class ConfigRepository(protected val context: Context) {
                 } else {
                     System.currentTimeMillis()
                 },
-                updateStage = null
+                updateStage = when {
+                    result is SubscriptionUpdateResult.Failed -> null
+                    it.updateStage == SubscriptionUpdateStage.DnsBackground -> it.updateStage
+                    else -> null
+                }
             )
         }
         val resetJob = scope.launch {
@@ -2663,7 +2698,9 @@ class ConfigRepository(protected val context: Context) {
                 } else {
                     it.copy(
                         updateStatus = UpdateStatus.Idle,
-                        updateStage = null
+                        updateStage = it.updateStage.takeIf { stage ->
+                            stage == SubscriptionUpdateStage.DnsBackground
+                        }
                     )
                 }
             }
@@ -2740,6 +2777,21 @@ class ConfigRepository(protected val context: Context) {
             }
 
             saveProfiles()
+            if (profile.dnsPreResolve) {
+                scope.launch {
+                    setProfileUpdateStage(profile.id, updateRunId, SubscriptionUpdateStage.DnsBackground)
+                    val success = preResolveDomainsForProfileBestEffort(
+                        profile.id,
+                        deduplicatedConfig,
+                        profile.dnsServer
+                    )
+                    Log.d(
+                        ConfigRepository.TAG,
+                        "Background DNS pre-resolve for ${profile.id}, run=$updateRunId: success=$success"
+                    )
+                    setProfileUpdateStage(profile.id, updateRunId, null)
+                }
+            }
             buildSubscriptionUpdateSuccessResult(
                 profileName = profile.name,
                 addedNodes = addedNodes,
@@ -2819,7 +2871,9 @@ class ConfigRepository(protected val context: Context) {
                 activeId,
                 activeNode,
                 sanitizedSettings,
-                allNodesSnapshot
+                allNodesSnapshot,
+                activeProfile?.dnsPreResolve ?: false,
+                dnsOverrideConfig
             )
             val serverAddressStrategy = ConfigRepository.resolveOutboundServerAddressStrategy(
                 sanitizedSettings.serverAddressStrategy,
@@ -2970,6 +3024,30 @@ class ConfigRepository(protected val context: Context) {
         val tls = outbound.tls ?: return outbound
         val ech = tls.ech ?: return outbound
         return outbound.copy(tls = tls.copy(ech = ech.copy(dnsServer = null)))
+    }
+
+    protected suspend fun preResolveDomainsForProfile(
+        profileId: String,
+        config: SingBoxConfig,
+        dnsServer: String?
+    ) {
+        val domains = config.outbounds.orEmpty()
+            .mapNotNull { it.server }
+            .filterNot(DnsResolver::isIpAddress)
+            .distinct()
+        if (domains.isEmpty()) return
+
+        val results = dnsResolver.resolveBatch(
+            domains = domains,
+            dohServer = dnsServer ?: DnsResolver.DOH_CLOUDFLARE
+        )
+        dnsResolveStore.saveBatch(profileId, results)
+    }
+
+    protected fun applyDnsResolveToOutbound(profileId: String, outbound: Outbound): Outbound {
+        val server = outbound.server ?: return outbound
+        if (DnsResolver.isIpAddress(server)) return outbound
+        return dnsResolveStore.getIp(profileId, server)?.let { outbound.copy(server = it) } ?: outbound
     }
 
     protected fun detectValidRuleSetFileFormat(file: File, tag: String): String? {
@@ -3759,7 +3837,9 @@ class ConfigRepository(protected val context: Context) {
         activeProfileId: String,
         activeNode: NodeUi?,
         settings: AppSettings,
-        allNodes: List<NodeUi>
+        allNodes: List<NodeUi>,
+        dnsPreResolve: Boolean = false,
+        dnsOverrideConfig: DnsConfig? = null
     ): ConfigRepositoryRunOutboundsContext {
         val rawOutbounds = baseConfig.outbounds
         val runtimeEndpointTags = buildSet {
@@ -3773,7 +3853,16 @@ class ConfigRepository(protected val context: Context) {
         }
 
         val fixedOutbounds = rawOutbounds?.mapNotNull { outbound ->
-            val processed = buildOutboundForRuntime(outbound) ?: return@mapNotNull null
+            var processed = buildOutboundForRuntime(outbound) ?: return@mapNotNull null
+            val server = processed.server?.trim().orEmpty()
+            if (dnsPreResolve && ConfigRepository.shouldApplyDnsPreResolveToDomain(
+                    server,
+                    dnsOverrideConfig,
+                    processed.tag
+                )
+            ) {
+                processed = applyDnsResolveToOutbound(activeProfileId, processed)
+            }
             if (singBoxCore.validateOutbound(stripInternalMetadata(processed))) {
                 processed
             } else {
@@ -5895,6 +5984,7 @@ class ConfigRepository(protected val context: Context) {
                 "requesting" -> SubscriptionUpdateStage.Requesting
                 "parsing" -> SubscriptionUpdateStage.Parsing
                 "saving" -> SubscriptionUpdateStage.Saving
+                "dns_background" -> SubscriptionUpdateStage.DnsBackground
                 else -> null
             }
         }
@@ -6868,6 +6958,26 @@ class ConfigRepository(protected val context: Context) {
                 return rule
             }
             return rule.copy(action = "route")
+        }
+
+        internal fun shouldApplyDnsPreResolveToDomain(
+            domain: String,
+            dnsOverride: DnsConfig?,
+            outboundTag: String? = null
+        ): Boolean {
+            val normalizedDomain = domain.trim()
+            if (normalizedDomain.isBlank() || isIpAddressValue(normalizedDomain) || dnsOverride == null) {
+                return true
+            }
+            return dnsOverride.rules.orEmpty()
+                .map { normalizeDnsOverrideRule(it) }
+                .none { rule ->
+                    buildDomainResolverForMatchedDnsOverrideRule(
+                        domain = normalizedDomain,
+                        outboundTag = outboundTag,
+                        rule = rule
+                    ) != null
+                }
         }
 
         internal fun applyDnsOverrideDomainResolvers(

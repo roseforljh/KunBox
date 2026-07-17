@@ -8,12 +8,13 @@ import com.kunk.singbox.utils.parser.NodeLinkParser
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.foundation.gestures.scrollBy
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
@@ -61,6 +62,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
@@ -82,26 +84,49 @@ import com.kunk.singbox.ui.theme.LiquidGlassFloatingActionButton
 import com.kunk.singbox.ui.theme.liquidGlassFloatingActionContainerColor
 import com.kunk.singbox.ui.theme.liquidGlassFloatingActionContentColor
 import com.kunk.singbox.ui.theme.liquidGlassIconButtonPanel
-import com.kunk.singbox.ui.theme.liquidGlassPressFeedback
 import com.kunk.singbox.ui.theme.liquidGlassScreenContainerColor
 import com.kunk.singbox.utils.DeepLinkHandler
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.ByteArrayOutputStream
 import java.util.Locale
 
+private const val PROFILE_DRAG_EDGE_RATIO = 0.7f
+
+internal fun calculateProfileDragAutoScroll(
+    pointerY: Float,
+    viewportTop: Float,
+    viewportBottom: Float,
+    edgeThreshold: Float,
+    maxScrollPerFrame: Float
+): Float {
+    if (edgeThreshold <= 0f || viewportBottom <= viewportTop) return 0f
+    val topProgress = ((viewportTop + edgeThreshold - pointerY) / edgeThreshold).coerceIn(0f, 1f)
+    if (topProgress > 0f) return -maxScrollPerFrame * topProgress * PROFILE_DRAG_EDGE_RATIO
+
+    val bottomProgress = ((pointerY - viewportBottom + edgeThreshold) / edgeThreshold).coerceIn(0f, 1f)
+    return maxScrollPerFrame * bottomProgress * PROFILE_DRAG_EDGE_RATIO
+}
+
 @Composable
-private fun Modifier.profileSortItemPressFeedback(
+private fun Modifier.profileSortItemClick(
     enabled: Boolean,
     onClick: () -> Unit
-): Modifier = liquidGlassPressFeedback(
-    enabled = enabled,
-    label = "liquid_glass_profile_sort_item_scale",
-    onClick = onClick
-)
+): Modifier {
+    val interactionSource = remember { MutableInteractionSource() }
+    // 长按重排区域禁用所有按压指示与缩放，避免松手灰底/白块
+    return clickable(
+        enabled = enabled,
+        interactionSource = interactionSource,
+        indication = null,
+        onClick = onClick
+    )
+}
 
 private suspend fun readImportContentSafely(
     context: android.content.Context,
@@ -160,8 +185,6 @@ fun ProfilesScreen(
     // Reordering state
     val profileList = remember { mutableStateListOf<com.kunk.singbox.model.ProfileUi>() }
     val isDragging = remember { mutableStateOf(false) }
-    var suppressPlacementAnimation by remember { mutableStateOf(false) }
-    val enablePlacementAnimation = false
 
     androidx.compose.runtime.LaunchedEffect(profiles) {
         if (!isDragging.value) {
@@ -184,8 +207,11 @@ fun ProfilesScreen(
     var draggingItemIndex by remember { mutableStateOf<Int?>(null) }
     var draggingItemOffset by remember { mutableFloatStateOf(0f) }
     var draggingItemId by remember { mutableStateOf<String?>(null) }
-    var settlingItemId by remember { mutableStateOf<String?>(null) }
     var itemHeightPx by remember { mutableFloatStateOf(0f) }
+    var dragPointerY by remember { mutableFloatStateOf(0f) }
+    var listViewportTop by remember { mutableFloatStateOf(0f) }
+    var listViewportBottom by remember { mutableFloatStateOf(0f) }
+    var autoScrollJob by remember { mutableStateOf<Job?>(null) }
 
     val density = androidx.compose.ui.platform.LocalDensity.current
     val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
@@ -435,8 +461,15 @@ fun ProfilesScreen(
     if (showSubscriptionInput) {
         SubscriptionInputDialog(
             onDismiss = { showSubscriptionInput = false },
-            onConfirm = { name, url, autoUpdateInterval, dnsOverride ->
-                viewModel.importSubscription(name, url, autoUpdateInterval, dnsOverride)
+            onConfirm = { name, url, autoUpdateInterval, dnsPreResolve, dnsServer, dnsOverride ->
+                viewModel.importSubscription(
+                    name = name,
+                    url = url,
+                    autoUpdateInterval = autoUpdateInterval,
+                    dnsPreResolve = dnsPreResolve,
+                    dnsServer = dnsServer,
+                    dnsOverride = dnsOverride
+                )
                 showSubscriptionInput = false
             }
         )
@@ -515,16 +548,20 @@ fun ProfilesScreen(
             initialName = profile.name,
             initialUrl = profile.url ?: "",
             initialAutoUpdateInterval = profile.autoUpdateInterval,
+            initialDnsPreResolve = profile.dnsPreResolve,
+            initialDnsServer = profile.dnsServer,
             initialDnsOverride = profile.dnsOverride,
             title = stringResource(R.string.profiles_edit_profile),
             onDismiss = { editingProfile = null },
-            onConfirm = { name, url, autoUpdateInterval, dnsOverride ->
+            onConfirm = { name, url, autoUpdateInterval, dnsPreResolve, dnsServer, dnsOverride ->
                 viewModel.updateProfileMetadata(
-                    profile.id,
-                    name,
-                    url,
-                    autoUpdateInterval,
-                    dnsOverride
+                    profileId = profile.id,
+                    newName = name,
+                    newUrl = url,
+                    autoUpdateInterval = autoUpdateInterval,
+                    dnsPreResolve = dnsPreResolve,
+                    dnsServer = dnsServer,
+                    dnsOverride = dnsOverride
                 )
                 editingProfile = null
             }
@@ -585,6 +622,11 @@ fun ProfilesScreen(
                 // List
                 LazyColumn(
                     state = listState,
+                    modifier = Modifier.onGloballyPositioned { coordinates ->
+                        val top = coordinates.positionInWindow().y
+                        listViewportTop = top
+                        listViewportBottom = top + coordinates.size.height
+                    },
                     contentPadding = PaddingValues(
                         start = 16.dp,
                         top = 16.dp,
@@ -596,6 +638,7 @@ fun ProfilesScreen(
                     items(profileList.size, key = { profileList[it].id }) { index ->
                         val profile = profileList[index]
                         var visible by remember { mutableStateOf(false) }
+                        var itemWindowTop by remember(profile.id) { mutableFloatStateOf(0f) }
                         androidx.compose.runtime.LaunchedEffect(Unit) {
                             if (index < 15) {
                                 delay(index * 30L)
@@ -610,7 +653,6 @@ fun ProfilesScreen(
                         )
 
                         val isDraggingItem = draggingItemIndex == index
-                        val isSettlingItem = settlingItemId == profile.id
                         val isCurrentlyDragging = isDragging.value
                         val canDisplace = isCurrentlyDragging &&
                             draggingItemIndex != null &&
@@ -642,40 +684,13 @@ fun ProfilesScreen(
                             }
                         }
 
-                        val dragScale by animateFloatAsState(
-                            targetValue = when {
-                                isDraggingItem && isCurrentlyDragging -> 1.02f
-                                isSettlingItem -> 1.01f
-                                else -> 1f
-                            },
-                            animationSpec = spring(dampingRatio = 0.8f, stiffness = 260f),
-                            label = "dragScale"
-                        )
-                        // 非拖拽时 elevation 必须为 0，否则 graphicsLayer 矩形阴影会透出圆角卡片底部灰边
-                        val dragShadow by animateFloatAsState(
-                            targetValue = when {
-                                isDraggingItem && isCurrentlyDragging -> 8f
-                                isSettlingItem -> 4f
-                                else -> 0f
-                            },
-                            animationSpec = spring(dampingRatio = 0.82f, stiffness = 260f),
-                            label = "dragShadow"
-                        )
-                        val dragAlpha by animateFloatAsState(
-                            targetValue = when {
-                                isDraggingItem && isCurrentlyDragging -> 0.94f
-                                isSettlingItem -> 0.98f
-                                else -> 1f
-                            },
-                            animationSpec = spring(dampingRatio = 0.85f, stiffness = 280f),
-                            label = "dragAlpha"
-                        )
-
+                        // 长按拖拽不做阴影/缩放/透明样式，只保留位移重排，避免松手白块/灰底
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .zIndex(if (isDraggingItem && isCurrentlyDragging) 1f else 0f)
                                 .onGloballyPositioned { coordinates ->
+                                    itemWindowTop = coordinates.positionInWindow().y
                                     if (itemHeightPx == 0f) {
                                         val spacingPx = with(density) { 12.dp.toPx() }
                                         itemHeightPx = coordinates.size.height.toFloat() + spacingPx
@@ -683,36 +698,30 @@ fun ProfilesScreen(
                                 }
                                 .graphicsLayer {
                                     this.translationY = if (isDraggingItem) draggingItemOffset else translationY
-                                    this.alpha = alpha * dragAlpha
-                                    scaleX = dragScale
-                                    scaleY = dragScale
-                                    shadowElevation = dragShadow
-                                    compositingStrategy = CompositingStrategy.ModulateAlpha
+                                    this.alpha = alpha
                                 }
-                                .then(
-                                    if (!enablePlacementAnimation || suppressPlacementAnimation) {
-                                        Modifier
-                                    } else {
-                                        Modifier.animateItem()
-                                    }
-                                )
-                                .profileSortItemPressFeedback(
+                                .profileSortItemClick(
                                     enabled = !isDraggingItem || !isCurrentlyDragging
                                 ) {
                                     viewModel.setActiveProfile(profile.id)
                                 }
                                 .pointerInput(index) {
                                     detectDragGesturesAfterLongPress(
-                                        onDragStart = {
+                                        onDragStart = { startOffset ->
+                                            autoScrollJob?.cancel()
+                                            autoScrollJob = null
                                             draggingItemIndex = index
                                             draggingItemId = profile.id
                                             draggingItemOffset = 0f
+                                            dragPointerY = itemWindowTop + startOffset.y
                                             isDragging.value = true
                                             haptic.performHapticFeedback(
                                                 androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress
                                             )
                                         },
                                         onDragEnd = {
+                                            autoScrollJob?.cancel()
+                                            autoScrollJob = null
                                             draggingItemIndex?.let { startIdx ->
                                                 val dist = if (itemHeightPx > 0f) {
                                                     kotlin.math.round(draggingItemOffset / itemHeightPx).toInt()
@@ -721,9 +730,6 @@ fun ProfilesScreen(
                                                 }
                                                 val endIdx = (startIdx + dist).coerceIn(0, profileList.lastIndex)
 
-                                                val settledProfileId = profile.id
-                                                settlingItemId = settledProfileId
-                                                suppressPlacementAnimation = true
                                                 val absScrollBefore = if (itemHeightPx > 0f) {
                                                     listState.firstVisibleItemIndex * itemHeightPx +
                                                         listState.firstVisibleItemScrollOffset
@@ -753,30 +759,55 @@ fun ProfilesScreen(
                                                 draggingItemOffset = 0f
                                                 draggingItemId = null
                                                 isDragging.value = false
-
-                                                scope.launch {
-                                                    androidx.compose.runtime.withFrameNanos { }
-                                                    suppressPlacementAnimation = false
-                                                }
-                                                scope.launch {
-                                                    delay(220)
-                                                    if (settlingItemId == settledProfileId) {
-                                                        settlingItemId = null
-                                                    }
-                                                }
                                             }
                                         },
                                         onDragCancel = {
+                                            autoScrollJob?.cancel()
+                                            autoScrollJob = null
                                             draggingItemIndex = null
                                             draggingItemId = null
                                             draggingItemOffset = 0f
-                                            settlingItemId = null
                                             isDragging.value = false
-                                            suppressPlacementAnimation = false
                                         },
                                         onDrag = { change, dragAmount ->
                                             change.consume()
                                             draggingItemOffset += dragAmount.y
+                                            dragPointerY += dragAmount.y
+
+                                            val edgeThreshold = with(density) { 56.dp.toPx() }
+                                            val maxScrollPerFrame = with(density) { 32.dp.toPx() }
+                                            val scrollPerFrame = calculateProfileDragAutoScroll(
+                                                pointerY = dragPointerY,
+                                                viewportTop = listViewportTop,
+                                                viewportBottom = listViewportBottom,
+                                                edgeThreshold = edgeThreshold,
+                                                maxScrollPerFrame = maxScrollPerFrame
+                                            )
+                                            if (scrollPerFrame == 0f) {
+                                                autoScrollJob?.cancel()
+                                                autoScrollJob = null
+                                            } else if (autoScrollJob?.isActive != true) {
+                                                autoScrollJob = scope.launch {
+                                                    var keepScrolling = true
+                                                    while (isActive && isDragging.value && keepScrolling) {
+                                                        androidx.compose.runtime.withFrameNanos { }
+                                                        val frameScroll = calculateProfileDragAutoScroll(
+                                                            pointerY = dragPointerY,
+                                                            viewportTop = listViewportTop,
+                                                            viewportBottom = listViewportBottom,
+                                                            edgeThreshold = edgeThreshold,
+                                                            maxScrollPerFrame = maxScrollPerFrame
+                                                        )
+                                                        val consumed = if (frameScroll == 0f) {
+                                                            0f
+                                                        } else {
+                                                            listState.scrollBy(frameScroll)
+                                                        }
+                                                        keepScrolling = frameScroll != 0f && consumed != 0f
+                                                        draggingItemOffset += consumed
+                                                    }
+                                                }
+                                            }
                                         }
                                     )
                                 }
