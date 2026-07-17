@@ -58,9 +58,7 @@ import com.kunk.singbox.model.AppLanguage
 import com.kunk.singbox.utils.LocaleHelper
 import com.kunk.singbox.utils.DeepLinkHandler
 import com.kunk.singbox.ipc.SingBoxRemote
-import com.kunk.singbox.ipc.VpnStateStore
 import com.kunk.singbox.service.VpnTileService
-import com.kunk.singbox.service.manager.RecoveryPolicy
 import com.kunk.singbox.ui.components.AppNotificationManager
 import com.kunk.singbox.ui.components.AppNavBar
 import com.kunk.singbox.ui.navigation.AppNavigation
@@ -242,7 +240,8 @@ fun SingBoxApp() {
     val connectionState by dashboardViewModel.connectionState.collectAsStateWithLifecycle()
     val isRunning by SingBoxRemote.isRunning.collectAsStateWithLifecycle()
     val isStarting by SingBoxRemote.isStarting.collectAsStateWithLifecycle()
-    val manuallyStopped by SingBoxRemote.manuallyStopped.collectAsStateWithLifecycle()
+    // 每次进入主界面只尝试一次，避免手动断开后同会话立刻重连
+    var autoConnectAttempted by remember { mutableStateOf(false) }
 
     LaunchedEffect(isRunning, isStarting) {
 
@@ -251,27 +250,35 @@ fun SingBoxApp() {
         }
     }
 
-    LaunchedEffect(settings.autoConnect, connectionState, isRunning, isStarting, manuallyStopped) {
-        // 有恢复意图（被杀待恢复）时不点火：恢复由 sticky/keepalive/冷启动单路负责
+    LaunchedEffect(settings.autoConnect, connectionState, isRunning, isStarting) {
+        if (autoConnectAttempted || !settings.autoConnect) return@LaunchedEffect
+
+        // 必须先取得 AIDL 实时状态，禁止用冷启动默认 STOPPED 误触发二次点火
+        SingBoxRemote.ensureBound(context)
+        repeat(5) {
+            if (SingBoxRemote.isBound()) return@repeat
+            delay(300L)
+        }
+        if (!SingBoxRemote.isBound()) return@LaunchedEffect
+        if (!SingBoxRemote.queryAndSyncState(context)) return@LaunchedEffect
+
+        // 启动时核心已运行也要消费本次机会，防止同会话手动断开后自动重连
+        if (SingBoxRemote.isRunning.value || SingBoxRemote.isStarting.value) {
+            autoConnectAttempted = true
+            return@LaunchedEffect
+        }
+
         fun shouldAutoConnectNow(): Boolean {
-            val persistedStopped = VpnStateStore.isManuallyStopped()
-            return RecoveryPolicy.shouldAllowAutoConnectStart(
-                autoConnect = settings.autoConnect,
-                connectionIdle = connectionState == ConnectionState.Idle,
-                isRunning = isRunning,
-                isStarting = isStarting,
-                manuallyStopped = manuallyStopped || persistedStopped,
-                hasRecoverableIntent = RecoveryPolicy.hasRecoverableIntent(
-                    manuallyStopped = persistedStopped,
-                    mode = VpnStateStore.getMode()
-                )
-            )
+            return settings.autoConnect &&
+                connectionState == ConnectionState.Idle &&
+                !SingBoxRemote.isRunning.value &&
+                !SingBoxRemote.isStarting.value
         }
 
         if (shouldAutoConnectNow()) {
-            // Delay a bit to ensure everything is initialized
-            delay(1000)
-            if (shouldAutoConnectNow()) {
+            delay(1_000L)
+            if (SingBoxRemote.queryAndSyncState(context) && shouldAutoConnectNow()) {
+                autoConnectAttempted = true
                 dashboardViewModel.toggleConnection()
             }
         }

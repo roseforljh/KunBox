@@ -3,11 +3,9 @@ package com.kunk.singbox.service.manager
 import com.kunk.singbox.ipc.VpnStateStore
 
 /**
- * VPN 恢复判定唯一入口：sticky / keepalive / 冷启动单路恢复 / autoConnect 守卫共用。
+ * VPN 恢复判定入口。
  *
- * 语义约定：
- * - 恢复意图 = !manuallyStopped && mode != NONE（用户没点断开，意图就仍是"要开"）
- * - active 只表示"此刻是否在跑"，不作为恢复开关
+ * 恢复意图 = !manuallyStopped && mode != NONE（仅 sticky 使用）。
  */
 object RecoveryPolicy {
 
@@ -38,28 +36,10 @@ object RecoveryPolicy {
     }
 
     /**
-     * 恢复启动失败时不得清 mode：意图留给下一次 sticky/keepalive/冷启动。
+     * 恢复启动失败时不得清 mode：意图留给下一次 sticky。
      * 用户主动 START 失败仍可清 mode。
      */
     fun shouldPreserveModeOnStartFailure(isRecoveryStart: Boolean): Boolean {
         return isRecoveryStart
-    }
-
-    /**
-     * autoConnect 只允许在"无恢复意图"时点火。
-     * 有恢复意图（被杀待恢复）时交给 sticky/keepalive/冷启动单路，autoConnect 不得抢跑。
-     */
-    @Suppress("LongParameterList")
-    fun shouldAllowAutoConnectStart(
-        autoConnect: Boolean,
-        connectionIdle: Boolean,
-        isRunning: Boolean,
-        isStarting: Boolean,
-        manuallyStopped: Boolean,
-        hasRecoverableIntent: Boolean
-    ): Boolean {
-        if (!autoConnect || !connectionIdle) return false
-        if (isRunning || isStarting) return false
-        return !manuallyStopped && !hasRecoverableIntent
     }
 }

@@ -205,8 +205,16 @@ class DashboardViewModelStateResolutionTest {
         val source = File("src/main/java/com/kunk/singbox/MainActivity.kt")
             .readText(Charsets.UTF_8)
 
-        assertTrue(source.contains("RecoveryPolicy.shouldAllowAutoConnectStart"))
-        assertTrue(source.contains("RecoveryPolicy.hasRecoverableIntent"))
+        assertTrue(source.contains("SingBoxRemote.ensureBound(context)"))
+        assertTrue(source.contains("SingBoxRemote.queryAndSyncState(context)"))
+        assertTrue(source.contains("if (!SingBoxRemote.isBound()) return@LaunchedEffect"))
+        assertTrue(source.contains("SingBoxRemote.isRunning.value || SingBoxRemote.isStarting.value"))
+        assertTrue(source.contains("autoConnectAttempted = true"))
+        // mode / 持久化手动停不再参与 autoConnect；进入界面 once 尝试即可
+        assertFalse(
+            source.contains("hasRecoverableIntent = RecoveryPolicy.hasRecoverableIntent")
+        )
+        assertFalse(source.contains("VpnStateStore.isManuallyStopped()"))
         assertFalse(source.contains("shouldBlockAutoConnectForPersistedRuntime"))
     }
 
