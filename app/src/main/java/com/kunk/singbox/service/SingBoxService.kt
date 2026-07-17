@@ -21,7 +21,6 @@ import com.kunk.singbox.core.SelectorManager
 import com.kunk.singbox.core.SingBoxCore
 import com.kunk.singbox.ipc.SingBoxIpcHub
 import com.kunk.singbox.ipc.VpnStateStore
-import com.kunk.singbox.manager.VpnServiceManager
 import com.kunk.singbox.model.AppSettings
 import com.kunk.singbox.model.BackgroundPowerSavingDelay
 import com.kunk.singbox.model.Outbound
@@ -2500,13 +2499,6 @@ class SingBoxService : VpnService() {
 
     protected fun createNotification(): Notification {
         return notificationManager.createNotification(buildNotificationState())
-    }
-
-    override fun onTaskRemoved(rootIntent: Intent?) {
-        Log.i(SingBoxService.TAG, "onTaskRemoved: task swiped, stopping VPN")
-        VpnServiceManager.stopVpn(applicationContext)
-            .onFailure { error -> Log.e(SingBoxService.TAG, "Failed to stop VPN after task removal", error) }
-        super.onTaskRemoved(rootIntent)
     }
 
     override fun onDestroy() {

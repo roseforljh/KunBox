@@ -10,20 +10,11 @@ import javax.xml.parsers.DocumentBuilderFactory
 class SingBoxServiceTaskRemovalTest {
 
     @Test
-    fun taskRemovalUsesExplicitStopWhileKeepingSystemCallbackEnabled() {
+    fun taskRemovalKeepsCoreServicesRunning() {
         val manifest = readManifest()
-        val vpnSource = File("src/main/java/com/kunk/singbox/service/SingBoxService.kt")
-            .readText(Charsets.UTF_8)
-        val proxySource = File("src/main/java/com/kunk/singbox/service/ProxyOnlyService.kt")
-            .readText(Charsets.UTF_8)
-        val vpnTaskRemoved = vpnSource.functionBody("override fun onTaskRemoved(")
-        val proxyTaskRemoved = proxySource.functionBody("override fun onTaskRemoved(")
 
-        // stopWithTask=false 让系统先回调 onTaskRemoved，再走完整 ACTION_STOP 收尾。
         assertTrue(serviceDeclaresStopWithTaskFalse(manifest, ".service.SingBoxService"))
         assertTrue(serviceDeclaresStopWithTaskFalse(manifest, ".service.ProxyOnlyService"))
-        assertTrue(vpnTaskRemoved.contains("VpnServiceManager.stopVpn(applicationContext)"))
-        assertTrue(proxyTaskRemoved.contains("VpnServiceManager.stopVpn(applicationContext)"))
     }
 
     @Test
@@ -80,7 +71,7 @@ class SingBoxServiceTaskRemovalTest {
     }
 
     @Test
-    fun taskRemovalStopMarksVpnAsManuallyStopped() {
+    fun explicitStopMarksVpnAsManuallyStopped() {
         val source = File("src/main/java/com/kunk/singbox/service/SingBoxService.kt")
             .readText(Charsets.UTF_8)
         val stopBranch = source
@@ -89,21 +80,6 @@ class SingBoxServiceTaskRemovalTest {
 
         assertTrue(stopBranch.contains("VpnStateStore.setManuallyStopped(true)"))
         assertTrue(stopBranch.contains("stopVpn(stopService = true)"))
-    }
-
-    private fun String.functionBody(startToken: String): String {
-        val start = indexOf(startToken)
-        require(start >= 0) { "未找到 $startToken" }
-        val openingBrace = indexOf('{', start)
-        require(openingBrace >= 0) { "$startToken 缺少函数体" }
-        var depth = 0
-        for (index in openingBrace until length) {
-            when (this[index]) {
-                '{' -> depth++
-                '}' -> if (--depth == 0) return substring(start, index + 1)
-            }
-        }
-        error("$startToken 函数体未闭合")
     }
 
     private fun readManifest(): org.w3c.dom.Document =

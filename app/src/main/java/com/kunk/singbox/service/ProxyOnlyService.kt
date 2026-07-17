@@ -19,7 +19,6 @@ import com.kunk.singbox.core.SingBoxCore
 import com.kunk.singbox.core.StringIteratorImpl
 import com.kunk.singbox.ipc.SingBoxIpcHub
 import com.kunk.singbox.ipc.VpnStateStore
-import com.kunk.singbox.manager.VpnServiceManager
 import com.kunk.singbox.model.SingBoxConfig
 import com.kunk.singbox.repository.ConfigRepository
 import com.kunk.singbox.repository.LogRepository
@@ -998,13 +997,6 @@ class ProxyOnlyService : Service() {
         notifyRemoteState(state = ServiceState.STOPPED)
         updateTileState()
         Log.i(TAG, "onDestroy: unexpected death, recovery intent preserved")
-    }
-
-    override fun onTaskRemoved(rootIntent: Intent?) {
-        Log.i(TAG, "onTaskRemoved: task swiped, stopping proxy")
-        VpnServiceManager.stopVpn(applicationContext)
-            .onFailure { error -> Log.e(TAG, "Failed to stop proxy after task removal", error) }
-        super.onTaskRemoved(rootIntent)
     }
 
     override fun onDestroy() {
