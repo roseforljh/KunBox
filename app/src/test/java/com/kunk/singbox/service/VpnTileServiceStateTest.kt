@@ -245,7 +245,9 @@ class VpnTileServiceStateTest {
 
     @Test
     fun explicitTileProfileIsUsedThroughoutRuntimeConfigGeneration() {
-        val source = File("src/main/java/com/kunk/singbox/repository/ConfigRepository.kt").readText()
+        val source = File("src/main/java/com/kunk/singbox/repository/ConfigRepository.kt")
+            .readText(Charsets.UTF_8)
+            .replace("\r\n", "\n")
         val generationBody = source
             .substringAfter("suspend fun generateConfigFile(")
             .substringBefore("private fun logRunningConfigPath")
