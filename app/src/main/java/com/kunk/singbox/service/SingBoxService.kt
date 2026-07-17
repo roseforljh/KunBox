@@ -20,6 +20,7 @@ import com.kunk.singbox.core.SelectorManager
 import com.kunk.singbox.core.SingBoxCore
 import com.kunk.singbox.ipc.SingBoxIpcHub
 import com.kunk.singbox.ipc.VpnStateStore
+import com.kunk.singbox.manager.VpnServiceManager
 import com.kunk.singbox.model.AppSettings
 import com.kunk.singbox.model.BackgroundPowerSavingDelay
 import com.kunk.singbox.model.Outbound
@@ -2496,15 +2497,9 @@ class SingBoxService : VpnService() {
     }
 
     override fun onTaskRemoved(rootIntent: Intent?) {
-        // 划任务语义写死：不 stop、不改 manuallyStopped/mode；激进 ROM 杀进程由恢复链路兜底
-        Log.i(SingBoxService.TAG, "onTaskRemoved: task swiped away, VPN keeps running")
-        runCatching {
-            LogRepository.getInstance().addAlwaysLog(
-                "INFO [Recovery] onTaskRemoved: task swiped, VPN keeps running " +
-                    "mode=${VpnStateStore.getMode()} active=${VpnStateStore.getActive()} " +
-                    "manuallyStopped=${VpnStateStore.isManuallyStopped()}"
-            )
-        }
+        Log.i(SingBoxService.TAG, "onTaskRemoved: task swiped, stopping VPN")
+        VpnServiceManager.stopVpn(applicationContext)
+            .onFailure { error -> Log.e(SingBoxService.TAG, "Failed to stop VPN after task removal", error) }
         super.onTaskRemoved(rootIntent)
     }
 

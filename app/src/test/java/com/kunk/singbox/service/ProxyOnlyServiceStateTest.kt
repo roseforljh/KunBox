@@ -9,6 +9,30 @@ import java.io.File
 class ProxyOnlyServiceStateTest {
 
     @Test
+    fun taskRemovalStopMarksProxyAsManuallyStopped() {
+        val source = File("src/main/java/com/kunk/singbox/service/ProxyOnlyService.kt")
+            .readText(Charsets.UTF_8)
+        val stopBranch = source
+            .substringAfter("ACTION_STOP ->")
+            .substringBefore("ACTION_SWITCH_NODE ->")
+
+        assertTrue(stopBranch.contains("VpnStateStore.setManuallyStopped(true)"))
+        assertTrue(stopBranch.contains("notifyRemoteState(state = ServiceState.STOPPING)"))
+        assertTrue(stopBranch.contains("stopCore(stopService = true)"))
+    }
+
+    @Test
+    fun successfulProxyStartClearsManualStopMarker() {
+        val source = File("src/main/java/com/kunk/singbox/service/ProxyOnlyService.kt")
+            .readText(Charsets.UTF_8)
+        val startBody = source
+            .substringAfter("private fun startCore(")
+            .substringBefore("private fun restrictLocalNetworkListenIfNeeded")
+
+        assertTrue(startBody.contains("VpnStateStore.setManuallyStopped(false)"))
+    }
+
+    @Test
     fun `destroy keeps recovery markers when proxy mode is still active`() {
         // 意外销毁不得清 mode：shouldClear=false，onDestroy 走保留意图分支
         assertFalse(

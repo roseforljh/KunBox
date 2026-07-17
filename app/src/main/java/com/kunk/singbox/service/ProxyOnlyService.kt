@@ -18,6 +18,7 @@ import com.kunk.singbox.core.SingBoxCore
 import com.kunk.singbox.core.StringIteratorImpl
 import com.kunk.singbox.ipc.SingBoxIpcHub
 import com.kunk.singbox.ipc.VpnStateStore
+import com.kunk.singbox.manager.VpnServiceManager
 import com.kunk.singbox.model.SingBoxConfig
 import com.kunk.singbox.repository.ConfigRepository
 import com.kunk.singbox.repository.LogRepository
@@ -473,7 +474,9 @@ class ProxyOnlyService : Service() {
             }
             ACTION_STOP -> {
                 ServiceStateHolder.preserveRecoveryIntentOnFailure = false
+                VpnStateStore.setManuallyStopped(true)
                 VpnTileService.persistVpnPending("stopping")
+                notifyRemoteState(state = ServiceState.STOPPING)
                 stopCore(stopService = true)
             }
             ACTION_SWITCH_NODE -> {
@@ -641,6 +644,7 @@ class ProxyOnlyService : Service() {
 
                 VpnTileService.persistVpnState(true)
                 VpnStateStore.setMode(VpnStateStore.CoreMode.PROXY)
+                VpnStateStore.setManuallyStopped(false)
                 VpnTileService.persistVpnPending("")
                 ServiceStateHolder.preserveRecoveryIntentOnFailure = false
                 VpnStateStore.clearRecoveryClaim()
@@ -881,7 +885,7 @@ class ProxyOnlyService : Service() {
             state = st,
             activeLabel = activeLabel,
             lastError = lastErrorFlow.value.orEmpty(),
-            manuallyStopped = false
+            manuallyStopped = VpnStateStore.isManuallyStopped()
         )
     }
 
@@ -991,14 +995,9 @@ class ProxyOnlyService : Service() {
     }
 
     override fun onTaskRemoved(rootIntent: Intent?) {
-        // 划任务语义写死：不 stop、不改 manuallyStopped/mode；激进 ROM 杀进程由恢复链路兜底
-        Log.i(TAG, "onTaskRemoved: task swiped away, proxy keeps running")
-        runCatching {
-            LogRepository.getInstance().addAlwaysLog(
-                "INFO [Recovery] Proxy onTaskRemoved: task swiped, keeps running " +
-                    "mode=${VpnStateStore.getMode()} active=${VpnStateStore.getActive()}"
-            )
-        }
+        Log.i(TAG, "onTaskRemoved: task swiped, stopping proxy")
+        VpnServiceManager.stopVpn(applicationContext)
+            .onFailure { error -> Log.e(TAG, "Failed to stop proxy after task removal", error) }
         super.onTaskRemoved(rootIntent)
     }
 
