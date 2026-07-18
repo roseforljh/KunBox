@@ -146,6 +146,8 @@ class CoreManager(
             currentSettings = settings
             PerfTracer.end(PerfTracer.Phases.SETTINGS_LOAD)
             settings
+        }.onFailure {
+            PerfTracer.end(PerfTracer.Phases.SETTINGS_LOAD, "error")
         }
     }
 
@@ -277,7 +279,7 @@ class CoreManager(
 
                     if (!isStartTokenCurrent(startToken)) {
                         Log.i(TAG, "Libbox start cancelled before native start")
-                        PerfTracer.end(PerfTracer.Phases.LIBBOX_START)
+                        PerfTracer.end(PerfTracer.Phases.LIBBOX_START, "cancelled")
                         return@withLock StartResult.Cancelled
                     }
 
@@ -293,7 +295,7 @@ class CoreManager(
 
                     if (!isStartTokenCurrent(startToken)) {
                         Log.i(TAG, "Libbox start invalidated while native start was running")
-                        PerfTracer.end(PerfTracer.Phases.LIBBOX_START)
+                        PerfTracer.end(PerfTracer.Phases.LIBBOX_START, "cancelled")
                         return@withLock StartResult.Cancelled
                     }
 
@@ -309,11 +311,11 @@ class CoreManager(
 
                     StartResult.Success(durationMs, configContent)
                 } catch (e: CancellationException) {
-                    PerfTracer.end(PerfTracer.Phases.LIBBOX_START)
+                    PerfTracer.end(PerfTracer.Phases.LIBBOX_START, "cancelled")
                     Log.i(TAG, "Libbox start cancelled")
                     throw e
                 } catch (e: Exception) {
-                    PerfTracer.end(PerfTracer.Phases.LIBBOX_START)
+                    PerfTracer.end(PerfTracer.Phases.LIBBOX_START, "error")
                     Log.e(TAG, "Libbox start failed: ${e.message}", e)
                     logRepo.addLog("ERR [Startup] startLibbox failed: ${e.message}")
                     StartResult.Failed(e.message ?: "Unknown error", e)
@@ -402,6 +404,7 @@ class CoreManager(
             return Result.failure(IllegalArgumentException("TunOptions cannot be null"))
         }
 
+        var tunTraceStarted = false
         return runCatching {
             if (reuseExisting) {
                 vpnInterface?.let { existing ->
@@ -420,6 +423,7 @@ class CoreManager(
             }
 
             PerfTracer.begin(PerfTracer.Phases.TUN_CREATE)
+            tunTraceStarted = true
 
             val builder = tunManager.consumePreallocatedBuilder()
                 ?: vpnService.Builder()
@@ -438,6 +442,10 @@ class CoreManager(
             Log.i(TAG, "TUN interface opened, fd=$fd")
 
             fd
+        }.onFailure {
+            if (tunTraceStarted) {
+                PerfTracer.end(PerfTracer.Phases.TUN_CREATE, "error")
+            }
         }
     }
 

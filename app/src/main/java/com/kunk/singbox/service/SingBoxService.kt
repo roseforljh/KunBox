@@ -50,6 +50,7 @@ import com.kunk.singbox.utils.LocalNetworkPermission
 import com.kunk.singbox.utils.LocaleHelper
 import com.kunk.singbox.utils.NetworkClient
 import com.kunk.singbox.utils.perf.StateCache
+import com.kunk.singbox.utils.perf.PerfTracer
 import io.nekohasekai.libbox.*
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
@@ -451,6 +452,7 @@ class SingBoxService : VpnService() {
     )
     @Volatile protected var isStopping: Boolean = false
     @Volatile protected var stopSelfRequested: Boolean = false
+    @Volatile private var preserveRuntimeStateOnDestroy: Boolean = false
     @Volatile protected var cleanupJob: Job? = null
     @Volatile protected var autoFailoverJob: Job? = null
     @Volatile protected var pendingStartConfigPath: String? = null
@@ -1521,6 +1523,11 @@ class SingBoxService : VpnService() {
 
         val success = hotSwitchNode(targetTag)
         if (!success) {
+            PerfTracer.recordDuration(
+                PerfTracer.Phases.AUTO_FAILOVER,
+                SystemClock.elapsedRealtime() - startedAtMs,
+                "hot_switch_failed"
+            )
             LogRepository.getInstance().addLog(
                 "WARN: Auto failover escalate restart reason=hot_switch_failed target=$targetTag"
             )
@@ -1568,6 +1575,11 @@ class SingBoxService : VpnService() {
                 )
                 restartVpnForAutoFailoverRecovery(currentTag)
             }
+            PerfTracer.recordDuration(
+                PerfTracer.Phases.AUTO_FAILOVER,
+                SystemClock.elapsedRealtime() - startedAtMs,
+                if (rolledBack) "live_check_failed" else "rollback_failed"
+            )
             return
         }
 
@@ -1579,6 +1591,11 @@ class SingBoxService : VpnService() {
         requestNotificationUpdate(force = true)
         requestRemoteStateUpdate(force = true)
         val elapsedMs = SystemClock.elapsedRealtime() - startedAtMs
+        PerfTracer.recordDuration(
+            PerfTracer.Phases.AUTO_FAILOVER,
+            elapsedMs,
+            "success"
+        )
         LogRepository.getInstance().addLog(
             "INFO: Auto failover committed $currentTag -> $displayName trigger=$trigger " +
                 "elapsed=${elapsedMs}ms dnsFails=$recentDnsFailures"
@@ -1709,6 +1726,7 @@ class SingBoxService : VpnService() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        preserveRuntimeStateOnDestroy = false
         val recoveryFlag = intent?.getBooleanExtra(SingBoxService.EXTRA_RECOVERY, false) == true
         Log.i(SingBoxService.TAG, "onStartCommand action=${intent?.action} recovery=$recoveryFlag")
         if (recoveryFlag) {
@@ -1948,11 +1966,46 @@ class SingBoxService : VpnService() {
                 }
             }
             SingBoxService.ACTION_FULL_RESTART -> {
+                val isPerAppRuleRestart = intent.getBooleanExtra(
+                    SingBoxService.EXTRA_PER_APP_RULE_RESTART,
+                    false
+                )
+                val manuallyStopped = isPerAppRuleRestart && VpnStateStore.isManuallyStopped()
+                val mode = if (isPerAppRuleRestart) {
+                    VpnStateStore.getMode()
+                } else {
+                    VpnStateStore.CoreMode.VPN
+                }
+                val shouldRejectPerAppRuleRestart = isPerAppRuleRestart && (
+                    !SingBoxService.isRunning ||
+                        isStopping ||
+                        manuallyStopped ||
+                        mode != VpnStateStore.CoreMode.VPN
+                    )
+                if (shouldRejectPerAppRuleRestart) {
+                    Log.w(
+                        SingBoxService.TAG,
+                        "Per-app rule FULL_RESTART rejected: " +
+                            "running=${SingBoxService.isRunning}, starting=${SingBoxService.isStarting}, " +
+                            "stopping=$isStopping, manuallyStopped=$manuallyStopped, mode=$mode"
+                    )
+                    val shouldStopIdleService = !SingBoxService.isRunning &&
+                        !SingBoxService.isStarting &&
+                        !isStopping
+                    if (shouldStopIdleService) {
+                        preserveRuntimeStateOnDestroy = true
+                        stopSelf(startId)
+                        return START_NOT_STICKY
+                    }
+                    return START_STICKY
+                }
                 Log.i(SingBoxService.TAG, "Received SingBoxService.ACTION_FULL_RESTART -> performing full restart (TUN rebuild)")
                 val configPath = intent.getStringExtra(SingBoxService.EXTRA_CONFIG_PATH)
                 if (configPath.isNullOrEmpty()) {
+                    PerfTracer.recordEvent(PerfTracer.Phases.FULL_RESTART, "missing_config")
                     Log.e(SingBoxService.TAG, "SingBoxService.ACTION_FULL_RESTART: config path is empty")
                 } else {
+                    PerfTracer.recordEvent(PerfTracer.Phases.FULL_RESTART, "requested")
                     performFullRestart(configPath)
                 }
             }
@@ -2130,7 +2183,7 @@ class SingBoxService : VpnService() {
         }
     }
 
-    @Suppress("CyclomaticComplexMethod", "CognitiveComplexMethod", "ReturnCount")
+    @Suppress("CyclomaticComplexMethod", "CognitiveComplexMethod", "LongMethod", "ReturnCount")
     protected fun performHotReload(configContent: String) {
         synchronized(this) {
             if (!SingBoxService.isRunning || isStopping) {
@@ -2145,6 +2198,7 @@ class SingBoxService : VpnService() {
             hotReloadJob?.cancel()
 
             val job = serviceScope.launch {
+                val startedAtMs = SystemClock.elapsedRealtime()
                 try {
                     Log.i(SingBoxService.TAG, "[HotReload] Starting kernel-level hot reload...")
 
@@ -2158,6 +2212,11 @@ class SingBoxService : VpnService() {
 
                     result.onSuccess { success ->
                         if (success) {
+                            PerfTracer.recordDuration(
+                                PerfTracer.Phases.HOT_RELOAD,
+                                SystemClock.elapsedRealtime() - startedAtMs,
+                                "success"
+                            )
                             Log.i(SingBoxService.TAG, "[HotReload] Kernel hot reload succeeded")
                             LogRepository.getInstance().addLog("INFO [HotReload] Config reloaded successfully")
 
@@ -2167,17 +2226,37 @@ class SingBoxService : VpnService() {
 
                             requestNotificationUpdate(force = true)
                         } else if (!isStopping && SingBoxService.isRunning) {
+                            PerfTracer.recordDuration(
+                                PerfTracer.Phases.HOT_RELOAD,
+                                SystemClock.elapsedRealtime() - startedAtMs,
+                                "kernel_error"
+                            )
                             handleHotReloadFailure("Kernel hot reload not available")
                         }
                     }.onFailure { e ->
                         if (!isStopping && SingBoxService.isRunning) {
+                            PerfTracer.recordDuration(
+                                PerfTracer.Phases.HOT_RELOAD,
+                                SystemClock.elapsedRealtime() - startedAtMs,
+                                "exception"
+                            )
                             handleHotReloadFailure("Hot reload failed: ${e.message}")
                         }
                     }
                 } catch (e: CancellationException) {
+                    PerfTracer.recordDuration(
+                        PerfTracer.Phases.HOT_RELOAD,
+                        SystemClock.elapsedRealtime() - startedAtMs,
+                        "cancelled"
+                    )
                     Log.i(SingBoxService.TAG, "performHotReload cancelled")
                     throw e
                 } catch (e: Exception) {
+                    PerfTracer.recordDuration(
+                        PerfTracer.Phases.HOT_RELOAD,
+                        SystemClock.elapsedRealtime() - startedAtMs,
+                        "exception"
+                    )
                     Log.e(SingBoxService.TAG, "performHotReload error", e)
                     if (!isStopping && SingBoxService.isRunning) {
                         handleHotReloadFailure("Hot reload error: ${e.message}")
@@ -2539,10 +2618,12 @@ class SingBoxService : VpnService() {
             stopVpn(stopService = false)
         } else {
             runCatching { stopForeground(STOP_FOREGROUND_REMOVE) }
-            VpnTileService.persistVpnState(false)
-            VpnTileService.persistVpnPending("")
-            updateServiceState(ServiceState.STOPPED)
-            updateTileState()
+            if (!preserveRuntimeStateOnDestroy) {
+                VpnTileService.persistVpnState(false)
+                VpnTileService.persistVpnPending("")
+                updateServiceState(ServiceState.STOPPED)
+                updateTileState()
+            }
         }
 
         serviceSupervisorJob.cancel()
@@ -2699,6 +2780,8 @@ class SingBoxService : VpnService() {
         val EXTRA_CONFIG_CONTENT = ServiceStateHolder.EXTRA_CONFIG_CONTENT
 
         val EXTRA_CLEAN_CACHE = ServiceStateHolder.EXTRA_CLEAN_CACHE
+
+        val EXTRA_PER_APP_RULE_RESTART = ServiceStateHolder.EXTRA_PER_APP_RULE_RESTART
 
         val EXTRA_SETTING_KEY = ServiceStateHolder.EXTRA_SETTING_KEY
 

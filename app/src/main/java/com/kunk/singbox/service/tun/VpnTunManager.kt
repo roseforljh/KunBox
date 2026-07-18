@@ -274,14 +274,18 @@ class VpnTunManager(
             packages: List<String>,
             addAllowedApplication: (String) -> Unit
         ): Int {
+            var addedCount = 0
             packages.forEach { packageName ->
                 try {
                     addAllowedApplication(packageName)
+                    addedCount++
+                } catch (e: PackageManager.NameNotFoundException) {
+                    Log.w(TAG, "Allowed app not found, skipping: $packageName", e)
                 } catch (e: Exception) {
                     throw IllegalStateException("Failed to add allowed application: $packageName", e)
                 }
             }
-            return packages.size
+            return addedCount
         }
     }
 

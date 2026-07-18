@@ -2,10 +2,12 @@
 
 import android.content.Context
 import android.content.Intent
+import android.os.SystemClock
 import android.util.Log
 import com.kunk.singbox.ipc.VpnStateStore
 import com.kunk.singbox.model.NodeUi
 import com.kunk.singbox.repository.ConfigRepository
+import com.kunk.singbox.utils.perf.PerfTracer
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 
@@ -59,6 +61,7 @@ class NodeSwitchManager(
         extraConfigPath: String
     ) {
         serviceScope.launch {
+            val startedAtMs = SystemClock.elapsedRealtime()
             val configRepository = ConfigRepository.getInstance(context)
             val node = configRepository.getNodeById(nodeId)
 
@@ -66,6 +69,7 @@ class NodeSwitchManager(
 
             if (nodeTag == null) {
                 Log.w(TAG, "Hot switch failed: node not found $nodeId and no outboundTag provided")
+                recordSwitchMetric(startedAtMs, "invalid_target")
                 return@launch
             }
 
@@ -87,6 +91,7 @@ class NodeSwitchManager(
                 }
                 callbacks?.requestNotificationUpdate(force = FORCE_NOTIFICATION_AFTER_EXPLICIT_HOT_SWITCH)
                 callbacks?.notifyRemoteStateUpdate(force = true)
+                recordSwitchMetric(startedAtMs, "success")
             } else {
                 Log.w(TAG, "Hot switch failed for $nodeTag, falling back to restart")
                 callbacks?.setRealTimeNodeName(null)
@@ -97,10 +102,12 @@ class NodeSwitchManager(
                     displayName?.let { putExtra("pending_node_name", it) }
                 }
                 callbacks?.startServiceIntent(restartIntent)
+                recordSwitchMetric(startedAtMs, "restart_fallback")
             }
         }
     }
 
+    @Suppress("LongMethod")
     fun switchNextNode(
         serviceClass: Class<*>,
         actionStart: String,
@@ -139,6 +146,8 @@ class NodeSwitchManager(
         lastSwitchTimeMs = now
 
         serviceScope.launch {
+            val startedAtMs = SystemClock.elapsedRealtime()
+            var metricOutcome = "error"
             try {
                 val success = callbacks?.hotSwitchNode(nextNode.name) == true
                 if (success) {
@@ -153,6 +162,7 @@ class NodeSwitchManager(
                         configRepository.syncActiveNodeFromProxySelection(nextNode.name)
                     }
                     Log.i(TAG, "switchNextNode: hot switch successful")
+                    metricOutcome = "success"
                 } else {
                     Log.w(TAG, "switchNextNode: hot switch failed, falling back to restart")
                     VpnStateStore.setActiveLabel(nextNode.name)
@@ -164,11 +174,21 @@ class NodeSwitchManager(
                         putExtra("pending_node_name", nextNode.name)
                     }
                     callbacks?.startServiceIntent(restartIntent)
+                    metricOutcome = "restart_fallback"
                 }
             } finally {
+                recordSwitchMetric(startedAtMs, metricOutcome)
                 isSwitching = false
             }
         }
+    }
+
+    private fun recordSwitchMetric(startedAtMs: Long, outcome: String) {
+        PerfTracer.recordDuration(
+            name = PerfTracer.Phases.NODE_SWITCH,
+            durationMs = SystemClock.elapsedRealtime() - startedAtMs,
+            outcome = outcome
+        )
     }
 
     fun cleanup() {

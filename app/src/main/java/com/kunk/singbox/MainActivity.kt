@@ -124,6 +124,7 @@ class MainActivity : ComponentActivity() {
 fun SingBoxApp() {
     val context = LocalContext.current
     val restartNeededMessage = stringResource(R.string.settings_restart_needed)
+    val importedSubscriptionDefaultName = stringResource(R.string.profiles_imported_subscription_default_name)
 
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission(),
@@ -208,7 +209,7 @@ fun SingBoxApp() {
                     if ((scheme == "singbox" || scheme == "kunbox") && host == "install-config") {
                         val url = uri.getQueryParameter("url")
                         val name = uri.getQueryParameter("name")
-                            ?: context.getString(R.string.profiles_imported_subscription_default_name)
+                            ?: importedSubscriptionDefaultName
                         val intervalStr = uri.getQueryParameter("interval")
                         val interval = intervalStr?.toIntOrNull() ?: 0
 

@@ -26,6 +26,7 @@ import com.kunk.singbox.service.ServiceState
 import com.kunk.singbox.service.ProxyOnlyService
 import com.kunk.singbox.service.VpnTileService
 import com.kunk.singbox.core.SingBoxCore
+import com.kunk.singbox.utils.perf.PerfTracer
 import com.kunk.singbox.repository.ConfigRepository
 import com.kunk.singbox.viewmodel.shared.NodeDisplaySettings
 import kotlinx.coroutines.Job
@@ -669,6 +670,8 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
             startServiceCompat(context, intent)
             return
         }
+
+        PerfTracer.recordEvent(PerfTracer.Phases.FULL_RESTART, "service_restart")
 
         runCatching {
             if (!com.kunk.singbox.ipc.VpnStateStore.shouldTriggerPrepareRestart(1500L)) {

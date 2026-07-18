@@ -2,6 +2,7 @@
 
 import android.os.SystemClock
 import android.util.Log
+import com.kunk.singbox.repository.LogRepository
 import java.util.concurrent.ConcurrentHashMap
 
 object PerfTracer {
@@ -21,14 +22,25 @@ object PerfTracer {
         )
     }
 
-    fun end(name: String): Long {
+    fun end(name: String, outcome: String = "success"): Long {
         val trace = activeTraces.remove(name) ?: return -1
         val durationMs = SystemClock.elapsedRealtime() - trace.startTimeMs
 
         val parentInfo = trace.parent?.let { " (parent: $it)" } ?: ""
         Log.d(TAG, "[$name] completed in ${durationMs}ms$parentInfo")
+        recordDuration(name = name, durationMs = durationMs, outcome = outcome)
 
         return durationMs
+    }
+
+    fun recordDuration(name: String, durationMs: Long, outcome: String) {
+        val line = "INFO [Metric] name=$name outcome=$outcome duration_ms=${durationMs.coerceAtLeast(0L)}"
+        Log.i(TAG, line)
+        runCatching { LogRepository.getInstance().addAlwaysLog(line) }
+    }
+
+    fun recordEvent(name: String, outcome: String) {
+        recordDuration(name = name, durationMs = 0L, outcome = outcome)
     }
 
     object Phases {
@@ -42,5 +54,10 @@ object PerfTracer {
         const val TUN_CREATE = "tun_create"
         const val VPN_VALIDATE = "vpn_validate"
         const val CORE_READY = "core_ready"
+        const val NETWORK_SWITCH = "network_switch"
+        const val NODE_SWITCH = "node_switch"
+        const val AUTO_FAILOVER = "auto_failover"
+        const val HOT_RELOAD = "hot_reload"
+        const val FULL_RESTART = "full_restart"
     }
 }
