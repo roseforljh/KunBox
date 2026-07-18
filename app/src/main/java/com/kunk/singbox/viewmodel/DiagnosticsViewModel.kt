@@ -6,6 +6,7 @@ import android.content.Context
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.os.Build
+import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.google.gson.Gson
@@ -13,10 +14,17 @@ import com.kunk.singbox.model.AppSettings
 import com.kunk.singbox.model.SingBoxConfig
 import com.kunk.singbox.repository.ConfigRepository
 import com.kunk.singbox.repository.ConfigRepository.ConfigGenerationResult
+import com.kunk.singbox.repository.DiagnosticArchiveRepository
 import com.kunk.singbox.service.SingBoxService
 import com.kunk.singbox.core.LibboxCompat
 import com.kunk.singbox.utils.TcpPing
+import com.kunk.singbox.utils.perf.DiagnosticResourceSample
+import com.kunk.singbox.utils.perf.DiagnosticResourceSampler
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
@@ -37,6 +45,8 @@ class DiagnosticsViewModel(application: Application) : AndroidViewModel(applicat
     private val gson = Gson()
     private val configRepository = ConfigRepository.getInstance(application)
     private val settingsRepository = SettingsRepository.getInstance(application)
+    private val diagnosticArchiveRepository = DiagnosticArchiveRepository(application)
+    private val resourceSampler = DiagnosticResourceSampler(application)
     private val nodeLineQueryRunner = DiagnosticsNodeLineQueryRunner(
         application = application,
         configRepository = configRepository,
@@ -79,8 +89,75 @@ class DiagnosticsViewModel(application: Application) : AndroidViewModel(applicat
     private val _isNodeLineQueryLoading = MutableStateFlow(false)
     val isNodeLineQueryLoading = _isNodeLineQueryLoading.asStateFlow()
 
+    private val _isDiagnosticExporting = MutableStateFlow(false)
+    val isDiagnosticExporting = _isDiagnosticExporting.asStateFlow()
+
+    private val _isResourceSamplingEnabled = MutableStateFlow(false)
+    val isResourceSamplingEnabled = _isResourceSamplingEnabled.asStateFlow()
+
+    private var resourceSamples = emptyList<DiagnosticResourceSample>()
+    private val _resourceSampleCount = MutableStateFlow(0)
+    val resourceSampleCount = _resourceSampleCount.asStateFlow()
+
+    private var resourceSamplingJob: Job? = null
+
     fun dismissDialog() {
         _showResultDialog.value = false
+    }
+
+    fun setResourceSamplingEnabled(enabled: Boolean) {
+        if (_isResourceSamplingEnabled.value == enabled) return
+        resourceSamplingJob?.cancel()
+        resourceSamplingJob = null
+        _isResourceSamplingEnabled.value = enabled
+        if (!enabled) return
+
+        resourceSampler.reset()
+        resourceSamples = emptyList()
+        _resourceSampleCount.value = 0
+        resourceSamplingJob = viewModelScope.launch {
+            while (true) {
+                try {
+                    val captured = withContext(Dispatchers.IO) { resourceSampler.capture() }
+                    coroutineContext.ensureActive()
+                    val merged = (resourceSamples + captured).takeLast(MAX_RESOURCE_SAMPLES)
+                    resourceSamples = merged
+                    _resourceSampleCount.value = merged.size
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    Log.e(TAG, "资源采样失败", e)
+                }
+                delay(RESOURCE_SAMPLE_INTERVAL_MS)
+            }
+        }
+    }
+
+    fun exportDiagnosticArchive() {
+        if (_isDiagnosticExporting.value) return
+        viewModelScope.launch {
+            _isDiagnosticExporting.value = true
+            _resultTitle.value = getApplication<Application>().getString(R.string.diagnostics_export_package)
+            try {
+                val samples = resourceSamples
+                val result = diagnosticArchiveRepository.export(samples)
+                _resultMessage.value = getApplication<Application>().getString(
+                    R.string.diagnostics_export_package_success,
+                    result.location,
+                    result.sizeBytes / 1024L,
+                    samples.size
+                )
+            } catch (e: Exception) {
+                Log.e(TAG, "导出诊断包失败", e)
+                _resultMessage.value = getApplication<Application>().getString(
+                    R.string.diagnostics_export_package_failed,
+                    e.message ?: "unknown"
+                )
+            } finally {
+                _isDiagnosticExporting.value = false
+                _showResultDialog.value = true
+            }
+        }
     }
 
     fun showRunningConfigSummary() {
@@ -602,5 +679,11 @@ class DiagnosticsViewModel(application: Application) : AndroidViewModel(applicat
         }
 
         return MatchResult("Final (No match)", config.route.finalOutbound ?: "direct")
+    }
+
+    private companion object {
+        const val TAG = "DiagnosticsViewModel"
+        const val RESOURCE_SAMPLE_INTERVAL_MS = 15_000L
+        const val MAX_RESOURCE_SAMPLES = 4_096
     }
 }

@@ -38,6 +38,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import com.kunk.singbox.ui.components.ConfirmDialog
 import com.kunk.singbox.ui.components.SettingItem
+import com.kunk.singbox.ui.components.SettingSwitchItem
 import com.kunk.singbox.ui.components.StandardCard
 import com.kunk.singbox.viewmodel.DiagnosticsViewModel
 import com.kunk.singbox.ui.theme.liquidGlassIconButtonPanel
@@ -64,6 +65,9 @@ fun DiagnosticsScreen(
     val isAppRoutingDiagLoading by viewModel.isAppRoutingDiagLoading.collectAsStateWithLifecycle()
     val isConnOwnerStatsLoading by viewModel.isConnOwnerStatsLoading.collectAsStateWithLifecycle()
     val isNodeLineQueryLoading by viewModel.isNodeLineQueryLoading.collectAsStateWithLifecycle()
+    val isDiagnosticExporting by viewModel.isDiagnosticExporting.collectAsStateWithLifecycle()
+    val isResourceSamplingEnabled by viewModel.isResourceSamplingEnabled.collectAsStateWithLifecycle()
+    val resourceSampleCount by viewModel.resourceSampleCount.collectAsStateWithLifecycle()
 
     if (showResultDialog) {
         ConfirmDialog(
@@ -115,6 +119,34 @@ fun DiagnosticsScreen(
                     icon = Icons.Rounded.FileDownload,
                     onClick = { viewModel.exportRunningConfigToExternalFiles() },
                     enabled = !isRunConfigLoading
+                )
+                SettingSwitchItem(
+                    title = stringResource(R.string.diagnostics_resource_sampling),
+                    subtitle = when {
+                        isResourceSamplingEnabled -> stringResource(
+                            R.string.diagnostics_resource_sampling_active,
+                            resourceSampleCount
+                        )
+                        resourceSampleCount > 0 -> stringResource(
+                            R.string.diagnostics_resource_sampling_stopped,
+                            resourceSampleCount
+                        )
+                        else -> stringResource(R.string.diagnostics_resource_sampling_subtitle)
+                    },
+                    icon = Icons.Rounded.Analytics,
+                    checked = isResourceSamplingEnabled,
+                    onCheckedChange = viewModel::setResourceSamplingEnabled
+                )
+                SettingItem(
+                    title = stringResource(R.string.diagnostics_export_package),
+                    subtitle = if (isDiagnosticExporting) {
+                        stringResource(R.string.diagnostics_export_package_loading)
+                    } else {
+                        stringResource(R.string.diagnostics_export_package_subtitle)
+                    },
+                    icon = Icons.Rounded.FileDownload,
+                    onClick = viewModel::exportDiagnosticArchive,
+                    enabled = !isDiagnosticExporting
                 )
                 SettingItem(
                     title = stringResource(R.string.diagnostics_app_routing),

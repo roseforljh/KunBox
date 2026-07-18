@@ -518,6 +518,15 @@
     <string name="diagnostics_export_config">导出运行配置</string>
     <string name="diagnostics_export_config_subtitle">导出 running_config.json 到外部存储目录</string>
     <string name="diagnostics_export_config_loading">正在导出...</string>
+    <string name="diagnostics_resource_sampling">资源周期采样</string>
+    <string name="diagnostics_resource_sampling_subtitle">每 15 秒采样主进程与 VPN 进程，最多保留 4096 条</string>
+    <string name="diagnostics_resource_sampling_active">采样中，已记录 %1$d 条</string>
+    <string name="diagnostics_resource_sampling_stopped">已停止，保留 %1$d 条</string>
+    <string name="diagnostics_export_package">导出脱敏诊断包</string>
+    <string name="diagnostics_export_package_subtitle">导出脱敏日志、运行配置和资源采样 ZIP</string>
+    <string name="diagnostics_export_package_loading">正在生成诊断包...</string>
+    <string name="diagnostics_export_package_success">诊断包已导出到：\n%1$s\n\n大小：%2$d KiB\n资源记录：%3$d 条</string>
+    <string name="diagnostics_export_package_failed">诊断包导出失败：%1$s</string>
     <string name="diagnostics_app_routing">应用分流诊断</string>
     <string name="diagnostics_app_routing_subtitle">检查 /proc/net 可读性（影响 package_name 生效）</string>
     <string name="diagnostics_app_routing_loading">正在检测...</string>

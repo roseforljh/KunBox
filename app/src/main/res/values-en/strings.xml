@@ -518,6 +518,15 @@
     <string name="diagnostics_export_config">Export Running Config</string>
     <string name="diagnostics_export_config_subtitle">Export running_config.json to external storage</string>
     <string name="diagnostics_export_config_loading">Exporting...</string>
+    <string name="diagnostics_resource_sampling">Periodic Resource Sampling</string>
+    <string name="diagnostics_resource_sampling_subtitle">Sample app and VPN processes every 15 seconds, up to 4096 records</string>
+    <string name="diagnostics_resource_sampling_active">Sampling, %1$d records captured</string>
+    <string name="diagnostics_resource_sampling_stopped">Stopped, %1$d records retained</string>
+    <string name="diagnostics_export_package">Export Redacted Diagnostic Package</string>
+    <string name="diagnostics_export_package_subtitle">Export redacted logs, runtime config, and resource samples as ZIP</string>
+    <string name="diagnostics_export_package_loading">Building diagnostic package...</string>
+    <string name="diagnostics_export_package_success">Diagnostic package exported to:\n%1$s\n\nSize: %2$d KiB\nResource records: %3$d</string>
+    <string name="diagnostics_export_package_failed">Diagnostic package export failed: %1$s</string>
     <string name="diagnostics_app_routing">App Routing Diagnostics</string>
     <string name="diagnostics_app_routing_subtitle">Check /proc/net readability (affects package_name)</string>
     <string name="diagnostics_app_routing_loading">Detecting...</string>
