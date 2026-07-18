@@ -1,5 +1,32 @@
 # Changelog
 
+## [2.20.0](https://github.com/roseforljh/KunBox/compare/v2.19.2...v2.20.0) (2026-07-18)
+
+
+### Features
+
+* IPC 状态改用 Bundle 快照 + generation 防乱序 ([3ad54bf](https://github.com/roseforljh/KunBox/commit/3ad54bf6775d4d523bf451f7cb57a6cd0484a029))
+* PerfTracer 增加指标记录 + 关键路径埋点与网络切换防乱序 ([e43ce77](https://github.com/roseforljh/KunBox/commit/e43ce77442930f7999d23a9d16e59a4cb181fa85))
+* 新增 Android VPN 基准采集脚本 ([188d586](https://github.com/roseforljh/KunBox/commit/188d586b4ba56cb1af68bcaaa6169bd3c62671e6))
+* 新安装应用自动跟随 VPN 规则 ([56f31fb](https://github.com/roseforljh/KunBox/commit/56f31fb4275cf2a5f76e7ab7ab4e0011dea32d41))
+* 诊断资源采样与诊断包导出 ([f9b3b1f](https://github.com/roseforljh/KunBox/commit/f9b3b1fe32fd3a02c8b2dcbab73247e774267643))
+
+
+### Bug Fixes
+
+* 保留恢复诊断并异步导出日志 ([4a60e3a](https://github.com/roseforljh/KunBox/commit/4a60e3a1c37ea177edf67f0348c30d11d17c087c))
+* 修复冷启动节点恢复与自动连接守卫 ([ef03b23](https://github.com/roseforljh/KunBox/commit/ef03b23ae66565f97a9f1a8e96974f701afd4eb4))
+* 修复划掉再进二次点火与恢复叠枪 ([1b09b0e](https://github.com/roseforljh/KunBox/commit/1b09b0e5ef5ab98dc7a34321defdc9c3273aea63))
+* 修复后台语言与导入界面本地化 ([5c979cc](https://github.com/roseforljh/KunBox/commit/5c979cc4f85e5dd4467feaccbc72ea0aa9bb1c3e))
+* 修复启动应用自动连接 ([e497962](https://github.com/roseforljh/KunBox/commit/e497962bac9fef2546683551d43a91374bf843f0))
+* 修复液态玻璃点击丢失 ([e9dc401](https://github.com/roseforljh/KunBox/commit/e9dc401463ce0ce8a6a52ac4042deee2376fdd42))
+* 修复配置拖拽与恢复 DNS 预解析 ([c0b9c4a](https://github.com/roseforljh/KunBox/commit/c0b9c4a322136d4516ee7dfa9024bc27fd654953))
+* 兼容备份空值字段导入 ([d1da025](https://github.com/roseforljh/KunBox/commit/d1da02562ed6513f6280719cf85f5b5e4d201bcc))
+* 兼容状态测试换行符 ([7c4e49d](https://github.com/roseforljh/KunBox/commit/7c4e49df56f455ba3100439e34f67dba242c13b5))
+* 划掉任务时彻底停止代理 ([2e04dd2](https://github.com/roseforljh/KunBox/commit/2e04dd2736d6cf8a358ddacad55a55490a4192bb))
+* 根除进入应用自动重启VPN ([ab053e3](https://github.com/roseforljh/KunBox/commit/ab053e300345433d0d3b49c51a7cd99db04bca03))
+* 避免任务移除误停代理 ([f684af6](https://github.com/roseforljh/KunBox/commit/f684af6acb1063b2a424f3813834e94bd2229554))
+
 ## [2.19.2](https://github.com/roseforljh/KunBox/compare/v2.19.1...v2.19.2) (2026-07-13)
 
 
