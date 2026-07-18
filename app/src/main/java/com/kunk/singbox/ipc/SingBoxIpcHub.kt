@@ -1,5 +1,6 @@
 ﻿package com.kunk.singbox.ipc
 
+import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.os.RemoteCallbackList
@@ -13,6 +14,7 @@ import com.kunk.singbox.service.ServiceState
 import com.kunk.singbox.service.manager.BackgroundPowerManager
 import com.kunk.singbox.service.manager.ServiceStateHolder
 import com.kunk.singbox.service.manager.UrlTestTagMatcher
+import com.kunk.singbox.utils.perf.PerfTracer
 import java.lang.ref.WeakReference
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.locks.ReentrantLock
@@ -26,9 +28,27 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 
+internal fun Bundle.toRuntimeStateSnapshot(): VpnStateStore.RuntimeStateSnapshot {
+    return VpnStateStore.normalizeRuntimeStateSnapshot(
+        VpnStateStore.RuntimeStateSnapshot(
+            generation = getLong(SingBoxIpcHub.SNAPSHOT_GENERATION, 0L),
+            stateOrdinal = getInt(SingBoxIpcHub.SNAPSHOT_STATE, ServiceState.STOPPED.ordinal),
+            activeLabel = getString(SingBoxIpcHub.SNAPSHOT_ACTIVE_LABEL).orEmpty(),
+            lastError = getString(SingBoxIpcHub.SNAPSHOT_LAST_ERROR).orEmpty(),
+            manuallyStopped = getBoolean(SingBoxIpcHub.SNAPSHOT_MANUALLY_STOPPED, false)
+        )
+    )
+}
+
 @Suppress("TooManyFunctions")
 object SingBoxIpcHub {
     private const val TAG = "SingBoxIpcHub"
+
+    internal const val SNAPSHOT_GENERATION = "generation"
+    internal const val SNAPSHOT_STATE = "state"
+    internal const val SNAPSHOT_ACTIVE_LABEL = "active_label"
+    internal const val SNAPSHOT_LAST_ERROR = "last_error"
+    internal const val SNAPSHOT_MANUALLY_STOPPED = "manually_stopped"
 
     private const val MIN_BROADCAST_INTERVAL_MS = 50L
 
@@ -47,17 +67,10 @@ object SingBoxIpcHub {
         logRepo.addLog("INFO [IPC] $msg")
     }
 
-    @Volatile
-    private var stateOrdinal: Int = ServiceState.STOPPED.ordinal
+    private val stateLock = Any()
 
     @Volatile
-    private var activeLabel: String = ""
-
-    @Volatile
-    private var lastError: String = ""
-
-    @Volatile
-    private var manuallyStopped: Boolean = false
+    private var stateSnapshot = VpnStateStore.RuntimeStateSnapshot()
 
     private val callbacks = RemoteCallbackList<ISingBoxServiceCallback>()
 
@@ -88,6 +101,12 @@ object SingBoxIpcHub {
             serviceRef?.clear()
             serviceRef = WeakReference(service)
         }
+        synchronized(stateLock) {
+            val persisted = VpnStateStore.getRuntimeStateSnapshot()
+            if (persisted.generation >= stateSnapshot.generation) {
+                stateSnapshot = persisted
+            }
+        }
         log("SingBoxIpcService registered")
     }
 
@@ -104,12 +123,16 @@ object SingBoxIpcHub {
             serviceRef?.clear()
             serviceRef = null
         }
-        VpnStateStore.clearRuntimeState(
-            preserveLastError = shouldPreserveLastErrorOnBinderDied(
-                lastError = lastError,
-                manuallyStopped = manuallyStopped
+        synchronized(stateLock) {
+            val current = stateSnapshot
+            VpnStateStore.clearRuntimeState(
+                preserveLastError = shouldPreserveLastErrorOnBinderDied(
+                    lastError = current.lastError,
+                    manuallyStopped = current.manuallyStopped
+                )
             )
-        )
+            stateSnapshot = VpnStateStore.getRuntimeStateSnapshot()
+        }
         Log.w(TAG, "SingBoxIpcService binder died")
         runCatching {
             logRepo.addLog("WARN [IPC] SingBoxIpcService binder died")
@@ -136,13 +159,6 @@ object SingBoxIpcHub {
             }
         }
         return resolvedDelay
-    }
-
-    private fun currentVisibleStateOrdinal(): Int {
-        return resolveVisibleStateOrdinal(
-            cachedStateOrdinal = stateOrdinal,
-            liveCoreState = currentLiveCoreState()
-        )
     }
 
     private fun currentLiveCoreState(): ServiceState? {
@@ -180,7 +196,7 @@ object SingBoxIpcHub {
     }
 
     fun onAppLifecycle(isForeground: Boolean) {
-        val vpnState = stateNames.getOrNull(stateOrdinal) ?: "UNKNOWN"
+        val vpnState = stateNames.getOrNull(stateSnapshot.stateOrdinal) ?: "UNKNOWN"
         log("onAppLifecycle: isForeground=$isForeground, vpnState=$vpnState")
 
         if (isForeground) {
@@ -191,15 +207,38 @@ object SingBoxIpcHub {
         }
     }
 
-    fun getStateOrdinal(): Int = currentVisibleStateOrdinal()
-
-    fun getActiveLabel(): String = activeLabel
-
-    fun getLastError(): String = lastError
-
-    fun isManuallyStopped(): Boolean = manuallyStopped
+    fun getStateSnapshotBundle(): Bundle {
+        return currentStateSnapshot().toBundle()
+    }
 
     fun getLastStateUpdateTime(): Long = lastStateUpdateAtMs.get()
+
+    private fun currentStateSnapshot(): VpnStateStore.RuntimeStateSnapshot {
+        return synchronized(stateLock) {
+            val snapshot = stateSnapshot
+            val visibleStateOrdinal = resolveVisibleStateOrdinal(
+                cachedStateOrdinal = snapshot.stateOrdinal,
+                liveCoreState = currentLiveCoreState()
+            )
+            if (visibleStateOrdinal == snapshot.stateOrdinal) {
+                snapshot
+            } else {
+                VpnStateStore.updateRuntimeStateSnapshot(
+                    state = ServiceState.values().getOrNull(visibleStateOrdinal) ?: ServiceState.STOPPED
+                ).also { stateSnapshot = it }
+            }
+        }
+    }
+
+    private fun VpnStateStore.RuntimeStateSnapshot.toBundle(): Bundle {
+        return Bundle().apply {
+            putLong(SNAPSHOT_GENERATION, generation)
+            putInt(SNAPSHOT_STATE, stateOrdinal)
+            putString(SNAPSHOT_ACTIVE_LABEL, activeLabel)
+            putString(SNAPSHOT_LAST_ERROR, lastError)
+            putBoolean(SNAPSHOT_MANUALLY_STOPPED, manuallyStopped)
+        }
+    }
 
     fun update(
         state: ServiceState? = null,
@@ -208,24 +247,18 @@ object SingBoxIpcHub {
         manuallyStopped: Boolean? = null
     ) {
         val updateStart = SystemClock.elapsedRealtime()
-
-        state?.let {
-            val oldState = stateNames.getOrNull(stateOrdinal) ?: "UNKNOWN"
-            stateOrdinal = it.ordinal
-            log("state update: $oldState -> ${it.name}")
-            VpnStateStore.setActive(it == ServiceState.RUNNING)
-        }
-        activeLabel?.let {
-            this.activeLabel = it
-            VpnStateStore.setActiveLabel(it)
-        }
-        lastError?.let {
-            this.lastError = it
-            VpnStateStore.setLastError(it)
-        }
-        manuallyStopped?.let {
-            this.manuallyStopped = it
-            VpnStateStore.setManuallyStopped(it)
+        val updatedSnapshot = synchronized(stateLock) {
+            val current = stateSnapshot
+            state?.let {
+                val oldState = stateNames.getOrNull(current.stateOrdinal) ?: "UNKNOWN"
+                log("state update: $oldState -> ${it.name}")
+            }
+            VpnStateStore.updateRuntimeStateSnapshot(
+                state = state,
+                activeLabel = activeLabel,
+                lastError = lastError,
+                manuallyStopped = manuallyStopped
+            ).also { stateSnapshot = it }
         }
 
         lastStateUpdateAtMs.set(SystemClock.elapsedRealtime())
@@ -234,14 +267,25 @@ object SingBoxIpcHub {
             scheduleBroadcastIfNeededLocked()
         }
 
-        Log.d(TAG, "[IPC] update completed in ${SystemClock.elapsedRealtime() - updateStart}ms")
+        Log.d(
+            TAG,
+            "[IPC] update generation=${updatedSnapshot.generation} " +
+                "completed in ${SystemClock.elapsedRealtime() - updateStart}ms"
+        )
     }
 
     fun registerCallback(callback: ISingBoxServiceCallback) {
         callbacks.register(callback)
         mainHandler.post {
             runCatching {
-                callback.onStateChanged(currentVisibleStateOrdinal(), activeLabel, lastError, manuallyStopped)
+                val snapshot = currentStateSnapshot()
+                callback.onStateChanged(
+                    snapshot.stateOrdinal,
+                    snapshot.activeLabel,
+                    snapshot.lastError,
+                    snapshot.manuallyStopped,
+                    snapshot.generation
+                )
             }
         }
     }
@@ -294,14 +338,15 @@ object SingBoxIpcHub {
                 return
             }
 
-            val snapshot = StateSnapshot(currentVisibleStateOrdinal(), activeLabel, lastError, manuallyStopped)
+            val snapshot = currentStateSnapshot()
 
             broadcastCallbacks { callback ->
                 callback.onStateChanged(
                     snapshot.stateOrdinal,
                     snapshot.activeLabel,
                     snapshot.lastError,
-                    snapshot.manuallyStopped
+                    snapshot.manuallyStopped,
+                    snapshot.generation
                 )
             }
 
@@ -322,13 +367,6 @@ object SingBoxIpcHub {
             }
         }
     }
-
-    private data class StateSnapshot(
-        val stateOrdinal: Int,
-        val activeLabel: String,
-        val lastError: String,
-        val manuallyStopped: Boolean
-    )
 
     object HotReloadResult {
         const val SUCCESS = 0
@@ -369,28 +407,46 @@ object SingBoxIpcHub {
     fun hotReloadConfig(configContent: String): Int {
         log("[HotReload] IPC request received")
 
-        if (stateOrdinal != ServiceState.RUNNING.ordinal) {
-            Log.w(TAG, "[HotReload] VPN not running, state=$stateOrdinal")
+        if (stateSnapshot.stateOrdinal != ServiceState.RUNNING.ordinal) {
+            Log.w(TAG, "[HotReload] VPN not running, state=${stateSnapshot.stateOrdinal}")
+            PerfTracer.recordEvent(PerfTracer.Phases.HOT_RELOAD, "vpn_not_running")
             return HotReloadResult.VPN_NOT_RUNNING
         }
 
         val service = ServiceStateHolder.instance
         if (service == null) {
             Log.e(TAG, "[HotReload] SingBoxService instance is null")
+            PerfTracer.recordEvent(PerfTracer.Phases.HOT_RELOAD, "service_missing")
             return HotReloadResult.VPN_NOT_RUNNING
         }
 
+        val startedAtMs = SystemClock.elapsedRealtime()
         return try {
             val result = service.performHotReloadSync(configContent)
             if (result) {
                 log("[HotReload] Success")
+                PerfTracer.recordDuration(
+                    PerfTracer.Phases.HOT_RELOAD,
+                    SystemClock.elapsedRealtime() - startedAtMs,
+                    "success"
+                )
                 HotReloadResult.SUCCESS
             } else {
                 Log.e(TAG, "[HotReload] Kernel returned false")
+                PerfTracer.recordDuration(
+                    PerfTracer.Phases.HOT_RELOAD,
+                    SystemClock.elapsedRealtime() - startedAtMs,
+                    "kernel_error"
+                )
                 HotReloadResult.KERNEL_ERROR
             }
         } catch (e: Exception) {
             Log.e(TAG, "[HotReload] Exception: ${e.message}", e)
+            PerfTracer.recordDuration(
+                PerfTracer.Phases.HOT_RELOAD,
+                SystemClock.elapsedRealtime() - startedAtMs,
+                "exception"
+            )
             HotReloadResult.UNKNOWN_ERROR
         }
     }

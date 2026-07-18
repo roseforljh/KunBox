@@ -1,15 +1,10 @@
 package com.kunk.singbox.aidl;
 
+import android.os.Bundle;
 import com.kunk.singbox.aidl.ISingBoxServiceCallback;
 
 interface ISingBoxService {
-    int getState();
-
-    String getActiveLabel();
-
-    String getLastError();
-
-    boolean isManuallyStopped();
+    Bundle getStateSnapshot();
 
     void registerCallback(ISingBoxServiceCallback callback);
 

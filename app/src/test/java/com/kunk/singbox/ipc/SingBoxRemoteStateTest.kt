@@ -4,6 +4,10 @@ import com.kunk.singbox.service.ServiceState
 import org.junit.Assert.*
 import org.junit.Test
 import java.io.File
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicReference
 
 class SingBoxRemoteStateTest {
 
@@ -251,6 +255,70 @@ class SingBoxRemoteStateTest {
         assertTrue(recoveryBody.contains("val ok = syncStateFromService(s)"))
         assertTrue(recoveryBody.contains("return recovering"))
         assertFalse(recoveryBody.contains("callback?.invoke(RecoveryResult.AlreadyConnected)"))
+    }
+
+    @Test
+    fun `state generation rejects stale callback`() {
+        assertTrue(SingBoxRemote.shouldAcceptStateGeneration(incoming = 12L, accepted = 11L))
+        assertTrue(SingBoxRemote.shouldAcceptStateGeneration(incoming = 12L, accepted = 12L))
+        assertFalse(SingBoxRemote.shouldAcceptStateGeneration(incoming = 11L, accepted = 12L))
+        assertFalse(SingBoxRemote.shouldAcceptStateGeneration(incoming = 0L, accepted = 12L))
+    }
+
+    @Test
+    fun `locally resolved state does not become authoritative`() {
+        val persisted = VpnStateStore.RuntimeStateSnapshot(
+            generation = 42L,
+            stateOrdinal = ServiceState.RUNNING.ordinal,
+            activeLabel = "节点 A",
+            lastError = "temporary error",
+            manuallyStopped = false
+        )
+
+        val resolved = SingBoxRemote.resolveLocalStateSnapshot(
+            persisted = persisted,
+            state = ServiceState.STOPPED,
+            clearTransientState = true
+        )
+
+        assertEquals(0L, resolved.generation)
+        assertEquals(ServiceState.STOPPED.ordinal, resolved.stateOrdinal)
+        assertEquals("", resolved.activeLabel)
+        assertEquals("", resolved.lastError)
+        assertEquals(ServiceState.RUNNING.ordinal, persisted.stateOrdinal)
+        assertEquals(42L, persisted.generation)
+    }
+
+    @Test
+    fun `newer state commit cannot be overwritten by an older in flight commit`() {
+        val gate = StateGenerationGate()
+        val firstEntered = CountDownLatch(1)
+        val releaseFirst = CountDownLatch(1)
+        val appliedState = AtomicReference("")
+        val executor = Executors.newFixedThreadPool(2)
+
+        try {
+            val older = executor.submit<Boolean> {
+                gate.tryCommit(10L) {
+                    firstEntered.countDown()
+                    assertTrue(releaseFirst.await(5, TimeUnit.SECONDS))
+                    appliedState.set("generation-10")
+                }
+            }
+            assertTrue(firstEntered.await(5, TimeUnit.SECONDS))
+
+            val newer = executor.submit<Boolean> {
+                gate.tryCommit(11L) { appliedState.set("generation-11") }
+            }
+            releaseFirst.countDown()
+
+            assertTrue(older.get(5, TimeUnit.SECONDS))
+            assertTrue(newer.get(5, TimeUnit.SECONDS))
+            assertEquals("generation-11", appliedState.get())
+        } finally {
+            releaseFirst.countDown()
+            executor.shutdownNow()
+        }
     }
 
     @Test
