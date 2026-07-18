@@ -8,9 +8,11 @@ import android.os.Looper
 import android.util.Log
 import com.kunk.singbox.ipc.SingBoxRemote
 import com.kunk.singbox.ipc.VpnStateStore
+import com.kunk.singbox.repository.ConfigRepository
 import com.kunk.singbox.repository.SettingsRepository
 import com.kunk.singbox.service.ProxyOnlyService
 import com.kunk.singbox.service.SingBoxService
+import kotlinx.coroutines.CancellationException
 
 object VpnServiceManager {
     private const val TAG = "VpnServiceManager"
@@ -98,6 +100,46 @@ object VpnServiceManager {
                 configPath = configPath,
                 cleanCache = cleanCache
             )
+        }
+    }
+
+    suspend fun applyPerAppRuleChangeIfRunning(context: Context): Result<Boolean> {
+        val appContext = context.applicationContext
+        val modeBefore = VpnStateStore.getMode()
+        val runtimeReadyBefore = isRunning() &&
+            !VpnStateStore.isManuallyStopped() &&
+            VpnStateStore.getPending().isBlank()
+        if (!runtimeReadyBefore || modeBefore != VpnStateStore.CoreMode.VPN) return Result.success(false)
+
+        return try {
+            val configResult = ConfigRepository.getInstance(appContext).generateConfigFile()
+            val modeAfter = VpnStateStore.getMode()
+            val runtimeReadyAfter = isRunning() &&
+                !VpnStateStore.isManuallyStopped() &&
+                VpnStateStore.getPending().isBlank()
+            if (!runtimeReadyAfter || modeAfter != VpnStateStore.CoreMode.VPN) {
+                return Result.success(false)
+            }
+            val configPath = configResult?.path?.takeIf { it.isNotBlank() }
+            if (configPath == null) {
+                val error = IllegalStateException("Failed to generate config for per-app rule change")
+                Log.e(TAG, error.message, error)
+                Result.failure(error)
+            } else {
+                runCatching {
+                    appContext.startService(Intent(appContext, SingBoxService::class.java).apply {
+                        action = SingBoxService.ACTION_FULL_RESTART
+                        putExtra(SingBoxService.EXTRA_CONFIG_PATH, configPath)
+                        putExtra(SingBoxService.EXTRA_PER_APP_RULE_RESTART, true)
+                    })
+                    true
+                }.onFailure { Log.e(TAG, "Failed to apply per-app rule change to running VPN", it) }
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to generate config for per-app rule change", e)
+            Result.failure(e)
         }
     }
 

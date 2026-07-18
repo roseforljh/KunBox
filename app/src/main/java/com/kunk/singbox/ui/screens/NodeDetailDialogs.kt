@@ -43,6 +43,7 @@ import com.kunk.singbox.model.TlsConfig
 import com.kunk.singbox.model.WireGuardPeer
 import com.kunk.singbox.model.allHeaderValues
 import com.kunk.singbox.model.asHttpHeaderMap
+import com.kunk.singbox.ui.theme.LiquidGlassDialogEffect
 import com.kunk.singbox.ui.theme.isLiquidGlassTheme
 import com.kunk.singbox.ui.theme.liquidGlassButtonColors
 import com.kunk.singbox.ui.theme.liquidGlassButtonContentColor
@@ -111,6 +112,7 @@ internal fun DetourNodeSelectDialog(
     var expandedProfileId by remember { mutableStateOf<String?>(null) }
 
     Dialog(onDismissRequest = onDismiss) {
+        LiquidGlassDialogEffect()
         Column(
             modifier = Modifier
                 .fillMaxWidth()

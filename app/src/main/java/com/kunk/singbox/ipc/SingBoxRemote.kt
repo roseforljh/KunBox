@@ -62,7 +62,25 @@ internal fun resolveSingBoxEnsureBoundAction(
     }
 }
 
-@Suppress("TooManyFunctions")
+internal class StateGenerationGate {
+    private val lock = Any()
+    private var acceptedGeneration = 0L
+
+    fun tryCommit(incomingGeneration: Long, commit: () -> Unit): Boolean {
+        return synchronized(lock) {
+            if (!SingBoxRemote.shouldAcceptStateGeneration(incomingGeneration, acceptedGeneration)) {
+                return@synchronized false
+            }
+            commit()
+            if (incomingGeneration > 0L) {
+                acceptedGeneration = maxOf(acceptedGeneration, incomingGeneration)
+            }
+            true
+        }
+    }
+}
+
+@Suppress("LargeClass", "TooManyFunctions")
 object SingBoxRemote {
     private const val TAG = "SingBoxRemote"
 
@@ -146,6 +164,7 @@ object SingBoxRemote {
 
     private val urlTestRequestId = AtomicLong(0L)
     private val pendingUrlTestRequests = ConcurrentHashMap<Long, CompletableDeferred<Int?>>()
+    private val stateGenerationGate = StateGenerationGate()
 
     private val mainHandler = Handler(Looper.getMainLooper())
 
@@ -175,12 +194,30 @@ object SingBoxRemote {
     }
 
     private val callback = object : ISingBoxServiceCallback.Stub() {
-        override fun onStateChanged(state: Int, activeLabel: String?, lastError: String?, manuallyStopped: Boolean) {
+        override fun onStateChanged(
+            state: Int,
+            activeLabel: String?,
+            lastError: String?,
+            manuallyStopped: Boolean,
+            generation: Long
+        ) {
             lastCallbackReceivedAtMs = SystemClock.elapsedRealtime()
             val st = ServiceState.values().getOrNull(state)
                 ?: ServiceState.STOPPED
             val oldState = _state.value
-            updateState(st, activeLabel, lastError, manuallyStopped)
+            val accepted = applyStateSnapshot(
+                VpnStateStore.RuntimeStateSnapshot(
+                    generation = generation,
+                    stateOrdinal = st.ordinal,
+                    activeLabel = activeLabel.orEmpty(),
+                    lastError = lastError.orEmpty(),
+                    manuallyStopped = manuallyStopped
+                )
+            )
+            if (!accepted) {
+                Log.w(TAG, "[UI] Ignored stale callback generation=$generation")
+                return
+            }
             Log.i(TAG, "[UI] Callback received: $oldState -> $st, activeLabel=$activeLabel")
 
             when (st) {
@@ -243,20 +280,37 @@ object SingBoxRemote {
         lastSyncTimeMs = System.currentTimeMillis()
     }
 
+    private fun applyStateSnapshot(snapshot: VpnStateStore.RuntimeStateSnapshot): Boolean {
+        return stateGenerationGate.tryCommit(snapshot.generation) {
+            val state = ServiceState.values().getOrNull(snapshot.stateOrdinal)
+                ?: ServiceState.STOPPED
+            updateState(
+                state,
+                snapshot.activeLabel,
+                snapshot.lastError,
+                snapshot.manuallyStopped
+            )
+        }
+    }
+
+    internal fun shouldAcceptStateGeneration(incoming: Long, accepted: Long): Boolean {
+        return if (incoming <= 0L) accepted <= 0L else accepted <= 0L || incoming >= accepted
+    }
+
     fun clearLastErrorForNewStart() {
-        _lastError.value = ""
-        _activeLabel.value = ""
-        VpnStateStore.setLastError(null)
+        applyStateSnapshot(
+            VpnStateStore.updateRuntimeStateSnapshot(activeLabel = "", lastError = "")
+        )
     }
 
     private fun syncStateFromStore() {
-        val state = resolvePersistedState(hasVpnTransport = false)
-        val storedLabel = VpnStateStore.getActiveLabel()
-        val storedError = VpnStateStore.getLastError()
-        val storedManuallyStopped = VpnStateStore.isManuallyStopped()
+        // 有 context 就查真实 VPN transport，避免把运行中的 VPN 误判成 STOPPED
+        val hasVpnTransport = contextRef?.get()?.let { hasSystemVpn(it) } ?: false
+        val state = resolvePersistedState(hasVpnTransport = hasVpnTransport)
+        val snapshot = resolveLocalStateSnapshot(VpnStateStore.getRuntimeStateSnapshot(), state)
 
-        Log.i(TAG, "syncStateFromStore: state=$state, label=$storedLabel")
-        updateState(state, storedLabel, storedError, storedManuallyStopped)
+        Log.i(TAG, "syncStateFromStore: state=$state, generation=${snapshot.generation}")
+        applyStateSnapshot(snapshot)
     }
 
     private fun syncStoppedStateAfterDisconnect() {
@@ -265,7 +319,27 @@ object SingBoxRemote {
             storedManuallyStopped = VpnStateStore.isManuallyStopped()
         )
         VpnStateStore.clearRuntimeState(preserveLastError = stopState.preserveLastError)
-        updateState(ServiceState.STOPPED, "", stopState.lastError, stopState.manuallyStopped)
+        applyStateSnapshot(
+            VpnStateStore.getRuntimeStateSnapshot().copy(
+                stateOrdinal = ServiceState.STOPPED.ordinal,
+                activeLabel = "",
+                lastError = stopState.lastError,
+                manuallyStopped = stopState.manuallyStopped
+            )
+        )
+    }
+
+    internal fun resolveLocalStateSnapshot(
+        persisted: VpnStateStore.RuntimeStateSnapshot,
+        state: ServiceState,
+        clearTransientState: Boolean = false
+    ): VpnStateStore.RuntimeStateSnapshot {
+        val resolved = persisted.copy(
+            stateOrdinal = state.ordinal,
+            activeLabel = if (clearTransientState) "" else persisted.activeLabel,
+            lastError = if (clearTransientState) "" else persisted.lastError
+        )
+        return if (resolved == persisted) persisted else resolved.copy(generation = 0L)
     }
 
     private val deathRecipient = object : IBinder.DeathRecipient {
@@ -504,10 +578,17 @@ object SingBoxRemote {
     private fun syncStateFromService(s: ISingBoxService?): Boolean {
         if (s == null) return false
         return runCatching {
-            val st = ServiceState.values().getOrNull(s.state)
+            val snapshot = s.stateSnapshot.toRuntimeStateSnapshot()
+            val st = ServiceState.values().getOrNull(snapshot.stateOrdinal)
                 ?: ServiceState.STOPPED
-            updateState(st, s.activeLabel.orEmpty(), s.lastError.orEmpty(), s.isManuallyStopped)
-            Log.i(TAG, "State synced: $st, running=${_isRunning.value}")
+            if (!applyStateSnapshot(snapshot)) {
+                Log.w(TAG, "Ignored stale service snapshot generation=${snapshot.generation}")
+                return@runCatching
+            }
+            Log.i(
+                TAG,
+                "State synced: $st, generation=${snapshot.generation}, running=${_isRunning.value}"
+            )
 
             when (st) {
                 ServiceState.RUNNING -> completePendingRecovery(RecoveryResult.AlreadyConnected)
@@ -643,7 +724,7 @@ object SingBoxRemote {
         val currentService = service
         val servicePresent = currentService != null
         val serviceAlive = if (connectionActive && bound && servicePresent) {
-            runCatching { currentService.state }.isSuccess
+            runCatching { currentService.stateSnapshot }.isSuccess
         } else {
             false
         }
@@ -701,11 +782,8 @@ object SingBoxRemote {
             connect(ctx)
 
             if (_state.value != persistedState) {
-                updateState(
-                    persistedState,
-                    VpnStateStore.getActiveLabel(),
-                    VpnStateStore.getLastError(),
-                    VpnStateStore.isManuallyStopped()
+                applyStateSnapshot(
+                    resolveLocalStateSnapshot(VpnStateStore.getRuntimeStateSnapshot(), persistedState)
                 )
             }
             return true
@@ -713,7 +791,13 @@ object SingBoxRemote {
 
         if (persistedState == ServiceState.STOPPED && _state.value != ServiceState.STOPPED) {
             Log.i(TAG, "queryAndSyncState: persisted state is STOPPED, correcting")
-            updateState(ServiceState.STOPPED, "", "", VpnStateStore.isManuallyStopped())
+            applyStateSnapshot(
+                resolveLocalStateSnapshot(
+                    persisted = VpnStateStore.getRuntimeStateSnapshot(),
+                    state = ServiceState.STOPPED,
+                    clearTransientState = true
+                )
+            )
         }
 
         if (!connectionActive) {

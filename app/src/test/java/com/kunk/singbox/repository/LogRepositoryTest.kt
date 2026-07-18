@@ -37,4 +37,33 @@ class LogRepositoryTest {
         assertEquals(1, logs.lineSequence().count { it.contains("INFO test log") })
         assertTrue(logs.contains("INFO test log"))
     }
+
+    @Test
+    fun userClearRemovesRecoveryDiagnostics() {
+        repository.setEnabled(false)
+        repository.clearLogs()
+
+        repository.addAlwaysLog("INFO [Recovery] cold start probe")
+        assertTrue(repository.getLogsAsText().contains("INFO [Recovery] cold start probe"))
+
+        repository.clearLogs()
+        assertFalse(repository.getLogsAsText().contains("INFO [Recovery] cold start probe"))
+    }
+
+    @Test
+    fun internalClearPreservesRecoveryDiagnostics() {
+        repository.setEnabled(false)
+        repository.clearLogs()
+
+        repository.addAlwaysLog("INFO [Recovery] cold start probe")
+        repository.clearLogs(preserveRecoveryDiagnostics = true)
+
+        assertTrue(repository.getLogsAsText().contains("INFO [Recovery] cold start probe"))
+    }
+
+    @Test
+    fun preservedDiagnosticMarkerMatchesRecoveryLinesOnly() {
+        assertTrue(LogRepository.isPreservedDiagnosticLine("INFO [Recovery] sticky"))
+        assertFalse(LogRepository.isPreservedDiagnosticLine("INFO [IPC] state update"))
+    }
 }

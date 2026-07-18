@@ -71,7 +71,10 @@ class LogViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun getLogsForExport(): String {
-        return repository.getLogsAsText()
+    fun getLogsForExport(onReady: (String) -> Unit) {
+        viewModelScope.launch {
+            val logs = repository.getLogsAsTextForExport()
+            onReady(logs)
+        }
     }
 }

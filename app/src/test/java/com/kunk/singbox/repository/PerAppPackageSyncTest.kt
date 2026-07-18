@@ -5,12 +5,133 @@ import com.kunk.singbox.model.AppGroup
 import com.kunk.singbox.model.AppInfo
 import com.kunk.singbox.model.AppRule
 import com.kunk.singbox.model.AppSettings
+import com.kunk.singbox.model.VpnAppMode
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class PerAppPackageSyncTest {
+
+    @Test
+    fun addPackageToList_normalizesAndDeduplicatesPackageNames() {
+        val result = addPackageToList(
+            value = "com.existing, com.duplicate\ncom.duplicate",
+            packageName = "com.new"
+        )
+
+        assertEquals("com.existing\ncom.duplicate\ncom.new", result)
+    }
+
+    @Test
+    fun newPackage_followsAllowlistWhenEnabled() {
+        val settings = AppSettings(
+            vpnAppMode = VpnAppMode.ALLOWLIST,
+            vpnAllowlist = "com.existing",
+            vpnBlocklist = "com.blocked",
+            autoIncludeNewAppsInPerAppRules = true
+        )
+
+        val result = addPackageToCurrentPerAppRule(settings, "com.new")
+
+        assertEquals("com.existing\ncom.new", result.vpnAllowlist)
+        assertEquals("com.blocked", result.vpnBlocklist)
+    }
+
+    @Test
+    fun newPackage_followsBlocklistWhenEnabled() {
+        val settings = AppSettings(
+            vpnAppMode = VpnAppMode.BLOCKLIST,
+            vpnAllowlist = "com.allowed",
+            vpnBlocklist = "com.existing",
+            autoIncludeNewAppsInPerAppRules = true
+        )
+
+        val result = addPackageToCurrentPerAppRule(settings, "com.new")
+
+        assertEquals("com.allowed", result.vpnAllowlist)
+        assertEquals("com.existing\ncom.new", result.vpnBlocklist)
+    }
+
+    @Test
+    fun newPackage_doesNotChangeRulesWhenSwitchDisabledOrModeIsAll() {
+        val disabled = AppSettings(
+            vpnAppMode = VpnAppMode.ALLOWLIST,
+            vpnAllowlist = "com.existing"
+        )
+        val allApps = AppSettings(
+            vpnAppMode = VpnAppMode.ALL,
+            autoIncludeNewAppsInPerAppRules = true
+        )
+
+        assertEquals(disabled, addPackageToCurrentPerAppRule(disabled, "com.new"))
+        assertEquals(allApps, addPackageToCurrentPerAppRule(allApps, "com.new"))
+    }
+
+    @Test
+    fun freshInstalledPackageIsAddedToCurrentRule() {
+        assertEquals(
+            PerAppPackageSyncAction.ADD,
+            resolvePerAppPackageSyncAction(
+                action = Intent.ACTION_PACKAGE_ADDED,
+                isReplacing = false,
+                packageName = "com.new",
+                isInstalled = true
+            )
+        )
+    }
+
+    @Test
+    fun addEventForPackageThatIsAlreadyAbsentRemovesStaleRule() {
+        assertEquals(
+            PerAppPackageSyncAction.REMOVE,
+            resolvePerAppPackageSyncAction(
+                action = Intent.ACTION_PACKAGE_ADDED,
+                isReplacing = false,
+                packageName = "com.removed",
+                isInstalled = false
+            )
+        )
+    }
+
+    @Test
+    fun removeEventForReinstalledPackageWaitsForAddEvent() {
+        assertEquals(
+            PerAppPackageSyncAction.NONE,
+            resolvePerAppPackageSyncAction(
+                action = Intent.ACTION_PACKAGE_REMOVED,
+                isReplacing = false,
+                packageName = "com.reinstalled",
+                isInstalled = true
+            )
+        )
+    }
+
+    @Test
+    fun removeEventForAbsentPackageRemovesStaleRule() {
+        assertEquals(
+            PerAppPackageSyncAction.REMOVE,
+            resolvePerAppPackageSyncAction(
+                action = Intent.ACTION_PACKAGE_REMOVED,
+                isReplacing = false,
+                packageName = "com.removed",
+                isInstalled = false
+            )
+        )
+    }
+
+    @Test
+    fun packageUpdateOnlyRefreshesInstalledAppMetadata() {
+        assertEquals(
+            PerAppPackageSyncAction.NONE,
+            resolvePerAppPackageSyncAction(
+                action = Intent.ACTION_PACKAGE_ADDED,
+                isReplacing = true,
+                packageName = "com.updated",
+                isInstalled = true
+            )
+        )
+    }
 
     @Test
     fun removePackageFromList_removesOnlyExactPackageName() {

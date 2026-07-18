@@ -37,25 +37,36 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.ui.draw.alpha
 import com.kunk.singbox.ui.theme.LiquidGlassDropdownMenu
+import com.kunk.singbox.ui.theme.hollowShadow
 import com.kunk.singbox.ui.theme.isLiquidGlassTheme
 import com.kunk.singbox.ui.theme.liquidGlassDropdownMenuItemColors
 import com.kunk.singbox.ui.theme.liquidGlassIconButtonPanel
 import com.kunk.singbox.ui.theme.liquidGlassPanel
+import com.kunk.singbox.ui.theme.liquidGlassPanelBorderBrush
+import com.kunk.singbox.ui.theme.liquidGlassPanelBrush
 import com.kunk.singbox.ui.theme.liquidGlassPressFeedback
 import com.kunk.singbox.ui.theme.liquidGlassProgressColor
 import com.kunk.singbox.ui.theme.liquidGlassProgressTrackColor
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+
+// 仅配置主卡：比全局默认轻，参数全常量；更新态刷新时 remember 住阴影段，不重建 hollowShadow
+private val ProfileCardShadowBlur = 4.dp
+private val ProfileCardShadowOffsetY = 1.5.dp
+private const val PROFILE_CARD_SHADOW_ALPHA_DARK = 0.10f
+private const val PROFILE_CARD_SHADOW_ALPHA_LIGHT = 0.03f
 
 @Composable
 private fun Modifier.profileOverflowMenuPanel(): Modifier {
@@ -75,12 +86,47 @@ private fun Modifier.profileOverflowMenuPanel(): Modifier {
 }
 
 @Composable
+private fun Modifier.profileListCardPanel(
+    shape: RoundedCornerShape,
+    selected: Boolean,
+    enabled: Boolean
+): Modifier {
+    if (!isLiquidGlassTheme()) {
+        return this
+    }
+    val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
+    // 阴影段与选中/启用态解耦：更新文案、进度、选中切换都不重建 hollowShadow
+    val shadowOnly = remember(shape, isDark) {
+        Modifier.hollowShadow(
+            shape = shape,
+            color = Color.Black,
+            alpha = if (isDark) PROFILE_CARD_SHADOW_ALPHA_DARK else PROFILE_CARD_SHADOW_ALPHA_LIGHT,
+            blurRadius = ProfileCardShadowBlur,
+            offsetY = ProfileCardShadowOffsetY
+        )
+    }
+    val panel = this
+        .then(shadowOnly)
+        .clip(shape)
+        .background(liquidGlassPanelBrush(selected = selected))
+        .border(
+            border = BorderStroke(
+                width = 1.dp,
+                brush = liquidGlassPanelBorderBrush(selected = selected)
+            ),
+            shape = shape
+        )
+    return if (!enabled) panel.alpha(0.56f) else panel
+}
+
+@Composable
 private fun Modifier.profileBadgePanel(
     defaultColor: Color,
     shape: RoundedCornerShape = RoundedCornerShape(6.dp)
 ): Modifier {
     return if (isLiquidGlassTheme()) {
-        liquidGlassPanel(shape = shape, selected = true, shadowElevation = 4.dp)
+        // 角标不画阴影，避免更新状态切换时多处 hollowShadow 同步闪
+        liquidGlassPanel(shape = shape, selected = true, shadowElevation = 0.dp)
     } else {
         background(defaultColor, shape)
     }
@@ -94,7 +140,7 @@ private fun profileBadgeContentColor(defaultColor: Color): Color {
 @Composable
 private fun Modifier.profileSelectedIndicatorPanel(): Modifier {
     return if (isLiquidGlassTheme()) {
-        liquidGlassPanel(shape = CircleShape, selected = true, shadowElevation = 4.dp)
+        liquidGlassPanel(shape = CircleShape, selected = true, shadowElevation = 0.dp)
     } else {
         background(MaterialTheme.colorScheme.primary, CircleShape)
     }
@@ -155,17 +201,23 @@ fun ProfileCard(
     val unlimitedTrafficMsg = stringResource(R.string.profile_card_traffic_unlimited)
     val stageContainerColor = MaterialTheme.colorScheme.primaryContainer
     val stageTextColor = profileBadgeContentColor(MaterialTheme.colorScheme.primary)
-    val shape = RoundedCornerShape(16.dp)
+    // 形状只建一次，避免每次重组新 Shape 实例触发阴影节点 update
+    val shape = remember { RoundedCornerShape(16.dp) }
     val useLiquidGlass = isLiquidGlassTheme()
     val cardModifier = if (useLiquidGlass) {
         modifier
             .fillMaxWidth()
+            // 配置页专用轻阴影面板；参数常量固定，更新态文案/进度刷新不重建阴影
+            .profileListCardPanel(
+                shape = shape,
+                selected = isSelected,
+                enabled = isEnabled
+            )
             .profileCardPressFeedback(
                 useLiquidGlass = useLiquidGlass,
                 isEnabled = isEnabled,
                 onClick = onClick
             )
-            .liquidGlassPanel(shape = shape, selected = isSelected, enabled = isEnabled)
             .padding(16.dp)
     } else {
         modifier
@@ -306,18 +358,22 @@ fun ProfileCard(
                                 .padding(horizontal = 4.dp, vertical = 1.dp)
                         )
                     }
-                }
 
-                if (updateStage != null) {
-                    Spacer(modifier = Modifier.height(6.dp))
-                    Text(
-                        text = stringResource(updateStage.labelRes),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = stageTextColor,
-                        modifier = Modifier
-                            .profileBadgePanel(stageContainerColor)
-                            .padding(horizontal = 6.dp, vertical = 2.dp)
-                    )
+                    // 更新阶段放在同一行，禁止新增行导致卡片高度变化
+                    if (updateStage != null) {
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = stringResource(updateStage.labelRes),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = stageTextColor,
+                            maxLines = 1,
+                            softWrap = false,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier
+                                .profileBadgePanel(stageContainerColor)
+                                .padding(horizontal = 6.dp, vertical = 1.dp)
+                        )
+                    }
                 }
 
                 Spacer(modifier = Modifier.height(4.dp))

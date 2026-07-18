@@ -130,6 +130,7 @@ class StartupManager(
 
             if (!coreManager.isStartTokenCurrent(startToken)) {
                 callbacks.onCancelled()
+                PerfTracer.end(PerfTracer.Phases.VPN_STARTUP, "cancelled")
                 return@withContext StartResult.Cancelled
             }
 
@@ -148,6 +149,7 @@ class StartupManager(
             log("[STEP] VpnService.prepare: ${SystemClock.elapsedRealtime() - stepStart}ms")
             if (prepareIntent != null) {
                 handlePermissionRequired(prepareIntent, callbacks)
+                PerfTracer.end(PerfTracer.Phases.VPN_STARTUP, "permission_required")
                 return@withContext StartResult.NeedPermission
             }
 
@@ -160,8 +162,17 @@ class StartupManager(
 
             stepStart = SystemClock.elapsedRealtime()
             PerfTracer.begin(PerfTracer.Phases.PARALLEL_INIT)
-            val initResult = parallelInit(configPath, callbacks)
-            PerfTracer.end(PerfTracer.Phases.PARALLEL_INIT)
+            val initResult = try {
+                parallelInit(configPath, callbacks).also {
+                    PerfTracer.end(PerfTracer.Phases.PARALLEL_INIT)
+                }
+            } catch (e: CancellationException) {
+                PerfTracer.end(PerfTracer.Phases.PARALLEL_INIT, "cancelled")
+                throw e
+            } catch (e: Exception) {
+                PerfTracer.end(PerfTracer.Phases.PARALLEL_INIT, "error")
+                throw e
+            }
             log("[STEP] parallelInit: ${SystemClock.elapsedRealtime() - stepStart}ms")
 
             if (!initResult.ruleSetReady) {
@@ -211,6 +222,7 @@ class StartupManager(
                 }
                 is CoreManager.StartResult.Cancelled -> {
                     callbacks.onCancelled()
+                    PerfTracer.end(PerfTracer.Phases.VPN_STARTUP, "cancelled")
                     return@withContext StartResult.Cancelled
                 }
             }
@@ -221,6 +233,7 @@ class StartupManager(
             }
             if (!coreManager.isStartTokenCurrent(startToken)) {
                 callbacks.onCancelled()
+                PerfTracer.end(PerfTracer.Phases.VPN_STARTUP, "cancelled")
                 return@withContext StartResult.Cancelled
             }
 
@@ -247,11 +260,11 @@ class StartupManager(
 
             StartResult.Success(configContent, totalMs)
         } catch (e: CancellationException) {
-            PerfTracer.end(PerfTracer.Phases.VPN_STARTUP)
+            PerfTracer.end(PerfTracer.Phases.VPN_STARTUP, "cancelled")
             callbacks.onCancelled()
             StartResult.Cancelled
         } catch (e: Exception) {
-            PerfTracer.end(PerfTracer.Phases.VPN_STARTUP)
+            PerfTracer.end(PerfTracer.Phases.VPN_STARTUP, "error")
             val error = parseStartError(e)
             callbacks.onFailed(error)
             StartResult.Failed(error, e)

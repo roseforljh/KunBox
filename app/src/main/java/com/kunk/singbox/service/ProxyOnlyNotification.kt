@@ -26,7 +26,7 @@ internal fun ProxyOnlyService.createProxyOnlyNotificationChannel(
 
     val channel = NotificationChannel(
         channelId,
-        "SingBox Proxy",
+        getString(R.string.proxy_only_channel_name),
         NotificationManager.IMPORTANCE_LOW
     ).apply {
         setShowBadge(false)
@@ -49,22 +49,17 @@ internal fun ProxyOnlyService.createProxyOnlyNotification(channelId: String): No
         PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
     )
 
-    return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+    val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
         Notification.Builder(this, channelId)
-            .setContentTitle("KunBox")
-            .setContentText("Proxy-only running")
-            .setSmallIcon(R.drawable.ic_notification)
-            .setContentIntent(pendingIntent)
-            .setOngoing(true)
-            .build()
     } else {
         @Suppress("DEPRECATION")
         Notification.Builder(this)
-            .setContentTitle("KunBox")
-            .setContentText("Proxy-only running")
-            .setSmallIcon(R.drawable.ic_notification)
-            .setContentIntent(pendingIntent)
-            .setOngoing(true)
-            .build()
     }
+    return builder
+        .setContentTitle(getString(R.string.app_name))
+        .setContentText(getString(R.string.proxy_only_notification_text))
+        .setSmallIcon(R.drawable.ic_notification)
+        .setContentIntent(pendingIntent)
+        .setOngoing(true)
+        .build()
 }

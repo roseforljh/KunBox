@@ -22,8 +22,10 @@ import androidx.core.content.ContextCompat
 import com.kunk.singbox.aidl.ISingBoxService
 import com.kunk.singbox.aidl.ISingBoxServiceCallback
 import com.kunk.singbox.R
+import com.kunk.singbox.ipc.StateGenerationGate
 import com.kunk.singbox.ipc.VpnStateStore
 import com.kunk.singbox.ipc.SingBoxIpcService
+import com.kunk.singbox.ipc.toRuntimeStateSnapshot
 import com.kunk.singbox.manager.VpnServiceManager
 import com.kunk.singbox.repository.ConfigRepository
 import com.kunk.singbox.ui.components.AppNotificationManager
@@ -44,6 +46,7 @@ class VpnTileService : TileService() {
     private val serviceScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private var bindTimeoutJob: Job? = null
     @Volatile private var lastServiceState: ServiceState = ServiceState.STOPPED
+    @Volatile private var lastServiceLabel: String = ""
     private var serviceBound = false
     private var bindRequested = false
     private var tapPending = false
@@ -53,6 +56,7 @@ class VpnTileService : TileService() {
     @Volatile private var startSequenceId: Long = 0L
 
     @Volatile private var remoteService: ISingBoxService? = null
+    private val stateGenerationGate = StateGenerationGate()
 
     private val tileRefreshReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -63,20 +67,43 @@ class VpnTileService : TileService() {
     }
 
     private val remoteCallback = object : ISingBoxServiceCallback.Stub() {
-        override fun onStateChanged(state: Int, activeLabel: String?, lastError: String?, manuallyStopped: Boolean) {
+        override fun onStateChanged(
+            state: Int,
+            activeLabel: String?,
+            lastError: String?,
+            manuallyStopped: Boolean,
+            generation: Long
+        ) {
             serviceScope.launch(Dispatchers.Main) {
-                val mappedState = ServiceState.values().getOrNull(state)
-                    ?: ServiceState.STOPPED
-                lastServiceState = mappedState
-                if (shouldCompleteStartingSequence(mappedState)) {
-                    isStartingSequence = false
-                    startSequenceId = 0L
+                val snapshot = VpnStateStore.RuntimeStateSnapshot(
+                    generation = generation,
+                    stateOrdinal = state,
+                    activeLabel = activeLabel.orEmpty(),
+                    lastError = lastError.orEmpty(),
+                    manuallyStopped = manuallyStopped
+                )
+                if (!applyRemoteStateSnapshot(snapshot)) {
+                    Log.w(TAG, "Ignored stale tile snapshot generation=$generation")
+                    return@launch
                 }
-                updateTile(activeLabelOverride = activeLabel)
+                updateTile()
             }
         }
 
         override fun onUrlTestNodeDelayResult(requestId: Long, delay: Int) = Unit
+    }
+
+    private fun applyRemoteStateSnapshot(snapshot: VpnStateStore.RuntimeStateSnapshot): Boolean {
+        val mappedState = ServiceState.values().getOrNull(snapshot.stateOrdinal)
+            ?: ServiceState.STOPPED
+        return stateGenerationGate.tryCommit(snapshot.generation) {
+            lastServiceState = mappedState
+            lastServiceLabel = snapshot.activeLabel
+            if (shouldCompleteStartingSequence(mappedState)) {
+                isStartingSequence = false
+                startSequenceId = 0L
+            }
+        }
     }
 
     companion object {
@@ -292,7 +319,7 @@ class VpnTileService : TileService() {
             effectiveState == ServiceState.STARTING
         ) {
             activeLabelOverride?.takeIf { it.isNotBlank() }
-                ?: runCatching { remoteService?.activeLabel }.getOrNull()?.takeIf { it.isNotBlank() }
+                ?: lastServiceLabel.takeIf { it.isNotBlank() }
                 ?: runCatching {
                     val repo = ConfigRepository.getInstance(applicationContext)
                     val nodeId = repo.activeNodeId.value
@@ -537,9 +564,13 @@ class VpnTileService : TileService() {
             runCatching { binder.registerCallback(remoteCallback) }
             serviceBound = true
             bindRequested = true
-            lastServiceState = ServiceState.values().getOrNull(runCatching { binder.state }.getOrNull() ?: -1)
-                ?: ServiceState.STOPPED
-            updateTile(activeLabelOverride = runCatching { binder.activeLabel }.getOrNull())
+            val snapshot = runCatching { binder.stateSnapshot.toRuntimeStateSnapshot() }
+                .onFailure { error -> Log.w(TAG, "Failed to read initial tile state snapshot", error) }
+                .getOrNull()
+            if (snapshot != null && !applyRemoteStateSnapshot(snapshot)) {
+                Log.w(TAG, "Ignored stale initial tile snapshot generation=${snapshot.generation}")
+            }
+            updateTile()
             if (tapPending) {
                 tapPending = false
                 toggle()

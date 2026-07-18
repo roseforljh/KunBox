@@ -54,11 +54,9 @@ import com.kunk.singbox.repository.SettingsRepository
 import com.kunk.singbox.viewmodel.DashboardViewModel
 import com.kunk.singbox.model.ConnectionState
 import com.kunk.singbox.model.AppThemeStyle
-import com.kunk.singbox.model.AppLanguage
 import com.kunk.singbox.utils.LocaleHelper
 import com.kunk.singbox.utils.DeepLinkHandler
 import com.kunk.singbox.ipc.SingBoxRemote
-import com.kunk.singbox.ipc.VpnStateStore
 import com.kunk.singbox.service.VpnTileService
 import com.kunk.singbox.ui.components.AppNotificationManager
 import com.kunk.singbox.ui.components.AppNavBar
@@ -102,21 +100,7 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun attachBaseContext(newBase: Context) {
-
-        val prefs = newBase.getSharedPreferences("settings", Context.MODE_PRIVATE)
-        val languageName = prefs.getString("app_language_cache", null)
-        val language = if (languageName != null) {
-            try {
-                AppLanguage.valueOf(languageName)
-            } catch (e: Exception) {
-                AppLanguage.SYSTEM
-            }
-        } else {
-            AppLanguage.SYSTEM
-        }
-
-        val context = LocaleHelper.wrap(newBase, language)
-        super.attachBaseContext(context)
+        super.attachBaseContext(LocaleHelper.wrapFromCache(newBase))
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -140,6 +124,7 @@ class MainActivity : ComponentActivity() {
 fun SingBoxApp() {
     val context = LocalContext.current
     val restartNeededMessage = stringResource(R.string.settings_restart_needed)
+    val importedSubscriptionDefaultName = stringResource(R.string.profiles_imported_subscription_default_name)
 
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission(),
@@ -223,7 +208,8 @@ fun SingBoxApp() {
 
                     if ((scheme == "singbox" || scheme == "kunbox") && host == "install-config") {
                         val url = uri.getQueryParameter("url")
-                        val name = uri.getQueryParameter("name") ?: "Imported Subscription"
+                        val name = uri.getQueryParameter("name")
+                            ?: importedSubscriptionDefaultName
                         val intervalStr = uri.getQueryParameter("interval")
                         val interval = intervalStr?.toIntOrNull() ?: 0
 
@@ -241,7 +227,8 @@ fun SingBoxApp() {
     val connectionState by dashboardViewModel.connectionState.collectAsStateWithLifecycle()
     val isRunning by SingBoxRemote.isRunning.collectAsStateWithLifecycle()
     val isStarting by SingBoxRemote.isStarting.collectAsStateWithLifecycle()
-    val manuallyStopped by SingBoxRemote.manuallyStopped.collectAsStateWithLifecycle()
+    // 每次进入主界面只尝试一次，避免手动断开后同会话立刻重连
+    var autoConnectAttempted by remember { mutableStateOf(false) }
 
     LaunchedEffect(isRunning, isStarting) {
 
@@ -250,23 +237,35 @@ fun SingBoxApp() {
         }
     }
 
-    LaunchedEffect(settings.autoConnect, connectionState, isRunning, isStarting, manuallyStopped) {
-        fun shouldAutoConnect(persistedManuallyStopped: Boolean): Boolean {
-            return settings.autoConnect &&
-                connectionState == ConnectionState.Idle &&
-                !isRunning &&
-                !isStarting &&
-                !manuallyStopped &&
-                !persistedManuallyStopped
+    LaunchedEffect(settings.autoConnect, connectionState, isRunning, isStarting) {
+        if (autoConnectAttempted || !settings.autoConnect) return@LaunchedEffect
+
+        // 必须先取得 AIDL 实时状态，禁止用冷启动默认 STOPPED 误触发二次点火
+        SingBoxRemote.ensureBound(context)
+        repeat(5) {
+            if (SingBoxRemote.isBound()) return@repeat
+            delay(300L)
+        }
+        if (!SingBoxRemote.isBound()) return@LaunchedEffect
+        if (!SingBoxRemote.queryAndSyncState(context)) return@LaunchedEffect
+
+        // 启动时核心已运行也要消费本次机会，防止同会话手动断开后自动重连
+        if (SingBoxRemote.isRunning.value || SingBoxRemote.isStarting.value) {
+            autoConnectAttempted = true
+            return@LaunchedEffect
         }
 
-        val persistedManuallyStopped = VpnStateStore.isManuallyStopped()
-        val shouldAutoConnectNow = shouldAutoConnect(persistedManuallyStopped)
-        if (shouldAutoConnectNow) {
-            // Delay a bit to ensure everything is initialized
-            delay(1000)
-            val shouldAutoConnectAfterDelay = shouldAutoConnect(VpnStateStore.isManuallyStopped())
-            if (shouldAutoConnectAfterDelay) {
+        fun shouldAutoConnectNow(): Boolean {
+            return settings.autoConnect &&
+                connectionState == ConnectionState.Idle &&
+                !SingBoxRemote.isRunning.value &&
+                !SingBoxRemote.isStarting.value
+        }
+
+        if (shouldAutoConnectNow()) {
+            delay(1_000L)
+            if (SingBoxRemote.queryAndSyncState(context) && shouldAutoConnectNow()) {
+                autoConnectAttempted = true
                 dashboardViewModel.toggleConnection()
             }
         }

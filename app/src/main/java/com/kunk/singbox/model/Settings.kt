@@ -33,6 +33,7 @@ data class AppSettings(
     @SerializedName("vpnAppMode") val vpnAppMode: VpnAppMode = VpnAppMode.ALL,
     @SerializedName("vpnAllowlist") val vpnAllowlist: String = "",
     @SerializedName("vpnBlocklist") val vpnBlocklist: String = "",
+    @SerializedName("autoIncludeNewAppsInPerAppRules") val autoIncludeNewAppsInPerAppRules: Boolean = false,
 
     @SerializedName("proxyPort") val proxyPort: Int = 2080,
     @SerializedName("allowLan") val allowLan: Boolean = false,

@@ -56,7 +56,6 @@ class DataExportRepository(private val context: Context) {
 
     private val gson: Gson = GsonBuilder()
         .setPrettyPrinting()
-        .serializeNulls()
         .create()
 
     private val settingsRepository = SettingsRepository.getInstance(context)

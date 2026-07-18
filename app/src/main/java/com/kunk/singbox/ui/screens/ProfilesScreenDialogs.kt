@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import com.kunk.singbox.ui.theme.LiquidGlassDialogEffect
+import com.kunk.singbox.utils.dns.DnsResolver
 import com.kunk.singbox.utils.parser.NodeLinkParser
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -455,7 +456,7 @@ internal fun ImportSelectionDialog(
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             Text(
-                text = "添加配置",
+                text = stringResource(R.string.profiles_add_config),
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onSurface
@@ -490,8 +491,8 @@ internal fun ImportSelectionDialog(
                 )
                 ImportOptionCard(
                     icon = Icons.Rounded.DashboardCustomize,
-                    title = "自定义配置",
-                    subtitle = "从现有订阅选择节点组合",
+                    title = stringResource(R.string.profiles_custom_config),
+                    subtitle = stringResource(R.string.profiles_custom_config_subtitle),
                     onClick = { onTypeSelected(ProfileImportType.Custom) }
                 )
             }
@@ -614,6 +615,8 @@ internal fun SubscriptionInputDialog(
     initialName: String = "",
     initialUrl: String = "",
     initialAutoUpdateInterval: Int = 0,
+    initialDnsPreResolve: Boolean = false,
+    initialDnsServer: String? = null,
     initialDnsOverride: String? = null,
     title: String = stringResource(R.string.profiles_add_subscription),
     onDismiss: () -> Unit,
@@ -621,6 +624,8 @@ internal fun SubscriptionInputDialog(
         name: String,
         url: String,
         autoUpdateInterval: Int,
+        dnsPreResolve: Boolean,
+        dnsServer: String?,
         dnsOverride: String?
     ) -> Unit
 ) {
@@ -637,6 +642,12 @@ internal fun SubscriptionInputDialog(
                 "60"
             }
         )
+    }
+    var dnsPreResolve by rememberSaveable(initialDnsPreResolve) {
+        mutableStateOf(initialDnsPreResolve)
+    }
+    var dnsServer by rememberSaveable(initialDnsServer) {
+        mutableStateOf(initialDnsServer ?: DnsResolver.DOH_CLOUDFLARE)
     }
     var dnsOverrideText by rememberSaveable(initialDnsOverride) {
         mutableStateOf(initialDnsOverride ?: "")
@@ -805,6 +816,69 @@ internal fun SubscriptionInputDialog(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = stringResource(R.string.profiles_dns_preresolve),
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = stringResource(R.string.profiles_dns_preresolve_hint),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                androidx.compose.material3.Switch(
+                    checked = dnsPreResolve,
+                    onCheckedChange = { dnsPreResolve = it },
+                    colors = liquidGlassSwitchColors(
+                        checkedThumbColor = MaterialTheme.colorScheme.primary,
+                        checkedTrackColor = MaterialTheme.colorScheme.primaryContainer
+                    )
+                )
+            }
+
+            AnimatedVisibility(visible = dnsPreResolve) {
+                Column {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = stringResource(R.string.profiles_dns_server),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    val dnsOptions = listOf(
+                        DnsResolver.DOH_CLOUDFLARE to R.string.profiles_dns_server_cloudflare,
+                        DnsResolver.DOH_GOOGLE to R.string.profiles_dns_server_google,
+                        DnsResolver.DOH_ALIDNS to R.string.profiles_dns_server_alidns
+                    )
+                    dnsOptions.forEach { (server, labelRes) ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .profileGroupPressFeedback(enabled = true) { dnsServer = server }
+                                .padding(vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            androidx.compose.material3.RadioButton(
+                                selected = dnsServer == server,
+                                onClick = { dnsServer = server }
+                            )
+                            Text(
+                                text = stringResource(labelRes),
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
                 Text(
                     text = stringResource(R.string.profiles_dns_override),
                     style = MaterialTheme.typography.bodyLarge,
@@ -915,6 +989,8 @@ internal fun SubscriptionInputDialog(
                         name,
                         url,
                         finalInterval,
+                        dnsPreResolve,
+                        dnsServer.takeIf { dnsPreResolve },
                         finalDnsOverride
                     )
                 },

@@ -287,6 +287,10 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         viewModelScope.launch { repository.setVpnBlocklist(value) }
     }
 
+    fun setAutoIncludeNewAppsInPerAppRules(value: Boolean) {
+        viewModelScope.launch { repository.setAutoIncludeNewAppsInPerAppRules(value) }
+    }
+
     fun setLocalDns(value: String) {
         viewModelScope.launch { repository.setLocalDns(value) }
     }

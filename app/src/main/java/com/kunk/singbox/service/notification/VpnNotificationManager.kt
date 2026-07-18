@@ -141,6 +141,7 @@ class VpnNotificationManager(
         if (updateJob?.isActive == true) return
         updateJob = serviceScope.launch {
             delay(delayMs)
+            if (suppressUpdates || state.isStopping) return@launch
             lastUpdateAtMs.set(SystemClock.elapsedRealtime())
             updateNotification(state, service)
         }
@@ -248,6 +249,10 @@ class VpnNotificationManager(
 
     fun setSuppressUpdates(suppress: Boolean) {
         suppressUpdates = suppress
+        if (suppress) {
+            updateJob?.cancel()
+            updateJob = null
+        }
     }
 
     fun resetState() {

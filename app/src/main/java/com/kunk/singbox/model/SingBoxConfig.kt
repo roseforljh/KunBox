@@ -147,6 +147,7 @@ data class DnsRule(
     // reject/predefined action fields
     @SerializedName("method") val method: String? = null,
     @SerializedName("no_drop") val noDrop: Boolean? = null,
+    @JsonAdapter(NullSafeJsonPrimitiveAdapter::class)
     @SerializedName("rcode") val rcode: JsonPrimitive? = null,
     @JsonAdapter(StringListJsonAdapter::class)
     @SerializedName("answer") val answer: List<String>? = null,
@@ -408,6 +409,7 @@ data class Outbound(
     @SerializedName("host_key_algorithms") val hostKeyAlgorithms: List<String>? = null,
     @SerializedName("client_version") val clientVersion: String? = null,
 
+    @JsonAdapter(NullSafeJsonPrimitiveAdapter::class)
     @SerializedName("version") val version: JsonPrimitive? = null,
     @SerializedName("detour") val detour: String? = null,
 
@@ -486,6 +488,20 @@ data class DomainResolveConfig(
     @SerializedName("rewrite_ttl") val rewriteTtl: Long? = null,
     @SerializedName("client_subnet") val clientSubnet: String? = null
 )
+
+class NullSafeJsonPrimitiveAdapter : JsonDeserializer<JsonPrimitive> {
+    override fun deserialize(
+        json: JsonElement?,
+        typeOfT: Type,
+        context: JsonDeserializationContext
+    ): JsonPrimitive? {
+        if (json == null || json.isJsonNull) return null
+        if (!json.isJsonPrimitive) {
+            throw JsonParseException("Expected JSON primitive")
+        }
+        return json.asJsonPrimitive
+    }
+}
 
 class UInt32JsonAdapter : JsonSerializer<Long>, JsonDeserializer<Long> {
     override fun serialize(

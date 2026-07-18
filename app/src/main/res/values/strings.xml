@@ -194,6 +194,8 @@
     <string name="tun_settings_allowlist_configured">已设置 %d 个</string>
     <string name="tun_settings_blocklist">排除列表</string>
     <string name="tun_settings_blocklist_configured">已设置 %d 个</string>
+    <string name="tun_settings_follow_new_apps">新安装应用跟随当前规则</string>
+    <string name="tun_settings_follow_new_apps_subtitle">仅允许模式自动加入仅允许列表；排除模式自动加入排除列表</string>
     <string name="tun_settings_select_vpn_apps">选择仅允许走 VPN 的应用</string>
 
     <!-- DNS Settings -->
@@ -242,6 +244,24 @@
     <string name="profiles_camera_permission_required">需要相机权限才能扫描二维码</string>
     <string name="profiles_import_success">导入成功: %s</string>
     <string name="profiles_import_failed">导入失败: %s</string>
+    <string name="profiles_add_config">添加配置</string>
+    <string name="profiles_custom_config">自定义配置</string>
+    <string name="profiles_custom_config_subtitle">从现有订阅选择节点组合</string>
+    <string name="profiles_imported_subscription_default_name">导入的订阅</string>
+    <string name="subscription_import_fetching">正在获取订阅内容...</string>
+    <string name="subscription_import_requesting">正在尝试订阅请求（User-Agent %1$d/%2$d）...</string>
+    <string name="subscription_import_parsing">正在解析订阅响应...</string>
+    <string name="subscription_import_empty_response">订阅响应内容为空</string>
+    <string name="subscription_import_http_error">订阅请求失败（HTTP %1$d：%2$s）</string>
+    <string name="subscription_import_timeout">连接超时，请检查网络</string>
+    <string name="subscription_import_dns_failed">域名解析失败，请检查订阅链接</string>
+    <string name="subscription_import_ssl_failed">SSL 证书校验失败</string>
+    <string name="subscription_import_failed_generic">订阅导入失败</string>
+    <string name="custom_profile_name_nodes_required">名称不能为空，且至少选择一个节点</string>
+    <string name="custom_profile_creating">正在创建自定义配置...</string>
+    <string name="custom_profile_create_failed">创建自定义配置失败</string>
+    <string name="custom_profile_nodes_required">未选择可用节点</string>
+    <string name="custom_profile_extract_failed">无法提取节点配置</string>
     <string name="profiles_parse_failed">无法解析内容</string>
     <string name="profiles_content_empty">内容为空</string>
     <string name="profiles_updated">配置已更新</string>
@@ -249,6 +269,12 @@
     <string name="profiles_auto_update">自动更新</string>
     <string name="profiles_auto_update_interval">更新间隔（分钟）</string>
     <string name="profiles_auto_update_hint">建议设置 30 分钟以上</string>
+    <string name="profiles_dns_preresolve">DNS 预解析</string>
+    <string name="profiles_dns_preresolve_hint">将节点域名预解析为 IP，绕过 DNS 污染</string>
+    <string name="profiles_dns_server">DNS 服务器</string>
+    <string name="profiles_dns_server_cloudflare">Cloudflare (1.1.1.1)</string>
+    <string name="profiles_dns_server_google">Google (8.8.8.8)</string>
+    <string name="profiles_dns_server_alidns">阿里 DNS (223.5.5.5)</string>
     <string name="profiles_dns_override">DNS 覆写</string>
     <string name="profiles_dns_override_hint">追加自定义 DNS 配置（JSON 格式，包含 servers 和 rules 字段）</string>
     <string name="profiles_name_label">名称</string>
@@ -492,6 +518,15 @@
     <string name="diagnostics_export_config">导出运行配置</string>
     <string name="diagnostics_export_config_subtitle">导出 running_config.json 到外部存储目录</string>
     <string name="diagnostics_export_config_loading">正在导出...</string>
+    <string name="diagnostics_resource_sampling">资源周期采样</string>
+    <string name="diagnostics_resource_sampling_subtitle">每 15 秒采样主进程与 VPN 进程，最多保留 4096 条</string>
+    <string name="diagnostics_resource_sampling_active">采样中，已记录 %1$d 条</string>
+    <string name="diagnostics_resource_sampling_stopped">已停止，保留 %1$d 条</string>
+    <string name="diagnostics_export_package">导出脱敏诊断包</string>
+    <string name="diagnostics_export_package_subtitle">导出脱敏日志、运行配置和资源采样 ZIP</string>
+    <string name="diagnostics_export_package_loading">正在生成诊断包...</string>
+    <string name="diagnostics_export_package_success">诊断包已导出到：\n%1$s\n\n大小：%2$d KiB\n资源记录：%3$d 条</string>
+    <string name="diagnostics_export_package_failed">诊断包导出失败：%1$s</string>
     <string name="diagnostics_app_routing">应用分流诊断</string>
     <string name="diagnostics_app_routing_subtitle">检查 /proc/net 可读性（影响 package_name 生效）</string>
     <string name="diagnostics_app_routing_loading">正在检测...</string>
@@ -572,6 +607,8 @@
     <string name="notification_reset_connections">重置连接</string>
     <string name="notification_disconnect">断开</string>
     <string name="notification_speed_format">↑ %1$s  ↓ %2$s</string>
+    <string name="proxy_only_channel_name">KunBox 代理服务</string>
+    <string name="proxy_only_notification_text">仅代理模式运行中</string>
 
     <!-- Connection Settings -->
     <string name="connection_settings_show_notification_speed">通知栏显示速度</string>
@@ -707,6 +744,7 @@
     <string name="subscription_update_stage_requesting">请求中</string>
     <string name="subscription_update_stage_parsing">解析中</string>
     <string name="subscription_update_stage_saving">保存中</string>
+    <string name="subscription_update_stage_dns_background">后台 DNS 预解析中</string>
     <string name="ruleset_update_network_error">更新失败，请检查网络</string>
 
     <!-- App Groups -->

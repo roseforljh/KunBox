@@ -7,6 +7,8 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -282,15 +284,18 @@ private fun LiquidGlassCapsule(
 
 private fun Modifier.consumeUnclaimedClicks(): Modifier {
     return pointerInput(Unit) {
-        awaitPointerEventScope {
-            while (true) {
-                val event = awaitPointerEvent(PointerEventPass.Final)
+        awaitEachGesture {
+            val down = awaitFirstDown(
+                requireUnconsumed = true,
+                pass = PointerEventPass.Main
+            )
+            down.consume()
+            do {
+                val event = awaitPointerEvent(PointerEventPass.Main)
                 event.changes.forEach { change ->
-                    if (!change.isConsumed) {
-                        change.consume()
-                    }
+                    if (!change.isConsumed) change.consume()
                 }
-            }
+            } while (event.changes.any { it.pressed })
         }
     }
 }

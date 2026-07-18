@@ -26,6 +26,7 @@ import com.kunk.singbox.service.ServiceState
 import com.kunk.singbox.service.ProxyOnlyService
 import com.kunk.singbox.service.VpnTileService
 import com.kunk.singbox.core.SingBoxCore
+import com.kunk.singbox.utils.perf.PerfTracer
 import com.kunk.singbox.repository.ConfigRepository
 import com.kunk.singbox.viewmodel.shared.NodeDisplaySettings
 import kotlinx.coroutines.Job
@@ -275,7 +276,15 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
 
                 val persisted = VpnStateStore.getActive()
 
-                if (!hasSystemVpn && persisted && VpnStateStore.getMode() == VpnStateStore.CoreMode.VPN) {
+                // 收紧：仅当 IPC 已确认 STOPPED 才清运行态；IPC 未可信时不写，避免"假停"窗口
+                if (shouldClearPersistedActiveOnBoot(
+                        hasSystemVpn = hasSystemVpn,
+                        persistedActive = persisted,
+                        mode = VpnStateStore.getMode(),
+                        ipcBound = SingBoxRemote.isBound(),
+                        serviceState = SingBoxRemote.state.value
+                    )
+                ) {
                     VpnTileService.persistVpnState(false)
                 }
 
@@ -661,6 +670,8 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
             startServiceCompat(context, intent)
             return
         }
+
+        PerfTracer.recordEvent(PerfTracer.Phases.FULL_RESTART, "service_restart")
 
         runCatching {
             if (!com.kunk.singbox.ipc.VpnStateStore.shouldTriggerPrepareRestart(1500L)) {

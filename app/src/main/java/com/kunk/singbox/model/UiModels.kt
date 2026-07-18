@@ -34,7 +34,8 @@ enum class SubscriptionUpdateStage(
 ) {
     Requesting(R.string.subscription_update_stage_requesting),
     Parsing(R.string.subscription_update_stage_parsing),
-    Saving(R.string.subscription_update_stage_saving)
+    Saving(R.string.subscription_update_stage_saving),
+    DnsBackground(R.string.subscription_update_stage_dns_background)
 }
 
 @Keep

@@ -88,14 +88,18 @@ class ProfilesViewModel(application: Application) : AndroidViewModel(application
         newName: String,
         newUrl: String?,
         autoUpdateInterval: Int = 0,
+        dnsPreResolve: Boolean = false,
+        dnsServer: String? = null,
         dnsOverride: String? = null
     ) {
         configRepository.updateProfileMetadata(
-            profileId,
-            newName,
-            newUrl,
-            autoUpdateInterval,
-            dnsOverride
+            profileId = profileId,
+            newName = newName,
+            newUrl = newUrl,
+            autoUpdateInterval = autoUpdateInterval,
+            dnsPreResolve = dnsPreResolve,
+            dnsServer = dnsServer,
+            dnsOverride = dnsOverride
         )
         emitToast(getApplication<Application>().getString(R.string.profiles_updated))
         emitDnsOverrideCompatibilityWarning(dnsOverride)
@@ -155,6 +159,8 @@ class ProfilesViewModel(application: Application) : AndroidViewModel(application
         name: String,
         url: String,
         autoUpdateInterval: Int = 0,
+        dnsPreResolve: Boolean = false,
+        dnsServer: String? = null,
         dnsOverride: String? = null
     ): Boolean {
 
@@ -169,6 +175,8 @@ class ProfilesViewModel(application: Application) : AndroidViewModel(application
                 name = name,
                 url = url,
                 autoUpdateInterval = autoUpdateInterval,
+                dnsPreResolve = dnsPreResolve,
+                dnsServer = dnsServer,
                 dnsOverride = dnsOverride,
                 onProgress = { progress ->
                     _importState.value = ImportState.Loading(progress)
@@ -201,12 +209,16 @@ class ProfilesViewModel(application: Application) : AndroidViewModel(application
             return
         }
         if (name.isBlank() || selectedNodeIds.isEmpty()) {
-            _importState.value = ImportState.Error("名称不能为空，且至少选择一个节点")
+            _importState.value = ImportState.Error(
+                getApplication<Application>().getString(R.string.custom_profile_name_nodes_required)
+            )
             return
         }
 
         importJob = viewModelScope.launch {
-            _importState.value = ImportState.Loading("创建自定义配置中...")
+            _importState.value = ImportState.Loading(
+                getApplication<Application>().getString(R.string.custom_profile_creating)
+            )
 
             val result = configRepository.createCustomProfile(
                 name = name,
@@ -223,7 +235,10 @@ class ProfilesViewModel(application: Application) : AndroidViewModel(application
                     if (error is kotlinx.coroutines.CancellationException) {
                         _importState.value = ImportState.Idle
                     } else {
-                        _importState.value = ImportState.Error(error.message ?: "创建失败")
+                        _importState.value = ImportState.Error(
+                            error.message
+                                ?: getApplication<Application>().getString(R.string.custom_profile_create_failed)
+                        )
                     }
                 }
             )

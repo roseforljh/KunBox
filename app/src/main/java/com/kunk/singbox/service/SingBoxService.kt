@@ -3,6 +3,7 @@ package com.kunk.singbox.service
 import android.app.Notification
 import android.app.NotificationManager
 import android.content.ComponentName
+import android.content.Context
 import android.content.Intent
 import android.net.ConnectivityManager
 import android.net.Network
@@ -35,6 +36,7 @@ import com.kunk.singbox.service.manager.ForeignVpnMonitor
 import com.kunk.singbox.service.manager.NetworkHelper
 import com.kunk.singbox.service.manager.NodeSwitchManager
 import com.kunk.singbox.service.manager.PlatformInterfaceImpl
+import com.kunk.singbox.service.manager.RecoveryPolicy
 import com.kunk.singbox.service.manager.ScreenStateManager
 import com.kunk.singbox.service.manager.ServiceStateHolder
 import com.kunk.singbox.service.manager.ShutdownManager
@@ -45,8 +47,10 @@ import com.kunk.singbox.ui.components.AppNotificationManager
 import com.kunk.singbox.utils.DefaultNetworkListener
 import com.kunk.singbox.utils.L
 import com.kunk.singbox.utils.LocalNetworkPermission
+import com.kunk.singbox.utils.LocaleHelper
 import com.kunk.singbox.utils.NetworkClient
 import com.kunk.singbox.utils.perf.StateCache
+import com.kunk.singbox.utils.perf.PerfTracer
 import io.nekohasekai.libbox.*
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
@@ -68,6 +72,10 @@ internal data class UidPackageCacheEntry(
 
 @Suppress("TooManyFunctions", "LargeClass", "ProtectedMemberInFinalClass")
 class SingBoxService : VpnService() {
+
+    override fun attachBaseContext(newBase: Context) {
+        super.attachBaseContext(LocaleHelper.wrapFromCache(newBase))
+    }
 
     protected val gson = Gson()
     private val defaultNetworkListenerKey = Any()
@@ -281,6 +289,8 @@ class SingBoxService : VpnService() {
             VpnTileService.persistVpnState(isRunning)
             if (isRunning) {
                 VpnStateStore.setMode(VpnStateStore.CoreMode.VPN)
+                ServiceStateHolder.preserveRecoveryIntentOnFailure = false
+                VpnStateStore.clearRecoveryClaim()
             }
         }
         override fun persistVpnPending(pending: String) {
@@ -442,6 +452,7 @@ class SingBoxService : VpnService() {
     )
     @Volatile protected var isStopping: Boolean = false
     @Volatile protected var stopSelfRequested: Boolean = false
+    @Volatile private var preserveRuntimeStateOnDestroy: Boolean = false
     @Volatile protected var cleanupJob: Job? = null
     @Volatile protected var autoFailoverJob: Job? = null
     @Volatile protected var pendingStartConfigPath: String? = null
@@ -771,10 +782,6 @@ class SingBoxService : VpnService() {
                 trafficMonitor.start(Process.myUid(), trafficListener)
                 scheduleAsyncRuleSetUpdate()
                 warmAutoFailoverCandidateCache("vpn_started")
-
-                runCatching { VpnKeepaliveWorker.schedule(applicationContext) }
-                    .onSuccess { Log.i(SingBoxService.TAG, "VPN keepalive worker scheduled") }
-                    .onFailure { error -> Log.w(SingBoxService.TAG, "Failed to schedule VPN keepalive worker", error) }
 
                 Log.i(SingBoxService.TAG, "VPN post-start tasks completed")
             } finally {
@@ -1516,6 +1523,11 @@ class SingBoxService : VpnService() {
 
         val success = hotSwitchNode(targetTag)
         if (!success) {
+            PerfTracer.recordDuration(
+                PerfTracer.Phases.AUTO_FAILOVER,
+                SystemClock.elapsedRealtime() - startedAtMs,
+                "hot_switch_failed"
+            )
             LogRepository.getInstance().addLog(
                 "WARN: Auto failover escalate restart reason=hot_switch_failed target=$targetTag"
             )
@@ -1563,6 +1575,11 @@ class SingBoxService : VpnService() {
                 )
                 restartVpnForAutoFailoverRecovery(currentTag)
             }
+            PerfTracer.recordDuration(
+                PerfTracer.Phases.AUTO_FAILOVER,
+                SystemClock.elapsedRealtime() - startedAtMs,
+                if (rolledBack) "live_check_failed" else "rollback_failed"
+            )
             return
         }
 
@@ -1574,6 +1591,11 @@ class SingBoxService : VpnService() {
         requestNotificationUpdate(force = true)
         requestRemoteStateUpdate(force = true)
         val elapsedMs = SystemClock.elapsedRealtime() - startedAtMs
+        PerfTracer.recordDuration(
+            PerfTracer.Phases.AUTO_FAILOVER,
+            elapsedMs,
+            "success"
+        )
         LogRepository.getInstance().addLog(
             "INFO: Auto failover committed $currentTag -> $displayName trigger=$trigger " +
                 "elapsed=${elapsedMs}ms dnsFails=$recentDnsFailures"
@@ -1704,9 +1726,16 @@ class SingBoxService : VpnService() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        Log.i(SingBoxService.TAG, "onStartCommand action=${intent?.action}")
-        runCatching {
-            LogRepository.getInstance().addLog("INFO SingBoxService: onStartCommand action=${intent?.action}")
+        preserveRuntimeStateOnDestroy = false
+        val recoveryFlag = intent?.getBooleanExtra(SingBoxService.EXTRA_RECOVERY, false) == true
+        Log.i(SingBoxService.TAG, "onStartCommand action=${intent?.action} recovery=$recoveryFlag")
+        if (recoveryFlag) {
+            runCatching {
+                LogRepository.getInstance().addAlwaysLog(
+                    "INFO [Recovery] SingBoxService START " +
+                        "running=${SingBoxService.isRunning} starting=${SingBoxService.isStarting}"
+                )
+            }
         }
         if (intent?.action == null) {
             handleStickyRestartIntent()
@@ -1714,8 +1743,35 @@ class SingBoxService : VpnService() {
         }
         when (intent.action) {
             SingBoxService.ACTION_START -> {
-                SingBoxService.isManuallyStopped = false
-                VpnStateStore.setManuallyStopped(false)
+                // 恢复 START 幂等：核心已在跑/正在起时只刷新状态，禁止 clean restart
+                val isRecoveryStart = intent.getBooleanExtra(SingBoxService.EXTRA_RECOVERY, false)
+                if (isRecoveryStart &&
+                    RecoveryPolicy.shouldIgnoreRecoveryStart(SingBoxService.isRunning, SingBoxService.isStarting)
+                ) {
+                    Log.i(SingBoxService.TAG, "Recovery START ignored: core already active")
+                    runCatching {
+                        LogRepository.getInstance().addAlwaysLog(
+                            "INFO [Recovery] START ignored: already active " +
+                                "running=${SingBoxService.isRunning} starting=${SingBoxService.isStarting}"
+                        )
+                    }
+                    VpnStateStore.clearRecoveryClaim()
+                    requestNotificationUpdate(force = true)
+                    requestRemoteStateUpdate(force = true)
+                    return START_STICKY
+                }
+                if (isRecoveryStart && !isValidRecoveryStart(VpnStateStore.CoreMode.VPN)) {
+                    rejectStaleRecoveryStart("VPN recovery intent no longer matches persisted intent")
+                    return START_STICKY
+                }
+                // recovery 不覆盖 manuallyStopped：意图由 claim 前判定，失败路径也不应洗成"未手动停"
+                if (!isRecoveryStart) {
+                    SingBoxService.isManuallyStopped = false
+                    VpnStateStore.setManuallyStopped(false)
+                    ServiceStateHolder.preserveRecoveryIntentOnFailure = false
+                } else {
+                    ServiceStateHolder.preserveRecoveryIntentOnFailure = true
+                }
                 SingBoxService.setLastError(null)
                 VpnStateStore.setLastError(null)
                 VpnTileService.persistVpnPending("starting")
@@ -1764,6 +1820,24 @@ class SingBoxService : VpnService() {
                             }
                         }
                     }
+                    return START_STICKY
+                }
+
+                // 同配置重复 START 幂等：已在跑且配置未变（且未要求清缓存）时只刷新状态，禁止 clean restart
+                if (SingBoxService.isRunning &&
+                    !cleanCache &&
+                    configPath == SingBoxService.lastConfigPath
+                ) {
+                    Log.i(SingBoxService.TAG, "Duplicate START ignored: same config already running")
+                    runCatching {
+                        LogRepository.getInstance().addAlwaysLog(
+                            "INFO [Recovery] Duplicate START ignored: same config already running " +
+                                "recovery=$isRecoveryStart path=$configPath"
+                        )
+                    }
+                    VpnTileService.persistVpnPending("")
+                    requestNotificationUpdate(force = true)
+                    requestRemoteStateUpdate(force = true)
                     return START_STICKY
                 }
 
@@ -1816,6 +1890,7 @@ class SingBoxService : VpnService() {
                 Log.i(SingBoxService.TAG, "Received SingBoxService.ACTION_STOP (manual) -> stopping VPN")
                 SingBoxService.isManuallyStopped = true
                 VpnStateStore.setManuallyStopped(true)
+                ServiceStateHolder.preserveRecoveryIntentOnFailure = false
                 VpnTileService.persistVpnPending("stopping")
                 updateServiceState(ServiceState.STOPPING)
                 notificationManager.setSuppressUpdates(true)
@@ -1891,11 +1966,46 @@ class SingBoxService : VpnService() {
                 }
             }
             SingBoxService.ACTION_FULL_RESTART -> {
+                val isPerAppRuleRestart = intent.getBooleanExtra(
+                    SingBoxService.EXTRA_PER_APP_RULE_RESTART,
+                    false
+                )
+                val manuallyStopped = isPerAppRuleRestart && VpnStateStore.isManuallyStopped()
+                val mode = if (isPerAppRuleRestart) {
+                    VpnStateStore.getMode()
+                } else {
+                    VpnStateStore.CoreMode.VPN
+                }
+                val shouldRejectPerAppRuleRestart = isPerAppRuleRestart && (
+                    !SingBoxService.isRunning ||
+                        isStopping ||
+                        manuallyStopped ||
+                        mode != VpnStateStore.CoreMode.VPN
+                    )
+                if (shouldRejectPerAppRuleRestart) {
+                    Log.w(
+                        SingBoxService.TAG,
+                        "Per-app rule FULL_RESTART rejected: " +
+                            "running=${SingBoxService.isRunning}, starting=${SingBoxService.isStarting}, " +
+                            "stopping=$isStopping, manuallyStopped=$manuallyStopped, mode=$mode"
+                    )
+                    val shouldStopIdleService = !SingBoxService.isRunning &&
+                        !SingBoxService.isStarting &&
+                        !isStopping
+                    if (shouldStopIdleService) {
+                        preserveRuntimeStateOnDestroy = true
+                        stopSelf(startId)
+                        return START_NOT_STICKY
+                    }
+                    return START_STICKY
+                }
                 Log.i(SingBoxService.TAG, "Received SingBoxService.ACTION_FULL_RESTART -> performing full restart (TUN rebuild)")
                 val configPath = intent.getStringExtra(SingBoxService.EXTRA_CONFIG_PATH)
                 if (configPath.isNullOrEmpty()) {
+                    PerfTracer.recordEvent(PerfTracer.Phases.FULL_RESTART, "missing_config")
                     Log.e(SingBoxService.TAG, "SingBoxService.ACTION_FULL_RESTART: config path is empty")
                 } else {
+                    PerfTracer.recordEvent(PerfTracer.Phases.FULL_RESTART, "requested")
                     performFullRestart(configPath)
                 }
             }
@@ -1917,6 +2027,19 @@ class SingBoxService : VpnService() {
         return START_STICKY
     }
 
+    private fun isValidRecoveryStart(expectedMode: VpnStateStore.CoreMode): Boolean {
+        return !VpnStateStore.isManuallyStopped() && VpnStateStore.getMode() == expectedMode
+    }
+
+    private fun rejectStaleRecoveryStart(reason: String) {
+        Log.w(SingBoxService.TAG, reason)
+        runCatching {
+            LogRepository.getInstance().addAlwaysLog("INFO [Recovery] START rejected: $reason")
+        }
+        VpnTileService.persistVpnPending("")
+        VpnStateStore.clearRecoveryClaim()
+    }
+
     protected fun handleStickyRestartIntent() {
         if (SingBoxService.isRunning || SingBoxService.isStarting) {
             Log.i(SingBoxService.TAG, "Sticky restart ignored: service is already running or starting")
@@ -1927,7 +2050,7 @@ class SingBoxService : VpnService() {
         val runningConfigUsable = SingBoxService.isRunningConfigUsable(runningConfigFile)
         val mode = VpnStateStore.getMode()
         val manuallyStopped = VpnStateStore.isManuallyStopped()
-        if (!SingBoxService.shouldRecoverFromStickyRestart(manuallyStopped, mode, runningConfigUsable)) {
+        if (!RecoveryPolicy.shouldRecoverFromStickyRestart(manuallyStopped, mode, runningConfigUsable)) {
             Log.i(
                 SingBoxService.TAG,
                 "Sticky restart skipped: manuallyStopped=$manuallyStopped, mode=$mode, " +
@@ -1935,10 +2058,20 @@ class SingBoxService : VpnService() {
             )
             return
         }
+        if (!VpnStateStore.tryClaimRecovery(RECOVERY_CLAIM_WINDOW_MS)) {
+            Log.i(SingBoxService.TAG, "Sticky restart skipped: another recovery was issued recently")
+            return
+        }
 
+        // 只冷恢复：running_config 原样拉起，不 CLEAN_CACHE、不重新生成配置、不覆盖 manuallyStopped
         Log.w(SingBoxService.TAG, "Sticky restart recovering VPN from ${runningConfigFile.absolutePath}")
-        SingBoxService.isManuallyStopped = false
-        VpnStateStore.setManuallyStopped(false)
+        runCatching {
+            LogRepository.getInstance().addAlwaysLog(
+                "INFO [Recovery] Sticky restart recovering path=${runningConfigFile.absolutePath} " +
+                    "mode=$mode manuallyStopped=$manuallyStopped"
+            )
+        }
+        ServiceStateHolder.preserveRecoveryIntentOnFailure = true
         VpnTileService.persistVpnPending("starting")
         initializeStartupNodeLabel(runningConfigFile.absolutePath, explicitTag = null)
         updateServiceState(ServiceState.STARTING)
@@ -1946,6 +2079,9 @@ class SingBoxService : VpnService() {
     }
 
     protected fun clearStartCommandFailureState() {
+        val preserveMode = RecoveryPolicy.shouldPreserveModeOnStartFailure(
+            ServiceStateHolder.preserveRecoveryIntentOnFailure
+        )
         synchronized(this) {
             SingBoxService.isRunning = false
             SingBoxService.isStarting = false
@@ -1956,8 +2092,16 @@ class SingBoxService : VpnService() {
         }
         NetworkClient.onVpnStateChanged(false)
         VpnTileService.persistVpnState(false)
-        VpnStateStore.setMode(VpnStateStore.CoreMode.NONE)
+        if (preserveMode) {
+            // 恢复失败：只清 runtime，保留 mode，留给 keepalive/冷启动再试
+            VpnStateStore.clearRuntimeState(preserveLastError = true)
+        } else {
+            VpnStateStore.setMode(VpnStateStore.CoreMode.NONE)
+        }
         VpnTileService.persistVpnPending("")
+        // 启动失败立即释放恢复互斥，让后续触发源按当时意图重新判定，而不是干等窗口过期
+        VpnStateStore.clearRecoveryClaim()
+        ServiceStateHolder.preserveRecoveryIntentOnFailure = false
         updateServiceState(ServiceState.STOPPED)
         updateTileState()
     }
@@ -2039,7 +2183,7 @@ class SingBoxService : VpnService() {
         }
     }
 
-    @Suppress("CyclomaticComplexMethod", "CognitiveComplexMethod", "ReturnCount")
+    @Suppress("CyclomaticComplexMethod", "CognitiveComplexMethod", "LongMethod", "ReturnCount")
     protected fun performHotReload(configContent: String) {
         synchronized(this) {
             if (!SingBoxService.isRunning || isStopping) {
@@ -2054,6 +2198,7 @@ class SingBoxService : VpnService() {
             hotReloadJob?.cancel()
 
             val job = serviceScope.launch {
+                val startedAtMs = SystemClock.elapsedRealtime()
                 try {
                     Log.i(SingBoxService.TAG, "[HotReload] Starting kernel-level hot reload...")
 
@@ -2067,6 +2212,11 @@ class SingBoxService : VpnService() {
 
                     result.onSuccess { success ->
                         if (success) {
+                            PerfTracer.recordDuration(
+                                PerfTracer.Phases.HOT_RELOAD,
+                                SystemClock.elapsedRealtime() - startedAtMs,
+                                "success"
+                            )
                             Log.i(SingBoxService.TAG, "[HotReload] Kernel hot reload succeeded")
                             LogRepository.getInstance().addLog("INFO [HotReload] Config reloaded successfully")
 
@@ -2076,17 +2226,37 @@ class SingBoxService : VpnService() {
 
                             requestNotificationUpdate(force = true)
                         } else if (!isStopping && SingBoxService.isRunning) {
+                            PerfTracer.recordDuration(
+                                PerfTracer.Phases.HOT_RELOAD,
+                                SystemClock.elapsedRealtime() - startedAtMs,
+                                "kernel_error"
+                            )
                             handleHotReloadFailure("Kernel hot reload not available")
                         }
                     }.onFailure { e ->
                         if (!isStopping && SingBoxService.isRunning) {
+                            PerfTracer.recordDuration(
+                                PerfTracer.Phases.HOT_RELOAD,
+                                SystemClock.elapsedRealtime() - startedAtMs,
+                                "exception"
+                            )
                             handleHotReloadFailure("Hot reload failed: ${e.message}")
                         }
                     }
                 } catch (e: CancellationException) {
+                    PerfTracer.recordDuration(
+                        PerfTracer.Phases.HOT_RELOAD,
+                        SystemClock.elapsedRealtime() - startedAtMs,
+                        "cancelled"
+                    )
                     Log.i(SingBoxService.TAG, "performHotReload cancelled")
                     throw e
                 } catch (e: Exception) {
+                    PerfTracer.recordDuration(
+                        PerfTracer.Phases.HOT_RELOAD,
+                        SystemClock.elapsedRealtime() - startedAtMs,
+                        "exception"
+                    )
                     Log.e(SingBoxService.TAG, "performHotReload error", e)
                     if (!isStopping && SingBoxService.isRunning) {
                         handleHotReloadFailure("Hot reload error: ${e.message}")
@@ -2427,27 +2597,33 @@ class SingBoxService : VpnService() {
             }
         }.getOrDefault(false)
 
-        // Ensure critical state is saved synchronously before we potentially halt
-        if (!SingBoxService.isManuallyStopped && shouldStop) {
-            // If we are being destroyed but not manually stopped (e.g. app update or system kill),
-            // keep the persisted intent recoverable for VpnKeepaliveWorker.
-            VpnTileService.persistVpnState(true)
+        val unexpectedDeath = !SingBoxService.isManuallyStopped && shouldStop
+        if (unexpectedDeath) {
+            // 意外死亡（划卡/系统杀）：恢复意图（mode、manuallyStopped）在启动成功时已持久化，这里不动。
+            // active/pending 落成"当前不在跑"，不做完整 stop→restart 收尾；
+            // 恢复交给 sticky / keepalive / 冷启动单路（共用 VpnStateStore 互斥）。
+            VpnTileService.persistVpnState(false)
             VpnTileService.persistVpnPending("")
-            VpnStateStore.setMode(VpnStateStore.CoreMode.VPN)
-            Log.i(SingBoxService.TAG, "onDestroy: Preserved recoverable VPN state")
-        }
-
-        if (shouldStop) {
+            Log.i(SingBoxService.TAG, "onDestroy: unexpected death, recovery intent preserved")
+            runCatching {
+                LogRepository.getInstance().addAlwaysLog(
+                    "INFO [Recovery] onDestroy unexpectedDeath mode=${VpnStateStore.getMode()} " +
+                        "manuallyStopped=${VpnStateStore.isManuallyStopped()} preserveIntent=true"
+                )
+            }
+        } else if (shouldStop) {
             // Note: stopVpn launches a cleanup job on cleanupScope.
             // If we halt() immediately, that job will die.
             // For app updates, the system kills us anyway, so cleanup might be best-effort.
             stopVpn(stopService = false)
         } else {
             runCatching { stopForeground(STOP_FOREGROUND_REMOVE) }
-            VpnTileService.persistVpnState(false)
-            VpnTileService.persistVpnPending("")
-            updateServiceState(ServiceState.STOPPED)
-            updateTileState()
+            if (!preserveRuntimeStateOnDestroy) {
+                VpnTileService.persistVpnState(false)
+                VpnTileService.persistVpnPending("")
+                updateServiceState(ServiceState.STOPPED)
+                updateTileState()
+            }
         }
 
         serviceSupervisorJob.cancel()
@@ -2563,6 +2739,8 @@ class SingBoxService : VpnService() {
     }
 
     companion object {
+        private const val RECOVERY_CLAIM_WINDOW_MS = 12_000L
+
         internal fun formatRestartFailure(error: Exception): String {
             val detail = error.message?.takeIf { it.isNotBlank() }
             return buildString {
@@ -2603,11 +2781,15 @@ class SingBoxService : VpnService() {
 
         val EXTRA_CLEAN_CACHE = ServiceStateHolder.EXTRA_CLEAN_CACHE
 
+        val EXTRA_PER_APP_RULE_RESTART = ServiceStateHolder.EXTRA_PER_APP_RULE_RESTART
+
         val EXTRA_SETTING_KEY = ServiceStateHolder.EXTRA_SETTING_KEY
 
         val EXTRA_SETTING_VALUE_BOOL = ServiceStateHolder.EXTRA_SETTING_VALUE_BOOL
 
         val EXTRA_PREPARE_RESTART_REASON = ServiceStateHolder.EXTRA_PREPARE_RESTART_REASON
+
+        val EXTRA_RECOVERY = ServiceStateHolder.EXTRA_RECOVERY
 
         internal val AUTO_FAILOVER_MEANINGFUL_TRAFFIC_BPS = 1024L
 
@@ -2675,16 +2857,6 @@ class SingBoxService : VpnService() {
 
         internal fun shouldContinueCoreStartAfterForegroundResult(foregroundStarted: Boolean): Boolean {
             return foregroundStarted
-        }
-
-        internal fun shouldRecoverFromStickyRestart(
-            manuallyStopped: Boolean,
-            mode: VpnStateStore.CoreMode,
-            runningConfigUsable: Boolean
-        ): Boolean {
-            return !manuallyStopped &&
-                mode == VpnStateStore.CoreMode.VPN &&
-                runningConfigUsable
         }
 
         internal fun isRunningConfigUsable(file: File): Boolean {

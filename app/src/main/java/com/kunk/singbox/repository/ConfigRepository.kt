@@ -14,6 +14,7 @@ import com.google.gson.JsonParser
 import com.google.gson.JsonPrimitive
 import com.google.gson.reflect.TypeToken
 import com.kunk.singbox.R
+import com.kunk.singbox.SingBoxApplication
 import com.kunk.singbox.core.SingBoxCore
 import com.kunk.singbox.database.AppDatabase
 import com.kunk.singbox.database.entity.ActiveStateEntity
@@ -30,6 +31,8 @@ import com.kunk.singbox.service.ProxyOnlyService
 import com.kunk.singbox.service.SingBoxService
 import com.kunk.singbox.service.tun.VpnTunManager
 import com.kunk.singbox.utils.NetworkClient
+import com.kunk.singbox.utils.dns.DnsResolveStore
+import com.kunk.singbox.utils.dns.DnsResolver
 import com.kunk.singbox.utils.parser.Base64Parser
 import com.kunk.singbox.utils.parser.NodeLinkParser
 import com.kunk.singbox.utils.parser.SingBoxParser
@@ -76,6 +79,28 @@ internal suspend fun runLatencyBatchAndApply(
         withContext(NonCancellable) { applyResults() }
         throw e
     }
+}
+
+internal fun resolveRestoredProfileSelection(
+    availableProfileIds: Set<String>,
+    databaseProfileId: String?,
+    databaseNodeId: String?,
+    persistedProfileId: String?,
+    persistedNodeId: String?
+): Pair<String?, String?> {
+    val usePersistedSelection = !persistedProfileId.isNullOrBlank() && persistedProfileId in availableProfileIds
+    val profileId = if (usePersistedSelection) {
+        persistedProfileId
+    } else {
+        databaseProfileId?.takeIf { it in availableProfileIds }
+    }
+    val nodeId = if (usePersistedSelection) {
+        persistedNodeId?.takeIf { it.isNotBlank() }
+            ?: databaseNodeId?.takeIf { databaseProfileId == profileId }
+    } else {
+        databaseNodeId
+    }
+    return profileId to nodeId
 }
 
 @Suppress("TooManyFunctions", "LargeClass", "ProtectedMemberInFinalClass")
@@ -151,6 +176,10 @@ class ConfigRepository(protected val context: Context) {
         com.kunk.singbox.utils.parser.ClashYamlParser(),
         Base64Parser { nodeLinkParser.parse(it) }
     ))
+
+    protected val dnsResolver = DnsResolver()
+
+    protected val dnsResolveStore = DnsResolveStore.getInstance()
 
     protected val _profiles = MutableStateFlow<List<ProfileUi>>(emptyList())
 
@@ -234,6 +263,10 @@ class ConfigRepository(protected val context: Context) {
 
     protected val profilesFileJson: File
         get() = File(context.filesDir, "profiles.json")
+
+    private val isMainProcess: Boolean by lazy {
+        (context.applicationContext as? SingBoxApplication)?.isMainProcess() == true
+    }
 
     init {
         startConfigCacheCleanup()
@@ -474,6 +507,12 @@ class ConfigRepository(protected val context: Context) {
         return profileLastSelectedNode[profileId]
     }
 
+    private fun persistMainProcessSelection(profileId: String, nodeId: String?, nodeName: String?) {
+        if (!isMainProcess) return
+        VpnStateStore.setSelectedNode(profileId, nodeId)
+        VpnStateStore.setSelectedNodeLabel(nodeName)
+    }
+
     protected fun applyActiveProfileNodes(
         profileId: String,
         nodes: List<NodeUi>,
@@ -495,13 +534,7 @@ class ConfigRepository(protected val context: Context) {
         val selectedName = _activeNodeId.value?.let { activeId ->
             nodes.find { it.id == activeId }?.name
         }
-        val storedProfileId = VpnStateStore.getSelectedProfileId()
-        if (storedProfileId.isBlank() ||
-            storedProfileId == profileId && VpnStateStore.getSelectedNodeId().isBlank()
-        ) {
-            VpnStateStore.setSelectedNode(profileId, _activeNodeId.value)
-        }
-        VpnStateStore.setSelectedNodeLabel(selectedName)
+        persistMainProcessSelection(profileId, _activeNodeId.value, selectedName)
     }
 
     protected suspend fun loadProfileNodesWithLatency(profileId: String): List<NodeUi>? {
@@ -672,6 +705,19 @@ class ConfigRepository(protected val context: Context) {
             Log.w(ConfigRepository.TAG, "Failed to parse dnsOverride JSON, skipping", e)
             null
         }
+    }
+
+    protected suspend fun preResolveDomainsForProfileBestEffort(
+        profileId: String,
+        config: SingBoxConfig,
+        dnsServer: String?
+    ): Boolean {
+        return runCatching {
+            preResolveDomainsForProfile(profileId, config, dnsServer)
+            true
+        }.onFailure { error ->
+            Log.w(ConfigRepository.TAG, "DNS pre-resolve failed for profile $profileId", error)
+        }.getOrDefault(false)
     }
 
     protected fun rollbackTransientProfileFile(profileId: String) {
@@ -889,6 +935,7 @@ class ConfigRepository(protected val context: Context) {
         }
     }
 
+    @Suppress("LongMethod")
     protected suspend fun loadSavedProfiles() {
         try {
             val startTime = System.currentTimeMillis()
@@ -898,14 +945,21 @@ class ConfigRepository(protected val context: Context) {
 
             if (profileEntities.isNotEmpty()) {
                 val profiles = profileEntities.map { it.toUiModel().copy(updateStatus = UpdateStatus.Idle) }
+                val (restoredProfileId, restoredNodeId) = resolveRestoredProfileSelection(
+                    availableProfileIds = profiles.mapTo(mutableSetOf()) { it.id },
+                    databaseProfileId = activeState?.activeProfileId,
+                    databaseNodeId = activeState?.activeNodeId,
+                    persistedProfileId = VpnStateStore.getSelectedProfileId(),
+                    persistedNodeId = VpnStateStore.getSelectedNodeId()
+                )
                 _profiles.value = profiles
-                _activeProfileId.value = activeState?.activeProfileId
+                _activeProfileId.value = restoredProfileId
                 savedNodeLatencies.clear()
                 latencyEntities.forEach { savedNodeLatencies[it.nodeId] = it.latencyMs }
 
                 val elapsed = System.currentTimeMillis() - startTime
                 Log.i(ConfigRepository.TAG, "Loaded ${profiles.size} profiles from Room in ${elapsed}ms")
-                loadActiveProfileNodes(activeState?.activeProfileId, activeState?.activeNodeId)
+                loadActiveProfileNodes(restoredProfileId, restoredNodeId)
                 cleanupLegacyProfileFiles()
                 return
             }
@@ -919,8 +973,15 @@ class ConfigRepository(protected val context: Context) {
 
             if (savedData != null) {
                 val profiles = savedData.profiles.map { it.copy(updateStatus = UpdateStatus.Idle) }
+                val (restoredProfileId, restoredNodeId) = resolveRestoredProfileSelection(
+                    availableProfileIds = profiles.mapTo(mutableSetOf()) { it.id },
+                    databaseProfileId = savedData.activeProfileId,
+                    databaseNodeId = savedData.activeNodeId,
+                    persistedProfileId = VpnStateStore.getSelectedProfileId(),
+                    persistedNodeId = VpnStateStore.getSelectedNodeId()
+                )
                 _profiles.value = profiles
-                _activeProfileId.value = savedData.activeProfileId
+                _activeProfileId.value = restoredProfileId
 
                 savedNodeLatencies.clear()
                 savedNodeLatencies.putAll(savedData.nodeLatencies)
@@ -944,7 +1005,7 @@ class ConfigRepository(protected val context: Context) {
 
                 val elapsed = System.currentTimeMillis() - startTime
                 Log.i(ConfigRepository.TAG, "Migrated ${profiles.size} profiles to Room in ${elapsed}ms")
-                loadActiveProfileNodes(savedData.activeProfileId, savedData.activeNodeId)
+                loadActiveProfileNodes(restoredProfileId, restoredNodeId)
                 cleanupLegacyProfileFiles()
             }
         } catch (e: Exception) {
@@ -952,31 +1013,29 @@ class ConfigRepository(protected val context: Context) {
         }
     }
 
-    protected fun loadActiveProfileNodes(activeProfileId: String?, activeNodeId: String?) {
+    protected suspend fun loadActiveProfileNodes(activeProfileId: String?, activeNodeId: String?) {
         if (activeProfileId == null) return
         val configFile = File(configDir, "$activeProfileId.json")
         if (!configFile.exists()) return
 
-        scope.launch {
-            try {
-                val configJson = configFile.readText()
-                val config = deduplicateTags(gson.fromJson(configJson, SingBoxConfig::class.java))
-                val nodes = extractNodesFromConfig(config, activeProfileId)
-                val nodesWithLatency = nodes.map { node ->
-                    val latency = savedNodeLatencies[node.id]
-                    if (latency != null) node.copy(latencyMs = latency) else node
-                }
-                profileNodes[activeProfileId] = nodesWithLatency
-                cacheConfig(activeProfileId, config)
-                if (activeProfileId == _activeProfileId.value) {
-                    applyActiveProfileNodes(activeProfileId, nodesWithLatency, activeNodeId)
-                }
-                if (allNodesUiActiveCount.get() > 0) {
-                    updateAllNodesAndGroups()
-                }
-            } catch (e: Exception) {
-                Log.e(ConfigRepository.TAG, "Failed to load config for profile: $activeProfileId", e)
+        try {
+            val configJson = configFile.readText()
+            val config = deduplicateTags(gson.fromJson(configJson, SingBoxConfig::class.java))
+            val nodes = extractNodesFromConfig(config, activeProfileId)
+            val nodesWithLatency = nodes.map { node ->
+                val latency = savedNodeLatencies[node.id]
+                if (latency != null) node.copy(latencyMs = latency) else node
             }
+            profileNodes[activeProfileId] = nodesWithLatency
+            cacheConfig(activeProfileId, config)
+            if (activeProfileId == _activeProfileId.value) {
+                applyActiveProfileNodes(activeProfileId, nodesWithLatency, activeNodeId)
+            }
+            if (allNodesUiActiveCount.get() > 0) {
+                updateAllNodesAndGroups()
+            }
+        } catch (e: Exception) {
+            Log.e(ConfigRepository.TAG, "Failed to load config for profile: $activeProfileId", e)
         }
     }
 
@@ -1328,7 +1387,9 @@ class ConfigRepository(protected val context: Context) {
         costMs: Long
     ): ConfigRepositorySubscriptionAttemptResult {
         val shouldStopFallback = ConfigRepository.shouldStopSubscriptionFallback(httpStatusCode = responseCode)
-        val error = Exception("HTTP $responseCode: $responseMessage")
+        val error = Exception(
+            this.context.getString(R.string.subscription_import_http_error, responseCode, responseMessage)
+        )
         logSubscriptionAttempt(
             level = Log.WARN,
             message = if (shouldStopFallback) {
@@ -1375,11 +1436,13 @@ class ConfigRepository(protected val context: Context) {
                     context = context,
                     costMs = costMs
                 )
-                throw Exception("Subscription response body is empty")
+                throw IllegalStateException(
+                    this@ConfigRepository.context.getString(R.string.subscription_import_empty_response)
+                )
             }
 
             onStageChanged(SubscriptionUpdateStage.Parsing)
-            onProgress("Parsing subscription response...")
+            onProgress(this@ConfigRepository.context.getString(R.string.subscription_import_parsing))
 
             val contentType = response.header("Content-Type")
             val attemptResult = parseSubscriptionResponse(
@@ -1432,7 +1495,13 @@ class ConfigRepository(protected val context: Context) {
 
             try {
                 onStageChanged(SubscriptionUpdateStage.Requesting)
-                onProgress("Trying subscription request with User-Agent (${index + 1}/${userAgents.size})...")
+                onProgress(
+                    context.getString(
+                        R.string.subscription_import_requesting,
+                        index + 1,
+                        userAgents.size
+                    )
+                )
                 val attemptContext = ConfigRepositorySubscriptionAttemptContext(
                     host = host,
                     userAgent = userAgent,
@@ -1487,13 +1556,15 @@ class ConfigRepository(protected val context: Context) {
         name: String,
         url: String,
         autoUpdateInterval: Int = 0,
+        dnsPreResolve: Boolean = false,
+        dnsServer: String? = null,
         dnsOverride: String? = null,
         onProgress: (String) -> Unit = {}): Result<ProfileUi> = withContext(Dispatchers.IO) {
         var profileId: String? = null
         val normalizedAutoUpdateInterval =
             com.kunk.singbox.service.SubscriptionAutoUpdateWorker.normalizeIntervalMinutes(autoUpdateInterval)
         try {
-            onProgress("Fetching subscription content...")
+            onProgress(context.getString(R.string.subscription_import_fetching))
             val fetchResult = try {
                 fetchAndParseSubscription(url, onProgress)
             } catch (e: Exception) {
@@ -1533,6 +1604,8 @@ class ConfigRepository(protected val context: Context) {
                 expireDate = userInfo?.expire ?: 0,
                 totalTraffic = userInfo?.total ?: 0,
                 usedTraffic = (userInfo?.upload ?: 0) + (userInfo?.download ?: 0),
+                dnsPreResolve = dnsPreResolve,
+                dnsServer = dnsServer,
                 dnsOverride = dnsOverride
             )
             cacheConfig(profileId, deduplicatedConfig)
@@ -1550,6 +1623,9 @@ class ConfigRepository(protected val context: Context) {
                     normalizedAutoUpdateInterval
                 )
             }
+            if (dnsPreResolve) {
+                preResolveDomainsForProfileBestEffort(profileId, deduplicatedConfig, dnsServer)
+            }
             onProgress(context.getString(R.string.profiles_import_success, nodes.size.toString()))
 
             Result.success(profile)
@@ -1557,10 +1633,10 @@ class ConfigRepository(protected val context: Context) {
             profileId?.let { rollbackTransientProfileFile(it) }
             Log.e(ConfigRepository.TAG, "Subscription import failed", e)
             val msg = when (e) {
-                is java.net.SocketTimeoutException -> "Connection timeout, please check your network"
-                is java.net.UnknownHostException -> "Failed to resolve domain, please check the link"
-                is javax.net.ssl.SSLHandshakeException -> "SSL certificate validation failed"
-                else -> e.message ?: context.getString(R.string.profiles_import_failed)
+                is java.net.SocketTimeoutException -> context.getString(R.string.subscription_import_timeout)
+                is java.net.UnknownHostException -> context.getString(R.string.subscription_import_dns_failed)
+                is javax.net.ssl.SSLHandshakeException -> context.getString(R.string.subscription_import_ssl_failed)
+                else -> e.message ?: context.getString(R.string.subscription_import_failed_generic)
             }
             Result.failure(Exception(msg))
         }
@@ -1600,12 +1676,16 @@ class ConfigRepository(protected val context: Context) {
         try {
             val targetNodes = loadSelectedCustomNodes(selectedNodeIds)
             if (targetNodes.isEmpty()) {
-                return@withContext Result.failure(Exception("No nodes selected or found"))
+                return@withContext Result.failure(
+                    Exception(context.getString(R.string.custom_profile_nodes_required))
+                )
             }
 
             val outbounds = collectCustomOutbounds(targetNodes)
             if (outbounds.isEmpty()) {
-                return@withContext Result.failure(Exception("Failed to extract any outbound data"))
+                return@withContext Result.failure(
+                    Exception(context.getString(R.string.custom_profile_extract_failed))
+                )
             }
 
             val newConfig = com.kunk.singbox.model.SingBoxConfig(outbounds = outbounds)
@@ -1613,7 +1693,9 @@ class ConfigRepository(protected val context: Context) {
             val deduplicatedConfig = deduplicateTags(newConfig)
             val nodes = extractNodesFromConfig(deduplicatedConfig, profileId, {})
             if (nodes.isEmpty()) {
-                return@withContext Result.failure(Exception("Failed to process extracted nodes"))
+                return@withContext Result.failure(
+                    Exception(context.getString(R.string.nodes_no_valid_found))
+                )
             }
 
             writeConfigFileOrThrow(profileId, deduplicatedConfig)
@@ -2008,7 +2090,7 @@ class ConfigRepository(protected val context: Context) {
             name = outbound.tag,
             protocol = outbound.type,
             group = group,
-            latencyMs = null,
+            latencyMs = savedNodeLatencies[id],
             isFavorite = false,
             sourceProfileId = profileId,
             trafficUsed = trafficRepo.getMonthlyTotal(id),
@@ -2049,7 +2131,8 @@ class ConfigRepository(protected val context: Context) {
                     ?: nodes.firstOrNull()?.id
             }
             ?: getProfileLastSelectedNode(profileId)
-        VpnStateStore.setSelectedNode(profileId, selectedNodeId)
+        val selectedNodeName = cached?.firstOrNull { it.id == selectedNodeId }?.name
+        persistMainProcessSelection(profileId, selectedNodeId, selectedNodeName)
 
         fun updateState(nodes: List<NodeUi>) {
             applyActiveProfileNodes(profileId, nodes, targetNodeId)
@@ -2282,6 +2365,8 @@ class ConfigRepository(protected val context: Context) {
         val candidates = _nodes.value
         val matched = candidates.firstOrNull { it.name == proxyName } ?: return false
         if (matched.sourceProfileId != activeProfileId) return false
+        VpnStateStore.setSelectedNode(activeProfileId, matched.id)
+        VpnStateStore.setSelectedNodeLabel(matched.name)
         if (_activeNodeId.value == matched.id) {
             saveProfileNodeMemory(activeProfileId, matched.id)
             return true
@@ -2301,6 +2386,7 @@ class ConfigRepository(protected val context: Context) {
 
         _profiles.update { list -> list.filter { it.id != profileId } }
         removeCachedConfig(profileId)
+        dnsResolveStore.removeAllForProfile(profileId)
         profileNodes.remove(profileId)
         removeNodeLatencies(removedNodeIds)
         updateAllNodesAndGroups()
@@ -2385,6 +2471,8 @@ class ConfigRepository(protected val context: Context) {
         newName: String,
         newUrl: String?,
         autoUpdateInterval: Int = 0,
+        dnsPreResolve: Boolean = false,
+        dnsServer: String? = null,
         dnsOverride: String? = null) {
         val normalizedAutoUpdateInterval =
             com.kunk.singbox.service.SubscriptionAutoUpdateWorker.normalizeIntervalMinutes(autoUpdateInterval)
@@ -2395,6 +2483,8 @@ class ConfigRepository(protected val context: Context) {
                         name = newName,
                         url = newUrl,
                         autoUpdateInterval = normalizedAutoUpdateInterval,
+                        dnsPreResolve = dnsPreResolve,
+                        dnsServer = dnsServer,
                         dnsOverride = dnsOverride
                     )
                 } else {
@@ -2609,7 +2699,11 @@ class ConfigRepository(protected val context: Context) {
                 } else {
                     System.currentTimeMillis()
                 },
-                updateStage = null
+                updateStage = when {
+                    result is SubscriptionUpdateResult.Failed -> null
+                    it.updateStage == SubscriptionUpdateStage.DnsBackground -> it.updateStage
+                    else -> null
+                }
             )
         }
         val resetJob = scope.launch {
@@ -2620,7 +2714,9 @@ class ConfigRepository(protected val context: Context) {
                 } else {
                     it.copy(
                         updateStatus = UpdateStatus.Idle,
-                        updateStage = null
+                        updateStage = it.updateStage.takeIf { stage ->
+                            stage == SubscriptionUpdateStage.DnsBackground
+                        }
                     )
                 }
             }
@@ -2672,7 +2768,7 @@ class ConfigRepository(protected val context: Context) {
             profileNodes[profile.id] = newNodes
             updateAllNodesAndGroups()
             if (_activeProfileId.value == profile.id) {
-                _nodes.value = newNodes
+                applyActiveProfileNodes(profile.id, newNodes)
             }
             val defaultQrName = context.getString(R.string.profiles_qrcode_subscription)
             val finalName = resolveSubscriptionProfileName(
@@ -2697,6 +2793,21 @@ class ConfigRepository(protected val context: Context) {
             }
 
             saveProfiles()
+            if (profile.dnsPreResolve) {
+                scope.launch {
+                    setProfileUpdateStage(profile.id, updateRunId, SubscriptionUpdateStage.DnsBackground)
+                    val success = preResolveDomainsForProfileBestEffort(
+                        profile.id,
+                        deduplicatedConfig,
+                        profile.dnsServer
+                    )
+                    Log.d(
+                        ConfigRepository.TAG,
+                        "Background DNS pre-resolve for ${profile.id}, run=$updateRunId: success=$success"
+                    )
+                    setProfileUpdateStage(profile.id, updateRunId, null)
+                }
+            }
             buildSubscriptionUpdateSuccessResult(
                 profileName = profile.name,
                 addedNodes = addedNodes,
@@ -2773,9 +2884,12 @@ class ConfigRepository(protected val context: Context) {
             val dnsOverrideConfig = parseDnsOverride(activeProfile?.dnsOverride)
             val rawOutboundsContext = buildRunOutbounds(
                 config,
+                activeId,
                 activeNode,
                 sanitizedSettings,
-                allNodesSnapshot
+                allNodesSnapshot,
+                activeProfile?.dnsPreResolve ?: false,
+                dnsOverrideConfig
             )
             val serverAddressStrategy = ConfigRepository.resolveOutboundServerAddressStrategy(
                 sanitizedSettings.serverAddressStrategy,
@@ -2801,6 +2915,7 @@ class ConfigRepository(protected val context: Context) {
             )
             val endpoints = buildRunEndpoints(
                 baseConfig = config,
+                activeProfileId = activeId,
                 allNodes = allNodesSnapshot,
                 nodeTagMap = outboundsContext.nodeTagMap
             )
@@ -2925,6 +3040,30 @@ class ConfigRepository(protected val context: Context) {
         val tls = outbound.tls ?: return outbound
         val ech = tls.ech ?: return outbound
         return outbound.copy(tls = tls.copy(ech = ech.copy(dnsServer = null)))
+    }
+
+    protected suspend fun preResolveDomainsForProfile(
+        profileId: String,
+        config: SingBoxConfig,
+        dnsServer: String?
+    ) {
+        val domains = config.outbounds.orEmpty()
+            .mapNotNull { it.server }
+            .filterNot(DnsResolver::isIpAddress)
+            .distinct()
+        if (domains.isEmpty()) return
+
+        val results = dnsResolver.resolveBatch(
+            domains = domains,
+            dohServer = dnsServer ?: DnsResolver.DOH_CLOUDFLARE
+        )
+        dnsResolveStore.saveBatch(profileId, results)
+    }
+
+    protected fun applyDnsResolveToOutbound(profileId: String, outbound: Outbound): Outbound {
+        val server = outbound.server ?: return outbound
+        if (DnsResolver.isIpAddress(server)) return outbound
+        return dnsResolveStore.getIp(profileId, server)?.let { outbound.copy(server = it) } ?: outbound
     }
 
     protected fun detectValidRuleSetFileFormat(file: File, tag: String): String? {
@@ -3678,6 +3817,7 @@ class ConfigRepository(protected val context: Context) {
 
     protected fun buildRunEndpoints(
         baseConfig: SingBoxConfig,
+        activeProfileId: String,
         allNodes: List<NodeUi>,
         nodeTagMap: Map<String, String>
     ): List<Endpoint>? {
@@ -3686,7 +3826,6 @@ class ConfigRepository(protected val context: Context) {
             ConfigRepository.convertWireGuardOutboundToEndpoint(it)
         }
 
-        val activeProfileId = _activeProfileId.value
         val sourceConfigs = mutableMapOf<String, SingBoxConfig?>()
         nodeTagMap.forEach { (nodeId, runtimeTag) ->
             val node = allNodes.firstOrNull { it.id == nodeId } ?: return@forEach
@@ -3711,9 +3850,12 @@ class ConfigRepository(protected val context: Context) {
     @Suppress("LongMethod", "CyclomaticComplexMethod", "CognitiveComplexMethod", "NestedBlockDepth")
     protected fun buildRunOutbounds(
         baseConfig: SingBoxConfig,
+        activeProfileId: String,
         activeNode: NodeUi?,
         settings: AppSettings,
-        allNodes: List<NodeUi>
+        allNodes: List<NodeUi>,
+        dnsPreResolve: Boolean = false,
+        dnsOverrideConfig: DnsConfig? = null
     ): ConfigRepositoryRunOutboundsContext {
         val rawOutbounds = baseConfig.outbounds
         val runtimeEndpointTags = buildSet {
@@ -3727,7 +3869,16 @@ class ConfigRepository(protected val context: Context) {
         }
 
         val fixedOutbounds = rawOutbounds?.mapNotNull { outbound ->
-            val processed = buildOutboundForRuntime(outbound) ?: return@mapNotNull null
+            var processed = buildOutboundForRuntime(outbound) ?: return@mapNotNull null
+            val server = processed.server?.trim().orEmpty()
+            if (dnsPreResolve && ConfigRepository.shouldApplyDnsPreResolveToDomain(
+                    server,
+                    dnsOverrideConfig,
+                    processed.tag
+                )
+            ) {
+                processed = applyDnsResolveToOutbound(activeProfileId, processed)
+            }
             if (singBoxCore.validateOutbound(stripInternalMetadata(processed))) {
                 processed
             } else {
@@ -3739,7 +3890,6 @@ class ConfigRepository(protected val context: Context) {
         if (fixedOutbounds.none { it.tag == "direct" }) {
             fixedOutbounds.add(Outbound(type = "direct", tag = "direct"))
         }
-        val activeProfileId = _activeProfileId.value
         val requiredNodeIds = mutableSetOf<String>()
         val requiredProfileIds = mutableSetOf<String>()
 
@@ -3752,12 +3902,8 @@ class ConfigRepository(protected val context: Context) {
                 return allNodes.firstOrNull { it.sourceProfileId == refProfileId && it.name == nodeName }?.id
             }
             if (allNodes.any { it.id == value }) return value
-            val node = if (activeProfileId != null) {
-                allNodes.firstOrNull { it.sourceProfileId == activeProfileId && it.name == value }
-                    ?: allNodes.firstOrNull { it.name == value }
-            } else {
-                allNodes.firstOrNull { it.name == value }
-            }
+            val node = allNodes.firstOrNull { it.sourceProfileId == activeProfileId && it.name == value }
+                ?: allNodes.firstOrNull { it.name == value }
             return node?.id
         }
         settings.appRules
@@ -3810,20 +3956,18 @@ class ConfigRepository(protected val context: Context) {
         val existingTags = (fixedOutbounds.map { it.tag } + runtimeEndpointTags).toMutableSet()
         Log.d(ConfigRepository.TAG, "buildRunOutbounds: activeProfileId=$activeProfileId, existingTags count=${existingTags.size}")
         Log.d(ConfigRepository.TAG, "  existingTags (first 10): ${existingTags.take(10)}")
-        if (activeProfileId != null) {
-            val profileNodes = allNodes.filter { it.sourceProfileId == activeProfileId }
-            Log.d(ConfigRepository.TAG, "  profileNodes count=${profileNodes.size}")
-            profileNodes.forEach { node ->
-                if (existingTags.contains(node.name)) {
-                    nodeTagMap[node.id] = node.name
+        val profileNodes = allNodes.filter { it.sourceProfileId == activeProfileId }
+        Log.d(ConfigRepository.TAG, "  profileNodes count=${profileNodes.size}")
+        profileNodes.forEach { node ->
+            if (existingTags.contains(node.name)) {
+                nodeTagMap[node.id] = node.name
+            } else {
+                val fuzzyMatch = existingTags.find { it.equals(node.name, ignoreCase = true) }
+                if (fuzzyMatch != null) {
+                    nodeTagMap[node.id] = fuzzyMatch
+                    Log.w(ConfigRepository.TAG, "  Fuzzy matched node '${node.name}' to tag '$fuzzyMatch'")
                 } else {
-                    val fuzzyMatch = existingTags.find { it.equals(node.name, ignoreCase = true) }
-                    if (fuzzyMatch != null) {
-                        nodeTagMap[node.id] = fuzzyMatch
-                        Log.w(ConfigRepository.TAG, "  Fuzzy matched node '${node.name}' to tag '$fuzzyMatch'")
-                    } else {
-                        Log.w(ConfigRepository.TAG, "  WARNING: Node '${node.name}' (id=${node.id.take(8)}) not found in existingTags!")
-                    }
+                    Log.w(ConfigRepository.TAG, "  WARNING: Node '${node.name}' (id=${node.id.take(8)}) not found in existingTags!")
                 }
             }
         }
@@ -5856,6 +6000,7 @@ class ConfigRepository(protected val context: Context) {
                 "requesting" -> SubscriptionUpdateStage.Requesting
                 "parsing" -> SubscriptionUpdateStage.Parsing
                 "saving" -> SubscriptionUpdateStage.Saving
+                "dns_background" -> SubscriptionUpdateStage.DnsBackground
                 else -> null
             }
         }
@@ -6829,6 +6974,26 @@ class ConfigRepository(protected val context: Context) {
                 return rule
             }
             return rule.copy(action = "route")
+        }
+
+        internal fun shouldApplyDnsPreResolveToDomain(
+            domain: String,
+            dnsOverride: DnsConfig?,
+            outboundTag: String? = null
+        ): Boolean {
+            val normalizedDomain = domain.trim()
+            if (normalizedDomain.isBlank() || isIpAddressValue(normalizedDomain) || dnsOverride == null) {
+                return true
+            }
+            return dnsOverride.rules.orEmpty()
+                .map { normalizeDnsOverrideRule(it) }
+                .none { rule ->
+                    buildDomainResolverForMatchedDnsOverrideRule(
+                        domain = normalizedDomain,
+                        outboundTag = outboundTag,
+                        rule = rule
+                    ) != null
+                }
         }
 
         internal fun applyDnsOverrideDomainResolvers(

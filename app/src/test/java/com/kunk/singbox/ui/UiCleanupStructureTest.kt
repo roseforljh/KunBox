@@ -248,6 +248,42 @@ class UiCleanupStructureTest {
     }
 
     @Test
+    fun liquidGlassClickFeedbackDoesNotCompeteWithComponentClicks() {
+        val navSource = mainSource("ui/components/AppNavBar.kt").readNormalizedText()
+        val consumeBody = navSource.extractFunctionBody("consumeUnclaimedClicks")
+        assertTrue(consumeBody.contains("awaitEachGesture"))
+        assertTrue(consumeBody.contains("requireUnconsumed = true"))
+        assertFalse(consumeBody.contains("PointerEventPass.Final"))
+
+        val controlsSource = mainSource("ui/theme/LiquidGlassControls.kt").readNormalizedText()
+        assertFalse(controlsSource.contains("liquidGlassPressBounceEffect"))
+        assertFalse(controlsSource.contains("awaitFirstDown(requireUnconsumed = false)"))
+        assertFalse(controlsSource.contains("waitForUpOrCancellation"))
+
+        val floatingActionBody = controlsSource.extractFunctionBody("LiquidGlassFloatingActionSurface")
+        assertTrue(floatingActionBody.contains("collectIsPressedAsState"))
+        assertTrue(floatingActionBody.contains("interactionSource = interactionSource"))
+        assertTrue(floatingActionBody.contains("graphicsLayer"))
+        assertTrue(floatingActionBody.contains(".clickable("))
+    }
+
+    @Test
+    fun backgroundLocaleDialogBlurAndImportTextStayCentralized() {
+        val localeSource = mainSource("utils/LocaleHelper.kt").readNormalizedText()
+        assertTrue(localeSource.contains("fun wrapFromCache(context: Context)"))
+
+        listOf("service/SingBoxService.kt", "service/ProxyOnlyService.kt").forEach { path ->
+            val source = mainSource(path).readNormalizedText()
+            assertTrue(source.contains("override fun attachBaseContext(newBase: Context)"))
+            assertTrue(source.contains("LocaleHelper.wrapFromCache(newBase)"))
+        }
+
+        val dialogSource = mainSource("ui/screens/NodeDetailDialogs.kt").readNormalizedText()
+        val detourDialog = dialogSource.extractFunctionBody("DetourNodeSelectDialog")
+        assertTrue(detourDialog.contains("LiquidGlassDialogEffect()"))
+    }
+
+    @Test
     fun trafficRefreshAnimationExistsOnlyWhileLoading() {
         val source = mainSource("ui/screens/TrafficStatsScreen.kt").readNormalizedText()
         val infiniteTransition = source.indexOf("rememberInfiniteTransition(")

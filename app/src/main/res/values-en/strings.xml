@@ -194,6 +194,8 @@
     <string name="tun_settings_allowlist_configured">%d configured</string>
     <string name="tun_settings_blocklist">Blocklist</string>
     <string name="tun_settings_blocklist_configured">%d configured</string>
+    <string name="tun_settings_follow_new_apps">Apply current rule to new apps</string>
+    <string name="tun_settings_follow_new_apps_subtitle">Adds newly installed apps to the allowlist or blocklist based on the current mode</string>
     <string name="tun_settings_select_vpn_apps">Select apps that can use VPN</string>
 
     <!-- DNS Settings -->
@@ -239,6 +241,24 @@
     <string name="profiles_camera_permission_required">Camera permission required to scan QR code</string>
     <string name="profiles_import_success">Import successful: %s</string>
     <string name="profiles_import_failed">Import failed: %s</string>
+    <string name="profiles_add_config">Add Profile</string>
+    <string name="profiles_custom_config">Custom Profile</string>
+    <string name="profiles_custom_config_subtitle">Combine nodes selected from existing subscriptions</string>
+    <string name="profiles_imported_subscription_default_name">Imported Subscription</string>
+    <string name="subscription_import_fetching">Fetching subscription content...</string>
+    <string name="subscription_import_requesting">Trying subscription request with User-Agent (%1$d/%2$d)...</string>
+    <string name="subscription_import_parsing">Parsing subscription response...</string>
+    <string name="subscription_import_empty_response">Subscription response body is empty</string>
+    <string name="subscription_import_http_error">Subscription request failed (HTTP %1$d: %2$s)</string>
+    <string name="subscription_import_timeout">Connection timeout, please check your network</string>
+    <string name="subscription_import_dns_failed">Failed to resolve domain, please check the subscription link</string>
+    <string name="subscription_import_ssl_failed">SSL certificate validation failed</string>
+    <string name="subscription_import_failed_generic">Subscription import failed</string>
+    <string name="custom_profile_name_nodes_required">Name is required and at least one node must be selected</string>
+    <string name="custom_profile_creating">Creating custom profile...</string>
+    <string name="custom_profile_create_failed">Failed to create custom profile</string>
+    <string name="custom_profile_nodes_required">No available nodes selected</string>
+    <string name="custom_profile_extract_failed">Failed to extract node configuration</string>
     <string name="profiles_parse_failed">Failed to parse content</string>
     <string name="profiles_content_empty">Content is empty</string>
     <string name="profiles_updated">Profile updated</string>
@@ -246,6 +266,12 @@
     <string name="profiles_auto_update">Auto Update</string>
     <string name="profiles_auto_update_interval">Update Interval (minutes)</string>
     <string name="profiles_auto_update_hint">Recommended 30+ minutes</string>
+    <string name="profiles_dns_preresolve">DNS Pre-resolve</string>
+    <string name="profiles_dns_preresolve_hint">Pre-resolve node domains to IP to bypass DNS pollution</string>
+    <string name="profiles_dns_server">DNS Server</string>
+    <string name="profiles_dns_server_cloudflare">Cloudflare (1.1.1.1)</string>
+    <string name="profiles_dns_server_google">Google (8.8.8.8)</string>
+    <string name="profiles_dns_server_alidns">Alibaba DNS (223.5.5.5)</string>
     <string name="profiles_dns_override">DNS Override</string>
     <string name="profiles_dns_override_hint">Append custom DNS config (JSON format, with servers and rules fields)</string>
     <string name="profiles_name_label">Name</string>
@@ -492,6 +518,15 @@
     <string name="diagnostics_export_config">Export Running Config</string>
     <string name="diagnostics_export_config_subtitle">Export running_config.json to external storage</string>
     <string name="diagnostics_export_config_loading">Exporting...</string>
+    <string name="diagnostics_resource_sampling">Periodic Resource Sampling</string>
+    <string name="diagnostics_resource_sampling_subtitle">Sample app and VPN processes every 15 seconds, up to 4096 records</string>
+    <string name="diagnostics_resource_sampling_active">Sampling, %1$d records captured</string>
+    <string name="diagnostics_resource_sampling_stopped">Stopped, %1$d records retained</string>
+    <string name="diagnostics_export_package">Export Redacted Diagnostic Package</string>
+    <string name="diagnostics_export_package_subtitle">Export redacted logs, runtime config, and resource samples as ZIP</string>
+    <string name="diagnostics_export_package_loading">Building diagnostic package...</string>
+    <string name="diagnostics_export_package_success">Diagnostic package exported to:\n%1$s\n\nSize: %2$d KiB\nResource records: %3$d</string>
+    <string name="diagnostics_export_package_failed">Diagnostic package export failed: %1$s</string>
     <string name="diagnostics_app_routing">App Routing Diagnostics</string>
     <string name="diagnostics_app_routing_subtitle">Check /proc/net readability (affects package_name)</string>
     <string name="diagnostics_app_routing_loading">Detecting...</string>
@@ -572,6 +607,8 @@
     <string name="notification_reset_connections">Reset</string>
     <string name="notification_disconnect">Disconnect</string>
     <string name="notification_speed_format">↑ %1$s  ↓ %2$s</string>
+    <string name="proxy_only_channel_name">KunBox Proxy Service</string>
+    <string name="proxy_only_notification_text">Proxy-only mode is running</string>
 
     <!-- Connection Settings -->
     <string name="connection_settings_show_notification_speed">Show Speed in Notification</string>
@@ -707,6 +744,7 @@
     <string name="subscription_update_stage_requesting">Requesting</string>
     <string name="subscription_update_stage_parsing">Parsing</string>
     <string name="subscription_update_stage_saving">Saving</string>
+    <string name="subscription_update_stage_dns_background">Background DNS pre-resolve</string>
     <string name="ruleset_update_network_error">Update failed, please check your network</string>
 
     <!-- App Groups -->

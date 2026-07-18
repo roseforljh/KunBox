@@ -180,6 +180,20 @@ class SettingsRepository(private val context: Context) {
         updateSettingsAndNotifyRestart { it.copy(vpnBlocklist = value) }
     }
 
+    suspend fun setAutoIncludeNewAppsInPerAppRules(value: Boolean) {
+        settingsStore.updateSettingsAndWait { it.copy(autoIncludeNewAppsInPerAppRules = value) }
+    }
+
+    suspend fun addPackageToCurrentPerAppRule(packageName: String): Boolean {
+        var changed = false
+        val persisted = settingsStore.updateSettingsAndWait { settings ->
+            addPackageToCurrentPerAppRule(settings, packageName).also { updated ->
+                changed = updated != settings
+            }
+        }
+        return persisted && changed
+    }
+
     suspend fun removePackageFromPerAppSettings(packageName: String) {
         updateSettingsAndNotifyRestart { settings ->
             removePackageFromPerAppSettings(settings, packageName)

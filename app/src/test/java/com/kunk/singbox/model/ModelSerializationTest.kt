@@ -16,6 +16,41 @@ class ModelSerializationTest {
     private val gson = Gson()
 
     @Test
+    fun perAppNewInstallSwitchDefaultsOffAndRoundTrips() {
+        val legacy = gson.fromJson("{}", AppSettings::class.java)
+        val enabled = AppSettings(autoIncludeNewAppsInPerAppRules = true)
+
+        assertFalse(legacy.autoIncludeNewAppsInPerAppRules)
+        assertTrue(
+            gson.fromJson(gson.toJson(enabled), AppSettings::class.java)
+                .autoIncludeNewAppsInPerAppRules
+        )
+    }
+
+    @Test
+    fun nullableJsonPrimitiveFieldsAcceptHistoricalExplicitNulls() {
+        val config = gson.fromJson(
+            """
+                {
+                  "dns":{"rules":[{"action":"predefined","rcode":null}]},
+                  "outbounds":[{"type":"socks","tag":"proxy","version":null}]
+                }
+            """.trimIndent(),
+            SingBoxConfig::class.java
+        )
+
+        assertEquals(null, config.dns?.rules?.single()?.rcode)
+        assertEquals(null, config.outbounds?.single()?.version)
+    }
+
+    @Test
+    fun nullableJsonPrimitiveFieldsRejectContainers() {
+        assertThrows(JsonParseException::class.java) {
+            gson.fromJson("{\"type\":\"socks\",\"version\":{}}", Outbound::class.java)
+        }
+    }
+
+    @Test
     fun testNodeUiSerialization() {
         val node = NodeUi(
             id = "test-id",

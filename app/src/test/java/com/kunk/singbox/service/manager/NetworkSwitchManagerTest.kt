@@ -12,7 +12,11 @@ class NetworkSwitchManagerTest {
     fun defaultNetworkChangeTriggersExactlyOneCoreReset() {
         val source = File("src/main/java/com/kunk/singbox/service/manager/NetworkSwitchManager.kt").readText()
 
-        assertEquals(1, source.windowed("cb.resetCoreNetwork()".length).count { it == "cb.resetCoreNetwork()" })
+        assertEquals(
+            1,
+            source.windowed("callbacks.resetCoreNetwork()".length)
+                .count { it == "callbacks.resetCoreNetwork()" }
+        )
         assertTrue(source.contains("if (networkChanged)"))
     }
 

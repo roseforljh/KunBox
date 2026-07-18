@@ -71,7 +71,8 @@ class SingBoxApplication : Application(), Configuration.Provider {
                 SubscriptionAutoUpdateWorker.rescheduleAll(this@SingBoxApplication)
                 RuleSetAutoUpdateWorker.rescheduleAll(this@SingBoxApplication)
 
-                VpnKeepaliveWorker.schedule(this@SingBoxApplication)
+                // 历史版本可能已注册周期恢复任务；升级后必须主动取消，禁止进入 App 后自动点火。
+                VpnKeepaliveWorker.cancel(this@SingBoxApplication)
             }
         }
 
@@ -80,7 +81,7 @@ class SingBoxApplication : Application(), Configuration.Provider {
         }
     }
 
-    private fun isMainProcess(): Boolean {
+    internal fun isMainProcess(): Boolean {
         val pid = Process.myPid()
         val activityManager = getSystemService(ACTIVITY_SERVICE) as ActivityManager
         val processName = activityManager.runningAppProcesses?.find { it.pid == pid }?.processName

@@ -10,10 +10,9 @@ import javax.xml.parsers.DocumentBuilderFactory
 class SingBoxServiceTaskRemovalTest {
 
     @Test
-    fun vpnCoreServicesStayRunningWhenTaskIsRemoved() {
+    fun taskRemovalKeepsCoreServicesRunning() {
         val manifest = readManifest()
 
-        // stopWithTask=false：任务被移除时服务继续跑
         assertTrue(serviceDeclaresStopWithTaskFalse(manifest, ".service.SingBoxService"))
         assertTrue(serviceDeclaresStopWithTaskFalse(manifest, ".service.ProxyOnlyService"))
     }
@@ -69,6 +68,18 @@ class SingBoxServiceTaskRemovalTest {
                 propertyValue = "proxy_only"
             )
         )
+    }
+
+    @Test
+    fun explicitStopMarksVpnAsManuallyStopped() {
+        val source = File("src/main/java/com/kunk/singbox/service/SingBoxService.kt")
+            .readText(Charsets.UTF_8)
+        val stopBranch = source
+            .substringAfter("SingBoxService.ACTION_STOP ->")
+            .substringBefore("SingBoxService.ACTION_SWITCH_NODE ->")
+
+        assertTrue(stopBranch.contains("VpnStateStore.setManuallyStopped(true)"))
+        assertTrue(stopBranch.contains("stopVpn(stopService = true)"))
     }
 
     private fun readManifest(): org.w3c.dom.Document =

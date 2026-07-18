@@ -25,10 +25,15 @@ object ServiceStateHolder {
     const val EXTRA_CONFIG_PATH = "config_path"
     const val EXTRA_CONFIG_CONTENT = "config_content"
     const val EXTRA_CLEAN_CACHE = "clean_cache"
+    // 仅标记由按应用规则变更触发的完整重启
+    const val EXTRA_PER_APP_RULE_RESTART = "per_app_rule_restart"
     const val EXTRA_SETTING_KEY = "setting_key"
     const val EXTRA_SETTING_VALUE_BOOL = "setting_value_bool"
 
     const val EXTRA_PREPARE_RESTART_REASON = "prepare_restart_reason"
+
+    // Marks an ACTION_START as a recovery start: must be idempotent, never a clean restart
+    const val EXTRA_RECOVERY = "recovery"
 
     @Volatile
     var instance: com.kunk.singbox.service.SingBoxService? = null
@@ -59,6 +64,14 @@ object ServiceStateHolder {
 
     @Volatile
     var isManuallyStopped: Boolean = false
+        internal set
+
+    /**
+     * 当前这次启动是否为恢复路径（EXTRA_RECOVERY / sticky）。
+     * 失败收尾时若为 true，只清 runtime + claim，保留 mode 意图。
+     */
+    @Volatile
+    var preserveRecoveryIntentOnFailure: Boolean = false
         internal set
 
     @Volatile

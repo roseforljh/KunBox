@@ -1,7 +1,31 @@
 package com.kunk.singbox.ipc
 
+import android.os.SystemClock
 import android.util.Log
+import com.google.gson.Gson
+import com.google.gson.JsonParser
+import com.google.gson.annotations.SerializedName
+import com.kunk.singbox.service.ServiceState
 import com.tencent.mmkv.MMKV
+import java.io.File
+import java.io.RandomAccessFile
+
+internal class CrossProcessRuntimeStateLock(private val lockFile: File) {
+    private val processLock = Any()
+
+    fun <T> withLock(block: () -> T): T {
+        return synchronized(processLock) {
+            lockFile.parentFile?.let { directory ->
+                check(directory.exists() || directory.mkdirs()) {
+                    "无法创建 VPN 状态锁目录: ${directory.absolutePath}"
+                }
+            }
+            RandomAccessFile(lockFile, "rw").use { lockAccess ->
+                lockAccess.channel.lock().use { block() }
+            }
+        }
+    }
+}
 
 /**
  *
@@ -21,6 +45,12 @@ object VpnStateStore {
     private const val KEY_SELECTED_NODE_ID = "selected_node_id"
     private const val KEY_VPN_LAST_ERROR = "vpn_last_error"
     private const val KEY_VPN_MANUALLY_STOPPED = "vpn_manually_stopped"
+    private const val KEY_RUNTIME_STATE_SNAPSHOT = "runtime_state_snapshot"
+    private const val SNAPSHOT_JSON_GENERATION = "generation"
+    private const val SNAPSHOT_JSON_STATE_ORDINAL = "stateOrdinal"
+    private const val SNAPSHOT_JSON_ACTIVE_LABEL = "activeLabel"
+    private const val SNAPSHOT_JSON_LAST_ERROR = "lastError"
+    private const val SNAPSHOT_JSON_MANUALLY_STOPPED = "manuallyStopped"
     private const val KEY_CORE_MODE = "core_mode"
     private const val KEY_LAST_APP_MODE = "last_app_mode"
     private const val KEY_LAST_ALLOWLIST_HASH = "last_allowlist_hash"
@@ -30,6 +60,11 @@ object VpnStateStore {
 
     // Sender-side throttle for ACTION_PREPARE_RESTART to reduce repeated network oscillations.
     private const val KEY_LAST_PREPARE_RESTART_AT_MS = "last_prepare_restart_at_ms"
+
+    // Cross-process mutex for recovery issuers (sticky / keepalive / cold-start recovery).
+    private const val KEY_LAST_RECOVERY_ISSUED_AT_MS = "last_recovery_issued_at_ms"
+    private const val KEY_LAST_RECOVERY_CLAIM_TOKEN = "last_recovery_claim_token"
+    private val recoveryClaimLock = Any()
     private const val KEY_TRAFFIC_CLEAR_TIMESTAMP = "traffic_clear_timestamp"
     private const val KEY_LOG_CLEAR_GENERATION = "log_clear_generation"
     private const val KEY_LAST_MANUAL_STOP_AT_MS = "last_manual_stop_at_ms"
@@ -38,21 +73,47 @@ object VpnStateStore {
     private const val KEY_AUTO_FAILOVER_COUNT_IN_WINDOW = "auto_failover_count_in_window"
     private const val KEY_AUTO_FAILOVER_QUARANTINED_TAGS = "auto_failover_quarantined_tags"
     private const val KEY_LAST_AUTO_FAILOVER_NODE_TAG = "last_auto_failover_node_tag"
-
     enum class CoreMode {
         NONE,
         VPN,
         PROXY
     }
 
+    internal data class RuntimeStateSnapshot(
+        @field:SerializedName(SNAPSHOT_JSON_GENERATION)
+        val generation: Long = 0L,
+        @field:SerializedName(SNAPSHOT_JSON_STATE_ORDINAL)
+        val stateOrdinal: Int = ServiceState.STOPPED.ordinal,
+        @field:SerializedName(SNAPSHOT_JSON_ACTIVE_LABEL)
+        val activeLabel: String = "",
+        @field:SerializedName(SNAPSHOT_JSON_LAST_ERROR)
+        val lastError: String = "",
+        @field:SerializedName(SNAPSHOT_JSON_MANUALLY_STOPPED)
+        val manuallyStopped: Boolean = false
+    )
+
     private val mmkv: MMKV by lazy {
         MMKV.mmkvWithID(MMKV_ID, MMKV.MULTI_PROCESS_MODE)
     }
 
-    fun getActive(): Boolean = mmkv.decodeBool(KEY_VPN_ACTIVE, false)
+    private val gson by lazy { Gson() }
+
+    private val runtimeStateFileLock by lazy {
+        CrossProcessRuntimeStateLock(
+            File(MMKV.getRootDir(), "$MMKV_ID.runtime_state.lock")
+        )
+    }
+
+    fun getActive(): Boolean {
+        val snapshot = readRuntimeStateSnapshot()
+        return snapshot?.stateOrdinal == ServiceState.RUNNING.ordinal ||
+            (snapshot == null && mmkv.decodeBool(KEY_VPN_ACTIVE, false))
+    }
 
     fun setActive(active: Boolean) {
-        mmkv.encode(KEY_VPN_ACTIVE, active)
+        updateRuntimeStateSnapshot(
+            state = if (active) ServiceState.RUNNING else ServiceState.STOPPED
+        )
     }
 
     fun getPending(): String = mmkv.decodeString(KEY_VPN_PENDING, "") ?: ""
@@ -61,10 +122,13 @@ object VpnStateStore {
         mmkv.encode(KEY_VPN_PENDING, pending ?: "")
     }
 
-    fun getActiveLabel(): String = mmkv.decodeString(KEY_VPN_ACTIVE_LABEL, "") ?: ""
+    fun getActiveLabel(): String {
+        return readRuntimeStateSnapshot()?.activeLabel
+            ?: mmkv.decodeString(KEY_VPN_ACTIVE_LABEL, "").orEmpty()
+    }
 
     fun setActiveLabel(label: String?) {
-        mmkv.encode(KEY_VPN_ACTIVE_LABEL, label ?: "")
+        updateRuntimeStateSnapshot(activeLabel = label.orEmpty())
     }
 
     fun getSelectedNodeLabel(): String = mmkv.decodeString(KEY_SELECTED_NODE_LABEL, "") ?: ""
@@ -82,19 +146,157 @@ object VpnStateStore {
         mmkv.encode(KEY_SELECTED_NODE_ID, nodeId ?: "")
     }
 
-    fun getLastError(): String = mmkv.decodeString(KEY_VPN_LAST_ERROR, "") ?: ""
-
-    fun setLastError(message: String?) {
-        mmkv.encode(KEY_VPN_LAST_ERROR, message ?: "")
+    fun getLastError(): String {
+        return readRuntimeStateSnapshot()?.lastError
+            ?: mmkv.decodeString(KEY_VPN_LAST_ERROR, "").orEmpty()
     }
 
-    fun isManuallyStopped(): Boolean = mmkv.decodeBool(KEY_VPN_MANUALLY_STOPPED, false)
+    fun setLastError(message: String?) {
+        updateRuntimeStateSnapshot(lastError = message.orEmpty())
+    }
+
+    fun isManuallyStopped(): Boolean {
+        return readRuntimeStateSnapshot()?.manuallyStopped
+            ?: mmkv.decodeBool(KEY_VPN_MANUALLY_STOPPED, false)
+    }
 
     fun setManuallyStopped(value: Boolean) {
-        mmkv.encode(KEY_VPN_MANUALLY_STOPPED, value)
-        if (value) {
+        updateRuntimeStateSnapshot(manuallyStopped = value)
+    }
+
+    internal fun getRuntimeStateSnapshot(): RuntimeStateSnapshot {
+        return readRuntimeStateSnapshot() ?: readLegacyRuntimeStateSnapshot()
+    }
+
+    internal fun updateRuntimeStateSnapshot(
+        state: ServiceState? = null,
+        activeLabel: String? = null,
+        lastError: String? = null,
+        manuallyStopped: Boolean? = null
+    ): RuntimeStateSnapshot {
+        return transformRuntimeStateSnapshot { current ->
+            current.copy(
+                stateOrdinal = state?.ordinal ?: current.stateOrdinal,
+                activeLabel = activeLabel ?: current.activeLabel,
+                lastError = lastError ?: current.lastError,
+                manuallyStopped = manuallyStopped ?: current.manuallyStopped
+            )
+        }
+    }
+
+    private fun transformRuntimeStateSnapshot(
+        transform: (RuntimeStateSnapshot) -> RuntimeStateSnapshot
+    ): RuntimeStateSnapshot {
+        return runtimeStateFileLock.withLock {
+            transformRuntimeStateSnapshotLocked(transform)
+        }
+    }
+
+    private fun transformRuntimeStateSnapshotLocked(
+        transform: (RuntimeStateSnapshot) -> RuntimeStateSnapshot
+    ): RuntimeStateSnapshot {
+        val current = readRuntimeStateSnapshot() ?: readLegacyRuntimeStateSnapshot()
+        val updated = transform(current).copy(
+            generation = nextRuntimeGeneration(current.generation, SystemClock.elapsedRealtimeNanos())
+        )
+        return persistRuntimeStateSnapshot(updated, previous = current)
+    }
+
+    private fun persistRuntimeStateSnapshot(
+        snapshot: RuntimeStateSnapshot,
+        previous: RuntimeStateSnapshot
+    ): RuntimeStateSnapshot {
+        mmkv.encode(KEY_RUNTIME_STATE_SNAPSHOT, encodeRuntimeStateSnapshot(snapshot))
+        mmkv.encode(KEY_VPN_ACTIVE, snapshot.stateOrdinal == ServiceState.RUNNING.ordinal)
+        mmkv.encode(KEY_VPN_ACTIVE_LABEL, snapshot.activeLabel)
+        mmkv.encode(KEY_VPN_LAST_ERROR, snapshot.lastError)
+        mmkv.encode(KEY_VPN_MANUALLY_STOPPED, snapshot.manuallyStopped)
+        if (snapshot.manuallyStopped && !previous.manuallyStopped) {
             mmkv.encode(KEY_LAST_MANUAL_STOP_AT_MS, System.currentTimeMillis())
         }
+        return snapshot
+    }
+
+    private fun readRuntimeStateSnapshot(): RuntimeStateSnapshot? {
+        val raw = mmkv.decodeString(KEY_RUNTIME_STATE_SNAPSHOT, null) ?: return null
+        return decodeRuntimeStateSnapshot(raw)
+    }
+
+    private fun readLegacyRuntimeStateSnapshot(): RuntimeStateSnapshot {
+        val pending = mmkv.decodeString(KEY_VPN_PENDING, "").orEmpty()
+        val state = when {
+            pending == "starting" -> ServiceState.STARTING
+            pending == "stopping" -> ServiceState.STOPPING
+            mmkv.decodeBool(KEY_VPN_ACTIVE, false) -> ServiceState.RUNNING
+            else -> ServiceState.STOPPED
+        }
+        return RuntimeStateSnapshot(
+            stateOrdinal = state.ordinal,
+            activeLabel = mmkv.decodeString(KEY_VPN_ACTIVE_LABEL, "").orEmpty(),
+            lastError = mmkv.decodeString(KEY_VPN_LAST_ERROR, "").orEmpty(),
+            manuallyStopped = mmkv.decodeBool(KEY_VPN_MANUALLY_STOPPED, false)
+        )
+    }
+
+    internal fun encodeRuntimeStateSnapshot(snapshot: RuntimeStateSnapshot): String {
+        return gson.toJson(snapshot)
+    }
+
+    internal fun decodeRuntimeStateSnapshot(raw: String): RuntimeStateSnapshot? {
+        if (raw.isBlank()) return null
+        return runCatching {
+            val json = JsonParser.parseString(raw)
+            if (!json.isJsonObject) return@runCatching null
+            val snapshot = json.asJsonObject
+            val generationValue = snapshot.get(SNAPSHOT_JSON_GENERATION)
+                ?.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isNumber }
+                ?.asString
+                ?.toLongOrNull()
+                ?: return@runCatching null
+            val stateOrdinalValue = snapshot.get(SNAPSHOT_JSON_STATE_ORDINAL)
+                ?.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isNumber }
+                ?.asString
+                ?.toIntOrNull()
+                ?: return@runCatching null
+            val activeLabelValue = snapshot.get(SNAPSHOT_JSON_ACTIVE_LABEL)
+                ?.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isString }
+                ?.asString
+                ?: return@runCatching null
+            val lastErrorValue = snapshot.get(SNAPSHOT_JSON_LAST_ERROR)
+                ?.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isString }
+                ?.asString
+                ?: return@runCatching null
+            val manuallyStoppedValue = snapshot.get(SNAPSHOT_JSON_MANUALLY_STOPPED)
+                ?.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isBoolean }
+                ?.asBoolean
+                ?: return@runCatching null
+            normalizeRuntimeStateSnapshot(
+                RuntimeStateSnapshot(
+                    generation = generationValue,
+                    stateOrdinal = stateOrdinalValue,
+                    activeLabel = activeLabelValue,
+                    lastError = lastErrorValue,
+                    manuallyStopped = manuallyStoppedValue
+                )
+            )
+        }.onFailure { error ->
+            runCatching { Log.w(TAG, "Failed to decode runtime state snapshot", error) }
+        }.getOrNull()
+    }
+
+    internal fun normalizeRuntimeStateSnapshot(snapshot: RuntimeStateSnapshot): RuntimeStateSnapshot {
+        return snapshot.copy(
+            generation = snapshot.generation.coerceAtLeast(0L),
+            stateOrdinal = ServiceState.values().getOrNull(snapshot.stateOrdinal)?.ordinal
+                ?: ServiceState.STOPPED.ordinal,
+            activeLabel = snapshot.activeLabel.orEmpty(),
+            lastError = snapshot.lastError.orEmpty()
+        )
+    }
+
+    internal fun nextRuntimeGeneration(current: Long, monotonicCandidate: Long): Long {
+        val incremented = if (current == Long.MAX_VALUE) Long.MAX_VALUE else current + 1L
+        return maxOf(incremented, monotonicCandidate.coerceAtLeast(1L))
     }
 
     fun getLastManualStopAtMs(): Long = mmkv.decodeLong(KEY_LAST_MANUAL_STOP_AT_MS, 0L)
@@ -221,6 +423,33 @@ object VpnStateStore {
         return true
     }
 
+    /**
+     * 恢复互斥：进程内 synchronized，写入 token 后二次确认，降低跨进程叠枪概率。
+     * 非严格 CAS（MMKV 无原生 compare-and-swap），服务侧幂等仍是最终兜底。
+     */
+    fun tryClaimRecovery(windowMs: Long): Boolean {
+        if (windowMs <= 0) return true
+        val now = System.currentTimeMillis()
+        val token = "${android.os.Process.myPid()}:$now:${System.identityHashCode(Thread.currentThread())}"
+        synchronized(recoveryClaimLock) {
+            val last = mmkv.decodeLong(KEY_LAST_RECOVERY_ISSUED_AT_MS, 0L)
+            if (now - last in 0 until windowMs) return false
+            mmkv.encode(KEY_LAST_RECOVERY_ISSUED_AT_MS, now)
+            mmkv.encode(KEY_LAST_RECOVERY_CLAIM_TOKEN, token)
+            val storedAt = mmkv.decodeLong(KEY_LAST_RECOVERY_ISSUED_AT_MS, 0L)
+            val storedToken = mmkv.decodeString(KEY_LAST_RECOVERY_CLAIM_TOKEN, null)
+            return storedAt == now && storedToken == token
+        }
+    }
+
+    /** Releases the recovery claim, e.g. when the issued start failed immediately. */
+    fun clearRecoveryClaim() {
+        synchronized(recoveryClaimLock) {
+            mmkv.removeValueForKey(KEY_LAST_RECOVERY_ISSUED_AT_MS)
+            mmkv.removeValueForKey(KEY_LAST_RECOVERY_CLAIM_TOKEN)
+        }
+    }
+
     fun getTrafficClearTimestamp(): Long = mmkv.decodeLong(KEY_TRAFFIC_CLEAR_TIMESTAMP, 0L)
 
     fun setTrafficClearTimestamp(timestamp: Long) {
@@ -270,23 +499,26 @@ object VpnStateStore {
 
     fun clearAll() {
         Log.w(TAG, "Clearing all VPN state store data")
-        mmkv.clearAll()
+        runtimeStateFileLock.withLock { mmkv.clearAll() }
     }
 
     fun clearConfig() {
-        mmkv.removeValueForKey(KEY_VPN_ACTIVE)
-        mmkv.removeValueForKey(KEY_VPN_PENDING)
-        mmkv.removeValueForKey(KEY_VPN_ACTIVE_LABEL)
-        mmkv.removeValueForKey(KEY_VPN_LAST_ERROR)
-        mmkv.removeValueForKey(KEY_VPN_MANUALLY_STOPPED)
-        mmkv.removeValueForKey(KEY_CORE_MODE)
-        mmkv.removeValueForKey(KEY_LAST_APP_MODE)
-        mmkv.removeValueForKey(KEY_LAST_ALLOWLIST_HASH)
-        mmkv.removeValueForKey(KEY_LAST_BLOCKLIST_HASH)
-        mmkv.removeValueForKey(KEY_LAST_TUN_SETTINGS_HASH)
-        mmkv.removeValueForKey(KEY_LAST_ROUTING_MODE)
-        mmkv.removeValueForKey(KEY_LAST_MANUAL_STOP_AT_MS)
-        clearAutoFailoverRuntimeState()
+        runtimeStateFileLock.withLock {
+            mmkv.removeValueForKey(KEY_RUNTIME_STATE_SNAPSHOT)
+            mmkv.removeValueForKey(KEY_VPN_ACTIVE)
+            mmkv.removeValueForKey(KEY_VPN_PENDING)
+            mmkv.removeValueForKey(KEY_VPN_ACTIVE_LABEL)
+            mmkv.removeValueForKey(KEY_VPN_LAST_ERROR)
+            mmkv.removeValueForKey(KEY_VPN_MANUALLY_STOPPED)
+            mmkv.removeValueForKey(KEY_CORE_MODE)
+            mmkv.removeValueForKey(KEY_LAST_APP_MODE)
+            mmkv.removeValueForKey(KEY_LAST_ALLOWLIST_HASH)
+            mmkv.removeValueForKey(KEY_LAST_BLOCKLIST_HASH)
+            mmkv.removeValueForKey(KEY_LAST_TUN_SETTINGS_HASH)
+            mmkv.removeValueForKey(KEY_LAST_ROUTING_MODE)
+            mmkv.removeValueForKey(KEY_LAST_MANUAL_STOP_AT_MS)
+            clearAutoFailoverRuntimeState()
+        }
     }
 
     /**
@@ -296,11 +528,15 @@ object VpnStateStore {
      */
     fun clearRuntimeState(preserveLastError: Boolean = false) {
         Log.i(TAG, "Clearing transient runtime state")
-        mmkv.removeValueForKey(KEY_VPN_ACTIVE)
-        mmkv.removeValueForKey(KEY_VPN_PENDING)
-        mmkv.removeValueForKey(KEY_VPN_ACTIVE_LABEL)
-        if (!preserveLastError) {
-            mmkv.removeValueForKey(KEY_VPN_LAST_ERROR)
+        runtimeStateFileLock.withLock {
+            mmkv.removeValueForKey(KEY_VPN_PENDING)
+            transformRuntimeStateSnapshotLocked { current ->
+                current.copy(
+                    stateOrdinal = ServiceState.STOPPED.ordinal,
+                    activeLabel = "",
+                    lastError = if (preserveLastError) current.lastError else ""
+                )
+            }
         }
         clearAutoFailoverRuntimeState()
     }

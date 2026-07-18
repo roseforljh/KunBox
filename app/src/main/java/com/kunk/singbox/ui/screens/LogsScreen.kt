@@ -99,15 +99,16 @@ fun LogsScreen(navController: NavController, viewModel: LogViewModel = viewModel
                         IconButton(
                             modifier = Modifier.liquidGlassIconButtonPanel(),
                             onClick = {
-                                val logsText = viewModel.getLogsForExport()
-                                val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                                    type = "text/plain"
-                                    putExtra(Intent.EXTRA_SUBJECT, exportSubject)
-                                    putExtra(Intent.EXTRA_TEXT, logsText)
+                                viewModel.getLogsForExport { logsText ->
+                                    val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                        type = "text/plain"
+                                        putExtra(Intent.EXTRA_SUBJECT, exportSubject)
+                                        putExtra(Intent.EXTRA_TEXT, logsText)
+                                    }
+                                    context.startActivity(
+                                        Intent.createChooser(shareIntent, exportTitle)
+                                    )
                                 }
-                                context.startActivity(
-                                    Intent.createChooser(shareIntent, exportTitle)
-                                )
                             }
                         ) {
                             Icon(

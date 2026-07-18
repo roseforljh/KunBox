@@ -1,5 +1,6 @@
 package com.kunk.singbox.service.tun
 
+import android.content.pm.PackageManager
 import com.google.gson.Gson
 import com.kunk.singbox.model.AppSettings
 import com.kunk.singbox.model.IpVersionMode
@@ -331,19 +332,33 @@ class VpnTunAddressPlanTest {
     }
 
     @org.junit.Test
-    fun allowlistFailsWhenAnyApplicationCannotBeAdded() {
+    fun allowlistSkipsMissingApplicationAndKeepsValidApplications() {
         val attempts = mutableListOf<String>()
 
-        val failure = runCatching {
-            VpnTunManager.addAllowedApplicationsFailClosed(
-                listOf("com.example.valid", "com.example.missing", "com.example.unreached")
-            ) { packageName ->
-                attempts += packageName
-                require(packageName != "com.example.missing") { "missing" }
+        val addedCount = VpnTunManager.addAllowedApplicationsFailClosed(
+            listOf("com.example.valid", "com.example.missing", "com.example.second")
+        ) { packageName ->
+            attempts += packageName
+            if (packageName == "com.example.missing") {
+                throw PackageManager.NameNotFoundException(packageName)
             }
         }
 
-        assertEquals(listOf("com.example.valid", "com.example.missing"), attempts)
+        assertEquals(
+            listOf("com.example.valid", "com.example.missing", "com.example.second"),
+            attempts
+        )
+        assertEquals(2, addedCount)
+    }
+
+    @org.junit.Test
+    fun allowlistStillFailsOnUnexpectedBuilderError() {
+        val failure = runCatching {
+            VpnTunManager.addAllowedApplicationsFailClosed(listOf("com.example.invalid")) {
+                error("builder failure")
+            }
+        }
+
         assertEquals(true, failure.exceptionOrNull() is IllegalStateException)
     }
 
