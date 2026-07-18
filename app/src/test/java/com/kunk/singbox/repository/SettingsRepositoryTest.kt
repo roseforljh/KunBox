@@ -128,4 +128,18 @@ class SettingsRepositoryTest {
             )
         )
     }
+
+    @Test
+    fun packageAutoSyncLeavesRuntimeApplicationToReceiver() {
+        val source = File("src/main/java/com/kunk/singbox/repository/SettingsRepository.kt")
+            .readText(Charsets.UTF_8)
+        val start = source.indexOf("suspend fun addPackageToCurrentPerAppRule")
+        val body = source.substring(
+            start,
+            source.indexOf("suspend fun removePackageFromPerAppSettings", start)
+        )
+
+        assertTrue(body.contains("return persisted && changed"))
+        assertFalse(body.contains("notifyRestartRequired()"))
+    }
 }

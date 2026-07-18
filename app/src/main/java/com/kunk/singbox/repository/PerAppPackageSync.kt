@@ -2,6 +2,44 @@ package com.kunk.singbox.repository
 
 import android.content.Intent
 import com.kunk.singbox.model.AppSettings
+import com.kunk.singbox.model.VpnAppMode
+
+internal fun resolvePerAppPackageSyncAction(
+    action: String?,
+    isReplacing: Boolean,
+    packageName: String?,
+    isInstalled: Boolean
+): PerAppPackageSyncAction {
+    if (packageName.isNullOrBlank() || isReplacing) return PerAppPackageSyncAction.NONE
+    if (action != Intent.ACTION_PACKAGE_ADDED && action != Intent.ACTION_PACKAGE_REMOVED) {
+        return PerAppPackageSyncAction.NONE
+    }
+    return when {
+        !isInstalled -> PerAppPackageSyncAction.REMOVE
+        action == Intent.ACTION_PACKAGE_ADDED -> PerAppPackageSyncAction.ADD
+        else -> PerAppPackageSyncAction.NONE
+    }
+}
+
+internal fun addPackageToList(value: String, packageName: String): String {
+    if (packageName.isBlank()) return value.toPackageNames().joinToString("\n")
+    return (value.toPackageNames() + packageName)
+        .distinct()
+        .joinToString("\n")
+}
+
+internal fun addPackageToCurrentPerAppRule(settings: AppSettings, packageName: String): AppSettings {
+    if (!settings.autoIncludeNewAppsInPerAppRules || packageName.isBlank()) return settings
+    return when (settings.vpnAppMode) {
+        VpnAppMode.ALLOWLIST -> settings.copy(
+            vpnAllowlist = addPackageToList(settings.vpnAllowlist, packageName)
+        )
+        VpnAppMode.BLOCKLIST -> settings.copy(
+            vpnBlocklist = addPackageToList(settings.vpnBlocklist, packageName)
+        )
+        VpnAppMode.ALL -> settings
+    }
+}
 
 internal fun removePackageFromList(value: String, packageName: String): String {
     return value.toPackageNames()

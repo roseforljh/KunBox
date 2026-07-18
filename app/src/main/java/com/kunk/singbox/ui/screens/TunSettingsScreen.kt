@@ -332,6 +332,12 @@ fun TunSettingsScreen(
                     value = stringResource(settings.vpnAppMode.displayNameRes),
                     onClick = { showAppModeDialog = true }
                 )
+                SettingSwitchItem(
+                    title = stringResource(R.string.tun_settings_follow_new_apps),
+                    subtitle = stringResource(R.string.tun_settings_follow_new_apps_subtitle),
+                    checked = settings.autoIncludeNewAppsInPerAppRules,
+                    onCheckedChange = settingsViewModel::setAutoIncludeNewAppsInPerAppRules
+                )
                 SettingItem(
                     title = stringResource(R.string.tun_settings_allowlist),
                     value = if (settings.vpnAppMode == VpnAppMode.ALLOWLIST) {

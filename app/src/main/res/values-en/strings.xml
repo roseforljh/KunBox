@@ -194,6 +194,8 @@
     <string name="tun_settings_allowlist_configured">%d configured</string>
     <string name="tun_settings_blocklist">Blocklist</string>
     <string name="tun_settings_blocklist_configured">%d configured</string>
+    <string name="tun_settings_follow_new_apps">Apply current rule to new apps</string>
+    <string name="tun_settings_follow_new_apps_subtitle">Adds newly installed apps to the allowlist or blocklist based on the current mode</string>
     <string name="tun_settings_select_vpn_apps">Select apps that can use VPN</string>
 
     <!-- DNS Settings -->

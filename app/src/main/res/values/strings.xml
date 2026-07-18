@@ -194,6 +194,8 @@
     <string name="tun_settings_allowlist_configured">已设置 %d 个</string>
     <string name="tun_settings_blocklist">排除列表</string>
     <string name="tun_settings_blocklist_configured">已设置 %d 个</string>
+    <string name="tun_settings_follow_new_apps">新安装应用跟随当前规则</string>
+    <string name="tun_settings_follow_new_apps_subtitle">仅允许模式自动加入仅允许列表；排除模式自动加入排除列表</string>
     <string name="tun_settings_select_vpn_apps">选择仅允许走 VPN 的应用</string>
 
     <!-- DNS Settings -->

@@ -16,6 +16,18 @@ class ModelSerializationTest {
     private val gson = Gson()
 
     @Test
+    fun perAppNewInstallSwitchDefaultsOffAndRoundTrips() {
+        val legacy = gson.fromJson("{}", AppSettings::class.java)
+        val enabled = AppSettings(autoIncludeNewAppsInPerAppRules = true)
+
+        assertFalse(legacy.autoIncludeNewAppsInPerAppRules)
+        assertTrue(
+            gson.fromJson(gson.toJson(enabled), AppSettings::class.java)
+                .autoIncludeNewAppsInPerAppRules
+        )
+    }
+
+    @Test
     fun nullableJsonPrimitiveFieldsAcceptHistoricalExplicitNulls() {
         val config = gson.fromJson(
             """
