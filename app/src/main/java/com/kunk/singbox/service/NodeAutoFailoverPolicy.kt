@@ -21,7 +21,10 @@ object NodeAutoFailoverPolicy {
         val nowAtMs: Long,
         val lastAutoFailoverAtMs: Long,
         val budgetWindowStartAtMs: Long,
-        val budgetCount: Int
+        val budgetCount: Int,
+        val isAutoSelectionEnabled: Boolean = false,
+        val hasResourceFailure: Boolean = false,
+        val hasPhysicalNetwork: Boolean = true
     )
 
     enum class ProbeOutcome {
@@ -55,7 +58,10 @@ object NodeAutoFailoverPolicy {
     }
 
     internal fun shouldStartProbe(context: TriggerContext, trigger: String): Boolean {
-        if (!context.isVpnRunning || context.isManuallyStopped) {
+        if (!context.isAutoSelectionEnabled || !context.isVpnRunning || context.isManuallyStopped) {
+            return false
+        }
+        if (context.hasResourceFailure || !context.hasPhysicalNetwork) {
             return false
         }
         if (context.isAutoFailoverInFlight) {

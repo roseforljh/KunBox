@@ -1,6 +1,8 @@
 package com.kunk.singbox.ipc
 
 import android.os.SystemClock
+import android.system.ErrnoException
+import android.system.OsConstants
 import android.util.Log
 import com.google.gson.Gson
 import com.google.gson.JsonParser
@@ -26,6 +28,21 @@ internal class CrossProcessRuntimeStateLock(private val lockFile: File) {
         }
     }
 }
+
+internal fun isFileDescriptorExhaustion(
+    error: Throwable,
+    errnoOf: (Throwable) -> Int? = { cause -> (cause as? ErrnoException)?.errno }
+): Boolean {
+    var cause: Throwable? = error
+    repeat(MAX_RESOURCE_ERROR_CAUSE_DEPTH) {
+        val current = cause ?: return false
+        if (errnoOf(current) == OsConstants.EMFILE) return true
+        cause = current.cause
+    }
+    return false
+}
+
+private const val MAX_RESOURCE_ERROR_CAUSE_DEPTH = 16
 
 /**
  *
@@ -65,6 +82,12 @@ object VpnStateStore {
     private const val KEY_LAST_RECOVERY_ISSUED_AT_MS = "last_recovery_issued_at_ms"
     private const val KEY_LAST_RECOVERY_CLAIM_TOKEN = "last_recovery_claim_token"
     private val recoveryClaimLock = Any()
+    private const val KEY_RESOURCE_RECOVERY_WINDOW_START_AT_MS = "resource_recovery_window_start_at_ms"
+    private const val KEY_RESOURCE_CORE_RESTART_COUNT = "resource_core_restart_count"
+    private const val KEY_RESOURCE_PROCESS_RECLAIM_COUNT = "resource_process_reclaim_count"
+    internal const val RESOURCE_RECOVERY_WINDOW_MS = 60 * 60_000L
+    internal const val RESOURCE_CORE_RESTART_LIMIT = 2
+    internal const val RESOURCE_PROCESS_RECLAIM_LIMIT = 1
     private const val KEY_TRAFFIC_CLEAR_TIMESTAMP = "traffic_clear_timestamp"
     private const val KEY_LOG_CLEAR_GENERATION = "log_clear_generation"
     private const val KEY_LAST_MANUAL_STOP_AT_MS = "last_manual_stop_at_ms"
@@ -78,6 +101,22 @@ object VpnStateStore {
         VPN,
         PROXY
     }
+
+    enum class ResourceRecoveryAction {
+        CORE_RESTART,
+        PROCESS_RECLAIM
+    }
+
+    internal data class ResourceRecoveryBudgetState(
+        val windowStartAtMs: Long = 0L,
+        val coreRestartCount: Int = 0,
+        val processReclaimCount: Int = 0
+    )
+
+    internal data class ResourceRecoveryBudgetResult(
+        val state: ResourceRecoveryBudgetState,
+        val consumed: Boolean
+    )
 
     internal data class RuntimeStateSnapshot(
         @field:SerializedName(SNAPSHOT_JSON_GENERATION)
@@ -187,8 +226,15 @@ object VpnStateStore {
     private fun transformRuntimeStateSnapshot(
         transform: (RuntimeStateSnapshot) -> RuntimeStateSnapshot
     ): RuntimeStateSnapshot {
-        return runtimeStateFileLock.withLock {
-            transformRuntimeStateSnapshotLocked(transform)
+        return try {
+            runtimeStateFileLock.withLock {
+                transformRuntimeStateSnapshotLocked(transform)
+            }
+        } catch (error: Exception) {
+            if (!isFileDescriptorExhaustion(error)) throw error
+            val current = readRuntimeStateSnapshot() ?: readLegacyRuntimeStateSnapshot()
+            Log.e(TAG, "FD exhausted while locking runtime state; preserving current snapshot", error)
+            current
         }
     }
 
@@ -500,6 +546,58 @@ object VpnStateStore {
     fun clearAll() {
         Log.w(TAG, "Clearing all VPN state store data")
         runtimeStateFileLock.withLock { mmkv.clearAll() }
+    }
+
+    fun tryConsumeResourceRecovery(
+        action: ResourceRecoveryAction,
+        nowMs: Long = System.currentTimeMillis()
+    ): Boolean = runtimeStateFileLock.withLock {
+        val current = ResourceRecoveryBudgetState(
+            windowStartAtMs = mmkv.decodeLong(KEY_RESOURCE_RECOVERY_WINDOW_START_AT_MS, 0L),
+            coreRestartCount = mmkv.decodeInt(KEY_RESOURCE_CORE_RESTART_COUNT, 0),
+            processReclaimCount = mmkv.decodeInt(KEY_RESOURCE_PROCESS_RECLAIM_COUNT, 0)
+        )
+        val result = consumeResourceRecoveryBudget(current, action, nowMs)
+        if (!result.consumed) return@withLock false
+        val saved = mmkv.encode(KEY_RESOURCE_RECOVERY_WINDOW_START_AT_MS, result.state.windowStartAtMs) &&
+            mmkv.encode(KEY_RESOURCE_CORE_RESTART_COUNT, result.state.coreRestartCount) &&
+            mmkv.encode(KEY_RESOURCE_PROCESS_RECLAIM_COUNT, result.state.processReclaimCount)
+        saved
+    }
+
+    internal fun consumeResourceRecoveryBudget(
+        current: ResourceRecoveryBudgetState,
+        action: ResourceRecoveryAction,
+        nowMs: Long,
+        windowMs: Long = RESOURCE_RECOVERY_WINDOW_MS,
+        coreRestartLimit: Int = RESOURCE_CORE_RESTART_LIMIT,
+        processReclaimLimit: Int = RESOURCE_PROCESS_RECLAIM_LIMIT
+    ): ResourceRecoveryBudgetResult {
+        val resetWindow = current.windowStartAtMs <= 0L || nowMs < current.windowStartAtMs ||
+            nowMs - current.windowStartAtMs >= windowMs
+        val base = if (resetWindow) ResourceRecoveryBudgetState(windowStartAtMs = nowMs) else current
+        return when (action) {
+            ResourceRecoveryAction.CORE_RESTART -> {
+                if (base.coreRestartCount >= coreRestartLimit) {
+                    ResourceRecoveryBudgetResult(base, consumed = false)
+                } else {
+                    ResourceRecoveryBudgetResult(
+                        base.copy(coreRestartCount = base.coreRestartCount + 1),
+                        consumed = true
+                    )
+                }
+            }
+            ResourceRecoveryAction.PROCESS_RECLAIM -> {
+                if (base.processReclaimCount >= processReclaimLimit) {
+                    ResourceRecoveryBudgetResult(base, consumed = false)
+                } else {
+                    ResourceRecoveryBudgetResult(
+                        base.copy(processReclaimCount = base.processReclaimCount + 1),
+                        consumed = true
+                    )
+                }
+            }
+        }
     }
 
     fun clearConfig() {

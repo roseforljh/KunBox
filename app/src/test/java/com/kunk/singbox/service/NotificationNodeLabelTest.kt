@@ -73,6 +73,21 @@ class NotificationNodeLabelTest {
     }
 
     @Test
+    fun resolveStartupProxyTagDoesNotExposeAutomaticGroupAsConcreteNode() {
+        val autoTag = "P:profile#AUTO"
+        val config = SingBoxConfig(
+            outbounds = listOf(
+                Outbound(type = "selector", tag = "PROXY", outbounds = listOf(autoTag), default = autoTag),
+                Outbound(type = "urltest", tag = autoTag, outbounds = listOf("node-a")),
+                Outbound(type = "vless", tag = "node-a")
+            )
+        )
+
+        assertNull(resolveStartupProxyTag(config))
+        assertNull(resolveStartupProxyTag(config, explicitTag = autoTag))
+    }
+
+    @Test
     fun resolveNodeLabel_usesCrossProcessSelectedNodeWhenRepositoryNodeIsStale() {
         val label = resolveNotificationNodeLabel(
             selectedNodeName = "上个配置节点",

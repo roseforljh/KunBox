@@ -20,7 +20,8 @@ class NodeAutoFailoverPolicyTest {
             nowAtMs = 100_000L,
             lastAutoFailoverAtMs = 0L,
             budgetWindowStartAtMs = 0L,
-            budgetCount = 0
+            budgetCount = 0,
+            isAutoSelectionEnabled = true
         )
     }
 
@@ -37,7 +38,8 @@ class NodeAutoFailoverPolicyTest {
             nowAtMs = 60_001L,
             lastAutoFailoverAtMs = 0L,
             budgetWindowStartAtMs = 0L,
-            budgetCount = 0
+            budgetCount = 0,
+            isAutoSelectionEnabled = true
         )
 
         assertFalse(NodeAutoFailoverPolicy.shouldStartProbe(context))
@@ -56,7 +58,8 @@ class NodeAutoFailoverPolicyTest {
             nowAtMs = 100_000L,
             lastAutoFailoverAtMs = 50_001L,
             budgetWindowStartAtMs = 0L,
-            budgetCount = 0
+            budgetCount = 0,
+            isAutoSelectionEnabled = true
         )
 
         assertFalse(NodeAutoFailoverPolicy.shouldStartProbe(context))
@@ -75,7 +78,8 @@ class NodeAutoFailoverPolicyTest {
             nowAtMs = 100_000L,
             lastAutoFailoverAtMs = 0L,
             budgetWindowStartAtMs = 95_000L,
-            budgetCount = NodeAutoFailoverPolicy.AUTO_FAILOVER_BUDGET_MAX_COUNT
+            budgetCount = NodeAutoFailoverPolicy.AUTO_FAILOVER_BUDGET_MAX_COUNT,
+            isAutoSelectionEnabled = true
         )
 
         assertFalse(NodeAutoFailoverPolicy.shouldStartProbe(context))
@@ -94,10 +98,25 @@ class NodeAutoFailoverPolicyTest {
             nowAtMs = 100_000L,
             lastAutoFailoverAtMs = 0L,
             budgetWindowStartAtMs = 0L,
-            budgetCount = 0
+            budgetCount = 0,
+            isAutoSelectionEnabled = true
         )
 
         assertTrue(NodeAutoFailoverPolicy.shouldStartProbe(context))
+    }
+
+    @Test
+    fun shouldNotStartProbeWhenAutoSelectionIsDisabled() {
+        val context = validTriggerContext().copy(isAutoSelectionEnabled = false)
+
+        assertFalse(NodeAutoFailoverPolicy.shouldStartProbe(context, trigger = "dns_remote_timeout"))
+    }
+
+    @Test
+    fun shouldNotStartProbeDuringResourceFailure() {
+        val context = validTriggerContext().copy(hasResourceFailure = true)
+
+        assertFalse(NodeAutoFailoverPolicy.shouldStartProbe(context))
     }
 
     @Test

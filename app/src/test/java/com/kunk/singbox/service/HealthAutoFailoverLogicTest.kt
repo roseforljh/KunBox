@@ -175,7 +175,7 @@ class HealthAutoFailoverLogicTest {
         assertTrue(body.contains("performAutoFailoverSwitch"))
         assertTrue(roundBody.contains("treatCurrentAsFailed"))
         assertTrue(roundBody.contains("resolveAutoFailoverFallbackDelays"))
-        assertTrue(roundBody.contains("fallback_saved"))
+        assertFalse(roundBody.contains("fallback_saved"))
     }
 
     @Test
