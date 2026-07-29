@@ -9,6 +9,26 @@ import java.io.File
 class ProxyOnlyServiceStateTest {
 
     @Test
+    fun runningCoreReloadsExplicitUserConfigButIgnoresRecoveryDuplicate() {
+        assertTrue(
+            ProxyOnlyService.shouldReloadRuntimeConfig(
+                isRecoveryStart = false,
+                isRunning = true,
+                isStarting = false,
+                configPath = "/data/user/0/app/files/running_config.json"
+            )
+        )
+        assertFalse(
+            ProxyOnlyService.shouldReloadRuntimeConfig(
+                isRecoveryStart = true,
+                isRunning = true,
+                isStarting = false,
+                configPath = "/data/user/0/app/files/running_config.json"
+            )
+        )
+    }
+
+    @Test
     fun taskRemovalStopMarksProxyAsManuallyStopped() {
         val source = File("src/main/java/com/kunk/singbox/service/ProxyOnlyService.kt")
             .readText(Charsets.UTF_8)

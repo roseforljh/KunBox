@@ -110,7 +110,9 @@ class DataExportRepository(private val context: Context) {
                 settings = settings,
                 profiles = profileExportDataList,
                 activeProfileId = activeProfileId,
-                activeNodeId = activeNodeId
+                activeNodeId = activeNodeId,
+                profileNodeMemory = configRepository.getProfileNodeMemorySnapshot(),
+                profileAutoSelection = configRepository.getProfileAutoSelectionSnapshot()
             )
 
             val jsonString = gson.toJson(exportData)
@@ -143,7 +145,7 @@ class DataExportRepository(private val context: Context) {
         }
     }
 
-    @Suppress("SENSELESS_COMPARISON")
+    @Suppress("SENSELESS_COMPARISON", "CognitiveComplexMethod")
     suspend fun validateImportData(jsonData: String): Result<ExportData> = withContext(Dispatchers.IO) {
         try {
             validateImportPayloadSize(jsonData)
@@ -162,6 +164,13 @@ class DataExportRepository(private val context: Context) {
             if (exportData.profiles.size > MAX_IMPORT_PROFILE_COUNT) {
                 return@withContext Result.failure(
                     Exception("Import rejected: profile count exceeds limit ($MAX_IMPORT_PROFILE_COUNT)")
+                )
+            }
+            if (exportData.profileNodeMemory.orEmpty().size > exportData.profiles.size ||
+                exportData.profileAutoSelection.orEmpty().size > exportData.profiles.size
+            ) {
+                return@withContext Result.failure(
+                    Exception("Data format error: profile selection state exceeds profile count")
                 )
             }
 
@@ -238,6 +247,12 @@ class DataExportRepository(private val context: Context) {
                         Log.e(TAG, "Failed to import profile: ${profileData.profile.name}", e)
                         errors.add("Profile '${profileData.profile.name}' import failed: ${e.message}")
                     }
+                }
+                try {
+                    restoreImportedProfileSelectionState(exportData, clearExisting = false)
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to import profile selection state", e)
+                    errors.add("Profile selection state import failed: ${e.message}")
                 }
             }
 
@@ -475,6 +490,14 @@ class DataExportRepository(private val context: Context) {
                     }
             }
 
+            if (rollbackErrors.isEmpty()) {
+                runCatching {
+                    restoreImportedProfileSelectionState(snapshot, clearExisting = true)
+                }.onFailure { error ->
+                    rollbackErrors += "profile selection rollback failed: ${error.message}"
+                }
+            }
+
             snapshot.activeProfileId?.let { activeProfileId ->
                 runCatching {
                     val profiles = configRepository.profiles.value
@@ -492,6 +515,31 @@ class DataExportRepository(private val context: Context) {
         } else {
             Result.failure(IllegalStateException(rollbackErrors.joinToString("; ")))
         }
+    }
+
+    private suspend fun restoreImportedProfileSelectionState(
+        exportData: ExportData,
+        clearExisting: Boolean
+    ) {
+        val importedProfileIds = exportData.profiles.mapTo(mutableSetOf()) { it.profile.id }
+        val nodeMemory = exportData.profileNodeMemory.orEmpty().toMutableMap()
+        val activeProfileId = exportData.activeProfileId
+        val activeNodeId = exportData.activeNodeId
+        if (!activeProfileId.isNullOrBlank() &&
+            !activeNodeId.isNullOrBlank() &&
+            activeProfileId in importedProfileIds
+        ) {
+            nodeMemory.putIfAbsent(activeProfileId, activeNodeId)
+        }
+        val autoSelection = importedProfileIds.associateWith { profileId ->
+            exportData.profileAutoSelection.orEmpty()[profileId] == true
+        }
+        configRepository.replaceProfileSelectionState(
+            nodeMemory = nodeMemory,
+            autoSelection = autoSelection,
+            allowedProfileIds = importedProfileIds,
+            clearExisting = clearExisting
+        )
     }
 
     fun cleanup() {
