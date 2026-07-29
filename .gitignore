@@ -79,6 +79,7 @@ Kkunbox/
 !.kernel-sync-local/patches/
 .kernel-sync-local/patches/*
 !.kernel-sync-local/patches/kunbox-v1.13.14.patch
+!.kernel-sync-local/patches/kunbox-v1.13.15.patch
 OPENWORLD_MIGRATION_PLAN.md
 .factory/settings.json
 .gstack/

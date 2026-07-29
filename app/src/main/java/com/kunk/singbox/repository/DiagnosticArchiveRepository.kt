@@ -14,7 +14,9 @@ import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import com.google.gson.JsonPrimitive
 import com.kunk.singbox.utils.perf.DiagnosticResourceSample
+import com.kunk.singbox.utils.perf.DiagnosticResourceHistory
 import com.kunk.singbox.utils.perf.formatDiagnosticResourceSamplesCsv
+import com.kunk.singbox.utils.perf.mergeDiagnosticResourceSamples
 import java.io.BufferedOutputStream
 import java.io.File
 import java.io.FileOutputStream
@@ -79,15 +81,19 @@ internal class DiagnosticArchiveRepository(
 
     private suspend fun buildEntries(samples: List<DiagnosticResourceSample>): Map<String, String> {
         val redactor = DiagnosticRedactor(ByteArray(REDACTION_SALT_BYTES).also(SecureRandom()::nextBytes))
+        val mergedSamples = mergeDiagnosticResourceSamples(
+            DiagnosticResourceHistory(appContext).read(),
+            samples
+        )
         val runningConfig = File(appContext.filesDir, RUNNING_CONFIG_FILE)
             .takeIf(File::isFile)
             ?.readText(Charsets.UTF_8)
         return linkedMapOf<String, String>().apply {
-            put("manifest.json", buildManifest(samples.size, runningConfig != null))
+            put("manifest.json", buildManifest(mergedSamples.size, runningConfig != null))
             put("redaction-policy.txt", REDACTION_POLICY)
             put("logs.txt", redactor.redactText(logRepository.getLogsAsTextForExport()))
             if (runningConfig != null) put("running_config.json", redactor.redactJson(runningConfig))
-            put("resources.csv", formatDiagnosticResourceSamplesCsv(samples))
+            put("resources.csv", formatDiagnosticResourceSamplesCsv(mergedSamples))
         }
     }
 

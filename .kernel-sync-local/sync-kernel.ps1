@@ -11,12 +11,19 @@ $officialRemote = 'https://github.com/SagerNet/sing-box.git'
 $officialReleaseApi = 'https://api.github.com/repos/SagerNet/sing-box/releases?per_page=30'
 $trustedTagCommits = @{
     'v1.13.14' = '25a600db24f7680ad9806ce5427bd0ab8afe1114'
+    'v1.13.15' = '3708fa18766cda1f11b77f6ed9c7bd61688f17df'
 }
 $trustedPatchHashes = @{
     'v1.13.14' = '4C89FE3A078F5DC68DA351BF04B1B9536D048925266E15332E5D6F2BFAB2ECE2'
+    'v1.13.15' = 'B0B08AA8B5A4278082CA04F59BBE3FB329E2D2C91B1C067BFE2A0C097EF64AB3'
 }
 $trustedPatchFiles = @{
     'v1.13.14' = @(
+        'cmd/internal/build_libbox/main.go',
+        'protocol/vless/outbound.go',
+        'protocol/vless/outbound_test.go'
+    )
+    'v1.13.15' = @(
         'cmd/internal/build_libbox/main.go',
         'protocol/vless/outbound.go',
         'protocol/vless/outbound_test.go'

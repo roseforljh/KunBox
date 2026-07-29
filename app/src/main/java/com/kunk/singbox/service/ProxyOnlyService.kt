@@ -14,6 +14,7 @@ import android.os.IBinder
 import android.os.SystemClock
 import android.util.Log
 import com.google.gson.Gson
+import com.kunk.singbox.core.BoxWrapperManager
 import com.kunk.singbox.core.LibboxCompat
 import com.kunk.singbox.core.SingBoxCore
 import com.kunk.singbox.core.StringIteratorImpl
@@ -26,16 +27,26 @@ import com.kunk.singbox.repository.SettingsRepository
 import com.kunk.singbox.repository.RuleSetRepository
 import com.kunk.singbox.service.manager.RecoveryPolicy
 import com.kunk.singbox.service.manager.ServiceStateHolder
+import com.kunk.singbox.service.manager.CommandManager
 import com.kunk.singbox.utils.LocalNetworkPermission
 import com.kunk.singbox.utils.LocaleHelper
 import com.kunk.singbox.utils.NetworkClient
+import com.kunk.singbox.utils.perf.BackgroundResourceGuard
+import com.kunk.singbox.utils.perf.ResourceGuardOwner
 import io.nekohasekai.libbox.CommandServer
 import io.nekohasekai.libbox.CommandServerHandler
+import io.nekohasekai.libbox.CommandClient
+import io.nekohasekai.libbox.CommandClientHandler
+import io.nekohasekai.libbox.CommandClientOptions
+import io.nekohasekai.libbox.ConnectionEvents
 import io.nekohasekai.libbox.ConnectionOwner
 import io.nekohasekai.libbox.InterfaceUpdateListener
 import io.nekohasekai.libbox.NetworkInterfaceIterator
 import io.nekohasekai.libbox.OverrideOptions
+import io.nekohasekai.libbox.OutboundGroupIterator
 import io.nekohasekai.libbox.PlatformInterface
+import io.nekohasekai.libbox.LogIterator
+import io.nekohasekai.libbox.StatusMessage
 import io.nekohasekai.libbox.StringIterator
 import io.nekohasekai.libbox.TunOptions
 import io.nekohasekai.libbox.Libbox
@@ -57,6 +68,7 @@ import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.NetworkInterface
 import java.net.ServerSocket
+import java.util.concurrent.ConcurrentHashMap
 
 @Suppress("LargeClass")
 class ProxyOnlyService : Service() {
@@ -118,6 +130,15 @@ class ProxyOnlyService : Service() {
             return action == ACTION_START && configPath.isNullOrBlank()
         }
 
+        internal fun shouldReloadRuntimeConfig(
+            isRecoveryStart: Boolean,
+            isRunning: Boolean,
+            isStarting: Boolean,
+            configPath: String?
+        ): Boolean {
+            return !isRecoveryStart && (isRunning || isStarting) && !configPath.isNullOrBlank()
+        }
+
         private fun setLastError(message: String?) {
             _lastErrorFlow.value = message
             if (!message.isNullOrBlank()) {
@@ -129,6 +150,8 @@ class ProxyOnlyService : Service() {
     }
 
     private var commandServer: CommandServer? = null
+    private var groupCommandClient: CommandClient? = null
+    private val groupSelectedOutbounds = ConcurrentHashMap<String, String>()
     private val gson = Gson()
 
     private val notificationUpdateDebounceMs: Long = 900L
@@ -150,6 +173,9 @@ class ProxyOnlyService : Service() {
     @Volatile private var stopSelfRequested: Boolean = false
     @Volatile private var startJob: Job? = null
     @Volatile private var cleanupJob: Job? = null
+    @Volatile private var currentConfigPath: String? = null
+    @Volatile private var resourceGuardToken: String? = null
+    private val resourceGuardGeneration = java.util.concurrent.atomic.AtomicLong(0L)
 
     private var connectivityManager: ConnectivityManager? = null
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
@@ -403,9 +429,10 @@ class ProxyOnlyService : Service() {
 
         when (intent?.action) {
             ACTION_START -> {
-                // 恢复 START 幂等：核心已在跑/正在起时只刷新状态，不重置 pending
                 val isRecoveryStart = intent.getBooleanExtra(SingBoxService.EXTRA_RECOVERY, false)
-                if (RecoveryPolicy.shouldIgnoreRecoveryStart(isRunning, isStarting)) {
+                val requestedConfigPath = intent.getStringExtra(EXTRA_CONFIG_PATH)
+                // 恢复 START 幂等：核心已在跑/正在起时只刷新状态，不重置 pending。
+                if (isRecoveryStart && RecoveryPolicy.shouldIgnoreRecoveryStart(isRunning, isStarting)) {
                     Log.i(TAG, "Duplicate START ignored: proxy core already active (recovery=$isRecoveryStart)")
                     runCatching {
                         LogRepository.getInstance().addAlwaysLog(
@@ -415,6 +442,16 @@ class ProxyOnlyService : Service() {
                     }
                     if (isRecoveryStart) VpnStateStore.clearRecoveryClaim()
                     notifyRemoteState(state = if (isRunning) ServiceState.RUNNING else ServiceState.STARTING)
+                    return START_NOT_STICKY
+                }
+                if (shouldReloadRuntimeConfig(isRecoveryStart, isRunning, isStarting, requestedConfigPath)) {
+                    Log.i(TAG, "Runtime config reload requested: $requestedConfigPath")
+                    val reloadConfigPath = requestedConfigPath.orEmpty()
+                    serviceScope.launch {
+                        stopCore(stopService = false)
+                        waitForCleanupJob()
+                        startCore(reloadConfigPath)
+                    }
                     return START_NOT_STICKY
                 }
                 if (isRecoveryStart &&
@@ -427,7 +464,7 @@ class ProxyOnlyService : Service() {
                 }
                 ServiceStateHolder.preserveRecoveryIntentOnFailure = isRecoveryStart
                 VpnTileService.persistVpnPending("starting")
-                val configPath = intent.getStringExtra(EXTRA_CONFIG_PATH)
+                val configPath = requestedConfigPath
 
                 // P0 Optimization: If config path is missing, generate it inside Service
                 if (configPath == null) {
@@ -544,6 +581,7 @@ class ProxyOnlyService : Service() {
         }
 
         setLastError(null)
+        currentConfigPath = configPath
         initializeStartupNodeLabel(configPath)
 
         notifyRemoteState(state = ServiceState.STARTING)
@@ -638,6 +676,7 @@ class ProxyOnlyService : Service() {
                 val server = Libbox.newCommandServer(serverHandler, platformInterface)
                 commandServer = server
                 server.start()
+                BoxWrapperManager.init(server)
 
                 val overrideOptions = OverrideOptions().apply {
                     autoRedirect = false
@@ -645,6 +684,7 @@ class ProxyOnlyService : Service() {
                 server.startOrReloadService(configContent, overrideOptions)
 
                 isRunning = true
+                startAutomaticGroupClientIfNeeded()
                 NetworkClient.onVpnStateChanged(true)
 
                 VpnTileService.persistVpnState(true)
@@ -657,6 +697,7 @@ class ProxyOnlyService : Service() {
                 notifyRemoteState(state = ServiceState.RUNNING)
                 updateTileState()
                 requestNotificationUpdate(force = true)
+                startResourceGuard()
             } catch (e: CancellationException) {
                 return@launch
             } catch (e: Exception) {
@@ -723,6 +764,7 @@ class ProxyOnlyService : Service() {
 
     @Suppress("CognitiveComplexMethod", "LongMethod")
     private fun stopCore(stopService: Boolean): Job? {
+        stopResourceGuard()
         synchronized(this) {
             stopSelfRequested = stopSelfRequested || stopService
             if (isStopping) return cleanupJob
@@ -740,6 +782,10 @@ class ProxyOnlyService : Service() {
 
         val serverToClose = commandServer
         commandServer = null
+        groupCommandClient?.disconnect()
+        groupCommandClient = null
+        groupSelectedOutbounds.clear()
+        BoxWrapperManager.release()
 
         notificationUpdateJob?.cancel()
         notificationUpdateJob = null
@@ -828,6 +874,104 @@ class ProxyOnlyService : Service() {
             job.join()
             Log.i(TAG, "Previous cleanup completed in ${SystemClock.elapsedRealtime() - waitStart}ms")
         }
+    }
+
+    private fun startAutomaticGroupClientIfNeeded() {
+        val profileId = VpnStateStore.getSelectedProfileId()
+        if (!ConfigRepository.getInstance(this).isProfileAutoSelectionEnabled(profileId)) return
+        val options = CommandClientOptions().apply {
+            addCommand(Libbox.CommandGroup)
+            statusInterval = 3_000L * 1_000L * 1_000L
+        }
+        groupCommandClient = Libbox.newCommandClient(object : CommandClientHandler {
+            override fun connected() = Unit
+            override fun disconnected(message: String?) {
+                Log.w(TAG, "Automatic group client disconnected: $message")
+            }
+            override fun clearLogs() = Unit
+            override fun setDefaultLogLevel(level: Int) = Unit
+            override fun writeLogs(messageList: LogIterator?) = Unit
+            override fun writeStatus(message: StatusMessage?) = Unit
+            override fun initializeClashMode(modeList: StringIterator?, currentMode: String?) = Unit
+            override fun updateClashMode(newMode: String?) = Unit
+            override fun writeConnectionEvents(events: ConnectionEvents?) = Unit
+
+            override fun writeGroups(groups: OutboundGroupIterator?) {
+                if (!isRunning || isStopping) return
+                groups ?: return
+                while (groups.hasNext()) {
+                    val group = groups.next()
+                    val tag = group.tag
+                    val selected = group.selected
+                    if (!tag.isNullOrBlank() && !selected.isNullOrBlank()) {
+                        groupSelectedOutbounds[tag] = selected
+                    }
+                }
+                val concreteTag = CommandManager.resolveConcreteGroupSelection("PROXY", groupSelectedOutbounds)
+                    ?: return
+                VpnStateStore.setActiveLabel(concreteTag)
+                notifyRemoteState(state = ServiceState.RUNNING)
+                requestNotificationUpdate(force = false)
+            }
+        }, options).also { it.connect() }
+    }
+
+    private fun startResourceGuard() {
+        val token = "proxy:${System.identityHashCode(this)}:${resourceGuardGeneration.incrementAndGet()}"
+        resourceGuardToken = token
+        BackgroundResourceGuard.start(this, serviceScope, token, object : ResourceGuardOwner {
+            override fun isRecoveryAllowed(): Boolean {
+                return isRunning && !isStopping && !VpnStateStore.isManuallyStopped()
+            }
+
+            override fun closeConnections(): Boolean = false
+
+            override fun resetNetwork(): Boolean = BoxWrapperManager.resetNetwork()
+
+            override fun restartCore(reason: String): Boolean {
+                val configPath = currentConfigPath?.takeIf { File(it).isFile }
+                    ?: File(filesDir, "running_config.json").takeIf(File::isFile)?.absolutePath
+                    ?: return false
+                LogRepository.getInstance().addAlwaysLog("WARN recovery resource_exhausted restart=$reason")
+                serviceScope.launch {
+                    stopCore(stopService = false)
+                    waitForCleanupJob()
+                    startCore(configPath)
+                }
+                return true
+            }
+
+            override fun recycleProcess(reason: String) {
+                val configPath = currentConfigPath?.takeIf { File(it).isFile }
+                    ?: File(filesDir, "running_config.json").takeIf(File::isFile)?.absolutePath
+                    ?: run {
+                        publishBudgetExhausted("missing_config:$reason")
+                        return
+                    }
+                LogRepository.getInstance().addAlwaysLog("ERROR recovery resource_exhausted recycle_process=$reason")
+                recycleBackgroundProcess(
+                    this@ProxyOnlyService,
+                    Intent(this@ProxyOnlyService, ProxyOnlyService::class.java).apply {
+                        action = ACTION_START
+                        putExtra(EXTRA_CONFIG_PATH, configPath)
+                        putExtra(SingBoxService.EXTRA_RECOVERY, true)
+                    }
+                )
+            }
+
+            override fun publishBudgetExhausted(reason: String) {
+                val message = "Resource recovery budget exhausted: $reason"
+                setLastError(message)
+                LogRepository.getInstance().addAlwaysLog("ERROR recovery resource_exhausted $message")
+                requestNotificationUpdate(force = true)
+                notifyRemoteState()
+            }
+        })
+    }
+
+    private fun stopResourceGuard() {
+        resourceGuardToken?.let(BackgroundResourceGuard::stop)
+        resourceGuardToken = null
     }
 
     private fun isPortAvailable(port: Int): Boolean {
@@ -1000,6 +1144,11 @@ class ProxyOnlyService : Service() {
     }
 
     override fun onDestroy() {
+        stopResourceGuard()
+        groupCommandClient?.disconnect()
+        groupCommandClient = null
+        groupSelectedOutbounds.clear()
+        BoxWrapperManager.release()
         val mode = VpnStateStore.getMode()
         val shouldClearRuntimeState = shouldClearRuntimeStateOnDestroy(
             isRunning = isRunning,

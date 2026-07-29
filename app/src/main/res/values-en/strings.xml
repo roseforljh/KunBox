@@ -799,4 +799,12 @@
     <string name="connection_info_no_active">There are no active network connections</string>
     <string name="connection_info_close_connection">Close Connection</string>
 
+    <string name="nodes_auto_selection">Automatic selection</string>
+    <string name="nodes_auto_selection_disabled">Not enabled</string>
+    <string name="nodes_auto_selection_enabled">Automatic selection enabled</string>
+    <string name="nodes_auto_selection_failed">Failed to enable automatic selection</string>
+    <string name="nodes_auto_selection_selecting">Selecting an available node</string>
+    <string name="nodes_auto_selection_current">Current: %1$s</string>
+    <string name="nodes_auto_selection_unavailable">No available node</string>
+    <string name="nodes_auto_selection_label">Automatic · %1$s</string>
 </resources>

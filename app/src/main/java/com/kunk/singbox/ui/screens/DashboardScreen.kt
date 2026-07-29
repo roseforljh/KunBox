@@ -105,6 +105,7 @@ fun DashboardScreen(
     val profiles by viewModel.profiles.collectAsStateWithLifecycle()
     val activeProfileId by viewModel.activeProfileId.collectAsStateWithLifecycle()
     val activeNodeId by viewModel.activeNodeId.collectAsStateWithLifecycle()
+    val isAutoSelectionEnabled by viewModel.isAutoSelectionEnabled.collectAsStateWithLifecycle()
     val activeNodeLatency by viewModel.activeNodeLatency.collectAsStateWithLifecycle()
     val isPingTesting by viewModel.isPingTesting.collectAsStateWithLifecycle()
     val nodes by viewModel.nodes.collectAsStateWithLifecycle()
@@ -125,6 +126,20 @@ fun DashboardScreen(
         derivedStateOf {
             viewModel.getActiveNodeName()
         }
+    }
+    val autoSelectionSubtitle = when {
+        !isAutoSelectionEnabled -> stringResource(R.string.nodes_auto_selection_disabled)
+        runtimeNodeLabel.isNotBlank() -> stringResource(R.string.nodes_auto_selection_current, runtimeNodeLabel)
+        connectionState == ConnectionState.Connecting -> stringResource(R.string.nodes_auto_selection_selecting)
+        else -> stringResource(R.string.nodes_auto_selection_unavailable)
+    }
+    val displayedNodeName = if (isAutoSelectionEnabled) {
+        stringResource(
+            R.string.nodes_auto_selection_label,
+            activeNodeName ?: stringResource(R.string.nodes_auto_selection_selecting)
+        )
+    } else {
+        activeNodeName
     }
 
     var showModeDialog by remember { mutableStateOf(false) }
@@ -239,7 +254,10 @@ fun DashboardScreen(
             title = stringResource(R.string.dashboard_select_node),
             nodes = nodesForSelector,
             selectedNodeId = activeNodeId,
+            isAutoSelectionEnabled = isAutoSelectionEnabled,
+            autoSelectionSubtitle = autoSelectionSubtitle,
             testingNodeIds = testingNodeIds,
+            onSelectAuto = viewModel::enableAutoSelection,
             onSelect = { nodeId ->
                 viewModel.setActiveNode(nodeId)
             },
@@ -418,7 +436,7 @@ fun DashboardScreen(
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     StatusChip(
-                        label = activeNodeName ?: stringResource(R.string.dashboard_no_node_selected),
+                        label = displayedNodeName ?: stringResource(R.string.dashboard_no_node_selected),
                         onClick = {
                             if (nodes.isNotEmpty()) {
                                 showNodeDialog = true

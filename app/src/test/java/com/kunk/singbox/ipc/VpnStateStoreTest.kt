@@ -1,5 +1,6 @@
 package com.kunk.singbox.ipc
 
+import android.system.OsConstants
 import com.google.gson.JsonParser
 import com.kunk.singbox.service.ServiceState
 import java.io.File
@@ -34,6 +35,23 @@ class VpnStateStoreTest {
         assertEquals(0, VpnStateStore.CoreMode.NONE.ordinal)
         assertEquals(1, VpnStateStore.CoreMode.VPN.ordinal)
         assertEquals(2, VpnStateStore.CoreMode.PROXY.ordinal)
+    }
+
+    @Test
+    fun fileDescriptorExhaustionRequiresEmfileInCauseChain() {
+        val emfile = IllegalStateException("emfile")
+        val unrelated = IllegalStateException("other")
+
+        assertTrue(
+            isFileDescriptorExhaustion(IllegalStateException("lock failed", emfile)) { cause ->
+                if (cause === emfile) OsConstants.EMFILE else null
+            }
+        )
+        assertFalse(
+            isFileDescriptorExhaustion(IllegalStateException("lock failed", unrelated)) { cause ->
+                if (cause === unrelated) OsConstants.EMFILE + 1 else null
+            }
+        )
     }
 
     @Test
@@ -106,6 +124,50 @@ class VpnStateStoreTest {
         assertEquals(11L, VpnStateStore.nextRuntimeGeneration(10L, 5L))
         assertEquals(20L, VpnStateStore.nextRuntimeGeneration(10L, 20L))
         assertEquals(Long.MAX_VALUE, VpnStateStore.nextRuntimeGeneration(Long.MAX_VALUE, 20L))
+    }
+
+    @Test
+    fun resourceRecoveryBudgetLimitsActionsAndResetsAfterOneHour() {
+        var state = VpnStateStore.ResourceRecoveryBudgetState()
+        repeat(2) {
+            val result = VpnStateStore.consumeResourceRecoveryBudget(
+                state,
+                VpnStateStore.ResourceRecoveryAction.CORE_RESTART,
+                nowMs = 1_000L
+            )
+            assertTrue(result.consumed)
+            state = result.state
+        }
+        assertFalse(
+            VpnStateStore.consumeResourceRecoveryBudget(
+                state,
+                VpnStateStore.ResourceRecoveryAction.CORE_RESTART,
+                nowMs = 2_000L
+            ).consumed
+        )
+
+        val reclaim = VpnStateStore.consumeResourceRecoveryBudget(
+            state,
+            VpnStateStore.ResourceRecoveryAction.PROCESS_RECLAIM,
+            nowMs = 2_000L
+        )
+        assertTrue(reclaim.consumed)
+        assertFalse(
+            VpnStateStore.consumeResourceRecoveryBudget(
+                reclaim.state,
+                VpnStateStore.ResourceRecoveryAction.PROCESS_RECLAIM,
+                nowMs = 3_000L
+            ).consumed
+        )
+
+        val reset = VpnStateStore.consumeResourceRecoveryBudget(
+            reclaim.state,
+            VpnStateStore.ResourceRecoveryAction.CORE_RESTART,
+            nowMs = 1_000L + VpnStateStore.RESOURCE_RECOVERY_WINDOW_MS
+        )
+        assertTrue(reset.consumed)
+        assertEquals(1, reset.state.coreRestartCount)
+        assertEquals(0, reset.state.processReclaimCount)
     }
 
     @Test

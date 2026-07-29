@@ -11,12 +11,16 @@ import com.kunk.singbox.service.manager.UrlTestTagMatcher
 internal fun evaluateAutoFailoverLiveCheck(
     targetTag: String,
     selectedTag: String?,
+    targetProbeSucceeded: Boolean,
     recentRemoteDnsFailures: Int,
     maxAllowedDnsFailures: Int = 1
 ): String? {
     val selectedOk = !selectedTag.isNullOrBlank() &&
         UrlTestTagMatcher.normalizeTag(targetTag) == UrlTestTagMatcher.normalizeTag(selectedTag)
-    if (!selectedOk) return "selected_mismatch"
-    if (recentRemoteDnsFailures > maxAllowedDnsFailures) return "live_remote_dns_timeout"
-    return null
+    return when {
+        !selectedOk -> "selected_mismatch"
+        !targetProbeSucceeded -> "target_https_probe_failed"
+        recentRemoteDnsFailures > maxAllowedDnsFailures -> "live_remote_dns_timeout"
+        else -> null
+    }
 }

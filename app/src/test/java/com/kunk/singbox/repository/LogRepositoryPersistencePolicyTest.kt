@@ -115,6 +115,56 @@ class LogRepositoryPersistencePolicyTest {
     }
 
     @Test
+    fun rotationKeepsResourceDiagnosticWhenOrdinaryLogsOverflow() {
+        val merged = mergeLogLinesForRewrite(
+            persistedLines = listOf("METRIC resource_fd count=32700", "disk-ordinary"),
+            batchLines = listOf("batch-1", "batch-2"),
+            maxLines = 3
+        )
+
+        assertEquals(listOf("METRIC resource_fd count=32700", "batch-1", "batch-2"), merged)
+    }
+
+    @Test
+    fun pendingQueueKeepsResourceDiagnosticWhenOrdinaryLogsOverflow() {
+        val queue = LogPersistenceQueue(maxPendingLines = 3)
+        queue.enqueue("METRIC resource_fd count=32700", rewriteAll = false, generation = 1L)
+        queue.enqueue("ordinary-1", rewriteAll = false, generation = 1L)
+        queue.enqueue("ordinary-2", rewriteAll = false, generation = 1L)
+        queue.enqueue("ordinary-3", rewriteAll = false, generation = 1L)
+
+        assertEquals(
+            listOf("METRIC resource_fd count=32700", "ordinary-2", "ordinary-3"),
+            queue.drain()?.lines
+        )
+    }
+
+    @Test
+    fun persistedReaderKeepsResourceDiagnosticWhenOrdinaryLogsOverflow() {
+        val tempDir = Files.createTempDirectory("log-diagnostic-retention-").toFile()
+        try {
+            val logFile = File(tempDir, "running.log")
+            writeLogLinesAtomically(
+                logFile,
+                generation = 2L,
+                lines = listOf(
+                    "METRIC resource_fd count=32700",
+                    "ordinary-1",
+                    "ordinary-2",
+                    "ordinary-3"
+                )
+            )
+
+            assertEquals(
+                listOf("METRIC resource_fd count=32700", "ordinary-2", "ordinary-3"),
+                readPersistedLogLines(logFile, generation = 2L, maxLines = 3)
+            )
+        } finally {
+            tempDir.deleteRecursively()
+        }
+    }
+
+    @Test
     fun reloadUsesLatestDiskStateWhenQueueIsEmpty() {
         val selected = selectLogReloadLines(
             persistedLines = listOf("disk-1", "disk-2", "disk-3"),

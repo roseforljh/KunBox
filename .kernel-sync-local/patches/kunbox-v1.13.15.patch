@@ -1,0 +1,173 @@
+diff --git a/cmd/internal/build_libbox/main.go b/cmd/internal/build_libbox/main.go
+index c128216..42fdbcb 100644
+--- a/cmd/internal/build_libbox/main.go
++++ b/cmd/internal/build_libbox/main.go
+@@ -65,8 +65,6 @@ func init() {
+ 
+ 	sharedTags = append(sharedTags, "with_gvisor", "with_quic", "with_wireguard", "with_utls", "with_naive_outbound", "with_clash_api", "badlinkname", "tfogo_checklinkname0")
+ 	darwinTags = append(darwinTags, "with_dhcp", "grpcnotrace")
+-	// memcTags = append(memcTags, "with_tailscale")
+-	sharedTags = append(sharedTags, "with_tailscale", "ts_omit_logtail", "ts_omit_ssh", "ts_omit_drive", "ts_omit_taildrop", "ts_omit_webclient", "ts_omit_doctor", "ts_omit_capture", "ts_omit_kube", "ts_omit_aws", "ts_omit_synology", "ts_omit_bird")
+ 	notMemcTags = append(notMemcTags, "with_low_memory")
+ 	debugTags = append(debugTags, "debug")
+ }
+diff --git a/protocol/vless/outbound.go b/protocol/vless/outbound.go
+index 007c78f..e0e56bf 100644
+--- a/protocol/vless/outbound.go
++++ b/protocol/vless/outbound.go
+@@ -148,12 +148,11 @@ func (h *Outbound) Close() error {
+ 
+ type vlessDialer Outbound
+ 
+-func (h *vlessDialer) DialContext(ctx context.Context, network string, destination M.Socksaddr) (net.Conn, error) {
++func (h *vlessDialer) DialContext(ctx context.Context, network string, destination M.Socksaddr) (_ net.Conn, err error) {
+ 	ctx, metadata := adapter.ExtendContext(ctx)
+ 	metadata.Outbound = h.Tag()
+ 	metadata.Destination = destination
+ 	var conn net.Conn
+-	var err error
+ 	if h.transport != nil {
+ 		conn, err = h.transport.DialContext(ctx)
+ 	} else if h.tlsDialer != nil {
+@@ -162,8 +161,14 @@ func (h *vlessDialer) DialContext(ctx context.Context, network string, destinati
+ 		conn, err = h.dialer.DialContext(ctx, N.NetworkTCP, h.serverAddr)
+ 	}
+ 	if err != nil {
++		common.Close(conn)
+ 		return nil, err
+ 	}
++	defer func() {
++		if err != nil {
++			common.Close(conn)
++		}
++	}()
+ 	switch N.NetworkName(network) {
+ 	case N.NetworkTCP:
+ 		h.logger.InfoContext(ctx, "outbound connection to ", destination)
+@@ -189,13 +194,12 @@ func (h *vlessDialer) DialContext(ctx context.Context, network string, destinati
+ 	}
+ }
+ 
+-func (h *vlessDialer) ListenPacket(ctx context.Context, destination M.Socksaddr) (net.PacketConn, error) {
++func (h *vlessDialer) ListenPacket(ctx context.Context, destination M.Socksaddr) (_ net.PacketConn, err error) {
+ 	h.logger.InfoContext(ctx, "outbound packet connection to ", destination)
+ 	ctx, metadata := adapter.ExtendContext(ctx)
+ 	metadata.Outbound = h.Tag()
+ 	metadata.Destination = destination
+ 	var conn net.Conn
+-	var err error
+ 	if h.transport != nil {
+ 		conn, err = h.transport.DialContext(ctx)
+ 	} else if h.tlsDialer != nil {
+@@ -207,6 +211,11 @@ func (h *vlessDialer) ListenPacket(ctx context.Context, destination M.Socksaddr)
+ 		common.Close(conn)
+ 		return nil, err
+ 	}
++	defer func() {
++		if err != nil {
++			common.Close(conn)
++		}
++	}()
+ 	if h.xudp {
+ 		return h.client.DialEarlyXUDPPacketConn(conn, destination)
+ 	} else if h.packetAddr {
+diff --git a/protocol/vless/outbound_test.go b/protocol/vless/outbound_test.go
+new file mode 100644
+index 0000000..48c3567
+--- /dev/null
++++ b/protocol/vless/outbound_test.go
+@@ -0,0 +1,94 @@
++package vless
++
++import (
++	"context"
++	"errors"
++	"io"
++	"net"
++	"testing"
++	"time"
++
++	outboundadapter "github.com/sagernet/sing-box/adapter/outbound"
++	C "github.com/sagernet/sing-box/constant"
++	vmessvless "github.com/sagernet/sing-vmess/vless"
++	"github.com/sagernet/sing/common/logger"
++	M "github.com/sagernet/sing/common/metadata"
++	N "github.com/sagernet/sing/common/network"
++)
++
++type staticVLESSDialer struct {
++	conn net.Conn
++}
++
++func (d staticVLESSDialer) DialContext(context.Context, string, M.Socksaddr) (net.Conn, error) {
++	return d.conn, nil
++}
++
++func (staticVLESSDialer) ListenPacket(context.Context, M.Socksaddr) (net.PacketConn, error) {
++	return nil, errors.New("unexpected packet listener")
++}
++
++type failingVLESSConn struct {
++	writeErr error
++	closed   bool
++}
++
++func (c *failingVLESSConn) Read([]byte) (int, error)         { return 0, io.EOF }
++func (c *failingVLESSConn) Write([]byte) (int, error)        { return 0, c.writeErr }
++func (c *failingVLESSConn) Close() error                     { c.closed = true; return nil }
++func (c *failingVLESSConn) LocalAddr() net.Addr              { return nil }
++func (c *failingVLESSConn) RemoteAddr() net.Addr             { return nil }
++func (c *failingVLESSConn) SetDeadline(time.Time) error      { return nil }
++func (c *failingVLESSConn) SetReadDeadline(time.Time) error  { return nil }
++func (c *failingVLESSConn) SetWriteDeadline(time.Time) error { return nil }
++
++func newXUDPTestDialer(t *testing.T, conn net.Conn) *vlessDialer {
++	t.Helper()
++	client, err := vmessvless.NewClient("00000000-0000-0000-0000-000000000001", "", logger.NOP())
++	if err != nil {
++		t.Fatalf("create vless client: %v", err)
++	}
++	return &vlessDialer{
++		Adapter: outboundadapter.NewAdapter(C.TypeVLESS, "test", []string{N.NetworkTCP, N.NetworkUDP}, nil),
++		logger:  logger.NOP(),
++		dialer:  staticVLESSDialer{conn: conn},
++		client:  client,
++		xudp:    true,
++	}
++}
++
++func TestVLESSDialerClosesXUDPConnectionOnSetupError(t *testing.T) {
++	destination := M.Socksaddr{Fqdn: "example.com", Port: 443}
++	tests := []struct {
++		name string
++		run  func(*vlessDialer) error
++	}{
++		{
++			name: "dial context",
++			run: func(dialer *vlessDialer) error {
++				_, err := dialer.DialContext(context.Background(), N.NetworkUDP, destination)
++				return err
++			},
++		},
++		{
++			name: "listen packet",
++			run: func(dialer *vlessDialer) error {
++				_, err := dialer.ListenPacket(context.Background(), destination)
++				return err
++			},
++		},
++	}
++	for _, test := range tests {
++		t.Run(test.name, func(t *testing.T) {
++			sentinel := errors.New("write failed")
++			conn := &failingVLESSConn{writeErr: sentinel}
++			err := test.run(newXUDPTestDialer(t, conn))
++			if !errors.Is(err, sentinel) {
++				t.Fatalf("expected setup error, got %v", err)
++			}
++			if !conn.closed {
++				t.Fatal("setup error left connection open")
++			}
++		})
++	}
++}

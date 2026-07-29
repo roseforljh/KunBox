@@ -153,6 +153,70 @@ class HealthSignalAggregatorTest {
     }
 
     @Test
+    fun emitsActiveProbeSignalAfterThreeTransportFailures() {
+        val aggregator = HealthSignalAggregator(
+            transportWindowMs = 7_000L,
+            minTransportFailures = 3
+        )
+
+        assertNull(
+            aggregator.observeKernelLog(
+                "[11:36:49] ERROR[1362] outbound/hysteria2[node-a]: dial udp: i/o timeout",
+                nowMs = 2_000L
+            )
+        )
+        assertNull(
+            aggregator.observeKernelLog(
+                "[11:36:50] ERROR[1362] outbound/hysteria2[node-a]: connection reset by peer",
+                nowMs = 2_100L
+            )
+        )
+
+        val signal = aggregator.observeKernelLog(
+            "[11:36:51] ERROR[1362] outbound/hysteria2[node-a]: network is unreachable",
+            nowMs = 2_200L
+        )
+
+        assertEquals(HealthSignalKind.ACTIVE_PROBE_FAILED, signal?.kind)
+        assertEquals(3, signal?.failureCount)
+        assertEquals("node-a", signal?.outboundTag)
+    }
+
+    @Test
+    fun doesNotMergeTransportFailuresFromDifferentOutbounds() {
+        val aggregator = HealthSignalAggregator(minTransportFailures = 3)
+
+        assertNull(
+            aggregator.observeKernelLog(
+                "ERROR outbound/vless[node-a]: i/o timeout",
+                nowMs = 1_000L
+            )
+        )
+        assertNull(
+            aggregator.observeKernelLog(
+                "ERROR outbound/vless[node-b]: i/o timeout",
+                nowMs = 1_100L
+            )
+        )
+        assertNull(
+            aggregator.observeKernelLog(
+                "ERROR outbound/vless[node-c]: i/o timeout",
+                nowMs = 1_200L
+            )
+        )
+    }
+
+    @Test
+    fun tooManyOpenFilesEmitsResourceSignalImmediately() {
+        val signal = HealthSignalAggregator().observeKernelLog(
+            "ERROR outbound/direct[direct]: fcntl: too many open files",
+            nowMs = 5_000L
+        )
+
+        assertEquals(HealthSignalKind.RESOURCE_EXHAUSTED, signal?.kind)
+    }
+
+    @Test
     fun summaryContainsDomainServerAndCount() {
         val signal = HealthSignal(
             kind = HealthSignalKind.REMOTE_DNS_TIMEOUT,
@@ -170,5 +234,20 @@ class HealthSignalAggregatorTest {
         assertTrue(summary.contains("failures=4"))
         assertTrue(summary.contains("dns_channel=remote"))
         assertTrue(summary.contains("diagnosis=remote_dns_timeout"))
+    }
+
+    @Test
+    fun activeProbeSummaryContainsFailureDiagnosis() {
+        val summary = HealthSignalAggregator.buildSummary(
+            HealthSignal(
+                kind = HealthSignalKind.ACTIVE_PROBE_FAILED,
+                failureCount = 3,
+                firstAtMs = 1_000L,
+                lastAtMs = 2_000L
+            )
+        )
+
+        assertTrue(summary.contains("diagnosis=active_probe_failed"))
+        assertTrue(summary.contains("failures=3"))
     }
 }

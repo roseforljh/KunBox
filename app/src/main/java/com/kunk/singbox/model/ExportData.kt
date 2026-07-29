@@ -11,7 +11,9 @@ data class ExportData(
     @SerializedName("settings") val settings: AppSettings, // AppSettings 导出数据
     @SerializedName("profiles") val profiles: List<ProfileExportData> = emptyList(),
     @SerializedName("activeProfileId") val activeProfileId: String?,
-    @SerializedName("activeNodeId") val activeNodeId: String?
+    @SerializedName("activeNodeId") val activeNodeId: String?,
+    @SerializedName("profileNodeMemory") val profileNodeMemory: Map<String, String>? = null,
+    @SerializedName("profileAutoSelection") val profileAutoSelection: Map<String, Boolean>? = null
 )
 
 @Keep

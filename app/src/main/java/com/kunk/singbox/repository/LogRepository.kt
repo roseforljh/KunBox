@@ -48,7 +48,7 @@ internal fun mergeLogLinesForRewrite(
     maxLines: Int
 ): List<String> {
     require(maxLines >= 0)
-    return (persistedLines + batchLines).takeLast(maxLines)
+    return selectBoundedLogLines(persistedLines + batchLines, maxLines)
 }
 
 internal fun selectLogReloadLines(
@@ -56,7 +56,55 @@ internal fun selectLogReloadLines(
     maxLines: Int
 ): List<String> {
     require(maxLines >= 0)
-    return persistedLines.filter { it.isNotBlank() }.takeLast(maxLines)
+    return selectBoundedLogLines(persistedLines.filter { it.isNotBlank() }, maxLines)
+}
+
+internal fun selectBoundedLogLines(lines: List<String>, maxLines: Int): List<String> {
+    require(maxLines >= 0)
+    val diagnosticCount = lines.count(LogRepository::isPreservedDiagnosticLine)
+    return when {
+        maxLines == 0 || lines.isEmpty() -> emptyList()
+        lines.size <= maxLines -> lines
+        diagnosticCount >= maxLines -> {
+            lines.filter(LogRepository::isPreservedDiagnosticLine).takeLast(maxLines)
+        }
+        else -> {
+            var ordinaryToSkip = lines.size - diagnosticCount - (maxLines - diagnosticCount)
+            // ponytail: 上限固定为 2000，单次线性筛选比维护第二套索引更简单且不易失序。
+            lines.filter { line ->
+                LogRepository.isPreservedDiagnosticLine(line) || if (ordinaryToSkip > 0) {
+                    ordinaryToSkip--
+                    false
+                } else {
+                    true
+                }
+            }
+        }
+    }
+}
+
+private fun ArrayDeque<String>.addBoundedLogLine(line: String, maxLines: Int): Boolean {
+    require(maxLines > 0)
+    if (size < maxLines) {
+        addLast(line)
+        return true
+    }
+    val removedOrdinary = removeFirstMatching { !LogRepository.isPreservedDiagnosticLine(it) }
+    if (!removedOrdinary && !LogRepository.isPreservedDiagnosticLine(line)) return false
+    if (!removedOrdinary) removeFirst()
+    addLast(line)
+    return true
+}
+
+private fun <T> ArrayDeque<T>.removeFirstMatching(predicate: (T) -> Boolean): Boolean {
+    val iterator = iterator()
+    while (iterator.hasNext()) {
+        if (predicate(iterator.next())) {
+            iterator.remove()
+            return true
+        }
+    }
+    return false
 }
 
 internal fun selectLogGeneration(knownGeneration: Long, sharedGeneration: Long): Long {
@@ -113,8 +161,7 @@ internal fun readPersistedLogLines(file: File, generation: Long, maxLines: Int):
     val lines = ArrayDeque<String>(maxLines)
 
     fun addLine(line: String) {
-        if (lines.size >= maxLines) lines.removeFirst()
-        lines.addLast(line)
+        lines.addBoundedLogLine(line, maxLines)
     }
 
     file.bufferedReader(Charsets.UTF_8).use { reader ->
@@ -185,7 +232,11 @@ internal class LogPersistenceQueue(private val maxPendingLines: Int = 2000) {
     fun enqueue(line: String, rewriteAll: Boolean, generation: Long) {
         var requiresRewrite = rewriteAll
         if (pendingLines.size >= maxPendingLines) {
-            pendingLines.removeFirst()
+            val removedOrdinary = pendingLines.removeFirstMatching {
+                !LogRepository.isPreservedDiagnosticLine(it.line)
+            }
+            if (!removedOrdinary && !LogRepository.isPreservedDiagnosticLine(line)) return
+            if (!removedOrdinary) pendingLines.removeFirst()
             requiresRewrite = true
         }
         pendingLines.addLast(PendingLine(line, requiresRewrite, generation))
@@ -219,7 +270,10 @@ internal class LogPersistenceQueue(private val maxPendingLines: Int = 2000) {
         if (batch.rewriteAll) pendingLines.peekFirst()?.rewriteAll = true
         var dropped = false
         while (pendingLines.size > maxPendingLines) {
-            pendingLines.removeFirst()
+            val removedOrdinary = pendingLines.removeFirstMatching {
+                !LogRepository.isPreservedDiagnosticLine(it.line)
+            }
+            if (!removedOrdinary) pendingLines.removeFirst()
             dropped = true
         }
         if (dropped) pendingLines.peekFirst()?.rewriteAll = true
@@ -367,12 +421,8 @@ class LogRepository private constructor() {
             val fileGeneration = currentLogGeneration()
             if (fileGeneration == UNINITIALIZED_GENERATION) return
             knownFileGeneration.set(fileGeneration)
-            var shouldRewriteFile = false
-            if (buffer.size >= maxLogSize) {
-                buffer.removeFirst()
-                shouldRewriteFile = true
-            }
-            buffer.addLast(finalLog)
+            val shouldRewriteFile = buffer.size >= maxLogSize
+            if (!buffer.addBoundedLogLine(finalLog, maxLogSize)) return
             logVersion.incrementAndGet()
             persistenceQueue.enqueue(finalLog, shouldRewriteFile, fileGeneration)
         }
@@ -530,7 +580,10 @@ class LogRepository private constructor() {
         }
 
         internal fun isPreservedDiagnosticLine(line: String): Boolean {
-            return line.contains(PRESERVED_DIAGNOSTIC_MARKER)
+            return line.contains(PRESERVED_DIAGNOSTIC_MARKER) ||
+                line.contains(" resource_fd ") ||
+                line.contains(" resource_fd_breakdown ") ||
+                line.contains(" resource_exhausted ")
         }
     }
 

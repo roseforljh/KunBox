@@ -1,12 +1,22 @@
 package com.kunk.singbox.repository
 
 import com.google.gson.JsonParser
+import com.kunk.singbox.utils.perf.DIAGNOSTIC_RESOURCE_CSV_HEADER
 import com.kunk.singbox.utils.perf.DiagnosticResourceSample
+import com.kunk.singbox.utils.perf.DiagnosticResourceHistory
+import com.kunk.singbox.utils.perf.FdBreakdown
+import com.kunk.singbox.utils.perf.FdPressureLevel
+import com.kunk.singbox.utils.perf.FdTargetType
 import com.kunk.singbox.utils.perf.ProcessCpuBaseline
 import com.kunk.singbox.utils.perf.ProcessResourcePoint
 import com.kunk.singbox.utils.perf.calculateProcessCpuPercent
+import com.kunk.singbox.utils.perf.classifyFdTarget
+import com.kunk.singbox.utils.perf.evaluateFdPressure
 import com.kunk.singbox.utils.perf.formatDiagnosticResourceSamplesCsv
+import com.kunk.singbox.utils.perf.isFdRecoverySufficient
+import com.kunk.singbox.utils.perf.parseDiagnosticResourceSamplesCsv
 import com.kunk.singbox.utils.perf.parseProcCpuTimeMs
+import com.kunk.singbox.utils.perf.parseProcSocketRows
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -293,5 +303,190 @@ class DiagnosticSupportTest {
         assertTrue(csv.startsWith("timestamp_epoch_ms,elapsed_realtime_ms,process_name,pid,pss_kb,cpu_time_ms"))
         assertTrue(csv.contains("\"com.kunk.singbox:bg,worker\""))
         assertTrue(csv.contains(",12.35,88"))
+    }
+
+    @Test
+    fun fdTargetsAreClassifiedWithoutExportingPaths() {
+        assertEquals(FdTargetType.SOCKET, classifyFdTarget("socket:[123]"))
+        assertEquals(FdTargetType.ANON_INODE, classifyFdTarget("anon_inode:[eventfd]"))
+        assertEquals(FdTargetType.PIPE, classifyFdTarget("pipe:[456]"))
+        assertEquals(FdTargetType.ORDINARY_FILE, classifyFdTarget("/data/user/0/private/file"))
+        assertEquals(FdTargetType.DEVICE, classifyFdTarget("/dev/null"))
+        assertEquals(FdTargetType.UNKNOWN, classifyFdTarget(null))
+    }
+
+    @Test
+    fun fdPressureBoundariesMatchRecoveryPolicy() {
+        assertEquals(FdPressureLevel.NORMAL, evaluateFdPressure(499, 1_000, 0, 0).level)
+        assertEquals(FdPressureLevel.OBSERVE, evaluateFdPressure(500, 1_000, 0, 0).level)
+        assertEquals(FdPressureLevel.WARNING, evaluateFdPressure(700, 1_000, 0, 0).level)
+        assertEquals(FdPressureLevel.WARNING, evaluateFdPressure(850, 1_000, 0, 1).level)
+        assertEquals(FdPressureLevel.RECOVERY, evaluateFdPressure(850, 1_000, 0, 2).level)
+        assertEquals(FdPressureLevel.EMERGENCY, evaluateFdPressure(950, 1_000, 0, 1).level)
+        val unknownLimitGrowth = evaluateFdPressure(2_000, null, 1_024, 0)
+        assertEquals(FdPressureLevel.WARNING, unknownLimitGrowth.level)
+        assertFalse(unknownLimitGrowth.shouldRecover)
+    }
+
+    @Test
+    fun fdRecoveryRequiresLowWatermarkAndMeaningfulDrop() {
+        assertTrue(isFdRecoverySufficient(beforeCount = 900, afterCount = 400, softLimit = 1_000))
+        assertFalse(isFdRecoverySufficient(beforeCount = 900, afterCount = 650, softLimit = 1_000))
+        assertFalse(isFdRecoverySufficient(beforeCount = 900, afterCount = 400, softLimit = null))
+    }
+
+    @Test
+    fun resourceCsvParserAcceptsLegacyRows() {
+        val legacy = "timestamp_epoch_ms,elapsed_realtime_ms,process_name,pid,pss_kb,cpu_time_ms," +
+            "cpu_percent,fd_count\n1700000000000,10000,com.kunk.singbox:bg,42,12345,6789,12.35,88\n"
+
+        val sample = parseDiagnosticResourceSamplesCsv(legacy).single()
+
+        assertEquals(88, sample.fdCount)
+        assertNull(sample.fdSoftLimit)
+        assertNull(sample.fdBreakdown)
+    }
+
+    @Test
+    fun procSocketTablesUseProtocolSpecificInodeColumns() {
+        val tcp = parseProcSocketRows(
+            sequenceOf(
+                "sl local_address rem_address st tx_queue rx_queue tr tm->when retrnsmt uid timeout inode",
+                "0: 0100007F:1F90 00000000:0000 0A 0:0 00:00000000 00000000 1000 0 12345"
+            ),
+            inodeColumn = 9,
+            stateColumn = 3
+        )
+        val unix = parseProcSocketRows(
+            sequenceOf(
+                "Num RefCount Protocol Flags Type St Inode Path",
+                "00000000: 00000002 00000000 00010000 0001 01 23456 /dev/socket/test"
+            ),
+            inodeColumn = 6,
+            stateColumn = 5
+        )
+        val netlink = parseProcSocketRows(
+            sequenceOf(
+                "sk Eth Pid Groups Rmem Wmem Dump Locks Drops Inode",
+                "00000000 0 42 00000000 0 0 0 2 0 33456"
+            ),
+            inodeColumn = 9,
+            stateColumn = 1
+        )
+        val packet = parseProcSocketRows(
+            sequenceOf(
+                "sk RefCnt Type Proto Iface R Rmem User Inode",
+                "00000000 3 3 0003 2 1 0 1000 34567"
+            ),
+            inodeColumn = 8,
+            stateColumn = 3
+        )
+
+        assertEquals("0A", tcp["12345"])
+        assertEquals("01", unix["23456"])
+        assertEquals("0", netlink["33456"])
+        assertEquals("0003", packet["34567"])
+    }
+
+    @Test
+    fun resourceCsvPreservesExtendedSocketBreakdownAndReadFailures() {
+        val sample = DiagnosticResourceSample(
+            timestampEpochMs = 1L,
+            elapsedRealtimeMs = 2L,
+            processName = "com.kunk.singbox:bg",
+            pid = 42,
+            pssKb = null,
+            cpuTimeMs = null,
+            cpuPercent = null,
+            fdCount = 100,
+            fdBreakdown = FdBreakdown(
+                socketUniqueCount = 11,
+                unixCount = 7,
+                netlinkCount = 3,
+                packetCount = 2,
+                socketUnknownCount = 5,
+                socketTableFailures = "packet:FileNotFoundException"
+            )
+        )
+
+        val decoded = parseDiagnosticResourceSamplesCsv(formatDiagnosticResourceSamplesCsv(listOf(sample))).single()
+
+        assertEquals(11, decoded.fdBreakdown?.socketUniqueCount)
+        assertEquals(7, decoded.fdBreakdown?.unixCount)
+        assertEquals(3, decoded.fdBreakdown?.netlinkCount)
+        assertEquals(2, decoded.fdBreakdown?.packetCount)
+        assertEquals(5, decoded.fdBreakdown?.socketUnknownCount)
+        assertEquals("packet:FileNotFoundException", decoded.fdBreakdown?.socketTableFailures)
+    }
+
+    @Test
+    fun backgroundResourceHistoryKeepsOnlyCompleteBoundedRows() {
+        val directory = Files.createTempDirectory("kunbox-resource-history").toFile()
+        val file = directory.resolve("resources.csv")
+        try {
+            val history = DiagnosticResourceHistory(file, maxSamples = 3)
+            repeat(5) { index ->
+                history.append(
+                    DiagnosticResourceSample(
+                        timestampEpochMs = index.toLong(),
+                        elapsedRealtimeMs = index.toLong(),
+                        processName = "com.kunk.singbox:bg",
+                        pid = 42,
+                        pssKb = null,
+                        cpuTimeMs = null,
+                        cpuPercent = null,
+                        fdCount = 100 + index
+                    )
+                )
+            }
+
+            val retained = history.read()
+            assertEquals(listOf(2L, 3L, 4L), retained.map { it.timestampEpochMs })
+            assertEquals(4, file.readLines(Charsets.UTF_8).size)
+        } finally {
+            directory.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun backgroundResourceHistoryMigratesLegacyHeaderBeforeAppending() {
+        val directory = Files.createTempDirectory("kunbox-resource-history-migration").toFile()
+        val file = directory.resolve("resources.csv")
+        try {
+            file.writeText(
+                "timestamp_epoch_ms,elapsed_realtime_ms,process_name,pid,pss_kb,cpu_time_ms," +
+                    "cpu_percent,fd_count,fd_soft_limit,fd_ratio,fd_socket,fd_anon_inode,fd_eventfd," +
+                    "fd_eventpoll,fd_timerfd,fd_pipe,fd_file,fd_device,fd_unknown,socket_tcp,socket_tcp6," +
+                    "socket_udp,socket_udp6,socket_raw,socket_raw6,socket_unknown,socket_table_failures," +
+                    "socket_states\n" +
+                    "1,2,com.kunk.singbox:bg,42,,,,32700,32768,0.9979,32600,20,5,5,0,2,70,7,1," +
+                    "0,0,0,0,0,0,32600,permission,unknown=32600\n",
+                Charsets.UTF_8
+            )
+            val history = DiagnosticResourceHistory(file, maxSamples = 3)
+
+            history.append(
+                DiagnosticResourceSample(
+                    timestampEpochMs = 3L,
+                    elapsedRealtimeMs = 4L,
+                    processName = "com.kunk.singbox:bg",
+                    pid = 43,
+                    pssKb = null,
+                    cpuTimeMs = null,
+                    cpuPercent = null,
+                    fdCount = 150,
+                    fdBreakdown = FdBreakdown(socketCount = 10, socketUniqueCount = 2)
+                )
+            )
+
+            val lines = file.readLines(Charsets.UTF_8)
+            val retained = history.read()
+            assertEquals(DIAGNOSTIC_RESOURCE_CSV_HEADER, lines.first())
+            assertEquals(listOf(1L, 3L), retained.map { it.timestampEpochMs })
+            assertEquals(32600, retained.first().fdBreakdown?.socketUnknownCount)
+            assertEquals(2, retained.last().fdBreakdown?.socketUniqueCount)
+        } finally {
+            directory.deleteRecursively()
+        }
     }
 }

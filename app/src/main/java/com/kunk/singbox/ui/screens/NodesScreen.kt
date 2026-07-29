@@ -113,6 +113,7 @@ import com.kunk.singbox.ui.components.SingleSelectDialog
 import com.kunk.singbox.ui.components.NodeCard
 import com.kunk.singbox.ui.components.NodeGridCard
 import com.kunk.singbox.ui.navigation.Screen
+import com.kunk.singbox.ipc.SingBoxRemote
 import com.kunk.singbox.ui.theme.LiquidGlassDropdownMenu
 import com.kunk.singbox.ui.theme.LiquidGlassFloatingActionButton
 import com.kunk.singbox.ui.theme.LiquidGlassSmallFloatingActionButton
@@ -217,6 +218,8 @@ fun NodesScreen(
 
     val nodes by viewModel.nodes.collectAsStateWithLifecycle()
     val activeNodeId by viewModel.activeNodeId.collectAsStateWithLifecycle()
+    val isAutoSelectionEnabled by viewModel.isAutoSelectionEnabled.collectAsStateWithLifecycle()
+    val runtimeNodeLabel by SingBoxRemote.activeLabel.collectAsStateWithLifecycle()
     val testingNodeIds by viewModel.testingNodeIds.collectAsStateWithLifecycle()
     val nodeFilter by viewModel.nodeFilter.collectAsStateWithLifecycle()
     val sortType by viewModel.sortType.collectAsStateWithLifecycle()
@@ -740,12 +743,58 @@ fun NodesScreen(
                         horizontalArrangement = Arrangement.spacedBy(12.dp),
                         verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
+                        item(key = "automatic-selection", contentType = "node") {
+                            val subtitle = when {
+                                !isAutoSelectionEnabled -> stringResource(R.string.nodes_auto_selection_disabled)
+                                runtimeNodeLabel.isNotBlank() -> stringResource(
+                                    R.string.nodes_auto_selection_current,
+                                    runtimeNodeLabel
+                                )
+                                else -> stringResource(R.string.nodes_auto_selection_selecting)
+                            }
+                            Box(
+                                modifier = Modifier.animateItem(
+                                    placementSpec = spring(
+                                        stiffness = 500f,
+                                        dampingRatio = 0.85f
+                                    )
+                                )
+                            ) {
+                                if (nodeColumnCount == 1) {
+                                    NodeCard(
+                                        name = stringResource(R.string.nodes_auto_selection),
+                                        type = subtitle,
+                                        isSelected = isAutoSelectionEnabled,
+                                        onClick = viewModel::enableAutoSelection,
+                                        onEdit = {},
+                                        onExport = {},
+                                        onLatency = {},
+                                        onDelete = {},
+                                        showLatency = false,
+                                        showActions = false
+                                    )
+                                } else {
+                                    NodeGridCard(
+                                        name = stringResource(R.string.nodes_auto_selection),
+                                        type = subtitle,
+                                        isSelected = isAutoSelectionEnabled,
+                                        onClick = viewModel::enableAutoSelection,
+                                        onEdit = {},
+                                        onExport = {},
+                                        onLatency = {},
+                                        onDelete = {},
+                                        showLatency = false,
+                                        showActions = false
+                                    )
+                                }
+                            }
+                        }
                         itemsIndexed(
                             items = filteredNodes,
                             key = { _, node -> node.id },
                             contentType = { _, _ -> "node" }
                         ) { index, node ->
-                            val isSelected = activeNodeId == node.id
+                            val isSelected = !isAutoSelectionEnabled && activeNodeId == node.id
                             val isTestingNode = testingNodeIds.contains(node.id)
 
                             val onNodeClick = remember(node.id) { { viewModel.setActiveNode(node.id) } }

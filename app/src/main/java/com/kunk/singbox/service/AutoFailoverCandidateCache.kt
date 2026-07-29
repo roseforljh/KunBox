@@ -36,28 +36,6 @@ internal class AutoFailoverCandidateCache(
     }
 
     @Synchronized
-    fun warmFromSavedLatencies(
-        currentTag: String,
-        tagLatencies: Map<String, Long>,
-        nowMs: Long,
-        quarantinedTags: Set<String> = emptySet()
-    ) {
-        val candidate = tagLatencies
-            .asSequence()
-            .map { (tag, latency) -> tag.trim() to latency }
-            .filter { (tag, latency) ->
-                tag.isNotBlank() &&
-                    latency > 0L &&
-                    !sameTag(tag, currentTag) &&
-                    quarantinedTags.none { sameTag(it, tag) }
-            }
-            .minByOrNull { (_, latency) -> latency }
-            ?: return
-
-        entry = Entry(candidate.first, nowMs)
-    }
-
-    @Synchronized
     fun resolve(
         currentTag: String,
         nowMs: Long,

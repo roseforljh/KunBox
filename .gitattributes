@@ -8,7 +8,6 @@
 *.properties text
 *.sh text eol=lf
 gradlew text eol=lf
-
 # Binary files
 *.aar binary
 *.jar binary
@@ -17,3 +16,4 @@ gradlew text eol=lf
 *.jpg binary
 *.jks binary
 *.keystore binary
+app/libs/libbox.aar filter=lfs diff=lfs merge=lfs -text

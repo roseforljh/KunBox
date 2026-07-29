@@ -2,14 +2,19 @@ package com.kunk.singbox.repository
 
 import com.kunk.singbox.model.AppSettings
 import com.kunk.singbox.model.DefaultRule
+import com.kunk.singbox.model.DnsConfig
+import com.kunk.singbox.model.DnsServer
 import com.kunk.singbox.model.DnsStrategy
 import com.kunk.singbox.model.EchConfig
+import com.kunk.singbox.model.Endpoint
 import com.kunk.singbox.model.IpVersionMode
 import com.kunk.singbox.model.Outbound
 import com.kunk.singbox.model.RuleSet
 import com.kunk.singbox.model.RuleSetConfig
 import com.kunk.singbox.model.RuleSetOutboundMode
 import com.kunk.singbox.model.RuleSetType
+import com.kunk.singbox.model.RouteConfig
+import com.kunk.singbox.model.RouteRule
 import com.kunk.singbox.model.SingBoxConfig
 import com.kunk.singbox.model.ProfileType
 import com.kunk.singbox.model.RoutingMode
@@ -28,7 +33,9 @@ abstract class ConfigRepositoryTestPart8 : ConfigRepositoryTestPart7() {
         val outbounds = ConfigRepository.buildProfileRouteGroupOutbounds(
             groupTag = "P:HK",
             nodeTags = listOf("node-a", "node-b"),
-            testUrl = "https://probe.example/204"
+            testUrl = "https://probe.example/204",
+            autoSelectionEnabled = true,
+            preferredNodeTag = "node-a"
         )
 
         assertEquals(2, outbounds.size)
@@ -45,8 +52,94 @@ abstract class ConfigRepositoryTestPart8 : ConfigRepositoryTestPart7() {
         val outerGroup = outbounds[1]
         assertEquals("selector", outerGroup.type)
         assertEquals("P:HK", outerGroup.tag)
-        assertEquals(listOf("P:HK#AUTO", "PROXY"), outerGroup.outbounds)
+        assertEquals(listOf("P:HK#AUTO", "node-a", "node-b"), outerGroup.outbounds)
         assertEquals("P:HK#AUTO", outerGroup.default)
+    }
+
+    @Test
+    fun buildProfileRouteGroupOutboundsOmitsUrlTestInManualMode() {
+        val outbounds = ConfigRepository.buildProfileRouteGroupOutbounds(
+            groupTag = "P:HK",
+            nodeTags = listOf("node-b", "node-a"),
+            testUrl = "https://probe.example/204",
+            autoSelectionEnabled = false,
+            preferredNodeTag = "node-a"
+        )
+
+        assertEquals(1, outbounds.size)
+        assertEquals("selector", outbounds.single().type)
+        assertEquals(listOf("node-b", "node-a"), outbounds.single().outbounds)
+        assertEquals("node-a", outbounds.single().default)
+    }
+
+    @Test
+    fun pruneUnreachableGroupOutboundsRemovesIsolatedSelectorAndUrlTest() {
+        val pruned = ConfigRepository.pruneUnreachableGroupOutbounds(
+            outbounds = listOf(
+                Outbound(type = "direct", tag = "direct"),
+                Outbound(type = "shadowsocks", tag = "node-a"),
+                Outbound(type = "urltest", tag = "orphan#AUTO", outbounds = listOf("node-a")),
+                Outbound(type = "selector", tag = "orphan", outbounds = listOf("orphan#AUTO"))
+            ),
+            route = RouteConfig(finalOutbound = "direct"),
+            dns = DnsConfig()
+        )
+
+        assertEquals(listOf("direct", "node-a"), pruned.map { it.tag })
+    }
+
+    @Test
+    fun pruneUnreachableGroupOutboundsKeepsProxyAutoChain() {
+        val pruned = ConfigRepository.pruneUnreachableGroupOutbounds(
+            outbounds = listOf(
+                Outbound(type = "shadowsocks", tag = "node-a"),
+                Outbound(type = "shadowsocks", tag = "node-b"),
+                Outbound(type = "urltest", tag = "P:HK#AUTO", outbounds = listOf("node-a", "node-b")),
+                Outbound(type = "selector", tag = "P:HK", outbounds = listOf("P:HK#AUTO", "node-a")),
+                Outbound(type = "selector", tag = "PROXY", outbounds = listOf("P:HK"))
+            ),
+            route = RouteConfig(finalOutbound = "PROXY"),
+            dns = DnsConfig()
+        )
+
+        assertEquals(
+            listOf("node-a", "node-b", "P:HK#AUTO", "P:HK", "PROXY"),
+            pruned.map { it.tag }
+        )
+    }
+
+    @Test
+    fun pruneUnreachableGroupOutboundsKeepsRouteAndDnsRoots() {
+        val groupTags = listOf("rule-group", "download-group", "dns-group")
+        val pruned = ConfigRepository.pruneUnreachableGroupOutbounds(
+            outbounds = listOf(Outbound(type = "shadowsocks", tag = "node-a")) +
+                groupTags.map { tag -> Outbound(type = "selector", tag = tag, outbounds = listOf("node-a")) },
+            route = RouteConfig(
+                rules = listOf(RouteRule(outbound = "rule-group")),
+                ruleSet = listOf(RuleSetConfig(downloadDetour = "download-group"))
+            ),
+            dns = DnsConfig(servers = listOf(DnsServer(tag = "remote", detour = "dns-group")))
+        )
+
+        assertTrue(pruned.map { it.tag }.containsAll(groupTags))
+    }
+
+    @Test
+    fun pruneUnreachableGroupOutboundsKeepsOutboundAndEndpointDetours() {
+        val pruned = ConfigRepository.pruneUnreachableGroupOutbounds(
+            outbounds = listOf(
+                Outbound(type = "selector", tag = "outbound-detour", outbounds = listOf("node-a")),
+                Outbound(type = "selector", tag = "endpoint-detour", outbounds = listOf("node-a")),
+                Outbound(type = "shadowsocks", tag = "node-a"),
+                Outbound(type = "shadowtls", tag = "wrapped-node", detour = "outbound-detour")
+            ),
+            route = RouteConfig(finalOutbound = "wrapped-node"),
+            dns = DnsConfig(),
+            endpoints = listOf(Endpoint(type = "wireguard", tag = "wg-endpoint", detour = "endpoint-detour"))
+        )
+
+        assertTrue(pruned.any { it.tag == "outbound-detour" })
+        assertTrue(pruned.any { it.tag == "endpoint-detour" })
     }
 
     @Test

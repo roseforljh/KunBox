@@ -150,8 +150,10 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         if (SingBoxRemote.isRunning.value || SingBoxRemote.isStarting.value) {
             viewModelScope.launch {
                 configRepository.setActiveProfileAndWait(profileId)
-                val currentNodeId = configRepository.activeNodeId.value
-                if (currentNodeId != null) {
+                if (configRepository.isProfileAutoSelectionEnabled(profileId)) {
+                    configRepository.enableAutoSelectionWithResult(profileId)
+                } else {
+                    val currentNodeId = configRepository.activeNodeId.value ?: return@launch
                     Log.i(TAG, "Profile switched while VPN running, triggering node switch for: $currentNodeId")
                     configRepository.setActiveNodeWithResult(currentNodeId)
                 }
@@ -174,6 +176,22 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                 }
                 emitToast(msg)
             }
+        }
+    }
+
+    fun enableAutoSelection() {
+        val profileId = activeProfileId.value ?: return
+        viewModelScope.launch {
+            val result = configRepository.enableAutoSelectionWithResult(profileId)
+            emitToast(
+                getApplication<Application>().getString(
+                    if (result is ConfigRepository.NodeSwitchResult.Failed) {
+                        R.string.nodes_auto_selection_failed
+                    } else {
+                        R.string.nodes_auto_selection_enabled
+                    }
+                )
+            )
         }
     }
 
@@ -202,6 +220,16 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
     // Active profile and node from ConfigRepository
     val activeProfileId: StateFlow<String?> = configRepository.activeProfileId
     val activeNodeId: StateFlow<String?> = configRepository.activeNodeId
+    val isAutoSelectionEnabled: StateFlow<Boolean> = combine(
+        activeProfileId,
+        configRepository.profileAutoSelections
+    ) { profileId, selections ->
+        profileId != null && selections[profileId] == true
+    }.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = configRepository.isProfileAutoSelectionEnabled(activeProfileId.value)
+    )
 
     val activeNodeLatency = kotlinx.coroutines.flow.combine(configRepository.nodes, activeNodeId) { nodes, id ->
         nodes.find { it.id == id }?.latencyMs

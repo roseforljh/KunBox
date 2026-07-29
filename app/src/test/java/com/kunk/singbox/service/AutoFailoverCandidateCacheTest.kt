@@ -26,17 +26,4 @@ class AutoFailoverCandidateCacheTest {
 
         assertNull(cache.resolve(currentTag = "node-a", nowMs = 70_001L))
     }
-
-    @Test
-    fun warmsFromSavedLatencies() {
-        val cache = AutoFailoverCandidateCache(maxAgeMs = 60_000L)
-
-        cache.warmFromSavedLatencies(
-            currentTag = "node-a",
-            tagLatencies = mapOf("node-a" to 50L, "node-b" to 90L, "node-c" to -1L),
-            nowMs = 1_000L
-        )
-
-        assertEquals("node-b", cache.resolve(currentTag = "node-a", nowMs = 2_000L))
-    }
 }
