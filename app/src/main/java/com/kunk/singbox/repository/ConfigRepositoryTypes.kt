@@ -17,6 +17,11 @@ data class ConfigRepositoryLatencyRuntimeContext(
     val dnsConfig: DnsConfig?
 )
 
+data class SavedNodeLatency(
+    val latencyMs: Long,
+    val testedAt: Long
+)
+
 data class ConfigRepositorySubscriptionAttemptContext(
     val host: String,
     val userAgent: String,

@@ -43,6 +43,7 @@ class CommandManager(
         private const val MAX_LOG_LINES = 300
         private const val PORT_RELEASE_TIMEOUT_MS = 10000L
         private const val PORT_CHECK_INTERVAL_MS = 50L
+        private const val MAX_GROUP_SELECTION_DEPTH = 4
 
         internal fun dispatchKernelLog(
             message: String,
@@ -54,6 +55,29 @@ class CommandManager(
             if (uiLogsEnabled) {
                 addToRepository(message)
             }
+        }
+
+        internal fun resolveConcreteGroupSelection(
+            rootTag: String,
+            selections: Map<String, String>,
+            maxDepth: Int = MAX_GROUP_SELECTION_DEPTH
+        ): String? {
+            var current = rootTag
+            val visited = mutableSetOf<String>()
+            var concreteTag: String? = null
+            run resolution@{
+                repeat(maxDepth) {
+                    if (!visited.add(current)) return@resolution
+                    val selected = selections[current]?.trim()?.takeIf { it.isNotBlank() }
+                        ?: return@resolution
+                    if (selected !in selections) {
+                        concreteTag = selected.takeUnless { it.endsWith("#AUTO", ignoreCase = true) }
+                        return@resolution
+                    }
+                    current = selected
+                }
+            }
+            return concreteTag
         }
     }
 
@@ -99,6 +123,7 @@ class CommandManager(
     interface Callbacks {
         fun requestNotificationUpdate(force: Boolean)
         fun resolveEgressNodeName(tagOrSelector: String?): String?
+        fun onGroupSelectionChanged(groupTag: String, selectedTag: String) {}
         fun onServiceStop(): Unit
         fun onServiceReload(): Unit
     }
@@ -337,6 +362,10 @@ class CommandManager(
 
     fun getSelectedOutbound(groupTag: String): String? = groupSelectedOutbounds[groupTag]
 
+    fun getResolvedSelectedOutbound(groupTag: String): String? {
+        return resolveConcreteGroupSelection(groupTag, groupSelectedOutbounds)
+    }
+
     fun getGroupsCount(): Int = groupSelectedOutbounds.size
 
     fun closeConnections(): Boolean {
@@ -484,6 +513,7 @@ class CommandManager(
             val groupChanged = processGroup(group)
             if (groupChanged) changed = true
         }
+        changed = updateResolvedProxySelection() || changed
 
         if (changed) {
             callbacks?.requestNotificationUpdate(false)
@@ -499,20 +529,18 @@ class CommandManager(
 
         if (!tag.isNullOrBlank() && !selected.isNullOrBlank()) {
             val prev = groupSelectedOutbounds.put(tag, selected)
-            if (prev != selected) changed = true
+            if (prev != selected) {
+                changed = true
+                callbacks?.onGroupSelectionChanged(tag, selected)
+            }
         }
-
-        changed = updateProxyGroupSelection(tag, selected) || changed
 
         return changed
     }
 
-    private fun updateProxyGroupSelection(
-        tag: String?,
-        selected: String?
-    ): Boolean {
-        if (!tag.equals("PROXY", ignoreCase = true)) return false
-        if (selected.isNullOrBlank() || selected == realTimeNodeName) return false
+    private fun updateResolvedProxySelection(): Boolean {
+        val selected = resolveConcreteGroupSelection("PROXY", groupSelectedOutbounds) ?: return false
+        if (selected == realTimeNodeName) return false
 
         // 只更新运行态展示，不写回用户手选节点。
         // writeGroups 会在 urltest/自动切换时频繁回调，写回 activeNodeId 会造成节点乱飞。
