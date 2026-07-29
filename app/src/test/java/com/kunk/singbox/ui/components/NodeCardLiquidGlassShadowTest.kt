@@ -2,6 +2,7 @@ package com.kunk.singbox.ui.components
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
 
@@ -20,5 +21,23 @@ class NodeCardLiquidGlassShadowTest {
         ).forEach { token ->
             assertFalse(nodeCard.contains(token))
         }
+    }
+
+    @Test
+    fun automaticSelectionUsesCurrentNodeCardLayoutAndStaysFirst() {
+        val nodesScreen = File("src/main/java/com/kunk/singbox/ui/screens/NodesScreen.kt")
+            .readText()
+            .replace("\r\n", "\n")
+        val automaticItemStart = nodesScreen.indexOf("key = \"automatic-selection\"")
+        val regularItemsStart = nodesScreen.indexOf("itemsIndexed(", startIndex = automaticItemStart)
+        val automaticItem = nodesScreen.substring(automaticItemStart, regularItemsStart)
+
+        assertTrue(automaticItemStart >= 0)
+        assertTrue(regularItemsStart > automaticItemStart)
+        assertTrue(automaticItem.contains("NodeCard("))
+        assertTrue(automaticItem.contains("NodeGridCard("))
+        assertTrue(automaticItem.contains("showLatency = false"))
+        assertTrue(automaticItem.contains("showActions = false"))
+        assertFalse(automaticItem.contains("GridItemSpan"))
     }
 }

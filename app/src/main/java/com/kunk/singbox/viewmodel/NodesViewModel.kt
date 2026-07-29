@@ -90,7 +90,18 @@ class NodesViewModel(application: Application) : AndroidViewModel(application) {
 
     val allNodes: StateFlow<List<NodeUi>> = configRepository.allNodes
     val profiles: StateFlow<List<ProfileUi>> = configRepository.profiles
+    val activeProfileId: StateFlow<String?> = configRepository.activeProfileId
     val activeNodeId: StateFlow<String?> = configRepository.activeNodeId
+    val isAutoSelectionEnabled: StateFlow<Boolean> = combine(
+        activeProfileId,
+        configRepository.profileAutoSelections
+    ) { profileId, selections ->
+        profileId != null && selections[profileId] == true
+    }.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = configRepository.isProfileAutoSelectionEnabled(activeProfileId.value)
+    )
 
     private val _testProgress = MutableStateFlow<Pair<Int, Int>?>(null)
     val testProgress: StateFlow<Pair<Int, Int>?> = _testProgress.asStateFlow()
@@ -120,6 +131,19 @@ class NodesViewModel(application: Application) : AndroidViewModel(application) {
                 }
                 emitToast(msg)
             }
+        }
+    }
+
+    fun enableAutoSelection() {
+        val profileId = activeProfileId.value ?: return
+        viewModelScope.launch {
+            val result = configRepository.enableAutoSelectionWithResult(profileId)
+            val messageRes = if (result is ConfigRepository.NodeSwitchResult.Failed) {
+                R.string.nodes_auto_selection_failed
+            } else {
+                R.string.nodes_auto_selection_enabled
+            }
+            emitToast(getApplication<Application>().getString(messageRes))
         }
     }
 

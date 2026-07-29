@@ -799,4 +799,12 @@
     <string name="connection_info_no_active">当前没有活跃的网络连接</string>
     <string name="connection_info_close_connection">关闭连接</string>
 
+    <string name="nodes_auto_selection">自动选择</string>
+    <string name="nodes_auto_selection_disabled">未启用</string>
+    <string name="nodes_auto_selection_enabled">自动选择已启用</string>
+    <string name="nodes_auto_selection_failed">启用自动选择失败</string>
+    <string name="nodes_auto_selection_selecting">正在选择可用节点</string>
+    <string name="nodes_auto_selection_current">当前：%1$s</string>
+    <string name="nodes_auto_selection_unavailable">当前没有可用节点</string>
+    <string name="nodes_auto_selection_label">自动选择 · %1$s</string>
 </resources>

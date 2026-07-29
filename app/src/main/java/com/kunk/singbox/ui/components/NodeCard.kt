@@ -68,7 +68,7 @@ private fun NodeSelectedIndicator(useLiquidGlass: Boolean) {
     }
 }
 
-@Suppress("LongParameterList", "LongMethod", "CognitiveComplexMethod")
+@Suppress("LongParameterList", "LongMethod", "CognitiveComplexMethod", "CyclomaticComplexMethod")
 @Composable
 fun NodeCard(
     name: String,
@@ -82,6 +82,8 @@ fun NodeCard(
     onExport: () -> Unit,
     onLatency: () -> Unit,
     onDelete: () -> Unit,
+    showLatency: Boolean = true,
+    showActions: Boolean = true,
     modifier: Modifier = Modifier
 ) {
     var showMenu by remember { mutableStateOf(false) }
@@ -158,9 +160,9 @@ fun NodeCard(
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
 
-                        Spacer(modifier = Modifier.width(8.dp))
+                        Spacer(modifier = Modifier.width(if (showLatency) 8.dp else 0.dp))
 
-                        if (isTesting) {
+                        if (isTesting && showLatency) {
                             CircularProgressIndicator(
                                 modifier = Modifier.size(12.dp),
                                 color = liquidGlassProgressColor(
@@ -183,8 +185,9 @@ fun NodeCard(
                             }
                             val timeoutText = stringResource(R.string.common_timeout)
                             val ipv6OnlyText = stringResource(R.string.common_ipv6_only)
-                            val latencyText = remember(latency, timeoutText, ipv6OnlyText) {
+                            val latencyText = remember(showLatency, latency, timeoutText, ipv6OnlyText) {
                                 when {
+                                    !showLatency -> ""
                                     latency == null -> "---"
                                     latency == com.kunk.singbox.model.PingResultCode.IPV6_ONLY -> ipv6OnlyText
                                     latency < 0 -> timeoutText
@@ -206,7 +209,7 @@ fun NodeCard(
 
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.padding(start = 8.dp)
+                modifier = if (trafficUsed > 0 || showActions) Modifier.padding(start = 8.dp) else Modifier
             ) {
                 if (trafficUsed > 0) {
                     Text(
@@ -218,7 +221,11 @@ fun NodeCard(
                     Spacer(modifier = Modifier.width(4.dp))
                 }
 
-                Box(modifier = Modifier.wrapContentSize(Alignment.TopStart)) {
+                Box(
+                    modifier = Modifier
+                        .wrapContentSize(Alignment.TopStart)
+                        .then(if (showActions) Modifier else Modifier.size(0.dp))
+                ) {
                     IconButton(
                         onClick = { showMenu = true },
                         modifier = Modifier
@@ -237,7 +244,7 @@ fun NodeCard(
                         shapes = MaterialTheme.shapes.copy(extraSmall = RoundedCornerShape(12.dp))
                     ) {
                         LiquidGlassDropdownMenu(
-                            expanded = showMenu,
+                            expanded = showActions && showMenu,
                             onDismissRequest = { showMenu = false },
                             modifier = Modifier.nodeOverflowMenuPanel()
                         ) {
@@ -335,6 +342,8 @@ fun NodeGridCard(
     onExport: () -> Unit,
     onLatency: () -> Unit,
     onDelete: () -> Unit,
+    showLatency: Boolean = true,
+    showActions: Boolean = true,
     modifier: Modifier = Modifier
 ) {
     var showMenu by remember { mutableStateOf(false) }
@@ -369,7 +378,7 @@ fun NodeGridCard(
             .liquidGlassPressFeedback(
                 interactionSource = gridInteractionSource,
                 label = "liquid_glass_node_grid_card_scale",
-                onLongClick = { showMenu = true },
+                onLongClick = if (showActions) ({ showMenu = true }) else null,
                 onClick = onClick
             )
             .padding(10.dp)
@@ -405,10 +414,10 @@ fun NodeGridCard(
                     modifier = Modifier.weight(1f)
                 )
 
-                Spacer(modifier = Modifier.width(4.dp))
+                Spacer(modifier = Modifier.width(if (showLatency) 4.dp else 0.dp))
 
                 // Latency / Testing
-                if (isTesting) {
+                if (isTesting && showLatency) {
                     CircularProgressIndicator(
                         modifier = Modifier.size(10.dp),
                         color = liquidGlassProgressColor(
@@ -431,8 +440,9 @@ fun NodeGridCard(
                     }
                     val timeoutText = stringResource(R.string.common_timeout)
                     val ipv6OnlyText = stringResource(R.string.common_ipv6_only)
-                    val latencyText = remember(latency, timeoutText, ipv6OnlyText) {
+                    val latencyText = remember(showLatency, latency, timeoutText, ipv6OnlyText) {
                         when {
+                            !showLatency -> ""
                             latency == null -> "---"
                             latency == com.kunk.singbox.model.PingResultCode.IPV6_ONLY -> ipv6OnlyText
                             latency < 0 -> timeoutText
@@ -450,7 +460,7 @@ fun NodeGridCard(
             }
         }
 
-        if (showMenu) {
+        if (showActions && showMenu) {
             MaterialTheme(
                 shapes = MaterialTheme.shapes.copy(extraSmall = RoundedCornerShape(12.dp))
             ) {

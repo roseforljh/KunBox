@@ -842,11 +842,15 @@ fun NodeFilterDialog(
 }
 
 @Composable
+@Suppress("LongParameterList", "LongMethod")
 fun NodeSelectorDialog(
     title: String,
     nodes: List<NodeUi>,
     selectedNodeId: String?,
+    isAutoSelectionEnabled: Boolean,
+    autoSelectionSubtitle: String,
     testingNodeIds: Set<String> = emptySet(),
+    onSelectAuto: () -> Unit,
     onSelect: (String) -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -913,8 +917,18 @@ fun NodeSelectorDialog(
                         )
                         Spacer(modifier = Modifier.height(16.dp))
                     }
+                    item(key = "automatic-selection") {
+                        AutoSelectionItem(
+                            isSelected = isAutoSelectionEnabled,
+                            subtitle = autoSelectionSubtitle,
+                            onClick = {
+                                onSelectAuto()
+                                onDismiss()
+                            }
+                        )
+                    }
                     items(nodes, key = { it.id }) { node ->
-                        val isSelected = node.id == selectedNodeId
+                        val isSelected = !isAutoSelectionEnabled && node.id == selectedNodeId
                         val isTesting = testingNodeIds.contains(node.id)
 
                         NodeSelectorItem(
@@ -947,6 +961,62 @@ fun NodeSelectorDialog(
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+@Suppress("CognitiveComplexMethod")
+fun AutoSelectionItem(
+    isSelected: Boolean,
+    subtitle: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val useLiquidGlass = isLiquidGlassTheme()
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .nodeSelectionItemPanel(isSelected)
+            .nodeSelectorItemPressFeedback(useLiquidGlass = useLiquidGlass, onClick = onClick)
+            .padding(12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(modifier = Modifier.size(20.dp), contentAlignment = Alignment.Center) {
+            if (isSelected) {
+                Box(
+                    modifier = Modifier
+                        .size(20.dp)
+                        .nodeSelectorCheckPanel(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Check,
+                        contentDescription = null,
+                        tint = if (useLiquidGlass) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.onPrimary
+                        },
+                        modifier = Modifier.size(14.dp)
+                    )
+                }
+            }
+        }
+        Spacer(modifier = Modifier.width(12.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = stringResource(R.string.nodes_auto_selection),
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+            )
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
     }
 }
