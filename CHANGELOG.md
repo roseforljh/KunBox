@@ -1,5 +1,20 @@
 # Changelog
 
+## [2.21.0](https://github.com/roseforljh/KunBox/compare/v2.20.0...v2.21.0) (2026-07-29)
+
+
+### Features
+
+* ConfigRepository 重构 + CommandManager 组选择解析 ([bdecebf](https://github.com/roseforljh/KunBox/commit/bdecebf21f2a335d04f7b03d3a109a3dbd61154b))
+* ProxyOnlyService CommandClient 集成 + 备份导出 profileSelection + 诊断 FD 细分 ([c0492f8](https://github.com/roseforljh/KunBox/commit/c0492f8a43e15f0f786316f63e2231d0e338ba54))
+* UI 节点自动选择标识 + 组选择显示增强 ([22f02a0](https://github.com/roseforljh/KunBox/commit/22f02a0ac57d1cf453132f98aaebf47810355b93))
+* 自动切换信号驱动重构 + 资源枯竭检测与回收 ([e92d606](https://github.com/roseforljh/KunBox/commit/e92d606d872893ed6da53cecd7bad185f778ed7e))
+
+
+### Bug Fixes
+
+* 同步内核至 v1.13.15 并更新 libbox.aar ([3320326](https://github.com/roseforljh/KunBox/commit/3320326818a2f47db5bdcca544e840ec2ba057e8))
+
 ## [2.20.0](https://github.com/roseforljh/KunBox/compare/v2.19.2...v2.20.0) (2026-07-18)
 
 
