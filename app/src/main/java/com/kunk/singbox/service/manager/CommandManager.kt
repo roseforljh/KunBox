@@ -10,6 +10,7 @@ import com.kunk.singbox.repository.ConfigRepository
 import com.kunk.singbox.repository.LogRepository
 import com.kunk.singbox.repository.TrafficRepository
 import com.kunk.singbox.service.notification.VpnNotificationManager
+import com.kunk.singbox.service.network.TrafficMonitor
 import io.nekohasekai.libbox.*
 import kotlinx.coroutines.*
 import java.net.InetSocketAddress
@@ -115,9 +116,7 @@ class CommandManager(
     var recentConnectionIds: List<String> = emptyList()
         private set
 
-    private var lastUplinkTotal: Long = 0
-    private var lastDownlinkTotal: Long = 0
-    private var lastSpeedUpdateTime: Long = 0L
+    private val trafficMonitor = TrafficMonitor()
     private var lastConnectionsLabelLogged: String? = null
 
     interface Callbacks {
@@ -125,6 +124,7 @@ class CommandManager(
         fun resolveEgressNodeName(tagOrSelector: String?): String?
         fun onGroupSelectionChanged(groupTag: String, selectedTag: String) {}
         fun onRuntimeNodeChanged(nodeName: String) {}
+        fun onTrafficUpdate(snapshot: TrafficMonitor.TrafficSnapshot) {}
         fun onServiceStop(): Unit
         fun onServiceReload(): Unit
     }
@@ -193,6 +193,7 @@ class CommandManager(
     }
 
     fun startClients(): Result<Unit> = runCatching {
+        trafficMonitor.reset()
         trafficStatusGate.start()
         val handler = createClientHandler()
         clientHandler = handler
@@ -331,6 +332,7 @@ class CommandManager(
 
     fun stopTrafficUpdatesAndWait() {
         trafficStatusGate.stopAndWait()
+        trafficMonitor.reset()
     }
 
     private suspend fun waitForPortRelease(port: Int, timeoutMs: Long): Boolean {
@@ -437,41 +439,28 @@ class CommandManager(
             if (message == null) return
             trafficStatusGate.runIfActive {
                 try {
-                    val currentUp = message.uplinkTotal
-                    val currentDown = message.downlinkTotal
-                    val currentTime = System.currentTimeMillis()
+                    val snapshot = trafficMonitor.updateTotals(
+                        uploadTotal = message.uplinkTotal,
+                        downloadTotal = message.downlinkTotal,
+                        sampleTimeMs = SystemClock.elapsedRealtime()
+                    )
+                    callbacks?.onTrafficUpdate(snapshot)
 
-                    if (lastSpeedUpdateTime == 0L || currentTime < lastSpeedUpdateTime) {
-                        lastSpeedUpdateTime = currentTime
-                        lastUplinkTotal = currentUp
-                        lastDownlinkTotal = currentDown
-                        return@runIfActive
-                    }
-
-                    if (currentUp < lastUplinkTotal || currentDown < lastDownlinkTotal) {
-                        lastUplinkTotal = currentUp
-                        lastDownlinkTotal = currentDown
-                        lastSpeedUpdateTime = currentTime
-                        return@runIfActive
-                    }
-
-                    val diffUp = currentUp - lastUplinkTotal
-                    val diffDown = currentDown - lastDownlinkTotal
-
-                    if (diffUp > 0 || diffDown > 0) {
+                    if (snapshot.uploadDelta > 0L || snapshot.downloadDelta > 0L) {
                         val trafficRepo = TrafficRepository.getInstance(context)
                         val configRepo = ConfigRepository.getInstance(context)
 
                         val activeNodeId = configRepo.activeNodeId.value
                         if (activeNodeId != null) {
                             val nodeName = configRepo.getNodeById(activeNodeId)?.name
-                            trafficRepo.addTraffic(activeNodeId, diffUp, diffDown, nodeName)
+                            trafficRepo.addTraffic(
+                                activeNodeId,
+                                snapshot.uploadDelta,
+                                snapshot.downloadDelta,
+                                nodeName
+                            )
                         }
                     }
-
-                    lastUplinkTotal = currentUp
-                    lastDownlinkTotal = currentDown
-                    lastSpeedUpdateTime = currentTime
                 } catch (e: Exception) {
                     Log.e(TAG, "writeStatus callback error", e)
                 }

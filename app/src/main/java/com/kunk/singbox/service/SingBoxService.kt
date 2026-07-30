@@ -486,16 +486,13 @@ class SingBoxService : VpnService() {
 
     protected val recentConnectionIds: List<String> get() = commandManager.recentConnectionIds
 
-    // 速度计算相关 - 委托给 TrafficMonitor
+    // 速度计算使用 sing-box CommandStatus 的真实代理流量
     @Volatile protected var showNotificationSpeed: Boolean = true
 
     protected var currentUploadSpeed: Long = 0L
 
     protected var currentDownloadSpeed: Long = 0L
 
-    // TrafficMonitor 实例 - 仅负责采样和展示流量
-
-    protected val trafficMonitor = TrafficMonitor(serviceScope)
     private val healthSignalAggregator = HealthSignalAggregator()
     private val autoFailoverCandidateCache = AutoFailoverCandidateCache()
     private val autoGroupRestoreInFlight = AtomicBoolean(false)
@@ -505,17 +502,6 @@ class SingBoxService : VpnService() {
     @Volatile protected var autoFailoverServiceStartedAtMs: Long = 0L
     @Volatile protected var lastAutoFailoverNetworkEventAtMs: Long = 0L
     private val singleNodeRouteFailureNotificationTimes = ConcurrentHashMap<String, Long>()
-
-    protected val trafficListener = object : TrafficMonitor.Listener {
-        override fun onTrafficUpdate(snapshot: TrafficMonitor.TrafficSnapshot) {
-            currentUploadSpeed = snapshot.uploadSpeed
-            currentDownloadSpeed = snapshot.downloadSpeed
-            handleTrafficUpdateForAutoFailover(snapshot)
-            if (showNotificationSpeed) {
-                requestNotificationUpdate(force = false)
-            }
-        }
-    }
 
     @Volatile protected var lastRuleSetCheckMs: Long = 0L
 
@@ -589,6 +575,14 @@ class SingBoxService : VpnService() {
                     pendingNodeName = null
                 }
                 requestRemoteStateUpdate(force = false)
+            }
+            override fun onTrafficUpdate(snapshot: TrafficMonitor.TrafficSnapshot) {
+                currentUploadSpeed = snapshot.uploadSpeed
+                currentDownloadSpeed = snapshot.downloadSpeed
+                handleTrafficUpdateForAutoFailover(snapshot)
+                if (showNotificationSpeed) {
+                    requestNotificationUpdate(force = false)
+                }
             }
             override fun onServiceStop() {
                 Log.i(SingBoxService.TAG, "CommandManager: onServiceStop requested")
@@ -802,7 +796,6 @@ class SingBoxService : VpnService() {
                 applyPreferredProxySelection(initSelectorManager(configContent))
                 if (!isPostStartTaskActive(generation)) return@launch
 
-                trafficMonitor.start(Process.myUid(), trafficListener)
                 scheduleAsyncRuleSetUpdate()
 
                 Log.i(SingBoxService.TAG, "VPN post-start tasks completed")
@@ -2709,7 +2702,6 @@ class SingBoxService : VpnService() {
             ),
             coreManager = coreManager,
             commandManager = commandManager,
-            trafficMonitor = trafficMonitor,
             notificationManager = notificationManager,
             callbacks = shutdownCallbacks
         )

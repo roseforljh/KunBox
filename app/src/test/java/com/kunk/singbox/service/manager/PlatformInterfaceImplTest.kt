@@ -5,9 +5,11 @@ import com.kunk.singbox.model.AppRule
 import com.kunk.singbox.model.AppSettings
 import com.kunk.singbox.model.RoutingMode
 import java.io.File
+import java.io.IOException
 import java.net.InetAddress
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -338,8 +340,23 @@ class PlatformInterfaceImplTest {
             .substringBefore("override fun openTun")
 
         assertTrue(method.contains("callbacks.protect(fd)"))
+        assertTrue(method.contains("ensureSocketProtected(protected, fd)"))
         assertFalse(method.contains("findBestPhysicalNetwork"))
         assertFalse(method.contains("bindSocket"))
+    }
+
+    @Test
+    fun socketProtectionFailureAbortsNativeDial() {
+        val error = assertThrows(IOException::class.java) {
+            PlatformInterfaceImpl.ensureSocketProtected(protected = false, fd = 42)
+        }
+
+        assertTrue(error.message.orEmpty().contains("42"))
+    }
+
+    @Test
+    fun successfulSocketProtectionAllowsNativeDial() {
+        PlatformInterfaceImpl.ensureSocketProtected(protected = true, fd = 42)
     }
 
     @Test

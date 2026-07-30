@@ -23,6 +23,7 @@ import io.nekohasekai.libbox.TunOptions
 import io.nekohasekai.libbox.WIFIState
 import kotlinx.coroutines.CoroutineScope
 import java.io.File
+import java.io.IOException
 import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.NetworkInterface
@@ -63,6 +64,10 @@ class PlatformInterfaceImpl(
         private const val IP_PROTOCOL_UDP = 17
         private val PROC_FS_WHITESPACE = Regex("\\s+")
         internal const val UID_PACKAGE_CACHE_TTL_MS = 5 * 60 * 1000L
+
+        internal fun ensureSocketProtected(protected: Boolean, fd: Int) {
+            if (!protected) throw IOException("VpnService.protect($fd) failed")
+        }
 
         internal fun isUidPackageCacheFresh(cachedAtMs: Long, nowMs: Long): Boolean {
             return nowMs - cachedAtMs in 0 until UID_PACKAGE_CACHE_TTL_MS
@@ -328,8 +333,8 @@ class PlatformInterfaceImpl(
                 com.kunk.singbox.repository.LogRepository.getInstance()
                     .addLog("ERROR: protect($fd) failed")
             }
-            return
         }
+        ensureSocketProtected(protected, fd)
     }
 
     override fun openTun(options: TunOptions?): Int {

@@ -1,165 +1,72 @@
 package com.kunk.singbox.service.network
 
-import android.net.TrafficStats
-import android.os.SystemClock
-import android.util.Log
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
-
-class TrafficMonitor(
-    private val scope: CoroutineScope
-) {
-    companion object {
-        private const val TAG = "TrafficMonitor"
-        private const val SAMPLE_INTERVAL_MS = 3000L
-    }
+class TrafficMonitor {
 
     data class TrafficSnapshot(
         val uploadSpeed: Long,
         val downloadSpeed: Long,
-        val totalUpload: Long,
-        val totalDownload: Long
-    )
-
-    interface Listener {
-        fun onTrafficUpdate(snapshot: TrafficSnapshot)
-    }
-
-    private var monitorJob: Job? = null
-    private var baseTxBytes: Long = 0L
-    private var baseRxBytes: Long = 0L
-    private var lastTxBytes: Long = 0L
-    private var lastRxBytes: Long = 0L
-    private var lastSampleTime: Long = 0L
-
-    @Volatile
-    private var isPaused: Boolean = false
-
-    @Volatile
-    private var cachedUid: Int = 0
-
-    @Volatile
-    private var cachedListener: Listener? = null
-
-    @Volatile var currentUploadSpeed: Long = 0L
-        private set
-
-    @Volatile var currentDownloadSpeed: Long = 0L
-        private set
-
-    fun start(uid: Int, listener: Listener) {
-        stop()
-
-        cachedUid = uid
-        cachedListener = listener
-        isPaused = false
-
-        initializeTrafficState(uid, resetBase = true)
-        startMonitorLoop(uid, listener)
-
-        Log.i(TAG, "Traffic monitor started for uid=$uid")
-    }
-
-    private fun initializeTrafficState(uid: Int, resetBase: Boolean) {
-        val tx0 = TrafficStats.getUidTxBytes(uid).coerceAtLeast(0L)
-        val rx0 = TrafficStats.getUidRxBytes(uid).coerceAtLeast(0L)
-
-        if (resetBase) {
-            baseTxBytes = tx0
-            baseRxBytes = rx0
+        val uploadDelta: Long,
+        val downloadDelta: Long
+    ) {
+        companion object {
+            val ZERO = TrafficSnapshot(0L, 0L, 0L, 0L)
         }
-        lastTxBytes = tx0
-        lastRxBytes = rx0
-        lastSampleTime = SystemClock.elapsedRealtime()
     }
 
-    private fun startMonitorLoop(uid: Int, listener: Listener) {
-        monitorJob = scope.launch(Dispatchers.IO) {
-            while (true) {
-                delay(SAMPLE_INTERVAL_MS)
-                collectAndEmitTraffic(uid, listener)
+    private var hasBaseline = false
+    private var lastUploadTotal = 0L
+    private var lastDownloadTotal = 0L
+    private var lastSampleTimeMs = 0L
+
+    @Synchronized
+    fun updateTotals(uploadTotal: Long, downloadTotal: Long, sampleTimeMs: Long): TrafficSnapshot {
+        if (uploadTotal < 0L || downloadTotal < 0L) {
+            reset()
+            return TrafficSnapshot.ZERO
+        }
+
+        val invalidTime = !hasBaseline || sampleTimeMs <= lastSampleTimeMs
+        val countersRolledBack = uploadTotal < lastUploadTotal || downloadTotal < lastDownloadTotal
+        if (invalidTime || countersRolledBack) {
+            setBaseline(uploadTotal, downloadTotal, sampleTimeMs)
+            return TrafficSnapshot.ZERO
+        }
+
+        val elapsedMs = sampleTimeMs - lastSampleTimeMs
+        val uploadDelta = uploadTotal - lastUploadTotal
+        val downloadDelta = downloadTotal - lastDownloadTotal
+        setBaseline(uploadTotal, downloadTotal, sampleTimeMs)
+        return TrafficSnapshot(
+            uploadSpeed = bytesPerSecond(uploadDelta, elapsedMs),
+            downloadSpeed = bytesPerSecond(downloadDelta, elapsedMs),
+            uploadDelta = uploadDelta,
+            downloadDelta = downloadDelta
+        )
+    }
+
+    @Synchronized
+    fun reset() {
+        hasBaseline = false
+        lastUploadTotal = 0L
+        lastDownloadTotal = 0L
+        lastSampleTimeMs = 0L
+    }
+
+    private fun setBaseline(uploadTotal: Long, downloadTotal: Long, sampleTimeMs: Long) {
+        hasBaseline = true
+        lastUploadTotal = uploadTotal
+        lastDownloadTotal = downloadTotal
+        lastSampleTimeMs = sampleTimeMs
+    }
+
+    companion object {
+        internal fun bytesPerSecond(bytes: Long, elapsedMs: Long): Long {
+            if (bytes <= 0L || elapsedMs <= 0L) return 0L
+            return if (bytes > Long.MAX_VALUE / 1_000L) {
+                Long.MAX_VALUE
+            } else {
+                bytes * 1_000L / elapsedMs
             }
         }
     }
-
-    private fun collectAndEmitTraffic(uid: Int, listener: Listener) {
-        val nowElapsed = SystemClock.elapsedRealtime()
-        val tx = TrafficStats.getUidTxBytes(uid).coerceAtLeast(0L)
-        val rx = TrafficStats.getUidRxBytes(uid).coerceAtLeast(0L)
-
-        val dtMs = (nowElapsed - lastSampleTime).coerceAtLeast(1L)
-        val dTx = (tx - lastTxBytes).coerceAtLeast(0L)
-        val dRx = (rx - lastRxBytes).coerceAtLeast(0L)
-
-        val uploadSpeedBps = dTx * 1000 / dtMs
-        val downloadSpeedBps = dRx * 1000 / dtMs
-
-        currentUploadSpeed = uploadSpeedBps
-        currentDownloadSpeed = downloadSpeedBps
-
-        val totalTx = (tx - baseTxBytes).coerceAtLeast(0L)
-        val totalRx = (rx - baseRxBytes).coerceAtLeast(0L)
-
-        listener.onTrafficUpdate(TrafficSnapshot(
-            uploadSpeed = uploadSpeedBps,
-            downloadSpeed = downloadSpeedBps,
-            totalUpload = totalTx,
-            totalDownload = totalRx
-        ))
-
-        lastTxBytes = tx
-        lastRxBytes = rx
-        lastSampleTime = nowElapsed
-    }
-
-    fun stop() {
-        monitorJob?.cancel()
-        monitorJob = null
-        currentUploadSpeed = 0L
-        currentDownloadSpeed = 0L
-        baseTxBytes = 0L
-        baseRxBytes = 0L
-        lastTxBytes = 0L
-        lastRxBytes = 0L
-        lastSampleTime = 0L
-        cachedUid = 0
-        cachedListener = null
-        isPaused = false
-        Log.i(TAG, "Traffic monitor stopped")
-    }
-
-    fun getTotalBytes(): Long {
-        return (lastTxBytes + lastRxBytes).coerceAtLeast(0L)
-    }
-
-    fun pause() {
-        if (isPaused) return
-        isPaused = true
-        monitorJob?.cancel()
-        monitorJob = null
-        currentUploadSpeed = 0L
-        currentDownloadSpeed = 0L
-        Log.i(TAG, "Traffic monitor paused")
-    }
-
-    fun resume() {
-        if (!isPaused) return
-        isPaused = false
-
-        val uid = cachedUid
-        val listener = cachedListener
-        if (uid > 0 && listener != null) {
-            initializeTrafficState(uid, resetBase = false)
-            startMonitorLoop(uid, listener)
-            Log.i(TAG, "Traffic monitor resumed")
-        } else {
-            Log.w(TAG, "Cannot resume: missing uid or listener")
-        }
-    }
-
-    val isMonitoringPaused: Boolean
-        get() = isPaused
 }

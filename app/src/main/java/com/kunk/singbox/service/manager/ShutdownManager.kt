@@ -12,7 +12,6 @@ import com.kunk.singbox.repository.TrafficRepository
 import com.kunk.singbox.service.ServiceState
 import com.kunk.singbox.service.VpnKeepaliveWorker
 import com.kunk.singbox.service.VpnTileService
-import com.kunk.singbox.service.network.TrafficMonitor
 import com.kunk.singbox.service.notification.VpnNotificationManager
 import com.kunk.singbox.utils.NetworkClient
 import kotlinx.coroutines.*
@@ -100,7 +99,6 @@ class ShutdownManager(
         options: ShutdownOptions,
         coreManager: CoreManager,
         commandManager: CommandManager,
-        trafficMonitor: TrafficMonitor,
         notificationManager: VpnNotificationManager,
         callbacks: Callbacks
     ): Job {
@@ -119,8 +117,6 @@ class ShutdownManager(
         Log.i(TAG, "VPN keepalive worker cancelled")
 
         notificationManager.resetState()
-
-        trafficMonitor.stop()
 
         callbacks.stopForeignVpnMonitor()
 
