@@ -124,6 +124,7 @@ class CommandManager(
         fun requestNotificationUpdate(force: Boolean)
         fun resolveEgressNodeName(tagOrSelector: String?): String?
         fun onGroupSelectionChanged(groupTag: String, selectedTag: String) {}
+        fun onRuntimeNodeChanged(nodeName: String) {}
         fun onServiceStop(): Unit
         fun onServiceReload(): Unit
     }
@@ -546,6 +547,7 @@ class CommandManager(
         // writeGroups 会在 urltest/自动切换时频繁回调，写回 activeNodeId 会造成节点乱飞。
         realTimeNodeName = selected
         VpnStateStore.setActiveLabel(selected)
+        callbacks?.onRuntimeNodeChanged(selected)
         Log.i(TAG, "Real-time node update: $selected")
         return true
     }
