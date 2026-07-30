@@ -30,6 +30,7 @@ import com.kunk.singbox.repository.buildServiceLifecycleDiagnostic
 import com.kunk.singbox.service.manager.RecoveryPolicy
 import com.kunk.singbox.service.manager.ServiceStateHolder
 import com.kunk.singbox.service.manager.CommandManager
+import com.kunk.singbox.service.network.TrafficMonitor
 import com.kunk.singbox.utils.LocalNetworkPermission
 import com.kunk.singbox.utils.LocaleHelper
 import com.kunk.singbox.utils.NetworkClient
@@ -64,7 +65,9 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -154,14 +157,18 @@ class ProxyOnlyService : Service() {
     }
 
     private var commandServer: CommandServer? = null
-    private var groupCommandClient: CommandClient? = null
+    private var runtimeCommandClient: CommandClient? = null
     private val groupSelectedOutbounds = ConcurrentHashMap<String, String>()
+    private val trafficMonitor = TrafficMonitor()
     private val gson = Gson()
 
     private val notificationUpdateDebounceMs: Long = 900L
     private val lastNotificationUpdateAtMs = java.util.concurrent.atomic.AtomicLong(0L)
     @Volatile private var notificationUpdateJob: Job? = null
     @Volatile private var suppressNotificationUpdates = false
+    @Volatile private var showNotificationSpeed = true
+    @Volatile private var currentUploadSpeed = 0L
+    @Volatile private var currentDownloadSpeed = 0L
 
     private val lastPrepareRestartAtMs = java.util.concurrent.atomic.AtomicLong(0L)
     private val prepareRestartDebounceMs: Long = 1500L
@@ -441,6 +448,19 @@ class ProxyOnlyService : Service() {
                 }
             }
         }
+
+        serviceScope.launch {
+            SettingsRepository.getInstance(this@ProxyOnlyService)
+                .settings
+                .map { it.showNotificationSpeed }
+                .distinctUntilChanged()
+                .collect { enabled ->
+                    showNotificationSpeed = enabled
+                    if (isRunning) {
+                        requestNotificationUpdate(force = true)
+                    }
+                }
+        }
     }
 
     @Suppress("ReturnCount", "LongMethod", "CyclomaticComplexMethod", "CognitiveComplexMethod")
@@ -718,7 +738,7 @@ class ProxyOnlyService : Service() {
                 server.startOrReloadService(configContent, overrideOptions)
 
                 isRunning = true
-                startAutomaticGroupClientIfNeeded()
+                startRuntimeCommandClient()
                 NetworkClient.onVpnStateChanged(true)
 
                 VpnTileService.persistVpnState(true)
@@ -816,9 +836,12 @@ class ProxyOnlyService : Service() {
 
         val serverToClose = commandServer
         commandServer = null
-        groupCommandClient?.disconnect()
-        groupCommandClient = null
+        runtimeCommandClient?.disconnect()
+        runtimeCommandClient = null
         groupSelectedOutbounds.clear()
+        trafficMonitor.reset()
+        currentUploadSpeed = 0L
+        currentDownloadSpeed = 0L
         BoxWrapperManager.release()
 
         notificationUpdateJob?.cancel()
@@ -910,44 +933,68 @@ class ProxyOnlyService : Service() {
         }
     }
 
-    private fun startAutomaticGroupClientIfNeeded() {
+    private fun startRuntimeCommandClient() {
         val profileId = VpnStateStore.getSelectedProfileId()
-        if (!ConfigRepository.getInstance(this).isProfileAutoSelectionEnabled(profileId)) return
-        val options = CommandClientOptions().apply {
-            addCommand(Libbox.CommandGroup)
-            statusInterval = 3_000L * 1_000L * 1_000L
-        }
-        groupCommandClient = Libbox.newCommandClient(object : CommandClientHandler {
+        val autoSelectionEnabled = ConfigRepository.getInstance(this).isProfileAutoSelectionEnabled(profileId)
+        trafficMonitor.reset()
+        val options = createRuntimeCommandOptions(autoSelectionEnabled)
+        runtimeCommandClient = Libbox.newCommandClient(object : CommandClientHandler {
             override fun connected() = Unit
             override fun disconnected(message: String?) {
-                Log.w(TAG, "Automatic group client disconnected: $message")
+                Log.w(TAG, "Runtime command client disconnected: $message")
             }
             override fun clearLogs() = Unit
             override fun setDefaultLogLevel(level: Int) = Unit
             override fun writeLogs(messageList: LogIterator?) = Unit
-            override fun writeStatus(message: StatusMessage?) = Unit
+            override fun writeStatus(message: StatusMessage?) = handleRuntimeStatus(message)
             override fun initializeClashMode(modeList: StringIterator?, currentMode: String?) = Unit
             override fun updateClashMode(newMode: String?) = Unit
             override fun writeConnectionEvents(events: ConnectionEvents?) = Unit
-
-            override fun writeGroups(groups: OutboundGroupIterator?) {
-                if (!isRunning || isStopping) return
-                groups ?: return
-                while (groups.hasNext()) {
-                    val group = groups.next()
-                    val tag = group.tag
-                    val selected = group.selected
-                    if (!tag.isNullOrBlank() && !selected.isNullOrBlank()) {
-                        groupSelectedOutbounds[tag] = selected
-                    }
-                }
-                val concreteTag = CommandManager.resolveConcreteGroupSelection("PROXY", groupSelectedOutbounds)
-                    ?: return
-                VpnStateStore.setActiveLabel(concreteTag)
-                notifyRemoteState(state = ServiceState.RUNNING)
-                requestNotificationUpdate(force = false)
-            }
+            override fun writeGroups(groups: OutboundGroupIterator?) =
+                handleRuntimeGroups(groups, autoSelectionEnabled)
         }, options).also { it.connect() }
+    }
+
+    private fun createRuntimeCommandOptions(autoSelectionEnabled: Boolean): CommandClientOptions {
+        return CommandClientOptions().apply {
+            addCommand(Libbox.CommandStatus)
+            if (autoSelectionEnabled) {
+                addCommand(Libbox.CommandGroup)
+            }
+            statusInterval = 3_000L * 1_000L * 1_000L
+        }
+    }
+
+    private fun handleRuntimeStatus(message: StatusMessage?) {
+        if (!isRunning || isStopping) return
+        message ?: return
+        val snapshot = trafficMonitor.updateTotals(
+            uploadTotal = message.uplinkTotal,
+            downloadTotal = message.downlinkTotal,
+            sampleTimeMs = SystemClock.elapsedRealtime()
+        )
+        currentUploadSpeed = snapshot.uploadSpeed
+        currentDownloadSpeed = snapshot.downloadSpeed
+        if (showNotificationSpeed) {
+            requestNotificationUpdate(force = false)
+        }
+    }
+
+    private fun handleRuntimeGroups(groups: OutboundGroupIterator?, autoSelectionEnabled: Boolean) {
+        if (!autoSelectionEnabled || !isRunning || isStopping) return
+        groups ?: return
+        while (groups.hasNext()) {
+            val group = groups.next()
+            val tag = group.tag
+            val selected = group.selected
+            if (!tag.isNullOrBlank() && !selected.isNullOrBlank()) {
+                groupSelectedOutbounds[tag] = selected
+            }
+        }
+        val concreteTag = CommandManager.resolveConcreteGroupSelection("PROXY", groupSelectedOutbounds) ?: return
+        VpnStateStore.setActiveLabel(concreteTag)
+        notifyRemoteState(state = ServiceState.RUNNING)
+        requestNotificationUpdate(force = false)
     }
 
     private fun startResourceGuard() {
@@ -1084,7 +1131,12 @@ class ProxyOnlyService : Service() {
         if (hasForegroundStarted.get()) return true
 
         return try {
-            val notification = createProxyOnlyNotification(CHANNEL_ID)
+            val notification = createProxyOnlyNotification(
+                CHANNEL_ID,
+                showNotificationSpeed,
+                currentUploadSpeed,
+                currentDownloadSpeed
+            )
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
                 startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
             } else {
@@ -1099,7 +1151,12 @@ class ProxyOnlyService : Service() {
     }
 
     private fun updateNotification() {
-        val notification = createProxyOnlyNotification(CHANNEL_ID)
+        val notification = createProxyOnlyNotification(
+            CHANNEL_ID,
+            showNotificationSpeed,
+            currentUploadSpeed,
+            currentDownloadSpeed
+        )
         val manager = getSystemService(NotificationManager::class.java)
         if (!hasForegroundStarted.get()) {
             runCatching {
@@ -1179,9 +1236,10 @@ class ProxyOnlyService : Service() {
 
     override fun onDestroy() {
         stopResourceGuard()
-        groupCommandClient?.disconnect()
-        groupCommandClient = null
+        runtimeCommandClient?.disconnect()
+        runtimeCommandClient = null
         groupSelectedOutbounds.clear()
+        trafficMonitor.reset()
         BoxWrapperManager.release()
         val mode = VpnStateStore.getMode()
         val shouldClearRuntimeState = shouldClearRuntimeStateOnDestroy(

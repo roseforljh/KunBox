@@ -199,4 +199,17 @@ class ProxyOnlyServiceStateTest {
             )
         )
     }
+
+    @Test
+    fun `proxy only notification uses core status speed and shared setting`() {
+        val serviceSource = File("src/main/java/com/kunk/singbox/service/ProxyOnlyService.kt")
+            .readText(Charsets.UTF_8)
+        val notificationSource = File("src/main/java/com/kunk/singbox/service/ProxyOnlyNotification.kt")
+            .readText(Charsets.UTF_8)
+
+        assertTrue(serviceSource.contains("addCommand(Libbox.CommandStatus)"))
+        assertTrue(serviceSource.contains("trafficMonitor.updateTotals("))
+        assertTrue(serviceSource.contains("it.showNotificationSpeed"))
+        assertTrue(notificationSource.contains("R.string.notification_speed_format"))
+    }
 }

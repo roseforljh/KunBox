@@ -9,6 +9,7 @@ import com.kunk.singbox.utils.perf.FdPressureLevel
 import com.kunk.singbox.utils.perf.FdTargetType
 import com.kunk.singbox.utils.perf.ProcessCpuBaseline
 import com.kunk.singbox.utils.perf.ProcessResourcePoint
+import com.kunk.singbox.utils.perf.ProcessStartEpochClock
 import com.kunk.singbox.utils.perf.calculateProcessCpuPercent
 import com.kunk.singbox.utils.perf.calculateProcessStartedAtEpochMs
 import com.kunk.singbox.utils.perf.classifyFdTarget
@@ -296,6 +297,14 @@ class DiagnosticSupportTest {
     }
 
     @Test
+    fun processStartEpochClockKeepsOneSessionStableAcrossSamplingJitter() {
+        val clock = ProcessStartEpochClock(bootEpochMs = 1_699_999_800_000L)
+
+        assertEquals(1_699_999_923_450L, clock.calculate(200_000L, 123_450L))
+        assertEquals(1_699_999_923_450L, clock.calculate(200_001L, 123_450L))
+    }
+
+    @Test
     fun processCpuBaselineResetStartsANewSamplingSession() {
         val baseline = ProcessCpuBaseline()
 
@@ -413,7 +422,7 @@ class DiagnosticSupportTest {
                 102,
                 appVersion = "v2.21.0",
                 appVersionCode = 6913L,
-                processStartedAtEpochMs = 20L
+                processStartedAtEpochMs = 21L
             )
         )
 

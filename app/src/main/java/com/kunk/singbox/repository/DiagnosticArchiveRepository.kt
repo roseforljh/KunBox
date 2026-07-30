@@ -66,22 +66,19 @@ internal data class DiagnosticResourceSummary(
     val latestSessionSampleCount: Int
 )
 
+private const val PROCESS_START_JITTER_TOLERANCE_MS = 2L
+
 internal fun summarizeDiagnosticResources(
     samples: List<DiagnosticResourceSample>,
     currentVersionCode: Long
 ): DiagnosticResourceSummary {
     val latest = samples.maxByOrNull(DiagnosticResourceSample::timestampEpochMs)
     val currentVersionSampleCount = samples.count { it.appVersionCode == currentVersionCode }
-    val processSessionCount = samples.distinctBy {
-        listOf(it.appVersionCode, it.processName, it.pid, it.processStartedAtEpochMs)
-    }.size
+    val processSessionCount = samples.groupBy {
+        Triple(it.appVersionCode, it.processName, it.pid)
+    }.values.sumOf(::countProcessSessions)
     val latestSessionSampleCount = latest?.let { current ->
-        samples.count {
-            it.appVersionCode == current.appVersionCode &&
-                it.processName == current.processName &&
-                it.pid == current.pid &&
-                it.processStartedAtEpochMs == current.processStartedAtEpochMs
-        }
+        samples.count { it.belongsToSameProcessSession(current) }
     } ?: 0
     return DiagnosticResourceSummary(
         currentVersionSampleCount = currentVersionSampleCount,
@@ -94,6 +91,24 @@ internal fun summarizeDiagnosticResources(
         latestProcessStartedAtEpochMs = latest?.processStartedAtEpochMs,
         latestSessionSampleCount = latestSessionSampleCount
     )
+}
+
+private fun countProcessSessions(samples: List<DiagnosticResourceSample>): Int {
+    var count = if (samples.any { it.processStartedAtEpochMs == null }) 1 else 0
+    var previous: Long? = null
+    samples.mapNotNull(DiagnosticResourceSample::processStartedAtEpochMs).sorted().forEach { current ->
+        if (previous == null || current - checkNotNull(previous) > PROCESS_START_JITTER_TOLERANCE_MS) count++
+        previous = current
+    }
+    return count
+}
+
+private fun DiagnosticResourceSample.belongsToSameProcessSession(other: DiagnosticResourceSample): Boolean {
+    if (appVersionCode != other.appVersionCode || processName != other.processName || pid != other.pid) return false
+    val currentStart = processStartedAtEpochMs
+    val otherStart = other.processStartedAtEpochMs
+    if (currentStart == null || otherStart == null) return currentStart == otherStart
+    return kotlin.math.abs(currentStart - otherStart) <= PROCESS_START_JITTER_TOLERANCE_MS
 }
 
 internal class DiagnosticArchiveRepository(

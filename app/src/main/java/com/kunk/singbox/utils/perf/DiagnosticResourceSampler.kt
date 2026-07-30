@@ -259,14 +259,24 @@ internal fun parseProcProcessStartElapsedRealtimeMs(stat: String, ticksPerSecond
     return startTicks / ticksPerSecond * 1_000L + startTicks % ticksPerSecond * 1_000L / ticksPerSecond
 }
 
+internal class ProcessStartEpochClock(private val bootEpochMs: Long) {
+    fun calculate(elapsedRealtimeMs: Long, processStartElapsedRealtimeMs: Long): Long? {
+        if (processStartElapsedRealtimeMs < 0L || processStartElapsedRealtimeMs > elapsedRealtimeMs) return null
+        return bootEpochMs + processStartElapsedRealtimeMs
+    }
+}
+
+private val processStartEpochClock by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+    val elapsedRealtimeMs = SystemClock.elapsedRealtime()
+    ProcessStartEpochClock(System.currentTimeMillis() - elapsedRealtimeMs)
+}
+
 internal fun calculateProcessStartedAtEpochMs(
     timestampEpochMs: Long,
     elapsedRealtimeMs: Long,
     processStartElapsedRealtimeMs: Long
-): Long? {
-    if (processStartElapsedRealtimeMs < 0L || processStartElapsedRealtimeMs > elapsedRealtimeMs) return null
-    return timestampEpochMs - (elapsedRealtimeMs - processStartElapsedRealtimeMs)
-}
+): Long? = ProcessStartEpochClock(timestampEpochMs - elapsedRealtimeMs)
+    .calculate(elapsedRealtimeMs, processStartElapsedRealtimeMs)
 
 internal fun readProcessStartedAtEpochMs(pid: Int = Process.myPid()): Long? = runCatching {
     val ticksPerSecond = Os.sysconf(OsConstants._SC_CLK_TCK).takeIf { it > 0L } ?: return@runCatching null
@@ -274,8 +284,7 @@ internal fun readProcessStartedAtEpochMs(pid: Int = Process.myPid()): Long? = ru
         File("/proc/$pid/stat").readText(Charsets.UTF_8),
         ticksPerSecond
     ) ?: return@runCatching null
-    calculateProcessStartedAtEpochMs(
-        timestampEpochMs = System.currentTimeMillis(),
+    processStartEpochClock.calculate(
         elapsedRealtimeMs = SystemClock.elapsedRealtime(),
         processStartElapsedRealtimeMs = startElapsedRealtimeMs
     )
@@ -414,7 +423,7 @@ internal class DiagnosticResourceSampler(context: Context) {
             appVersion = appVersion,
             appVersionCode = appVersionCode,
             processStartedAtEpochMs = processStartElapsedRealtimeMs?.let {
-                calculateProcessStartedAtEpochMs(timestampEpochMs, elapsedRealtimeMs, it)
+                processStartEpochClock.calculate(elapsedRealtimeMs, it)
             }
         )
     }
