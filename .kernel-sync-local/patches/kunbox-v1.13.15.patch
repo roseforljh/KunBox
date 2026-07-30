@@ -171,3 +171,196 @@ index 0000000..48c3567
 +		})
 +	}
 +}
+diff --git a/route/conn.go b/route/conn.go
+index 9fdc6cd..8afb094 100644
+--- a/route/conn.go
++++ b/route/conn.go
+@@ -143,6 +143,8 @@ func (m *ConnectionManager) NewConnection(ctx context.Context, this N.Dialer, co
+ 
+ func (m *ConnectionManager) NewPacketConnection(ctx context.Context, this N.Dialer, conn N.PacketConn, metadata adapter.InboundContext, onClose N.CloseHandlerFunc) {
+ 	ctx = adapter.WithContext(ctx, &metadata)
++	dialContext, cancelDial := newPacketDialContext(ctx, conn)
++	defer cancelDial()
+ 	var (
+ 		remotePacketConn   net.PacketConn
+ 		remoteConn         net.Conn
+@@ -153,18 +155,18 @@ func (m *ConnectionManager) NewPacketConnection(ctx context.Context, this N.Dial
+ 		parallelDialer, isParallelDialer := this.(dialer.ParallelInterfaceDialer)
+ 		if len(metadata.DestinationAddresses) > 0 {
+ 			if isParallelDialer {
+-				remoteConn, err = dialer.DialSerialNetwork(ctx, parallelDialer, N.NetworkUDP, metadata.Destination, metadata.DestinationAddresses, metadata.NetworkStrategy, metadata.NetworkType, metadata.FallbackNetworkType, metadata.FallbackDelay)
++				remoteConn, err = dialer.DialSerialNetwork(dialContext, parallelDialer, N.NetworkUDP, metadata.Destination, metadata.DestinationAddresses, metadata.NetworkStrategy, metadata.NetworkType, metadata.FallbackNetworkType, metadata.FallbackDelay)
+ 			} else {
+-				remoteConn, err = N.DialSerial(ctx, this, N.NetworkUDP, metadata.Destination, metadata.DestinationAddresses)
++				remoteConn, err = N.DialSerial(dialContext, this, N.NetworkUDP, metadata.Destination, metadata.DestinationAddresses)
+ 			}
+ 		} else if metadata.Destination.IsIP() {
+ 			if isParallelDialer {
+-				remoteConn, err = dialer.DialSerialNetwork(ctx, parallelDialer, N.NetworkUDP, metadata.Destination, metadata.DestinationAddresses, metadata.NetworkStrategy, metadata.NetworkType, metadata.FallbackNetworkType, metadata.FallbackDelay)
++				remoteConn, err = dialer.DialSerialNetwork(dialContext, parallelDialer, N.NetworkUDP, metadata.Destination, metadata.DestinationAddresses, metadata.NetworkStrategy, metadata.NetworkType, metadata.FallbackNetworkType, metadata.FallbackDelay)
+ 			} else {
+-				remoteConn, err = this.DialContext(ctx, N.NetworkUDP, metadata.Destination)
++				remoteConn, err = this.DialContext(dialContext, N.NetworkUDP, metadata.Destination)
+ 			}
+ 		} else {
+-			remoteConn, err = this.DialContext(ctx, N.NetworkUDP, metadata.Destination)
++			remoteConn, err = this.DialContext(dialContext, N.NetworkUDP, metadata.Destination)
+ 		}
+ 		if err != nil {
+ 			var remoteString string
+@@ -189,11 +191,11 @@ func (m *ConnectionManager) NewPacketConnection(ctx context.Context, this N.Dial
+ 		}
+ 	} else {
+ 		if len(metadata.DestinationAddresses) > 0 {
+-			remotePacketConn, destinationAddress, err = dialer.ListenSerialNetworkPacket(ctx, this, metadata.Destination, metadata.DestinationAddresses, metadata.NetworkStrategy, metadata.NetworkType, metadata.FallbackNetworkType, metadata.FallbackDelay)
++			remotePacketConn, destinationAddress, err = dialer.ListenSerialNetworkPacket(dialContext, this, metadata.Destination, metadata.DestinationAddresses, metadata.NetworkStrategy, metadata.NetworkType, metadata.FallbackNetworkType, metadata.FallbackDelay)
+ 		} else if packetDialer, withDestination := this.(dialer.PacketDialerWithDestination); withDestination {
+-			remotePacketConn, destinationAddress, err = packetDialer.ListenPacketWithDestination(ctx, metadata.Destination)
++			remotePacketConn, destinationAddress, err = packetDialer.ListenPacketWithDestination(dialContext, metadata.Destination)
+ 		} else {
+-			remotePacketConn, err = this.ListenPacket(ctx, metadata.Destination)
++			remotePacketConn, err = this.ListenPacket(dialContext, metadata.Destination)
+ 		}
+ 		if err != nil {
+ 			var dialerString string
+@@ -258,6 +260,35 @@ func (m *ConnectionManager) NewPacketConnection(ctx context.Context, this N.Dial
+ 	go m.packetConnectionCopy(ctx, destination, conn, true, &done, onClose)
+ }
+ 
++func newPacketDialContext(parent context.Context, conn N.PacketConn) (context.Context, context.CancelFunc) {
++	timeoutConn, loaded := common.Cast[canceler.PacketConn](conn)
++	if !loaded {
++		return parent, func() {}
++	}
++	dialContext, cancel := context.WithCancel(parent)
++	if timeoutConn.Timeout() <= 0 {
++		cancel()
++		return dialContext, cancel
++	}
++	go func() {
++		// ponytail: 旧版 udpnat2 没有关闭通知，仅在拨号期间轮询；迁移到新版 sing-tun UDPNAT 后删除。
++		ticker := time.NewTicker(10 * time.Millisecond)
++		defer ticker.Stop()
++		for {
++			select {
++			case <-dialContext.Done():
++				return
++			case <-ticker.C:
++				if timeoutConn.Timeout() <= 0 {
++					cancel()
++					return
++				}
++			}
++		}
++	}()
++	return dialContext, cancel
++}
++
+ func (m *ConnectionManager) connectionCopy(ctx context.Context, source net.Conn, destination net.Conn, direction bool, done *atomic.Bool, onClose N.CloseHandlerFunc) {
+ 	_, err := bufio.CopyWithIncreateBuffer(destination, source, bufio.DefaultIncreaseBufferAfter, bufio.DefaultBatchSize)
+ 	if err != nil {
+diff --git a/route/conn_packet_lifecycle_test.go b/route/conn_packet_lifecycle_test.go
+new file mode 100644
+index 0000000..6ce6818
+--- /dev/null
++++ b/route/conn_packet_lifecycle_test.go
+@@ -0,0 +1,99 @@
++package route
++
++import (
++	"context"
++	"net"
++	"sync/atomic"
++	"testing"
++	"time"
++
++	"github.com/sagernet/sing-box/adapter"
++	"github.com/sagernet/sing-box/log"
++	"github.com/sagernet/sing/common/buf"
++	M "github.com/sagernet/sing/common/metadata"
++)
++
++func TestPacketDialCanceledWhenInboundNATExpires(t *testing.T) {
++	manager := NewConnectionManager(log.NewNOPFactory().Logger())
++	source := &expiringPacketConn{}
++	dialer := &blockingPacketDialer{
++		started:  make(chan struct{}),
++		canceled: make(chan struct{}),
++	}
++	done := make(chan struct{})
++	go func() {
++		manager.NewPacketConnection(
++			context.Background(),
++			dialer,
++			source,
++			adapter.InboundContext{Destination: M.ParseSocksaddr("1.1.1.1:443")},
++			nil,
++		)
++		close(done)
++	}()
++
++	select {
++	case <-dialer.started:
++	case <-time.After(time.Second):
++		t.Fatal("packet dial did not start")
++	}
++	source.expired.Store(true)
++	select {
++	case <-dialer.canceled:
++	case <-time.After(250 * time.Millisecond):
++		t.Fatal("expired inbound NAT did not cancel the pending packet dial")
++	}
++	select {
++	case <-done:
++	case <-time.After(time.Second):
++		t.Fatal("packet connection did not return after dial cancellation")
++	}
++}
++
++type expiringPacketConn struct {
++	expired atomic.Bool
++}
++
++func (c *expiringPacketConn) ReadPacket(*buf.Buffer) (M.Socksaddr, error) {
++	return M.Socksaddr{}, net.ErrClosed
++}
++
++func (c *expiringPacketConn) WritePacket(buffer *buf.Buffer, _ M.Socksaddr) error {
++	buffer.Release()
++	return nil
++}
++
++func (c *expiringPacketConn) Close() error                     { return nil }
++func (c *expiringPacketConn) LocalAddr() net.Addr              { return M.Socksaddr{} }
++func (c *expiringPacketConn) SetDeadline(time.Time) error      { return nil }
++func (c *expiringPacketConn) SetReadDeadline(time.Time) error  { return nil }
++func (c *expiringPacketConn) SetWriteDeadline(time.Time) error { return nil }
++
++func (c *expiringPacketConn) Timeout() time.Duration {
++	if c.expired.Load() {
++		return 0
++	}
++	return time.Minute
++}
++
++func (c *expiringPacketConn) SetTimeout(time.Duration) bool { return true }
++
++type blockingPacketDialer struct {
++	started  chan struct{}
++	canceled chan struct{}
++}
++
++func (d *blockingPacketDialer) DialContext(ctx context.Context, _ string, _ M.Socksaddr) (net.Conn, error) {
++	return nil, d.wait(ctx)
++}
++
++func (d *blockingPacketDialer) ListenPacket(ctx context.Context, _ M.Socksaddr) (net.PacketConn, error) {
++	return nil, d.wait(ctx)
++}
++
++func (d *blockingPacketDialer) wait(ctx context.Context) error {
++	close(d.started)
++	<-ctx.Done()
++	close(d.canceled)
++	return ctx.Err()
++}

@@ -15,7 +15,7 @@ $trustedTagCommits = @{
 }
 $trustedPatchHashes = @{
     'v1.13.14' = '4C89FE3A078F5DC68DA351BF04B1B9536D048925266E15332E5D6F2BFAB2ECE2'
-    'v1.13.15' = 'B0B08AA8B5A4278082CA04F59BBE3FB329E2D2C91B1C067BFE2A0C097EF64AB3'
+    'v1.13.15' = '4A49BC1D91509477AC193CFA149E557687D87F3D0D6D4F69178E14A514BAC7ED'
 }
 $trustedPatchFiles = @{
     'v1.13.14' = @(
@@ -26,7 +26,9 @@ $trustedPatchFiles = @{
     'v1.13.15' = @(
         'cmd/internal/build_libbox/main.go',
         'protocol/vless/outbound.go',
-        'protocol/vless/outbound_test.go'
+        'protocol/vless/outbound_test.go',
+        'route/conn.go',
+        'route/conn_packet_lifecycle_test.go'
     )
 }
 $gomobileVersion = 'v0.1.12'
@@ -717,7 +719,7 @@ function Run-GoValidation([string] $goBinary) {
     Write-Stage 'Stage 4/8: Validate patched Go packages'
 
     $env:GOTOOLCHAIN = 'local'
-    $packages = @('./protocol/vless')
+    $packages = @('./protocol/vless', './route')
     Invoke-External -FilePath $goBinary -Arguments (@('test') + $packages) -WorkingDirectory $upstreamDir -FailureMessage 'Patched Go package tests failed'
     Invoke-External -FilePath $goBinary -Arguments (@('test', '-race') + $packages) -WorkingDirectory $upstreamDir -FailureMessage 'Patched Go race tests failed'
     Invoke-External -FilePath $goBinary -Arguments (@('vet') + $packages) -WorkingDirectory $upstreamDir -FailureMessage 'Patched Go vet failed'
