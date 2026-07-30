@@ -10,12 +10,14 @@ import com.kunk.singbox.utils.perf.FdTargetType
 import com.kunk.singbox.utils.perf.ProcessCpuBaseline
 import com.kunk.singbox.utils.perf.ProcessResourcePoint
 import com.kunk.singbox.utils.perf.calculateProcessCpuPercent
+import com.kunk.singbox.utils.perf.calculateProcessStartedAtEpochMs
 import com.kunk.singbox.utils.perf.classifyFdTarget
 import com.kunk.singbox.utils.perf.evaluateFdPressure
 import com.kunk.singbox.utils.perf.formatDiagnosticResourceSamplesCsv
 import com.kunk.singbox.utils.perf.isFdRecoverySufficient
 import com.kunk.singbox.utils.perf.parseDiagnosticResourceSamplesCsv
 import com.kunk.singbox.utils.perf.parseProcCpuTimeMs
+import com.kunk.singbox.utils.perf.parseProcProcessStartElapsedRealtimeMs
 import com.kunk.singbox.utils.perf.parseProcSocketRows
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -78,6 +80,16 @@ class DiagnosticSupportTest {
             "123e4567-e89b-12d3-a456-426614174000",
             "/data/user/0/com.kunk.singbox/files/running_config.json"
         ).forEach { secret -> assertFalse("未脱敏: $secret", redacted.contains(secret)) }
+    }
+
+    @Test
+    fun redactorPreservesLogTimestampsWhileRedactingBracketedIpv6() {
+        val source = "[14:40:27] connected to [2001:db8::1]:443"
+
+        val redacted = DiagnosticRedactor("test-salt".toByteArray()).redactText(source)
+
+        assertTrue(redacted.startsWith("[14:40:27] connected to "))
+        assertFalse(redacted.contains("2001:db8::1"))
     }
 
     @Test
@@ -268,6 +280,22 @@ class DiagnosticSupportTest {
     }
 
     @Test
+    fun resourceSamplerCalculatesProcessStartEpochFromProcStat() {
+        val stat = "42 (com.kunk.singbox:bg worker) S 1 1 1 0 0 0 0 0 0 0 250 150 0 0 0 0 0 0 12345"
+        val startElapsedRealtimeMs = parseProcProcessStartElapsedRealtimeMs(stat, ticksPerSecond = 100L)
+
+        assertEquals(123_450L, startElapsedRealtimeMs)
+        assertEquals(
+            1_699_999_923_450L,
+            calculateProcessStartedAtEpochMs(
+                timestampEpochMs = 1_700_000_000_000L,
+                elapsedRealtimeMs = 200_000L,
+                processStartElapsedRealtimeMs = checkNotNull(startElapsedRealtimeMs)
+            )
+        )
+    }
+
+    @Test
     fun processCpuBaselineResetStartsANewSamplingSession() {
         val baseline = ProcessCpuBaseline()
 
@@ -295,7 +323,10 @@ class DiagnosticSupportTest {
                     pssKb = 12_345,
                     cpuTimeMs = 6_789L,
                     cpuPercent = 12.345,
-                    fdCount = 88
+                    fdCount = 88,
+                    appVersion = "v2.21.0",
+                    appVersionCode = 6913L,
+                    processStartedAtEpochMs = 1_699_999_990_000L
                 )
             )
         )
@@ -303,6 +334,10 @@ class DiagnosticSupportTest {
         assertTrue(csv.startsWith("timestamp_epoch_ms,elapsed_realtime_ms,process_name,pid,pss_kb,cpu_time_ms"))
         assertTrue(csv.contains("\"com.kunk.singbox:bg,worker\""))
         assertTrue(csv.contains(",12.35,88"))
+        val decoded = parseDiagnosticResourceSamplesCsv(csv).single()
+        assertEquals("v2.21.0", decoded.appVersion)
+        assertEquals(6913L, decoded.appVersionCode)
+        assertEquals(1_699_999_990_000L, decoded.processStartedAtEpochMs)
     }
 
     @Test
@@ -345,6 +380,50 @@ class DiagnosticSupportTest {
         assertEquals(88, sample.fdCount)
         assertNull(sample.fdSoftLimit)
         assertNull(sample.fdBreakdown)
+        assertNull(sample.appVersion)
+        assertNull(sample.appVersionCode)
+        assertNull(sample.processStartedAtEpochMs)
+    }
+
+    @Test
+    fun resourceSummarySeparatesCurrentVersionAndLatestProcessSession() {
+        val samples = listOf(
+            DiagnosticResourceSample(1L, 1L, "bg", 10, null, null, null, 100),
+            DiagnosticResourceSample(
+                2L,
+                2L,
+                "bg",
+                11,
+                null,
+                null,
+                null,
+                101,
+                appVersion = "v2.21.0",
+                appVersionCode = 6913L,
+                processStartedAtEpochMs = 20L
+            ),
+            DiagnosticResourceSample(
+                3L,
+                3L,
+                "bg",
+                11,
+                null,
+                null,
+                null,
+                102,
+                appVersion = "v2.21.0",
+                appVersionCode = 6913L,
+                processStartedAtEpochMs = 20L
+            )
+        )
+
+        val summary = summarizeDiagnosticResources(samples, currentVersionCode = 6913L)
+
+        assertEquals(2, summary.currentVersionSampleCount)
+        assertEquals(1, summary.historicalSampleCount)
+        assertEquals(2, summary.processSessionCount)
+        assertEquals(2, summary.latestSessionSampleCount)
+        assertEquals(11, summary.latestPid)
     }
 
     @Test

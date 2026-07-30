@@ -59,14 +59,14 @@ class ConfigRepositoryBatchLatencyPolicyTest {
     }
 
     @Test
-    fun latencyFreshnessRejectsExpiredFutureAndUnknownTimes() {
-        val now = 2_000_000L
-        val maxAge = 60_000L
+    fun displayedLatencyIsKeptUntilUserClearsOrRetests() {
+        val source = File(
+            "src/main/java/com/kunk/singbox/repository/ConfigRepository.kt"
+        ).readText()
 
-        assertTrue(ConfigRepository.isLatencyFresh(now - maxAge + 1L, now, maxAge))
-        assertFalse(ConfigRepository.isLatencyFresh(now - maxAge, now, maxAge))
-        assertFalse(ConfigRepository.isLatencyFresh(0L, now, maxAge))
-        assertFalse(ConfigRepository.isLatencyFresh(now + 1L, now, maxAge))
+        assertTrue(source.contains("latencyMs = savedLatencyMs(id)"))
+        assertFalse(source.contains("refreshExpiredNodeLatencies"))
+        assertFalse(source.contains("LATENCY_EXPIRY_REFRESH_INTERVAL_MS"))
     }
 
     @Test
@@ -175,7 +175,7 @@ class ConfigRepositoryBatchLatencyPolicyTest {
             .substringAfter("protected fun createNodeUi(")
             .substringBefore("suspend fun setActiveProfileAndWait")
 
-        assertTrue(body.contains("latencyMs = freshLatencyMs(id)"))
+        assertTrue(body.contains("latencyMs = savedLatencyMs(id)"))
     }
 
     @Test

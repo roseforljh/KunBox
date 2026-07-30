@@ -11,6 +11,7 @@ import android.system.OsConstants
 import android.util.Log
 import com.kunk.singbox.ipc.VpnStateStore
 import com.kunk.singbox.repository.LogRepository
+import com.kunk.singbox.utils.VersionInfo
 import java.io.File
 import java.io.FileOutputStream
 import java.util.Locale
@@ -32,7 +33,10 @@ internal data class DiagnosticResourceSample(
     val fdCount: Int?,
     val fdSoftLimit: Long? = null,
     val fdRatio: Double? = null,
-    val fdBreakdown: FdBreakdown? = null
+    val fdBreakdown: FdBreakdown? = null,
+    val appVersion: String? = null,
+    val appVersionCode: Long? = null,
+    val processStartedAtEpochMs: Long? = null
 )
 
 internal data class FdBreakdown(
@@ -90,7 +94,7 @@ internal const val DIAGNOSTIC_RESOURCE_CSV_HEADER =
         "fd_soft_limit,fd_ratio,fd_socket,socket_unique,fd_anon_inode,fd_eventfd,fd_eventpoll,fd_timerfd,fd_pipe," +
         "fd_file,fd_device,fd_unknown,socket_tcp,socket_tcp6,socket_udp,socket_udp6,socket_raw," +
         "socket_raw6,socket_unix,socket_netlink,socket_packet,socket_unknown,socket_table_failures," +
-        "socket_states"
+        "socket_states,app_version,app_version_code,process_started_at_epoch_ms"
 
 internal fun formatDiagnosticResourceSamplesCsv(samples: List<DiagnosticResourceSample>): String = buildString {
     appendLine(DIAGNOSTIC_RESOURCE_CSV_HEADER)
@@ -129,7 +133,10 @@ internal fun formatDiagnosticResourceSamplesCsv(samples: List<DiagnosticResource
                 breakdown?.packetCount?.toString().orEmpty(),
                 breakdown?.socketUnknownCount?.toString().orEmpty(),
                 breakdown?.socketTableFailures?.toCsvField().orEmpty(),
-                breakdown?.socketStates?.toCsvField().orEmpty()
+                breakdown?.socketStates?.toCsvField().orEmpty(),
+                sample.appVersion?.toCsvField().orEmpty(),
+                sample.appVersionCode?.toString().orEmpty(),
+                sample.processStartedAtEpochMs?.toString().orEmpty()
             ).joinToString(",")
         )
     }
@@ -197,7 +204,10 @@ internal fun parseDiagnosticResourceSamplesCsv(csv: String): List<DiagnosticReso
                 )
             } else {
                 null
-            }
+            },
+            appVersion = values.value("app_version").takeIf(String::isNotBlank),
+            appVersionCode = values.long("app_version_code"),
+            processStartedAtEpochMs = values.long("process_started_at_epoch_ms")
         )
     }
 }
@@ -233,12 +243,7 @@ private fun String.toCsvField(): String {
 }
 
 internal fun parseProcCpuTimeMs(stat: String, ticksPerSecond: Long): Long? {
-    val processNameEnd = stat.lastIndexOf(')')
-    val fields = if (ticksPerSecond > 0L && processNameEnd >= 0 && processNameEnd + 2 < stat.length) {
-        stat.substring(processNameEnd + 2).trim().split(Regex("\\s+"))
-    } else {
-        emptyList()
-    }
+    val fields = parseProcStatFields(stat, ticksPerSecond)
     val userTicks = fields.getOrNull(11)?.toLongOrNull()
     val systemTicks = fields.getOrNull(12)?.toLongOrNull()
     return if (userTicks == null || systemTicks == null) {
@@ -246,6 +251,42 @@ internal fun parseProcCpuTimeMs(stat: String, ticksPerSecond: Long): Long? {
     } else {
         val totalTicks = userTicks + systemTicks
         totalTicks / ticksPerSecond * 1_000L + totalTicks % ticksPerSecond * 1_000L / ticksPerSecond
+    }
+}
+
+internal fun parseProcProcessStartElapsedRealtimeMs(stat: String, ticksPerSecond: Long): Long? {
+    val startTicks = parseProcStatFields(stat, ticksPerSecond).getOrNull(19)?.toLongOrNull() ?: return null
+    return startTicks / ticksPerSecond * 1_000L + startTicks % ticksPerSecond * 1_000L / ticksPerSecond
+}
+
+internal fun calculateProcessStartedAtEpochMs(
+    timestampEpochMs: Long,
+    elapsedRealtimeMs: Long,
+    processStartElapsedRealtimeMs: Long
+): Long? {
+    if (processStartElapsedRealtimeMs < 0L || processStartElapsedRealtimeMs > elapsedRealtimeMs) return null
+    return timestampEpochMs - (elapsedRealtimeMs - processStartElapsedRealtimeMs)
+}
+
+internal fun readProcessStartedAtEpochMs(pid: Int = Process.myPid()): Long? = runCatching {
+    val ticksPerSecond = Os.sysconf(OsConstants._SC_CLK_TCK).takeIf { it > 0L } ?: return@runCatching null
+    val startElapsedRealtimeMs = parseProcProcessStartElapsedRealtimeMs(
+        File("/proc/$pid/stat").readText(Charsets.UTF_8),
+        ticksPerSecond
+    ) ?: return@runCatching null
+    calculateProcessStartedAtEpochMs(
+        timestampEpochMs = System.currentTimeMillis(),
+        elapsedRealtimeMs = SystemClock.elapsedRealtime(),
+        processStartElapsedRealtimeMs = startElapsedRealtimeMs
+    )
+}.getOrNull()
+
+private fun parseProcStatFields(stat: String, ticksPerSecond: Long): List<String> {
+    val processNameEnd = stat.lastIndexOf(')')
+    return if (ticksPerSecond > 0L && processNameEnd >= 0 && processNameEnd + 2 < stat.length) {
+        stat.substring(processNameEnd + 2).trim().split(Regex("\\s+"))
+    } else {
+        emptyList()
     }
 }
 
@@ -299,6 +340,8 @@ internal class DiagnosticResourceSampler(context: Context) {
         .getOrDefault(DEFAULT_TICKS_PER_SECOND)
         .takeIf { it > 0L }
         ?: DEFAULT_TICKS_PER_SECOND
+    private val appVersion = VersionInfo.getAppVersionName(appContext)
+    private val appVersionCode = VersionInfo.getAppVersionCode(appContext)
 
     fun reset() {
         cpuBaseline.reset()
@@ -344,7 +387,11 @@ internal class DiagnosticResourceSampler(context: Context) {
         pssKb: Int?,
         includeFdBreakdown: Boolean
     ): DiagnosticResourceSample {
-        val cpuTimeMs = readCpuTimeMs(process.pid)
+        val stat = readProcessStat(process.pid)
+        val cpuTimeMs = stat?.let { parseProcCpuTimeMs(it, ticksPerSecond) }
+        val processStartElapsedRealtimeMs = stat?.let {
+            parseProcProcessStartElapsedRealtimeMs(it, ticksPerSecond)
+        }
         val point = cpuTimeMs?.let { ProcessResourcePoint(process.pid, elapsedRealtimeMs, it) }
         val fdCount = readFdCount(process.pid)
         val fdSoftLimit = readFdSoftLimit(process.pid)
@@ -363,7 +410,12 @@ internal class DiagnosticResourceSampler(context: Context) {
             } else {
                 null
             },
-            fdBreakdown = if (includeFdBreakdown) readFdBreakdown(process.pid) else null
+            fdBreakdown = if (includeFdBreakdown) readFdBreakdown(process.pid) else null,
+            appVersion = appVersion,
+            appVersionCode = appVersionCode,
+            processStartedAtEpochMs = processStartElapsedRealtimeMs?.let {
+                calculateProcessStartedAtEpochMs(timestampEpochMs, elapsedRealtimeMs, it)
+            }
         )
     }
 
@@ -394,8 +446,8 @@ internal class DiagnosticResourceSampler(context: Context) {
         return pids.zip(memoryInfo).associate { (pid, info) -> pid to info.totalPss.coerceAtLeast(0) }
     }
 
-    private fun readCpuTimeMs(pid: Int): Long? = runCatching {
-        parseProcCpuTimeMs(File("/proc/$pid/stat").readText(Charsets.UTF_8), ticksPerSecond)
+    private fun readProcessStat(pid: Int): String? = runCatching {
+        File("/proc/$pid/stat").readText(Charsets.UTF_8)
     }.getOrNull()
 
     private fun readFdCount(pid: Int): Int? = runCatching {

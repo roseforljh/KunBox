@@ -64,9 +64,26 @@ class LogRepositoryTest {
     @Test
     fun preservedDiagnosticMarkerMatchesRecoveryLinesOnly() {
         assertTrue(LogRepository.isPreservedDiagnosticLine("INFO [Recovery] sticky"))
+        assertTrue(LogRepository.isPreservedDiagnosticLine("INFO [Lifecycle] service=vpn event=create"))
         assertTrue(LogRepository.isPreservedDiagnosticLine("METRIC resource_fd process=bg count=32700"))
         assertTrue(LogRepository.isPreservedDiagnosticLine("WARN recovery resource_exhausted stage=restart_core"))
         assertFalse(LogRepository.isPreservedDiagnosticLine("INFO [IPC] state update"))
+    }
+
+    @Test
+    fun lifecycleDiagnosticContainsProcessSessionAndReason() {
+        val line = buildServiceLifecycleDiagnostic(
+            service = "vpn",
+            event = "destroy",
+            reason = "unexpected_destroy",
+            pid = 12186,
+            details = "process_started_at_epoch_ms=1700000000000 app_version_code=6913 " +
+                "mode=VPN manually_stopped=false recovery=true action=START"
+        )
+
+        assertTrue(line.contains("service=vpn event=destroy reason=unexpected_destroy pid=12186"))
+        assertTrue(line.contains("process_started_at_epoch_ms=1700000000000 app_version_code=6913"))
+        assertTrue(line.contains("mode=VPN manually_stopped=false recovery=true action=START"))
     }
 
     @Test

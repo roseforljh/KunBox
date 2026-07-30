@@ -54,6 +54,48 @@ internal data class DiagnosticArchiveResult(
     val sizeBytes: Long
 )
 
+internal data class DiagnosticResourceSummary(
+    val currentVersionSampleCount: Int,
+    val historicalSampleCount: Int,
+    val processSessionCount: Int,
+    val historyStartEpochMs: Long?,
+    val historyEndEpochMs: Long?,
+    val latestProcessName: String?,
+    val latestPid: Int?,
+    val latestProcessStartedAtEpochMs: Long?,
+    val latestSessionSampleCount: Int
+)
+
+internal fun summarizeDiagnosticResources(
+    samples: List<DiagnosticResourceSample>,
+    currentVersionCode: Long
+): DiagnosticResourceSummary {
+    val latest = samples.maxByOrNull(DiagnosticResourceSample::timestampEpochMs)
+    val currentVersionSampleCount = samples.count { it.appVersionCode == currentVersionCode }
+    val processSessionCount = samples.distinctBy {
+        listOf(it.appVersionCode, it.processName, it.pid, it.processStartedAtEpochMs)
+    }.size
+    val latestSessionSampleCount = latest?.let { current ->
+        samples.count {
+            it.appVersionCode == current.appVersionCode &&
+                it.processName == current.processName &&
+                it.pid == current.pid &&
+                it.processStartedAtEpochMs == current.processStartedAtEpochMs
+        }
+    } ?: 0
+    return DiagnosticResourceSummary(
+        currentVersionSampleCount = currentVersionSampleCount,
+        historicalSampleCount = samples.size - currentVersionSampleCount,
+        processSessionCount = processSessionCount,
+        historyStartEpochMs = samples.minOfOrNull(DiagnosticResourceSample::timestampEpochMs),
+        historyEndEpochMs = latest?.timestampEpochMs,
+        latestProcessName = latest?.processName,
+        latestPid = latest?.pid,
+        latestProcessStartedAtEpochMs = latest?.processStartedAtEpochMs,
+        latestSessionSampleCount = latestSessionSampleCount
+    )
+}
+
 internal class DiagnosticArchiveRepository(
     context: Context,
     private val logRepository: LogRepository = LogRepository.getInstance()
@@ -89,7 +131,7 @@ internal class DiagnosticArchiveRepository(
             .takeIf(File::isFile)
             ?.readText(Charsets.UTF_8)
         return linkedMapOf<String, String>().apply {
-            put("manifest.json", buildManifest(mergedSamples.size, runningConfig != null))
+            put("manifest.json", buildManifest(mergedSamples, runningConfig != null))
             put("redaction-policy.txt", REDACTION_POLICY)
             put("logs.txt", redactor.redactText(logRepository.getLogsAsTextForExport()))
             if (runningConfig != null) put("running_config.json", redactor.redactJson(runningConfig))
@@ -98,16 +140,17 @@ internal class DiagnosticArchiveRepository(
     }
 
     @Suppress("DEPRECATION")
-    private fun buildManifest(resourceSampleCount: Int, hasRunningConfig: Boolean): String {
+    private fun buildManifest(samples: List<DiagnosticResourceSample>, hasRunningConfig: Boolean): String {
         val packageInfo = appContext.packageManager.getPackageInfo(appContext.packageName, 0)
         val versionCode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             packageInfo.longVersionCode
         } else {
             packageInfo.versionCode.toLong()
         }
+        val resourceSummary = summarizeDiagnosticResources(samples, versionCode)
         return gson.toJson(
             JsonObject().apply {
-                addProperty("format_version", 1)
+                addProperty("format_version", 2)
                 addProperty("created_at_epoch_ms", System.currentTimeMillis())
                 addProperty("app_version", packageInfo.versionName.orEmpty())
                 addProperty("app_version_code", versionCode)
@@ -115,7 +158,19 @@ internal class DiagnosticArchiveRepository(
                 addProperty("device_model", Build.MODEL)
                 addProperty("android_version", Build.VERSION.RELEASE)
                 addProperty("android_api", Build.VERSION.SDK_INT)
-                addProperty("resource_sample_count", resourceSampleCount)
+                addProperty("resource_sample_count", samples.size)
+                addProperty("resource_current_version_sample_count", resourceSummary.currentVersionSampleCount)
+                addProperty("resource_historical_sample_count", resourceSummary.historicalSampleCount)
+                addProperty("resource_process_session_count", resourceSummary.processSessionCount)
+                addProperty("resource_history_start_epoch_ms", resourceSummary.historyStartEpochMs ?: -1L)
+                addProperty("resource_history_end_epoch_ms", resourceSummary.historyEndEpochMs ?: -1L)
+                addProperty("latest_resource_process_name", resourceSummary.latestProcessName.orEmpty())
+                addProperty("latest_resource_pid", resourceSummary.latestPid ?: -1)
+                addProperty(
+                    "latest_resource_process_started_at_epoch_ms",
+                    resourceSummary.latestProcessStartedAtEpochMs ?: -1L
+                )
+                addProperty("latest_resource_session_sample_count", resourceSummary.latestSessionSampleCount)
                 addProperty("running_config_included", hasRunningConfig)
                 addProperty("redaction", "salted-pseudonym-v1")
             }
@@ -223,7 +278,9 @@ internal class DiagnosticRedactor(private val salt: ByteArray) {
         redacted = EMAIL_REGEX.replace(redacted) { match -> "<email:${fingerprint(match.value)}>" }
         redacted = PRIVATE_PATH_REGEX.replace(redacted) { match -> "<path:${fingerprint(match.value)}>" }
         redacted = MAC_REGEX.replace(redacted) { match -> "<mac:${fingerprint(match.value)}>" }
-        redacted = BRACKETED_IPV6_REGEX.replace(redacted) { match -> "<ip:${fingerprint(match.value)}>" }
+        redacted = BRACKETED_IPV6_REGEX.replace(redacted) { match ->
+            if (LOG_TIMESTAMP_REGEX.matches(match.value)) match.value else "<ip:${fingerprint(match.value)}>"
+        }
         redacted = IPV4_REGEX.replace(redacted) { match -> "<ip:${fingerprint(match.value)}>" }
         redacted = COMPRESSED_IPV6_REGEX.replace(redacted) { match -> "<ip:${fingerprint(match.value)}>" }
         redacted = IPV6_REGEX.replace(redacted) { match -> "<ip:${fingerprint(match.value)}>" }
@@ -380,6 +437,7 @@ internal class DiagnosticRedactor(private val salt: ByteArray) {
         val PRIVATE_PATH_REGEX = Regex("/(?:data|storage|sdcard)/(?:[^\\s\"'<>]+)")
         val MAC_REGEX = Regex("(?i)\\b(?:[0-9a-f]{2}:){5}[0-9a-f]{2}\\b")
         val BRACKETED_IPV6_REGEX = Regex("(?i)\\[[0-9a-f:]{2,}]")
+        val LOG_TIMESTAMP_REGEX = Regex("\\[(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d{3})?]")
         val IPV4_REGEX = Regex("\\b(?:25[0-5]|2[0-4]\\d|1?\\d?\\d)(?:\\.(?:25[0-5]|2[0-4]\\d|1?\\d?\\d)){3}\\b")
         val COMPRESSED_IPV6_REGEX = Regex(
             "(?i)(?<![0-9a-f:])(?=[0-9a-f:]*::)(?:[0-9a-f]{0,4}:){1,7}[0-9a-f]{0,4}(?![0-9a-f:])"

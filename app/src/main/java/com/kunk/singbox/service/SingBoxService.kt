@@ -29,6 +29,7 @@ import com.kunk.singbox.repository.ConfigRepository
 import com.kunk.singbox.repository.LogRepository
 import com.kunk.singbox.repository.RuleSetRepository
 import com.kunk.singbox.repository.SettingsRepository
+import com.kunk.singbox.repository.buildServiceLifecycleDiagnostic
 import com.kunk.singbox.service.manager.BackgroundPowerManager
 import com.kunk.singbox.service.manager.CommandManager
 import com.kunk.singbox.service.manager.CoreManager
@@ -49,10 +50,12 @@ import com.kunk.singbox.utils.L
 import com.kunk.singbox.utils.LocalNetworkPermission
 import com.kunk.singbox.utils.LocaleHelper
 import com.kunk.singbox.utils.NetworkClient
+import com.kunk.singbox.utils.VersionInfo
 import com.kunk.singbox.utils.perf.StateCache
 import com.kunk.singbox.utils.perf.PerfTracer
 import com.kunk.singbox.utils.perf.BackgroundResourceGuard
 import com.kunk.singbox.utils.perf.ResourceGuardOwner
+import com.kunk.singbox.utils.perf.readProcessStartedAtEpochMs
 import io.nekohasekai.libbox.*
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
@@ -579,6 +582,13 @@ class SingBoxService : VpnService() {
             }
             override fun onGroupSelectionChanged(groupTag: String, selectedTag: String) {
                 this@SingBoxService.handleAutoGroupSelectionChanged(groupTag, selectedTag)
+            }
+            override fun onRuntimeNodeChanged(nodeName: String) {
+                realTimeNodeName = nodeName
+                if (nodeName == pendingNodeName) {
+                    pendingNodeName = null
+                }
+                requestRemoteStateUpdate(force = false)
             }
             override fun onServiceStop() {
                 Log.i(SingBoxService.TAG, "CommandManager: onServiceStop requested")
@@ -1782,6 +1792,29 @@ class SingBoxService : VpnService() {
         return getCurrentPhysicalNetwork()
     }
 
+    private fun recordServiceLifecycle(
+        event: String,
+        reason: String,
+        recovery: Boolean = false,
+        action: String? = null
+    ) {
+        LogRepository.getInstance().addAlwaysLog(
+            buildServiceLifecycleDiagnostic(
+                service = "vpn",
+                event = event,
+                reason = reason,
+                pid = Process.myPid(),
+                details = buildString {
+                    append("process_started_at_epoch_ms=${readProcessStartedAtEpochMs() ?: -1L} ")
+                    append("app_version_code=${VersionInfo.getAppVersionCode(this@SingBoxService)} ")
+                    append("mode=${VpnStateStore.getMode().name} ")
+                    append("manually_stopped=${VpnStateStore.isManuallyStopped()} recovery=$recovery")
+                    action?.takeIf(String::isNotBlank)?.let { append(" action=$it") }
+                }
+            )
+        )
+    }
+
     override fun onCreate() {
         super.onCreate()
         Log.e(SingBoxService.TAG, "SingBoxService onCreate: pid=${android.os.Process.myPid()} SingBoxService.instance=${System.identityHashCode(this)}")
@@ -1790,6 +1823,7 @@ class SingBoxService : VpnService() {
         // Restore manually stopped state from persistent storage
         SingBoxService.isManuallyStopped = VpnStateStore.isManuallyStopped()
         Log.i(SingBoxService.TAG, "Restored SingBoxService.isManuallyStopped state: $SingBoxService.isManuallyStopped")
+        recordServiceLifecycle(event = "create", reason = "service_on_create")
 
         notificationManager.createNotificationChannel()
         // 初始化 ConnectivityManager
@@ -1853,6 +1887,12 @@ class SingBoxService : VpnService() {
         preserveRuntimeStateOnDestroy = false
         val recoveryFlag = intent?.getBooleanExtra(SingBoxService.EXTRA_RECOVERY, false) == true
         Log.i(SingBoxService.TAG, "onStartCommand action=${intent?.action} recovery=$recoveryFlag")
+        recordServiceLifecycle(
+            event = "start_request",
+            reason = if (intent?.action == null) "sticky_restart" else "intent",
+            recovery = recoveryFlag,
+            action = intent?.action?.substringAfterLast('.')
+        )
         if (recoveryFlag) {
             runCatching {
                 LogRepository.getInstance().addAlwaysLog(
@@ -2735,6 +2775,15 @@ class SingBoxService : VpnService() {
         }.getOrDefault(false)
 
         val unexpectedDeath = !SingBoxService.isManuallyStopped && shouldStop
+        recordServiceLifecycle(
+            event = "destroy",
+            reason = when {
+                SingBoxService.isManuallyStopped -> "manual_stop"
+                unexpectedDeath -> "unexpected_destroy"
+                shouldStop -> "active_cleanup"
+                else -> "inactive_destroy"
+            }
+        )
         if (unexpectedDeath) {
             // 意外死亡（划卡/系统杀）：恢复意图（mode、manuallyStopped）在启动成功时已持久化，这里不动。
             // active/pending 落成"当前不在跑"，不做完整 stop→restart 收尾；

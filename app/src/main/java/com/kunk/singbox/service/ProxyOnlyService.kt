@@ -11,6 +11,7 @@ import android.net.NetworkCapabilities
 import android.net.NetworkRequest
 import android.os.Build
 import android.os.IBinder
+import android.os.Process
 import android.os.SystemClock
 import android.util.Log
 import com.google.gson.Gson
@@ -25,14 +26,17 @@ import com.kunk.singbox.repository.ConfigRepository
 import com.kunk.singbox.repository.LogRepository
 import com.kunk.singbox.repository.SettingsRepository
 import com.kunk.singbox.repository.RuleSetRepository
+import com.kunk.singbox.repository.buildServiceLifecycleDiagnostic
 import com.kunk.singbox.service.manager.RecoveryPolicy
 import com.kunk.singbox.service.manager.ServiceStateHolder
 import com.kunk.singbox.service.manager.CommandManager
 import com.kunk.singbox.utils.LocalNetworkPermission
 import com.kunk.singbox.utils.LocaleHelper
 import com.kunk.singbox.utils.NetworkClient
+import com.kunk.singbox.utils.VersionInfo
 import com.kunk.singbox.utils.perf.BackgroundResourceGuard
 import com.kunk.singbox.utils.perf.ResourceGuardOwner
+import com.kunk.singbox.utils.perf.readProcessStartedAtEpochMs
 import io.nekohasekai.libbox.CommandServer
 import io.nekohasekai.libbox.CommandServerHandler
 import io.nekohasekai.libbox.CommandClient
@@ -394,8 +398,32 @@ class ProxyOnlyService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
 
+    private fun recordServiceLifecycle(
+        event: String,
+        reason: String,
+        recovery: Boolean = false,
+        action: String? = null
+    ) {
+        LogRepository.getInstance().addAlwaysLog(
+            buildServiceLifecycleDiagnostic(
+                service = "proxy",
+                event = event,
+                reason = reason,
+                pid = Process.myPid(),
+                details = buildString {
+                    append("process_started_at_epoch_ms=${readProcessStartedAtEpochMs() ?: -1L} ")
+                    append("app_version_code=${VersionInfo.getAppVersionCode(this@ProxyOnlyService)} ")
+                    append("mode=${VpnStateStore.getMode().name} ")
+                    append("manually_stopped=${VpnStateStore.isManuallyStopped()} recovery=$recovery")
+                    action?.takeIf(String::isNotBlank)?.let { append(" action=$it") }
+                }
+            )
+        )
+    }
+
     override fun onCreate() {
         super.onCreate()
+        recordServiceLifecycle(event = "create", reason = "service_on_create")
         createProxyOnlyNotificationChannel(CHANNEL_ID, LEGACY_CHANNEL_ID, TAG)
         connectivityManager = getSystemService(ConnectivityManager::class.java)
 
@@ -419,6 +447,12 @@ class ProxyOnlyService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val recoveryFlag = intent?.getBooleanExtra(SingBoxService.EXTRA_RECOVERY, false) == true
         Log.i(TAG, "onStartCommand action=${intent?.action} recovery=$recoveryFlag")
+        recordServiceLifecycle(
+            event = "start_request",
+            reason = if (intent?.action == null) "sticky_restart" else "intent",
+            recovery = recoveryFlag,
+            action = intent?.action?.substringAfterLast('.')
+        )
         if (recoveryFlag) {
             runCatching {
                 LogRepository.getInstance().addAlwaysLog(
@@ -1156,6 +1190,14 @@ class ProxyOnlyService : Service() {
             isStopping = isStopping,
             pending = VpnStateStore.getPending(),
             mode = mode
+        )
+        recordServiceLifecycle(
+            event = "destroy",
+            reason = when {
+                shouldClearRuntimeState -> "manual_or_cleanup"
+                mode == VpnStateStore.CoreMode.PROXY -> "unexpected_destroy"
+                else -> "inactive_destroy"
+            }
         )
         val serverToClose = commandServer
         commandServer = null
