@@ -1,5 +1,25 @@
 # Changelog
 
+## [2.22.0](https://github.com/roseforljh/KunBox/compare/v2.21.0...v2.22.0) (2026-07-31)
+
+
+### Features
+
+* BackgroundResourceGuard 重构 + ResourceRecoveryGate 门控 ([83d04e5](https://github.com/roseforljh/KunBox/commit/83d04e59fc5209be6e92e5bde1d898385427a744))
+* ProxyOnly 通知显示速度 + runtime client 重构 + VpnNotificationManager 防竞态 ([3ab9ec0](https://github.com/roseforljh/KunBox/commit/3ab9ec029324fd4b7671dc7c9331ed7c6135205b))
+* ProxyOnly/SingBox 服务适配恢复意图租约与资源恢复门控 ([a75f50c](https://github.com/roseforljh/KunBox/commit/a75f50c0772e6d70468ab543109a4980e37b3b35))
+* RecoveryIntentLease 恢复意图租约机制 ([0497597](https://github.com/roseforljh/KunBox/commit/0497597691c7da3ee85a76ef2e0ee4d6f087cae7))
+* 服务生命周期诊断 + 诊断包 manifest v2 + 资源采样版本跟踪 ([a38d76e](https://github.com/roseforljh/KunBox/commit/a38d76ec7a6f4c049e3d293a93e9131e00574baf))
+* 诊断包脱敏增强 outbound 日志标签与 selector 引用 ([432d8ae](https://github.com/roseforljh/KunBox/commit/432d8aef2c8096ae14879b1a4a2b8610d66e44b1))
+
+
+### Bug Fixes
+
+* ConfigRepository 移除过期延迟刷新 + CommandManager 节点回调 ([bea3a59](https://github.com/roseforljh/KunBox/commit/bea3a5968f5515cb33a08085167305f4c211c79a))
+* 内核依赖 sing-tun 补丁更新 + 同步脚本支持依赖补丁 ([77fc759](https://github.com/roseforljh/KunBox/commit/77fc75913cc0520ca9a2618e46d094d227dfe6bd))
+* 内核补丁更新 ([a8abe59](https://github.com/roseforljh/KunBox/commit/a8abe59304ab35e0a70cce505894e02dc3bd5cb6))
+* 内核补丁更新 PacketConn dialContext + 同步脚本调整 ([ed1690f](https://github.com/roseforljh/KunBox/commit/ed1690fe178adb70282243ca3b9a8cdbc81b5091))
+
 ## [2.21.0](https://github.com/roseforljh/KunBox/compare/v2.20.0...v2.21.0) (2026-07-29)
 
 
