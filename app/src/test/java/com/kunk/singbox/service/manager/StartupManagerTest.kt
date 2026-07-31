@@ -27,17 +27,25 @@ class StartupManagerTest {
     }
 
     @Test
-    fun successfulCoreStartDoesNotWaitForOptionalPostStartTasks() {
-        val source = File("src/main/java/com/kunk/singbox/service/manager/StartupManager.kt")
+    fun successfulCoreStartPublishesStateBehindExactLeaseGate() {
+        val managerSource = File("src/main/java/com/kunk/singbox/service/manager/StartupManager.kt")
+            .readText(Charsets.UTF_8)
+        val serviceSource = File("src/main/java/com/kunk/singbox/service/SingBoxService.kt")
             .readText(Charsets.UTF_8)
 
-        val markRunning = source.indexOf("callbacks.setIsRunning(true)")
-        val launchPostStart = source.indexOf("callbacks.launchPostStartTasks(configContent)")
-        assertTrue(markRunning >= 0)
+        assertTrue(
+            managerSource.contains("callbacks.completeRecoveryIntentOnSuccess(recoveryIntentLease, configContent)")
+        )
+        assertFalse(managerSource.contains("callbacks.setIsRunning(true)"))
+        val completionBody = serviceSource
+            .substringAfter("override fun completeRecoveryIntentOnSuccess(")
+            .substringBefore("override fun persistVpnState")
+        val exactLeaseGate = completionBody.indexOf("completeRecoveryIntentOnSuccess(lease)")
+        val markRunning = completionBody.indexOf("SingBoxService.isRunning = true")
+        val launchPostStart = completionBody.indexOf("launchPostStartTasks(configContent)")
+        assertTrue(exactLeaseGate >= 0)
+        assertTrue(markRunning > exactLeaseGate)
         assertTrue(launchPostStart > markRunning)
-        assertTrue(!source.contains("callbacks.startCommandClients()"))
-        assertTrue(!source.contains("callbacks.startHealthMonitor()"))
-        assertTrue(!source.contains("callbacks.scheduleKeepaliveWorker()"))
     }
 
     @Test
@@ -83,7 +91,7 @@ class StartupManagerTest {
         val proxySource = File("src/main/java/com/kunk/singbox/service/ProxyOnlyService.kt").readText(Charsets.UTF_8)
         assertOrdered(
             proxySource,
-            "private fun startCore(configPath: String) {",
+            "private fun startCore(configPath: String, recoveryIntentLease: RecoveryIntentLease) {",
             "initializeStartupNodeLabel",
             "notifyRemoteState"
         )
@@ -106,15 +114,15 @@ class StartupManagerTest {
         val source = File("src/main/java/com/kunk/singbox/service/SingBoxService.kt")
             .readText(Charsets.UTF_8)
         val startBody = source
-            .substringAfter("protected fun startVpn(configPath: String) {")
+            .substringAfter("protected fun startVpn(")
             .substringBefore("protected fun continueStartVpnAfterForeground")
         val tokenIndex = startBody.indexOf("coreManager.captureStartToken()")
-        val scheduleIndex = startBody.indexOf("continueStartVpnAfterForeground(configPath, startToken)")
+        val scheduleIndex = startBody.indexOf("continueStartVpnAfterForeground(configPath, startToken, recoveryLease)")
         assertTrue(tokenIndex >= 0)
         assertTrue(scheduleIndex > tokenIndex)
 
         val continueBody = source
-            .substringAfter("protected fun continueStartVpnAfterForeground(configPath: String, startToken: Long)")
+            .substringAfter("protected fun continueStartVpnAfterForeground(")
             .substringBefore("protected fun stopVpn(")
         assertTrue(continueBody.contains("startToken = startToken"))
 
@@ -130,8 +138,80 @@ class StartupManagerTest {
             .substringAfter("protected fun performFullRestart(configPath: String) {")
             .substringBefore("fun performHotReloadSync")
         assertTrue(restartBody.contains("pendingStartConfigPath = configPath"))
-        assertTrue(restartBody.contains("stopVpn(stopService = false)"))
+        assertTrue(restartBody.contains("stopVpn(stopService = false, recoveryIntentLease = recoveryIntentLease)"))
+        assertFalse(restartBody.contains("?: synchronized(this) { pendingRecoveryIntentLease }"))
         assertFalse(restartBody.contains("serviceScope.launch"))
+    }
+
+    @Test
+    fun resourceRestartCarriesExactLeaseIntoRestartAndStop() {
+        val source = File("src/main/java/com/kunk/singbox/service/SingBoxService.kt")
+            .readText(Charsets.UTF_8)
+        val resourceRestartBody = source
+            .substringAfter("override fun restartCore(reason: String, attemptId: Long): Boolean {")
+            .substringBefore("override fun recycleProcess")
+        val fullRestartBody = source
+            .substringAfter("private fun performFullRestart(")
+            .substringBefore("fun performHotReloadSync")
+        val stopBody = source
+            .substringAfter("protected fun stopVpn(")
+            .substringBefore("protected fun updateTileState()")
+
+        assertTrue(source.contains("private fun claimResourceRecoveryIntent(attemptId: Long): RecoveryIntentLease?"))
+        assertTrue(resourceRestartBody.contains("val recoveryIntentLease = claimResourceRecoveryIntent(attemptId)"))
+        assertTrue(resourceRestartBody.contains("performFullRestart(configPath, recoveryIntentLease)"))
+        assertTrue(fullRestartBody.contains("pendingRecoveryIntentLease !== recoveryIntentLease"))
+        assertTrue(fullRestartBody.contains("recoveryIntentLease.ownerId !== resourceGuardOwnerId"))
+        assertTrue(fullRestartBody.contains("val resourceRecoveryAttemptId = recoveryIntentLease.attemptId"))
+        assertTrue(stopBody.contains("val cleanupRecoveryAttemptId = cleanupRecoveryLease.attemptId"))
+        assertFalse(stopBody.contains("resourceRecoveryAttemptId: Long?"))
+    }
+
+    @Test
+    fun commandServerIsPublishedOnlyAfterExactLifecycleGate() {
+        val managerSource = File("src/main/java/com/kunk/singbox/service/manager/StartupManager.kt")
+            .readText(Charsets.UTF_8)
+        val serviceSource = File("src/main/java/com/kunk/singbox/service/SingBoxService.kt")
+            .readText(Charsets.UTF_8)
+        val commandSource = File("src/main/java/com/kunk/singbox/service/manager/CommandManager.kt")
+            .readText(Charsets.UTF_8)
+        val callbackBody = serviceSource
+            .substringAfter("override fun createAndStartCommandServer(")
+            .substringBefore("override fun launchPostStartTasks")
+        val createIndex = callbackBody.indexOf("commandManager.createServer")
+        val startIndex = callbackBody.indexOf("commandManager.startServer")
+        val publishGateIndex = callbackBody.indexOf("isCommandServerStartupCurrentLocked")
+        val adoptIndex = callbackBody.indexOf("commandManager.adoptServer")
+        val corePublishIndex = callbackBody.indexOf("coreManager.setCommandServer")
+
+        assertTrue(
+            managerSource.contains(
+                "callbacks.createAndStartCommandServer(startToken, recoveryIntentLease).getOrThrow()"
+            )
+        )
+        assertTrue(managerSource.contains("return@withContext StartResult.Superseded"))
+        val initialLifecycleGate = callbackBody.indexOf(
+            "isCommandServerStartupCurrent(startToken, recoveryIntentLease)"
+        )
+        assertTrue(initialLifecycleGate in 0 until createIndex)
+        assertTrue(createIndex in 0 until startIndex)
+        assertTrue(publishGateIndex in (startIndex + 1) until adoptIndex)
+        assertTrue(adoptIndex in 0 until corePublishIndex)
+        assertTrue(callbackBody.contains("if (!adopted)"))
+        assertTrue(callbackBody.contains("server?.close()"))
+
+        val createBody = commandSource
+            .substringAfter("fun createServer(platformInterface: PlatformInterface)")
+            .substringBefore("fun startServer(server: CommandServer)")
+        val startBody = commandSource
+            .substringAfter("fun startServer(server: CommandServer)")
+            .substringBefore("fun adoptServer(server: CommandServer)")
+        val adoptBody = commandSource
+            .substringAfter("fun adoptServer(server: CommandServer)")
+            .substringBefore("fun startService(")
+        assertFalse(createBody.contains("commandServer = server"))
+        assertTrue(startBody.contains("server.start()"))
+        assertTrue(adoptBody.contains("commandServer = server"))
     }
 
     @Test

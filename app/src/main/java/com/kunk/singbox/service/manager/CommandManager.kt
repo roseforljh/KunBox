@@ -164,17 +164,21 @@ class CommandManager(
         }
 
         val server = Libbox.newCommandServer(serverHandler, platformInterface)
-        commandServer = server
         Log.i(TAG, "CommandServer created")
         server
     }
 
-    fun startServer(): Result<Unit> = runCatching {
-        commandServer?.start() ?: throw IllegalStateException("CommandServer not created")
+    fun startServer(server: CommandServer): Result<Unit> = runCatching {
+        server.start()
         Log.i(TAG, "CommandServer started")
 
         // BoxWrapperManager.init 延迟到 libbox 启动后调用
         // 避免 Libbox.hasSelector() 在 box 未运行时超时阻塞 ~1.5s
+    }
+
+    fun adoptServer(server: CommandServer) {
+        check(commandServer == null || commandServer === server) { "CommandServer already adopted" }
+        commandServer = server
     }
 
     fun startService(configContent: String, platformInterface: PlatformInterface): Result<Unit> = runCatching {

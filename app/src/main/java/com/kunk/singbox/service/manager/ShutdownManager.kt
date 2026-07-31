@@ -42,20 +42,36 @@ class ShutdownManager(
         internal fun resolveStopCompletion(
             initialStopService: Boolean,
             hardStopRequested: Boolean,
-            pendingStartConfigPath: String?
+            cleanupRecoveryIntentLease: RecoveryIntentLease?,
+            hardStopRecoveryIntentLease: RecoveryIntentLease?,
+            pendingStartConfigPath: String?,
+            pendingRecoveryIntentLease: RecoveryIntentLease? = null
         ): StopCompletion {
-            val stopService = initialStopService || hardStopRequested
+            val hardStopLease = hardStopRecoveryIntentLease
+                ?.takeIf { hardStopRequested && ServiceStateHolder.isRecoveryIntentCurrent(it) }
+                ?: cleanupRecoveryIntentLease?.takeIf {
+                    initialStopService && ServiceStateHolder.isRecoveryIntentCurrent(it)
+                }
+            val restartLease = pendingRecoveryIntentLease?.takeIf {
+                hardStopLease == null && ServiceStateHolder.isRecoveryIntentCurrent(it)
+            }
+            val restartConfigPath = pendingStartConfigPath?.takeIf {
+                it.isNotBlank() && restartLease != null
+            }
             return StopCompletion(
-                stopService = stopService,
-                restartConfigPath = pendingStartConfigPath
-                    ?.takeIf { it.isNotBlank() && !stopService }
+                stopService = hardStopLease != null,
+                restartConfigPath = restartConfigPath,
+                recoveryIntentLease = hardStopLease ?: restartLease.takeIf { restartConfigPath != null },
+                resourceRecoveryAttemptId = (hardStopLease ?: restartLease)?.attemptId
             )
         }
     }
 
     data class StopCompletion(
         val stopService: Boolean,
-        val restartConfigPath: String?
+        val restartConfigPath: String?,
+        val recoveryIntentLease: RecoveryIntentLease?,
+        val resourceRecoveryAttemptId: Long?
     )
 
     interface Callbacks {
@@ -85,13 +101,18 @@ class ShutdownManager(
         fun clearUnderlyingNetworks()
 
         fun hasPendingStartConfigPath(): Boolean
-        fun completeStop(initialStopService: Boolean): StopCompletion
-        fun startVpn(configPath: String)
+        fun completeStop(
+            initialStopService: Boolean,
+            recoveryIntentLease: RecoveryIntentLease
+        ): StopCompletion
+        fun startVpn(configPath: String, recoveryIntentLease: RecoveryIntentLease?)
     }
 
     data class ShutdownOptions(
         val stopService: Boolean,
-        val proxyPort: Int = 0
+        val proxyPort: Int = 0,
+        val recoveryIntentLease: RecoveryIntentLease,
+        val resourceRecoveryAttemptId: Long? = null
     )
 
     @Suppress("LongParameterList", "LongMethod", "CognitiveComplexMethod", "CyclomaticComplexMethod")
@@ -104,6 +125,8 @@ class ShutdownManager(
     ): Job {
         val stopService = options.stopService
         val proxyPort = options.proxyPort
+        val recoveryIntentLease = options.recoveryIntentLease
+        val resourceRecoveryAttemptId = options.resourceRecoveryAttemptId
 
         val jobsToJoin = listOfNotNull(
             callbacks.cancelStartVpnJob(),
@@ -183,37 +206,46 @@ class ShutdownManager(
                 }
 
                 withContext(Dispatchers.Main) {
-                    val completion = callbacks.completeStop(stopService)
+                    val completion = callbacks.completeStop(stopService, recoveryIntentLease)
                     val restartConfigPath = completion.restartConfigPath
                     when {
                         restartConfigPath != null -> {
                             Log.i(TAG, "Cleanup complete, restarting VPN")
-                            callbacks.startVpn(restartConfigPath)
+                            callbacks.startVpn(restartConfigPath, completion.recoveryIntentLease)
                         }
                         completion.stopService -> {
-                            callbacks.stopForegroundService()
-                            runCatching {
-                                val manager = context.getSystemService(NotificationManager::class.java)
-                                manager.cancel(VpnNotificationManager.NOTIFICATION_ID)
-                            }
-                            VpnTileService.persistVpnState(false)
-                            val preserveMode = RecoveryPolicy.shouldPreserveModeOnStartFailure(
-                                ServiceStateHolder.preserveRecoveryIntentOnFailure
+                            val completionLease = completion.recoveryIntentLease
+                            val recoveryIntent = completionLease?.let(
+                                ServiceStateHolder::consumeRecoveryIntentOnFailure
                             )
-                            if (preserveMode) {
-                                // 恢复路径启动失败：保留 mode，只清 runtime + claim
-                                VpnStateStore.clearRuntimeState(preserveLastError = true)
-                                VpnStateStore.clearRecoveryClaim()
-                                ServiceStateHolder.preserveRecoveryIntentOnFailure = false
-                                Log.w(TAG, "Recovery start failed, mode preserved for next issuer")
+                            if (recoveryIntent == null) {
+                                Log.w(
+                                    TAG,
+                                    "Stale shutdown completion ignored: recovery intent ownership changed " +
+                                        "attempt=${completion.resourceRecoveryAttemptId ?: resourceRecoveryAttemptId}"
+                                )
                             } else {
-                                VpnStateStore.setMode(VpnStateStore.CoreMode.NONE)
+                                callbacks.stopForegroundService()
+                                runCatching {
+                                    val manager = context.getSystemService(NotificationManager::class.java)
+                                    manager.cancel(VpnNotificationManager.NOTIFICATION_ID)
+                                }
+                                VpnTileService.persistVpnState(false)
+                                val preserveMode = RecoveryPolicy.shouldPreserveModeOnStartFailure(recoveryIntent)
+                                if (preserveMode) {
+                                    // 恢复路径启动失败：保留 mode，只清 runtime + claim
+                                    VpnStateStore.clearRuntimeState(preserveLastError = true)
+                                    VpnStateStore.clearRecoveryClaim()
+                                    Log.w(TAG, "Recovery start failed, mode preserved for next issuer")
+                                } else {
+                                    VpnStateStore.setMode(VpnStateStore.CoreMode.NONE)
+                                }
+                                VpnTileService.persistVpnPending("")
+                                callbacks.updateServiceState(ServiceState.STOPPED)
+                                callbacks.updateTileState()
+                                callbacks.stopSelf()
+                                Log.i(TAG, "VPN stopped")
                             }
-                            VpnTileService.persistVpnPending("")
-                            callbacks.updateServiceState(ServiceState.STOPPED)
-                            callbacks.updateTileState()
-                            callbacks.stopSelf()
-                            Log.i(TAG, "VPN stopped")
                         }
                         else -> Log.i(TAG, "Cleanup complete without restart")
                     }

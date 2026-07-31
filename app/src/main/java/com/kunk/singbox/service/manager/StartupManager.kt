@@ -62,10 +62,10 @@ class StartupManager(
     }
 
     interface Callbacks {
-        fun onStarting()
+        fun onStarting(recoveryIntentLease: RecoveryIntentLease): Boolean
         fun onStarted(configContent: String)
         fun onFailed(error: String)
-        fun onCancelled()
+        fun onCancelled(recoveryIntentLease: RecoveryIntentLease)
 
         fun createNotification(): Notification
         fun markForegroundStarted()
@@ -76,13 +76,20 @@ class StartupManager(
 
         fun detectExistingVpns(): Boolean
 
-        fun createAndStartCommandServer(): Result<Unit>
+        fun createAndStartCommandServer(
+            startToken: Long,
+            recoveryIntentLease: RecoveryIntentLease
+        ): Result<Boolean>
         fun launchPostStartTasks(configContent: String)
 
         fun updateTileState()
         fun setIsRunning(running: Boolean)
-        fun setIsStarting(starting: Boolean)
+        fun clearIsStartingIfCurrent(recoveryIntentLease: RecoveryIntentLease)
         fun setLastError(error: String?)
+        fun completeRecoveryIntentOnSuccess(
+            lease: RecoveryIntentLease,
+            configContent: String
+        ): Boolean
         fun persistVpnState(isRunning: Boolean)
         fun persistVpnPending(pending: String)
 
@@ -100,7 +107,8 @@ class StartupManager(
         data class Success(val configContent: String, val durationMs: Long) : StartResult()
         data class Failed(val error: String, val exception: Exception? = null) : StartResult()
         data object Cancelled : StartResult()
-        data object NeedPermission : StartResult()
+        data object Superseded : StartResult()
+        data class NeedPermission(val prepareIntent: Intent) : StartResult()
     }
 
     private data class ParallelInitResult(
@@ -110,11 +118,12 @@ class StartupManager(
         val configContent: String
     )
 
-    @Suppress("CognitiveComplexMethod", "CyclomaticComplexMethod", "LongMethod")
+    @Suppress("CognitiveComplexMethod", "CyclomaticComplexMethod", "LongMethod", "LongParameterList")
     suspend fun startVpn(
         configPath: String,
         cleanCache: Boolean,
         startToken: Long,
+        recoveryIntentLease: RecoveryIntentLease,
         coreManager: CoreManager,
         callbacks: Callbacks
     ): StartResult = withContext(Dispatchers.IO) {
@@ -129,12 +138,15 @@ class StartupManager(
             log("[STEP] waitForCleanupJob: ${SystemClock.elapsedRealtime() - stepStart}ms")
 
             if (!coreManager.isStartTokenCurrent(startToken)) {
-                callbacks.onCancelled()
+                callbacks.onCancelled(recoveryIntentLease)
                 PerfTracer.end(PerfTracer.Phases.VPN_STARTUP, "cancelled")
                 return@withContext StartResult.Cancelled
             }
 
-            callbacks.onStarting()
+            if (!callbacks.onStarting(recoveryIntentLease)) {
+                PerfTracer.end(PerfTracer.Phases.VPN_STARTUP, "superseded")
+                return@withContext StartResult.Superseded
+            }
 
             stepStart = SystemClock.elapsedRealtime()
             val hasExistingVpn = callbacks.detectExistingVpns()
@@ -148,9 +160,8 @@ class StartupManager(
             val prepareIntent = VpnService.prepare(context)
             log("[STEP] VpnService.prepare: ${SystemClock.elapsedRealtime() - stepStart}ms")
             if (prepareIntent != null) {
-                handlePermissionRequired(prepareIntent, callbacks)
                 PerfTracer.end(PerfTracer.Phases.VPN_STARTUP, "permission_required")
-                return@withContext StartResult.NeedPermission
+                return@withContext StartResult.NeedPermission(prepareIntent)
             }
 
             stepStart = SystemClock.elapsedRealtime()
@@ -204,7 +215,11 @@ class StartupManager(
             }
 
             stepStart = SystemClock.elapsedRealtime()
-            callbacks.createAndStartCommandServer().getOrThrow()
+            if (!callbacks.createAndStartCommandServer(startToken, recoveryIntentLease).getOrThrow()) {
+                Log.w(TAG, "CommandServer startup superseded by a newer lifecycle request")
+                PerfTracer.end(PerfTracer.Phases.VPN_STARTUP, "superseded")
+                return@withContext StartResult.Superseded
+            }
             log("[STEP] createAndStartCommandServer: ${SystemClock.elapsedRealtime() - stepStart}ms")
 
             callbacks.restoreUnderlyingNetwork(initResult.network)
@@ -221,7 +236,7 @@ class StartupManager(
                     throw Exception("Libbox start failed: ${result.error}", result.exception)
                 }
                 is CoreManager.StartResult.Cancelled -> {
-                    callbacks.onCancelled()
+                    callbacks.onCancelled(recoveryIntentLease)
                     PerfTracer.end(PerfTracer.Phases.VPN_STARTUP, "cancelled")
                     return@withContext StartResult.Cancelled
                 }
@@ -232,27 +247,18 @@ class StartupManager(
                 throw IllegalStateException("Service is not running after successful start")
             }
             if (!coreManager.isStartTokenCurrent(startToken)) {
-                callbacks.onCancelled()
+                callbacks.onCancelled(recoveryIntentLease)
                 PerfTracer.end(PerfTracer.Phases.VPN_STARTUP, "cancelled")
                 return@withContext StartResult.Cancelled
             }
 
             stepStart = SystemClock.elapsedRealtime()
-            callbacks.setIsRunning(true)
-            callbacks.setLastError(null)
-            callbacks.persistVpnState(true)
-            callbacks.stopForeignVpnMonitor()
+            if (!callbacks.completeRecoveryIntentOnSuccess(recoveryIntentLease, configContent)) {
+                Log.w(TAG, "Startup completion superseded by a newer recovery lease")
+                PerfTracer.end(PerfTracer.Phases.VPN_STARTUP, "superseded")
+                return@withContext StartResult.Superseded
+            }
             log("[STEP] markRunning: ${SystemClock.elapsedRealtime() - stepStart}ms")
-
-            stepStart = SystemClock.elapsedRealtime()
-            callbacks.persistVpnPending("")
-            callbacks.updateTileState()
-            log("[STEP] updateUI: ${SystemClock.elapsedRealtime() - stepStart}ms")
-
-            runCatching { callbacks.onStarted(configContent) }
-                .onFailure { error -> Log.w(TAG, "Post-start notification failed", error) }
-            runCatching { callbacks.launchPostStartTasks(configContent) }
-                .onFailure { error -> Log.w(TAG, "Failed to launch post-start tasks", error) }
 
             val totalMs = PerfTracer.end(PerfTracer.Phases.VPN_STARTUP)
             val actualTotal = SystemClock.elapsedRealtime() - startupBeginMs
@@ -261,15 +267,14 @@ class StartupManager(
             StartResult.Success(configContent, totalMs)
         } catch (e: CancellationException) {
             PerfTracer.end(PerfTracer.Phases.VPN_STARTUP, "cancelled")
-            callbacks.onCancelled()
+            callbacks.onCancelled(recoveryIntentLease)
             StartResult.Cancelled
         } catch (e: Exception) {
             PerfTracer.end(PerfTracer.Phases.VPN_STARTUP, "error")
             val error = parseStartError(e)
-            callbacks.onFailed(error)
             StartResult.Failed(error, e)
         } finally {
-            callbacks.setIsStarting(false)
+            callbacks.clearIsStartingIfCurrent(recoveryIntentLease)
         }
     }
 
@@ -489,12 +494,8 @@ class StartupManager(
         return configContent
     }
 
-    private fun handlePermissionRequired(prepareIntent: Intent, callbacks: Callbacks) {
+    internal fun handlePermissionRequired(prepareIntent: Intent) {
         Log.w(TAG, "VPN permission required")
-        callbacks.persistVpnState(false)
-        callbacks.persistVpnPending("")
-        VpnStateStore.clearRuntimeState()
-        VpnStateStore.setMode(VpnStateStore.CoreMode.NONE)
         VpnStateStore.setLastError("VPN permission required")
 
         runCatching {
