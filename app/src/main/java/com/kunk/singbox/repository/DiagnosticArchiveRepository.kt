@@ -289,6 +289,9 @@ internal class DiagnosticRedactor(private val salt: ByteArray) {
             val replacement = "<value:${fingerprint(rawValue.trim('"', '\''))}>"
             "$keyQuote$key$keyQuote$separator$valueQuote$replacement$valueQuote"
         }
+        redacted = OUTBOUND_TAG_REGEX.replace(redacted) { match ->
+            "${match.groupValues[1]}<id:${fingerprint(match.groupValues[2])}>${match.groupValues[3]}"
+        }
         redacted = URI_REGEX.replace(redacted) { match -> "<uri:${fingerprint(match.value)}>" }
         redacted = EMAIL_REGEX.replace(redacted) { match -> "<email:${fingerprint(match.value)}>" }
         redacted = PRIVATE_PATH_REGEX.replace(redacted) { match -> "<path:${fingerprint(match.value)}>" }
@@ -308,7 +311,9 @@ internal class DiagnosticRedactor(private val salt: ByteArray) {
         return when {
             isCredentialKey(normalizedKey) -> JsonPrimitive(REDACTED)
             normalizedKey in ENDPOINT_KEYS -> pseudonymize(element, "endpoint")
-            normalizedKey in IDENTIFIER_KEYS -> pseudonymize(element, "id")
+            normalizedKey in IDENTIFIER_KEYS || normalizedKey in SELECTOR_REFERENCE_KEYS -> {
+                pseudonymize(element, "id")
+            }
             normalizedKey in PATH_KEYS -> pseudonymize(element, "path")
             element.isJsonObject -> redactObject(element.asJsonObject)
             element.isJsonArray -> redactArray(element.asJsonArray, null)
@@ -429,6 +434,7 @@ internal class DiagnosticRedactor(private val salt: ByteArray) {
             "user",
             "username"
         )
+        val SELECTOR_REFERENCE_KEYS = setOf("default", "outbounds")
         val PATH_KEYS = setOf("file", "file_path", "path", "private_path")
         val TEXT_CREDENTIAL_KEY_PATTERNS = (
             CREDENTIAL_KEYS.map(::keyPattern) + CREDENTIAL_KEY_SUFFIXES.map(::credentialSuffixPattern)
@@ -443,6 +449,7 @@ internal class DiagnosticRedactor(private val salt: ByteArray) {
                 "([:=])\\s*" +
                 "(\"[^\"\\r\\n]*\"|'[^'\\r\\n]*'|[^\\s,;}\\]]+)"
         )
+        val OUTBOUND_TAG_REGEX = Regex("(?i)(\\boutbound/[a-z0-9_-]+\\[)([^\\]\\r\\n]+)(])")
         val PRIVATE_KEY_BLOCK_REGEX = Regex(
             "(?is)-----BEGIN ([A-Z0-9 ]*PRIVATE KEY)-----.*?(?:-----END \\1-----|\\z)"
         )

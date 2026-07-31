@@ -238,6 +238,48 @@ class DiagnosticSupportTest {
     }
 
     @Test
+    fun redactorPseudonymizesSelectorReferencesAndOutboundLogTagsConsistently() {
+        val selectedNode = "CANARY_PRIVATE_NODE"
+        val trafficNode = "CANARY_TRAFFIC_TAG"
+        val configSource = """
+            {
+              "outbounds": [
+                {
+                  "type": "selector",
+                  "tag": "PROXY",
+                  "outbounds": ["$selectedNode", "$trafficNode"],
+                  "default": "$selectedNode"
+                },
+                {"type": "hysteria2", "tag": "$selectedNode"},
+                {"type": "vless", "tag": "$trafficNode"}
+              ]
+            }
+        """.trimIndent()
+        val logSource = """
+            outbound/hysteria2[$selectedNode]: connection opened
+            router: using outbound/vless[$trafficNode]
+        """.trimIndent()
+        val redactor = DiagnosticRedactor("test-salt".toByteArray())
+
+        val redactedConfig = redactor.redactJson(configSource)
+        val redactedLogs = redactor.redactText(logSource)
+        val outbounds = JsonParser.parseString(redactedConfig).asJsonObject.getAsJsonArray("outbounds")
+        val selector = outbounds[0].asJsonObject
+        val selectedTag = outbounds[1].asJsonObject.get("tag").asString
+        val trafficTag = outbounds[2].asJsonObject.get("tag").asString
+
+        listOf(selectedNode, trafficNode).forEach { node ->
+            assertFalse("配置未脱敏: $node", redactedConfig.contains(node))
+            assertFalse("日志未脱敏: $node", redactedLogs.contains(node))
+        }
+        assertEquals(selectedTag, selector.get("default").asString)
+        assertEquals(selectedTag, selector.getAsJsonArray("outbounds")[0].asString)
+        assertEquals(trafficTag, selector.getAsJsonArray("outbounds")[1].asString)
+        assertTrue(redactedLogs.contains("outbound/hysteria2[$selectedTag]"))
+        assertTrue(redactedLogs.contains("using outbound/vless[$trafficTag]"))
+    }
+
+    @Test
     fun diagnosticArchiveContainsExpectedSanitizedEntries() {
         val directory = Files.createTempDirectory("kunbox-diagnostic-test").toFile()
         val archive = directory.resolve("diagnostics.zip")
