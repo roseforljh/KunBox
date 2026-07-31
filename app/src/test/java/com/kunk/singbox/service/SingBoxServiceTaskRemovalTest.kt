@@ -79,7 +79,8 @@ class SingBoxServiceTaskRemovalTest {
             .substringBefore("SingBoxService.ACTION_SWITCH_NODE ->")
 
         assertTrue(stopBranch.contains("VpnStateStore.setManuallyStopped(true)"))
-        assertTrue(stopBranch.contains("stopVpn(stopService = true)"))
+        assertTrue(stopBranch.contains("val recoveryLease = setNonResourceRecoveryIntent(false)"))
+        assertTrue(stopBranch.contains("stopVpn(stopService = true, recoveryIntentLease = recoveryLease)"))
     }
 
     private fun readManifest(): org.w3c.dom.Document =
