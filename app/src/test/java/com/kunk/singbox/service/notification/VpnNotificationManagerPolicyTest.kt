@@ -27,11 +27,27 @@ class VpnNotificationManagerPolicyTest {
         val delayedUpdate = body.substringAfter("updateJob = serviceScope.launch")
 
         assertTrue(delayedUpdate.contains("delay(delayMs)"))
-        assertTrue(delayedUpdate.contains("if (suppressUpdates || state.isStopping) return@launch"))
+        assertTrue(delayedUpdate.contains("!suppressUpdates && !latest.state.isStopping"))
         assertTrue(
-            delayedUpdate.indexOf("if (suppressUpdates || state.isStopping) return@launch") <
-                delayedUpdate.indexOf("updateNotification(state, service)")
+            delayedUpdate.indexOf("!suppressUpdates && !latest.state.isStopping") <
+                delayedUpdate.indexOf("updateNotification(latest.state, latest.service)")
         )
+    }
+
+    @Test
+    fun delayedUpdatePublishesLatestPendingState() {
+        val source = File(
+            "src/main/java/com/kunk/singbox/service/notification/VpnNotificationManager.kt"
+        ).readText(Charsets.UTF_8)
+        val body = source.functionBody("fun requestNotificationUpdate(")
+        val storeIndex = body.indexOf("pendingUpdate = PendingUpdate(state, service)")
+        val activeJobIndex = body.indexOf("if (updateJob?.isActive == true) return")
+        val delayedUpdate = body.substringAfter("updateJob = serviceScope.launch")
+
+        assertTrue(storeIndex >= 0)
+        assertTrue(storeIndex < activeJobIndex)
+        assertTrue(delayedUpdate.contains("pendingUpdate.also { pendingUpdate = null }"))
+        assertTrue(delayedUpdate.contains("updateNotification(latest.state, latest.service)"))
     }
 
     private fun String.functionBody(startToken: String): String {

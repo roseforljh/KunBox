@@ -6,6 +6,15 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import java.util.concurrent.atomic.AtomicLong
 
+class RecoveryIntentLease internal constructor(
+    internal val generation: Long,
+    internal val preserveModeOnFailure: Boolean,
+    internal val ownerId: Any?,
+    internal val attemptId: Long?,
+    internal val allowsResourceClaim: Boolean
+)
+
+@Suppress("TooManyFunctions")
 object ServiceStateHolder {
 
     const val ACTION_START = "com.kunk.singbox.START"
@@ -72,7 +81,91 @@ object ServiceStateHolder {
      */
     @Volatile
     var preserveRecoveryIntentOnFailure: Boolean = false
-        internal set
+        private set
+
+    private var recoveryIntentLease: RecoveryIntentLease? = null
+    private var recoveryIntentGeneration: Long = 0L
+
+    @Synchronized
+    fun setRecoveryIntentOnFailure(preserve: Boolean): RecoveryIntentLease {
+        return replaceRecoveryIntent(
+            preserve = preserve,
+            ownerId = null,
+            attemptId = null,
+            allowsResourceClaim = false
+        )
+    }
+
+    @Synchronized
+    fun claimResourceRecoveryIntent(ownerId: Any, attemptId: Long): RecoveryIntentLease? {
+        val current = recoveryIntentLease ?: return null
+        if (!current.allowsResourceClaim ||
+            (current.ownerId != null && current.ownerId !== ownerId)
+        ) {
+            return null
+        }
+        return replaceRecoveryIntent(
+            preserve = true,
+            ownerId = ownerId,
+            attemptId = attemptId,
+            allowsResourceClaim = true
+        )
+    }
+
+    @Synchronized
+    fun clearResourceRecoveryIntent(
+        ownerId: Any,
+        attemptId: Long,
+        lease: RecoveryIntentLease
+    ): Boolean {
+        if (recoveryIntentLease !== lease || lease.ownerId !== ownerId || lease.attemptId != attemptId) {
+            return false
+        }
+        recoveryIntentLease = null
+        preserveRecoveryIntentOnFailure = false
+        return true
+    }
+
+    @Synchronized
+    fun consumeRecoveryIntentOnFailure(lease: RecoveryIntentLease): Boolean? {
+        if (recoveryIntentLease !== lease) return null
+        recoveryIntentLease = null
+        preserveRecoveryIntentOnFailure = false
+        return lease.preserveModeOnFailure
+    }
+
+    @Synchronized
+    fun completeRecoveryIntentOnSuccess(lease: RecoveryIntentLease): RecoveryIntentLease? {
+        if (recoveryIntentLease !== lease) return null
+        return replaceRecoveryIntent(
+            preserve = false,
+            ownerId = null,
+            attemptId = null,
+            allowsResourceClaim = true
+        )
+    }
+
+    @Synchronized
+    fun isRecoveryIntentCurrent(lease: RecoveryIntentLease): Boolean = recoveryIntentLease === lease
+
+    private fun replaceRecoveryIntent(
+        preserve: Boolean,
+        ownerId: Any?,
+        attemptId: Long?,
+        allowsResourceClaim: Boolean
+    ): RecoveryIntentLease {
+        if (recoveryIntentGeneration < Long.MAX_VALUE) recoveryIntentGeneration++
+        return RecoveryIntentLease(
+            generation = recoveryIntentGeneration,
+            preserveModeOnFailure = preserve,
+            ownerId = ownerId,
+            attemptId = attemptId,
+            allowsResourceClaim = allowsResourceClaim
+        ).also { lease ->
+            recoveryIntentLease = lease
+            preserveRecoveryIntentOnFailure = preserve
+        }
+    }
 
     @Volatile
     var lastConfigPath: String? = null

@@ -44,6 +44,9 @@ class VpnNotificationManager(
     @Volatile
     private var updateJob: Job? = null
 
+    private val updateLock = Any()
+    private var pendingUpdate: PendingUpdate? = null
+
     @Volatile
     private var suppressUpdates = false
 
@@ -57,6 +60,11 @@ class VpnNotificationManager(
         val showSpeed: Boolean = true,
         val uploadSpeed: Long = 0L,
         val downloadSpeed: Long = 0L
+    )
+
+    private data class PendingUpdate(
+        val state: NotificationState,
+        val service: SingBoxService
     )
 
     fun createNotificationChannel() {
@@ -118,32 +126,42 @@ class VpnNotificationManager(
         if (suppressUpdates) return
         if (state.isStopping) return
 
-        val now = SystemClock.elapsedRealtime()
-        val last = lastUpdateAtMs.get()
+        synchronized(updateLock) {
+            val now = SystemClock.elapsedRealtime()
+            val last = lastUpdateAtMs.get()
 
-        if (force) {
-            lastUpdateAtMs.set(now)
-            updateJob?.cancel()
-            updateJob = null
-            updateNotification(state, service)
-            return
-        }
+            if (force) {
+                lastUpdateAtMs.set(now)
+                pendingUpdate = null
+                updateJob?.cancel()
+                updateJob = null
+                updateNotification(state, service)
+                return
+            }
 
-        val delayMs = (UPDATE_DEBOUNCE_MS - (now - last)).coerceAtLeast(0L)
-        if (delayMs <= 0L) {
-            lastUpdateAtMs.set(now)
-            updateJob?.cancel()
-            updateJob = null
-            updateNotification(state, service)
-            return
-        }
+            val delayMs = (UPDATE_DEBOUNCE_MS - (now - last)).coerceAtLeast(0L)
+            if (delayMs <= 0L) {
+                lastUpdateAtMs.set(now)
+                pendingUpdate = null
+                updateJob?.cancel()
+                updateJob = null
+                updateNotification(state, service)
+                return
+            }
 
-        if (updateJob?.isActive == true) return
-        updateJob = serviceScope.launch {
-            delay(delayMs)
-            if (suppressUpdates || state.isStopping) return@launch
-            lastUpdateAtMs.set(SystemClock.elapsedRealtime())
-            updateNotification(state, service)
+            pendingUpdate = PendingUpdate(state, service)
+            if (updateJob?.isActive == true) return
+            updateJob = serviceScope.launch {
+                delay(delayMs)
+                synchronized(updateLock) {
+                    val latest = pendingUpdate.also { pendingUpdate = null }
+                    updateJob = null
+                    if (latest != null && !suppressUpdates && !latest.state.isStopping) {
+                        lastUpdateAtMs.set(SystemClock.elapsedRealtime())
+                        updateNotification(latest.state, latest.service)
+                    }
+                }
+            }
         }
     }
 
@@ -250,14 +268,20 @@ class VpnNotificationManager(
     fun setSuppressUpdates(suppress: Boolean) {
         suppressUpdates = suppress
         if (suppress) {
-            updateJob?.cancel()
-            updateJob = null
+            synchronized(updateLock) {
+                pendingUpdate = null
+                updateJob?.cancel()
+                updateJob = null
+            }
         }
     }
 
     fun resetState() {
-        updateJob?.cancel()
-        updateJob = null
+        synchronized(updateLock) {
+            pendingUpdate = null
+            updateJob?.cancel()
+            updateJob = null
+        }
         hasForegroundStarted.set(false)
         suppressUpdates = false
         lastTextLogged = null

@@ -15,7 +15,7 @@ $trustedTagCommits = @{
 }
 $trustedPatchHashes = @{
     'v1.13.14' = '4C89FE3A078F5DC68DA351BF04B1B9536D048925266E15332E5D6F2BFAB2ECE2'
-    'v1.13.15' = 'B0B08AA8B5A4278082CA04F59BBE3FB329E2D2C91B1C067BFE2A0C097EF64AB3'
+    'v1.13.15' = '7C8318A5C9B77BF0BF623FA4D8610FF4190B188B9BD4D6149E0D9BF51E1B0172'
 }
 $trustedPatchFiles = @{
     'v1.13.14' = @(
@@ -26,8 +26,26 @@ $trustedPatchFiles = @{
     'v1.13.15' = @(
         'cmd/internal/build_libbox/main.go',
         'protocol/vless/outbound.go',
-        'protocol/vless/outbound_test.go'
+        'protocol/vless/outbound_test.go',
+        'route/conn.go',
+        'route/conn_packet_lifecycle_test.go'
     )
+}
+$trustedDependencyPatches = @{
+    'v1.13.15' = [pscustomobject]@{
+        ModulePath = 'github.com/sagernet/sing-tun'
+        Version = 'v0.8.12-0.20260727151122-3a09076491df'
+        FileName = 'sing-tun-v0.8.12-0.20260727151122-3a09076491df.patch'
+        Hash = '19FC1E4FFAA5773BFBADCE1A33D1AF571E11E44BF59A1D18FF136B486DAE9E97'
+        RequiredNativeMarker = 'system TCP connection limit reached: active='
+        Files = @(
+            'stack_mixed.go',
+            'stack_mixed_test.go',
+            'stack_system.go',
+            'stack_system_accept_test.go',
+            'stack_system_nat.go'
+        )
+    }
 }
 $gomobileVersion = 'v0.1.12'
 $backupKeepCount = 3
@@ -84,8 +102,11 @@ $upstreamDir = Join-Path $tempDir 'upstream-sing-box'
 $aarCheckDir = Join-Path $tempDir 'aar-check'
 $resolvedTag = $null
 $patchFile = $null
+$dependencyPatch = $null
 $syncSucceeded = $false
 $aarReplaced = $false
+$syncMutex = $null
+$syncMutexAcquired = $false
 
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 
@@ -220,9 +241,32 @@ function Remove-WorkspaceGarbage {
     Remove-PathIfExists -Path $tempDir
 }
 
+function Copy-FileWithRetry {
+    param(
+        [Parameter(Mandatory = $true)] [string] $Source,
+        [Parameter(Mandatory = $true)] [string] $Destination,
+        [Parameter()] [int] $Attempts = 10
+    )
+
+    $lastError = $null
+    for ($attempt = 1; $attempt -le $Attempts; $attempt++) {
+        try {
+            Copy-Item -LiteralPath $Source -Destination $Destination -Force
+            return
+        }
+        catch {
+            $lastError = $_.Exception
+            if ($attempt -lt $Attempts) {
+                Start-Sleep -Milliseconds 300
+            }
+        }
+    }
+    throw $lastError
+}
+
 function Trim-OldAarBackups {
     $backups = Get-ChildItem -Path $backupDir -File -Filter 'libbox.aar.backup-before-replace.*' -ErrorAction SilentlyContinue |
-        Sort-Object LastWriteTimeUtc -Descending
+        Sort-Object Name -Descending
 
     if (@($backups).Count -le $backupKeepCount) {
         return
@@ -313,6 +357,44 @@ function Resolve-PatchFile([string] $targetTag) {
 
     Write-Host "Using exact patch for ${targetTag}: $candidate"
     return $candidate
+}
+
+function Resolve-DependencyPatch([string] $targetTag) {
+    $policy = $trustedDependencyPatches[$targetTag]
+    if ($null -eq $policy) {
+        return $null
+    }
+
+    $candidate = Join-Path $patchesDir $policy.FileName
+    if (-not (Test-Path -LiteralPath $candidate)) {
+        Fail "Dependency patch for $targetTag not found: $candidate"
+    }
+
+    $actualHash = (Get-FileHash -LiteralPath $candidate -Algorithm SHA256).Hash
+    if ($actualHash -cne $policy.Hash) {
+        Fail "Dependency patch SHA256 mismatch for ${targetTag}: $actualHash, expected $($policy.Hash)"
+    }
+
+    $changedFiles = @()
+    foreach ($line in Get-Content -LiteralPath $candidate -Encoding UTF8) {
+        if ($line -match '^diff --git a/(.+) b/(.+)$') {
+            if ($matches[1] -cne $matches[2]) {
+                Fail "Dependency patch renames files, which is not allowed: $($matches[1]) -> $($matches[2])"
+            }
+            $changedFiles += $matches[2]
+        }
+    }
+    $actualFiles = @($changedFiles | Sort-Object -Unique)
+    $fileDiff = @(Compare-Object -ReferenceObject @($policy.Files) -DifferenceObject $actualFiles -CaseSensitive)
+    if ($fileDiff.Count -gt 0) {
+        Fail "Dependency patch file set mismatch for ${targetTag}. Expected: $($policy.Files -join ', '); actual: $($actualFiles -join ', ')"
+    }
+
+    Write-Host "Dependency patch policy: $($policy.ModulePath)@$($policy.Version), SHA256 and file set verified."
+    return [pscustomobject]@{
+        Path = $candidate
+        Policy = $policy
+    }
 }
 
 function Assert-MinimalLibboxPatch([string] $PatchPath, [string] $TargetTag) {
@@ -713,14 +795,126 @@ function Apply-KunBoxPatch([string] $gitBinary) {
     Invoke-External -FilePath $gitBinary -Arguments @('apply', '--whitespace=nowarn', $patchFile) -WorkingDirectory $upstreamDir -FailureMessage 'Failed to apply KunBox patch'
 }
 
+function Apply-DependencyPatch([string] $goBinary, [string] $gitBinary) {
+    if ($null -eq $dependencyPatch) {
+        return
+    }
+
+    $policy = $dependencyPatch.Policy
+    $moduleInfo = (Get-ExternalOutput -FilePath $goBinary -Arguments @(
+            'list', '-m', '-f', '{{.Version}}|{{.Dir}}', $policy.ModulePath
+        ) -WorkingDirectory $upstreamDir -FailureMessage "Failed to resolve dependency $($policy.ModulePath)").Trim()
+    $separatorIndex = $moduleInfo.IndexOf('|')
+    if ($separatorIndex -le 0) {
+        Fail "Unexpected dependency metadata for $($policy.ModulePath): $moduleInfo"
+    }
+    $actualVersion = $moduleInfo.Substring(0, $separatorIndex)
+    $sourceDir = $moduleInfo.Substring($separatorIndex + 1)
+    if ($actualVersion -cne $policy.Version) {
+        Fail "Dependency version mismatch for $($policy.ModulePath): $actualVersion, expected $($policy.Version)"
+    }
+    if (-not (Test-Path -LiteralPath $sourceDir)) {
+        Fail "Dependency source directory not found: $sourceDir"
+    }
+
+    $patchedDir = Join-Path $tempDir 'patched-sing-tun'
+    Remove-PathIfExists -Path $patchedDir
+    Copy-Item -LiteralPath $sourceDir -Destination $patchedDir -Recurse
+    Get-ChildItem -LiteralPath $patchedDir -File -Recurse -Force | ForEach-Object {
+        $_.IsReadOnly = $false
+    }
+
+    $patchName = [System.IO.Path]::GetFileName($dependencyPatch.Path)
+    Invoke-External -FilePath $gitBinary -Arguments @('init', '--quiet') -WorkingDirectory $patchedDir -FailureMessage 'Failed to isolate patched dependency worktree'
+    Invoke-External -FilePath $gitBinary -Arguments @(
+        'apply', '--check', '--whitespace=error-all', $dependencyPatch.Path
+    ) -WorkingDirectory $patchedDir -FailureMessage "Dependency patch $patchName does not apply cleanly"
+    Invoke-External -FilePath $gitBinary -Arguments @(
+        'apply', '--whitespace=error-all', $dependencyPatch.Path
+    ) -WorkingDirectory $patchedDir -FailureMessage "Failed to apply dependency patch $patchName"
+    Invoke-External -FilePath $gitBinary -Arguments @(
+        'apply', '--reverse', '--check', '--whitespace=error-all', $dependencyPatch.Path
+    ) -WorkingDirectory $patchedDir -FailureMessage "Dependency patch $patchName was not applied"
+    foreach ($relativePath in $policy.Files) {
+        if (-not (Test-Path -LiteralPath (Join-Path $patchedDir $relativePath) -PathType Leaf)) {
+            Fail "Dependency patch output is missing: $relativePath"
+        }
+    }
+    Invoke-External -FilePath $goBinary -Arguments @(
+        'mod', 'edit', "-replace=$($policy.ModulePath)=$patchedDir"
+    ) -WorkingDirectory $upstreamDir -FailureMessage "Failed to activate patched dependency $($policy.ModulePath)"
+
+    $resolvedDir = (Get-ExternalOutput -FilePath $goBinary -Arguments @(
+            'list', '-m', '-f', '{{.Dir}}', $policy.ModulePath
+        ) -WorkingDirectory $upstreamDir -FailureMessage "Failed to verify patched dependency $($policy.ModulePath)").Trim()
+    if (-not [System.IO.Path]::GetFullPath($resolvedDir).Equals(
+            [System.IO.Path]::GetFullPath($patchedDir),
+            [System.StringComparison]::OrdinalIgnoreCase
+        )) {
+        Fail "Patched dependency replacement is inactive: $resolvedDir"
+    }
+    Write-Host "Patched dependency activated: $($policy.ModulePath)@$actualVersion"
+}
+
+function Assert-GoTestsDiscovered {
+    param(
+        [Parameter(Mandatory = $true)] [string] $goBinary,
+        [Parameter(Mandatory = $true)] [string] $WorkingDirectory,
+        [Parameter()] [string[]] $BuildTags = @()
+    )
+
+    $testArguments = @('test')
+    if ($BuildTags.Count -gt 0) {
+        $testArguments += @('-tags', ($BuildTags -join ','))
+    }
+    $testArguments += @('-list', '^Test', '.')
+    $testOutput = Get-ExternalOutput -FilePath $goBinary -Arguments $testArguments `
+        -WorkingDirectory $WorkingDirectory -FailureMessage 'Failed to discover patched sing-tun tests'
+
+    $testCount = 0
+    $reader = [System.IO.StringReader]::new($testOutput)
+    try {
+        while ($null -ne ($line = $reader.ReadLine())) {
+            if ($line.StartsWith('Test', [System.StringComparison]::Ordinal)) {
+                $testCount++
+            }
+        }
+    }
+    finally {
+        $reader.Dispose()
+    }
+
+    $tagLabel = if ($BuildTags.Count -gt 0) { $BuildTags -join ',' } else { 'default' }
+    if ($testCount -lt 1) {
+        Fail "Patched sing-tun discovered no tests for build tags '$tagLabel'."
+    }
+    Write-Host "Patched sing-tun test discovery ($tagLabel): $testCount test(s)."
+}
+
 function Run-GoValidation([string] $goBinary) {
     Write-Stage 'Stage 4/8: Validate patched Go packages'
 
     $env:GOTOOLCHAIN = 'local'
-    $packages = @('./protocol/vless')
+    $packages = @('./protocol/vless', './route')
     Invoke-External -FilePath $goBinary -Arguments (@('test') + $packages) -WorkingDirectory $upstreamDir -FailureMessage 'Patched Go package tests failed'
     Invoke-External -FilePath $goBinary -Arguments (@('test', '-race') + $packages) -WorkingDirectory $upstreamDir -FailureMessage 'Patched Go race tests failed'
     Invoke-External -FilePath $goBinary -Arguments (@('vet') + $packages) -WorkingDirectory $upstreamDir -FailureMessage 'Patched Go vet failed'
+
+    if ($null -ne $dependencyPatch) {
+        $patchedDependencyDir = Join-Path $tempDir 'patched-sing-tun'
+        if (-not (Test-Path -LiteralPath $patchedDependencyDir -PathType Container)) {
+            Fail "Patched dependency directory not found: $patchedDependencyDir"
+        }
+        Assert-GoTestsDiscovered -goBinary $goBinary -WorkingDirectory $patchedDependencyDir
+        Assert-GoTestsDiscovered -goBinary $goBinary -WorkingDirectory $patchedDependencyDir `
+            -BuildTags @('with_gvisor')
+        Invoke-External -FilePath $goBinary -Arguments @('test', '.') -WorkingDirectory $patchedDependencyDir -FailureMessage 'Patched sing-tun tests failed'
+        Invoke-External -FilePath $goBinary -Arguments @('test', '-race', '.') -WorkingDirectory $patchedDependencyDir -FailureMessage 'Patched sing-tun race tests failed'
+        Invoke-External -FilePath $goBinary -Arguments @('vet', '.') -WorkingDirectory $patchedDependencyDir -FailureMessage 'Patched sing-tun vet failed'
+        Invoke-External -FilePath $goBinary -Arguments @('test', '-tags', 'with_gvisor', '.') -WorkingDirectory $patchedDependencyDir -FailureMessage 'Patched sing-tun gVisor tests failed'
+        Invoke-External -FilePath $goBinary -Arguments @('test', '-race', '-tags', 'with_gvisor', '.') -WorkingDirectory $patchedDependencyDir -FailureMessage 'Patched sing-tun gVisor race tests failed'
+        Invoke-External -FilePath $goBinary -Arguments @('vet', '-tags', 'with_gvisor', '.') -WorkingDirectory $patchedDependencyDir -FailureMessage 'Patched sing-tun gVisor vet failed'
+    }
 }
 
 function Remove-LibboxBuildArtifacts {
@@ -802,7 +996,10 @@ function Invoke-BinaryPatternScannerSelfTest {
         Fail 'Binary pattern scanner self-test reported a pattern that is not present.'
     }
 
-    $policyPatterns = [string[]] @($forbiddenNativeMarkers | ForEach-Object { $_.Pattern })
+    $policyPatterns = [string[]] @(
+        $forbiddenNativeMarkers | ForEach-Object { $_.Pattern }
+        $trustedDependencyPatches.Values | ForEach-Object { $_.RequiredNativeMarker }
+    )
     $benignPolicyText = (@(
             'xhttp',
             'XHTTP',
@@ -873,7 +1070,18 @@ function Assert-AarNativeBinaryPolicy {
         Fail "Patched AAR libbox ABI set mismatch. Expected: $($requiredAndroidAbis -join ', '); actual: $($libboxAbis -join ', ')"
     }
 
+    $requiredNativeMarker = if ($null -ne $dependencyPatch) {
+        [string] $dependencyPatch.Policy.RequiredNativeMarker
+    } else {
+        $null
+    }
+    if ($null -ne $dependencyPatch -and [string]::IsNullOrWhiteSpace($requiredNativeMarker)) {
+        Fail 'Dependency patch policy is missing its required native marker.'
+    }
     $patterns = [string[]] @($forbiddenNativeMarkers | ForEach-Object { $_.Pattern })
+    if ($null -ne $requiredNativeMarker) {
+        $patterns += $requiredNativeMarker
+    }
     $violations = New-Object System.Collections.Generic.List[string]
     $zip = [System.IO.Compression.ZipFile]::OpenRead($AarPath)
     try {
@@ -899,6 +1107,11 @@ function Assert-AarNativeBinaryPolicy {
                     "$entryName contains forbidden $($marker.Category) marker '$($marker.Pattern)' at offset 0x$('{0:X}' -f $hits[$marker.Pattern])"
                 )
             }
+            if ($null -ne $requiredNativeMarker -and -not $hits.ContainsKey($requiredNativeMarker)) {
+                [void] $violations.Add(
+                    "$entryName is missing required dependency marker '$requiredNativeMarker'"
+                )
+            }
         }
     }
     finally {
@@ -909,7 +1122,16 @@ function Assert-AarNativeBinaryPolicy {
         Fail "Patched AAR native binary policy check failed:`n$($violations -join "`n")"
     }
 
-    Write-Host "AAR native binary policy: scanned $($libboxEntries.Count) ABI libbox.so entries; no Tailscale, private VLESS Encryption, or connection recovery implementations found. Official XHTTP remains enabled."
+    $dependencyMarkerStatus = if ($null -ne $requiredNativeMarker) {
+        ' Required dependency marker was found in every ABI.'
+    } else {
+        ''
+    }
+    Write-Host (
+        "AAR native binary policy: scanned $($libboxEntries.Count) ABI libbox.so entries; " +
+        'no Tailscale, private VLESS Encryption, or connection recovery implementations found. ' +
+        "Official XHTTP remains enabled.$dependencyMarkerStatus"
+    )
 }
 
 function Get-JavaClassEntries([string] $ClassesJar) {
@@ -1063,10 +1285,12 @@ function Replace-Aar([string] $aarPath) {
         Fail "Target AAR not found: $targetAar"
     }
 
-    Copy-Item -Path $targetAar -Destination $backupAar -Force
+    Invoke-External -FilePath $gradleWrapper -Arguments @('--stop') -WorkingDirectory $repoRoot -FailureMessage 'Failed to stop Gradle before replacing libbox.aar'
+    [GC]::Collect()
+    [GC]::WaitForPendingFinalizers()
+    Copy-FileWithRetry -Source $targetAar -Destination $backupAar
     $script:aarReplaced = $true
-    Copy-Item -Path $aarPath -Destination $targetAar -Force
-    Trim-OldAarBackups
+    Copy-FileWithRetry -Source $aarPath -Destination $targetAar
 
     Write-Host "Backup created: $backupAar"
     Write-Host "Target replaced: $targetAar"
@@ -1089,11 +1313,23 @@ if ($SelfTestBinaryScan) {
     foreach ($targetTag in @($trustedPatchHashes.Keys)) {
         $selfTestPatch = Resolve-PatchFile -targetTag $targetTag
         Assert-MinimalLibboxPatch -PatchPath $selfTestPatch -TargetTag $targetTag
+        [void] (Resolve-DependencyPatch -targetTag $targetTag)
     }
     exit 0
 }
 
 try {
+    $syncMutex = [System.Threading.Mutex]::new($false, 'Local\KunBox.SyncKernel')
+    try {
+        $syncMutexAcquired = $syncMutex.WaitOne(0)
+    }
+    catch [System.Threading.AbandonedMutexException] {
+        $syncMutexAcquired = $true
+        Write-Warning 'Recovered abandoned KunBox kernel sync mutex.'
+    }
+    if (-not $syncMutexAcquired) {
+        Fail 'Another KunBox kernel sync is already running.'
+    }
     Write-Stage 'Environment check'
 
     $gitPath = Resolve-CommandPath -commandName 'git' -hint 'Install Git and make sure it is on PATH.'
@@ -1127,11 +1363,11 @@ try {
     Write-Host ("GOPATH/bin: {0}" -f $gopathBin)
 
     Remove-WorkspaceGarbage
-    Trim-OldAarBackups
 
     $resolvedTag = Resolve-TargetTag
     $patchFile = Resolve-PatchFile -targetTag $resolvedTag
     Assert-MinimalLibboxPatch -PatchPath $patchFile -TargetTag $resolvedTag
+    $dependencyPatch = Resolve-DependencyPatch -targetTag $resolvedTag
     Write-Host ("Patch file: {0}" -f $patchFile)
 
     Ensure-GomobileTools -goBinary $goPath -binDir $gopathBin
@@ -1139,6 +1375,7 @@ try {
     $officialAar = Build-LibboxSnapshot -goBinary $goPath -OutputPath (Join-Path $tempDir 'official-libbox.aar') -StageName 'Stage 2/8: Build official AAR baseline'
     Assert-UpstreamTreeIsClean -gitBinary $gitPath
     Apply-KunBoxPatch -gitBinary $gitPath
+    Apply-DependencyPatch -goBinary $goPath -gitBinary $gitPath
     Run-GoValidation -goBinary $goPath
     $builtAar = Build-LibboxSnapshot -goBinary $goPath -OutputPath (Join-Path $tempDir 'patched-libbox.aar') -StageName 'Stage 5/8: Build patched libbox.aar'
     Assert-AarCompatibility -OfficialAar $officialAar -PatchedAar $builtAar -javapBinary $javapPath
@@ -1154,7 +1391,18 @@ catch {
     $failure = $_.Exception
     if ($aarReplaced -and (Test-Path $backupAar)) {
         try {
-            Copy-Item -Path $backupAar -Destination $targetAar -Force
+            try {
+                Invoke-External -FilePath $gradleWrapper -Arguments @('--stop') -WorkingDirectory $repoRoot `
+                    -FailureMessage 'Failed to stop Gradle before restoring libbox.aar'
+            }
+            catch {
+                [Console]::Error.WriteLine(
+                    "Gradle stop failed before rollback; continuing restore: $($_.Exception.Message)"
+                )
+            }
+            [GC]::Collect()
+            [GC]::WaitForPendingFinalizers()
+            Copy-FileWithRetry -Source $backupAar -Destination $targetAar
             $aarReplaced = $false
             [Console]::Error.WriteLine("Gradle validation failed; restored previous libbox.aar from $backupAar")
         } catch {
@@ -1165,8 +1413,27 @@ catch {
     exit 1
 }
 finally {
-    Remove-WorkspaceGarbage
-    if ($syncSucceeded) {
-        Trim-OldAarBackups
+    try {
+        if ($syncMutexAcquired) {
+            Remove-WorkspaceGarbage
+            if ($syncSucceeded) {
+                Trim-OldAarBackups
+            }
+        }
+    }
+    finally {
+        if ($syncMutexAcquired) {
+            try {
+                $syncMutex.ReleaseMutex()
+            }
+            catch {
+                [Console]::Error.WriteLine("Failed to release kernel sync mutex: $($_.Exception.Message)")
+            }
+            $syncMutexAcquired = $false
+        }
+        if ($null -ne $syncMutex) {
+            $syncMutex.Dispose()
+            $syncMutex = $null
+        }
     }
 }

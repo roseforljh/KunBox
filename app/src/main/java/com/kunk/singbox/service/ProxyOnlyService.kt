@@ -11,6 +11,7 @@ import android.net.NetworkCapabilities
 import android.net.NetworkRequest
 import android.os.Build
 import android.os.IBinder
+import android.os.Process
 import android.os.SystemClock
 import android.util.Log
 import com.google.gson.Gson
@@ -25,14 +26,20 @@ import com.kunk.singbox.repository.ConfigRepository
 import com.kunk.singbox.repository.LogRepository
 import com.kunk.singbox.repository.SettingsRepository
 import com.kunk.singbox.repository.RuleSetRepository
+import com.kunk.singbox.repository.buildServiceLifecycleDiagnostic
+import com.kunk.singbox.service.manager.RecoveryIntentLease
 import com.kunk.singbox.service.manager.RecoveryPolicy
 import com.kunk.singbox.service.manager.ServiceStateHolder
 import com.kunk.singbox.service.manager.CommandManager
+import com.kunk.singbox.service.network.TrafficMonitor
 import com.kunk.singbox.utils.LocalNetworkPermission
 import com.kunk.singbox.utils.LocaleHelper
 import com.kunk.singbox.utils.NetworkClient
+import com.kunk.singbox.utils.VersionInfo
 import com.kunk.singbox.utils.perf.BackgroundResourceGuard
+import com.kunk.singbox.utils.perf.ResourceGuardRegistration
 import com.kunk.singbox.utils.perf.ResourceGuardOwner
+import com.kunk.singbox.utils.perf.readProcessStartedAtEpochMs
 import io.nekohasekai.libbox.CommandServer
 import io.nekohasekai.libbox.CommandServerHandler
 import io.nekohasekai.libbox.CommandClient
@@ -52,7 +59,9 @@ import io.nekohasekai.libbox.TunOptions
 import io.nekohasekai.libbox.Libbox
 import io.nekohasekai.libbox.WIFIState
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
@@ -60,7 +69,9 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -150,14 +161,18 @@ class ProxyOnlyService : Service() {
     }
 
     private var commandServer: CommandServer? = null
-    private var groupCommandClient: CommandClient? = null
+    private var runtimeCommandClient: CommandClient? = null
     private val groupSelectedOutbounds = ConcurrentHashMap<String, String>()
+    private val trafficMonitor = TrafficMonitor()
     private val gson = Gson()
 
     private val notificationUpdateDebounceMs: Long = 900L
     private val lastNotificationUpdateAtMs = java.util.concurrent.atomic.AtomicLong(0L)
     @Volatile private var notificationUpdateJob: Job? = null
     @Volatile private var suppressNotificationUpdates = false
+    @Volatile private var showNotificationSpeed = true
+    @Volatile private var currentUploadSpeed = 0L
+    @Volatile private var currentDownloadSpeed = 0L
 
     private val lastPrepareRestartAtMs = java.util.concurrent.atomic.AtomicLong(0L)
     private val prepareRestartDebounceMs: Long = 1500L
@@ -174,8 +189,15 @@ class ProxyOnlyService : Service() {
     @Volatile private var startJob: Job? = null
     @Volatile private var cleanupJob: Job? = null
     @Volatile private var currentConfigPath: String? = null
-    @Volatile private var resourceGuardToken: String? = null
+    @Volatile private var pendingStartConfigPath: String? = null
+    @Volatile private var pendingStartRecoveryIntentLease: RecoveryIntentLease? = null
+    @Volatile private var activeStartRecoveryIntentLease: RecoveryIntentLease? = null
+    @Volatile private var pendingStopRecoveryIntentLease: RecoveryIntentLease? = null
     private val resourceGuardGeneration = java.util.concurrent.atomic.AtomicLong(0L)
+    private val resourceGuardCancellationGeneration = java.util.concurrent.atomic.AtomicLong(0L)
+    private val resourceGuardOwnerId = Any()
+    @Volatile private var resourceGuardRegistration: ResourceGuardRegistration? = null
+    @Volatile private var pendingRecoveryIntentLease: RecoveryIntentLease? = null
 
     private var connectivityManager: ConnectivityManager? = null
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
@@ -394,8 +416,32 @@ class ProxyOnlyService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
 
+    private fun recordServiceLifecycle(
+        event: String,
+        reason: String,
+        recovery: Boolean = false,
+        action: String? = null
+    ) {
+        LogRepository.getInstance().addAlwaysLog(
+            buildServiceLifecycleDiagnostic(
+                service = "proxy",
+                event = event,
+                reason = reason,
+                pid = Process.myPid(),
+                details = buildString {
+                    append("process_started_at_epoch_ms=${readProcessStartedAtEpochMs() ?: -1L} ")
+                    append("app_version_code=${VersionInfo.getAppVersionCode(this@ProxyOnlyService)} ")
+                    append("mode=${VpnStateStore.getMode().name} ")
+                    append("manually_stopped=${VpnStateStore.isManuallyStopped()} recovery=$recovery")
+                    action?.takeIf(String::isNotBlank)?.let { append(" action=$it") }
+                }
+            )
+        )
+    }
+
     override fun onCreate() {
         super.onCreate()
+        recordServiceLifecycle(event = "create", reason = "service_on_create")
         createProxyOnlyNotificationChannel(CHANNEL_ID, LEGACY_CHANNEL_ID, TAG)
         connectivityManager = getSystemService(ConnectivityManager::class.java)
 
@@ -413,12 +459,37 @@ class ProxyOnlyService : Service() {
                 }
             }
         }
+
+        serviceScope.launch {
+            SettingsRepository.getInstance(this@ProxyOnlyService)
+                .settings
+                .map { it.showNotificationSpeed }
+                .distinctUntilChanged()
+                .collect { enabled ->
+                    showNotificationSpeed = enabled
+                    if (isRunning) {
+                        requestNotificationUpdate(force = true)
+                    }
+                }
+        }
     }
 
-    @Suppress("ReturnCount", "LongMethod", "CyclomaticComplexMethod", "CognitiveComplexMethod")
+    @Suppress(
+        "ReturnCount",
+        "LongMethod",
+        "CyclomaticComplexMethod",
+        "CognitiveComplexMethod",
+        "NestedBlockDepth"
+    )
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val recoveryFlag = intent?.getBooleanExtra(SingBoxService.EXTRA_RECOVERY, false) == true
         Log.i(TAG, "onStartCommand action=${intent?.action} recovery=$recoveryFlag")
+        recordServiceLifecycle(
+            event = "start_request",
+            reason = if (intent?.action == null) "sticky_restart" else "intent",
+            recovery = recoveryFlag,
+            action = intent?.action?.substringAfterLast('.')
+        )
         if (recoveryFlag) {
             runCatching {
                 LogRepository.getInstance().addAlwaysLog(
@@ -444,16 +515,6 @@ class ProxyOnlyService : Service() {
                     notifyRemoteState(state = if (isRunning) ServiceState.RUNNING else ServiceState.STARTING)
                     return START_NOT_STICKY
                 }
-                if (shouldReloadRuntimeConfig(isRecoveryStart, isRunning, isStarting, requestedConfigPath)) {
-                    Log.i(TAG, "Runtime config reload requested: $requestedConfigPath")
-                    val reloadConfigPath = requestedConfigPath.orEmpty()
-                    serviceScope.launch {
-                        stopCore(stopService = false)
-                        waitForCleanupJob()
-                        startCore(reloadConfigPath)
-                    }
-                    return START_NOT_STICKY
-                }
                 if (isRecoveryStart &&
                     (VpnStateStore.isManuallyStopped() || VpnStateStore.getMode() != VpnStateStore.CoreMode.PROXY)
                 ) {
@@ -462,8 +523,13 @@ class ProxyOnlyService : Service() {
                     VpnStateStore.clearRecoveryClaim()
                     return START_NOT_STICKY
                 }
-                ServiceStateHolder.preserveRecoveryIntentOnFailure = isRecoveryStart
+                val recoveryIntentLease = setNonResourceRecoveryIntent(isRecoveryStart)
                 VpnTileService.persistVpnPending("starting")
+                if (shouldReloadRuntimeConfig(isRecoveryStart, isRunning, isStarting, requestedConfigPath)) {
+                    Log.i(TAG, "Runtime config reload requested: $requestedConfigPath")
+                    queueCoreRestart(requestedConfigPath.orEmpty(), recoveryIntentLease)
+                    return START_NOT_STICKY
+                }
                 val configPath = requestedConfigPath
 
                 // P0 Optimization: If config path is missing, generate it inside Service
@@ -471,9 +537,11 @@ class ProxyOnlyService : Service() {
                     if (shouldStartForegroundBeforeConfigGeneration(intent.action, configPath) &&
                         !startForegroundForProxyStart()
                     ) {
-                        setLastError("Failed to start foreground service")
-                        clearStartupFailureState()
-                        stopSelf()
+                        if (setLastErrorIfCurrent(recoveryIntentLease, "Failed to start foreground service") &&
+                            clearStartupFailureState(recoveryIntentLease)
+                        ) {
+                            stopSelf()
+                        }
                         return START_NOT_STICKY
                     }
                     Log.i(TAG, "ACTION_START received without config path, generating config...")
@@ -484,26 +552,23 @@ class ProxyOnlyService : Service() {
                             val result = repo.generateConfigFile()
                             if (result != null) {
                                 Log.i(TAG, "Config generated successfully: ${result.path}")
-                                // Recursively call start command with the generated path
-                                val newIntent = Intent(applicationContext, ProxyOnlyService::class.java).apply {
-                                    action = ACTION_START
-                                    putExtra(EXTRA_CONFIG_PATH, result.path)
-                                }
-                                startService(newIntent)
+                                startCore(result.path, recoveryIntentLease)
                             } else {
+                                if (!setLastErrorIfCurrent(recoveryIntentLease, "Failed to generate config file")) {
+                                    return@launch
+                                }
                                 Log.e(TAG, "Failed to generate config file")
-                                setLastError("Failed to generate config file")
                                 withContext(Dispatchers.Main) {
-                                    clearStartupFailureState()
-                                    stopSelf()
+                                    if (clearStartupFailureState(recoveryIntentLease)) stopSelf()
                                 }
                             }
                         } catch (e: Exception) {
+                            if (!setLastErrorIfCurrent(recoveryIntentLease, "Error generating config: ${e.message}")) {
+                                return@launch
+                            }
                             Log.e(TAG, "Error generating config in Service", e)
-                            setLastError("Error generating config: ${e.message}")
                             withContext(Dispatchers.Main) {
-                                clearStartupFailureState()
-                                stopSelf()
+                                if (clearStartupFailureState(recoveryIntentLease)) stopSelf()
                             }
                         }
                     }
@@ -511,33 +576,39 @@ class ProxyOnlyService : Service() {
                 }
 
                 if (!configPath.isNullOrBlank()) {
-                    startCore(configPath)
+                    startCore(configPath, recoveryIntentLease)
+                } else {
+                    if (setLastErrorIfCurrent(recoveryIntentLease, "Config path is empty") &&
+                        clearStartupFailureState(recoveryIntentLease)
+                    ) {
+                        stopSelf()
+                    }
                 }
             }
             ACTION_STOP -> {
-                ServiceStateHolder.preserveRecoveryIntentOnFailure = false
                 VpnStateStore.setManuallyStopped(true)
+                val recoveryIntentLease = setNonResourceRecoveryIntent(false)
                 VpnTileService.persistVpnPending("stopping")
                 notifyRemoteState(state = ServiceState.STOPPING)
-                stopCore(stopService = true)
+                stopCore(stopService = true, recoveryIntentLease = recoveryIntentLease)
             }
             ACTION_SWITCH_NODE -> {
+                val recoveryIntentLease = setNonResourceRecoveryIntent(false)
                 val configPath = intent.getStringExtra(EXTRA_CONFIG_PATH)
                 if (!configPath.isNullOrBlank()) {
-                    serviceScope.launch {
-                        stopCore(stopService = false)
-                        waitForCleanupJob()
-                        startCore(configPath)
-                    }
+                    queueCoreRestart(configPath, recoveryIntentLease)
                 } else {
                     serviceScope.launch {
                         val repo = ConfigRepository.getInstance(this@ProxyOnlyService)
-                        val generationResult = repo.generateConfigFile()
+                        val generationResult = runCatching { repo.generateConfigFile() }
+                            .onFailure { error -> Log.e(TAG, "Failed to generate switch config", error) }
+                            .getOrNull()
                         val generatedPath = generationResult?.path
-                        if (generatedPath.isNullOrBlank()) return@launch
-                        stopCore(stopService = false)
-                        waitForCleanupJob()
-                        startCore(generatedPath)
+                        if (generatedPath.isNullOrBlank()) {
+                            completeRecoveryIntentOnSuccess(recoveryIntentLease)
+                            return@launch
+                        }
+                        queueCoreRestart(generatedPath, recoveryIntentLease)
                     }
                 }
             }
@@ -572,31 +643,75 @@ class ProxyOnlyService : Service() {
         return START_NOT_STICKY
     }
 
-    @Suppress("CognitiveComplexMethod", "LongMethod")
-    private fun startCore(configPath: String) {
-        synchronized(this) {
-            if (isRunning || isStarting) return
-            if (isStopping) return
+    @Suppress(
+        "CognitiveComplexMethod",
+        "CyclomaticComplexMethod",
+        "ComplexCondition",
+        "LongMethod",
+        "ReturnCount"
+    )
+    private fun startCore(configPath: String, recoveryIntentLease: RecoveryIntentLease) {
+        val resourceRecoveryAttemptId = recoveryIntentLease.attemptId
+        val shouldRestartActiveCore = synchronized(this) {
+            if (!serviceSupervisorJob.isActive) return
+            if (!ServiceStateHolder.isRecoveryIntentCurrent(recoveryIntentLease)) return
+            if (isStopping) {
+                pendingStartConfigPath = configPath
+                pendingStartRecoveryIntentLease = recoveryIntentLease
+                stopSelfRequested = false
+                pendingStopRecoveryIntentLease = null
+                return
+            }
+            if (isRunning || isStarting) return@synchronized true
+            if (pendingStartRecoveryIntentLease === recoveryIntentLease) {
+                pendingStartConfigPath = null
+                pendingStartRecoveryIntentLease = null
+            }
             isStarting = true
+            activeStartRecoveryIntentLease = recoveryIntentLease
+            setLastError(null)
+            currentConfigPath = configPath
+            initializeStartupNodeLabel(configPath)
+            notifyRemoteState(state = ServiceState.STARTING)
+            updateTileState()
+            false
         }
 
-        setLastError(null)
-        currentConfigPath = configPath
-        initializeStartupNodeLabel(configPath)
-
-        notifyRemoteState(state = ServiceState.STARTING)
-        updateTileState()
-
-        val foregroundStarted = startForegroundForProxyStart()
-        if (!shouldContinueCoreStartAfterForegroundResult(foregroundStarted)) {
-            setLastError("Failed to start foreground service")
-            clearStartupFailureState()
-            stopSelf()
+        if (shouldRestartActiveCore) {
+            queueCoreRestart(configPath, recoveryIntentLease)
             return
         }
 
-        startJob?.cancel()
-        startJob = serviceScope.launch {
+        val foregroundStarted = startForegroundForProxyStart()
+        if (!shouldContinueCoreStartAfterForegroundResult(foregroundStarted)) {
+            if (!setLastErrorIfCurrent(recoveryIntentLease, "Failed to start foreground service")) {
+                synchronized(this) {
+                    if (activeStartRecoveryIntentLease === recoveryIntentLease) {
+                        activeStartRecoveryIntentLease = null
+                        isStarting = false
+                    }
+                }
+                stopSupersededStartup()
+                return
+            }
+            if (resourceRecoveryAttemptId == null) {
+                if (clearStartupFailureState(recoveryIntentLease)) stopSelf()
+            } else {
+                serviceScope.launch {
+                    BackgroundResourceGuard.failSuccessorAndAwait(
+                        resourceGuardOwnerId,
+                        resourceRecoveryAttemptId
+                    )
+                    withContext(Dispatchers.Main) {
+                        if (clearStartupFailureState(recoveryIntentLease)) stopSelf()
+                    }
+                }
+            }
+            return
+        }
+
+        val nextStartJob = serviceScope.launch(start = CoroutineStart.LAZY) {
+            var activeRecoveryIntentLease = recoveryIntentLease
             try {
                 val ruleSetRepo = RuleSetRepository.getInstance(this@ProxyOnlyService)
                 runCatching {
@@ -608,10 +723,15 @@ class ProxyOnlyService : Service() {
 
                 val configFile = File(configPath)
                 if (!configFile.exists()) {
-                    setLastError("Config file not found: $configPath")
+                    if (!setLastErrorIfCurrent(recoveryIntentLease, "Config file not found: $configPath")) {
+                        return@launch
+                    }
+                    BackgroundResourceGuard.failSuccessorAndAwait(
+                        resourceGuardOwnerId,
+                        resourceRecoveryAttemptId
+                    )
                     withContext(Dispatchers.Main) {
-                        clearStartupFailureState()
-                        stopSelf()
+                        if (clearStartupFailureState(recoveryIntentLease)) stopSelf()
                     }
                     return@launch
                 }
@@ -621,11 +741,14 @@ class ProxyOnlyService : Service() {
                 val settings = settingsRepository.settings.first()
                 if (!LocalNetworkPermission.canApplySettings(this@ProxyOnlyService, settings)) {
                     val reason = LocalNetworkPermission.MISSING_PERMISSION_ERROR
+                    if (!setLastErrorIfCurrent(recoveryIntentLease, reason)) return@launch
                     Log.e(TAG, reason)
-                    setLastError(reason)
+                    BackgroundResourceGuard.failSuccessorAndAwait(
+                        resourceGuardOwnerId,
+                        resourceRecoveryAttemptId
+                    )
                     withContext(Dispatchers.Main) {
-                        clearStartupFailureState()
-                        stopSelf()
+                        if (clearStartupFailureState(recoveryIntentLease)) stopSelf()
                     }
                     return@launch
                 }
@@ -645,13 +768,15 @@ class ProxyOnlyService : Service() {
                     if (portAvailable) {
                         Log.i(TAG, "Port $proxyPort available after ${waitTime}ms")
                     } else {
-
                         val reason = "Proxy port $proxyPort is unavailable after ${waitTime}ms"
+                        if (!setLastErrorIfCurrent(recoveryIntentLease, reason)) return@launch
                         Log.e(TAG, reason)
-                        setLastError(reason)
+                        BackgroundResourceGuard.failSuccessorAndAwait(
+                            resourceGuardOwnerId,
+                            resourceRecoveryAttemptId
+                        )
                         withContext(Dispatchers.Main) {
-                            clearStartupFailureState()
-                            stopSelf()
+                            if (clearStartupFailureState(recoveryIntentLease)) stopSelf()
                         }
                         return@launch
                     }
@@ -673,47 +798,128 @@ class ProxyOnlyService : Service() {
                     }
                 }
 
-                val server = Libbox.newCommandServer(serverHandler, platformInterface)
-                commandServer = server
-                server.start()
-                BoxWrapperManager.init(server)
-
                 val overrideOptions = OverrideOptions().apply {
                     autoRedirect = false
                 }
-                server.startOrReloadService(configContent, overrideOptions)
+                val server = synchronized(this@ProxyOnlyService) {
+                    if (!ServiceStateHolder.isRecoveryIntentCurrent(recoveryIntentLease) ||
+                        isStopping || activeStartRecoveryIntentLease !== recoveryIntentLease
+                    ) {
+                        null
+                    } else {
+                        Libbox.newCommandServer(serverHandler, platformInterface).also { createdServer ->
+                            commandServer = createdServer
+                            createdServer.start()
+                            BoxWrapperManager.init(createdServer)
+                            createdServer.startOrReloadService(configContent, overrideOptions)
+                        }
+                    }
+                }
+                if (server == null) {
+                    Log.w(TAG, "Proxy CommandServer creation ignored for superseded recovery lease")
+                    withContext(Dispatchers.Main) { stopSupersededStartup() }
+                    return@launch
+                }
 
-                isRunning = true
-                startAutomaticGroupClientIfNeeded()
-                NetworkClient.onVpnStateChanged(true)
-
-                VpnTileService.persistVpnState(true)
-                VpnStateStore.setMode(VpnStateStore.CoreMode.PROXY)
-                VpnStateStore.setManuallyStopped(false)
-                VpnTileService.persistVpnPending("")
-                ServiceStateHolder.preserveRecoveryIntentOnFailure = false
-                VpnStateStore.clearRecoveryClaim()
-                setLastError(null)
-                notifyRemoteState(state = ServiceState.RUNNING)
-                updateTileState()
-                requestNotificationUpdate(force = true)
-                startResourceGuard()
+                val baselineLease = synchronized(this@ProxyOnlyService) {
+                    if (!ServiceStateHolder.isRecoveryIntentCurrent(recoveryIntentLease) ||
+                        isStopping || activeStartRecoveryIntentLease !== recoveryIntentLease ||
+                        commandServer !== server
+                    ) {
+                        return@synchronized null
+                    }
+                    val baseline = completeRecoveryIntentOnSuccess(recoveryIntentLease)
+                        ?: return@synchronized null
+                    activeRecoveryIntentLease = baseline
+                    activeStartRecoveryIntentLease = baseline
+                    isRunning = true
+                    startRuntimeCommandClient()
+                    NetworkClient.onVpnStateChanged(true)
+                    VpnTileService.persistVpnState(true)
+                    VpnStateStore.setMode(VpnStateStore.CoreMode.PROXY)
+                    VpnStateStore.setManuallyStopped(false)
+                    VpnTileService.persistVpnPending("")
+                    VpnStateStore.clearRecoveryClaim()
+                    setLastError(null)
+                    notifyRemoteState(state = ServiceState.RUNNING)
+                    updateTileState()
+                    requestNotificationUpdate(force = true)
+                    startResourceGuard()
+                    isStarting = false
+                    if (activeStartRecoveryIntentLease === baseline) {
+                        activeStartRecoveryIntentLease = null
+                    }
+                    baseline
+                }
+                if (baselineLease == null) {
+                    Log.w(TAG, "Proxy startup success ignored for superseded recovery lease")
+                    withContext(Dispatchers.Main) { stopSupersededStartup() }
+                    return@launch
+                }
             } catch (e: CancellationException) {
                 return@launch
             } catch (e: Exception) {
+                if (!ServiceStateHolder.isRecoveryIntentCurrent(activeRecoveryIntentLease)) {
+                    Log.w(TAG, "Proxy startup failure ignored for superseded recovery lease", e)
+                    withContext(Dispatchers.Main) { stopSupersededStartup() }
+                    return@launch
+                }
                 val reason = "Failed to start proxy-only: ${e.javaClass.simpleName}: ${e.message}"
                 Log.e(TAG, reason, e)
-                setLastError(reason)
+                if (!setLastErrorIfCurrent(activeRecoveryIntentLease, reason)) {
+                    withContext(Dispatchers.Main) { stopSupersededStartup() }
+                    return@launch
+                }
+                BackgroundResourceGuard.failSuccessorAndAwait(
+                    resourceGuardOwnerId,
+                    resourceRecoveryAttemptId
+                )
                 withContext(Dispatchers.Main) {
-                    isRunning = false
-                    notifyRemoteState(state = ServiceState.STOPPED)
-                    stopCore(stopService = true)
+                    stopCore(
+                        stopService = true,
+                        recoveryIntentLease = activeRecoveryIntentLease,
+                        resourceRecoveryAttemptId = activeRecoveryIntentLease.attemptId
+                    )
                 }
             } finally {
-                isStarting = false
-                startJob = null
+                val runningJob = coroutineContext[Job]
+                synchronized(this@ProxyOnlyService) {
+                    if (startJob === runningJob) {
+                        isStarting = false
+                        startJob = null
+                        if (activeStartRecoveryIntentLease === recoveryIntentLease ||
+                            activeStartRecoveryIntentLease === activeRecoveryIntentLease
+                        ) {
+                            activeStartRecoveryIntentLease = null
+                        }
+                    }
+                }
             }
         }
+
+        val shouldStartJob = synchronized(this) {
+            if (!ServiceStateHolder.isRecoveryIntentCurrent(recoveryIntentLease) ||
+                isStopping || activeStartRecoveryIntentLease !== recoveryIntentLease
+            ) {
+                false
+            } else {
+                startJob?.cancel()
+                startJob = nextStartJob
+                true
+            }
+        }
+        if (!shouldStartJob) {
+            nextStartJob.cancel()
+            synchronized(this) {
+                if (activeStartRecoveryIntentLease === recoveryIntentLease) {
+                    activeStartRecoveryIntentLease = null
+                    isStarting = false
+                }
+            }
+            stopSupersededStartup()
+            return
+        }
+        nextStartJob.start()
     }
 
     private fun restrictLocalNetworkListenIfNeeded(configContent: String): String {
@@ -742,10 +948,48 @@ class ProxyOnlyService : Service() {
         }
     }
 
-    private fun clearStartupFailureState() {
-        val preserveMode = RecoveryPolicy.shouldPreserveModeOnStartFailure(
-            ServiceStateHolder.preserveRecoveryIntentOnFailure
+    private fun queueCoreRestart(configPath: String, recoveryIntentLease: RecoveryIntentLease): Boolean {
+        synchronized(this) {
+            if (!ServiceStateHolder.isRecoveryIntentCurrent(recoveryIntentLease)) return false
+            pendingStartConfigPath = configPath
+            pendingStartRecoveryIntentLease = recoveryIntentLease
+            stopSelfRequested = false
+            pendingStopRecoveryIntentLease = null
+        }
+        stopCore(
+            stopService = false,
+            recoveryIntentLease = recoveryIntentLease,
+            resourceRecoveryAttemptId = recoveryIntentLease.attemptId
         )
+        return true
+    }
+
+    private fun stopSupersededStartup() {
+        val successorLease = synchronized(this) {
+            pendingStartRecoveryIntentLease
+                ?.takeIf(ServiceStateHolder::isRecoveryIntentCurrent)
+                ?: pendingRecoveryIntentLease?.takeIf(ServiceStateHolder::isRecoveryIntentCurrent)
+        } ?: return
+        stopCore(
+            stopService = false,
+            recoveryIntentLease = successorLease,
+            resourceRecoveryAttemptId = successorLease.attemptId
+        )
+    }
+
+    private fun clearStartupFailureState(recoveryIntentLease: RecoveryIntentLease): Boolean = synchronized(this) {
+        val consumedIntent = ServiceStateHolder.consumeRecoveryIntentOnFailure(recoveryIntentLease)
+        if (consumedIntent == null) {
+            Log.w(TAG, "Proxy startup failure ignored for superseded recovery lease")
+            return@synchronized false
+        }
+        val preserveMode = RecoveryPolicy.shouldPreserveModeOnStartFailure(consumedIntent)
+        if (pendingRecoveryIntentLease === recoveryIntentLease) pendingRecoveryIntentLease = null
+        if (pendingStartRecoveryIntentLease === recoveryIntentLease) {
+            pendingStartConfigPath = null
+            pendingStartRecoveryIntentLease = null
+        }
+        if (activeStartRecoveryIntentLease === recoveryIntentLease) activeStartRecoveryIntentLease = null
         isRunning = false
         isStarting = false
         NetworkClient.onVpnStateChanged(false)
@@ -757,35 +1001,62 @@ class ProxyOnlyService : Service() {
         }
         VpnTileService.persistVpnPending("")
         VpnStateStore.clearRecoveryClaim()
-        ServiceStateHolder.preserveRecoveryIntentOnFailure = false
         notifyRemoteState(state = ServiceState.STOPPED)
         updateTileState()
+        true
     }
 
-    @Suppress("CognitiveComplexMethod", "LongMethod")
-    private fun stopCore(stopService: Boolean): Job? {
-        stopResourceGuard()
-        synchronized(this) {
+    @OptIn(DelicateCoroutinesApi::class)
+    @Suppress("CognitiveComplexMethod", "CyclomaticComplexMethod", "LongMethod")
+    private fun stopCore(
+        stopService: Boolean,
+        recoveryIntentLease: RecoveryIntentLease,
+        resourceRecoveryAttemptId: Long? = recoveryIntentLease.attemptId
+    ): Job? {
+        var jobToJoin: Job? = null
+        var serverToClose: CommandServer? = null
+        var runtimeClientToDisconnect: CommandClient? = null
+        val shouldStartCleanup = synchronized(this) {
+            if (!ServiceStateHolder.isRecoveryIntentCurrent(recoveryIntentLease)) {
+                Log.w(TAG, "Proxy stop ignored for superseded recovery lease")
+                return cleanupJob
+            }
             stopSelfRequested = stopSelfRequested || stopService
-            if (isStopping) return cleanupJob
-            isStopping = true
+            if (stopService) {
+                pendingStartConfigPath = null
+                pendingStartRecoveryIntentLease = null
+                pendingStopRecoveryIntentLease = recoveryIntentLease
+            }
+            if (resourceRecoveryAttemptId == null) {
+                cancelResourceGuard()
+            } else {
+                detachResourceGuard(resourceRecoveryAttemptId)
+            }
+            if (isStopping) {
+                false
+            } else {
+                isStopping = true
+                isStarting = false
+                isRunning = false
+                activeStartRecoveryIntentLease = null
+                jobToJoin = startJob.also { startJob = null }
+                serverToClose = commandServer.also { commandServer = null }
+                runtimeClientToDisconnect = runtimeCommandClient.also { runtimeCommandClient = null }
+                true
+            }
         }
+        if (!shouldStartCleanup) return cleanupJob
 
         notifyRemoteState(state = ServiceState.STOPPING)
         updateTileState()
-        isRunning = false
         NetworkClient.onVpnStateChanged(false)
 
-        val jobToJoin = startJob
-        startJob = null
         jobToJoin?.cancel()
-
-        val serverToClose = commandServer
-        commandServer = null
-        groupCommandClient?.disconnect()
-        groupCommandClient = null
+        runtimeClientToDisconnect?.disconnect()
         groupSelectedOutbounds.clear()
-        BoxWrapperManager.release()
+        trafficMonitor.reset()
+        currentUploadSpeed = 0L
+        currentDownloadSpeed = 0L
 
         notificationUpdateJob?.cancel()
         notificationUpdateJob = null
@@ -797,13 +1068,15 @@ class ProxyOnlyService : Service() {
                 .settings.value.proxyPort
         }.getOrDefault(2080)
 
-        val job = cleanupScope.launch {
+        // ponytail: ATOMIC 仅保证销毁竞态中进入不可取消清理段，任务仍由 cleanupSupervisorJob 持有。
+        val job = cleanupScope.launch(start = CoroutineStart.ATOMIC) {
             withContext(NonCancellable) {
                 try {
                     jobToJoin?.join()
                 } catch (e: Exception) {
                     Log.w(TAG, "Failed to join start job", e)
                 }
+                BoxWrapperManager.release()
 
                 if (serverToClose != null) {
                     Log.i(TAG, "Closing CommandServer...")
@@ -821,7 +1094,7 @@ class ProxyOnlyService : Service() {
 
                                 val reason = "Proxy port $proxyPort was not released after ${elapsed}ms"
                                 Log.e(TAG, reason)
-                                setLastError(reason)
+                                setLastErrorIfCurrent(recoveryIntentLease, reason)
                             }
                         } else {
                             Log.i(TAG, "CommandServer closed in ${SystemClock.elapsedRealtime() - closeStart}ms")
@@ -832,146 +1105,316 @@ class ProxyOnlyService : Service() {
                 }
 
                 withContext(Dispatchers.Main) {
-                    runCatching { stopForeground(STOP_FOREGROUND_REMOVE) }
-                    if (stopSelfRequested) {
-                        stopSelf()
-                    }
-                    if (shouldClearRuntimeStateAfterStop(stopService = stopSelfRequested)) {
-                        VpnTileService.persistVpnState(false)
-                        val preserveMode = RecoveryPolicy.shouldPreserveModeOnStartFailure(
-                            ServiceStateHolder.preserveRecoveryIntentOnFailure
-                        )
-                        if (preserveMode) {
-                            VpnStateStore.clearRuntimeState(preserveLastError = true)
-                            VpnStateStore.clearRecoveryClaim()
-                            ServiceStateHolder.preserveRecoveryIntentOnFailure = false
-                            Log.w(TAG, "Recovery start failed, mode preserved for next issuer")
-                        } else {
-                            VpnStateStore.setMode(VpnStateStore.CoreMode.NONE)
+                    if (!cleanupSupervisorJob.isActive) {
+                        synchronized(this@ProxyOnlyService) {
+                            cleanupJob = null
                         }
-                        VpnTileService.persistVpnPending("")
+                        return@withContext
                     }
-                    notifyRemoteState(state = ServiceState.STOPPED)
-                    updateTileState()
-                }
+                    val (restartConfigPath, restartLease, hardStopLease) =
+                        synchronized(this@ProxyOnlyService) {
+                            val exactHardStopLease = pendingStopRecoveryIntentLease?.takeIf {
+                                stopSelfRequested && ServiceStateHolder.isRecoveryIntentCurrent(it)
+                            }
+                            val queuedLease = pendingStartRecoveryIntentLease
+                            val queuedPath = pendingStartConfigPath
+                            val canRestart = exactHardStopLease == null &&
+                                !queuedPath.isNullOrBlank() &&
+                                queuedLease != null &&
+                                ServiceStateHolder.isRecoveryIntentCurrent(queuedLease)
+                            val restartPath = queuedPath.takeIf { canRestart }
+                            val continuationLease = queuedLease.takeIf { canRestart }
+                            if (canRestart) {
+                                pendingStartConfigPath = null
+                                pendingStartRecoveryIntentLease = null
+                            }
+                            isStopping = false
+                            stopSelfRequested = false
+                            pendingStopRecoveryIntentLease = null
+                            cleanupJob = null
+                            Triple(restartPath, continuationLease, exactHardStopLease)
+                        }
 
-                synchronized(this@ProxyOnlyService) {
-                    isStopping = false
-                    stopSelfRequested = false
-                    cleanupJob = null
+                    when {
+                        restartConfigPath != null && restartLease != null -> {
+                            runCatching { stopForeground(STOP_FOREGROUND_REMOVE) }
+                            startCore(restartConfigPath, restartLease)
+                        }
+                        hardStopLease != null -> {
+                            val completed = synchronized(this@ProxyOnlyService) {
+                                val consumedIntent = ServiceStateHolder.consumeRecoveryIntentOnFailure(
+                                    hardStopLease
+                                ) ?: return@synchronized false
+                                if (pendingRecoveryIntentLease === hardStopLease) {
+                                    pendingRecoveryIntentLease = null
+                                }
+                                runCatching { stopForeground(STOP_FOREGROUND_REMOVE) }
+                                VpnTileService.persistVpnState(false)
+                                val preserveMode = RecoveryPolicy.shouldPreserveModeOnStartFailure(consumedIntent)
+                                if (preserveMode) {
+                                    VpnStateStore.clearRuntimeState(preserveLastError = true)
+                                    VpnStateStore.clearRecoveryClaim()
+                                    Log.w(TAG, "Recovery start failed, mode preserved for next issuer")
+                                } else {
+                                    VpnStateStore.setMode(VpnStateStore.CoreMode.NONE)
+                                }
+                                VpnTileService.persistVpnPending("")
+                                notifyRemoteState(state = ServiceState.STOPPED)
+                                updateTileState()
+                                stopSelf()
+                                true
+                            }
+                            if (!completed) {
+                                Log.w(TAG, "Proxy shutdown completion ignored for superseded recovery lease")
+                            }
+                        }
+                        ServiceStateHolder.isRecoveryIntentCurrent(recoveryIntentLease) -> synchronized(
+                            this@ProxyOnlyService
+                        ) {
+                            if (ServiceStateHolder.isRecoveryIntentCurrent(recoveryIntentLease)) {
+                                runCatching { stopForeground(STOP_FOREGROUND_REMOVE) }
+                                VpnTileService.persistVpnState(false)
+                                VpnTileService.persistVpnPending("")
+                                notifyRemoteState(state = ServiceState.STOPPED)
+                                updateTileState()
+                            }
+                        }
+                        else -> Log.w(TAG, "Proxy cleanup ignored for superseded recovery lease")
+                    }
                 }
             }
         }
-        cleanupJob = job
+        synchronized(this) {
+            cleanupJob = job
+        }
+        job.invokeOnCompletion {
+            synchronized(this) {
+                if (cleanupJob === job) cleanupJob = null
+            }
+        }
         return job
     }
 
-    private suspend fun waitForCleanupJob() {
-        val job = cleanupJob
-        if (job != null && job.isActive) {
-            Log.i(TAG, "Waiting for previous cleanup to complete...")
-            val waitStart = SystemClock.elapsedRealtime()
-            job.join()
-            Log.i(TAG, "Previous cleanup completed in ${SystemClock.elapsedRealtime() - waitStart}ms")
-        }
-    }
-
-    private fun startAutomaticGroupClientIfNeeded() {
+    private fun startRuntimeCommandClient() {
         val profileId = VpnStateStore.getSelectedProfileId()
-        if (!ConfigRepository.getInstance(this).isProfileAutoSelectionEnabled(profileId)) return
-        val options = CommandClientOptions().apply {
-            addCommand(Libbox.CommandGroup)
-            statusInterval = 3_000L * 1_000L * 1_000L
-        }
-        groupCommandClient = Libbox.newCommandClient(object : CommandClientHandler {
+        val autoSelectionEnabled = ConfigRepository.getInstance(this).isProfileAutoSelectionEnabled(profileId)
+        trafficMonitor.reset()
+        val options = createRuntimeCommandOptions(autoSelectionEnabled)
+        val client = Libbox.newCommandClient(object : CommandClientHandler {
             override fun connected() = Unit
             override fun disconnected(message: String?) {
-                Log.w(TAG, "Automatic group client disconnected: $message")
+                Log.w(TAG, "Runtime command client disconnected: $message")
             }
             override fun clearLogs() = Unit
             override fun setDefaultLogLevel(level: Int) = Unit
             override fun writeLogs(messageList: LogIterator?) = Unit
-            override fun writeStatus(message: StatusMessage?) = Unit
+            override fun writeStatus(message: StatusMessage?) = handleRuntimeStatus(message)
             override fun initializeClashMode(modeList: StringIterator?, currentMode: String?) = Unit
             override fun updateClashMode(newMode: String?) = Unit
             override fun writeConnectionEvents(events: ConnectionEvents?) = Unit
+            override fun writeGroups(groups: OutboundGroupIterator?) =
+                handleRuntimeGroups(groups, autoSelectionEnabled)
+        }, options)
+        runtimeCommandClient = client
+        client.connect()
+    }
 
-            override fun writeGroups(groups: OutboundGroupIterator?) {
-                if (!isRunning || isStopping) return
-                groups ?: return
-                while (groups.hasNext()) {
-                    val group = groups.next()
-                    val tag = group.tag
-                    val selected = group.selected
-                    if (!tag.isNullOrBlank() && !selected.isNullOrBlank()) {
-                        groupSelectedOutbounds[tag] = selected
-                    }
-                }
-                val concreteTag = CommandManager.resolveConcreteGroupSelection("PROXY", groupSelectedOutbounds)
-                    ?: return
-                VpnStateStore.setActiveLabel(concreteTag)
-                notifyRemoteState(state = ServiceState.RUNNING)
-                requestNotificationUpdate(force = false)
+    private fun createRuntimeCommandOptions(autoSelectionEnabled: Boolean): CommandClientOptions {
+        return CommandClientOptions().apply {
+            addCommand(Libbox.CommandStatus)
+            if (autoSelectionEnabled) {
+                addCommand(Libbox.CommandGroup)
             }
-        }, options).also { it.connect() }
+            statusInterval = 3_000L * 1_000L * 1_000L
+        }
+    }
+
+    private fun handleRuntimeStatus(message: StatusMessage?) {
+        if (!isRunning || isStopping) return
+        message ?: return
+        val snapshot = trafficMonitor.updateTotals(
+            uploadTotal = message.uplinkTotal,
+            downloadTotal = message.downlinkTotal,
+            sampleTimeMs = SystemClock.elapsedRealtime()
+        )
+        currentUploadSpeed = snapshot.uploadSpeed
+        currentDownloadSpeed = snapshot.downloadSpeed
+        if (showNotificationSpeed) {
+            requestNotificationUpdate(force = false)
+        }
+    }
+
+    private fun handleRuntimeGroups(groups: OutboundGroupIterator?, autoSelectionEnabled: Boolean) {
+        if (!autoSelectionEnabled || !isRunning || isStopping) return
+        groups ?: return
+        while (groups.hasNext()) {
+            val group = groups.next()
+            val tag = group.tag
+            val selected = group.selected
+            if (!tag.isNullOrBlank() && !selected.isNullOrBlank()) {
+                groupSelectedOutbounds[tag] = selected
+            }
+        }
+        val concreteTag = CommandManager.resolveConcreteGroupSelection("PROXY", groupSelectedOutbounds) ?: return
+        VpnStateStore.setActiveLabel(concreteTag)
+        notifyRemoteState(state = ServiceState.RUNNING)
+        requestNotificationUpdate(force = false)
     }
 
     private fun startResourceGuard() {
-        val token = "proxy:${System.identityHashCode(this)}:${resourceGuardGeneration.incrementAndGet()}"
-        resourceGuardToken = token
-        BackgroundResourceGuard.start(this, serviceScope, token, object : ResourceGuardOwner {
+        val registration = ResourceGuardRegistration(
+            ownerId = resourceGuardOwnerId,
+            generation = resourceGuardGeneration.incrementAndGet()
+        )
+        resourceGuardRegistration = registration
+        BackgroundResourceGuard.start(this, serviceScope, registration, object : ResourceGuardOwner {
             override fun isRecoveryAllowed(): Boolean {
-                return isRunning && !isStopping && !VpnStateStore.isManuallyStopped()
+                return !VpnStateStore.isManuallyStopped() &&
+                    VpnStateStore.getMode() == VpnStateStore.CoreMode.PROXY &&
+                    isResourceRecoveryLeaseCurrent()
             }
 
             override fun closeConnections(): Boolean = false
 
             override fun resetNetwork(): Boolean = BoxWrapperManager.resetNetwork()
 
-            override fun restartCore(reason: String): Boolean {
-                val configPath = currentConfigPath?.takeIf { File(it).isFile }
-                    ?: File(filesDir, "running_config.json").takeIf(File::isFile)?.absolutePath
-                    ?: return false
-                LogRepository.getInstance().addAlwaysLog("WARN recovery resource_exhausted restart=$reason")
-                serviceScope.launch {
-                    stopCore(stopService = false)
-                    waitForCleanupJob()
-                    startCore(configPath)
-                }
-                return true
+            override fun restartCore(reason: String, attemptId: Long): Boolean {
+                return restartCoreForResourceRecovery(reason, attemptId)
             }
 
             override fun recycleProcess(reason: String) {
-                val configPath = currentConfigPath?.takeIf { File(it).isFile }
-                    ?: File(filesDir, "running_config.json").takeIf(File::isFile)?.absolutePath
-                    ?: run {
-                        publishBudgetExhausted("missing_config:$reason")
+                synchronized(this@ProxyOnlyService) {
+                    if (VpnStateStore.isManuallyStopped() ||
+                        VpnStateStore.getMode() != VpnStateStore.CoreMode.PROXY ||
+                        !isResourceRecoveryLeaseCurrent()
+                    ) {
                         return
                     }
-                LogRepository.getInstance().addAlwaysLog("ERROR recovery resource_exhausted recycle_process=$reason")
-                recycleBackgroundProcess(
-                    this@ProxyOnlyService,
-                    Intent(this@ProxyOnlyService, ProxyOnlyService::class.java).apply {
-                        action = ACTION_START
-                        putExtra(EXTRA_CONFIG_PATH, configPath)
-                        putExtra(SingBoxService.EXTRA_RECOVERY, true)
-                    }
-                )
+                    val configPath = currentConfigPath?.takeIf { File(it).isFile }
+                        ?: File(filesDir, "running_config.json").takeIf(File::isFile)?.absolutePath
+                        ?: run {
+                            publishBudgetExhausted("missing_config:$reason")
+                            return
+                        }
+                    LogRepository.getInstance()
+                        .addAlwaysLog("ERROR recovery resource_exhausted recycle_process=$reason")
+                    recycleBackgroundProcess(
+                        this@ProxyOnlyService,
+                        Intent(this@ProxyOnlyService, ProxyOnlyService::class.java).apply {
+                            action = ACTION_START
+                            putExtra(EXTRA_CONFIG_PATH, configPath)
+                            putExtra(SingBoxService.EXTRA_RECOVERY, true)
+                        }
+                    )
+                }
             }
 
             override fun publishBudgetExhausted(reason: String) {
-                val message = "Resource recovery budget exhausted: $reason"
-                setLastError(message)
-                LogRepository.getInstance().addAlwaysLog("ERROR recovery resource_exhausted $message")
-                requestNotificationUpdate(force = true)
-                notifyRemoteState()
+                synchronized(this@ProxyOnlyService) {
+                    if (VpnStateStore.isManuallyStopped() ||
+                        VpnStateStore.getMode() != VpnStateStore.CoreMode.PROXY ||
+                        !isResourceRecoveryLeaseCurrent()
+                    ) {
+                        return
+                    }
+                    val message = "Resource recovery budget exhausted: $reason"
+                    setLastError(message)
+                    LogRepository.getInstance().addAlwaysLog("ERROR recovery resource_exhausted $message")
+                    requestNotificationUpdate(force = true)
+                    notifyRemoteState()
+                }
             }
         })
     }
 
-    private fun stopResourceGuard() {
-        resourceGuardToken?.let(BackgroundResourceGuard::stop)
-        resourceGuardToken = null
+    private fun restartCoreForResourceRecovery(reason: String, attemptId: Long): Boolean {
+        if (!BackgroundResourceGuard.isRecoveryAttemptActive(resourceGuardOwnerId, attemptId)) return false
+        val configPath = currentConfigPath?.takeIf { File(it).isFile }
+            ?: File(filesDir, "running_config.json").takeIf(File::isFile)?.absolutePath
+            ?: return false
+        LogRepository.getInstance().addAlwaysLog("WARN recovery resource_exhausted restart=$reason")
+        val cancellationGeneration = resourceGuardCancellationGeneration.get()
+        val recoveryIntentLease = claimResourceRecoveryIntent(attemptId) ?: return false
+        if (resourceGuardCancellationGeneration.get() != cancellationGeneration ||
+            !BackgroundResourceGuard.isRecoveryAttemptActive(resourceGuardOwnerId, attemptId)
+        ) {
+            clearResourceRecoveryIntent(recoveryIntentLease)
+            return false
+        }
+        serviceScope.launch {
+            if (!BackgroundResourceGuard.isRecoveryAttemptActive(resourceGuardOwnerId, attemptId)) return@launch
+            val recoveryIntentStillValid =
+                resourceGuardCancellationGeneration.get() == cancellationGeneration &&
+                    !VpnStateStore.isManuallyStopped() &&
+                    VpnStateStore.getMode() == VpnStateStore.CoreMode.PROXY &&
+                    ServiceStateHolder.isRecoveryIntentCurrent(recoveryIntentLease)
+            if (recoveryIntentStillValid) {
+                queueCoreRestart(configPath, recoveryIntentLease)
+            }
+        }
+        return true
+    }
+
+    private fun detachResourceGuard(attemptId: Long) {
+        resourceGuardRegistration?.let { BackgroundResourceGuard.detach(it, attemptId) }
+        resourceGuardRegistration = null
+    }
+
+    private fun cancelResourceGuard() {
+        resourceGuardCancellationGeneration.incrementAndGet()
+        BackgroundResourceGuard.cancelOwner(resourceGuardOwnerId)
+        resourceGuardRegistration = null
+        clearResourceRecoveryIntent(synchronized(this) { pendingRecoveryIntentLease })
+    }
+
+    private fun isResourceRecoveryLeaseCurrent(): Boolean {
+        val lease = pendingRecoveryIntentLease ?: return false
+        return lease.allowsResourceClaim && ServiceStateHolder.isRecoveryIntentCurrent(lease)
+    }
+
+    private fun claimResourceRecoveryIntent(attemptId: Long): RecoveryIntentLease? {
+        return synchronized(this) {
+            if (VpnStateStore.isManuallyStopped() ||
+                VpnStateStore.getMode() != VpnStateStore.CoreMode.PROXY ||
+                !isResourceRecoveryLeaseCurrent()
+            ) {
+                return@synchronized null
+            }
+            val lease = ServiceStateHolder.claimResourceRecoveryIntent(resourceGuardOwnerId, attemptId)
+                ?: return@synchronized null
+            pendingRecoveryIntentLease = lease
+            lease
+        }
+    }
+
+    private fun setNonResourceRecoveryIntent(preserve: Boolean): RecoveryIntentLease = synchronized(this) {
+        ServiceStateHolder.setRecoveryIntentOnFailure(preserve).also { lease ->
+            pendingRecoveryIntentLease = lease
+        }
+    }
+
+    private fun clearResourceRecoveryIntent(lease: RecoveryIntentLease?) {
+        lease ?: return
+        synchronized(this) {
+            val ownedAttemptId = lease.attemptId ?: return
+            if (ServiceStateHolder.clearResourceRecoveryIntent(resourceGuardOwnerId, ownedAttemptId, lease) &&
+                pendingRecoveryIntentLease === lease
+            ) {
+                pendingRecoveryIntentLease = null
+            }
+        }
+    }
+
+    private fun completeRecoveryIntentOnSuccess(lease: RecoveryIntentLease): RecoveryIntentLease? = synchronized(this) {
+        val baseline = ServiceStateHolder.completeRecoveryIntentOnSuccess(lease) ?: return@synchronized null
+        if (pendingRecoveryIntentLease === lease) pendingRecoveryIntentLease = baseline
+        baseline
+    }
+
+    private fun setLastErrorIfCurrent(lease: RecoveryIntentLease, message: String): Boolean = synchronized(this) {
+        if (!ServiceStateHolder.isRecoveryIntentCurrent(lease)) return@synchronized false
+        setLastError(message)
+        true
     }
 
     private fun isPortAvailable(port: Int): Boolean {
@@ -1050,7 +1493,12 @@ class ProxyOnlyService : Service() {
         if (hasForegroundStarted.get()) return true
 
         return try {
-            val notification = createProxyOnlyNotification(CHANNEL_ID)
+            val notification = createProxyOnlyNotification(
+                CHANNEL_ID,
+                showNotificationSpeed,
+                currentUploadSpeed,
+                currentDownloadSpeed
+            )
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
                 startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
             } else {
@@ -1065,7 +1513,12 @@ class ProxyOnlyService : Service() {
     }
 
     private fun updateNotification() {
-        val notification = createProxyOnlyNotification(CHANNEL_ID)
+        val notification = createProxyOnlyNotification(
+            CHANNEL_ID,
+            showNotificationSpeed,
+            currentUploadSpeed,
+            currentDownloadSpeed
+        )
         val manager = getSystemService(NotificationManager::class.java)
         if (!hasForegroundStarted.get()) {
             runCatching {
@@ -1143,28 +1596,58 @@ class ProxyOnlyService : Service() {
         Log.i(TAG, "onDestroy: unexpected death, recovery intent preserved")
     }
 
+    @Suppress("LongMethod")
     override fun onDestroy() {
-        stopResourceGuard()
-        groupCommandClient?.disconnect()
-        groupCommandClient = null
-        groupSelectedOutbounds.clear()
-        BoxWrapperManager.release()
         val mode = VpnStateStore.getMode()
-        val shouldClearRuntimeState = shouldClearRuntimeStateOnDestroy(
-            isRunning = isRunning,
-            isStarting = isStarting,
-            isStopping = isStopping,
-            pending = VpnStateStore.getPending(),
-            mode = mode
+        var shouldClearRuntimeState = false
+        var startJobToCancel: Job? = null
+        var serverToClose: CommandServer? = null
+        var runtimeClientToDisconnect: CommandClient? = null
+        synchronized(this) {
+            shouldClearRuntimeState = shouldClearRuntimeStateOnDestroy(
+                isRunning = isRunning,
+                isStarting = isStarting,
+                isStopping = isStopping,
+                pending = VpnStateStore.getPending(),
+                mode = mode
+            )
+            isStopping = true
+            activeStartRecoveryIntentLease = null
+            pendingStartConfigPath = null
+            pendingStartRecoveryIntentLease = null
+            pendingStopRecoveryIntentLease = null
+            startJobToCancel = startJob.also { startJob = null }
+            serverToClose = commandServer.also { commandServer = null }
+            runtimeClientToDisconnect = runtimeCommandClient.also { runtimeCommandClient = null }
+            cleanupJob = null
+        }
+        recordServiceLifecycle(
+            event = "destroy",
+            reason = when {
+                shouldClearRuntimeState -> "manual_or_cleanup"
+                mode == VpnStateStore.CoreMode.PROXY -> "unexpected_destroy"
+                else -> "inactive_destroy"
+            }
         )
-        val serverToClose = commandServer
-        commandServer = null
-        startJob?.cancel()
-        startJob = null
+        cancelResourceGuard()
+        startJobToCancel?.cancel()
         notificationUpdateJob?.cancel()
         notificationUpdateJob = null
         hasForegroundStarted.set(false)
         suppressNotificationUpdates = true
+        runCatching { serviceSupervisorJob.cancel() }
+        runCatching { cleanupSupervisorJob.cancel() }
+        runtimeClientToDisconnect?.disconnect()
+        groupSelectedOutbounds.clear()
+        trafficMonitor.reset()
+
+        runCatching {
+            serverToClose?.closeService()
+            serverToClose?.close()
+        }.onFailure { e ->
+            Log.w(TAG, "Failed to close proxy-only CommandServer on destroy", e)
+        }
+        BoxWrapperManager.release()
 
         if (shouldClearRuntimeState) {
             // 用户停/收尾：清运行态与 mode
@@ -1180,20 +1663,10 @@ class ProxyOnlyService : Service() {
         }
 
         runCatching {
-            serverToClose?.closeService()
-            serverToClose?.close()
-        }.onFailure { e ->
-            Log.w(TAG, "Failed to close proxy-only CommandServer on destroy", e)
-        }
-
-        runCatching {
             val nm = getSystemService(android.app.NotificationManager::class.java)
             nm.cancel(NOTIFICATION_ID)
             stopForeground(STOP_FOREGROUND_REMOVE)
         }
-
-        runCatching { serviceSupervisorJob.cancel() }
-        runCatching { cleanupSupervisorJob.cancel() }
         super.onDestroy()
     }
 }

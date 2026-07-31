@@ -38,7 +38,12 @@ internal fun ProxyOnlyService.createProxyOnlyNotificationChannel(
     manager.createNotificationChannel(channel)
 }
 
-internal fun ProxyOnlyService.createProxyOnlyNotification(channelId: String): Notification {
+internal fun ProxyOnlyService.createProxyOnlyNotification(
+    channelId: String,
+    showSpeed: Boolean,
+    uploadSpeed: Long,
+    downloadSpeed: Long
+): Notification {
     val intent = Intent(this, MainActivity::class.java).apply {
         flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
     }
@@ -55,9 +60,19 @@ internal fun ProxyOnlyService.createProxyOnlyNotification(channelId: String): No
         @Suppress("DEPRECATION")
         Notification.Builder(this)
     }
+    val contentText = if (showSpeed) {
+        getString(
+            R.string.notification_speed_format,
+            android.text.format.Formatter.formatFileSize(this, uploadSpeed) + "/s",
+            android.text.format.Formatter.formatFileSize(this, downloadSpeed) + "/s"
+        )
+    } else {
+        getString(R.string.proxy_only_notification_text)
+    }
+
     return builder
         .setContentTitle(getString(R.string.app_name))
-        .setContentText(getString(R.string.proxy_only_notification_text))
+        .setContentText(contentText)
         .setSmallIcon(R.drawable.ic_notification)
         .setContentIntent(pendingIntent)
         .setOngoing(true)

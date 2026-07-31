@@ -40,6 +40,17 @@ internal data class LogPersistenceBatch(
     val queueGeneration: Long
 )
 
+internal fun buildServiceLifecycleDiagnostic(
+    service: String,
+    event: String,
+    reason: String,
+    pid: Int,
+    details: String
+): String = buildString {
+    append("INFO [Lifecycle] service=$service event=$event reason=$reason pid=$pid")
+    details.trim().takeIf(String::isNotBlank)?.let { append(" $it") }
+}
+
 private const val LOG_FILE_GENERATION_PREFIX = "# KunBox log generation: "
 
 internal fun mergeLogLinesForRewrite(
@@ -560,6 +571,7 @@ class LogRepository private constructor() {
         private const val FILE_WRITE_BATCH_DELAY_MS = 100L
         private const val UNINITIALIZED_GENERATION = -1L
         private const val PRESERVED_DIAGNOSTIC_MARKER = "[Recovery]"
+        private const val LIFECYCLE_DIAGNOSTIC_MARKER = "[Lifecycle]"
 
         private val processFileLock = Any()
 
@@ -581,6 +593,7 @@ class LogRepository private constructor() {
 
         internal fun isPreservedDiagnosticLine(line: String): Boolean {
             return line.contains(PRESERVED_DIAGNOSTIC_MARKER) ||
+                line.contains(LIFECYCLE_DIAGNOSTIC_MARKER) ||
                 line.contains(" resource_fd ") ||
                 line.contains(" resource_fd_breakdown ") ||
                 line.contains(" resource_exhausted ")

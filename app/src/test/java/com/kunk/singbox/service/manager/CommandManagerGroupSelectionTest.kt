@@ -1,7 +1,9 @@
 package com.kunk.singbox.service.manager
 
+import java.io.File
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class CommandManagerGroupSelectionTest {
@@ -43,5 +45,20 @@ class CommandManagerGroupSelectionTest {
                 selections = mapOf("A" to "B", "B" to "C", "C" to "D", "D" to "E", "E" to "node")
             )
         )
+    }
+
+    @Test
+    fun resolvedAutomaticNodeIsPropagatedToServiceAndMainProcess() {
+        val managerSource = File(
+            "src/main/java/com/kunk/singbox/service/manager/CommandManager.kt"
+        ).readText()
+        val serviceSource = File(
+            "src/main/java/com/kunk/singbox/service/SingBoxService.kt"
+        ).readText()
+
+        assertTrue(managerSource.contains("callbacks?.onRuntimeNodeChanged(selected)"))
+        assertTrue(serviceSource.contains("override fun onRuntimeNodeChanged(nodeName: String)"))
+        assertTrue(serviceSource.contains("realTimeNodeName = nodeName"))
+        assertTrue(serviceSource.contains("requestRemoteStateUpdate(force = false)"))
     }
 }

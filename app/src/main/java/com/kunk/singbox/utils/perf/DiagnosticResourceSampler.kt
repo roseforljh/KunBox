@@ -11,15 +11,21 @@ import android.system.OsConstants
 import android.util.Log
 import com.kunk.singbox.ipc.VpnStateStore
 import com.kunk.singbox.repository.LogRepository
+import com.kunk.singbox.utils.VersionInfo
 import java.io.File
 import java.io.FileOutputStream
 import java.util.Locale
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 
 internal data class DiagnosticResourceSample(
     val timestampEpochMs: Long,
@@ -32,7 +38,10 @@ internal data class DiagnosticResourceSample(
     val fdCount: Int?,
     val fdSoftLimit: Long? = null,
     val fdRatio: Double? = null,
-    val fdBreakdown: FdBreakdown? = null
+    val fdBreakdown: FdBreakdown? = null,
+    val appVersion: String? = null,
+    val appVersionCode: Long? = null,
+    val processStartedAtEpochMs: Long? = null
 )
 
 internal data class FdBreakdown(
@@ -90,7 +99,7 @@ internal const val DIAGNOSTIC_RESOURCE_CSV_HEADER =
         "fd_soft_limit,fd_ratio,fd_socket,socket_unique,fd_anon_inode,fd_eventfd,fd_eventpoll,fd_timerfd,fd_pipe," +
         "fd_file,fd_device,fd_unknown,socket_tcp,socket_tcp6,socket_udp,socket_udp6,socket_raw," +
         "socket_raw6,socket_unix,socket_netlink,socket_packet,socket_unknown,socket_table_failures," +
-        "socket_states"
+        "socket_states,app_version,app_version_code,process_started_at_epoch_ms"
 
 internal fun formatDiagnosticResourceSamplesCsv(samples: List<DiagnosticResourceSample>): String = buildString {
     appendLine(DIAGNOSTIC_RESOURCE_CSV_HEADER)
@@ -129,7 +138,10 @@ internal fun formatDiagnosticResourceSamplesCsv(samples: List<DiagnosticResource
                 breakdown?.packetCount?.toString().orEmpty(),
                 breakdown?.socketUnknownCount?.toString().orEmpty(),
                 breakdown?.socketTableFailures?.toCsvField().orEmpty(),
-                breakdown?.socketStates?.toCsvField().orEmpty()
+                breakdown?.socketStates?.toCsvField().orEmpty(),
+                sample.appVersion?.toCsvField().orEmpty(),
+                sample.appVersionCode?.toString().orEmpty(),
+                sample.processStartedAtEpochMs?.toString().orEmpty()
             ).joinToString(",")
         )
     }
@@ -197,7 +209,10 @@ internal fun parseDiagnosticResourceSamplesCsv(csv: String): List<DiagnosticReso
                 )
             } else {
                 null
-            }
+            },
+            appVersion = values.value("app_version").takeIf(String::isNotBlank),
+            appVersionCode = values.long("app_version_code"),
+            processStartedAtEpochMs = values.long("process_started_at_epoch_ms")
         )
     }
 }
@@ -233,12 +248,7 @@ private fun String.toCsvField(): String {
 }
 
 internal fun parseProcCpuTimeMs(stat: String, ticksPerSecond: Long): Long? {
-    val processNameEnd = stat.lastIndexOf(')')
-    val fields = if (ticksPerSecond > 0L && processNameEnd >= 0 && processNameEnd + 2 < stat.length) {
-        stat.substring(processNameEnd + 2).trim().split(Regex("\\s+"))
-    } else {
-        emptyList()
-    }
+    val fields = parseProcStatFields(stat, ticksPerSecond)
     val userTicks = fields.getOrNull(11)?.toLongOrNull()
     val systemTicks = fields.getOrNull(12)?.toLongOrNull()
     return if (userTicks == null || systemTicks == null) {
@@ -246,6 +256,51 @@ internal fun parseProcCpuTimeMs(stat: String, ticksPerSecond: Long): Long? {
     } else {
         val totalTicks = userTicks + systemTicks
         totalTicks / ticksPerSecond * 1_000L + totalTicks % ticksPerSecond * 1_000L / ticksPerSecond
+    }
+}
+
+internal fun parseProcProcessStartElapsedRealtimeMs(stat: String, ticksPerSecond: Long): Long? {
+    val startTicks = parseProcStatFields(stat, ticksPerSecond).getOrNull(19)?.toLongOrNull() ?: return null
+    return startTicks / ticksPerSecond * 1_000L + startTicks % ticksPerSecond * 1_000L / ticksPerSecond
+}
+
+internal class ProcessStartEpochClock(private val bootEpochMs: Long) {
+    fun calculate(elapsedRealtimeMs: Long, processStartElapsedRealtimeMs: Long): Long? {
+        if (processStartElapsedRealtimeMs < 0L || processStartElapsedRealtimeMs > elapsedRealtimeMs) return null
+        return bootEpochMs + processStartElapsedRealtimeMs
+    }
+}
+
+private val processStartEpochClock by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+    val elapsedRealtimeMs = SystemClock.elapsedRealtime()
+    ProcessStartEpochClock(System.currentTimeMillis() - elapsedRealtimeMs)
+}
+
+internal fun calculateProcessStartedAtEpochMs(
+    timestampEpochMs: Long,
+    elapsedRealtimeMs: Long,
+    processStartElapsedRealtimeMs: Long
+): Long? = ProcessStartEpochClock(timestampEpochMs - elapsedRealtimeMs)
+    .calculate(elapsedRealtimeMs, processStartElapsedRealtimeMs)
+
+internal fun readProcessStartedAtEpochMs(pid: Int = Process.myPid()): Long? = runCatching {
+    val ticksPerSecond = Os.sysconf(OsConstants._SC_CLK_TCK).takeIf { it > 0L } ?: return@runCatching null
+    val startElapsedRealtimeMs = parseProcProcessStartElapsedRealtimeMs(
+        File("/proc/$pid/stat").readText(Charsets.UTF_8),
+        ticksPerSecond
+    ) ?: return@runCatching null
+    processStartEpochClock.calculate(
+        elapsedRealtimeMs = SystemClock.elapsedRealtime(),
+        processStartElapsedRealtimeMs = startElapsedRealtimeMs
+    )
+}.getOrNull()
+
+private fun parseProcStatFields(stat: String, ticksPerSecond: Long): List<String> {
+    val processNameEnd = stat.lastIndexOf(')')
+    return if (ticksPerSecond > 0L && processNameEnd >= 0 && processNameEnd + 2 < stat.length) {
+        stat.substring(processNameEnd + 2).trim().split(Regex("\\s+"))
+    } else {
+        emptyList()
     }
 }
 
@@ -299,6 +354,8 @@ internal class DiagnosticResourceSampler(context: Context) {
         .getOrDefault(DEFAULT_TICKS_PER_SECOND)
         .takeIf { it > 0L }
         ?: DEFAULT_TICKS_PER_SECOND
+    private val appVersion = VersionInfo.getAppVersionName(appContext)
+    private val appVersionCode = VersionInfo.getAppVersionCode(appContext)
 
     fun reset() {
         cpuBaseline.reset()
@@ -344,7 +401,11 @@ internal class DiagnosticResourceSampler(context: Context) {
         pssKb: Int?,
         includeFdBreakdown: Boolean
     ): DiagnosticResourceSample {
-        val cpuTimeMs = readCpuTimeMs(process.pid)
+        val stat = readProcessStat(process.pid)
+        val cpuTimeMs = stat?.let { parseProcCpuTimeMs(it, ticksPerSecond) }
+        val processStartElapsedRealtimeMs = stat?.let {
+            parseProcProcessStartElapsedRealtimeMs(it, ticksPerSecond)
+        }
         val point = cpuTimeMs?.let { ProcessResourcePoint(process.pid, elapsedRealtimeMs, it) }
         val fdCount = readFdCount(process.pid)
         val fdSoftLimit = readFdSoftLimit(process.pid)
@@ -363,7 +424,12 @@ internal class DiagnosticResourceSampler(context: Context) {
             } else {
                 null
             },
-            fdBreakdown = if (includeFdBreakdown) readFdBreakdown(process.pid) else null
+            fdBreakdown = if (includeFdBreakdown) readFdBreakdown(process.pid) else null,
+            appVersion = appVersion,
+            appVersionCode = appVersionCode,
+            processStartedAtEpochMs = processStartElapsedRealtimeMs?.let {
+                processStartEpochClock.calculate(elapsedRealtimeMs, it)
+            }
         )
     }
 
@@ -394,8 +460,8 @@ internal class DiagnosticResourceSampler(context: Context) {
         return pids.zip(memoryInfo).associate { (pid, info) -> pid to info.totalPss.coerceAtLeast(0) }
     }
 
-    private fun readCpuTimeMs(pid: Int): Long? = runCatching {
-        parseProcCpuTimeMs(File("/proc/$pid/stat").readText(Charsets.UTF_8), ticksPerSecond)
+    private fun readProcessStat(pid: Int): String? = runCatching {
+        File("/proc/$pid/stat").readText(Charsets.UTF_8)
     }.getOrNull()
 
     private fun readFdCount(pid: Int): Int? = runCatching {
@@ -742,82 +808,215 @@ internal interface ResourceGuardOwner {
     fun isRecoveryAllowed(): Boolean
     fun closeConnections(): Boolean
     fun resetNetwork(): Boolean
-    fun restartCore(reason: String): Boolean
+    fun restartCore(reason: String, attemptId: Long): Boolean
     fun recycleProcess(reason: String)
     fun publishBudgetExhausted(reason: String)
 }
 
+private data class ResourceRecoverySuccessor(
+    val registration: ResourceGuardRegistration,
+    val owner: ResourceGuardOwner,
+    val sampler: DiagnosticResourceSampler,
+    val history: DiagnosticResourceHistory
+)
+
+private data class ActiveResourceRecovery(
+    val attemptId: Long,
+    val registration: ResourceGuardRegistration,
+    val reason: String,
+    val owner: ResourceGuardOwner,
+    val sampler: DiagnosticResourceSampler,
+    val history: DiagnosticResourceHistory,
+    val successorSignal: CompletableDeferred<Unit> = CompletableDeferred(),
+    var successorResolved: Boolean = false,
+    var successorResult: ResourceRecoverySuccessor? = null,
+    var job: Job? = null
+)
+
 internal object BackgroundResourceGuard {
     private const val TAG = "BackgroundResourceGuard"
     private val lock = Any()
-    private var ownerToken: String? = null
+    private val recoveryScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val gate = ResourceRecoveryGate()
+    private var registration: ResourceGuardRegistration? = null
     private var monitorJob: Job? = null
-    private var recoveryJob: Job? = null
+    private var recovery: ActiveResourceRecovery? = null
     private var owner: ResourceGuardOwner? = null
-    private var ownerScope: CoroutineScope? = null
     private var sampler: DiagnosticResourceSampler? = null
     private var history: DiagnosticResourceHistory? = null
 
     @Volatile
     private var recovering = false
 
-    fun start(context: Context, scope: CoroutineScope, token: String, owner: ResourceGuardOwner) {
+    @Suppress("CognitiveComplexMethod")
+    fun start(
+        context: Context,
+        scope: CoroutineScope,
+        registration: ResourceGuardRegistration,
+        owner: ResourceGuardOwner
+    ) {
+        if (synchronized(lock) { gate.isCurrent(registration) && monitorJob?.isActive == true }) return
+
+        val activeSampler = DiagnosticResourceSampler(context)
+        val activeHistory = DiagnosticResourceHistory(context)
+        val newMonitorJob = scope.launch(start = CoroutineStart.LAZY) {
+            monitor(registration, activeSampler, activeHistory)
+        }
+        var installMonitor = false
+        var oldMonitorJob: Job? = null
+        var recoveryToCancel: ActiveResourceRecovery? = null
+        var successorSignal: CompletableDeferred<Unit>? = null
         synchronized(lock) {
-            if (ownerToken == token && monitorJob?.isActive == true) return
-            monitorJob?.cancel()
-            recoveryJob?.cancel()
-            this.ownerToken = token
+            if (gate.isCurrent(registration) && monitorJob?.isActive == true) return@synchronized
+
+            val registerResult = gate.register(registration)
+            if (registerResult.rejected) return@synchronized
+
+            oldMonitorJob = monitorJob
+            recoveryToCancel = removeRecoveryLocked(registerResult.cancelledAttemptId)
+
+            this.registration = registration
             this.owner = owner
-            ownerScope = scope
-            sampler = DiagnosticResourceSampler(context)
-            history = DiagnosticResourceHistory(context)
-            recovering = false
-            monitorJob = scope.launch {
-                monitor(token)
+            sampler = activeSampler
+            history = activeHistory
+
+            registerResult.successorAttemptId?.let { attemptId ->
+                val activeRecovery = recovery
+                if (activeRecovery?.attemptId == attemptId) {
+                    if (activeRecovery.successorResolved) {
+                        gate.finish(attemptId)
+                        recoveryToCancel = removeRecoveryLocked(attemptId)
+                    } else {
+                        activeRecovery.successorResolved = true
+                        activeRecovery.successorResult = ResourceRecoverySuccessor(
+                            registration = registration,
+                            owner = owner,
+                            sampler = activeSampler,
+                            history = activeHistory
+                        )
+                        successorSignal = activeRecovery.successorSignal
+                    }
+                } else {
+                    gate.finish(attemptId)
+                }
             }
+
+            monitorJob = newMonitorJob
+            installMonitor = true
+        }
+
+        oldMonitorJob?.cancel()
+        cancelRecoveryOutsideLock(recoveryToCancel)
+        successorSignal?.complete(Unit)
+        if (installMonitor && synchronized(lock) {
+                monitorJob === newMonitorJob && gate.isCurrent(registration)
+            }
+        ) {
+            newMonitorJob.start()
+        } else {
+            newMonitorJob.cancel()
         }
     }
 
-    fun stop(token: String) {
+    fun detach(registration: ResourceGuardRegistration, handoffAttemptId: Long) {
+        var oldMonitorJob: Job? = null
+        var recoveryToCancel: ActiveResourceRecovery? = null
         synchronized(lock) {
-            if (ownerToken != token) return
-            monitorJob?.cancel()
-            recoveryJob?.cancel()
+            val result = gate.detach(registration, handoffAttemptId)
+            if (!result.detached) return
+
+            oldMonitorJob = monitorJob
             monitorJob = null
-            recoveryJob = null
-            ownerToken = null
+            this.registration = null
             owner = null
-            ownerScope = null
             sampler = null
             history = null
-            recovering = false
+            recoveryToCancel = removeRecoveryLocked(result.cancelledAttemptId)
         }
+        oldMonitorJob?.cancel()
+        cancelRecoveryOutsideLock(recoveryToCancel)
+    }
+
+    fun cancelOwner(ownerId: Any) {
+        var oldMonitorJob: Job? = null
+        var recoveryToCancel: ActiveResourceRecovery? = null
+        synchronized(lock) {
+            val result = gate.cancelOwner(ownerId)
+            if (result.registrationCancelled) {
+                oldMonitorJob = monitorJob
+                monitorJob = null
+                registration = null
+                owner = null
+                sampler = null
+                history = null
+            }
+            recoveryToCancel = removeRecoveryLocked(result.cancelledAttemptId)
+        }
+        oldMonitorJob?.cancel()
+        cancelRecoveryOutsideLock(recoveryToCancel)
     }
 
     fun isRecovering(): Boolean = recovering
 
-    fun signalResourceExhaustion(token: String, reason: String) {
-        val sample = synchronized(lock) {
-            if (ownerToken != token) return
-            runCatching { sampler?.captureCurrentProcess(includeFdBreakdown = true) }.getOrNull()
+    fun signalResourceExhaustion(registration: ResourceGuardRegistration, reason: String) {
+        val activeSampler = synchronized(lock) {
+            if (!gate.isCurrent(registration)) return
+            sampler
         }
-        requestRecovery(token, reason, sample)
+        val sample = runCatching {
+            activeSampler?.captureCurrentProcess(includeFdBreakdown = true)
+        }.getOrNull()
+        requestRecovery(registration, reason, sample)
     }
 
-    private suspend fun monitor(token: String) {
+    suspend fun failSuccessorAndAwait(ownerId: Any, attemptId: Long?) {
+        if (attemptId == null) return
+        var successorSignal: CompletableDeferred<Unit>? = null
+        val recoveryJob = synchronized(lock) {
+            if (!gate.isAttemptCurrent(ownerId, attemptId, ResourceRecoveryPhase.AWAITING_SUCCESSOR)) {
+                return@synchronized null
+            }
+            recovery
+                ?.takeIf { it.attemptId == attemptId }
+                ?.also { activeRecovery ->
+                    if (!activeRecovery.successorResolved) {
+                        activeRecovery.successorResolved = true
+                        activeRecovery.successorResult = null
+                        successorSignal = activeRecovery.successorSignal
+                    }
+                }
+                ?.job
+        }
+        successorSignal?.complete(Unit)
+        recoveryJob?.join()
+    }
+
+    fun isRecoveryAttemptActive(ownerId: Any, attemptId: Long): Boolean = synchronized(lock) {
+        gate.isAttemptCurrent(ownerId, attemptId)
+    }
+
+    private suspend fun monitor(
+        registration: ResourceGuardRegistration,
+        activeSampler: DiagnosticResourceSampler,
+        activeHistory: DiagnosticResourceHistory
+    ) {
         val tracker = ResourceFdTracker()
-        while (kotlin.coroutines.coroutineContext.isActive && isCurrentOwner(token)) {
+        while (kotlin.coroutines.coroutineContext.isActive && isCurrent(registration)) {
             try {
-                var sample = sampler?.captureCurrentProcess() ?: return
+                var sample = activeSampler.captureCurrentProcess()
                 val decision = tracker.observe(sample)
                 if (decision.shouldClassify) {
-                    sample = sampler?.captureCurrentProcess(includeFdBreakdown = true) ?: sample
+                    sample = activeSampler.captureCurrentProcess(includeFdBreakdown = true)
                 }
-                runCatching { history?.append(sample) }
+                runCatching { activeHistory.append(sample) }
                     .onFailure { Log.w(TAG, "Failed to persist resource sample: ${it.message}") }
                 logSample(sample, decision)
                 if (decision.shouldRecover) {
-                    requestRecovery(token, "fd_${decision.level.name.lowercase(Locale.US)}", sample)
+                    requestRecovery(
+                        registration,
+                        "fd_${decision.level.name.lowercase(Locale.US)}",
+                        sample
+                    )
                 }
                 delay(decision.sampleIntervalMs)
             } catch (e: CancellationException) {
@@ -829,73 +1028,276 @@ internal object BackgroundResourceGuard {
         }
     }
 
-    private fun requestRecovery(token: String, reason: String, before: DiagnosticResourceSample?) {
-        synchronized(lock) {
-            val scope = ownerScope ?: return
+    @Suppress("CyclomaticComplexMethod")
+    private fun requestRecovery(
+        registration: ResourceGuardRegistration,
+        reason: String,
+        before: DiagnosticResourceSample?
+    ) {
+        val candidate = synchronized(lock) {
             val activeOwner = owner ?: return
-            if (ownerToken != token || recoveryJob?.isActive == true || !activeOwner.isRecoveryAllowed()) return
-            recovering = true
-            recoveryJob = scope.launch {
-                try {
-                    recover(token, reason, before, activeOwner)
-                } finally {
-                    synchronized(lock) {
-                        if (ownerToken == token) {
-                            recovering = false
-                            recoveryJob = null
-                        }
-                    }
-                }
+            val activeSampler = sampler ?: return
+            val activeHistory = history ?: return
+            if (!gate.isCurrent(registration) || recovery != null) return
+            ResourceRecoverySuccessor(registration, activeOwner, activeSampler, activeHistory)
+        }
+        if (!candidate.owner.isRecoveryAllowed()) return
+
+        val activeRecovery = synchronized(lock) {
+            if (!isRecoveryCandidateCurrentLocked(registration, candidate)) return
+            val attemptId = gate.beginRecovery(registration) ?: return
+            ActiveResourceRecovery(
+                attemptId = attemptId,
+                registration = registration,
+                reason = reason,
+                owner = candidate.owner,
+                sampler = candidate.sampler,
+                history = candidate.history
+            ).also {
+                recovery = it
+                recovering = true
             }
+        }
+        val job = recoveryScope.launch(start = CoroutineStart.LAZY) {
+            try {
+                recover(activeRecovery, before)
+            } finally {
+                finishRecovery(activeRecovery.attemptId)
+            }
+        }
+        val shouldStart = synchronized(lock) {
+            if (recovery !== activeRecovery ||
+                !gate.isAttemptCurrent(registration.ownerId, activeRecovery.attemptId)
+            ) {
+                false
+            } else {
+                activeRecovery.job = job
+                true
+            }
+        }
+        if (shouldStart) {
+            job.start()
+        } else {
+            job.cancel()
         }
     }
 
+    private fun isRecoveryCandidateCurrentLocked(
+        registration: ResourceGuardRegistration,
+        candidate: ResourceRecoverySuccessor
+    ): Boolean = when {
+        !gate.isCurrent(registration) -> false
+        recovery != null -> false
+        owner !== candidate.owner -> false
+        sampler !== candidate.sampler -> false
+        history !== candidate.history -> false
+        else -> true
+    }
+
+    @Suppress("LongMethod", "CyclomaticComplexMethod", "CognitiveComplexMethod", "ReturnCount")
     private suspend fun recover(
-        token: String,
-        reason: String,
-        before: DiagnosticResourceSample?,
-        activeOwner: ResourceGuardOwner
+        activeRecovery: ActiveResourceRecovery,
+        before: DiagnosticResourceSample?
     ) {
-        if (!isCurrentOwner(token) || !activeOwner.isRecoveryAllowed()) return
+        val attemptId = activeRecovery.attemptId
+        val sourceRegistration = activeRecovery.registration
+        val activeOwner = activeRecovery.owner
+        if (!activeOwner.isRecoveryAllowed() ||
+            !isAttemptCurrent(activeRecovery, ResourceRecoveryPhase.RESETTING)
+        ) {
+            return
+        }
+
         val closed = activeOwner.closeConnections()
+        if (!isAttemptCurrent(activeRecovery, ResourceRecoveryPhase.RESETTING) ||
+            !activeOwner.isRecoveryAllowed() ||
+            !isAttemptCurrent(activeRecovery, ResourceRecoveryPhase.RESETTING)
+        ) {
+            return
+        }
         val reset = activeOwner.resetNetwork()
+        if (!isAttemptCurrent(activeRecovery, ResourceRecoveryPhase.RESETTING)) return
         logRecovery("close_connections", before?.fdCount, null, "closed=$closed reset=$reset")
         delay(RESOURCE_RECOVERY_RESAMPLE_DELAY_MS)
-        val afterReset = runCatching { sampler?.captureCurrentProcess(includeFdBreakdown = true) }.getOrNull()
-        afterReset?.let { runCatching { history?.append(it) } }
+        if (!activeOwner.isRecoveryAllowed() ||
+            !isAttemptCurrent(activeRecovery, ResourceRecoveryPhase.RESETTING)
+        ) {
+            return
+        }
+
+        val afterReset = runCatching {
+            activeRecovery.sampler.captureCurrentProcess(includeFdBreakdown = true)
+        }.getOrNull()
+        if (!isAttemptCurrent(activeRecovery, ResourceRecoveryPhase.RESETTING)) return
+        afterReset?.let { runCatching { activeRecovery.history.append(it) } }
+        if (!isAttemptCurrent(activeRecovery, ResourceRecoveryPhase.RESETTING)) return
         if (isFdRecoverySufficient(before?.fdCount, afterReset?.fdCount, afterReset?.fdSoftLimit)) {
             logRecovery("close_connections", before?.fdCount, afterReset?.fdCount, "success")
             return
         }
-        if (!VpnStateStore.tryConsumeResourceRecovery(VpnStateStore.ResourceRecoveryAction.CORE_RESTART)) {
-            recycleProcessIfAllowed(reason, activeOwner)
+        if (!activeOwner.isRecoveryAllowed() ||
+            !isAttemptCurrent(activeRecovery, ResourceRecoveryPhase.RESETTING)
+        ) {
             return
         }
-        val restartIssued = activeOwner.restartCore("resource_exhausted:$reason")
+        val awaitingSuccessor = synchronized(lock) {
+            gate.isAttemptCurrent(
+                sourceRegistration.ownerId,
+                attemptId,
+                ResourceRecoveryPhase.RESETTING
+            ) && gate.awaitSuccessor(sourceRegistration, attemptId)
+        }
+        if (!awaitingSuccessor) return
+
+        val restartAllowed = VpnStateStore.tryConsumeResourceRecovery(
+            VpnStateStore.ResourceRecoveryAction.CORE_RESTART
+        )
+        if (!isAttemptCurrent(activeRecovery, ResourceRecoveryPhase.AWAITING_SUCCESSOR)) return
+        if (!restartAllowed) {
+            recycleProcessIfAllowed(activeRecovery, activeOwner)
+            return
+        }
+        if (!activeOwner.isRecoveryAllowed() ||
+            !isAttemptCurrent(activeRecovery, ResourceRecoveryPhase.AWAITING_SUCCESSOR)
+        ) {
+            return
+        }
+        val restartIssued = activeOwner.restartCore(
+            "resource_exhausted:${activeRecovery.reason}",
+            attemptId
+        )
+        if (!isAttemptCurrent(activeRecovery)) return
         logRecovery("restart_core", afterReset?.fdCount, null, "issued=$restartIssued")
         if (!restartIssued) {
-            recycleProcessIfAllowed(reason, activeOwner)
+            recycleProcessIfAllowed(activeRecovery, activeOwner)
             return
         }
+
+        val successorSignalled = withTimeoutOrNull(RESOURCE_CORE_RESTART_SUCCESSOR_TIMEOUT_MS) {
+            activeRecovery.successorSignal.await()
+            true
+        } == true
+        if (!successorSignalled) {
+            recycleProcessIfAllowed(activeRecovery, activeOwner)
+            return
+        }
+        val successor = synchronized(lock) {
+            if (!gate.isAttemptCurrent(sourceRegistration.ownerId, attemptId) ||
+                !activeRecovery.successorResolved
+            ) {
+                return
+            }
+            activeRecovery.successorResult?.also { resolvedSuccessor ->
+                if (!gate.isAttemptCurrent(
+                        sourceRegistration.ownerId,
+                        attemptId,
+                        ResourceRecoveryPhase.OBSERVING_SUCCESSOR
+                    ) || !gate.isCurrent(resolvedSuccessor.registration)
+                ) {
+                    return
+                }
+            }
+        }
+        if (successor == null) {
+            recycleProcessIfAllowed(activeRecovery, activeOwner)
+            return
+        }
+        if (!successor.owner.isRecoveryAllowed() || !isSuccessorCurrent(activeRecovery, successor)) return
+
         delay(RESOURCE_CORE_RESTART_OBSERVE_MS)
-        val afterRestart = runCatching { sampler?.captureCurrentProcess(includeFdBreakdown = true) }.getOrNull()
-        afterRestart?.let { runCatching { history?.append(it) } }
+        if (!successor.owner.isRecoveryAllowed() || !isSuccessorCurrent(activeRecovery, successor)) {
+            return
+        }
+
+        val afterRestart = runCatching {
+            successor.sampler.captureCurrentProcess(includeFdBreakdown = true)
+        }.getOrNull()
+        if (!isSuccessorCurrent(activeRecovery, successor) || !successor.owner.isRecoveryAllowed()) {
+            return
+        }
+        afterRestart?.let { runCatching { successor.history.append(it) } }
+        if (!isSuccessorCurrent(activeRecovery, successor)) return
         if (!isFdRecoverySufficient(afterReset?.fdCount, afterRestart?.fdCount, afterRestart?.fdSoftLimit)) {
-            recycleProcessIfAllowed(reason, activeOwner)
+            recycleProcessIfAllowed(activeRecovery, successor.owner)
         } else {
             logRecovery("restart_core", afterReset?.fdCount, afterRestart?.fdCount, "success")
         }
     }
 
-    private fun recycleProcessIfAllowed(reason: String, activeOwner: ResourceGuardOwner) {
-        if (VpnStateStore.tryConsumeResourceRecovery(VpnStateStore.ResourceRecoveryAction.PROCESS_RECLAIM)) {
+    private fun recycleProcessIfAllowed(
+        activeRecovery: ActiveResourceRecovery,
+        activeOwner: ResourceGuardOwner
+    ) {
+        if (!activeOwner.isRecoveryAllowed()) return
+        val claimed = synchronized(lock) {
+            gate.claimProcessReclaim(activeRecovery.registration.ownerId, activeRecovery.attemptId)
+        }
+        if (!claimed) return
+        val reclaimAllowed = VpnStateStore.tryConsumeResourceRecovery(
+            VpnStateStore.ResourceRecoveryAction.PROCESS_RECLAIM
+        )
+        if (!isAttemptCurrent(activeRecovery, ResourceRecoveryPhase.RECLAIM_CLAIMED) ||
+            !activeOwner.isRecoveryAllowed() ||
+            !isAttemptCurrent(activeRecovery, ResourceRecoveryPhase.RECLAIM_CLAIMED)
+        ) {
+            return
+        }
+        val reason = activeRecovery.reason
+        if (reclaimAllowed) {
             activeOwner.recycleProcess("resource_exhausted:$reason")
         } else {
             activeOwner.publishBudgetExhausted("process_reclaim:$reason")
         }
     }
 
-    private fun isCurrentOwner(token: String): Boolean = synchronized(lock) { ownerToken == token }
+    private fun finishRecovery(attemptId: Long) {
+        synchronized(lock) {
+            if (recovery?.attemptId != attemptId) return
+            gate.finish(attemptId)
+            recovery = null
+            recovering = false
+        }
+    }
+
+    private fun removeRecoveryLocked(attemptId: Long?): ActiveResourceRecovery? {
+        if (attemptId == null) return null
+        val activeRecovery = recovery?.takeIf { it.attemptId == attemptId } ?: return null
+        recovery = null
+        recovering = false
+        return activeRecovery
+    }
+
+    private fun cancelRecoveryOutsideLock(activeRecovery: ActiveResourceRecovery?) {
+        activeRecovery ?: return
+        activeRecovery.successorSignal.cancel()
+        activeRecovery.job?.cancel()
+    }
+
+    private fun isCurrent(registration: ResourceGuardRegistration): Boolean = synchronized(lock) {
+        gate.isCurrent(registration)
+    }
+
+    private fun isAttemptCurrent(
+        activeRecovery: ActiveResourceRecovery,
+        phase: ResourceRecoveryPhase? = null
+    ): Boolean = synchronized(lock) {
+        gate.isAttemptCurrent(
+            activeRecovery.registration.ownerId,
+            activeRecovery.attemptId,
+            phase
+        )
+    }
+
+    private fun isSuccessorCurrent(
+        activeRecovery: ActiveResourceRecovery,
+        successor: ResourceRecoverySuccessor
+    ): Boolean = synchronized(lock) {
+        gate.isAttemptCurrent(
+            activeRecovery.registration.ownerId,
+            activeRecovery.attemptId,
+            ResourceRecoveryPhase.OBSERVING_SUCCESSOR
+        ) && gate.isCurrent(successor.registration)
+    }
 
     private fun logSample(sample: DiagnosticResourceSample, decision: FdPressureDecision) {
         if (decision.level == FdPressureLevel.NORMAL) return
@@ -941,5 +1343,6 @@ internal const val FD_RECOVERY_RATIO = 0.85
 internal const val FD_EMERGENCY_RATIO = 0.95
 private const val RESOURCE_RECOVERY_RESAMPLE_DELAY_MS = 2_000L
 private const val RESOURCE_CORE_RESTART_OBSERVE_MS = 5_000L
+private const val RESOURCE_CORE_RESTART_SUCCESSOR_TIMEOUT_MS = 30_000L
 
 private val CSV_SPECIAL_CHARACTERS = setOf(',', '"', '\n', '\r')

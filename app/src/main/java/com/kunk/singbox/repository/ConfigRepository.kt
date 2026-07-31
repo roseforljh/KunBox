@@ -283,14 +283,6 @@ class ConfigRepository(protected val context: Context) {
             loadProfileAutoSelections()
             loadSavedProfiles()
         }
-        if (isMainProcess) {
-            scope.launch {
-                while (isActive) {
-                    delay(LATENCY_EXPIRY_REFRESH_INTERVAL_MS)
-                    refreshExpiredNodeLatencies()
-                }
-            }
-        }
         scope.launch {
             settingsRepository.settings.collect { settings ->
                 cachedSettings = settings
@@ -637,7 +629,7 @@ class ConfigRepository(protected val context: Context) {
         val cfg = withContext(Dispatchers.IO) { loadConfig(profileId) } ?: return null
         val nodes = extractNodesFromConfig(cfg, profileId)
         return nodes.map { node ->
-            val latency = freshLatencyMs(node.id)
+            val latency = savedLatencyMs(node.id)
             if (latency != null) node.copy(latencyMs = latency) else node
         }.also { profileNodes[profileId] = it }
     }
@@ -859,7 +851,7 @@ class ConfigRepository(protected val context: Context) {
                         val cfg = loadConfig(p.id) ?: continue
                         val nodes = extractNodesFromConfig(cfg, p.id)
                         val nodesWithLatency = nodes.map { node ->
-                            val latency = freshLatencyMs(node.id)
+                            val latency = savedLatencyMs(node.id)
                             if (latency != null) node.copy(latencyMs = latency) else node
                         }
                         profileNodes[p.id] = nodesWithLatency
@@ -942,27 +934,7 @@ class ConfigRepository(protected val context: Context) {
         }
     }
 
-    private fun freshLatencyMs(nodeId: String, nowMs: Long = System.currentTimeMillis()): Long? {
-        val saved = savedNodeLatencies[nodeId] ?: return null
-        return saved.latencyMs.takeIf {
-            ConfigRepository.isLatencyFresh(saved.testedAt, nowMs, ConfigRepository.UI_LATENCY_MAX_AGE_MS)
-        }
-    }
-
-    internal fun refreshExpiredNodeLatencies(nowMs: Long = System.currentTimeMillis()) {
-        fun clearExpired(nodes: List<NodeUi>): List<NodeUi> = nodes.map { node ->
-            if (node.latencyMs != null && freshLatencyMs(node.id, nowMs) == null) {
-                node.copy(latencyMs = null)
-            } else {
-                node
-            }
-        }
-        _nodes.update(::clearExpired)
-        _allNodes.update(::clearExpired)
-        profileNodes.keys.forEach { profileId ->
-            profileNodes.computeIfPresent(profileId) { _, nodes -> clearExpired(nodes) }
-        }
-    }
+    private fun savedLatencyMs(nodeId: String): Long? = savedNodeLatencies[nodeId]?.latencyMs
 
     protected suspend fun applyLatencyResults(results: Map<String, SavedNodeLatency>) {
         if (results.isEmpty()) return
@@ -1152,7 +1124,7 @@ class ConfigRepository(protected val context: Context) {
             val config = deduplicateTags(gson.fromJson(configJson, SingBoxConfig::class.java))
             val nodes = extractNodesFromConfig(config, activeProfileId)
             val nodesWithLatency = nodes.map { node ->
-                val latency = freshLatencyMs(node.id)
+                val latency = savedLatencyMs(node.id)
                 if (latency != null) node.copy(latencyMs = latency) else node
             }
             profileNodes[activeProfileId] = nodesWithLatency
@@ -2219,7 +2191,7 @@ class ConfigRepository(protected val context: Context) {
             name = outbound.tag,
             protocol = outbound.type,
             group = group,
-            latencyMs = freshLatencyMs(id),
+            latencyMs = savedLatencyMs(id),
             isFavorite = false,
             sourceProfileId = profileId,
             trafficUsed = trafficRepo.getMonthlyTotal(id),
@@ -2275,7 +2247,7 @@ class ConfigRepository(protected val context: Context) {
                 val cfg = loadConfig(profileId) ?: return@launch
                 val nodes = extractNodesFromConfig(cfg, profileId)
                 val nodesWithLatency = nodes.map { node ->
-                    val latency = freshLatencyMs(node.id)
+                    val latency = savedLatencyMs(node.id)
                     if (latency != null) node.copy(latencyMs = latency) else node
                 }
                 profileNodes[profileId] = nodesWithLatency
@@ -2536,7 +2508,7 @@ class ConfigRepository(protected val context: Context) {
                         loadConfig(profileId)?.let { cfg ->
                             val nodes = extractNodesFromConfig(cfg, profileId)
                             val nodesWithLatency = nodes.map { node ->
-                                val latency = freshLatencyMs(node.id)
+                                val latency = savedLatencyMs(node.id)
                                 if (latency != null) node.copy(latencyMs = latency) else node
                             }
                             profileNodes[profileId] = nodesWithLatency
@@ -5405,14 +5377,8 @@ class ConfigRepository(protected val context: Context) {
             }
         }
 
-        internal fun isLatencyFresh(testedAt: Long, nowMs: Long, maxAgeMs: Long): Boolean {
-            return testedAt > 0L && testedAt <= nowMs && nowMs - testedAt < maxAgeMs
-        }
-
         internal val ROUTE_GROUP_AUTO_TAG_SUFFIX = "#AUTO"
 
-        internal const val UI_LATENCY_MAX_AGE_MS = 30 * 60_000L
-        private const val LATENCY_EXPIRY_REFRESH_INTERVAL_MS = 60_000L
         private const val RUNTIME_RELOAD_POLL_INTERVAL_MS = 250L
         private const val RUNTIME_RELOAD_TIMEOUT_MS = 30_000L
         private const val AUTO_GROUP_RESOLUTION_TIMEOUT_MS = 10_000L

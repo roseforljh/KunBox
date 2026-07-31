@@ -42,7 +42,7 @@ class CoreManagerLockPolicyTest {
             .substringAfter("fun stopVpn(")
             .substringBefore("private suspend fun waitForSystemVpnDown")
         val coreStopIndex = stopVpnBody.indexOf("coreManager.stopFully(completeLifecycle = false)")
-        val completionIndex = stopVpnBody.indexOf("callbacks.completeStop(stopService)")
+        val completionIndex = stopVpnBody.indexOf("callbacks.completeStop(stopService, recoveryIntentLease)")
         val stoppedIndex = stopVpnBody.indexOf("callbacks.updateServiceState(ServiceState.STOPPED)")
         assertTrue(coreStopIndex >= 0)
         assertTrue(completionIndex > coreStopIndex)
@@ -98,21 +98,49 @@ class CoreManagerLockPolicyTest {
 
     @Test
     fun hardStopSuppressesQueuedRestart() {
+        val hardStopLease = ServiceStateHolder.setRecoveryIntentOnFailure(false)
         val completion = ShutdownManager.resolveStopCompletion(
             initialStopService = false,
             hardStopRequested = true,
-            pendingStartConfigPath = "running.json"
+            cleanupRecoveryIntentLease = hardStopLease,
+            hardStopRecoveryIntentLease = hardStopLease,
+            pendingStartConfigPath = "running.json",
+            pendingRecoveryIntentLease = hardStopLease
         )
 
         assertTrue(completion.stopService)
         assertNull(completion.restartConfigPath)
 
+        val restartLease = ServiceStateHolder.setRecoveryIntentOnFailure(false)
         val restart = ShutdownManager.resolveStopCompletion(
             initialStopService = false,
             hardStopRequested = false,
-            pendingStartConfigPath = "running.json"
+            cleanupRecoveryIntentLease = hardStopLease,
+            hardStopRecoveryIntentLease = null,
+            pendingStartConfigPath = "running.json",
+            pendingRecoveryIntentLease = restartLease
         )
         assertFalse(restart.stopService)
         assertEquals("running.json", restart.restartConfigPath)
+        assertTrue(restart.recoveryIntentLease === restartLease)
+    }
+
+    @Test
+    fun staleHardStopHandsOffToLatestQueuedStart() {
+        val staleStopLease = ServiceStateHolder.setRecoveryIntentOnFailure(false)
+        val latestStartLease = ServiceStateHolder.setRecoveryIntentOnFailure(false)
+
+        val completion = ShutdownManager.resolveStopCompletion(
+            initialStopService = true,
+            hardStopRequested = true,
+            cleanupRecoveryIntentLease = staleStopLease,
+            hardStopRecoveryIntentLease = staleStopLease,
+            pendingStartConfigPath = "latest.json",
+            pendingRecoveryIntentLease = latestStartLease
+        )
+
+        assertFalse(completion.stopService)
+        assertEquals("latest.json", completion.restartConfigPath)
+        assertTrue(completion.recoveryIntentLease === latestStartLease)
     }
 }
