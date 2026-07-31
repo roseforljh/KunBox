@@ -80,6 +80,7 @@ Kkunbox/
 .kernel-sync-local/patches/*
 !.kernel-sync-local/patches/kunbox-v1.13.14.patch
 !.kernel-sync-local/patches/kunbox-v1.13.15.patch
+!.kernel-sync-local/patches/sing-tun-v0.8.12-0.20260727151122-3a09076491df.patch
 OPENWORLD_MIGRATION_PLAN.md
 .factory/settings.json
 .gstack/
