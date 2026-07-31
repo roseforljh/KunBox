@@ -172,19 +172,57 @@ index 0000000..48c3567
 +	}
 +}
 diff --git a/route/conn.go b/route/conn.go
-index 9fdc6cd..8afb094 100644
+index 9fdc6cd..c8a8874 100644
 --- a/route/conn.go
 +++ b/route/conn.go
-@@ -143,6 +143,8 @@ func (m *ConnectionManager) NewConnection(ctx context.Context, this N.Dialer, co
+@@ -29,15 +29,20 @@ import (
+ 
+ var _ adapter.ConnectionManager = (*ConnectionManager)(nil)
+ 
++// ponytail: 与旧版 udpnat2 的 1024 条目上限对齐，迁移到带关闭通知的新版 UDPNAT 后删除。
++const maxActivePacketConnections = 1024
++
+ type ConnectionManager struct {
+-	logger      logger.ContextLogger
+-	access      sync.Mutex
+-	connections list.List[io.Closer]
++	logger                logger.ContextLogger
++	access                sync.Mutex
++	connections           list.List[io.Closer]
++	packetConnectionSlots chan struct{}
+ }
+ 
+ func NewConnectionManager(logger logger.ContextLogger) *ConnectionManager {
+ 	return &ConnectionManager{
+-		logger: logger,
++		logger:                logger,
++		packetConnectionSlots: make(chan struct{}, maxActivePacketConnections),
+ 	}
+ }
+ 
+@@ -143,6 +148,21 @@ func (m *ConnectionManager) NewConnection(ctx context.Context, this N.Dialer, co
  
  func (m *ConnectionManager) NewPacketConnection(ctx context.Context, this N.Dialer, conn N.PacketConn, metadata adapter.InboundContext, onClose N.CloseHandlerFunc) {
  	ctx = adapter.WithContext(ctx, &metadata)
 +	dialContext, cancelDial := newPacketDialContext(ctx, conn)
 +	defer cancelDial()
++	if !m.acquirePacketConnection(dialContext) {
++		N.CloseOnHandshakeFailure(conn, onClose, dialContext.Err())
++		return
++	}
++	var releaseOnce sync.Once
++	managedOnClose := func(err error) {
++		releaseOnce.Do(func() {
++			<-m.packetConnectionSlots
++			if onClose != nil {
++				onClose(err)
++			}
++		})
++	}
  	var (
  		remotePacketConn   net.PacketConn
  		remoteConn         net.Conn
-@@ -153,18 +155,18 @@ func (m *ConnectionManager) NewPacketConnection(ctx context.Context, this N.Dial
+@@ -153,18 +173,18 @@ func (m *ConnectionManager) NewPacketConnection(ctx context.Context, this N.Dial
  		parallelDialer, isParallelDialer := this.(dialer.ParallelInterfaceDialer)
  		if len(metadata.DestinationAddresses) > 0 {
  			if isParallelDialer {
@@ -208,7 +246,16 @@ index 9fdc6cd..8afb094 100644
  		}
  		if err != nil {
  			var remoteString string
-@@ -189,11 +191,11 @@ func (m *ConnectionManager) NewPacketConnection(ctx context.Context, this N.Dial
+@@ -178,7 +198,7 @@ func (m *ConnectionManager) NewPacketConnection(ctx context.Context, this N.Dial
+ 				dialerString = " using outbound/" + outbound.Type() + "[" + outbound.Tag() + "]"
+ 			}
+ 			err = E.Cause(err, "open packet connection to ", remoteString, dialerString)
+-			N.CloseOnHandshakeFailure(conn, onClose, err)
++			N.CloseOnHandshakeFailure(conn, managedOnClose, err)
+ 			m.logger.ErrorContext(ctx, err)
+ 			return
+ 		}
+@@ -189,11 +209,11 @@ func (m *ConnectionManager) NewPacketConnection(ctx context.Context, this N.Dial
  		}
  	} else {
  		if len(metadata.DestinationAddresses) > 0 {
@@ -223,10 +270,42 @@ index 9fdc6cd..8afb094 100644
  		}
  		if err != nil {
  			var dialerString string
-@@ -258,6 +260,35 @@ func (m *ConnectionManager) NewPacketConnection(ctx context.Context, this N.Dial
- 	go m.packetConnectionCopy(ctx, destination, conn, true, &done, onClose)
- }
- 
+@@ -201,7 +221,7 @@ func (m *ConnectionManager) NewPacketConnection(ctx context.Context, this N.Dial
+ 				dialerString = " using outbound/" + outbound.Type() + "[" + outbound.Tag() + "]"
+ 			}
+ 			err = E.Cause(err, "listen packet connection using ", dialerString)
+-			N.CloseOnHandshakeFailure(conn, onClose, err)
++			N.CloseOnHandshakeFailure(conn, managedOnClose, err)
+ 			m.logger.ErrorContext(ctx, err)
+ 			return
+ 		}
+@@ -210,6 +230,7 @@ func (m *ConnectionManager) NewPacketConnection(ctx context.Context, this N.Dial
+ 	if err != nil {
+ 		conn.Close()
+ 		remotePacketConn.Close()
++		managedOnClose(err)
+ 		m.logger.ErrorContext(ctx, "report handshake success: ", err)
+ 		return
+ 	}
+@@ -254,8 +275,46 @@ func (m *ConnectionManager) NewPacketConnection(ctx context.Context, this N.Dial
+ 	}
+ 	destination := bufio.NewPacketConn(remotePacketConn)
+ 	var done atomic.Bool
+-	go m.packetConnectionCopy(ctx, conn, destination, false, &done, onClose)
+-	go m.packetConnectionCopy(ctx, destination, conn, true, &done, onClose)
++	go m.packetConnectionCopy(ctx, conn, destination, false, &done, managedOnClose)
++	go m.packetConnectionCopy(ctx, destination, conn, true, &done, managedOnClose)
++}
++
++func (m *ConnectionManager) acquirePacketConnection(ctx context.Context) bool {
++	select {
++	case m.packetConnectionSlots <- struct{}{}:
++		return true
++	case <-ctx.Done():
++		return false
++	}
++}
++
 +func newPacketDialContext(parent context.Context, conn N.PacketConn) (context.Context, context.CancelFunc) {
 +	timeoutConn, loaded := common.Cast[canceler.PacketConn](conn)
 +	if !loaded {
@@ -254,22 +333,21 @@ index 9fdc6cd..8afb094 100644
 +		}
 +	}()
 +	return dialContext, cancel
-+}
-+
+ }
+ 
  func (m *ConnectionManager) connectionCopy(ctx context.Context, source net.Conn, destination net.Conn, direction bool, done *atomic.Bool, onClose N.CloseHandlerFunc) {
- 	_, err := bufio.CopyWithIncreateBuffer(destination, source, bufio.DefaultIncreaseBufferAfter, bufio.DefaultBatchSize)
- 	if err != nil {
 diff --git a/route/conn_packet_lifecycle_test.go b/route/conn_packet_lifecycle_test.go
 new file mode 100644
-index 0000000..6ce6818
+index 0000000..cbe28db
 --- /dev/null
 +++ b/route/conn_packet_lifecycle_test.go
-@@ -0,0 +1,99 @@
+@@ -0,0 +1,190 @@
 +package route
 +
 +import (
 +	"context"
 +	"net"
++	"net/netip"
 +	"sync/atomic"
 +	"testing"
 +	"time"
@@ -278,6 +356,8 @@ index 0000000..6ce6818
 +	"github.com/sagernet/sing-box/log"
 +	"github.com/sagernet/sing/common/buf"
 +	M "github.com/sagernet/sing/common/metadata"
++	N "github.com/sagernet/sing/common/network"
++	udpnat "github.com/sagernet/sing/common/udpnat2"
 +)
 +
 +func TestPacketDialCanceledWhenInboundNATExpires(t *testing.T) {
@@ -315,6 +395,94 @@ index 0000000..6ce6818
 +	case <-time.After(time.Second):
 +		t.Fatal("packet connection did not return after dial cancellation")
 +	}
++}
++
++func TestPacketDialFloodStaysBoundedByInboundNATCapacity(t *testing.T) {
++	manager := NewConnectionManager(log.NewNOPFactory().Logger())
++	dialer := &countingBlockingPacketDialer{}
++	handler := &natPacketRouteHandler{manager: manager, dialer: dialer}
++	service := udpnat.New(
++		handler,
++		func(_, _ M.Socksaddr, _ any) (bool, context.Context, N.PacketWriter, N.CloseHandlerFunc) {
++			return true, context.Background(), discardPacketWriter{}, nil
++		},
++		time.Minute,
++		true,
++	)
++	destination := M.Socksaddr{Addr: netip.MustParseAddr("1.1.1.1"), Port: 443}
++	for index := 0; index < 32_768; index++ {
++		source := M.Socksaddr{
++			Addr: netip.AddrFrom4([4]byte{10, byte(index >> 8), byte(index), 1}),
++			Port: uint16(index + 1),
++		}
++		service.NewPacket([][]byte{{1}}, source, destination, nil)
++	}
++	deadline := time.Now().Add(5 * time.Second)
++	for dialer.started.Load() < 1024 && time.Now().Before(deadline) {
++		time.Sleep(time.Millisecond)
++	}
++	service.Purge()
++	for dialer.active.Load() != 0 && time.Now().Before(deadline) {
++		time.Sleep(time.Millisecond)
++	}
++	if active := dialer.active.Load(); active != 0 {
++		t.Fatalf("packet dials still active after NAT purge: %d", active)
++	}
++	if peak := dialer.peak.Load(); peak > 1024 {
++		t.Fatalf("packet dial flood exceeded NAT capacity: peak=%d", peak)
++	}
++}
++
++type natPacketRouteHandler struct {
++	manager *ConnectionManager
++	dialer  *countingBlockingPacketDialer
++}
++
++func (h *natPacketRouteHandler) NewPacketConnectionEx(
++	ctx context.Context,
++	conn N.PacketConn,
++	_ M.Socksaddr,
++	destination M.Socksaddr,
++	onClose N.CloseHandlerFunc,
++) {
++	h.manager.NewPacketConnection(
++		ctx,
++		h.dialer,
++		conn,
++		adapter.InboundContext{Destination: destination},
++		onClose,
++	)
++}
++
++type discardPacketWriter struct{}
++
++func (discardPacketWriter) WritePacket(buffer *buf.Buffer, _ M.Socksaddr) error {
++	buffer.Release()
++	return nil
++}
++
++type countingBlockingPacketDialer struct {
++	started atomic.Int64
++	active  atomic.Int64
++	peak    atomic.Int64
++}
++
++func (d *countingBlockingPacketDialer) DialContext(ctx context.Context, _ string, _ M.Socksaddr) (net.Conn, error) {
++	return nil, d.wait(ctx)
++}
++
++func (d *countingBlockingPacketDialer) ListenPacket(ctx context.Context, _ M.Socksaddr) (net.PacketConn, error) {
++	return nil, d.wait(ctx)
++}
++
++func (d *countingBlockingPacketDialer) wait(ctx context.Context) error {
++	active := d.active.Add(1)
++	d.started.Add(1)
++	for peak := d.peak.Load(); active > peak && !d.peak.CompareAndSwap(peak, active); peak = d.peak.Load() {
++	}
++	<-ctx.Done()
++	d.active.Add(-1)
++	return ctx.Err()
 +}
 +
 +type expiringPacketConn struct {
