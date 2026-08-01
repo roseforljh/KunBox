@@ -502,6 +502,7 @@ class SingBoxService : VpnService() {
                 hardStopRecoveryIntentLease = completion.recoveryIntentLease.takeIf { completion.stopService }
                 pendingStartConfigPath = null
                 pendingStartRecoveryIntentLease = null
+                SingBoxService.isStarting = false
                 isStopping = false
                 completion
             }

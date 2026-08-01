@@ -110,6 +110,20 @@ class StartupManagerTest {
     }
 
     @Test
+    fun stopCompletionClearsStartingBeforeQueuedRestart() {
+        val source = File("src/main/java/com/kunk/singbox/service/SingBoxService.kt")
+            .readText(Charsets.UTF_8)
+        val completionBody = source
+            .substringAfter("override fun completeStop(")
+            .substringBefore("override fun startVpn(configPath: String, recoveryIntentLease: RecoveryIntentLease?)")
+
+        val clearStartingIndex = completionBody.indexOf("SingBoxService.isStarting = false")
+        val clearStoppingIndex = completionBody.indexOf("isStopping = false")
+        assertTrue(clearStartingIndex >= 0)
+        assertTrue(clearStartingIndex < clearStoppingIndex)
+    }
+
+    @Test
     fun serviceCapturesLifecycleTokenBeforeSchedulingAndTracksFullRestart() {
         val source = File("src/main/java/com/kunk/singbox/service/SingBoxService.kt")
             .readText(Charsets.UTF_8)
