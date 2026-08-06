@@ -965,6 +965,16 @@ class ConfigRepository(protected val context: Context) {
         val rawOutbounds = ConfigRepository.buildLatencyRuntimeOutbounds(config) { outbound ->
             buildOutboundForRuntime(outbound)
         }
+        val detourResolvedOutbounds = ConfigRepository.resolveLatencyRuntimeDetours(
+            sourceProfileId = profileId,
+            sourceOutbounds = rawOutbounds
+        ) { detourProfileId ->
+            loadConfig(detourProfileId)?.let { detourConfig ->
+                ConfigRepository.buildLatencyRuntimeOutbounds(detourConfig) { outbound ->
+                    buildOutboundForRuntime(outbound)
+                }
+            }
+        }
         val dnsOverrideConfig = parseDnsOverride(_profiles.value.find { it.id == profileId }?.dnsOverride)
         val serverAddressStrategy = ConfigRepository.resolveOutboundServerAddressStrategy(
             settings.serverAddressStrategy,
@@ -977,7 +987,7 @@ class ConfigRepository(protected val context: Context) {
             resolvedStrategy = serverAddressStrategy
         )
         val defaultResolverOutbounds = ConfigRepository.applyDefaultOutboundDomainResolver(
-            rawOutbounds,
+            detourResolvedOutbounds,
             ConfigRepository.DEFAULT_ROUTE_DOMAIN_RESOLVER_TAG,
             serverAddressStrategy
         )
@@ -5343,6 +5353,92 @@ class ConfigRepository(protected val context: Context) {
             val normalized = normalizeWireGuardEndpointsForInternalUse(config)
             return normalized.outbounds.orEmpty().mapNotNull { outbound ->
                 prepareLatencyRuntimeOutbound(outbound, buildNonWireGuard)
+            }
+        }
+
+        internal fun resolveLatencyRuntimeDetours(
+            sourceProfileId: String,
+            sourceOutbounds: List<Outbound>,
+            loadProfileOutbounds: (String) -> List<Outbound>?
+        ): List<Outbound> {
+            return LatencyRuntimeDetourResolver(
+                sourceProfileId,
+                sourceOutbounds,
+                loadProfileOutbounds
+            ).resolve()
+        }
+
+        private class LatencyRuntimeDetourResolver(
+            private val sourceProfileId: String,
+            private val sourceOutbounds: List<Outbound>,
+            private val loadProfileOutbounds: (String) -> List<Outbound>?
+        ) {
+            private val outboundsByProfile = mutableMapOf(sourceProfileId to sourceOutbounds)
+            private val runtimeTags = sourceOutbounds.associate { outbound ->
+                (sourceProfileId to outbound.tag) to outbound.tag
+            }.toMutableMap()
+            private val usedTags = sourceOutbounds.mapTo(mutableSetOf()) { it.tag }
+            private val resolving = mutableSetOf<Pair<String, String>>()
+            private val resolvedOutbounds = linkedMapOf<Pair<String, String>, Outbound>()
+
+            fun resolve(): List<Outbound> {
+                val sourceKeys = sourceOutbounds.map { sourceProfileId to it.tag }
+                sourceKeys.forEach { resolveOutbound(it) }
+                val sourceKeySet = sourceKeys.toSet()
+                return buildList {
+                    sourceKeys.mapNotNullTo(this) { resolvedOutbounds[it] }
+                    resolvedOutbounds.forEach { (key, outbound) ->
+                        if (key !in sourceKeySet) add(outbound)
+                    }
+                }
+            }
+
+            private fun outboundsFor(profileId: String): List<Outbound>? {
+                outboundsByProfile[profileId]?.let { return it }
+                return loadProfileOutbounds(profileId)?.also { outboundsByProfile[profileId] = it }
+            }
+
+            private fun resolveReference(profileId: String, reference: String): Pair<String, String>? {
+                val parts = reference.split("::", limit = 2)
+                val targetProfileId = if (parts.size == 2) parts[0] else profileId
+                val targetTag = if (parts.size == 2) parts[1] else reference
+                if (targetProfileId.isBlank() || targetTag.isBlank()) return null
+                val targetExists = outboundsFor(targetProfileId)?.any { it.tag == targetTag } == true
+                return (targetProfileId to targetTag).takeIf { targetExists }
+            }
+
+            private fun allocateRuntimeTag(key: Pair<String, String>): String {
+                runtimeTags[key]?.let { return it }
+                val (profileId, originalTag) = key
+                var candidate = originalTag
+                if (candidate in usedTags) {
+                    val suffix = profileId.take(8).ifBlank { "profile" }
+                    val base = "$originalTag#latency-$suffix"
+                    candidate = base
+                    var index = 2
+                    while (candidate in usedTags) {
+                        candidate = "$base-$index"
+                        index++
+                    }
+                }
+                runtimeTags[key] = candidate
+                usedTags.add(candidate)
+                return candidate
+            }
+
+            private fun resolveOutbound(key: Pair<String, String>): String? {
+                val knownTag = resolvedOutbounds[key]?.tag ?: runtimeTags[key]?.takeIf { key in resolving }
+                if (knownTag != null) return knownTag
+                val (profileId, sourceTag) = key
+                val source = outboundsFor(profileId)?.firstOrNull { it.tag == sourceTag } ?: return null
+                val runtimeTag = allocateRuntimeTag(key)
+                resolving.add(key)
+                val resolvedDetour = source.detour?.takeIf { it.isNotBlank() }?.let { detour ->
+                    resolveReference(profileId, detour)?.let { resolveOutbound(it) } ?: detour
+                }
+                resolvedOutbounds[key] = source.copy(tag = runtimeTag, detour = resolvedDetour)
+                resolving.remove(key)
+                return runtimeTag
             }
         }
 

@@ -107,6 +107,90 @@ class ConfigRepositoryBatchLatencyPolicyTest {
     }
 
     @Test
+    fun latencyRuntimeLoadsCrossProfileDetourAndRewritesReference() {
+        val source = listOf(
+            Outbound(type = "vless", tag = "tested", detour = "profile-b::front")
+        )
+
+        val resolved = ConfigRepository.resolveLatencyRuntimeDetours(
+            sourceProfileId = "profile-a",
+            sourceOutbounds = source
+        ) { profileId ->
+            when (profileId) {
+                "profile-b" -> listOf(Outbound(type = "socks", tag = "front"))
+                else -> null
+            }
+        }
+
+        assertEquals("front", resolved.first { it.tag == "tested" }.detour)
+        assertTrue(resolved.any { it.tag == "front" && it.type == "socks" })
+    }
+
+    @Test
+    fun latencyRuntimeNormalizesSameProfileDetourReference() {
+        val source = listOf(
+            Outbound(type = "vless", tag = "tested", detour = "profile-a::front"),
+            Outbound(type = "http", tag = "front")
+        )
+
+        val resolved = ConfigRepository.resolveLatencyRuntimeDetours(
+            sourceProfileId = "profile-a",
+            sourceOutbounds = source,
+            loadProfileOutbounds = { error("同配置引用不应重复加载配置") }
+        )
+
+        assertEquals("front", resolved.first { it.tag == "tested" }.detour)
+        assertEquals(2, resolved.size)
+    }
+
+    @Test
+    fun latencyRuntimeLoadsPlainTagDependenciesRecursively() {
+        val source = listOf(
+            Outbound(type = "vless", tag = "tested", detour = "profile-b::front")
+        )
+
+        val resolved = ConfigRepository.resolveLatencyRuntimeDetours(
+            sourceProfileId = "profile-a",
+            sourceOutbounds = source
+        ) { profileId ->
+            when (profileId) {
+                "profile-b" -> listOf(
+                    Outbound(type = "socks", tag = "front", detour = "hop"),
+                    Outbound(type = "http", tag = "hop")
+                )
+                else -> null
+            }
+        }
+
+        val front = resolved.first { it.type == "socks" }
+        assertTrue(resolved.any { it.tag == front.detour && it.type == "http" })
+    }
+
+    @Test
+    fun latencyRuntimeAllocatesUniqueTagForCrossProfileCollision() {
+        val source = listOf(
+            Outbound(type = "vless", tag = "tested", detour = "profile-b::front"),
+            Outbound(type = "http", tag = "front", server = "source.example")
+        )
+
+        val resolved = ConfigRepository.resolveLatencyRuntimeDetours(
+            sourceProfileId = "profile-a",
+            sourceOutbounds = source
+        ) { profileId ->
+            when (profileId) {
+                "profile-b" -> listOf(Outbound(type = "socks", tag = "front", server = "detour.example"))
+                else -> null
+            }
+        }
+
+        val tested = resolved.first { it.tag == "tested" }
+        val crossProfileDetour = resolved.first { it.server == "detour.example" }
+        assertNotEquals("front", crossProfileDetour.tag)
+        assertEquals(crossProfileDetour.tag, tested.detour)
+        assertEquals(resolved.size, resolved.map { it.tag }.distinct().size)
+    }
+
+    @Test
     fun latencyCancellationIsPropagatedBySharedTest() {
         val source = File(
             "src/main/java/com/kunk/singbox/repository/ConfigRepository.kt"
