@@ -1,6 +1,17 @@
 package com.kunk.singbox.ui.components
 
 import com.kunk.singbox.R
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -9,17 +20,22 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.kunk.singbox.ui.theme.*
+
+private val NodeSelectedPulseGreen = Color(0xFF22C55E)
 
 @Composable
 private fun Modifier.nodeOverflowMenuPanel(): Modifier {
@@ -37,37 +53,6 @@ private fun Modifier.nodeOverflowMenuPanel(): Modifier {
     }
 }
 
-@Composable
-private fun Modifier.nodeSelectedIndicatorPanel(): Modifier {
-    return if (isLiquidGlassTheme()) {
-        liquidGlassPanel(shape = CircleShape, selected = true, shadowElevation = 4.dp)
-    } else {
-        background(MaterialTheme.colorScheme.primary, CircleShape)
-    }
-}
-
-@Composable
-private fun NodeSelectedIndicator(useLiquidGlass: Boolean) {
-    Box(
-        modifier = Modifier
-            .size(24.dp)
-            .nodeSelectedIndicatorPanel()
-            .padding(4.dp),
-        contentAlignment = Alignment.Center
-    ) {
-        Icon(
-            imageVector = Icons.Rounded.Check,
-            contentDescription = "Selected",
-            tint = if (useLiquidGlass) {
-                MaterialTheme.colorScheme.primary
-            } else {
-                MaterialTheme.colorScheme.onPrimary
-            },
-            modifier = Modifier.size(16.dp)
-        )
-    }
-}
-
 @Suppress("LongParameterList", "LongMethod", "CognitiveComplexMethod", "CyclomaticComplexMethod")
 @Composable
 fun NodeCard(
@@ -75,6 +60,7 @@ fun NodeCard(
     type: String,
     latency: Long? = null,
     isSelected: Boolean,
+    isSwitching: Boolean = false,
     isTesting: Boolean = false,
     trafficUsed: Long = 0,
     onClick: () -> Unit,
@@ -117,6 +103,7 @@ fun NodeCard(
     }
     Box(
         modifier = cardModifier
+            .semantics { selected = isSelected }
             .liquidGlassPressFeedback(
                 interactionSource = listInteractionSource,
                 label = "liquid_glass_node_card_scale",
@@ -133,11 +120,11 @@ fun NodeCard(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.weight(1f)
             ) {
-                if (isSelected) {
-                    NodeSelectedIndicator(useLiquidGlass = useLiquidGlass)
-                } else {
-                    Spacer(modifier = Modifier.size(24.dp))
-                }
+                SelectedPulseIndicator(
+                    selected = isSelected,
+                    animationLabel = "node_list_selected",
+                    isSwitching = isSwitching
+                )
 
                 Spacer(modifier = Modifier.width(16.dp))
 
@@ -328,6 +315,81 @@ fun NodeCard(
     }
 }
 
+@Composable
+private fun BreathingGreenDot(animationLabel: String) {
+    val infiniteTransition = rememberInfiniteTransition(label = "${animationLabel}_pulse")
+    val pulseProgress by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 1100, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "${animationLabel}_pulse_progress"
+    )
+
+    Box(
+        modifier = Modifier.size(16.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Box(
+            modifier = Modifier
+                .size(12.dp)
+                .graphicsLayer {
+                    val pulseScale = 0.75f + (pulseProgress * 0.5f)
+                    scaleX = pulseScale
+                    scaleY = pulseScale
+                    alpha = 0.36f - (pulseProgress * 0.18f)
+                }
+                .background(NodeSelectedPulseGreen, CircleShape)
+        )
+        Box(
+            modifier = Modifier
+                .size(7.dp)
+                .background(NodeSelectedPulseGreen, CircleShape)
+        )
+    }
+}
+
+@Composable
+internal fun SelectedPulseIndicator(
+    selected: Boolean,
+    animationLabel: String,
+    isSwitching: Boolean = false,
+    slotSize: Dp = 24.dp
+) {
+    Box(
+        modifier = Modifier.size(slotSize),
+        contentAlignment = Alignment.Center
+    ) {
+        if (isSwitching) {
+            CircularProgressIndicator(
+                modifier = Modifier.size(slotSize.coerceAtMost(16.dp)),
+                color = NodeSelectedPulseGreen,
+                strokeWidth = 2.dp
+            )
+        } else {
+            AnimatedVisibility(
+                visible = selected,
+                enter = fadeIn(
+                    animationSpec = tween(durationMillis = 200, easing = FastOutSlowInEasing)
+                ) + scaleIn(
+                    initialScale = 0.55f,
+                    animationSpec = tween(durationMillis = 220, easing = FastOutSlowInEasing)
+                ),
+                exit = fadeOut(
+                    animationSpec = tween(durationMillis = 160, easing = FastOutSlowInEasing)
+                ) + scaleOut(
+                    targetScale = 0.55f,
+                    animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing)
+                )
+            ) {
+                BreathingGreenDot(animationLabel = animationLabel)
+            }
+        }
+    }
+}
+
 @Suppress("LongParameterList", "LongMethod", "CognitiveComplexMethod")
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -336,6 +398,7 @@ fun NodeGridCard(
     type: String,
     latency: Long? = null,
     isSelected: Boolean,
+    isSwitching: Boolean = false,
     isTesting: Boolean = false,
     onClick: () -> Unit,
     onEdit: () -> Unit,
@@ -375,6 +438,7 @@ fun NodeGridCard(
     }
     Box(
         modifier = cardModifier
+            .semantics { selected = isSelected }
             .liquidGlassPressFeedback(
                 interactionSource = gridInteractionSource,
                 label = "liquid_glass_node_grid_card_scale",
@@ -387,16 +451,28 @@ fun NodeGridCard(
             modifier = Modifier.fillMaxSize(),
             verticalArrangement = Arrangement.SpaceBetween
         ) {
-            // Name
-            Text(
-                text = name,
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface,
-                maxLines = 2,
-                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                modifier = Modifier.fillMaxWidth()
-            )
+            // 名称与选中指示器独立占位，双列和三列下都不会互相覆盖。
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.Top
+            ) {
+                Text(
+                    text = name,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 2,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f)
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                SelectedPulseIndicator(
+                    selected = isSelected,
+                    animationLabel = "node_grid_selected",
+                    isSwitching = isSwitching,
+                    slotSize = 16.dp
+                )
+            }
 
             // Protocol & Latency
             Row(

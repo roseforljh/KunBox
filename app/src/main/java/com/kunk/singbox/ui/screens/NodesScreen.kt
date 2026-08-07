@@ -19,13 +19,12 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.statusBars
-import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -51,7 +50,6 @@ import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.FilterAlt
 import androidx.compose.material.icons.rounded.Sort
-import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.MyLocation
 import androidx.compose.material.icons.rounded.GridView
 import androidx.compose.material.icons.rounded.ViewCompact
@@ -65,9 +63,6 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.res.stringResource
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -82,7 +77,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.geometry.Offset
@@ -90,28 +84,27 @@ import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.PointerEventPass
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.text.AnnotatedString
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import com.kunk.singbox.model.FilterMode
+import com.kunk.singbox.model.NodeUi
 import com.kunk.singbox.model.NodeSortType
 import com.kunk.singbox.viewmodel.NodesViewModel
 import com.kunk.singbox.ui.components.AppNotificationManager
-import com.kunk.singbox.ui.components.AddNodeDialog
-import com.kunk.singbox.ui.components.AddNodeTarget
+import com.kunk.singbox.ui.components.ConfirmDialog
+import com.kunk.singbox.ui.components.ExpandableSearchBar
 import com.kunk.singbox.ui.components.InputDialog
+import com.kunk.singbox.ui.components.FloatingMainPageLayout
 import com.kunk.singbox.ui.components.NodeFilterDialog
 import com.kunk.singbox.ui.components.SingleSelectDialog
 import com.kunk.singbox.ui.components.NodeCard
 import com.kunk.singbox.ui.components.NodeGridCard
+import com.kunk.singbox.ui.components.TopOnlySupportingContent
 import com.kunk.singbox.ui.navigation.Screen
 import com.kunk.singbox.ipc.SingBoxRemote
 import com.kunk.singbox.ui.theme.LiquidGlassDropdownMenu
@@ -146,24 +139,7 @@ private fun Modifier.nodesMenuPanel(shape: RoundedCornerShape = RoundedCornerSha
 }
 
 @Composable
-private fun Modifier.nodeSearchPanel(): Modifier {
-    val shape = RoundedCornerShape(20.dp)
-    return if (isLiquidGlassTheme()) {
-        liquidGlassPanel(shape = shape, shadowElevation = 8.dp)
-    } else {
-        background(
-            color = MaterialTheme.colorScheme.surface,
-            shape = shape
-        ).border(
-            width = 1.dp,
-            color = Color.White.copy(alpha = 0.2f),
-            shape = shape
-        )
-    }
-}
-
-@Composable
-private fun Modifier.nodeActiveIndicatorPanel(): Modifier {
+internal fun Modifier.nodeActiveIndicatorPanel(): Modifier {
     return if (isLiquidGlassTheme()) {
         size(10.dp)
             .liquidGlassPanel(shape = RoundedCornerShape(5.dp), selected = true, shadowElevation = 3.dp)
@@ -198,6 +174,9 @@ fun NodesScreen(
     val clipboardManager = LocalClipboardManager.current
     val scope = rememberCoroutineScope()
     val gridState = rememberLazyGridState()
+    val showTopControls by remember {
+        derivedStateOf { !gridState.canScrollBackward }
+    }
 
     var isFabVisible by remember { mutableStateOf(true) }
 
@@ -219,17 +198,23 @@ fun NodesScreen(
     val nodes by viewModel.nodes.collectAsStateWithLifecycle()
     val activeNodeId by viewModel.activeNodeId.collectAsStateWithLifecycle()
     val isAutoSelectionEnabled by viewModel.isAutoSelectionEnabled.collectAsStateWithLifecycle()
+    val switchingNodeId by viewModel.switchingNodeId.collectAsStateWithLifecycle()
     val runtimeNodeLabel by SingBoxRemote.activeLabel.collectAsStateWithLifecycle()
     val testingNodeIds by viewModel.testingNodeIds.collectAsStateWithLifecycle()
     val nodeFilter by viewModel.nodeFilter.collectAsStateWithLifecycle()
     val sortType by viewModel.sortType.collectAsStateWithLifecycle()
     val testProgress by viewModel.testProgress.collectAsStateWithLifecycle()
-    val profiles by viewModel.profiles.collectAsStateWithLifecycle()
     val nodeColumnCount by viewModel.nodeColumnCount.collectAsStateWithLifecycle()
 
     var searchQuery by remember { mutableStateOf("") }
     var isSearchExpanded by remember { mutableStateOf(false) }
     val isTesting by viewModel.isTesting.collectAsStateWithLifecycle()
+
+    LaunchedEffect(showTopControls) {
+        if (!showTopControls) {
+            isSearchExpanded = false
+        }
+    }
 
     LaunchedEffect(Unit) {
         viewModel.toastEvents.collectLatest { message ->
@@ -252,10 +237,39 @@ fun NodesScreen(
     var showSortDialog by remember { mutableStateOf(false) }
     var showMoreMenu by remember { mutableStateOf(false) }
     var showFilterDialog by remember { mutableStateOf(false) }
-    var showProtocolSelectDialog by remember { mutableStateOf(false) }
     var exportLink by remember { mutableStateOf<String?>(null) }
     var isFabExpanded by remember { mutableStateOf(false) }
-    var showAddNodeDialog by remember { mutableStateOf(false) }
+    var nodeToDelete by remember { mutableStateOf<NodeUi?>(null) }
+    var showClearLatencyConfirm by remember { mutableStateOf(false) }
+
+    val pendingNodeDelete = nodeToDelete
+    if (pendingNodeDelete != null) {
+        ConfirmDialog(
+            title = stringResource(R.string.common_delete),
+            message = stringResource(R.string.common_delete_confirm, pendingNodeDelete.displayName),
+            confirmText = stringResource(R.string.common_delete),
+            isDestructive = true,
+            onConfirm = {
+                viewModel.deleteNode(pendingNodeDelete.id)
+                nodeToDelete = null
+            },
+            onDismiss = { nodeToDelete = null }
+        )
+    }
+
+    if (showClearLatencyConfirm) {
+        ConfirmDialog(
+            title = stringResource(R.string.nodes_clear_latency),
+            message = stringResource(R.string.nodes_clear_latency_confirm),
+            confirmText = stringResource(R.string.common_clear),
+            isDestructive = true,
+            onConfirm = {
+                viewModel.clearLatency()
+                showClearLatencyConfirm = false
+            },
+            onDismiss = { showClearLatencyConfirm = false }
+        )
+    }
 
     if (showSortDialog) {
         val sortOptions = listOf(
@@ -276,30 +290,6 @@ fun NodesScreen(
         )
     }
 
-    if (showAddNodeDialog) {
-        AddNodeDialog(
-            profiles = profiles,
-            onConfirm = { nodeLink, target ->
-                when (target) {
-                    is AddNodeTarget.ExistingProfile -> {
-                        viewModel.addNode(
-                            content = nodeLink,
-                            targetProfileId = target.profileId
-                        )
-                    }
-                    is AddNodeTarget.NewProfile -> {
-                        viewModel.addNode(
-                            content = nodeLink,
-                            newProfileName = target.profileName
-                        )
-                    }
-                }
-                showAddNodeDialog = false
-            },
-            onDismiss = { showAddNodeDialog = false }
-        )
-    }
-
     if (showFilterDialog) {
         NodeFilterDialog(
             currentFilter = nodeFilter,
@@ -308,27 +298,6 @@ fun NodesScreen(
                 showFilterDialog = false
             },
             onDismiss = { showFilterDialog = false }
-        )
-    }
-
-    if (showProtocolSelectDialog) {
-        val protocolOptions = listOf(
-            "VMess", "VLESS", "Trojan", "Shadowsocks", "Hysteria2", "Hysteria",
-            "TUIC", "Naive", "WireGuard", "SSH", "AnyTLS", "SOCKS", "HTTP"
-        )
-        val protocolValues = listOf(
-            "vmess", "vless", "trojan", "shadowsocks", "hysteria2", "hysteria",
-            "tuic", "naive", "wireguard", "ssh", "anytls", "socks", "http"
-        )
-        SingleSelectDialog(
-            title = stringResource(R.string.nodes_select_protocol),
-            options = protocolOptions,
-            selectedIndex = -1,
-            onSelect = { index ->
-                navController.navigate(Screen.NodeCreate.createRoute(protocolValues[index]))
-                showProtocolSelectDialog = false
-            },
-            onDismiss = { showProtocolSelectDialog = false }
         )
     }
 
@@ -394,7 +363,7 @@ fun NodesScreen(
                             )
                             LiquidGlassSmallFloatingActionButton(
                                 onClick = {
-                                    viewModel.clearLatency()
+                                    showClearLatencyConfirm = true
                                     isFabExpanded = false
                                 },
                                 containerColor = fabContainerColor,
@@ -414,7 +383,7 @@ fun NodesScreen(
                             )
                             LiquidGlassSmallFloatingActionButton(
                                 onClick = {
-                                    showAddNodeDialog = true
+                                    navController.navigate(Screen.NodeAdd.route)
                                     isFabExpanded = false
                                 },
                                 containerColor = fabContainerColor,
@@ -434,7 +403,7 @@ fun NodesScreen(
                             )
                             LiquidGlassSmallFloatingActionButton(
                                 onClick = {
-                                    showProtocolSelectDialog = true
+                                    navController.navigate(Screen.NodeProtocolSelect.route)
                                     isFabExpanded = false
                                 },
                                 containerColor = fabContainerColor,
@@ -497,8 +466,8 @@ fun NodesScreen(
             containerColor = liquidGlassScreenContainerColor(MaterialTheme.colorScheme.background),
             contentWindowInsets = WindowInsets(0, 0, 0, 0)
         ) { padding ->
-            val statusBarPadding = WindowInsets.statusBars.asPaddingValues()
-            Column(
+            FloatingMainPageLayout(
+                title = stringResource(R.string.nodes_title),
                 modifier = Modifier
                     .fillMaxSize()
                     .pointerInput(Unit) {
@@ -519,362 +488,347 @@ fun NodesScreen(
                         }
                     }
                     .nestedScroll(nestedScrollConnection)
-                    .padding(top = statusBarPadding.calculateTopPadding())
-                    .padding(bottom = padding.calculateBottomPadding())
-            ) {
-                // 1. Top Bar
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Text(
-                        text = stringResource(R.string.nodes_title),
-                        style = MaterialTheme.typography.headlineMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onBackground
-                    )
+                    .padding(bottom = padding.calculateBottomPadding()),
+                actions = {
+                    val activeIndex = remember(filteredNodes, activeNodeId) {
+                        filteredNodes.indexOfFirst { it.id == activeNodeId }
+                    }
 
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    val layoutIcon = when (nodeColumnCount) {
+                        1 -> Icons.Rounded.GridView
+                        2 -> Icons.Rounded.ViewCompact
+                        else -> Icons.Rounded.ViewList
+                    }
+                    IconButton(
+                        modifier = Modifier.liquidGlassIconButtonPanel(),
+                        onClick = {
+                            val nextCount = when (nodeColumnCount) {
+                                1 -> 2
+                                2 -> 3
+                                else -> 1
+                            }
+                            viewModel.setNodeColumnCount(nextCount)
+                        }
                     ) {
-                        val activeIndex = remember(filteredNodes, activeNodeId) {
-                            filteredNodes.indexOfFirst { it.id == activeNodeId }
-                        }
+                        Icon(
+                            imageVector = layoutIcon,
+                            contentDescription = "Switch layout",
+                            tint = MaterialTheme.colorScheme.onBackground
+                        )
+                    }
 
-                        val layoutIcon = when (nodeColumnCount) {
-                            1 -> Icons.Rounded.GridView
-                            2 -> Icons.Rounded.ViewCompact
-                            else -> Icons.Rounded.ViewList
-                        }
+                    Box(modifier = Modifier.wrapContentSize(Alignment.TopStart)) {
                         IconButton(
                             modifier = Modifier.liquidGlassIconButtonPanel(),
-                            onClick = {
-                                val nextCount = when (nodeColumnCount) {
-                                    1 -> 2
-                                    2 -> 3
-                                    else -> 1
-                                }
-                                viewModel.setNodeColumnCount(nextCount)
-                            }
+                            onClick = { showMoreMenu = true }
                         ) {
                             Icon(
-                                imageVector = layoutIcon,
-                                contentDescription = "Switch layout",
+                                imageVector = Icons.Rounded.MoreVert,
+                                contentDescription = "More options",
                                 tint = MaterialTheme.colorScheme.onBackground
                             )
                         }
 
-                        Box(modifier = Modifier.wrapContentSize(Alignment.TopStart)) {
-                            IconButton(
-                                modifier = Modifier.liquidGlassIconButtonPanel(),
-                                onClick = { showMoreMenu = true }
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Rounded.MoreVert,
-                                    contentDescription = "More options",
-                                    tint = MaterialTheme.colorScheme.onBackground
-                                )
-                            }
-
-                            MaterialTheme(
-                                shapes = MaterialTheme.shapes.copy(extraSmall = RoundedCornerShape(12.dp))
-                            ) {
-                                LiquidGlassDropdownMenu(
-                                    expanded = showMoreMenu,
-                                    onDismissRequest = { showMoreMenu = false },
-                                    modifier = Modifier
-                                        .nodesMenuPanel()
-                                ) {
-                                    DropdownMenuItem(
-                                        leadingIcon = {
-                                            Icon(
-                                                imageVector = Icons.Rounded.MyLocation,
-                                                contentDescription = null,
-                                                tint = if (activeIndex >= 0) {
-                                                    MaterialTheme.colorScheme.primary
-                                                } else {
-                                                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
-                                                }
-                                            )
-                                        },
-                                        text = {
-                                            Text(
-                                                text = "定位当前节点",
-                                                color = if (activeIndex >= 0) {
-                                                    MaterialTheme.colorScheme.onSurfaceVariant
-                                                } else {
-                                                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
-                                                }
-                                            )
-                                        },
-                                        enabled = activeIndex >= 0,
-                                        onClick = {
-                                            showMoreMenu = false
-                                            if (activeIndex >= 0) {
-                                                scope.launch {
-                                                    gridState.animateScrollToItem(activeIndex)
-                                                }
-                                            }
-                                        },
-                                        colors = liquidGlassDropdownMenuItemColors()
-                                    )
-
-                                    DropdownMenuItem(
-                                        leadingIcon = {
-                                            val hasFilter = nodeFilter.filterMode != FilterMode.NONE
-                                            Icon(
-                                                imageVector = Icons.Rounded.FilterAlt,
-                                                contentDescription = null,
-                                                tint = if (hasFilter) {
-                                                    MaterialTheme.colorScheme.primary
-                                                } else {
-                                                    MaterialTheme.colorScheme.onSurfaceVariant
-                                                }
-                                            )
-                                        },
-                                        text = {
-                                            Text(
-                                                text = stringResource(R.string.nodes_filter),
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                                            )
-                                        },
-                                        onClick = {
-                                            showMoreMenu = false
-                                            showFilterDialog = true
-                                        },
-                                        colors = liquidGlassDropdownMenuItemColors()
-                                    )
-
-                                    DropdownMenuItem(
-                                        leadingIcon = {
-                                            Icon(
-                                                imageVector = Icons.Rounded.Sort,
-                                                contentDescription = null,
-                                                tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                            )
-                                        },
-                                        text = {
-                                            Text(
-                                                text = stringResource(R.string.nodes_sort),
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                                            )
-                                        },
-                                        onClick = {
-                                            showMoreMenu = false
-                                            showSortDialog = true
-                                        },
-                                        colors = liquidGlassDropdownMenuItemColors()
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-
-                NodeSearchBar(
-                    query = searchQuery,
-                    onQueryChange = { searchQuery = it },
-                    isExpanded = isSearchExpanded,
-                    onToggle = { isSearchExpanded = !isSearchExpanded },
-                    totalCount = nodes.size,
-                    filteredCount = filteredNodes.size,
-                    activeNodeName = nodes.find { it.id == activeNodeId }?.displayName,
-                    modifier = Modifier.padding(horizontal = 16.dp)
-                )
-
-                AnimatedVisibility(
-                    visible = testProgress != null,
-                    enter = fadeIn() + expandVertically(),
-                    exit = fadeOut() + shrinkVertically()
-                ) {
-                    testProgress?.let { (completed, total) ->
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 16.dp)
-                                .nodeTestingProgressPanel()
+                        MaterialTheme(
+                            shapes = MaterialTheme.shapes.copy(extraSmall = RoundedCornerShape(12.dp))
                         ) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween
+                            LiquidGlassDropdownMenu(
+                                expanded = showMoreMenu,
+                                onDismissRequest = { showMoreMenu = false },
+                                modifier = Modifier.nodesMenuPanel()
                             ) {
-                                Text(
-                                    text = stringResource(R.string.nodes_testing_progress),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                DropdownMenuItem(
+                                    leadingIcon = {
+                                        Icon(
+                                            imageVector = Icons.Rounded.MyLocation,
+                                            contentDescription = null,
+                                            tint = if (activeIndex >= 0) {
+                                                MaterialTheme.colorScheme.primary
+                                            } else {
+                                                MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+                                            }
+                                        )
+                                    },
+                                    text = {
+                                        Text(
+                                            text = "定位当前节点",
+                                            color = if (activeIndex >= 0) {
+                                                MaterialTheme.colorScheme.onSurfaceVariant
+                                            } else {
+                                                MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+                                            }
+                                        )
+                                    },
+                                    enabled = activeIndex >= 0,
+                                    onClick = {
+                                        showMoreMenu = false
+                                        if (activeIndex >= 0) {
+                                            scope.launch {
+                                                gridState.animateScrollToItem(activeIndex + 2)
+                                            }
+                                        }
+                                    },
+                                    colors = liquidGlassDropdownMenuItemColors()
                                 )
-                                Text(
-                                    text = "$completed / $total",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.primary
+
+                                DropdownMenuItem(
+                                    leadingIcon = {
+                                        val hasFilter = nodeFilter.filterMode != FilterMode.NONE
+                                        Icon(
+                                            imageVector = Icons.Rounded.FilterAlt,
+                                            contentDescription = null,
+                                            tint = if (hasFilter) {
+                                                MaterialTheme.colorScheme.primary
+                                            } else {
+                                                MaterialTheme.colorScheme.onSurfaceVariant
+                                            }
+                                        )
+                                    },
+                                    text = {
+                                        Text(
+                                            text = stringResource(R.string.nodes_filter),
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    },
+                                    onClick = {
+                                        showMoreMenu = false
+                                        showFilterDialog = true
+                                    },
+                                    colors = liquidGlassDropdownMenuItemColors()
+                                )
+
+                                DropdownMenuItem(
+                                    leadingIcon = {
+                                        Icon(
+                                            imageVector = Icons.Rounded.Sort,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    },
+                                    text = {
+                                        Text(
+                                            text = stringResource(R.string.nodes_sort),
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    },
+                                    onClick = {
+                                        showMoreMenu = false
+                                        showSortDialog = true
+                                    },
+                                    colors = liquidGlassDropdownMenuItemColors()
                                 )
                             }
-                            Spacer(modifier = Modifier.height(4.dp))
-                            LinearProgressIndicator(
-                                progress = { if (total > 0) completed.toFloat() / total else 0f },
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(4.dp),
-                                color = liquidGlassProgressColor(MaterialTheme.colorScheme.primary),
-                                trackColor = liquidGlassProgressTrackColor(
-                                    MaterialTheme.colorScheme.surfaceVariant
-                                ),
-                            )
                         }
                     }
+                },
+                supportingContentHeight = 48.dp,
+                supportingContent = {
+                    TopOnlySupportingContent(visible = showTopControls) {
+                        NodeSearchBar(
+                            query = searchQuery,
+                            onQueryChange = { searchQuery = it },
+                            isExpanded = isSearchExpanded,
+                            onToggle = { isSearchExpanded = !isSearchExpanded },
+                            totalCount = nodes.size,
+                            filteredCount = filteredNodes.size,
+                            activeNodeName = nodes.find { it.id == activeNodeId }?.displayName,
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+                        )
+                    }
                 }
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                Box(modifier = Modifier.fillMaxSize()) {
-                    LazyVerticalGrid(
-                        columns = GridCells.Fixed(nodeColumnCount),
-                        state = gridState,
-                        contentPadding = PaddingValues(
-                            bottom = 16.dp + bottomContentPadding,
-                            top = 12.dp,
-                            start = 16.dp,
-                            end = 16.dp
-                        ),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) { contentTopPadding ->
+                LazyVerticalGrid(
+                    columns = GridCells.Fixed(nodeColumnCount),
+                    state = gridState,
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(
+                        bottom = 16.dp + bottomContentPadding,
+                        top = contentTopPadding + 12.dp,
+                        start = 16.dp,
+                        end = 16.dp
+                    ),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    item(
+                        key = "testing-progress",
+                        span = { GridItemSpan(maxLineSpan) }
                     ) {
-                        item(key = "automatic-selection", contentType = "node") {
-                            val subtitle = when {
-                                !isAutoSelectionEnabled -> stringResource(R.string.nodes_auto_selection_disabled)
-                                runtimeNodeLabel.isNotBlank() -> stringResource(
-                                    R.string.nodes_auto_selection_current,
-                                    runtimeNodeLabel
-                                )
-                                else -> stringResource(R.string.nodes_auto_selection_selecting)
-                            }
-                            Box(
-                                modifier = Modifier.animateItem(
-                                    placementSpec = spring(
-                                        stiffness = 500f,
-                                        dampingRatio = 0.85f
-                                    )
-                                )
-                            ) {
-                                if (nodeColumnCount == 1) {
-                                    NodeCard(
-                                        name = stringResource(R.string.nodes_auto_selection),
-                                        type = subtitle,
-                                        isSelected = isAutoSelectionEnabled,
-                                        onClick = viewModel::enableAutoSelection,
-                                        onEdit = {},
-                                        onExport = {},
-                                        onLatency = {},
-                                        onDelete = {},
-                                        showLatency = false,
-                                        showActions = false
-                                    )
-                                } else {
-                                    NodeGridCard(
-                                        name = stringResource(R.string.nodes_auto_selection),
-                                        type = subtitle,
-                                        isSelected = isAutoSelectionEnabled,
-                                        onClick = viewModel::enableAutoSelection,
-                                        onEdit = {},
-                                        onExport = {},
-                                        onLatency = {},
-                                        onDelete = {},
-                                        showLatency = false,
-                                        showActions = false
+                        AnimatedVisibility(
+                            visible = testProgress != null,
+                            enter = fadeIn() + expandVertically(),
+                            exit = fadeOut() + shrinkVertically()
+                        ) {
+                            testProgress?.let { (completed, total) ->
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .nodeTestingProgressPanel()
+                                ) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Text(
+                                            text = stringResource(R.string.nodes_testing_progress),
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                        Text(
+                                            text = "$completed / $total",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.primary
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    LinearProgressIndicator(
+                                        progress = { if (total > 0) completed.toFloat() / total else 0f },
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .height(4.dp),
+                                        color = liquidGlassProgressColor(MaterialTheme.colorScheme.primary),
+                                        trackColor = liquidGlassProgressTrackColor(
+                                            MaterialTheme.colorScheme.surfaceVariant
+                                        )
                                     )
                                 }
                             }
                         }
-                        itemsIndexed(
-                            items = filteredNodes,
-                            key = { _, node -> node.id },
-                            contentType = { _, _ -> "node" }
-                        ) { index, node ->
-                            val isSelected = !isAutoSelectionEnabled && activeNodeId == node.id
-                            val isTestingNode = testingNodeIds.contains(node.id)
-
-                            val onNodeClick = remember(node.id) { { viewModel.setActiveNode(node.id) } }
-                            val onEdit = remember(node.id) {
-                                { navController.navigate(Screen.NodeDetail.createRoute(node.id)) }
-                            }
-                            val onExport = remember(node.id) {
-                                {
-                                    scope.launch {
-                                        val link = viewModel.exportNode(node.id)
-                                        if (link != null) {
-                                            exportLink = link
-                                        }
-                                    }
-                                    Unit
-                                }
-                            }
-                            val onLatency = remember(node.id) { { viewModel.testLatency(node.id) } }
-                            val onDelete = remember(node.id) { { viewModel.deleteNode(node.id) } }
-
-                            // Scroll-triggered animation for all items
-                            var visible by remember { mutableStateOf(false) }
-                            LaunchedEffect(Unit) {
-                                visible = true
-                            }
-
-                            val alpha by animateFloatAsState(
-                                targetValue = if (visible) 1f else 0f,
-                                animationSpec = tween(durationMillis = 300),
-                                label = "alpha"
+                    }
+                    item(key = "automatic-selection", contentType = "node") {
+                        val subtitle = when {
+                            !isAutoSelectionEnabled -> stringResource(R.string.nodes_auto_selection_disabled)
+                            runtimeNodeLabel.isNotBlank() -> stringResource(
+                                R.string.nodes_auto_selection_current,
+                                runtimeNodeLabel
                             )
-                            val translateY by animateFloatAsState(
-                                targetValue = if (visible) 0f else 50f,
-                                animationSpec = tween(durationMillis = 300),
-                                label = "translateY"
-                            )
-
-                            // animateItem 包住整张卡，避免选中边框与卡片位移动画脱节
-                            Box(
-                                modifier = Modifier.animateItem(
-                                    placementSpec = spring(
-                                        stiffness = 500f,
-                                        dampingRatio = 0.85f
-                                    )
+                            else -> stringResource(R.string.nodes_auto_selection_selecting)
+                        }
+                        Box(
+                            modifier = Modifier.animateItem(
+                                placementSpec = spring(
+                                    stiffness = 500f,
+                                    dampingRatio = 0.85f
                                 )
-                            ) {
-                                val cardModifier = Modifier.graphicsLayer {
-                                    this.alpha = alpha
-                                    this.translationY = translateY
-                                    this.compositingStrategy = CompositingStrategy.ModulateAlpha
+                            )
+                        ) {
+                            if (nodeColumnCount == 1) {
+                                NodeCard(
+                                    name = stringResource(R.string.nodes_auto_selection),
+                                    type = subtitle,
+                                    isSelected = isAutoSelectionEnabled,
+                                    onClick = viewModel::enableAutoSelection,
+                                    onEdit = {},
+                                    onExport = {},
+                                    onLatency = {},
+                                    onDelete = {},
+                                    showLatency = false,
+                                    showActions = false
+                                )
+                            } else {
+                                NodeGridCard(
+                                    name = stringResource(R.string.nodes_auto_selection),
+                                    type = subtitle,
+                                    isSelected = isAutoSelectionEnabled,
+                                    onClick = viewModel::enableAutoSelection,
+                                    onEdit = {},
+                                    onExport = {},
+                                    onLatency = {},
+                                    onDelete = {},
+                                    showLatency = false,
+                                    showActions = false
+                                )
+                            }
+                        }
+                    }
+                    itemsIndexed(
+                        items = filteredNodes,
+                        key = { _, node -> node.id },
+                        contentType = { _, _ -> "node" }
+                    ) { index, node ->
+                        val isSelected = !isAutoSelectionEnabled && activeNodeId == node.id
+                        val isTestingNode = testingNodeIds.contains(node.id)
+                        val isSwitchingNode = switchingNodeId == node.id
+
+                        val onNodeClick = remember(node.id) { { viewModel.setActiveNode(node.id) } }
+                        val onEdit = remember(node.id) {
+                            { navController.navigate(Screen.NodeDetail.createRoute(node.id)) }
+                        }
+                        val onExport = remember(node.id) {
+                            {
+                                scope.launch {
+                                    val link = viewModel.exportNode(node.id)
+                                    if (link != null) {
+                                        exportLink = link
+                                    }
                                 }
-                                if (nodeColumnCount == 1) {
-                                    NodeCard(
-                                        name = node.displayName,
-                                        type = node.protocolDisplay,
-                                        latency = node.latencyMs,
-                                        isSelected = isSelected,
-                                        isTesting = isTestingNode,
-                                        onClick = onNodeClick,
-                                        onEdit = onEdit,
-                                        onExport = onExport,
-                                        onLatency = onLatency,
-                                        onDelete = onDelete,
-                                        modifier = cardModifier
-                                    )
-                                } else {
-                                    NodeGridCard(
-                                        name = node.displayName,
-                                        type = node.protocolDisplay,
-                                        latency = node.latencyMs,
-                                        isSelected = isSelected,
-                                        isTesting = isTestingNode,
-                                        onClick = onNodeClick,
-                                        onEdit = onEdit,
-                                        onExport = onExport,
-                                        onLatency = onLatency,
-                                        onDelete = onDelete,
-                                        modifier = cardModifier
-                                    )
-                                }
+                                Unit
+                            }
+                        }
+                        val onLatency = remember(node.id) { { viewModel.testLatency(node.id) } }
+                        val onDelete = remember(node) { { nodeToDelete = node } }
+
+                        // Scroll-triggered animation for all items
+                        var visible by remember { mutableStateOf(false) }
+                        LaunchedEffect(Unit) {
+                            visible = true
+                        }
+
+                        val alpha by animateFloatAsState(
+                            targetValue = if (visible) 1f else 0f,
+                            animationSpec = tween(durationMillis = 300),
+                            label = "alpha"
+                        )
+                        val translateY by animateFloatAsState(
+                            targetValue = if (visible) 0f else 50f,
+                            animationSpec = tween(durationMillis = 300),
+                            label = "translateY"
+                        )
+
+                        // animateItem 包住整张卡，避免选中边框与卡片位移动画脱节
+                        Box(
+                            modifier = Modifier.animateItem(
+                                placementSpec = spring(
+                                    stiffness = 500f,
+                                    dampingRatio = 0.85f
+                                )
+                            )
+                        ) {
+                            val cardModifier = Modifier.graphicsLayer {
+                                this.alpha = alpha
+                                this.translationY = translateY
+                                this.compositingStrategy = CompositingStrategy.ModulateAlpha
+                            }
+                            if (nodeColumnCount == 1) {
+                                NodeCard(
+                                    name = node.displayName,
+                                    type = node.protocolDisplay,
+                                    latency = node.latencyMs,
+                                    isSelected = isSelected,
+                                    isSwitching = isSwitchingNode,
+                                    isTesting = isTestingNode,
+                                    onClick = onNodeClick,
+                                    onEdit = onEdit,
+                                    onExport = onExport,
+                                    onLatency = onLatency,
+                                    onDelete = onDelete,
+                                    modifier = cardModifier
+                                )
+                            } else {
+                                NodeGridCard(
+                                    name = node.displayName,
+                                    type = node.protocolDisplay,
+                                    latency = node.latencyMs,
+                                    isSelected = isSelected,
+                                    isSwitching = isSwitchingNode,
+                                    isTesting = isTestingNode,
+                                    onClick = onNodeClick,
+                                    onEdit = onEdit,
+                                    onExport = onExport,
+                                    onLatency = onLatency,
+                                    onDelete = onDelete,
+                                    modifier = cardModifier
+                                )
                             }
                         }
                     }
@@ -914,7 +868,7 @@ fun NodesScreen(
 
 @Suppress("FunctionNaming", "LongMethod", "CognitiveComplexMethod")
 @Composable
-private fun NodeSearchBar(
+internal fun NodeSearchBar(
     query: String,
     onQueryChange: (String) -> Unit,
     isExpanded: Boolean,
@@ -924,161 +878,59 @@ private fun NodeSearchBar(
     activeNodeName: String?,
     modifier: Modifier = Modifier
 ) {
-    Box(
+    ExpandableSearchBar(
+        query = query,
+        onQueryChange = onQueryChange,
+        isExpanded = isExpanded,
+        onToggle = onToggle,
+        placeholder = stringResource(R.string.common_search),
         modifier = modifier
-            .fillMaxWidth()
-            .height(40.dp),
-        contentAlignment = Alignment.CenterStart
     ) {
-        IconButton(
-            onClick = onToggle,
-            modifier = Modifier
-                .size(40.dp)
-                .liquidGlassIconButtonPanel(selected = false)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(
-                imageVector = if (isExpanded) Icons.Rounded.Close else Icons.Rounded.Search,
-                contentDescription = null,
-                tint = if (isExpanded) MaterialTheme.colorScheme.primary else liquidGlassMutedContentColor(Neutral500),
-                modifier = Modifier.size(24.dp)
+
+            Text(
+                text = if (filteredCount != totalCount) {
+                    "$filteredCount / $totalCount ${stringResource(R.string.nodes_count_suffix)}"
+                } else {
+                    "$totalCount ${stringResource(R.string.nodes_count_suffix)}"
+                },
+                style = MaterialTheme.typography.bodyMedium,
+                color = liquidGlassMutedContentColor(Neutral500)
             )
-        }
 
-        AnimatedVisibility(
-            visible = !isExpanded,
-            enter = fadeIn(),
-            exit = fadeOut(),
-            modifier = Modifier
-                .padding(start = 48.dp, end = 8.dp)
-                .fillMaxWidth()
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-
-                Text(
-                    text = if (filteredCount != totalCount) {
-                        "$filteredCount / $totalCount ${stringResource(R.string.nodes_count_suffix)}"
-                    } else {
-                        "$totalCount ${stringResource(R.string.nodes_count_suffix)}"
-                    },
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = liquidGlassMutedContentColor(Neutral500)
-                )
-
-                if (activeNodeName != null) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.padding(start = 8.dp)
+            if (activeNodeName != null) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.padding(start = 8.dp)
+                ) {
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier.nodeActiveIndicatorPanel()
                     ) {
-                        Box(
-                            contentAlignment = Alignment.Center,
-                            modifier = Modifier
-                                .nodeActiveIndicatorPanel()
-                        ) {
-                            if (isLiquidGlassTheme()) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(4.dp)
-                                        .background(
-                                            color = MaterialTheme.colorScheme.primary,
-                                            shape = RoundedCornerShape(2.dp)
-                                        )
-                                )
-                            }
-                        }
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = activeNodeName,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.primary,
-                            maxLines = 1,
-                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f, fill = false)
-                        )
-                    }
-                }
-            }
-        }
-
-        val searchAlpha by animateFloatAsState(
-            targetValue = if (isExpanded) 1f else 0f,
-            animationSpec = tween(durationMillis = 300),
-            label = "searchAlpha"
-        )
-
-        if (searchAlpha > 0f) {
-            var isFocused by remember { mutableStateOf(false) }
-            val focusRequester = remember { FocusRequester() }
-
-            LaunchedEffect(isExpanded) {
-                if (isExpanded) {
-                    focusRequester.requestFocus()
-                }
-            }
-
-            Box(
-                modifier = Modifier
-                    .padding(start = 52.dp)
-                    .fillMaxWidth()
-                    .height(40.dp)
-                    .graphicsLayer {
-                        alpha = searchAlpha
-                        translationX = (1f - searchAlpha) * (-15.dp.toPx())
-                        scaleX = 0.96f + 0.04f * searchAlpha
-                        compositingStrategy = CompositingStrategy.ModulateAlpha
-                    }
-                    .nodeSearchPanel(),
-                contentAlignment = Alignment.CenterStart
-            ) {
-                BasicTextField(
-                    value = query,
-                    onValueChange = onQueryChange,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 10.dp)
-                        .focusRequester(focusRequester)
-                        .onFocusChanged { isFocused = it.isFocused },
-                    textStyle = MaterialTheme.typography.bodyMedium.copy(
-                        color = MaterialTheme.colorScheme.onBackground
-                    ),
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                    cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-                    decorationBox = { innerTextField ->
-                        Box(
-                            modifier = Modifier.fillMaxWidth(),
-                            contentAlignment = Alignment.CenterStart
-                        ) {
-                            if (query.isEmpty() && !isFocused) {
-                                Text(
-                                    text = stringResource(R.string.common_search),
-                                    color = liquidGlassMutedContentColor(Neutral500),
-                                    style = MaterialTheme.typography.bodyMedium
-                                )
-                            }
-                            innerTextField()
+                        if (isLiquidGlassTheme()) {
+                            Box(
+                                modifier = Modifier
+                                    .size(4.dp)
+                                    .background(
+                                        color = MaterialTheme.colorScheme.primary,
+                                        shape = RoundedCornerShape(2.dp)
+                                    )
+                            )
                         }
                     }
-                )
-
-                if (query.isNotEmpty()) {
-                    IconButton(
-                        onClick = { onQueryChange("") },
-                        modifier = Modifier
-                            .align(Alignment.CenterEnd)
-                            .padding(end = 6.dp)
-                            .size(28.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Rounded.Close,
-                            contentDescription = stringResource(R.string.common_clear),
-                            tint = liquidGlassMutedContentColor(Neutral500),
-                            modifier = Modifier.size(16.dp)
-                        )
-                    }
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = activeNodeName,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        maxLines = 1,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false)
+                    )
                 }
             }
         }

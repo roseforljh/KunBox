@@ -1,10 +1,10 @@
 package com.kunk.singbox.ui.screens
 
 import com.kunk.singbox.R
+import com.kunk.singbox.ui.components.FloatingPageLayout
 import android.content.Intent
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
@@ -19,7 +19,6 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Clear
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Search
@@ -31,11 +30,12 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
-import androidx.compose.ui.Alignment
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -53,8 +53,8 @@ import com.kunk.singbox.ui.theme.liquidGlassTextFieldPanel
 import com.kunk.singbox.ui.theme.liquidGlassIconButtonPanel
 import com.kunk.singbox.viewmodel.LogViewModel
 import com.kunk.singbox.ui.theme.LiquidGlassFilterChip
-import com.kunk.singbox.ui.theme.liquidGlassTopAppBarColors
 import com.kunk.singbox.ui.theme.liquidGlassTopAppBarContainerColor
+import com.kunk.singbox.ui.components.ConfirmDialog
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -64,105 +64,89 @@ fun LogsScreen(navController: NavController, viewModel: LogViewModel = viewModel
     val selectedCategory by viewModel.selectedCategory.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val listState = rememberLazyListState()
+    var showClearLogsConfirm by remember { mutableStateOf(false) }
 
-    Scaffold(
-        contentWindowInsets = WindowInsets(0, 0, 0, 0),
-        containerColor = liquidGlassTopAppBarContainerColor(MaterialTheme.colorScheme.background),
-        topBar = {
-            TopAppBar(
-                title = {
-                    Text(
-                        stringResource(R.string.logs_title),
-                        color = MaterialTheme.colorScheme.onBackground
-                    )
-                },
-                navigationIcon = {
-                    IconButton(
-                        modifier = Modifier.liquidGlassIconButtonPanel(),
-                        onClick = { navController.popBackStack() }
-                    ) {
-                        Icon(
-                            Icons.Rounded.ArrowBack,
-                            contentDescription = stringResource(R.string.common_back),
-                            tint = MaterialTheme.colorScheme.onBackground
+    if (showClearLogsConfirm) {
+        ConfirmDialog(
+            title = stringResource(R.string.logs_clear),
+            message = stringResource(R.string.logs_clear_confirm),
+            confirmText = stringResource(R.string.common_clear),
+            isDestructive = true,
+            onConfirm = {
+                viewModel.clearLogs()
+                showClearLogsConfirm = false
+            },
+            onDismiss = { showClearLogsConfirm = false }
+        )
+    }
+
+    FloatingPageLayout(
+        title = stringResource(R.string.logs_title),
+        onBack = { navController.popBackStack() },
+        actions = {
+            val exportSubject = "KunBox " + stringResource(R.string.logs_title)
+            val exportTitle = stringResource(R.string.logs_export)
+            IconButton(
+                onClick = {
+                    viewModel.getLogsForExport { logsText ->
+                        val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                            type = "text/plain"
+                            putExtra(Intent.EXTRA_SUBJECT, exportSubject)
+                            putExtra(Intent.EXTRA_TEXT, logsText)
+                        }
+                        context.startActivity(
+                            Intent.createChooser(shareIntent, exportTitle)
                         )
                     }
-                },
-                actions = {
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.padding(end = 8.dp)
-                    ) {
-                        val exportSubject = "KunBox " + stringResource(R.string.logs_title)
-                        val exportTitle = stringResource(R.string.logs_export)
-                        IconButton(
-                            modifier = Modifier.liquidGlassIconButtonPanel(),
-                            onClick = {
-                                viewModel.getLogsForExport { logsText ->
-                                    val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                                        type = "text/plain"
-                                        putExtra(Intent.EXTRA_SUBJECT, exportSubject)
-                                        putExtra(Intent.EXTRA_TEXT, logsText)
-                                    }
-                                    context.startActivity(
-                                        Intent.createChooser(shareIntent, exportTitle)
-                                    )
-                                }
-                            }
-                        ) {
-                            Icon(
-                                Icons.Rounded.Share,
-                                contentDescription = stringResource(R.string.logs_export),
-                                tint = MaterialTheme.colorScheme.onBackground
-                            )
-                        }
-                        IconButton(
-                            modifier = Modifier.liquidGlassIconButtonPanel(),
-                            onClick = { viewModel.clearLogs() }
-                        ) {
-                            Icon(
-                                Icons.Rounded.Delete,
-                                contentDescription = stringResource(R.string.logs_clear),
-                                tint = MaterialTheme.colorScheme.onBackground
-                            )
-                        }
-                    }
-                },
-                colors = liquidGlassTopAppBarColors(
-                    defaultContainerColor = liquidGlassTopAppBarContainerColor(MaterialTheme.colorScheme.background)
+                }
+            ) {
+                Icon(
+                    Icons.Rounded.Share,
+                    contentDescription = stringResource(R.string.logs_export),
+                    tint = MaterialTheme.colorScheme.onBackground
                 )
-            )
-        }
-    ) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-        ) {
-            LogsSearchField(
-                searchKeyword = searchKeyword,
-                onSearchKeywordChange = { viewModel.setSearchKeyword(it) }
-            )
-
-            LogsCategoryRow(
-                categories = viewModel.categories,
-                selectedCategory = selectedCategory,
-                onCategorySelected = { viewModel.setCategory(it) }
-            )
-
+            }
+            IconButton(onClick = { showClearLogsConfirm = true }) {
+                Icon(
+                    Icons.Rounded.Delete,
+                    contentDescription = stringResource(R.string.logs_clear),
+                    tint = MaterialTheme.colorScheme.onBackground
+                )
+            }
+        },
+        circularAction = false
+    ) { contentTopPadding ->
+        Scaffold(
+            contentWindowInsets = WindowInsets(0, 0, 0, 0),
+            containerColor = liquidGlassTopAppBarContainerColor(MaterialTheme.colorScheme.background)
+        ) { padding ->
             LazyColumn(
                 state = listState,
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding),
                 contentPadding = PaddingValues(
                     start = 12.dp,
+                    top = contentTopPadding + 8.dp,
                     end = 12.dp,
                     bottom = WindowInsets.navigationBars.asPaddingValues()
-                        .calculateBottomPadding()
-                ),
-                reverseLayout = true
+                        .calculateBottomPadding() + 12.dp
+                )
             ) {
-                items(logs) { log ->
+                item(key = "logs_search") {
+                    LogsSearchField(
+                        searchKeyword = searchKeyword,
+                        onSearchKeywordChange = { viewModel.setSearchKeyword(it) }
+                    )
+                }
+                item(key = "logs_categories") {
+                    LogsCategoryRow(
+                        categories = viewModel.categories,
+                        selectedCategory = selectedCategory,
+                        onCategorySelected = { viewModel.setCategory(it) }
+                    )
+                }
+                items(logs.asReversed()) { log ->
                     Text(
                         text = log,
                         color = when {

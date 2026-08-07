@@ -46,7 +46,7 @@ fun Modifier.liquidGlassFloatingActionPanel(
         return this
     }
 
-    return this.liquidGlassPanel(shape = shape, selected = true, shadowElevation = shadowElevation)
+    return this.liquidGlassPanel(shape = shape, selected = false, shadowElevation = shadowElevation)
 }
 
 private data class LiquidGlassFloatingActionSurfaceSpec(
@@ -198,7 +198,7 @@ fun Modifier.liquidGlassButtonPanel(
     shadowElevation: Dp = 8.dp
 ): Modifier {
     return if (isLiquidGlassTheme()) {
-        liquidGlassPanel(shape = shape, selected = true, shadowElevation = shadowElevation)
+        liquidGlassPanel(shape = shape, selected = false, shadowElevation = shadowElevation)
     } else {
         this
     }

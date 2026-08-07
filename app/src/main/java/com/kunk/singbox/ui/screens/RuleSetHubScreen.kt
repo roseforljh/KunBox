@@ -4,11 +4,11 @@ import com.kunk.singbox.R
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Visibility
@@ -28,13 +28,13 @@ import com.kunk.singbox.model.RuleSet
 import com.kunk.singbox.model.RuleSetType
 import com.kunk.singbox.model.HubRuleSet
 import com.kunk.singbox.ui.components.AppNotificationManager
+import com.kunk.singbox.ui.components.FloatingPageLayout
 import com.kunk.singbox.ui.components.StandardCard
 import com.kunk.singbox.ui.theme.isLiquidGlassTheme
 import com.kunk.singbox.ui.theme.liquidGlassButtonColors
 import com.kunk.singbox.ui.theme.liquidGlassButtonContentColor
 import com.kunk.singbox.ui.theme.liquidGlassButtonPanel
 import com.kunk.singbox.ui.theme.liquidGlassEmptyStatePanel
-import com.kunk.singbox.ui.theme.liquidGlassIconButtonPanel
 import com.kunk.singbox.ui.theme.liquidGlassLoadingStatePanel
 import com.kunk.singbox.ui.theme.liquidGlassOutlinedTextFieldColors
 import com.kunk.singbox.ui.theme.liquidGlassPanel
@@ -49,7 +49,6 @@ import com.kunk.singbox.ui.theme.liquidGlassTextButtonPanel
 import com.kunk.singbox.viewmodel.RuleSetViewModel
 import com.kunk.singbox.viewmodel.SettingsViewModel
 import com.kunk.singbox.ui.theme.liquidGlassTopAppBarContainerColor
-import com.kunk.singbox.ui.theme.liquidGlassTopAppBarColors
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
 @Composable
@@ -143,103 +142,104 @@ fun RuleSetHubScreen(
         else ruleSets.filter { it.name.contains(searchQuery, ignoreCase = true) }
     }
 
-    Scaffold(
-        contentWindowInsets = WindowInsets(0, 0, 0, 0),
-        containerColor = liquidGlassTopAppBarContainerColor(MaterialTheme.colorScheme.background),
-        topBar = {
-            TopAppBar(
-                title = {
-                    Column {
-                        Text(stringResource(R.string.ruleset_hub_title), color = MaterialTheme.colorScheme.onBackground)
-                        Text(
-                            text = stringResource(R.string.import_count_items, filteredRuleSets.size),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                },
-                navigationIcon = {
-                    IconButton(
-                        modifier = Modifier.liquidGlassIconButtonPanel(),
-                        onClick = { navController.popBackStack() }
-                    ) {
-                        Icon(Icons.Rounded.ArrowBack, contentDescription = stringResource(R.string.common_back), tint = MaterialTheme.colorScheme.onBackground)
-                    }
-                },
-                actions = {
-                    IconButton(
-                        modifier = Modifier.liquidGlassIconButtonPanel(),
-                        onClick = { activityRuleSetViewModel.fetchRuleSets() }
-                    ) {
-                        Icon(Icons.Rounded.Refresh, contentDescription = stringResource(R.string.common_refresh), tint = MaterialTheme.colorScheme.onBackground)
-                    }
-                },
-                colors = liquidGlassTopAppBarColors(defaultContainerColor = MaterialTheme.colorScheme.background)
-            )
-        }
-    ) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-        ) {
-            // Search Bar
-            StandardCard(modifier = Modifier.padding(16.dp)) {
-                RuleSetHubSearchField(
-                    searchQuery = searchQuery,
-                    onSearchQueryChange = { searchQuery = it }
-                )
+    FloatingPageLayout(
+        title = stringResource(R.string.ruleset_hub_title) + " · " +
+            stringResource(R.string.import_count_items, filteredRuleSets.size),
+        onBack = { navController.popBackStack() },
+        actions = {
+            IconButton(
+                onClick = { activityRuleSetViewModel.fetchRuleSets() }
+            ) {
+                Icon(Icons.Rounded.Refresh, contentDescription = stringResource(R.string.common_refresh), tint = MaterialTheme.colorScheme.onBackground)
             }
-
-            if (isLoading) {
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Box(
-                        modifier = Modifier.liquidGlassLoadingStatePanel(),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        CircularProgressIndicator(
-                            color = liquidGlassProgressColor(MaterialTheme.colorScheme.primary),
-                            trackColor = liquidGlassProgressTrackColor(Color.Transparent)
+        }
+    ) { contentTopPadding ->
+        Scaffold(
+            contentWindowInsets = WindowInsets(0, 0, 0, 0),
+            containerColor = liquidGlassTopAppBarContainerColor(MaterialTheme.colorScheme.background)
+        ) { padding ->
+            LazyVerticalGrid(
+                columns = GridCells.Adaptive(minSize = 300.dp),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding),
+                contentPadding = PaddingValues(
+                    start = 16.dp,
+                    top = contentTopPadding + 16.dp,
+                    end = 16.dp,
+                    bottom = 16.dp + WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+                ),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                item(
+                    key = "ruleset_hub_search",
+                    span = { GridItemSpan(maxLineSpan) }
+                ) {
+                    StandardCard {
+                        RuleSetHubSearchField(
+                            searchQuery = searchQuery,
+                            onSearchQueryChange = { searchQuery = it }
                         )
                     }
                 }
-            } else if (error != null) {
-                val errorMessage = error.orEmpty()
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Column(
-                        modifier = Modifier.ruleSetHubStatusPanel(),
-                        horizontalAlignment = Alignment.CenterHorizontally
+
+                if (isLoading) {
+                    item(
+                        key = "ruleset_hub_loading",
+                        span = { GridItemSpan(maxLineSpan) }
                     ) {
-                        Text(text = errorMessage, color = MaterialTheme.colorScheme.error)
-                        Button(
-                            onClick = { activityRuleSetViewModel.fetchRuleSets() },
-                            modifier = Modifier.liquidGlassButtonPanel(),
-                            colors = liquidGlassButtonColors(
-                                defaultContainerColor = MaterialTheme.colorScheme.primary,
-                                defaultContentColor = MaterialTheme.colorScheme.onPrimary
-                            )
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(320.dp),
+                            contentAlignment = Alignment.Center
                         ) {
-                            Text(
-                                text = stringResource(R.string.common_retry),
-                                color = liquidGlassButtonContentColor(MaterialTheme.colorScheme.onPrimary)
-                            )
+                            Box(
+                                modifier = Modifier.liquidGlassLoadingStatePanel(),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                CircularProgressIndicator(
+                                    color = liquidGlassProgressColor(MaterialTheme.colorScheme.primary),
+                                    trackColor = liquidGlassProgressTrackColor(Color.Transparent)
+                                )
+                            }
                         }
                     }
-                }
-            } else {
-                // Grid Content
-                LazyVerticalGrid(
-                    columns = GridCells.Adaptive(minSize = 300.dp),
-                    modifier = Modifier.weight(1f),
-                    contentPadding = PaddingValues(
-                        start = 16.dp,
-                        top = 16.dp,
-                        end = 16.dp,
-                        bottom = 16.dp + WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
-                    ),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
+                } else if (error != null) {
+                    val errorMessage = error.orEmpty()
+                    item(
+                        key = "ruleset_hub_error",
+                        span = { GridItemSpan(maxLineSpan) }
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(320.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Column(
+                                modifier = Modifier.ruleSetHubStatusPanel(),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Text(text = errorMessage, color = MaterialTheme.colorScheme.error)
+                                Button(
+                                    onClick = { activityRuleSetViewModel.fetchRuleSets() },
+                                    modifier = Modifier.liquidGlassButtonPanel(),
+                                    colors = liquidGlassButtonColors(
+                                        defaultContainerColor = MaterialTheme.colorScheme.primary,
+                                        defaultContentColor = MaterialTheme.colorScheme.onPrimary
+                                    )
+                                ) {
+                                    Text(
+                                        text = stringResource(R.string.common_retry),
+                                        color = liquidGlassButtonContentColor(MaterialTheme.colorScheme.onPrimary)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                } else {
                     items(filteredRuleSets) { ruleSet ->
                         HubRuleSetItem(
                             ruleSet = ruleSet,

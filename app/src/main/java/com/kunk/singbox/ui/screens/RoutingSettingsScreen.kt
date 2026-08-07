@@ -11,15 +11,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.ui.res.stringResource
-import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -42,6 +39,7 @@ import com.kunk.singbox.model.RoutingMode
 import com.kunk.singbox.model.GhProxyMirror
 import com.kunk.singbox.model.LatencyTestMethod
 import com.kunk.singbox.ui.components.InputDialog
+import com.kunk.singbox.ui.components.FloatingPageLayout
 import com.kunk.singbox.ui.components.SettingItem
 import com.kunk.singbox.ui.components.SettingSwitchItem
 import com.kunk.singbox.ui.components.SingleSelectDialog
@@ -50,10 +48,8 @@ import com.kunk.singbox.ui.components.rememberLocalNetworkPermissionRequest
 import com.kunk.singbox.ui.navigation.Screen
 import com.kunk.singbox.ui.theme.Neutral500
 import com.kunk.singbox.viewmodel.SettingsViewModel
-import com.kunk.singbox.ui.theme.liquidGlassIconButtonPanel
 import com.kunk.singbox.ui.theme.liquidGlassMutedContentColor
 import com.kunk.singbox.ui.theme.liquidGlassTopAppBarContainerColor
-import com.kunk.singbox.ui.theme.liquidGlassTopAppBarColors
 
 private typealias RequestLocalNetworkPermission = ((() -> Unit) -> Unit)
 
@@ -205,114 +201,110 @@ fun RoutingSettingsScreen(
         )
     }
 
-    Scaffold(
-        contentWindowInsets = WindowInsets(0, 0, 0, 0),
-        containerColor = liquidGlassTopAppBarContainerColor(MaterialTheme.colorScheme.background),
-        topBar = {
-            TopAppBar(
-                title = { Text(stringResource(R.string.routing_settings_title), color = MaterialTheme.colorScheme.onBackground) },
-                navigationIcon = {
-                    IconButton(
-                        modifier = Modifier.liquidGlassIconButtonPanel(),
-                        onClick = { navController.popBackStack() }
-                    ) {
-                        Icon(Icons.Rounded.ArrowBack, contentDescription = stringResource(R.string.common_back), tint = MaterialTheme.colorScheme.onBackground)
-                    }
-                },
-                colors = liquidGlassTopAppBarColors(defaultContainerColor = MaterialTheme.colorScheme.background)
-            )
-        }
-    ) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .verticalScroll(scrollState)
-                .padding(16.dp)
-                .navigationBarsPadding()
-        ) {
-            StandardCard {
-                SettingItem(title = stringResource(R.string.routing_settings_mode), value = stringResource(settings.routingMode.displayNameRes), onClick = { showModeDialog = true })
-                SettingItem(title = stringResource(R.string.routing_settings_default_rule), value = stringResource(settings.defaultRule.displayNameRes), onClick = { showDefaultRuleDialog = true })
-                SettingItem(title = stringResource(R.string.routing_settings_latency_test_method), value = stringResource(settings.latencyTestMethod.displayNameRes), onClick = { showLatencyMethodDialog = true })
-                SettingItem(
-                    title = stringResource(R.string.routing_settings_latency_test_url),
-                    onClick = { showLatencyUrlDialog = true },
-                    trailing = {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                text = settings.latencyTestUrl,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.widthIn(max = 140.dp)
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Icon(
-                                imageVector = Icons.Rounded.ChevronRight,
-                                contentDescription = null,
-                                tint = liquidGlassMutedContentColor(Neutral500)
-                            )
+    FloatingPageLayout(
+        title = stringResource(R.string.routing_settings_title),
+        onBack = { navController.popBackStack() }
+    ) { contentTopPadding ->
+        Scaffold(
+            contentWindowInsets = WindowInsets(0, 0, 0, 0),
+            containerColor = liquidGlassTopAppBarContainerColor(MaterialTheme.colorScheme.background)
+        ) { padding ->
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding)
+                    .verticalScroll(scrollState)
+                    .padding(
+                        start = 16.dp,
+                        top = contentTopPadding + 16.dp,
+                        end = 16.dp,
+                        bottom = 16.dp
+                    )
+                    .navigationBarsPadding()
+            ) {
+                StandardCard {
+                    SettingItem(title = stringResource(R.string.routing_settings_mode), value = stringResource(settings.routingMode.displayNameRes), onClick = { showModeDialog = true })
+                    SettingItem(title = stringResource(R.string.routing_settings_default_rule), value = stringResource(settings.defaultRule.displayNameRes), onClick = { showDefaultRuleDialog = true })
+                    SettingItem(title = stringResource(R.string.routing_settings_latency_test_method), value = stringResource(settings.latencyTestMethod.displayNameRes), onClick = { showLatencyMethodDialog = true })
+                    SettingItem(
+                        title = stringResource(R.string.routing_settings_latency_test_url),
+                        onClick = { showLatencyUrlDialog = true },
+                        trailing = {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = settings.latencyTestUrl,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.widthIn(max = 140.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Icon(
+                                    imageVector = Icons.Rounded.ChevronRight,
+                                    contentDescription = null,
+                                    tint = liquidGlassMutedContentColor(Neutral500)
+                                )
+                            }
                         }
-                    }
-                )
-                SettingItem(title = stringResource(R.string.routing_settings_github_mirror), value = stringResource(settings.ghProxyMirror.displayNameRes), onClick = { showMirrorDialog = true })
-                SettingItem(
-                    title = stringResource(R.string.routing_settings_subscription_timeout),
-                    value = stringResource(R.string.routing_settings_latency_test_timeout_s, settings.subscriptionUpdateTimeout),
-                    onClick = { showSubscriptionTimeoutDialog = true }
-                )
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            StandardCard {
-                SettingSwitchItem(
-                    title = stringResource(R.string.routing_settings_block_quic),
-                    subtitle = stringResource(R.string.routing_settings_block_quic_subtitle),
-                    checked = settings.blockQuic,
-                    onCheckedChange = { settingsViewModel.setBlockQuic(it) }
-                )
-                SettingSwitchItem(
-                    title = stringResource(R.string.routing_settings_bypass_lan),
-                    subtitle = stringResource(R.string.routing_settings_bypass_lan_subtitle),
-                    checked = settings.bypassLan,
-                    onCheckedChange = { enabled ->
-                        handleBypassLanChange(enabled, settingsViewModel, requestLocalNetworkPermission)
-                    }
-                )
-                SettingSwitchItem(
-                    title = stringResource(R.string.routing_settings_icmp_echo_routing),
-                    subtitle = stringResource(R.string.routing_settings_icmp_echo_routing_subtitle),
-                    checked = settings.icmpEchoRoutingEnabled,
-                    onCheckedChange = { settingsViewModel.setIcmpEchoRoutingEnabled(it) }
-                )
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            StandardCard {
-                SettingItem(
-                    title = stringResource(R.string.routing_settings_app_routing),
-                    value = stringResource(R.string.routing_settings_app_routing_rules, settings.appRules.size + settings.appGroups.size),
-                    onClick = { navController.navigate(Screen.AppRouting.route) }
-                )
-                val domainRuleCount = settings.customRules.count {
-                    it.enabled && it.type in listOf(
-                        com.kunk.singbox.model.RuleType.DOMAIN,
-                        com.kunk.singbox.model.RuleType.DOMAIN_SUFFIX,
-                        com.kunk.singbox.model.RuleType.DOMAIN_KEYWORD
+                    )
+                    SettingItem(title = stringResource(R.string.routing_settings_github_mirror), value = stringResource(settings.ghProxyMirror.displayNameRes), onClick = { showMirrorDialog = true })
+                    SettingItem(
+                        title = stringResource(R.string.routing_settings_subscription_timeout),
+                        value = stringResource(R.string.routing_settings_latency_test_timeout_s, settings.subscriptionUpdateTimeout),
+                        onClick = { showSubscriptionTimeoutDialog = true }
                     )
                 }
-                SettingItem(
-                    title = stringResource(R.string.routing_settings_domain_routing),
-                    value = stringResource(R.string.routing_settings_app_routing_rules, domainRuleCount),
-                    onClick = { navController.navigate(Screen.DomainRules.route) }
-                )
-                SettingItem(title = stringResource(R.string.routing_settings_manage_rulesets), onClick = { navController.navigate(Screen.RuleSets.route) })
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                StandardCard {
+                    SettingSwitchItem(
+                        title = stringResource(R.string.routing_settings_block_quic),
+                        subtitle = stringResource(R.string.routing_settings_block_quic_subtitle),
+                        checked = settings.blockQuic,
+                        onCheckedChange = { settingsViewModel.setBlockQuic(it) }
+                    )
+                    SettingSwitchItem(
+                        title = stringResource(R.string.routing_settings_bypass_lan),
+                        subtitle = stringResource(R.string.routing_settings_bypass_lan_subtitle),
+                        checked = settings.bypassLan,
+                        onCheckedChange = { enabled ->
+                            handleBypassLanChange(enabled, settingsViewModel, requestLocalNetworkPermission)
+                        }
+                    )
+                    SettingSwitchItem(
+                        title = stringResource(R.string.routing_settings_icmp_echo_routing),
+                        subtitle = stringResource(R.string.routing_settings_icmp_echo_routing_subtitle),
+                        checked = settings.icmpEchoRoutingEnabled,
+                        onCheckedChange = { settingsViewModel.setIcmpEchoRoutingEnabled(it) }
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                StandardCard {
+                    SettingItem(
+                        title = stringResource(R.string.routing_settings_app_routing),
+                        value = stringResource(R.string.routing_settings_app_routing_rules, settings.appRules.size + settings.appGroups.size),
+                        onClick = { navController.navigate(Screen.AppRouting.route) }
+                    )
+                    val domainRuleCount = settings.customRules.count {
+                        it.enabled && it.type in listOf(
+                            com.kunk.singbox.model.RuleType.DOMAIN,
+                            com.kunk.singbox.model.RuleType.DOMAIN_SUFFIX,
+                            com.kunk.singbox.model.RuleType.DOMAIN_KEYWORD
+                        )
+                    }
+                    SettingItem(
+                        title = stringResource(R.string.routing_settings_domain_routing),
+                        value = stringResource(R.string.routing_settings_app_routing_rules, domainRuleCount),
+                        onClick = { navController.navigate(Screen.DomainRules.route) }
+                    )
+                    SettingItem(title = stringResource(R.string.routing_settings_manage_rulesets), onClick = { navController.navigate(Screen.RuleSets.route) })
+                }
+                Spacer(modifier = Modifier.height(16.dp))
             }
-            Spacer(modifier = Modifier.height(16.dp))
         }
     }
 }

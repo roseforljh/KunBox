@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -30,21 +31,19 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.kunk.singbox.model.*
 import com.kunk.singbox.ui.components.ClickableDropdownField
-import com.kunk.singbox.ui.components.ProfileNodeSelectDialog
+import com.kunk.singbox.ui.components.ClickableSelectionButton
+import com.kunk.singbox.ui.components.ExpandableSearchBar
+import com.kunk.singbox.ui.components.FullScreenDialogPage
 import com.kunk.singbox.ui.components.SingleSelectDialog
 import com.kunk.singbox.ui.components.StandardCard
 import com.kunk.singbox.ui.components.StyledTextField
+import com.kunk.singbox.ui.components.TopOnlySupportingContent
+import com.kunk.singbox.ui.theme.LiquidGlassFilterChip
 import com.kunk.singbox.ui.theme.Neutral500
 import com.kunk.singbox.ui.theme.Neutral700
-import com.kunk.singbox.ui.theme.LiquidGlassDialogEffect
 import com.kunk.singbox.ui.theme.isLiquidGlassTheme
-import com.kunk.singbox.ui.theme.liquidGlassButtonColors
-import com.kunk.singbox.ui.theme.liquidGlassButtonContentColor
-import com.kunk.singbox.ui.theme.liquidGlassButtonPanel
 import com.kunk.singbox.ui.theme.liquidGlassCheckboxColors
 import com.kunk.singbox.ui.theme.liquidGlassPanel
-import com.kunk.singbox.ui.theme.liquidGlassDialogContainerColor
-import com.kunk.singbox.ui.theme.liquidGlassDialogPanel
 import com.kunk.singbox.ui.theme.liquidGlassIconButtonPanel
 import com.kunk.singbox.ui.theme.liquidGlassMutedContentColor
 import com.kunk.singbox.ui.theme.liquidGlassOutlinedTextFieldColors
@@ -390,7 +389,7 @@ fun AppRuleEditorDialog(
         val appRoutingModes = RuleSetOutboundMode.entries.filter { it != RuleSetOutboundMode.DIRECT }
         val options = appRoutingModes.map { stringResource(it.displayNameRes) }
         val currentIndex = appRoutingModes.indexOf(outboundMode).coerceAtLeast(0)
-        SingleSelectDialog(title = stringResource(R.string.rulesets_select_outbound), options = options, selectedIndex = currentIndex, onSelect = { index ->
+        SingleSelectDialog(title = stringResource(R.string.rulesets_select_outbound), options = options, selectedIndex = currentIndex, fullScreen = true, onSelect = { index ->
             val selectedMode = appRoutingModes[index]
             outboundMode = selectedMode
             if (selectedMode != initialRule?.outboundMode) outboundValue = null
@@ -413,13 +412,14 @@ fun AppRuleEditorDialog(
     }
 
     if (showNodeSelectionDialog) {
-        val currentRef = resolveNodeByStoredValue(outboundValue)?.let { toNodeRef(it) } ?: outboundValue
-        ProfileNodeSelectDialog(
+        val selectedNode = resolveNodeByStoredValue(outboundValue)
+        NodePickerPage(
             title = stringResource(R.string.rulesets_select_node),
             profiles = profiles,
-            nodesForSelection = selectionNodes,
-            selectedNodeRef = currentRef,
-            onSelect = { ref -> outboundValue = ref },
+            allNodes = nodes,
+            displayedNodes = selectionNodes,
+            selectedNodeId = selectedNode?.id,
+            onSelectNode = { node -> outboundValue = toNodeRef(node) },
             onDismiss = { showNodeSelectionDialog = false }
         )
     }
@@ -430,6 +430,7 @@ fun AppRuleEditorDialog(
             title = targetSelectionTitle,
             options = targetOptions.map { it.first },
             selectedIndex = targetOptions.indexOfFirst { it.second == currentRef }.coerceAtLeast(0),
+            fullScreen = true,
             onSelect = { index ->
                 outboundValue = targetOptions[index].second
                 showTargetSelectionDialog = false
@@ -438,55 +439,17 @@ fun AppRuleEditorDialog(
         )
     }
 
-    AlertDialog(
-        modifier = Modifier.liquidGlassDialogPanel(RoundedCornerShape(24.dp)),
-        onDismissRequest = onDismiss,
-        shape = RoundedCornerShape(24.dp),
-        containerColor = liquidGlassDialogContainerColor(),
-        title = { Text(text = if (initialRule == null) stringResource(R.string.app_rules_add) else stringResource(R.string.app_rules_edit), fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface) },
-        text = {
-            LiquidGlassDialogEffect()
-            Column(modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(20.dp)) {
-                ClickableDropdownField(label = stringResource(R.string.app_rules_select_app), value = selectedApp?.appName ?: stringResource(R.string.app_rules_click_to_select), onClick = { showAppPicker = true })
-                ClickableDropdownField(label = stringResource(R.string.common_outbound), value = stringResource(outboundMode.displayNameRes), onClick = { showOutboundModeDialog = true })
-                if (outboundMode == RuleSetOutboundMode.NODE || outboundMode == RuleSetOutboundMode.PROFILE) {
-                    val targetName = when (outboundMode) {
-                        RuleSetOutboundMode.NODE -> {
-                            val node = resolveNodeByStoredValue(outboundValue)
-                            val profileName = profiles.find { it.id == node?.sourceProfileId }?.name
-                            if (node != null && profileName != null) "${node.name} ($profileName)" else node?.name
-                        }
-                        RuleSetOutboundMode.PROFILE -> profiles.find { it.id == outboundValue }?.name
-                        else -> null
-                    } ?: stringResource(R.string.rulesets_tap_to_select)
-                    ClickableDropdownField(
-                        label = stringResource(R.string.rulesets_select_target),
-                        value = targetName,
-                        onClick = {
-                            when (outboundMode) {
-                                RuleSetOutboundMode.NODE -> {
-                                    showNodeSelectionDialog = true
-                                }
-                                RuleSetOutboundMode.PROFILE -> {
-                                    targetSelectionTitle = selectProfileTitle
-                                    targetOptions = profiles.map { it.name to it.id }
-                                }
-                                else -> {}
-                            }
-                            if (outboundMode != RuleSetOutboundMode.NODE) {
-                                showTargetSelectionDialog = true
-                            }
-                        }
-                    )
-                }
-            }
+    val canSave = selectedApp != null
+    FullScreenDialogPage(
+        title = if (initialRule == null) {
+            stringResource(R.string.app_rules_add)
+        } else {
+            stringResource(R.string.app_rules_edit)
         },
-        confirmButton = {
-            TextButton(
-                modifier = Modifier.liquidGlassTextButtonPanel(enabled = selectedApp != null),
-                colors = liquidGlassTextButtonColors(
-                    contentColor = liquidGlassTextButtonContentColor(MaterialTheme.colorScheme.primary)
-                ),
+        onDismiss = onDismiss,
+        actions = {
+            IconButton(
+                modifier = Modifier.fillMaxSize(),
                 onClick = {
                     selectedApp?.let { app ->
                         val rule = initialRule?.copy(
@@ -503,39 +466,72 @@ fun AppRuleEditorDialog(
                         onConfirm(rule)
                     }
                 },
-                enabled = selectedApp != null
+                enabled = canSave
             ) {
                 Text(
-                    stringResource(R.string.common_save),
-                    color = if (selectedApp != null) {
-                        liquidGlassTextButtonContentColor(MaterialTheme.colorScheme.primary)
-                    } else {
-                        liquidGlassMutedContentColor(Neutral500)
-                    }
-                )
-            }
-        },
-        dismissButton = {
-            TextButton(
-                modifier = Modifier.liquidGlassTextButtonPanel(),
-                colors = liquidGlassTextButtonColors(
-                    contentColor = liquidGlassTextButtonContentColor(
-                        defaultColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                        liquidColor = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                ),
-                onClick = onDismiss
-            ) {
-                Text(
-                    stringResource(R.string.common_cancel),
-                    color = liquidGlassTextButtonContentColor(
-                        defaultColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                        liquidColor = MaterialTheme.colorScheme.onSurfaceVariant
+                    text = stringResource(R.string.common_save),
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onBackground.copy(
+                        alpha = if (canSave) 1f else 0.38f
                     )
                 )
             }
         }
-    )
+    ) { contentTopPadding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(
+                    start = 20.dp,
+                    top = contentTopPadding + 20.dp,
+                    end = 20.dp,
+                    bottom = 20.dp
+                ),
+            verticalArrangement = Arrangement.spacedBy(20.dp)
+        ) {
+            ClickableDropdownField(label = stringResource(R.string.app_rules_select_app), value = selectedApp?.appName ?: stringResource(R.string.app_rules_click_to_select), onClick = { showAppPicker = true })
+            ClickableDropdownField(label = stringResource(R.string.common_outbound), value = stringResource(outboundMode.displayNameRes), onClick = { showOutboundModeDialog = true })
+            if (outboundMode == RuleSetOutboundMode.NODE || outboundMode == RuleSetOutboundMode.PROFILE) {
+                val targetName = when (outboundMode) {
+                    RuleSetOutboundMode.NODE -> {
+                        val node = resolveNodeByStoredValue(outboundValue)
+                        val profileName = profiles.find { it.id == node?.sourceProfileId }?.name
+                        if (node != null && profileName != null) "${node.name} ($profileName)" else node?.name
+                    }
+                    RuleSetOutboundMode.PROFILE -> profiles.find { it.id == outboundValue }?.name
+                    else -> null
+                } ?: stringResource(R.string.rulesets_tap_to_select)
+                val onTargetClick = {
+                    when (outboundMode) {
+                        RuleSetOutboundMode.NODE -> showNodeSelectionDialog = true
+                        RuleSetOutboundMode.PROFILE -> {
+                            targetSelectionTitle = selectProfileTitle
+                            targetOptions = profiles.map { it.name to it.id }
+                        }
+                        else -> {}
+                    }
+                    if (outboundMode != RuleSetOutboundMode.NODE) {
+                        showTargetSelectionDialog = true
+                    }
+                }
+                if (outboundMode == RuleSetOutboundMode.NODE) {
+                    ClickableSelectionButton(
+                        label = stringResource(R.string.rulesets_select_target),
+                        value = targetName,
+                        onClick = onTargetClick
+                    )
+                } else {
+                    ClickableDropdownField(
+                        label = stringResource(R.string.rulesets_select_target),
+                        value = targetName,
+                        onClick = onTargetClick
+                    )
+                }
+            }
+        }
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -559,15 +555,22 @@ fun AppPickerDialog(
         }
     }
 
-    AlertDialog(
-        modifier = Modifier.liquidGlassDialogPanel(RoundedCornerShape(20.dp)),
-        onDismissRequest = onDismiss,
-        shape = RoundedCornerShape(20.dp),
-        containerColor = liquidGlassDialogContainerColor(),
-        title = null,
-        text = {
-            LiquidGlassDialogEffect()
-            Column(modifier = Modifier.fillMaxWidth().fillMaxHeight(0.8f)) {
+    FullScreenDialogPage(
+        title = stringResource(R.string.app_rules_select_app),
+        onDismiss = onDismiss
+    ) { contentTopPadding ->
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(
+                start = 16.dp,
+                top = contentTopPadding + 12.dp,
+                end = 16.dp,
+                bottom = WindowInsets.navigationBars.asPaddingValues()
+                    .calculateBottomPadding() + 12.dp
+            ),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            item(key = "app_picker_filters") {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically
@@ -635,45 +638,17 @@ fun AppPickerDialog(
                         Text(stringResource(R.string.common_system), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    verticalArrangement = Arrangement.spacedBy(2.dp)
-                ) {
-                    items(filteredApps, key = { it.packageName }) { app ->
-                        AppListItem(
-                            app = app,
-                            loadIcon = loadIcon,
-                            onClick = { onSelect(app) }
-                        )
-                    }
-                }
             }
-        },
-        confirmButton = {},
-        dismissButton = {
-            TextButton(
-                modifier = Modifier.liquidGlassTextButtonPanel(),
-                colors = liquidGlassTextButtonColors(
-                    contentColor = liquidGlassTextButtonContentColor(
-                        defaultColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                        liquidColor = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                ),
-                onClick = onDismiss
-            ) {
-                Text(
-                    stringResource(R.string.common_cancel),
-                    color = liquidGlassTextButtonContentColor(
-                        defaultColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                        liquidColor = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+
+            items(filteredApps, key = { it.packageName }) { app ->
+                AppListItem(
+                    app = app,
+                    loadIcon = loadIcon,
+                    onClick = { onSelect(app) }
                 )
             }
         }
-    )
+    }
 }
 
 @Composable
@@ -994,6 +969,7 @@ fun MultiAppSelectorDialog(
         tempSelected.mapTo(mutableSetOf()) { it.packageName }
     }
     var searchQuery by remember { mutableStateOf("") }
+    var isSearchExpanded by remember { mutableStateOf(false) }
     var showSystemApps by remember { mutableStateOf(false) }
 
     val filteredApps = remember(installedApps, searchQuery, showSystemApps, tempSelectedPackages) {
@@ -1006,159 +982,105 @@ fun MultiAppSelectorDialog(
         }
         filtered.sortedByDescending { it.packageName in tempSelectedPackages }
     }
+    val listState = rememberLazyListState()
+    val showTopControls by remember {
+        derivedStateOf { !listState.canScrollBackward }
+    }
+    LaunchedEffect(showTopControls) {
+        if (!showTopControls) {
+            isSearchExpanded = false
+        }
+    }
 
-    AlertDialog(
-        modifier = Modifier.liquidGlassDialogPanel(RoundedCornerShape(20.dp)),
-        onDismissRequest = onDismiss,
-        shape = RoundedCornerShape(20.dp),
-        containerColor = liquidGlassDialogContainerColor(),
-        title = null,
-        text = {
-            LiquidGlassDialogEffect()
-            Column(modifier = Modifier.fillMaxWidth().fillMaxHeight(0.8f)) {
+    FullScreenDialogPage(
+        title = stringResource(R.string.app_groups_select_apps),
+        onDismiss = onDismiss,
+        actions = {
+            IconButton(
+                modifier = Modifier.fillMaxSize(),
+                onClick = { onConfirm(tempSelectedEntries.toAppInfoSet()) }
+            ) {
+                Text(
+                    text = stringResource(R.string.common_ok),
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onBackground
+                )
+            }
+        },
+        supportingContentHeight = 64.dp,
+        supportingContent = {
+            TopOnlySupportingContent(visible = showTopControls) {
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Text(
-                        text = stringResource(R.string.import_count_items, tempSelected.size),
-                        fontSize = 13.sp,
-                        color = MaterialTheme.colorScheme.primary,
-                        fontWeight = FontWeight.Medium
-                    )
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier
-                            .routingFilterTogglePanel(RoundedCornerShape(6.dp))
-                            .liquidGlassPressFeedback(
-                                label = "liquid_glass_routing_selected_system_filter_scale"
-                            ) {
-                                showSystemApps = !showSystemApps
-                            }
-                            .padding(4.dp)
-                    ) {
-                        Checkbox(
-                            checked = showSystemApps,
-                            onCheckedChange = { showSystemApps = it },
-                            modifier = Modifier.size(18.dp),
-                            colors = liquidGlassCheckboxColors(
-                                checkedColor = MaterialTheme.colorScheme.primary,
-                                uncheckedColor = liquidGlassMutedContentColor(Neutral500)
-                            )
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(stringResource(R.string.common_system), fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                val searchFieldShape = RoundedCornerShape(10.dp)
-                OutlinedTextField(
-                    value = searchQuery,
-                    onValueChange = { searchQuery = it },
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .liquidGlassTextFieldPanel(shape = searchFieldShape),
-                    placeholder = {
-                        Text(
-                            stringResource(R.string.common_search),
-                            color = liquidGlassMutedContentColor(Neutral500),
-                            fontSize = 13.sp
-                        )
-                    },
-                    leadingIcon = {
-                        Icon(
-                            Icons.Rounded.Search,
-                            contentDescription = null,
-                            tint = liquidGlassMutedContentColor(Neutral500),
-                            modifier = Modifier.size(18.dp)
-                        )
-                    },
-                    singleLine = true,
-                    shape = searchFieldShape,
-                    colors = liquidGlassOutlinedTextFieldColors(
-                        focusedTextColor = MaterialTheme.colorScheme.onSurface,
-                        unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
-                        focusedBorderColor = liquidGlassTextFieldBorderColor(
-                            MaterialTheme.colorScheme.primary.copy(alpha = 0.6f)
-                        ),
-                        unfocusedBorderColor = liquidGlassTextFieldBorderColor(
-                            MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)
-                        ),
-                        focusedContainerColor = liquidGlassTextFieldContainerColor(Color.Transparent),
-                        unfocusedContainerColor = liquidGlassTextFieldContainerColor(Color.Transparent),
-                        cursorColor = MaterialTheme.colorScheme.primary
-                    )
-                )
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    verticalArrangement = Arrangement.spacedBy(2.dp)
+                        .fillMaxSize()
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    items(filteredApps, key = { it.packageName }) { app ->
-                        val appInfo = AppInfo(app.packageName, app.appName)
-                        val isSelected = app.packageName in tempSelectedPackages
-                        SelectableAppItem(
-                            app = app,
-                            isSelected = isSelected,
-                            loadIcon = loadIcon,
-                            onClick = {
-                                val savedAppInfo = appInfo.toSavedValue()
-                                tempSelectedEntries = if (isSelected) {
-                                    tempSelectedEntries.filterNot { it.toAppInfo().packageName == app.packageName }
-                                } else {
-                                    tempSelectedEntries + savedAppInfo
-                                }
-                            }
+                    ExpandableSearchBar(
+                        query = searchQuery,
+                        onQueryChange = { searchQuery = it },
+                        isExpanded = isSearchExpanded,
+                        onToggle = { isSearchExpanded = !isSearchExpanded },
+                        placeholder = stringResource(R.string.app_list_search_hint),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text(
+                            text = stringResource(R.string.import_count_items, tempSelected.size),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1
                         )
                     }
+
+                    Spacer(modifier = Modifier.width(8.dp))
+                    LiquidGlassFilterChip(
+                        selected = showSystemApps,
+                        onClick = { showSystemApps = !showSystemApps },
+                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 10.dp),
+                        label = {
+                            Text(
+                                text = stringResource(R.string.common_system),
+                                style = MaterialTheme.typography.bodyMedium,
+                                maxLines = 1
+                            )
+                        }
+                    )
                 }
             }
-        },
-        confirmButton = {
-            Button(
-                onClick = { onConfirm(tempSelectedEntries.toAppInfoSet()) },
-                modifier = Modifier.liquidGlassButtonPanel(shape = RoundedCornerShape(10.dp)),
-                colors = liquidGlassButtonColors(
-                    defaultContainerColor = MaterialTheme.colorScheme.primary,
-                    defaultContentColor = MaterialTheme.colorScheme.onPrimary
-                ),
-                shape = RoundedCornerShape(10.dp)
-            ) {
-                Text(
-                    text = stringResource(R.string.common_ok) + " (${tempSelected.size})",
-                    fontWeight = FontWeight.Medium,
-                    fontSize = 13.sp,
-                    color = liquidGlassButtonContentColor(MaterialTheme.colorScheme.onPrimary)
-                )
-            }
-        },
-        dismissButton = {
-            TextButton(
-                modifier = Modifier.liquidGlassTextButtonPanel(),
-                colors = liquidGlassTextButtonColors(
-                    contentColor = liquidGlassTextButtonContentColor(
-                        defaultColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                        liquidColor = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                ),
-                onClick = onDismiss
-            ) {
-                Text(
-                    stringResource(R.string.common_cancel),
-                    color = liquidGlassTextButtonContentColor(
-                        defaultColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                        liquidColor = MaterialTheme.colorScheme.onSurfaceVariant
-                    ),
-                    fontSize = 13.sp
+        }
+    ) { contentTopPadding ->
+        LazyColumn(
+            state = listState,
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(
+                start = 16.dp,
+                top = contentTopPadding + 12.dp,
+                end = 16.dp,
+                bottom = WindowInsets.navigationBars.asPaddingValues()
+                    .calculateBottomPadding() + 12.dp
+            ),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            items(filteredApps, key = { it.packageName }) { app ->
+                val appInfo = AppInfo(app.packageName, app.appName)
+                val isSelected = app.packageName in tempSelectedPackages
+                SelectableAppItem(
+                    app = app,
+                    isSelected = isSelected,
+                    loadIcon = loadIcon,
+                    onClick = {
+                        val savedAppInfo = appInfo.toSavedValue()
+                        tempSelectedEntries = if (isSelected) {
+                            tempSelectedEntries.filterNot { it.toAppInfo().packageName == app.packageName }
+                        } else {
+                            tempSelectedEntries + savedAppInfo
+                        }
+                    }
                 )
             }
         }
-    )
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -1235,6 +1157,7 @@ fun AppGroupEditorDialog(
             title = stringResource(R.string.rulesets_select_outbound),
             options = options,
             selectedIndex = currentIndex,
+            fullScreen = true,
             onSelect = { index ->
                 val selectedMode = appRoutingModes[index]
                 outboundMode = selectedMode
@@ -1265,13 +1188,14 @@ fun AppGroupEditorDialog(
     }
 
     if (showNodeSelectionDialog) {
-        val currentRef = resolveNodeByStoredValue(outboundValue)?.let { toNodeRef(it) } ?: outboundValue
-        ProfileNodeSelectDialog(
+        val selectedNode = resolveNodeByStoredValue(outboundValue)
+        NodePickerPage(
             title = stringResource(R.string.rulesets_select_node),
             profiles = profiles,
-            nodesForSelection = selectionNodes,
-            selectedNodeRef = currentRef,
-            onSelect = { ref -> outboundValue = ref },
+            allNodes = nodes,
+            displayedNodes = selectionNodes,
+            selectedNodeId = selectedNode?.id,
+            onSelectNode = { node -> outboundValue = toNodeRef(node) },
             onDismiss = { showNodeSelectionDialog = false }
         )
     }
@@ -1282,6 +1206,7 @@ fun AppGroupEditorDialog(
             title = targetSelectionTitle,
             options = targetOptions.map { it.first },
             selectedIndex = targetOptions.indexOfFirst { it.second == currentRef }.coerceAtLeast(0),
+            fullScreen = true,
             onSelect = { index ->
                 outboundValue = targetOptions[index].second
                 showTargetSelectionDialog = false
@@ -1290,128 +1215,17 @@ fun AppGroupEditorDialog(
         )
     }
 
-    AlertDialog(
-        modifier = Modifier.liquidGlassDialogPanel(RoundedCornerShape(24.dp)),
-        onDismissRequest = onDismiss,
-        shape = RoundedCornerShape(24.dp),
-        containerColor = liquidGlassDialogContainerColor(),
-        title = {
-            Text(
-                text = if (initialGroup == null) stringResource(R.string.app_groups_create) else stringResource(R.string.app_groups_edit),
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface
-            )
+    val canSave = groupName.isNotBlank() && selectedApps.isNotEmpty()
+    FullScreenDialogPage(
+        title = if (initialGroup == null) {
+            stringResource(R.string.app_groups_create)
+        } else {
+            stringResource(R.string.app_groups_edit)
         },
-        text = {
-            LiquidGlassDialogEffect()
-            Column(
-                modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                StyledTextField(
-                    label = stringResource(R.string.app_groups_name),
-                    value = groupName,
-                    onValueChange = { groupName = it },
-                    placeholder = stringResource(R.string.app_groups_name_placeholder)
-                )
-
-                ClickableDropdownField(
-                    label = stringResource(R.string.common_outbound),
-                    value = stringResource(outboundMode.displayNameRes),
-                    onClick = { showOutboundModeDialog = true }
-                )
-
-                if (outboundMode == RuleSetOutboundMode.NODE ||
-                    outboundMode == RuleSetOutboundMode.PROFILE) {
-
-                    val targetName = when (outboundMode) {
-                        RuleSetOutboundMode.NODE -> {
-                            val node = resolveNodeByStoredValue(outboundValue)
-                            val profileName = profiles.find { it.id == node?.sourceProfileId }?.name
-                            if (node != null && profileName != null) "${node.name} ($profileName)" else node?.name
-                        }
-                        RuleSetOutboundMode.PROFILE -> profiles.find { it.id == outboundValue }?.name
-                        else -> null
-                    } ?: stringResource(R.string.app_rules_click_to_select)
-
-                    ClickableDropdownField(
-                        label = stringResource(R.string.app_rules_select_target),
-                        value = targetName,
-                        onClick = {
-                            when (outboundMode) {
-                                RuleSetOutboundMode.NODE -> {
-                                    showNodeSelectionDialog = true
-                                }
-                                RuleSetOutboundMode.PROFILE -> {
-                                    targetSelectionTitle = selectProfileTitle
-                                    targetOptions = profiles.map { it.name to it.id }
-                                }
-                                else -> {}
-                            }
-                            if (outboundMode != RuleSetOutboundMode.NODE) {
-                                showTargetSelectionDialog = true
-                            }
-                        }
-                    )
-                }
-
-                Column {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(stringResource(R.string.app_rules_tabs_individual) + " (${selectedApps.size})", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.Medium)
-                        TextButton(
-                            modifier = Modifier.liquidGlassTextButtonPanel(shadowElevation = 0.dp),
-                            colors = liquidGlassTextButtonColors(
-                                contentColor = liquidGlassTextButtonContentColor(MaterialTheme.colorScheme.primary)
-                            ),
-                            onClick = { showAppSelector = true }
-                        ) {
-                            Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text(stringResource(R.string.app_groups_select_apps))
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(16.dp))
-
-                    if (selectedApps.isEmpty()) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(60.dp)
-                                .routingEmptySelectionPanel(),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                stringResource(R.string.app_groups_click_to_add),
-                                color = liquidGlassMutedContentColor(Neutral500),
-                                fontSize = 13.sp
-                            )
-                        }
-                    } else {
-                        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            items(selectedApps, key = { it.packageName }) { app ->
-                                SelectedAppChip(
-                                    app = app,
-                                    loadIcon = loadIcon,
-                                    onRemove = {
-                                        selectedAppEntries = selectedAppEntries.filterNot {
-                                            it.toAppInfo().packageName == app.packageName
-                                        }
-                                    }
-                                )
-                            }
-                        }
-                    }
-                }
-                Spacer(modifier = Modifier.height(16.dp))
-            }
-        },
-        confirmButton = {
-            Button(
+        onDismiss = onDismiss,
+        actions = {
+            IconButton(
+                modifier = Modifier.fillMaxSize(),
                 onClick = {
                     val group = initialGroup?.copy(
                         name = groupName,
@@ -1426,40 +1240,138 @@ fun AppGroupEditorDialog(
                     )
                     onConfirm(group)
                 },
-                enabled = groupName.isNotBlank() && selectedApps.isNotEmpty(),
-                modifier = Modifier.liquidGlassButtonPanel(shape = RoundedCornerShape(12.dp)),
-                colors = liquidGlassButtonColors(
-                    defaultContainerColor = MaterialTheme.colorScheme.primary,
-                    defaultContentColor = MaterialTheme.colorScheme.onPrimary
-                ),
-                shape = RoundedCornerShape(12.dp)
+                enabled = canSave
             ) {
                 Text(
                     text = stringResource(R.string.common_save),
+                    style = MaterialTheme.typography.labelMedium,
                     fontWeight = FontWeight.Bold,
-                    color = liquidGlassButtonContentColor(MaterialTheme.colorScheme.onPrimary)
-                )
-            }
-        },
-        dismissButton = {
-            TextButton(
-                modifier = Modifier.liquidGlassTextButtonPanel(),
-                colors = liquidGlassTextButtonColors(
-                    contentColor = liquidGlassTextButtonContentColor(
-                        defaultColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                        liquidColor = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                ),
-                onClick = onDismiss
-            ) {
-                Text(
-                    stringResource(R.string.common_cancel),
-                    color = liquidGlassTextButtonContentColor(
-                        defaultColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                        liquidColor = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onBackground.copy(
+                        alpha = if (canSave) 1f else 0.38f
                     )
                 )
             }
         }
-    )
+    ) { contentTopPadding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(
+                    start = 20.dp,
+                    top = contentTopPadding + 20.dp,
+                    end = 20.dp,
+                    bottom = 20.dp
+                ),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            StyledTextField(
+                label = stringResource(R.string.app_groups_name),
+                value = groupName,
+                onValueChange = { groupName = it },
+                placeholder = stringResource(R.string.app_groups_name_placeholder)
+            )
+
+            ClickableDropdownField(
+                label = stringResource(R.string.common_outbound),
+                value = stringResource(outboundMode.displayNameRes),
+                onClick = { showOutboundModeDialog = true }
+            )
+
+            if (outboundMode == RuleSetOutboundMode.NODE ||
+                outboundMode == RuleSetOutboundMode.PROFILE) {
+
+                val targetName = when (outboundMode) {
+                    RuleSetOutboundMode.NODE -> {
+                        val node = resolveNodeByStoredValue(outboundValue)
+                        val profileName = profiles.find { it.id == node?.sourceProfileId }?.name
+                        if (node != null && profileName != null) "${node.name} ($profileName)" else node?.name
+                    }
+                    RuleSetOutboundMode.PROFILE -> profiles.find { it.id == outboundValue }?.name
+                    else -> null
+                } ?: stringResource(R.string.app_rules_click_to_select)
+
+                val onTargetClick = {
+                    when (outboundMode) {
+                        RuleSetOutboundMode.NODE -> showNodeSelectionDialog = true
+                        RuleSetOutboundMode.PROFILE -> {
+                            targetSelectionTitle = selectProfileTitle
+                            targetOptions = profiles.map { it.name to it.id }
+                        }
+                        else -> {}
+                    }
+                    if (outboundMode != RuleSetOutboundMode.NODE) {
+                        showTargetSelectionDialog = true
+                    }
+                }
+                if (outboundMode == RuleSetOutboundMode.NODE) {
+                    ClickableSelectionButton(
+                        label = stringResource(R.string.app_rules_select_target),
+                        value = targetName,
+                        onClick = onTargetClick
+                    )
+                } else {
+                    ClickableDropdownField(
+                        label = stringResource(R.string.app_rules_select_target),
+                        value = targetName,
+                        onClick = onTargetClick
+                    )
+                }
+            }
+
+            Column {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(stringResource(R.string.app_rules_tabs_individual) + " (${selectedApps.size})", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.Medium)
+                    TextButton(
+                        modifier = Modifier.liquidGlassTextButtonPanel(shadowElevation = 0.dp),
+                        colors = liquidGlassTextButtonColors(
+                            contentColor = liquidGlassTextButtonContentColor(MaterialTheme.colorScheme.primary)
+                        ),
+                        onClick = { showAppSelector = true }
+                    ) {
+                        Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(stringResource(R.string.app_groups_select_apps))
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                if (selectedApps.isEmpty()) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(60.dp)
+                            .routingEmptySelectionPanel(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            stringResource(R.string.app_groups_click_to_add),
+                            color = liquidGlassMutedContentColor(Neutral500),
+                            fontSize = 13.sp
+                        )
+                    }
+                } else {
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        items(selectedApps, key = { it.packageName }) { app ->
+                            SelectedAppChip(
+                                app = app,
+                                loadIcon = loadIcon,
+                                onRemove = {
+                                    selectedAppEntries = selectedAppEntries.filterNot {
+                                        it.toAppInfo().packageName == app.packageName
+                                    }
+                                }
+                            )
+                        }
+                    }
+                }
+            }
+            Spacer(modifier = Modifier.height(16.dp))
+        }
+    }
 }

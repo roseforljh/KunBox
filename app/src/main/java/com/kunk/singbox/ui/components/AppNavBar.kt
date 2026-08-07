@@ -2,10 +2,9 @@ package com.kunk.singbox.ui.components
 
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
-import androidx.compose.foundation.BorderStroke
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -25,6 +24,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Dashboard
@@ -46,7 +46,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
@@ -55,20 +54,51 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import androidx.navigation.compose.currentBackStackEntryAsState
 import com.kunk.singbox.model.AppThemeStyle
 import com.kunk.singbox.ui.navigation.Screen
 import com.kunk.singbox.ui.navigation.getTabForRoute
+import com.kunk.singbox.ui.theme.hollowShadow
+import com.kunk.singbox.ui.theme.liquidGlassMaterial
+import com.kyant.backdrop.Backdrop
+import com.kyant.backdrop.BackdropEffectScope
+import com.kyant.backdrop.drawBackdrop
+import com.kyant.backdrop.effects.blur
+import com.kyant.backdrop.effects.runtimeShaderEffect
+import com.kyant.backdrop.effects.vibrancy
 
 private val liquidGlassButtonShape = RoundedCornerShape(percent = 50)
-private val liquidGlassNavCapsuleHeight = 60.dp
+private val liquidGlassNavCapsuleHeight = 64.dp
 private val liquidGlassNavItemMinTouchSize = 56.dp
 private val liquidGlassSelectedIndicatorSize = 44.dp
 
+private const val LIQUID_NAV_REFRACTION_SHADER = """
+uniform shader content;
+uniform float2 size;
+uniform float edgeRefraction;
+uniform float centerRefraction;
+
+half4 main(float2 coord) {
+    float halfHeight = max(size.y * 0.5, 1.0);
+    float centeredY = coord.y - halfHeight;
+    float edgeProximity = clamp(abs(centeredY) / halfHeight, 0.0, 1.0);
+
+    float verticalWeight = smoothstep(0.0, 0.75, edgeProximity);
+    float distanceToEdge = max(halfHeight - abs(centeredY), 0.0);
+    float verticalAmount = min(edgeRefraction * verticalWeight, distanceToEdge * 0.92);
+    float verticalOffset = sign(centeredY) * verticalAmount;
+
+    float centerWeight = 1.0 - smoothstep(0.25, 0.75, edgeProximity);
+    float horizontalOffset = centerRefraction * centerWeight;
+    float2 refractedCoord = coord + float2(horizontalOffset, verticalOffset);
+    return content.eval(clamp(refractedCoord, float2(0.0), size - float2(1.0)));
+}
+"""
+
 private data class LiquidGlassNavColors(
-    val capsuleBorderColor: Color,
     val selectedIconColor: Color,
     val unselectedIconColor: Color
 )
@@ -78,16 +108,11 @@ private data class LiquidGlassNavMetrics(
     val iconSize: Dp
 )
 
-private data class LiquidGlassSelectedButtonBrushAlphas(
-    val top: Float,
-    val middle: Float,
-    val bottom: Float
-)
-
 @Composable
 fun AppNavBar(
     navController: NavController,
-    themeStyle: AppThemeStyle = AppThemeStyle.DEFAULT
+    themeStyle: AppThemeStyle = AppThemeStyle.DEFAULT,
+    backdrop: Backdrop? = null
 ) {
     val items = listOf(
         Screen.Dashboard,
@@ -98,7 +123,11 @@ fun AppNavBar(
 
     when (themeStyle) {
         AppThemeStyle.DEFAULT -> DefaultAppNavBar(navController = navController, items = items)
-        AppThemeStyle.LIQUID_GLASS -> LiquidGlassAppNavBar(navController = navController, items = items)
+        AppThemeStyle.LIQUID_GLASS -> LiquidGlassAppNavBar(
+            navController = navController,
+            items = items,
+            backdrop = backdrop
+        )
     }
 }
 
@@ -200,7 +229,8 @@ private fun RowScope.DefaultNavItem(
 @Composable
 private fun LiquidGlassAppNavBar(
     navController: NavController,
-    items: List<Screen>
+    items: List<Screen>,
+    backdrop: Backdrop?
 ) {
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
@@ -218,9 +248,9 @@ private fun LiquidGlassAppNavBar(
         contentAlignment = Alignment.BottomCenter
     ) {
         LiquidGlassCapsule(
-            isDark = isDark,
             selectedIndex = selectedIndex,
-            itemCount = items.size
+            itemCount = items.size,
+            backdrop = backdrop
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -253,32 +283,94 @@ private fun LiquidGlassAppNavBar(
 
 @Composable
 private fun LiquidGlassCapsule(
-    isDark: Boolean,
     selectedIndex: Int,
     itemCount: Int,
+    backdrop: Backdrop?,
     content: @Composable () -> Unit
 ) {
-    val colors = liquidGlassNavColors(isDark = isDark)
-
-    BoxWithConstraints(
+    val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
+    Box(
         modifier = Modifier
             .fillMaxWidth()
             .height(liquidGlassNavCapsuleHeight)
-            .shadow(elevation = 14.dp, shape = liquidGlassButtonShape, clip = false)
+            .hollowShadow(
+                shape = liquidGlassButtonShape,
+                color = Color.Black,
+                alpha = if (isDark) 0.20f else 0.10f,
+                blurRadius = 10.dp,
+                offsetY = 4.dp
+            )
             .clip(liquidGlassButtonShape)
-            .background(brush = liquidGlassCapsuleBrush(isDark = isDark))
-            .border(BorderStroke(1.dp, colors.capsuleBorderColor), liquidGlassButtonShape)
-            .consumeUnclaimedClicks()
-            .padding(horizontal = 6.dp, vertical = 2.dp),
+            .consumeUnclaimedClicks(),
         contentAlignment = Alignment.Center
     ) {
-        LiquidGlassSelectedIndicator(
-            isDark = isDark,
-            selectedIndex = selectedIndex,
-            itemCount = itemCount,
-            maxWidth = maxWidth
+        LiquidGlassRefractionOverlay(
+            backdrop = backdrop
         )
-        content()
+        BoxWithConstraints(
+            modifier = Modifier
+                .matchParentSize()
+                .padding(4.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            LiquidGlassSelectedIndicator(
+                selectedIndex = selectedIndex,
+                itemCount = itemCount,
+                maxWidth = maxWidth
+            )
+            content()
+        }
+    }
+}
+
+@Composable
+private fun BoxScope.LiquidGlassRefractionOverlay(
+    backdrop: Backdrop?
+) {
+    val surfaceTint = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.20f)
+    val backdropModifier = if (backdrop == null) {
+        Modifier.background(surfaceTint, liquidGlassButtonShape)
+    } else {
+        Modifier.drawBackdrop(
+            backdrop = backdrop,
+            shape = { liquidGlassButtonShape },
+            effects = {
+                vibrancy()
+                blur(0.5.dp.toPx())
+                liquidNavLens(
+                    edgeRefraction = 16.dp.toPx(),
+                    centerRefraction = 6.dp.toPx()
+                )
+            },
+            shadow = null,
+            onDrawSurface = { drawRect(surfaceTint) }
+        )
+    }
+
+    Box(
+        modifier = Modifier
+            .matchParentSize()
+            .then(backdropModifier)
+            .liquidGlassMaterial(
+                shape = liquidGlassButtonShape,
+                accented = false,
+                backdropVisible = backdrop != null
+            )
+    )
+}
+
+private fun BackdropEffectScope.liquidNavLens(
+    edgeRefraction: Float,
+    centerRefraction: Float
+) {
+    runtimeShaderEffect(
+        key = "LiquidNavRefraction",
+        shaderString = LIQUID_NAV_REFRACTION_SHADER,
+        uniformShaderName = "content"
+    ) {
+        setFloatUniform("size", size.width, size.height)
+        setFloatUniform("edgeRefraction", edgeRefraction)
+        setFloatUniform("centerRefraction", centerRefraction)
     }
 }
 
@@ -302,25 +394,33 @@ private fun Modifier.consumeUnclaimedClicks(): Modifier {
 
 @Composable
 private fun BoxScope.LiquidGlassSelectedIndicator(
-    isDark: Boolean,
     selectedIndex: Int,
     itemCount: Int,
     maxWidth: Dp
 ) {
+    if (itemCount <= 0) return
+
     val targetOffset = liquidGlassSelectedIndicatorOffset(
         selectedIndex = selectedIndex,
         itemCount = itemCount,
         maxWidth = maxWidth
     )
-    val indicatorOffset = targetOffset
-
+    val indicatorOffset by animateDpAsState(
+        targetValue = targetOffset,
+        animationSpec = tween(durationMillis = 220, easing = FastOutSlowInEasing),
+        label = "liquid_glass_nav_indicator_offset"
+    )
     Box(
         modifier = Modifier
             .align(Alignment.CenterStart)
-            .offset(x = indicatorOffset)
+            .offset { IntOffset(indicatorOffset.roundToPx(), 0) }
             .size(liquidGlassSelectedIndicatorSize)
-            .clip(liquidGlassButtonShape)
-            .background(brush = liquidGlassSelectedButtonBrush(isDark = isDark))
+            .liquidGlassMaterial(
+                shape = CircleShape,
+                selected = true,
+                accented = false,
+                backdropVisible = true
+            )
     )
 }
 
@@ -375,12 +475,12 @@ private fun rememberLiquidGlassNavMetrics(
 ): LiquidGlassNavMetrics {
     val scale by animateFloatAsState(
         targetValue = liquidGlassScaleTarget(isSelected = isSelected, isPressed = isPressed),
-        animationSpec = spring(stiffness = 520f, dampingRatio = 0.72f),
+        animationSpec = tween(durationMillis = 90, easing = FastOutSlowInEasing),
         label = "${screen.route}_liquid_glass_nav_scale"
     )
     val iconSize by animateDpAsState(
         targetValue = if (isSelected) 23.dp else 21.dp,
-        animationSpec = spring(stiffness = 460f, dampingRatio = 0.82f),
+        animationSpec = tween(durationMillis = 90, easing = FastOutSlowInEasing),
         label = "${screen.route}_liquid_glass_nav_icon_size"
     )
     return LiquidGlassNavMetrics(
@@ -399,7 +499,8 @@ private fun liquidGlassSelectedIndicatorOffset(
     }
     val selectedSlotIndex = selectedIndex.coerceIn(0, itemCount - 1)
     val slotWidth = maxWidth / itemCount.toFloat()
-    return (slotWidth * selectedSlotIndex.toFloat()) + ((slotWidth - liquidGlassSelectedIndicatorSize) / 2f)
+    return (slotWidth * selectedSlotIndex.toFloat()) +
+        ((slotWidth - liquidGlassSelectedIndicatorSize) / 2f)
 }
 
 private fun liquidGlassScaleTarget(isSelected: Boolean, isPressed: Boolean): Float {
@@ -413,48 +514,9 @@ private fun liquidGlassScaleTarget(isSelected: Boolean, isPressed: Boolean): Flo
 @Composable
 private fun liquidGlassNavColors(isDark: Boolean): LiquidGlassNavColors {
     return LiquidGlassNavColors(
-        capsuleBorderColor = if (isDark) {
-            Color.White.copy(alpha = 0.14f)
-        } else {
-            Color.White.copy(alpha = 0.62f)
-        },
-        selectedIconColor = MaterialTheme.colorScheme.onBackground,
+        selectedIconColor = MaterialTheme.colorScheme.primary,
         unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = if (isDark) 0.86f else 0.72f)
     )
-}
-
-@Composable
-private fun liquidGlassCapsuleBrush(isDark: Boolean): Brush {
-    return Brush.verticalGradient(
-        colors = listOf(
-            Color.White.copy(alpha = if (isDark) 0.14f else 0.48f),
-            MaterialTheme.colorScheme.surface.copy(alpha = if (isDark) 0.48f else 0.58f),
-            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = if (isDark) 0.24f else 0.34f)
-        )
-    )
-}
-
-@Composable
-private fun liquidGlassSelectedButtonBrush(isDark: Boolean): Brush {
-    val alphas = liquidGlassSelectedButtonBrushAlphas(isDark = isDark)
-
-    return Brush.verticalGradient(
-        colors = listOf(
-            Color.White.copy(alpha = alphas.top),
-            Color.White.copy(alpha = alphas.middle),
-            Color.White.copy(alpha = alphas.bottom)
-        )
-    )
-}
-
-private fun liquidGlassSelectedButtonBrushAlphas(
-    isDark: Boolean
-): LiquidGlassSelectedButtonBrushAlphas {
-    return if (isDark) {
-        LiquidGlassSelectedButtonBrushAlphas(top = 0.24f, middle = 0.16f, bottom = 0.10f)
-    } else {
-        LiquidGlassSelectedButtonBrushAlphas(top = 0.78f, middle = 0.48f, bottom = 0.26f)
-    }
 }
 
 private fun navIcon(screen: Screen, isSelected: Boolean): ImageVector {
@@ -489,7 +551,7 @@ private fun navigateToTab(
                 saveState = true
             }
             launchSingleTop = true
-            restoreState = screen != Screen.Settings
+            restoreState = true
         }
     } else if (screen == Screen.Settings) {
         navController.popBackStack(Screen.Settings.route, false)

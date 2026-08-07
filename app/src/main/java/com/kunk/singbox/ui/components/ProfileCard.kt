@@ -14,10 +14,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentSize
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Error
 import androidx.compose.ui.text.style.TextOverflow
@@ -37,12 +35,13 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.material3.CircularProgressIndicator
@@ -52,9 +51,8 @@ import com.kunk.singbox.ui.theme.hollowShadow
 import com.kunk.singbox.ui.theme.isLiquidGlassTheme
 import com.kunk.singbox.ui.theme.liquidGlassDropdownMenuItemColors
 import com.kunk.singbox.ui.theme.liquidGlassIconButtonPanel
+import com.kunk.singbox.ui.theme.liquidGlassMaterial
 import com.kunk.singbox.ui.theme.liquidGlassPanel
-import com.kunk.singbox.ui.theme.liquidGlassPanelBorderBrush
-import com.kunk.singbox.ui.theme.liquidGlassPanelBrush
 import com.kunk.singbox.ui.theme.liquidGlassPressFeedback
 import com.kunk.singbox.ui.theme.liquidGlassProgressColor
 import com.kunk.singbox.ui.theme.liquidGlassProgressTrackColor
@@ -107,15 +105,7 @@ private fun Modifier.profileListCardPanel(
     }
     val panel = this
         .then(shadowOnly)
-        .clip(shape)
-        .background(liquidGlassPanelBrush(selected = selected))
-        .border(
-            border = BorderStroke(
-                width = 1.dp,
-                brush = liquidGlassPanelBorderBrush(selected = selected)
-            ),
-            shape = shape
-        )
+        .liquidGlassMaterial(shape = shape, selected = selected)
     return if (!enabled) panel.alpha(0.56f) else panel
 }
 
@@ -135,15 +125,6 @@ private fun Modifier.profileBadgePanel(
 @Composable
 private fun profileBadgeContentColor(defaultColor: Color): Color {
     return if (isLiquidGlassTheme()) MaterialTheme.colorScheme.primary else defaultColor
-}
-
-@Composable
-private fun Modifier.profileSelectedIndicatorPanel(): Modifier {
-    return if (isLiquidGlassTheme()) {
-        liquidGlassPanel(shape = CircleShape, selected = true, shadowElevation = 0.dp)
-    } else {
-        background(MaterialTheme.colorScheme.primary, CircleShape)
-    }
 }
 
 @Composable
@@ -251,7 +232,7 @@ fun ProfileCard(
     }
 
     Row(
-        modifier = cardModifier,
+        modifier = cardModifier.semantics { selected = isSelected },
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
@@ -259,24 +240,10 @@ fun ProfileCard(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.weight(1f)
         ) {
-            // Status Indicator
-            if (isSelected) {
-                Icon(
-                    imageVector = Icons.Rounded.Check,
-                    contentDescription = "Selected",
-                    tint = if (useLiquidGlass) {
-                        MaterialTheme.colorScheme.primary
-                    } else {
-                        MaterialTheme.colorScheme.onPrimary
-                    },
-                    modifier = Modifier
-                        .size(24.dp)
-                        .profileSelectedIndicatorPanel()
-                        .padding(4.dp)
-                )
-            } else {
-                Spacer(modifier = Modifier.size(24.dp))
-            }
+            SelectedPulseIndicator(
+                selected = isSelected,
+                animationLabel = "profile_selected"
+            )
 
             Spacer(modifier = Modifier.width(16.dp))
 

@@ -28,6 +28,7 @@ import com.kunk.singbox.ui.theme.liquidGlassButtonContentColor
 import com.kunk.singbox.ui.theme.liquidGlassButtonPanel
 import com.kunk.singbox.ui.theme.liquidGlassDividerColor
 import com.kunk.singbox.ui.theme.liquidGlassPanel
+import com.kunk.singbox.ui.theme.liquidGlassDialogPanel
 import com.kunk.singbox.ui.theme.liquidGlassProgressColor
 import com.kunk.singbox.ui.theme.liquidGlassProgressTrackColor
 import com.kunk.singbox.ui.theme.liquidGlassTextButtonContentColor
@@ -51,17 +52,23 @@ private fun ExportImportCard(
     modifier: Modifier = Modifier,
     shape: Shape = MaterialTheme.shapes.large,
     selected: Boolean = false,
+    dialog: Boolean = false,
     containerColor: Color = MaterialTheme.colorScheme.surface,
     content: @Composable ColumnScope.() -> Unit
 ) {
     val useLiquidGlass = isLiquidGlassTheme()
     if (useLiquidGlass) {
-        Column(
-            modifier = modifier.liquidGlassPanel(
+        val panelModifier = if (dialog) {
+            modifier.liquidGlassDialogPanel(shape = shape, shadowElevation = 20.dp)
+        } else {
+            modifier.liquidGlassPanel(
                 shape = shape,
                 selected = selected,
                 shadowElevation = 20.dp
-            ),
+            )
+        }
+        Column(
+            modifier = panelModifier,
             content = content
         )
         return
@@ -97,7 +104,8 @@ fun ExportProgressDialog(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(16.dp),
-            shape = MaterialTheme.shapes.large
+            shape = MaterialTheme.shapes.large,
+            dialog = true
         ) {
             Column(
                 modifier = Modifier
@@ -210,7 +218,8 @@ fun ImportPreviewDialog(
             modifier = Modifier
                 .fillMaxWidth(0.9f)
                 .padding(16.dp),
-            shape = MaterialTheme.shapes.large
+            shape = MaterialTheme.shapes.large,
+            dialog = true
         ) {
             Column(
                 modifier = Modifier
@@ -374,7 +383,8 @@ fun ImportProgressDialog(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(16.dp),
-            shape = MaterialTheme.shapes.large
+            shape = MaterialTheme.shapes.large,
+            dialog = true
         ) {
             Column(
                 modifier = Modifier
@@ -506,7 +516,8 @@ fun ValidatingDialog() {
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(16.dp),
-            shape = MaterialTheme.shapes.large
+            shape = MaterialTheme.shapes.large,
+            dialog = true
         ) {
             Column(
                 modifier = Modifier

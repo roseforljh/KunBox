@@ -8,26 +8,49 @@ import java.io.File
 class LiquidGlassReactBitsSurfaceTest {
 
     @Test
-    fun liquidGlassPanelKeepsSharedThemeEntryWithoutInternalDrawLayers() {
+    fun liquidGlassUsesNeutralCrystalOpticsAndAnimatedNavigationIndicator() {
+        val themeSource = liquidGlassThemeSource()
+        val navSource = File("src/main/java/com/kunk/singbox/ui/components/AppNavBar.kt")
+            .readText()
+            .replace("\r\n", "\n")
+
+        val crystalBody = themeSource.extractFunctionBody("liquidGlassCrystalSurface")
+        assertTrue(themeSource.contains(".liquidGlassCrystalSurface("))
+        assertTrue(crystalBody.contains("BlendMode.Screen"))
+        assertTrue(crystalBody.contains("causticBrush"))
+        assertTrue(crystalBody.contains("innerRimBrush"))
+        assertFalse(crystalBody.contains("coolRefraction"))
+        assertFalse(crystalBody.contains("warmRefraction"))
+        assertFalse(crystalBody.contains("0xFF66D9FF"))
+        assertFalse(crystalBody.contains("0xFFFF8BCB"))
+        assertFalse(themeSource.contains("Primary.copy("))
+        assertTrue(navSource.contains("liquid_glass_nav_indicator_offset"))
+        val indicatorBody = navSource.extractFunctionBody("LiquidGlassSelectedIndicator")
+        assertFalse(indicatorBody.contains(".background("))
+        assertTrue(indicatorBody.contains(".liquidGlassMaterial("))
+        assertTrue(indicatorBody.contains("selected = true"))
+        assertFalse(indicatorBody.contains(".liquidGlassPanel("))
+        assertFalse(indicatorBody.contains("shadowElevation"))
+        assertTrue(navSource.contains("selectedIconColor = MaterialTheme.colorScheme.primary"))
+        assertFalse(navSource.contains("0xFF76D7FF"))
+    }
+
+    @Test
+    fun liquidGlassPanelKeepsSharedThemeEntryAndOpticalDrawLayer() {
         val source = liquidGlassThemeSource()
         val panelBody = source.extractFunctionBody("liquidGlassPanel")
 
-        listOf(
-            "drawWithContent",
-            "BlendMode.Screen",
-            "Color(0xFFFF3B30)",
-            "Color(0xFF0A84FF)",
-            "float3 channel = float3(redMap, greenMap, blueMap) * channelAlpha;"
-        ).forEach { token ->
-            assertFalse(panelBody.contains(token))
-        }
-        assertTrue(source.contains(".background(liquidGlassPanelBrush(selected = selected))"))
-        assertTrue(source.contains("liquidGlassPanelBorderBrush(selected = selected)"))
+        assertTrue(panelBody.contains(".liquidGlassMaterial("))
+        assertTrue(
+            source.extractFunctionBody("liquidGlassMaterial")
+                .contains("backdropVisible = backdropVisible")
+        )
+        assertTrue(source.extractFunctionBody("liquidGlassCrystalSurface").contains("drawWithCache"))
         assertTrue(source.extractFunctionBody("hollowShadow").contains("drawWithCache"))
     }
 
     @Test
-    fun liquidGlassPanelDoesNotUseReloadVisibleInteriorSurfaceHelpers() {
+    fun liquidGlassPanelDoesNotUseApi33OnlyShaders() {
         val source = liquidGlassThemeSource()
 
         listOf(
@@ -36,17 +59,14 @@ class LiquidGlassReactBitsSurfaceTest {
             "REACT_BITS_GLASS_SURFACE_SHADER",
             "ReactBitsGlassSurfaceSpec",
             "reactBitsGlassSurface",
-            "drawReactBits",
-            "channelAlpha",
-            "innerGlowAlpha",
-            "edgeAlpha"
+            "drawReactBits"
         ).forEach { token ->
             assertFalse(source.contains(token))
         }
     }
 
     @Test
-    fun selectedPrimaryTintDoesNotUseSeparateInteriorOverlay() {
+    fun selectedNeutralTintDoesNotUseSeparateInteriorOverlay() {
         val source = liquidGlassThemeSource()
         val panelBody = source.extractFunctionBody("liquidGlassPanel")
 
@@ -62,10 +82,11 @@ class LiquidGlassReactBitsSurfaceTest {
 
         assertFalse(source.contains("LiquidGlassShadowSpec"))
         assertFalse(source.contains("liquidGlassPanelShadowSpec"))
-        assertTrue(panelBody.contains("val shadowAlpha = if (isDark) 0.35f else 0.12f"))
+        assertTrue(panelBody.contains("val edgeShadowAlpha = if (isDark) 0.08f else 0.12f"))
+        assertTrue(panelBody.contains("val edgeShadowColor = if (isDark) Color.White else Color.Black"))
         assertFalse(panelBody.contains("liquidGlassPanelShadowSpec(selected = selected)"))
-        assertTrue(panelBody.contains("color = Color.Black"))
-        assertTrue(panelBody.contains("alpha = shadowAlpha"))
+        assertTrue(panelBody.contains("color = edgeShadowColor"))
+        assertTrue(panelBody.contains("alpha = edgeShadowAlpha"))
     }
 
     @Test
@@ -92,6 +113,30 @@ class LiquidGlassReactBitsSurfaceTest {
     }
 
     @Test
+    fun liquidGlassBackdropLayersStayNeutralWhileSamplingRealContent() {
+        val source = liquidGlassThemeSource()
+        val backdropBody = source.extractFunctionBody("liquidGlassBackdrop")
+        val mainSource = File("src/main/java/com/kunk/singbox/MainActivity.kt")
+            .readText()
+            .replace("\r\n", "\n")
+        val navSource = File("src/main/java/com/kunk/singbox/ui/components/AppNavBar.kt")
+            .readText()
+            .replace("\r\n", "\n")
+
+        assertTrue(backdropBody.contains("Brush.verticalGradient("))
+        assertFalse(backdropBody.contains("coolAmbient"))
+        assertFalse(backdropBody.contains("warmAmbient"))
+        assertFalse(source.contains("0xFF70CFFF"))
+        assertFalse(source.contains("0xFFB78CFF"))
+        assertTrue(source.contains("HazeStyle("))
+        assertTrue(source.contains(".hazeEffect("))
+        assertTrue(mainSource.contains(".layerBackdrop(liquidGlassContentBackdrop)"))
+        assertTrue(navSource.contains("backdrop = backdrop"))
+        assertFalse(mainSource.contains(".hazeSource("))
+        assertFalse(navSource.extractFunctionBody("LiquidGlassRefractionOverlay").contains(".hazeEffect("))
+    }
+
+    @Test
     fun mainActivityCollectsSettingsWithoutReadingStateFlowValueInComposition() {
         val source = File("src/main/java/com/kunk/singbox/MainActivity.kt")
             .readText()
@@ -102,7 +147,11 @@ class LiquidGlassReactBitsSurfaceTest {
     }
 
     private fun String.extractFunctionBody(functionName: String): String {
-        val start = listOf("fun Modifier.$functionName", "fun $functionName")
+        val start = listOf(
+            "fun Modifier.$functionName",
+            "fun BoxScope.$functionName",
+            "fun $functionName"
+        )
             .map(::indexOf)
             .firstOrNull { it >= 0 } ?: -1
         assertTrue("Missing function $functionName", start >= 0)

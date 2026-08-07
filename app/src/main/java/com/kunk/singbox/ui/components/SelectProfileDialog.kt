@@ -32,6 +32,7 @@ import androidx.compose.ui.unit.dp
 import com.kunk.singbox.R
 import com.kunk.singbox.model.ProfileUi
 import com.kunk.singbox.ui.theme.isLiquidGlassTheme
+import com.kunk.singbox.ui.theme.LiquidGlassDialogEffect
 import com.kunk.singbox.ui.theme.liquidGlassPanel
 import com.kunk.singbox.ui.theme.liquidGlassDialogContainerColor
 import com.kunk.singbox.ui.theme.liquidGlassDialogPanel
@@ -95,6 +96,7 @@ fun SelectProfileDialog(
             )
         },
         text = {
+            LiquidGlassDialogEffect()
             Column(modifier = Modifier.fillMaxWidth()) {
                 LazyColumn(
                     modifier = Modifier

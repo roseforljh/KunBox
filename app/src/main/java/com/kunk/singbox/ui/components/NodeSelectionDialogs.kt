@@ -1,36 +1,23 @@
 package com.kunk.singbox.ui.components
 
 import android.content.Intent
-import androidx.compose.ui.res.stringResource
-import com.kunk.singbox.R
 import android.net.Uri
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.animateContentSize
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.ui.draw.clip
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.ClickableText
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.RadioButtonChecked
+import androidx.compose.material.icons.rounded.RadioButtonUnchecked
 import androidx.compose.material3.Button
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -46,44 +33,34 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import androidx.compose.foundation.text.ClickableText
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Check
-import androidx.compose.material.icons.rounded.ExpandLess
-import androidx.compose.material.icons.rounded.ExpandMore
-import androidx.compose.material.icons.rounded.RadioButtonChecked
-import androidx.compose.material.icons.rounded.RadioButtonUnchecked
-import androidx.compose.ui.text.SpanStyle
-import androidx.compose.ui.text.buildAnnotatedString
-import androidx.compose.ui.text.style.TextDecoration
-import androidx.compose.ui.text.withStyle
-import com.kunk.singbox.ui.theme.Destructive
+import com.kunk.singbox.R
 import com.kunk.singbox.model.FilterMode
 import com.kunk.singbox.model.NodeFilter
-import com.kunk.singbox.model.NodeUi
-import com.kunk.singbox.model.ProfileUi
+import com.kunk.singbox.ui.theme.Destructive
+import com.kunk.singbox.ui.theme.LiquidGlassDialogEffect
 import com.kunk.singbox.ui.theme.isLiquidGlassTheme
 import com.kunk.singbox.ui.theme.liquidGlassButtonColors
 import com.kunk.singbox.ui.theme.liquidGlassButtonContentColor
 import com.kunk.singbox.ui.theme.liquidGlassButtonPanel
-import com.kunk.singbox.ui.theme.liquidGlassEmptyStatePanel
+import com.kunk.singbox.ui.theme.liquidGlassDialogPanel
+import com.kunk.singbox.ui.theme.liquidGlassOutlinedTextFieldColors
 import com.kunk.singbox.ui.theme.liquidGlassPanel
 import com.kunk.singbox.ui.theme.liquidGlassPressFeedback
-import com.kunk.singbox.ui.theme.liquidGlassProgressColor
-import com.kunk.singbox.ui.theme.liquidGlassProgressTrackColor
-import com.kunk.singbox.ui.theme.liquidGlassOutlinedTextFieldColors
-import com.kunk.singbox.ui.theme.liquidGlassTextFieldBorderColor
-import com.kunk.singbox.ui.theme.liquidGlassTextFieldContainerColor
-import com.kunk.singbox.ui.theme.liquidGlassTextFieldPanel
 import com.kunk.singbox.ui.theme.liquidGlassTextButtonColors
 import com.kunk.singbox.ui.theme.liquidGlassTextButtonContentColor
 import com.kunk.singbox.ui.theme.liquidGlassTextButtonPanel
-import com.kunk.singbox.ui.theme.LiquidGlassDialogEffect
-import com.kunk.singbox.ui.theme.liquidGlassDialogPanel
+import com.kunk.singbox.ui.theme.liquidGlassTextFieldBorderColor
+import com.kunk.singbox.ui.theme.liquidGlassTextFieldContainerColor
+import com.kunk.singbox.ui.theme.liquidGlassTextFieldPanel
 
 @Composable
 private fun Modifier.nodeSelectionDialogPanel(shape: RoundedCornerShape = RoundedCornerShape(28.dp)): Modifier {
@@ -91,50 +68,6 @@ private fun Modifier.nodeSelectionDialogPanel(shape: RoundedCornerShape = Rounde
         liquidGlassDialogPanel(shape = shape, shadowElevation = 24.dp)
     } else {
         background(MaterialTheme.colorScheme.surface, shape)
-    }
-}
-
-@Composable
-private fun Modifier.nodeSelectionGroupPanel(shape: RoundedCornerShape = RoundedCornerShape(12.dp)): Modifier {
-    return if (isLiquidGlassTheme()) {
-        liquidGlassPanel(shape = shape, shadowElevation = 0.dp)
-    } else {
-        background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
-    }
-}
-
-@Composable
-private fun Modifier.nodeSelectionItemPanel(isSelected: Boolean): Modifier {
-    val shape = RoundedCornerShape(12.dp)
-    val borderColor = if (isSelected) MaterialTheme.colorScheme.primary else Color.Transparent
-    val backgroundColor = if (isSelected) {
-        MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)
-    } else {
-        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
-    }
-
-    return if (isLiquidGlassTheme()) {
-        liquidGlassPanel(shape = shape, selected = isSelected, shadowElevation = 0.dp)
-    } else {
-        background(backgroundColor, shape)
-            .border(
-                width = if (isSelected) 1.5.dp else 0.dp,
-                color = borderColor,
-                shape = shape
-            )
-    }
-}
-
-@Composable
-private fun Modifier.nodeSelectionListItemPanel(isSelected: Boolean): Modifier {
-    val shape = RoundedCornerShape(10.dp)
-    return if (isLiquidGlassTheme()) {
-        liquidGlassPanel(shape = shape, selected = isSelected, shadowElevation = 0.dp)
-    } else {
-        background(
-            if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.1f) else Color.Transparent,
-            shape
-        )
     }
 }
 
@@ -149,324 +82,6 @@ private fun Modifier.nodeFilterModePanel(isSelected: Boolean): Modifier {
             shape
         )
     }
-}
-
-@Composable
-private fun Modifier.nodeSelectorCheckPanel(): Modifier {
-    return if (isLiquidGlassTheme()) {
-        liquidGlassPanel(shape = CircleShape, selected = true, shadowElevation = 4.dp)
-    } else {
-        background(MaterialTheme.colorScheme.primary, CircleShape)
-    }
-}
-
-@Composable
-private fun Modifier.nodeSelectorItemPressFeedback(
-    useLiquidGlass: Boolean,
-    onClick: () -> Unit
-): Modifier = liquidGlassPressFeedback(
-    useLiquidGlass = useLiquidGlass,
-    label = "liquid_glass_node_selector_item_scale",
-    onClick = onClick
-)
-
-@Composable
-private fun Modifier.nodeSelectionGroupPressFeedback(
-    useLiquidGlass: Boolean,
-    enabled: Boolean,
-    onClick: () -> Unit
-): Modifier = liquidGlassPressFeedback(
-    enabled = enabled,
-    useLiquidGlass = useLiquidGlass,
-    label = "liquid_glass_node_selection_group_scale",
-    onClick = onClick
-)
-
-@Composable
-private fun Modifier.nodeSelectionRouteItemPressFeedback(
-    useLiquidGlass: Boolean,
-    onClick: () -> Unit
-): Modifier = liquidGlassPressFeedback(
-    useLiquidGlass = useLiquidGlass,
-    label = "liquid_glass_node_selection_route_item_scale",
-    onClick = onClick
-)
-
-@Composable
-fun ProfileNodeSelectDialog(
-    title: String,
-    profiles: List<ProfileUi>,
-    nodesForSelection: List<NodeUi>,
-    selectedNodeRef: String?,
-    onSelect: (String) -> Unit,
-    onDismiss: () -> Unit
-) {
-    fun toNodeRef(node: NodeUi): String = "${node.sourceProfileId}::${node.name}"
-
-    val nodesByProfile = remember(nodesForSelection) {
-        nodesForSelection.groupBy { it.sourceProfileId }
-    }
-    val profileOrder = remember(profiles) { profiles.sortedBy { it.name } }
-    val knownProfileIds = remember(profiles) { profiles.map { it.id }.toSet() }
-
-    var expandedProfileId by remember { mutableStateOf<String?>(null) }
-    val useLiquidGlass = isLiquidGlassTheme()
-
-    Dialog(
-        onDismissRequest = onDismiss,
-        properties = DialogProperties(
-            usePlatformDefaultWidth = false,
-            decorFitsSystemWindows = false
-        )
-    ) {
-        LiquidGlassDialogEffect()
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(24.dp)
-                .nodeSelectionDialogPanel()
-        ) {
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .fillMaxHeight(0.85f),
-                contentPadding = PaddingValues(24.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                item {
-                    Text(
-                        text = title,
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    Spacer(modifier = Modifier.height(16.dp))
-                }
-                profileOrder.forEach { profile ->
-                    val itemsForProfile = nodesByProfile[profile.id].orEmpty()
-                    val isExpanded = expandedProfileId == profile.id
-                    val enabled = itemsForProfile.isNotEmpty()
-
-                    item(key = "profile_${profile.id}") {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(12.dp))
-                                .nodeSelectionGroupPanel()
-                                .animateContentSize(animationSpec = tween(durationMillis = 220))
-                        ) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .nodeSelectionGroupPressFeedback(
-                                        useLiquidGlass = useLiquidGlass,
-                                        enabled = enabled
-                                    ) {
-                                        expandedProfileId = if (isExpanded) null else profile.id
-                                    }
-                                    .padding(vertical = 12.dp, horizontal = 12.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        text = profile.name,
-                                        style = MaterialTheme.typography.bodyLarge,
-                                        color = if (enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
-                                        fontWeight = FontWeight.Medium
-                                    )
-                                    Text(
-                                        text = stringResource(R.string.rulesets_nodes_count, itemsForProfile.size),
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                                Icon(
-                                    imageVector = if (isExpanded) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
-                                    contentDescription = null,
-                                    tint = if (enabled) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-                                )
-                            }
-
-                            AnimatedVisibility(
-                                visible = isExpanded,
-                                enter = fadeIn(animationSpec = tween(180)),
-                                exit = fadeOut(animationSpec = tween(120))
-                            ) {
-                                LazyColumn(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .heightIn(max = 260.dp),
-                                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                                ) {
-                                    items(itemsForProfile, key = { it.id }) { node ->
-                                        val ref = toNodeRef(node)
-                                        val selected = ref == selectedNodeRef
-                                        Row(
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .nodeSelectionListItemPanel(selected)
-                                                .nodeSelectionRouteItemPressFeedback(
-                                                    useLiquidGlass = useLiquidGlass
-                                                ) {
-                                                    onSelect(ref)
-                                                    onDismiss()
-                                                }
-                                                .padding(vertical = 10.dp, horizontal = 12.dp),
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            Icon(
-                                                imageVector = if (selected) Icons.Rounded.RadioButtonChecked else Icons.Rounded.RadioButtonUnchecked,
-                                                contentDescription = null,
-                                                tint = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                                modifier = Modifier.size(20.dp)
-                                            )
-                                            Spacer(modifier = Modifier.width(10.dp))
-                                            Column(modifier = Modifier.weight(1f)) {
-                                                Text(
-                                                    text = node.name,
-                                                    style = MaterialTheme.typography.bodyLarge,
-                                                    color = MaterialTheme.colorScheme.onSurface
-                                                )
-                                                Text(
-                                                    text = node.group,
-                                                    style = MaterialTheme.typography.bodySmall,
-                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                    maxLines = 1
-                                                )
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-
-                val unknownProfiles = nodesByProfile.keys
-                    .filter { it !in knownProfileIds }
-                    .sorted()
-
-                unknownProfiles.forEach { profileId ->
-                    val itemsForProfile = nodesByProfile[profileId].orEmpty()
-                    val isExpanded = expandedProfileId == profileId
-                    val enabled = itemsForProfile.isNotEmpty()
-
-                    item(key = "unknown_$profileId") {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(12.dp))
-                                .nodeSelectionGroupPanel()
-                                .animateContentSize(animationSpec = tween(durationMillis = 220))
-                        ) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .nodeSelectionGroupPressFeedback(
-                                        useLiquidGlass = useLiquidGlass,
-                                        enabled = enabled
-                                    ) {
-                                        expandedProfileId = if (isExpanded) null else profileId
-                                    }
-                                    .padding(vertical = 12.dp, horizontal = 12.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        text = stringResource(R.string.rulesets_unknown_profile, profileId),
-                                        style = MaterialTheme.typography.bodyLarge,
-                                        color = if (enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
-                                        fontWeight = FontWeight.Medium
-                                    )
-                                    Text(
-                                        text = stringResource(R.string.rulesets_nodes_count, itemsForProfile.size),
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                                Icon(
-                                    imageVector = if (isExpanded) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
-                                    contentDescription = null,
-                                    tint = if (enabled) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-                                )
-                            }
-
-                            AnimatedVisibility(
-                                visible = isExpanded,
-                                enter = fadeIn(animationSpec = tween(180)),
-                                exit = fadeOut(animationSpec = tween(120))
-                            ) {
-                                LazyColumn(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .heightIn(max = 260.dp),
-                                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                                ) {
-                                    items(itemsForProfile, key = { it.id }) { node ->
-                                        val ref = toNodeRef(node)
-                                        val selected = ref == selectedNodeRef
-                                        Row(
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .nodeSelectionListItemPanel(selected)
-                                                .nodeSelectionRouteItemPressFeedback(
-                                                    useLiquidGlass = useLiquidGlass
-                                                ) {
-                                                    onSelect(ref)
-                                                    onDismiss()
-                                                }
-                                                .padding(vertical = 10.dp, horizontal = 12.dp),
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            Icon(
-                                                imageVector = if (selected) Icons.Rounded.RadioButtonChecked else Icons.Rounded.RadioButtonUnchecked,
-                                                contentDescription = null,
-                                                tint = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                                modifier = Modifier.size(20.dp)
-                                            )
-                                            Spacer(modifier = Modifier.width(10.dp))
-                                            Column(modifier = Modifier.weight(1f)) {
-                                                Text(
-                                                    text = node.name,
-                                                    style = MaterialTheme.typography.bodyLarge,
-                                                    color = MaterialTheme.colorScheme.onSurface
-                                                )
-                                                Text(
-                                                    text = node.group,
-                                                    style = MaterialTheme.typography.bodySmall,
-                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                    maxLines = 1
-                                                )
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                } // End of unknownProfiles
-
-                item {
-                    Spacer(modifier = Modifier.height(16.dp))
-                    TextButton(
-                        onClick = onDismiss,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(50.dp)
-                            .liquidGlassTextButtonPanel(shape = RoundedCornerShape(25.dp)),
-                        colors = liquidGlassTextButtonColors(
-                            contentColor = liquidGlassTextButtonContentColor(
-                                defaultColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                                liquidColor = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        )
-                    ) {
-                        Text(stringResource(R.string.common_cancel))
-                    }
-                }
-            } // End of LazyColumn
-        } // End of Column
-    } // End of Dialog
 }
 
 @Composable
@@ -834,290 +449,6 @@ fun NodeFilterDialog(
                         text = stringResource(R.string.common_ok),
                         fontWeight = FontWeight.Bold,
                         color = liquidGlassButtonContentColor(MaterialTheme.colorScheme.onPrimary)
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-@Suppress("LongParameterList", "LongMethod")
-fun NodeSelectorDialog(
-    title: String,
-    nodes: List<NodeUi>,
-    selectedNodeId: String?,
-    isAutoSelectionEnabled: Boolean,
-    autoSelectionSubtitle: String,
-    testingNodeIds: Set<String> = emptySet(),
-    onSelectAuto: () -> Unit,
-    onSelect: (String) -> Unit,
-    onDismiss: () -> Unit
-) {
-    Dialog(
-        onDismissRequest = onDismiss,
-        properties = DialogProperties(
-            usePlatformDefaultWidth = false,
-            decorFitsSystemWindows = false
-        )
-    ) {
-        LiquidGlassDialogEffect()
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(24.dp)
-                .nodeSelectionDialogPanel()
-        ) {
-            if (nodes.isEmpty()) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(1f)
-                        .padding(top = 24.dp, start = 24.dp, end = 24.dp)
-                        .liquidGlassEmptyStatePanel(),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = stringResource(R.string.dashboard_no_nodes_available),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                Spacer(modifier = Modifier.height(16.dp))
-                TextButton(
-                    onClick = onDismiss,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(start = 24.dp, end = 24.dp, bottom = 24.dp)
-                        .height(50.dp)
-                        .liquidGlassTextButtonPanel(shape = RoundedCornerShape(25.dp)),
-                    colors = liquidGlassTextButtonColors(
-                        contentColor = liquidGlassTextButtonContentColor(
-                            defaultColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                            liquidColor = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    )
-                ) {
-                    Text(stringResource(R.string.common_cancel))
-                }
-            } else {
-                LazyColumn(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .fillMaxHeight(0.85f),
-                    contentPadding = PaddingValues(24.dp),
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    item {
-                        Text(
-                            text = title,
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Spacer(modifier = Modifier.height(16.dp))
-                    }
-                    item(key = "automatic-selection") {
-                        AutoSelectionItem(
-                            isSelected = isAutoSelectionEnabled,
-                            subtitle = autoSelectionSubtitle,
-                            onClick = {
-                                onSelectAuto()
-                                onDismiss()
-                            }
-                        )
-                    }
-                    items(nodes, key = { it.id }) { node ->
-                        val isSelected = !isAutoSelectionEnabled && node.id == selectedNodeId
-                        val isTesting = testingNodeIds.contains(node.id)
-
-                        NodeSelectorItem(
-                            node = node,
-                            isSelected = isSelected,
-                            isTesting = isTesting,
-                            onClick = {
-                                onSelect(node.id)
-                                onDismiss()
-                            }
-                        )
-                    }
-                    item {
-                        Spacer(modifier = Modifier.height(16.dp))
-                        TextButton(
-                            onClick = onDismiss,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(50.dp)
-                                .liquidGlassTextButtonPanel(shape = RoundedCornerShape(25.dp)),
-                            colors = liquidGlassTextButtonColors(
-                                contentColor = liquidGlassTextButtonContentColor(
-                                    defaultColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    liquidColor = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            )
-                        ) {
-                            Text(stringResource(R.string.common_cancel))
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-@Suppress("CognitiveComplexMethod")
-fun AutoSelectionItem(
-    isSelected: Boolean,
-    subtitle: String,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    val useLiquidGlass = isLiquidGlassTheme()
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .nodeSelectionItemPanel(isSelected)
-            .nodeSelectorItemPressFeedback(useLiquidGlass = useLiquidGlass, onClick = onClick)
-            .padding(12.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Box(modifier = Modifier.size(20.dp), contentAlignment = Alignment.Center) {
-            if (isSelected) {
-                Box(
-                    modifier = Modifier
-                        .size(20.dp)
-                        .nodeSelectorCheckPanel(),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.Check,
-                        contentDescription = null,
-                        tint = if (useLiquidGlass) {
-                            MaterialTheme.colorScheme.primary
-                        } else {
-                            MaterialTheme.colorScheme.onPrimary
-                        },
-                        modifier = Modifier.size(14.dp)
-                    )
-                }
-            }
-        }
-        Spacer(modifier = Modifier.width(12.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = stringResource(R.string.nodes_auto_selection),
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
-            )
-            Spacer(modifier = Modifier.height(2.dp))
-            Text(
-                text = subtitle,
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-    }
-}
-
-@Composable
-internal fun NodeSelectorItem(
-    node: NodeUi,
-    isSelected: Boolean,
-    isTesting: Boolean,
-    onClick: () -> Unit
-) {
-    val useLiquidGlass = isLiquidGlassTheme()
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .nodeSelectionItemPanel(isSelected)
-            .nodeSelectorItemPressFeedback(useLiquidGlass = useLiquidGlass, onClick = onClick)
-            .padding(12.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Box(
-            modifier = Modifier.size(20.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            if (isSelected) {
-                Box(
-                    modifier = Modifier
-                        .size(20.dp)
-                        .nodeSelectorCheckPanel(),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = androidx.compose.material.icons.Icons.Rounded.Check,
-                        contentDescription = null,
-                        tint = if (useLiquidGlass) {
-                            MaterialTheme.colorScheme.primary
-                        } else {
-                            MaterialTheme.colorScheme.onPrimary
-                        },
-                        modifier = Modifier.size(14.dp)
-                    )
-                }
-            }
-        }
-
-        Spacer(modifier = Modifier.width(12.dp))
-
-        Column(modifier = Modifier.weight(1f)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text = node.displayName,
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                    color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-                    maxLines = 1,
-                    modifier = Modifier.weight(1f, fill = false)
-                )
-            }
-
-            Spacer(modifier = Modifier.height(2.dp))
-
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text = node.protocolDisplay,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-
-                Spacer(modifier = Modifier.width(8.dp))
-
-                if (isTesting) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(10.dp),
-                        color = liquidGlassProgressColor(
-                            MaterialTheme.colorScheme.primary.copy(alpha = 0.7f)
-                        ),
-                        strokeWidth = 1.5.dp,
-                        trackColor = liquidGlassProgressTrackColor(Color.Transparent)
-                    )
-                } else {
-                    val latency = node.latencyMs
-                    val latencyColor = when {
-                        latency == null -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-                        latency < 0 -> Color.Red
-                        latency < 1000 -> Color(0xFF4CAF50)
-                        latency < 2000 -> Color(0xFFFFC107)
-                        else -> Color.Red
-                    }
-                    val latencyText = when {
-                        latency == null -> "---"
-                        latency == com.kunk.singbox.model.PingResultCode.IPV6_ONLY -> {
-                            stringResource(R.string.common_ipv6_only)
-                        }
-                        latency < 0 -> stringResource(R.string.common_timeout)
-                        else -> "${latency}ms"
-                    }
-                    Text(
-                        text = latencyText,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = latencyColor,
-                        fontWeight = if (latency != null && latency > 0) FontWeight.Bold else FontWeight.Normal
                     )
                 }
             }

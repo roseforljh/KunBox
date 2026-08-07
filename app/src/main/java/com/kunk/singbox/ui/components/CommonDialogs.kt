@@ -5,11 +5,13 @@ import com.kunk.singbox.R
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -25,6 +27,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
@@ -76,7 +79,7 @@ private fun Modifier.dialogPanel(shape: RoundedCornerShape = RoundedCornerShape(
 private fun Modifier.dialogOptionPanel(isSelected: Boolean): Modifier {
     val shape = RoundedCornerShape(12.dp)
     if (isLiquidGlassTheme()) {
-        return this.liquidGlassPanel(shape = shape, selected = false, shadowElevation = 4.dp)
+        return this.liquidGlassPanel(shape = shape, selected = isSelected, shadowElevation = 4.dp)
     } else {
         return background(
             if (isSelected) {
@@ -333,17 +336,125 @@ internal fun resolveVisibleSelectedPackages(
 }
 
 @Composable
+@Suppress("LongMethod")
+private fun SingleSelectOptions(
+    options: List<String>,
+    selectedIndex: Int,
+    onSelected: (Int) -> Unit,
+    modifier: Modifier = Modifier,
+    contentPadding: PaddingValues = PaddingValues(0.dp)
+) {
+    Column(
+        modifier = modifier
+            .verticalScroll(rememberScrollState())
+            .padding(contentPadding),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        options.forEachIndexed { index, option ->
+            val isSelected = index == selectedIndex
+            val textColorState = animateColorAsState(
+                targetValue = if (isSelected) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    MaterialTheme.colorScheme.onSurface
+                },
+                animationSpec = tween(220),
+                label = "dialog_option_text_color"
+            )
+            val iconTintState = animateColorAsState(
+                targetValue = if (isSelected) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                },
+                animationSpec = tween(220),
+                label = "dialog_option_icon_tint"
+            )
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .dialogOptionPanel(isSelected = isSelected)
+                    .liquidGlassPressFeedback(
+                        label = "liquid_glass_dialog_option_scale"
+                    ) {
+                        onSelected(index)
+                    }
+                    .padding(vertical = 14.dp, horizontal = 14.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = if (isSelected) {
+                        Icons.Rounded.RadioButtonChecked
+                    } else {
+                        Icons.Rounded.RadioButtonUnchecked
+                    },
+                    contentDescription = null,
+                    tint = iconTintState.value,
+                    modifier = Modifier.size(24.dp)
+                )
+                Spacer(modifier = Modifier.width(16.dp))
+                Text(
+                    text = option,
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = textColorState.value
+                )
+            }
+        }
+    }
+}
+
+@Composable
+@Suppress("LongMethod", "CognitiveComplexMethod")
 fun SingleSelectDialog(
     title: String,
     options: List<String>,
     selectedIndex: Int,
     optionsHeight: androidx.compose.ui.unit.Dp? = null,
+    fullScreen: Boolean = false,
     onSelect: (Int) -> Unit,
     onDismiss: () -> Unit
 ) {
     // 以 selectedIndex 作为初始值，并在外部选中项变化时同步。
     var tempSelectedIndex by remember(selectedIndex) { mutableIntStateOf(selectedIndex) }
     val canConfirm = tempSelectedIndex in options.indices
+
+    if (fullScreen) {
+        FullScreenDialogPage(
+            title = title,
+            onDismiss = onDismiss,
+            actions = {
+                IconButton(
+                    modifier = Modifier.fillMaxSize(),
+                    onClick = { if (canConfirm) onSelect(tempSelectedIndex) },
+                    enabled = canConfirm
+                ) {
+                    Text(
+                        text = stringResource(R.string.common_ok),
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onBackground.copy(
+                            alpha = if (canConfirm) 1f else 0.38f
+                        )
+                    )
+                }
+            }
+        ) { contentTopPadding ->
+            SingleSelectOptions(
+                options = options,
+                selectedIndex = tempSelectedIndex,
+                onSelected = { tempSelectedIndex = it },
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(
+                    start = 16.dp,
+                    top = contentTopPadding + 12.dp,
+                    end = 16.dp,
+                    bottom = 12.dp
+                )
+            )
+        }
+        return
+    }
 
     Dialog(onDismissRequest = onDismiss) {
         LiquidGlassDialogEffect()
@@ -371,58 +482,11 @@ fun SingleSelectDialog(
                         }
                     )
             ) {
-                Column(
-                    modifier = Modifier.verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    options.forEachIndexed { index, option ->
-                        val isSelected = index == tempSelectedIndex
-                        val textColorState = animateColorAsState(
-                            targetValue = if (isSelected) {
-                                MaterialTheme.colorScheme.primary
-                            } else {
-                                MaterialTheme.colorScheme.onSurface
-                            },
-                            animationSpec = tween(220),
-                            label = "dialog_option_text_color"
-                        )
-                        val iconTintState = animateColorAsState(
-                            targetValue = if (isSelected) {
-                                MaterialTheme.colorScheme.primary
-                            } else {
-                                MaterialTheme.colorScheme.onSurfaceVariant
-                            },
-                            animationSpec = tween(220),
-                            label = "dialog_option_icon_tint"
-                        )
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(12.dp))
-                                .dialogOptionPanel(isSelected = isSelected)
-                                .liquidGlassPressFeedback(
-                                    label = "liquid_glass_dialog_option_scale"
-                                ) {
-                                    tempSelectedIndex = index
-                                }
-                                .padding(vertical = 14.dp, horizontal = 14.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(
-                                imageVector = if (isSelected) Icons.Rounded.RadioButtonChecked else Icons.Rounded.RadioButtonUnchecked,
-                                contentDescription = null,
-                                tint = iconTintState.value,
-                                modifier = Modifier.size(24.dp)
-                            )
-                            Spacer(modifier = Modifier.width(16.dp))
-                            Text(
-                                text = option,
-                                style = MaterialTheme.typography.bodyLarge,
-                                color = textColorState.value
-                            )
-                        }
-                    }
-                }
+                SingleSelectOptions(
+                    options = options,
+                    selectedIndex = tempSelectedIndex,
+                    onSelected = { tempSelectedIndex = it }
+                )
             }
 
             Spacer(modifier = Modifier.height(24.dp))
