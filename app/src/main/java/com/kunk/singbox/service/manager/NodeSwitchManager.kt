@@ -7,6 +7,7 @@ import android.util.Log
 import com.kunk.singbox.ipc.VpnStateStore
 import com.kunk.singbox.model.NodeUi
 import com.kunk.singbox.repository.ConfigRepository
+import com.kunk.singbox.repository.NodeProtectionStore
 import com.kunk.singbox.utils.perf.PerfTracer
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
@@ -52,13 +53,11 @@ class NodeSwitchManager(
         this.callbacks = callbacks
     }
 
+    @Suppress("CognitiveComplexMethod")
     fun performHotSwitch(
         nodeId: String,
         outboundTag: String?,
-        targetNodeName: String? = null,
-        serviceClass: Class<*>,
-        actionStart: String,
-        extraConfigPath: String
+        targetNodeName: String? = null
     ) {
         serviceScope.launch {
             val startedAtMs = SystemClock.elapsedRealtime()
@@ -72,42 +71,46 @@ class NodeSwitchManager(
                 recordSwitchMetric(startedAtMs, "invalid_target")
                 return@launch
             }
+            if (NodeProtectionStore.effectiveSelectedNodeId(VpnStateStore.getSelectedNodeId()) != nodeId) {
+                Log.w(TAG, "Hot switch rejected because the manual selection transaction is missing: $nodeId")
+                recordSwitchMetric(startedAtMs, "unauthorized_target")
+                return@launch
+            }
+            val targetRef = NodeProtectionStore.runtimeMappings()[nodeTag]
+            if (targetRef?.nodeId != nodeId ||
+                !NodeProtectionStore.isRuntimeUseAuthorized(nodeId, VpnStateStore.getSelectedNodeId())
+            ) {
+                Log.w(TAG, "Hot switch rejected because runtime outbound ownership is invalid: $nodeTag")
+                recordSwitchMetric(startedAtMs, "invalid_runtime_mapping")
+                return@launch
+            }
 
             val displayName = resolveExplicitHotSwitchDisplayName(
                 node = node,
                 targetNodeName = targetNodeName
             )
-            if (displayName != null) {
-                VpnStateStore.setActiveLabel(displayName)
-            }
 
             val success = callbacks?.hotSwitchNode(nodeTag) == true
 
             if (success) {
                 Log.i(TAG, "Hot switch successful for $nodeTag")
                 if (displayName != null) {
+                    VpnStateStore.setActiveLabel(displayName)
                     callbacks?.setRealTimeNodeName(displayName)
-                    runCatching { configRepository.syncActiveNodeFromProxySelection(displayName) }
                 }
                 callbacks?.requestNotificationUpdate(force = FORCE_NOTIFICATION_AFTER_EXPLICIT_HOT_SWITCH)
                 callbacks?.notifyRemoteStateUpdate(force = true)
                 recordSwitchMetric(startedAtMs, "success")
             } else {
-                Log.w(TAG, "Hot switch failed for $nodeTag, falling back to restart")
-                callbacks?.setRealTimeNodeName(null)
-                val configPath = callbacks?.getConfigPath() ?: return@launch
-                val restartIntent = Intent(context, serviceClass).apply {
-                    action = actionStart
-                    putExtra(extraConfigPath, configPath)
-                    displayName?.let { putExtra("pending_node_name", it) }
-                }
-                callbacks?.startServiceIntent(restartIntent)
-                recordSwitchMetric(startedAtMs, "restart_fallback")
+                Log.w(TAG, "Hot switch failed for $nodeTag, keeping current runtime")
+                callbacks?.requestNotificationUpdate(force = true)
+                callbacks?.notifyRemoteStateUpdate(force = true)
+                recordSwitchMetric(startedAtMs, "failed")
             }
         }
     }
 
-    @Suppress("LongMethod")
+    @Suppress("LongMethod", "CognitiveComplexMethod")
     fun switchNextNode(
         serviceClass: Class<*>,
         actionStart: String,
@@ -129,7 +132,9 @@ class NodeSwitchManager(
         }
 
         val configRepository = ConfigRepository.getInstance(context)
-        val nodes = configRepository.nodes.value
+        val nodes = configRepository.nodes.value.filter {
+            it.autoSelectionEligible && !it.meteredProtected
+        }
         if (nodes.isEmpty()) {
             Log.w(TAG, "switchNextNode: no nodes available")
             return
@@ -139,6 +144,8 @@ class NodeSwitchManager(
         val currentIndex = nodes.indexOfFirst { it.id == activeNodeId }
         val nextIndex = (currentIndex + 1) % nodes.size
         val nextNode = nodes[nextIndex]
+        val requiresProtectedConfigPurge = activeNodeId?.let(configRepository::isNodeMeteredProtected) == true ||
+            NodeProtectionStore.manuallyAuthorizedNodeId() != null
 
         Log.i(TAG, "switchNextNode: switching from ${nodes.getOrNull(currentIndex)?.name} to ${nextNode.name}")
 
@@ -149,8 +156,19 @@ class NodeSwitchManager(
             val startedAtMs = SystemClock.elapsedRealtime()
             var metricOutcome = "error"
             try {
-                val success = callbacks?.hotSwitchNode(nextNode.name) == true
-                if (success) {
+                if (requiresProtectedConfigPurge) {
+                    when (val result = configRepository.setActiveNodeWithResult(nextNode.id)) {
+                        ConfigRepository.NodeSwitchResult.Success,
+                        ConfigRepository.NodeSwitchResult.NotRunning -> {
+                            metricOutcome = "protected_config_purged"
+                            Log.i(TAG, "switchNextNode: protected source removed through full selection transaction")
+                        }
+                        is ConfigRepository.NodeSwitchResult.Failed -> {
+                            metricOutcome = "protected_config_purge_failed"
+                            Log.e(TAG, "switchNextNode: failed to purge protected source: ${result.reason}")
+                        }
+                    }
+                } else if (callbacks?.hotSwitchNode(nextNode.name) == true) {
 
                     VpnStateStore.setActiveLabel(nextNode.name)
                     callbacks?.setRealTimeNodeName(nextNode.name)
@@ -165,12 +183,12 @@ class NodeSwitchManager(
                     metricOutcome = "success"
                 } else {
                     Log.w(TAG, "switchNextNode: hot switch failed, falling back to restart")
-                    VpnStateStore.setActiveLabel(nextNode.name)
                     callbacks?.setRealTimeNodeName(null)
                     val configPath = callbacks?.getConfigPath() ?: return@launch
                     val restartIntent = Intent(context, serviceClass).apply {
                         action = actionStart
                         putExtra(extraConfigPath, configPath)
+                        putExtra(ServiceStateHolder.EXTRA_CLEAN_CACHE, true)
                         putExtra("pending_node_name", nextNode.name)
                     }
                     callbacks?.startServiceIntent(restartIntent)

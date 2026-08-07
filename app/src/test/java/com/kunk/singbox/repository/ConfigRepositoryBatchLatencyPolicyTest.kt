@@ -167,6 +167,67 @@ class ConfigRepositoryBatchLatencyPolicyTest {
     }
 
     @Test
+    fun latencyRuntimeDropsTargetWhoseRecursiveDetourUsesProtectedNode() {
+        val source = listOf(
+            Outbound(type = "vless", tag = "tested", detour = "profile-b::front")
+        )
+        val protectedNodeIds = setOf(ConfigRepository.stableNodeId("profile-b", "New-HTTP"))
+
+        val resolved = ConfigRepository.resolveLatencyRuntimeDetours(
+            sourceProfileId = "profile-a",
+            sourceOutbounds = source,
+            isProtectedReference = { profileId, reference ->
+                MeteredNodeConfigGuard.isProtectedNodeReference(
+                    sourceProfileId = profileId,
+                    reference = reference,
+                    protectedNodeIds = protectedNodeIds
+                )
+            }
+        ) { profileId ->
+            when (profileId) {
+                "profile-b" -> listOf(
+                    Outbound(type = "socks", tag = "front", detour = "New-HTTP"),
+                    Outbound(type = "http", tag = "New-HTTP")
+                )
+                else -> null
+            }
+        }
+
+        assertTrue(resolved.isEmpty())
+    }
+
+    @Test
+    fun latencyRuntimeDropsTargetWhoseDetourGroupCanReachProtectedNode() {
+        val source = listOf(
+            Outbound(type = "vless", tag = "tested", detour = "automatic"),
+            Outbound(
+                type = "urltest",
+                tag = "automatic",
+                outbounds = listOf("safe", "New-HTTP")
+            ),
+            Outbound(type = "socks", tag = "safe"),
+            Outbound(type = "http", tag = "New-HTTP")
+        )
+        val protectedNodeIds = setOf(ConfigRepository.stableNodeId("profile-a", "New-HTTP"))
+
+        val resolved = ConfigRepository.resolveLatencyRuntimeDetours(
+            sourceProfileId = "profile-a",
+            sourceOutbounds = source,
+            isProtectedReference = { profileId, reference ->
+                MeteredNodeConfigGuard.isProtectedNodeReference(
+                    sourceProfileId = profileId,
+                    reference = reference,
+                    protectedNodeIds = protectedNodeIds
+                )
+            },
+            loadProfileOutbounds = { null }
+        )
+
+        assertTrue(resolved.none { it.tag == "tested" || it.tag == "automatic" })
+        assertTrue(resolved.none { it.tag == "New-HTTP" })
+    }
+
+    @Test
     fun latencyRuntimeAllocatesUniqueTagForCrossProfileCollision() {
         val source = listOf(
             Outbound(type = "vless", tag = "tested", detour = "profile-b::front"),

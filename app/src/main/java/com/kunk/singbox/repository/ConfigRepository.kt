@@ -104,6 +104,42 @@ internal fun resolveRestoredProfileSelection(
     return profileId to nodeId
 }
 
+internal fun combineCustomProfileOutbounds(
+    copiedOutbounds: List<Outbound>,
+    addedOutbounds: List<Outbound>
+): List<Outbound> {
+    val nodeOutbounds = (copiedOutbounds + addedOutbounds)
+        .filterNot { it.type == "direct" || it.type == "block" || it.type == "dns" }
+    if (nodeOutbounds.isEmpty()) return emptyList()
+    return nodeOutbounds + Outbound(type = "direct", tag = "direct")
+}
+
+internal fun shouldReloadRuntimeForManualSelection(
+    currentProfileId: String,
+    currentTags: Set<String>,
+    baselineProfileId: String?,
+    baselineTags: Set<String>?,
+    isVpnStartingNotReady: Boolean
+): Boolean {
+    return isVpnStartingNotReady ||
+        baselineProfileId.isNullOrBlank() ||
+        baselineProfileId != currentProfileId ||
+        baselineTags == null ||
+        baselineTags != currentTags
+}
+
+internal fun isRuntimeSelectionConfirmed(
+    snapshot: VpnStateStore.RuntimeStateSnapshot,
+    previousGeneration: Long,
+    expectedLabels: Set<String>
+): Boolean {
+    return !snapshot.manuallyStopped &&
+        snapshot.generation > previousGeneration &&
+        snapshot.stateOrdinal == ServiceState.RUNNING.ordinal &&
+        snapshot.lastError.isBlank() &&
+        expectedLabels.any { expected -> expected.equals(snapshot.activeLabel, ignoreCase = true) }
+}
+
 @Suppress("TooManyFunctions", "LargeClass", "ProtectedMemberInFinalClass")
 class ConfigRepository(protected val context: Context) {
     sealed class OutboundSemantic {
@@ -238,6 +274,7 @@ class ConfigRepository(protected val context: Context) {
     @Volatile protected var lastTagToNodeName: Map<String, String> = emptyMap()
     @Volatile protected var lastRunOutboundTags: Set<String>? = null
     @Volatile protected var lastRunProfileId: String? = null
+    @Volatile private var lastConfigGenerationError: String? = null
 
     private val nodeSwitchGate = NodeSwitchGate()
 
@@ -252,6 +289,10 @@ class ConfigRepository(protected val context: Context) {
 
     protected val profileAutoSelectionMmkv: MMKV by lazy {
         MMKV.mmkvWithID("profile_auto_selection", MMKV.MULTI_PROCESS_MODE)
+    }
+
+    protected val nodeAutoSelectionMmkv: MMKV by lazy {
+        MMKV.mmkvWithID("node_auto_selection", MMKV.MULTI_PROCESS_MODE)
     }
 
     protected val subscriptionUaMemoryMmkv: MMKV by lazy {
@@ -528,6 +569,33 @@ class ConfigRepository(protected val context: Context) {
 
     fun isProfileAutoSelectionEnabled(profileId: String?): Boolean {
         return !profileId.isNullOrBlank() && profileAutoSelectionMmkv.decodeBool(profileId, false)
+    }
+
+    fun isNodeAutoSelectionEligible(nodeId: String): Boolean {
+        return nodeAutoSelectionMmkv.decodeBool(nodeId, true)
+    }
+
+    fun isNodeMeteredProtected(nodeId: String): Boolean {
+        return NodeProtectionStore.isProtected(nodeId)
+    }
+
+    fun getLastConfigGenerationError(): String? = lastConfigGenerationError
+
+    internal fun getRuntimeNodeMappings(): Map<String, RuntimeNodeRef> {
+        return NodeProtectionStore.runtimeMappings()
+    }
+
+    internal fun isMeteredNodeUseAuthorized(nodeId: String): Boolean {
+        val node = getNodeById(nodeId) ?: return false
+        return NodeProtectionStore.isUseAuthorized(
+            nodeId = nodeId,
+            activeNodeId = _activeNodeId.value,
+            autoSelectionEnabled = isProfileAutoSelectionEnabled(node.sourceProfileId)
+        )
+    }
+
+    private fun saveNodeAutoSelectionEligibility(nodeId: String, eligible: Boolean): Boolean {
+        return nodeAutoSelectionMmkv.encode(nodeId, eligible)
     }
 
     fun getProfileNodeMemorySnapshot(): Map<String, String> {
@@ -956,18 +1024,27 @@ class ConfigRepository(protected val context: Context) {
         }
     }
 
-    protected fun buildLatencyRuntimeContext(
+    private fun buildMeteredSafeLatencyOutbounds(
         profileId: String,
         config: SingBoxConfig,
-        settings: AppSettings
-    ): ConfigRepositoryLatencyRuntimeContext {
+        protectedNodeIds: Set<String>,
+        allowedProtectedNodeId: String? = null
+    ): List<Outbound> {
         // WireGuard 在 sing-box 1.13 仅为 endpoint；延迟 runtime 仍保留逻辑 outbound 供节点匹配与探测
         val rawOutbounds = ConfigRepository.buildLatencyRuntimeOutbounds(config) { outbound ->
             buildOutboundForRuntime(outbound)
         }
-        val detourResolvedOutbounds = ConfigRepository.resolveLatencyRuntimeDetours(
+        return ConfigRepository.resolveLatencyRuntimeDetours(
             sourceProfileId = profileId,
-            sourceOutbounds = rawOutbounds
+            sourceOutbounds = rawOutbounds,
+            isProtectedReference = { referenceProfileId, reference ->
+                MeteredNodeConfigGuard.isProtectedNodeReference(
+                    sourceProfileId = referenceProfileId,
+                    reference = reference,
+                    protectedNodeIds = protectedNodeIds,
+                    allowedProtectedNodeId = allowedProtectedNodeId
+                )
+            }
         ) { detourProfileId ->
             loadConfig(detourProfileId)?.let { detourConfig ->
                 ConfigRepository.buildLatencyRuntimeOutbounds(detourConfig) { outbound ->
@@ -975,7 +1052,37 @@ class ConfigRepository(protected val context: Context) {
                 }
             }
         }
+    }
+
+    protected fun buildLatencyRuntimeContext(
+        profileId: String,
+        config: SingBoxConfig,
+        settings: AppSettings,
+        allowedProtectedNodeId: String? = null
+    ): ConfigRepositoryLatencyRuntimeContext {
+        val protectedNodeIds = NodeProtectionStore.protectedNodeIds()
+        val detourResolvedOutbounds = buildMeteredSafeLatencyOutbounds(
+            profileId = profileId,
+            config = config,
+            protectedNodeIds = protectedNodeIds,
+            allowedProtectedNodeId = allowedProtectedNodeId
+        )
         val dnsOverrideConfig = parseDnsOverride(_profiles.value.find { it.id == profileId }?.dnsOverride)
+        val dnsProtectionViolations = dnsOverrideConfig?.let { overrideConfig ->
+            MeteredNodeConfigGuard.findSourceConfigViolations(
+                config = SingBoxConfig(dns = overrideConfig),
+                sourceProfileId = profileId,
+                protectedNodeIds = protectedNodeIds,
+                includeGroupReferences = false
+            )
+        }.orEmpty()
+        if (dnsProtectionViolations.isNotEmpty()) {
+            LogRepository.getInstance().addAlwaysLog(
+                "WARN [PROTECTION] 计费节点保护已跳过测速：" +
+                    dnsProtectionViolations.joinToString(separator = "；")
+            )
+            return ConfigRepositoryLatencyRuntimeContext(emptyList(), null)
+        }
         val serverAddressStrategy = ConfigRepository.resolveOutboundServerAddressStrategy(
             settings.serverAddressStrategy,
             settings.ipVersionMode
@@ -1767,6 +1874,29 @@ class ConfigRepository(protected val context: Context) {
         }
     }
 
+    protected suspend fun resolveCustomProfileOutbounds(
+        selectedNodeIds: List<String>,
+        additionalOutbounds: List<Outbound>
+    ): Result<List<Outbound>> {
+        val targetNodes = if (selectedNodeIds.isEmpty()) {
+            emptyList()
+        } else {
+            loadSelectedCustomNodes(selectedNodeIds)
+        }
+        val copiedOutbounds = collectCustomOutbounds(targetNodes)
+        val outbounds = combineCustomProfileOutbounds(copiedOutbounds, additionalOutbounds)
+        return if (outbounds.isEmpty()) {
+            val message = if (selectedNodeIds.isEmpty()) {
+                context.getString(R.string.custom_profile_nodes_required)
+            } else {
+                context.getString(R.string.custom_profile_extract_failed)
+            }
+            Result.failure(Exception(message))
+        } else {
+            Result.success(outbounds)
+        }
+    }
+
     protected fun buildCustomProfile(profileId: String, name: String): ProfileUi {
         return ProfileUi(
             id = profileId,
@@ -1781,22 +1911,13 @@ class ConfigRepository(protected val context: Context) {
 
     suspend fun createCustomProfile(
         name: String,
-        selectedNodeIds: List<String>
+        selectedNodeIds: List<String>,
+        additionalOutbounds: List<Outbound> = emptyList()
     ): Result<ProfileUi> = withContext(Dispatchers.IO) {
         var profileId: String? = null
         try {
-            val targetNodes = loadSelectedCustomNodes(selectedNodeIds)
-            if (targetNodes.isEmpty()) {
-                return@withContext Result.failure(
-                    Exception(context.getString(R.string.custom_profile_nodes_required))
-                )
-            }
-
-            val outbounds = collectCustomOutbounds(targetNodes)
-            if (outbounds.isEmpty()) {
-                return@withContext Result.failure(
-                    Exception(context.getString(R.string.custom_profile_extract_failed))
-                )
+            val outbounds = resolveCustomProfileOutbounds(selectedNodeIds, additionalOutbounds).getOrElse { error ->
+                return@withContext Result.failure(error)
             }
 
             val newConfig = com.kunk.singbox.model.SingBoxConfig(outbounds = outbounds)
@@ -2081,6 +2202,17 @@ class ConfigRepository(protected val context: Context) {
         return nodeLinkParser.parse(link)
     }
 
+    fun parseNodeLinkForCustomProfile(link: String): Result<Outbound> {
+        val normalizedLink = link.trim()
+        if (!NodeLinkParser.isSupportedLink(normalizedLink)) {
+            return Result.failure(Exception(context.getString(R.string.nodes_unsupported_format)))
+        }
+        return runCatching {
+            parseNodeLink(normalizedLink)
+                ?: throw IllegalArgumentException(context.getString(R.string.nodes_add_failed))
+        }
+    }
+
     protected suspend fun extractNodesFromConfig(
         config: SingBoxConfig,
         profileId: String,
@@ -2195,6 +2327,7 @@ class ConfigRepository(protected val context: Context) {
         }
 
         val id = ConfigRepository.stableNodeId(profileId, outbound.tag)
+        val meteredProtected = isNodeMeteredProtected(id)
 
         return NodeUi(
             id = id,
@@ -2205,6 +2338,8 @@ class ConfigRepository(protected val context: Context) {
             isFavorite = false,
             sourceProfileId = profileId,
             trafficUsed = trafficRepo.getMonthlyTotal(id),
+            autoSelectionEligible = isNodeAutoSelectionEligible(id) && !meteredProtected,
+            meteredProtected = meteredProtected,
             tags = buildList {
                 outbound.tls?.let {
                     if (it.enabled == true) add("TLS")
@@ -2274,6 +2409,12 @@ class ConfigRepository(protected val context: Context) {
     }
 
     fun setActiveNodeIdOnly(nodeId: String) {
+        check(!isNodeMeteredProtected(nodeId)) {
+            "Automatic selection cannot activate a metered protected node: $nodeId"
+        }
+        if (NodeProtectionStore.manuallyAuthorizedNodeId() != nodeId) {
+            NodeProtectionStore.clearManualAuthorization()
+        }
         _activeNodeId.value = nodeId
         VpnStateStore.setSelectedNode(_activeProfileId.value, nodeId)
         _nodes.value.find { it.id == nodeId }?.name?.let { VpnStateStore.setSelectedNodeLabel(it) }
@@ -2293,6 +2434,34 @@ class ConfigRepository(protected val context: Context) {
         return result is ConfigRepository.NodeSwitchResult.Success || result is ConfigRepository.NodeSwitchResult.NotRunning
     }
 
+    /** 配置卡优先选择安全节点；唯一节点受保护时，本次点击视为明确手动选择。 */
+    @Suppress("ReturnCount")
+    suspend fun setActiveProfileWithResult(profileId: String): ConfigRepository.NodeSwitchResult {
+        awaitInitialProfilesLoaded()
+        val profile = _profiles.value.find { it.id == profileId }
+            ?: return ConfigRepository.NodeSwitchResult.Failed("Profile not found: $profileId")
+        val nodes = profileNodes[profileId] ?: loadProfileNodesWithLatency(profileId).orEmpty()
+        val autoSelectionEnabled = isProfileAutoSelectionEnabled(profileId)
+        val rememberedNodeId = getProfileLastSelectedNode(profileId)
+        val targetNode = ConfigRepository.resolveManualProfileTarget(
+            nodes = nodes,
+            rememberedNodeId = rememberedNodeId,
+            autoSelectionEnabled = autoSelectionEnabled
+        )
+            ?: return ConfigRepository.NodeSwitchResult.Failed(
+                context.getString(R.string.profiles_no_safe_node)
+            )
+
+        val manualResult = setActiveNodeWithResult(targetNode.id)
+        if (manualResult is ConfigRepository.NodeSwitchResult.Failed ||
+            !autoSelectionEnabled ||
+            targetNode.meteredProtected
+        ) {
+            return manualResult
+        }
+        return enableAutoSelectionWithResult(profileId)
+    }
+
     @Suppress("LongMethod", "CognitiveComplexMethod")
     suspend fun enableAutoSelectionWithResult(profileId: String): ConfigRepository.NodeSwitchResult {
         return nodeSwitchGate.run {
@@ -2301,6 +2470,7 @@ class ConfigRepository(protected val context: Context) {
             val previousProfileId = _activeProfileId.value
             val previousNodeId = _activeNodeId.value
             val previousAutoSelection = isProfileAutoSelectionEnabled(profileId)
+            val previousMeteredAuthorization = NodeProtectionStore.manuallyAuthorizedNodeId()
             val previousCoreMode = VpnStateStore.getMode()
             val runningConfigFile = File(context.filesDir, "running_config.json")
             val previousRunningConfig = withContext(Dispatchers.IO) {
@@ -2310,15 +2480,30 @@ class ConfigRepository(protected val context: Context) {
             if (previousProfileId != profileId) {
                 setActiveProfileAndWait(profileId)
             }
+            NodeProtectionStore.clearManualAuthorization()
             if (_nodes.value.isEmpty()) {
                 restoreAutoSelectionState(
                     profileId,
                     previousAutoSelection,
                     previousProfileId,
                     previousNodeId,
-                    previousRunningConfig
+                    previousRunningConfig,
+                    previousMeteredAuthorization
                 )
                 return@run ConfigRepository.NodeSwitchResult.Failed("Profile has no available nodes: ${profile.name}")
+            }
+            if (_nodes.value.none { isNodeAutoSelectionEligible(it.id) && !it.meteredProtected }) {
+                restoreAutoSelectionState(
+                    profileId,
+                    previousAutoSelection,
+                    previousProfileId,
+                    previousNodeId,
+                    previousRunningConfig,
+                    previousMeteredAuthorization
+                )
+                return@run ConfigRepository.NodeSwitchResult.Failed(
+                    "Profile has no nodes participating in automatic selection: ${profile.name}"
+                )
             }
             if (!saveProfileAutoSelection(profileId, true)) {
                 restoreAutoSelectionState(
@@ -2326,12 +2511,15 @@ class ConfigRepository(protected val context: Context) {
                     previousAutoSelection,
                     previousProfileId,
                     previousNodeId,
-                    previousRunningConfig
+                    previousRunningConfig,
+                    previousMeteredAuthorization
                 )
                 return@run ConfigRepository.NodeSwitchResult.Failed("Failed to persist automatic selection")
             }
 
-            val remoteRunning = SingBoxRemote.isRunning.value || SingBoxRemote.isStarting.value
+            val remoteRunning = SingBoxRemote.isRunning.value ||
+                SingBoxRemote.isStarting.value ||
+                VpnStateStore.getActive()
             if (!remoteRunning) {
                 saveProfilesImmediate()
                 return@run ConfigRepository.NodeSwitchResult.NotRunning
@@ -2344,9 +2532,12 @@ class ConfigRepository(protected val context: Context) {
                     previousAutoSelection,
                     previousProfileId,
                     previousNodeId,
-                    previousRunningConfig
+                    previousRunningConfig,
+                    previousMeteredAuthorization
                 )
-                return@run ConfigRepository.NodeSwitchResult.Failed("Failed to generate automatic selection config")
+                return@run ConfigRepository.NodeSwitchResult.Failed(
+                    lastConfigGenerationError ?: "Failed to generate automatic selection config"
+                )
             }
 
             runCatching {
@@ -2363,7 +2554,8 @@ class ConfigRepository(protected val context: Context) {
                         previousAutoSelection,
                         previousProfileId,
                         previousNodeId,
-                        previousRunningConfig
+                        previousRunningConfig,
+                        previousMeteredAuthorization
                     )
                     restorePreviousRuntimeConfig(previousRunningConfig, previousCoreMode)
                     ConfigRepository.NodeSwitchResult.Failed(
@@ -2434,6 +2626,52 @@ class ConfigRepository(protected val context: Context) {
         } == true
     }
 
+    @Suppress("ComplexCondition")
+    private suspend fun awaitRuntimeSelectionAfter(
+        previousGeneration: Long,
+        expectedNodeName: String,
+        expectedOutboundTag: String?,
+        timeoutMs: Long = RUNTIME_RELOAD_TIMEOUT_MS
+    ): Boolean {
+        val expectedLabels = setOfNotNull(
+            expectedNodeName.takeIf(String::isNotBlank),
+            expectedOutboundTag?.takeIf(String::isNotBlank)
+        )
+        val confirmed = withTimeoutOrNull(timeoutMs) {
+            while (true) {
+                val snapshot = VpnStateStore.getRuntimeStateSnapshot()
+                if (snapshot.manuallyStopped ||
+                    (snapshot.generation > previousGeneration && snapshot.lastError.isNotBlank())
+                ) {
+                    return@withTimeoutOrNull false
+                }
+                if (isRuntimeSelectionConfirmed(snapshot, previousGeneration, expectedLabels)) {
+                    return@withTimeoutOrNull true
+                }
+                delay(RUNTIME_RELOAD_POLL_INTERVAL_MS)
+            }
+            false
+        }
+        return confirmed ?: isRuntimeSelectionConfirmed(
+            snapshot = VpnStateStore.getRuntimeStateSnapshot(),
+            previousGeneration = previousGeneration,
+            expectedLabels = expectedLabels
+        )
+    }
+
+    private fun resolveRunningOutboundTags(configContent: String?): Set<String>? {
+        if (configContent.isNullOrBlank()) return null
+        return runCatching {
+            val config = gson.fromJson(configContent, SingBoxConfig::class.java)
+            (config.outbounds.orEmpty().map { it.tag } + config.endpoints.orEmpty().map { it.tag })
+                .filter(String::isNotBlank)
+                .toSet()
+                .takeIf(Set<String>::isNotEmpty)
+        }.onFailure { error ->
+            Log.w(ConfigRepository.TAG, "Failed to recover running outbound tags", error)
+        }.getOrNull()
+    }
+
     private suspend fun awaitConcreteRuntimeLabel(): Boolean {
         return withTimeoutOrNull(AUTO_GROUP_RESOLUTION_TIMEOUT_MS) {
             while (true) {
@@ -2455,7 +2693,7 @@ class ConfigRepository(protected val context: Context) {
     ) {
         if (previousRunningConfig == null) return
         val runningConfigFile = File(context.filesDir, "running_config.json")
-        ConfigRepository.writeTextFileAtomically(runningConfigFile, previousRunningConfig)
+        if (!restoreRunningConfigSnapshot(previousRunningConfig)) return
         if (!VpnStateStore.isManuallyStopped() && previousCoreMode != VpnStateStore.CoreMode.NONE) {
             VpnStateStore.setMode(previousCoreMode)
             val previousGeneration = VpnStateStore.getRuntimeStateSnapshot().generation
@@ -2470,22 +2708,37 @@ class ConfigRepository(protected val context: Context) {
         }
     }
 
+    private fun restoreRunningConfigSnapshot(configContent: String): Boolean {
+        return runCatching {
+            ConfigRepository.writeTextFileAtomically(
+                File(context.filesDir, "running_config.json"),
+                configContent
+            )
+            check(NodeProtectionStore.replaceRuntimeMappings(emptyMap(), configContent)) {
+                "Failed to restore runtime mapping fingerprint"
+            }
+            true
+        }.onFailure { error ->
+            Log.e(ConfigRepository.TAG, "Failed to restore previous running config snapshot", error)
+        }.getOrDefault(false)
+    }
+
+    @Suppress("LongParameterList")
     private fun restoreAutoSelectionState(
         profileId: String,
         previousAutoSelection: Boolean,
         previousProfileId: String?,
         previousNodeId: String?,
-        previousRunningConfig: String?
+        previousRunningConfig: String?,
+        previousMeteredAuthorization: String?
     ) {
         saveProfileAutoSelection(profileId, previousAutoSelection)
+        NodeProtectionStore.authorizeManualNode(previousMeteredAuthorization)
         if (previousProfileId != null) {
             setActiveProfile(previousProfileId, previousNodeId)
         }
         if (previousRunningConfig != null) {
-            ConfigRepository.writeTextFileAtomically(
-                File(context.filesDir, "running_config.json"),
-                previousRunningConfig
-            )
+            restoreRunningConfigSnapshot(previousRunningConfig)
         }
     }
 
@@ -2494,11 +2747,13 @@ class ConfigRepository(protected val context: Context) {
             val allNodesSnapshot = _allNodes.value.takeIf { it.isNotEmpty() } ?: loadAllNodesSnapshot()
             val previousProfileId = _activeProfileId.value
             val previousNodeId = _activeNodeId.value
+            val previousMeteredAuthorization = NodeProtectionStore.manuallyAuthorizedNodeId()
+            val previousTagToNodeName = lastTagToNodeName
 
             // Check for cross-profile switch
             val targetNode = allNodesSnapshot.find { it.id == nodeId }
-            val targetProfileId = targetNode?.sourceProfileId ?: previousProfileId
-                ?: return@run ConfigRepository.NodeSwitchResult.Failed("Target profile not found: $nodeId")
+                ?: return@run ConfigRepository.NodeSwitchResult.Failed("Target node not found: $nodeId")
+            val targetProfileId = targetNode.sourceProfileId
             val previousTargetNodeId = getProfileLastSelectedNode(targetProfileId)
             val previousAutoSelection = isProfileAutoSelectionEnabled(targetProfileId)
             val previousCoreMode = VpnStateStore.getMode()
@@ -2506,7 +2761,7 @@ class ConfigRepository(protected val context: Context) {
             val previousRunningConfig = withContext(Dispatchers.IO) {
                 runningConfigFile.takeIf { it.exists() }?.readText()
             }
-            if (targetNode != null && targetNode.sourceProfileId != _activeProfileId.value) {
+            if (targetNode.sourceProfileId != _activeProfileId.value) {
                 Log.i(ConfigRepository.TAG, "Cross-profile switch detected: ${_activeProfileId.value} -> ${targetNode.sourceProfileId}")
 
                 // 2025-fix: Ensure profile is loaded synchronously before switching
@@ -2525,32 +2780,56 @@ class ConfigRepository(protected val context: Context) {
                         }
                     }
                 }
-
-                setActiveProfile(targetNode.sourceProfileId, nodeId)
             }
 
-            _activeNodeId.value = nodeId
-            VpnStateStore.setSelectedNode(_activeProfileId.value, nodeId)
-            _activeProfileId.value?.let { profileId ->
-                saveProfileNodeMemory(profileId, nodeId)
+            val manualSelectionToken = runCatching {
+                NodeProtectionStore.beginManualSelection(nodeId)
+            }.getOrElse { error ->
+                return@run ConfigRepository.NodeSwitchResult.Failed(
+                    error.message ?: "Failed to stage manual selection"
+                )
             }
-            if (!saveProfileAutoSelection(targetProfileId, false)) {
+            val remoteRunning = SingBoxRemote.isRunning.value ||
+                SingBoxRemote.isStarting.value ||
+                VpnStateStore.getActive()
+            if (!remoteRunning) {
+                return@run runCatching {
+                    commitManualSelectionState(
+                        targetNode = targetNode,
+                        allNodesSnapshot = allNodesSnapshot,
+                        manualSelectionToken = manualSelectionToken
+                    )
+                    Log.i(ConfigRepository.TAG, "setActiveNodeWithResult: VPN not running, selection committed")
+                    ConfigRepository.NodeSwitchResult.NotRunning
+                }.getOrElse { error ->
+                    NodeProtectionStore.cancelManualSelection(manualSelectionToken)
+                    restoreManualSelectionState(
+                        targetProfileId,
+                        previousTargetNodeId,
+                        previousAutoSelection,
+                        previousProfileId to previousNodeId,
+                        previousRunningConfig,
+                        previousMeteredAuthorization
+                    )
+                    ConfigRepository.NodeSwitchResult.Failed(
+                        error.message ?: "Failed to persist manual selection"
+                    )
+                }
+            }
+
+            if (profileNodes[targetProfileId].orEmpty().none { it.id == nodeId } &&
+                allNodesSnapshot.none { it.id == nodeId }
+            ) {
+                NodeProtectionStore.cancelManualSelection(manualSelectionToken)
                 restoreManualSelectionState(
                     targetProfileId,
                     previousTargetNodeId,
                     previousAutoSelection,
                     previousProfileId to previousNodeId,
-                    previousRunningConfig
+                    previousRunningConfig,
+                    previousMeteredAuthorization
                 )
-                return@run ConfigRepository.NodeSwitchResult.Failed("Failed to persist manual selection")
-            }
-            nodeDisplayName(nodeId, allNodesSnapshot)?.let { VpnStateStore.setSelectedNodeLabel(it) }
-            saveProfilesImmediate()
-
-            val remoteRunning = SingBoxRemote.isRunning.value || SingBoxRemote.isStarting.value
-            if (!remoteRunning) {
-                Log.i(ConfigRepository.TAG, "setActiveNodeWithResult: VPN not running, skip hot switch")
-                return@run ConfigRepository.NodeSwitchResult.NotRunning
+                return@run ConfigRepository.NodeSwitchResult.Failed("Target node not found: $nodeId")
             }
 
             withContext(Dispatchers.IO) {
@@ -2562,20 +2841,29 @@ class ConfigRepository(protected val context: Context) {
                 if (node == null) {
                     val msg = "Target node not found: $nodeId"
                     Log.w(ConfigRepository.TAG, msg)
+                    NodeProtectionStore.cancelManualSelection(manualSelectionToken)
                     return@withContext ConfigRepository.NodeSwitchResult.Failed(msg)
                 }
 
                 try {
-                    val generationResult = generateConfigFile()
+                    val generationResult = generateConfigFile(
+                        selectedProfileId = targetProfileId,
+                        selectedNodeId = nodeId,
+                        forceManualSelection = true
+                    )
                     if (generationResult == null) {
-                        val msg = context.getString(R.string.dashboard_config_generation_failed)
+                        val msg = lastConfigGenerationError
+                            ?: context.getString(R.string.dashboard_config_generation_failed)
                         Log.e(ConfigRepository.TAG, msg)
+                        lastTagToNodeName = previousTagToNodeName
+                        NodeProtectionStore.cancelManualSelection(manualSelectionToken)
                         restoreManualSelectionState(
                             targetProfileId,
                             previousTargetNodeId,
                             previousAutoSelection,
                             previousProfileId to previousNodeId,
-                            previousRunningConfig
+                            previousRunningConfig,
+                            previousMeteredAuthorization
                         )
                         return@withContext ConfigRepository.NodeSwitchResult.Failed(msg)
                     }
@@ -2586,30 +2874,31 @@ class ConfigRepository(protected val context: Context) {
                         if (oldCacheDb.exists()) oldCacheDb.delete()
                     }
                     val currentTags = generationResult.outboundTags
-                    val currentProfileId = _activeProfileId.value
-                    val isFirstSwitchWhileRunning = lastRunProfileId == null && remoteRunning
-                    val profileChanged = (lastRunProfileId != null && lastRunProfileId != currentProfileId) || isFirstSwitchWhileRunning
-                    val tagsActuallyChanged = lastRunOutboundTags != null && lastRunOutboundTags != currentTags
+                    val currentProfileId = targetProfileId
+                    val baselineTags = lastRunOutboundTags
+                        ?: resolveRunningOutboundTags(previousRunningConfig)
+                    val baselineProfileId = lastRunProfileId
+                        ?: VpnStateStore.getSelectedProfileId().takeIf(String::isNotBlank)
+                        ?: previousProfileId
+                    val profileChanged = baselineProfileId == null || baselineProfileId != currentProfileId
+                    val tagsActuallyChanged = baselineTags == null || baselineTags != currentTags
                     val isVpnStartingNotReady = SingBoxRemote.isStarting.value && !SingBoxRemote.isRunning.value
-                    val needsConfigReload = lastRunOutboundTags == null && remoteRunning
-
-                    val tagsChanged = tagsActuallyChanged ||
-                        profileChanged ||
-                        isVpnStartingNotReady ||
-                        needsConfigReload
+                    val tagsChanged = shouldReloadRuntimeForManualSelection(
+                        currentProfileId = currentProfileId,
+                        currentTags = currentTags,
+                        baselineProfileId = baselineProfileId,
+                        baselineTags = baselineTags,
+                        isVpnStartingNotReady = isVpnStartingNotReady
+                    )
 
                     Log.d(
                         ConfigRepository.TAG,
                         "Switch decision: profileChanged=$profileChanged " +
-                            "(last=$lastRunProfileId, cur=$currentProfileId, " +
-                            "firstSwitch=$isFirstSwitchWhileRunning), " +
+                            "(baseline=$baselineProfileId, cur=$currentProfileId), " +
                             "tagsActuallyChanged=$tagsActuallyChanged, " +
                             "isVpnStartingNotReady=$isVpnStartingNotReady, " +
-                            "needsConfigReload=$needsConfigReload, tagsChanged=$tagsChanged"
+                            "baselineTags=${baselineTags?.size ?: "missing"}, tagsChanged=$tagsChanged"
                     )
-                    lastRunOutboundTags = currentTags
-                    lastRunProfileId = currentProfileId
-
                     val coreMode = VpnStateStore.getMode()
 
                     if (tagsChanged && remoteRunning) {
@@ -2681,24 +2970,49 @@ class ConfigRepository(protected val context: Context) {
                     } else {
                         context.startService(intent)
                     }
-                    if (previousAutoSelection && tagsChanged &&
-                        !awaitRuntimeRunningAfter(previousRuntimeGeneration)
+                    check(
+                        awaitRuntimeSelectionAfter(
+                            previousGeneration = previousRuntimeGeneration,
+                            expectedNodeName = node.name,
+                            expectedOutboundTag = generationResult.activeNodeTag,
+                            timeoutMs = if (tagsChanged) {
+                                RUNTIME_RELOAD_TIMEOUT_MS
+                            } else {
+                                MANUAL_HOT_SWITCH_CONFIRMATION_TIMEOUT_MS
+                            }
+                        )
                     ) {
-                        error("Timed out waiting for manual selection config")
+                        val actual = VpnStateStore.getRuntimeStateSnapshot().activeLabel
+                        "Kernel selection confirmation failed: expected=${node.name}, actual=$actual"
                     }
 
-                    Log.i(ConfigRepository.TAG, "Requested switch for node: ${node.name} (Tag: ${generationResult.activeNodeTag}, Restart: $tagsChanged)")
+                    commitManualSelectionState(
+                        targetNode = targetNode,
+                        allNodesSnapshot = allNodesSnapshot,
+                        manualSelectionToken = manualSelectionToken
+                    )
+                    lastRunOutboundTags = currentTags
+                    lastRunProfileId = currentProfileId
+
+                    Log.i(
+                        ConfigRepository.TAG,
+                        "Confirmed switch for node: ${node.name} " +
+                            "(Tag: ${generationResult.activeNodeTag}, Restart: $tagsChanged)"
+                    )
                     ConfigRepository.NodeSwitchResult.Success
                 } catch (e: Exception) {
 
                     val msg = "Switch error: ${e.message ?: "unknown error"}"
                     Log.e(ConfigRepository.TAG, "Error during hot switch", e)
+                    lastTagToNodeName = previousTagToNodeName
+                    NodeProtectionStore.cancelManualSelection(manualSelectionToken)
                     restoreManualSelectionState(
                         targetProfileId,
                         previousTargetNodeId,
                         previousAutoSelection,
                         previousProfileId to previousNodeId,
-                        previousRunningConfig
+                        previousRunningConfig,
+                        previousMeteredAuthorization
                     )
                     restorePreviousRuntimeConfig(previousRunningConfig, previousCoreMode)
                     ConfigRepository.NodeSwitchResult.Failed(msg)
@@ -2707,14 +3021,51 @@ class ConfigRepository(protected val context: Context) {
         }
     }
 
+    private fun commitManualSelectionState(
+        targetNode: NodeUi,
+        allNodesSnapshot: List<NodeUi>,
+        manualSelectionToken: String
+    ) {
+        val targetProfileId = targetNode.sourceProfileId
+        check(saveProfileAutoSelection(targetProfileId, false)) {
+            "Failed to persist manual selection mode"
+        }
+        NodeProtectionStore.commitManualSelection(
+            token = manualSelectionToken,
+            nodeId = targetNode.id,
+            protected = isNodeMeteredProtected(targetNode.id)
+        )
+
+        val previousProfileId = _activeProfileId.value
+        val previousNodeId = _activeNodeId.value
+        if (previousProfileId != null && previousNodeId != null && previousProfileId != targetProfileId) {
+            saveProfileNodeMemory(previousProfileId, previousNodeId)
+        }
+
+        val targetNodes = profileNodes[targetProfileId]
+            ?: allNodesSnapshot.filter { it.sourceProfileId == targetProfileId }
+        check(targetNodes.any { it.id == targetNode.id }) {
+            "Target node disappeared before selection commit: ${targetNode.id}"
+        }
+        profileNodes[targetProfileId] = targetNodes
+        _activeProfileId.value = targetProfileId
+        applyActiveProfileNodes(targetProfileId, targetNodes, targetNode.id)
+        saveProfileNodeMemory(targetProfileId, targetNode.id)
+        VpnStateStore.setSelectedNodeLabel(targetNode.name)
+        saveProfilesImmediate()
+    }
+
+    @Suppress("LongParameterList")
     private fun restoreManualSelectionState(
         targetProfileId: String,
         previousTargetNodeId: String?,
         previousAutoSelection: Boolean,
         previousSelection: Pair<String?, String?>,
-        previousRunningConfig: String?
+        previousRunningConfig: String?,
+        previousMeteredAuthorization: String?
     ) {
         saveProfileAutoSelection(targetProfileId, previousAutoSelection)
+        NodeProtectionStore.authorizeManualNode(previousMeteredAuthorization)
         val (previousProfileId, previousNodeId) = previousSelection
         if (previousProfileId != null) {
             setActiveProfile(previousProfileId, previousNodeId)
@@ -2726,10 +3077,7 @@ class ConfigRepository(protected val context: Context) {
             saveProfileNodeMemory(targetProfileId, previousTargetNodeId)
         }
         if (previousRunningConfig != null) {
-            ConfigRepository.writeTextFileAtomically(
-                File(context.filesDir, "running_config.json"),
-                previousRunningConfig
-            )
+            restoreRunningConfigSnapshot(previousRunningConfig)
         }
     }
 
@@ -2768,6 +3116,7 @@ class ConfigRepository(protected val context: Context) {
         profileAutoSelectionMmkv.removeValueForKey(profileId)
         _profileAutoSelections.update { it - profileId }
         removeNodeLatencies(removedNodeIds)
+        removedNodeIds.forEach(NodeProtectionStore::removeNode)
         updateAllNodesAndGroups()
         val configFile = File(configDir, "$profileId.json")
         if (configFile.exists() && !configFile.delete()) {
@@ -2897,6 +3246,12 @@ class ConfigRepository(protected val context: Context) {
                             Log.e(ConfigRepository.TAG, "Node not found: $nodeId")
                             return@withContext -1L
                         }
+                        if (node.meteredProtected && !isMeteredNodeUseAuthorized(nodeId)) {
+                            LogRepository.getInstance().addLog(
+                                "WARN: 计费节点保护已阻止测速：${node.name}"
+                            )
+                            return@withContext -1L
+                        }
 
                         val loadedConfig = loadConfig(node.sourceProfileId)
                         if (loadedConfig == null) {
@@ -2913,7 +3268,12 @@ class ConfigRepository(protected val context: Context) {
                         }
 
                         val settings = settingsRepository.settings.first()
-                        val runtimeContext = buildLatencyRuntimeContext(node.sourceProfileId, config, settings)
+                        val runtimeContext = buildLatencyRuntimeContext(
+                            profileId = node.sourceProfileId,
+                            config = config,
+                            settings = settings,
+                            allowedProtectedNodeId = node.id.takeIf { node.meteredProtected }
+                        )
                         val fixedOutbound = runtimeContext.outbounds.find { it.tag == rawOutbound.tag }
                         if (fixedOutbound == null) {
                             Log.e(ConfigRepository.TAG, "Outbound type removed: ${rawOutbound.type}")
@@ -2995,11 +3355,12 @@ class ConfigRepository(protected val context: Context) {
         useAllNodes: Boolean = false,
         onNodeComplete: ((nodeId: String, latencyMs: Long) -> Unit)? = null) = withContext(Dispatchers.IO) {
         val sourceNodes = if (useAllNodes) _allNodes.value else _nodes.value
-        val nodes = if (targetNodeIds != null) {
+        val selectedNodes = if (targetNodeIds != null) {
             sourceNodes.filter { it.id in targetNodeIds }
         } else {
             sourceNodes
         }
+        val nodes = selectedNodes.filterNot(NodeUi::meteredProtected)
 
         val settings = settingsRepository.settings.first()
         val testInfoList = buildNodeTestInfos(nodes, settings)
@@ -3233,8 +3594,10 @@ class ConfigRepository(protected val context: Context) {
     @Suppress("LongMethod", "CyclomaticComplexMethod", "CognitiveComplexMethod")
     suspend fun generateConfigFile(
         selectedProfileId: String? = null,
-        selectedNodeId: String? = null
+        selectedNodeId: String? = null,
+        forceManualSelection: Boolean = false
     ): ConfigRepository.ConfigGenerationResult? = withContext(Dispatchers.IO) {
+        lastConfigGenerationError = null
         try {
             settingsRepository.reloadFromStorage()
             awaitInitialProfilesLoaded()
@@ -3250,11 +3613,25 @@ class ConfigRepository(protected val context: Context) {
             val activeNodeId = selectedNodeId?.takeIf { it.isNotBlank() }
                 ?: _activeNodeId.value
                 ?: activeStateDao.get()?.activeNodeId
+            val activeProfileAutoSelectionEnabled =
+                !forceManualSelection && isProfileAutoSelectionEnabled(activeId)
 
             val allNodesSnapshot = _allNodes.value.takeIf { it.isNotEmpty() } ?: loadAllNodesSnapshot()
             val activeNode = _nodes.value.find { it.id == activeNodeId }
                 ?: allNodesSnapshot.find { it.id == activeNodeId }
             val sanitizedSettings = settingsRepository.settings.first()
+            if (activeNode?.meteredProtected == true &&
+                !NodeProtectionStore.isUseAuthorized(
+                    nodeId = activeNode.id,
+                    activeNodeId = activeNodeId,
+                    autoSelectionEnabled = activeProfileAutoSelectionEnabled
+                ) &&
+                !activeProfileAutoSelectionEnabled
+            ) {
+                throw MeteredNodeConfigurationException(
+                    listOf("受保护节点「${activeNode.name}」尚未经过本次手动选择授权")
+                )
+            }
             val log = buildRunLogConfig()
             val experimental = buildRunExperimentalConfig(sanitizedSettings)
             val inbounds = buildRunInbounds(sanitizedSettings)
@@ -3268,7 +3645,8 @@ class ConfigRepository(protected val context: Context) {
                 sanitizedSettings,
                 allNodesSnapshot,
                 activeProfile?.dnsPreResolve ?: false,
-                dnsOverrideConfig
+                dnsOverrideConfig,
+                activeProfileAutoSelectionEnabled
             )
             val serverAddressStrategy = ConfigRepository.resolveOutboundServerAddressStrategy(
                 sanitizedSettings.serverAddressStrategy,
@@ -3296,7 +3674,8 @@ class ConfigRepository(protected val context: Context) {
                 baseConfig = config,
                 activeProfileId = activeId,
                 allNodes = allNodesSnapshot,
-                nodeTagMap = outboundsContext.nodeTagMap
+                nodeTagMap = outboundsContext.nodeTagMap,
+                excludedOutboundTags = outboundsContext.disallowedProtectedTags
             )
             val dns = buildRunDns(
                 sanitizedSettings,
@@ -3334,6 +3713,39 @@ class ConfigRepository(protected val context: Context) {
                 outbounds = runtimeOutbounds
             )
 
+            val runtimeMappings = buildRuntimeNodeMappings(
+                activeProfileId = activeId,
+                baseConfig = config,
+                runtimeOutbounds = runtimeOutbounds,
+                runtimeEndpoints = endpoints.orEmpty(),
+                nodeTagMap = outboundsContext.nodeTagMap,
+                allNodes = allNodesSnapshot,
+                explicitlyRoutedProtectedNodeIds = outboundsContext.explicitlyRoutedProtectedNodeIds
+            )
+            val routeOnlyProtectedTags = runtimeMappings
+                .filterValues { it.nodeId in outboundsContext.routeOnlyProtectedNodeIds }
+                .keys
+            MeteredNodeConfigGuard.requireNoViolations(
+                MeteredNodeConfigGuard.findExplicitRouteScopeViolations(
+                    config = runConfig,
+                    protectedTags = routeOnlyProtectedTags
+                )
+            )
+            val unauthorizedRuntimeNodes = MeteredNodeConfigGuard.findUnauthorizedRuntimeNodes(
+                mappings = runtimeMappings,
+                protectedNodeIds = NodeProtectionStore.protectedNodeIds(),
+                selectedNodeId = activeNodeId,
+                manuallyAuthorizedNodeId = activeNodeId?.let(NodeProtectionStore::authorizedManualNodeId)
+            )
+
+            MeteredNodeConfigGuard.requireNoViolations(
+                MeteredNodeConfigGuard.findConfigViolations(
+                    config = runConfig,
+                    protectedTags = outboundsContext.disallowedProtectedTags + unauthorizedRuntimeNodes.keys,
+                    includeGroupReferences = true
+                )
+            )
+
             val validation = singBoxCore.validateConfig(stripInternalMetadata(runConfig))
             validation.exceptionOrNull()?.let { e ->
                 val msg = e.cause?.message ?: e.message ?: "unknown error"
@@ -3345,7 +3757,7 @@ class ConfigRepository(protected val context: Context) {
             val activeProfileName = _profiles.value.find { it.id == activeId }?.name ?: "Profile"
             val activeAutoTag = ConfigRepository.buildRouteGroupAutoTag(
                 ConfigRepository.buildProfileRouteTag(activeId, activeProfileName)
-            ).takeIf { tag -> isProfileAutoSelectionEnabled(activeId) && tag in allTags }
+            ).takeIf { tag -> activeProfileAutoSelectionEnabled && tag in allTags }
             val candidateTag = activeAutoTag
                 ?: activeNodeId?.let { outboundsContext.nodeTagMap[it] }
                 ?: activeNode?.name
@@ -3362,7 +3774,11 @@ class ConfigRepository(protected val context: Context) {
                 }
             }
             val configFile = File(context.filesDir, "running_config.json")
-            ConfigRepository.writeTextFileAtomically(configFile, gson.toJson(stripInternalMetadata(runConfig)))
+            val runtimeConfigContent = gson.toJson(stripInternalMetadata(runConfig))
+            check(NodeProtectionStore.replaceRuntimeMappings(runtimeMappings, runtimeConfigContent)) {
+                "无法持久化运行时节点映射，已阻止启动"
+            }
+            ConfigRepository.writeTextFileAtomically(configFile, runtimeConfigContent)
             logRunningConfigPath(configFile, resolvedTag, allTags.size)
 
             ConfigRepository.ConfigGenerationResult(
@@ -3372,9 +3788,71 @@ class ConfigRepository(protected val context: Context) {
                 activeNodeName = activeNode?.name.takeIf { activeAutoTag == null }
             )
         } catch (e: Exception) {
+            lastConfigGenerationError = e.message ?: "配置生成失败"
             Log.e(ConfigRepository.TAG, "Failed to generate config file", e)
+            LogRepository.getInstance().addAlwaysLog(
+                "ERROR [CFG] ${lastConfigGenerationError.orEmpty()}"
+            )
             null
         }
+    }
+
+    @Suppress("LongParameterList")
+    private fun buildRuntimeNodeMappings(
+        activeProfileId: String,
+        baseConfig: SingBoxConfig,
+        runtimeOutbounds: List<Outbound>,
+        runtimeEndpoints: List<Endpoint>,
+        nodeTagMap: Map<String, String>,
+        allNodes: List<NodeUi>,
+        explicitlyRoutedProtectedNodeIds: Set<String>
+    ): Map<String, RuntimeNodeRef> {
+        val physicalTypes = setOf(
+            "shadowsocks", "vmess", "vless", "trojan", "hysteria", "hysteria2",
+            "tuic", "wireguard", "shadowtls", "ssh", "anytls", "naive", "http", "socks"
+        )
+        val runtimePhysicalTags = runtimeOutbounds
+            .filter { it.type.lowercase() in physicalTypes }
+            .mapTo(mutableSetOf(), Outbound::tag)
+            .apply { runtimeEndpoints.mapTo(this, Endpoint::tag) }
+        val nodesById = allNodes.associateBy(NodeUi::id)
+        val result = linkedMapOf<String, RuntimeNodeRef>()
+
+        nodeTagMap.forEach { (nodeId, runtimeTag) ->
+            if (runtimeTag !in runtimePhysicalTags) return@forEach
+            val node = nodesById[nodeId]
+            result[runtimeTag] = RuntimeNodeRef(
+                nodeId = nodeId,
+                nodeName = node?.name ?: runtimeTag,
+                meteredProtected = NodeProtectionStore.isProtected(nodeId),
+                explicitRouteAuthorized = nodeId in explicitlyRoutedProtectedNodeIds
+            )
+        }
+        baseConfig.outbounds.orEmpty()
+            .filter { it.type.lowercase() in physicalTypes && it.tag in runtimePhysicalTags }
+            .forEach { outbound ->
+                if (result.containsKey(outbound.tag)) return@forEach
+                val nodeId = ConfigRepository.stableNodeId(activeProfileId, outbound.tag)
+                result[outbound.tag] = RuntimeNodeRef(
+                    nodeId = nodeId,
+                    nodeName = outbound.tag,
+                    meteredProtected = NodeProtectionStore.isProtected(nodeId),
+                    explicitRouteAuthorized = nodeId in explicitlyRoutedProtectedNodeIds
+                )
+            }
+        baseConfig.endpoints.orEmpty()
+            .filter { it.tag in runtimePhysicalTags }
+            .forEach { endpoint ->
+                if (result.containsKey(endpoint.tag)) return@forEach
+                val nodeId = ConfigRepository.stableNodeId(activeProfileId, endpoint.tag)
+                result[endpoint.tag] = RuntimeNodeRef(
+                    nodeId = nodeId,
+                    nodeName = endpoint.tag,
+                    meteredProtected = NodeProtectionStore.isProtected(nodeId),
+                    explicitRouteAuthorized = nodeId in explicitlyRoutedProtectedNodeIds
+                )
+            }
+        return result
     }
 
     private fun logRunningConfigPath(configFile: File, activeNodeTag: String?, outboundCount: Int) {
@@ -4209,12 +4687,15 @@ class ConfigRepository(protected val context: Context) {
         baseConfig: SingBoxConfig,
         activeProfileId: String,
         allNodes: List<NodeUi>,
-        nodeTagMap: Map<String, String>
+        nodeTagMap: Map<String, String>,
+        excludedOutboundTags: Set<String> = emptySet()
     ): List<Endpoint>? {
         val convertedEndpoints = mutableListOf<Endpoint>()
-        baseConfig.outbounds.orEmpty().mapNotNullTo(convertedEndpoints) {
-            ConfigRepository.convertWireGuardOutboundToEndpoint(it)
-        }
+        baseConfig.outbounds.orEmpty()
+            .filterNot { it.tag in excludedOutboundTags }
+            .mapNotNullTo(convertedEndpoints) {
+                ConfigRepository.convertWireGuardOutboundToEndpoint(it)
+            }
 
         val sourceConfigs = mutableMapOf<String, SingBoxConfig?>()
         nodeTagMap.forEach { (nodeId, runtimeTag) ->
@@ -4233,7 +4714,7 @@ class ConfigRepository(protected val context: Context) {
 
         return ConfigRepository.mergeRuntimeEndpoints(
             convertedEndpoints = convertedEndpoints,
-            existingEndpoints = baseConfig.endpoints.orEmpty()
+            existingEndpoints = baseConfig.endpoints.orEmpty().filterNot { it.tag in excludedOutboundTags }
         ).takeIf(List<Endpoint>::isNotEmpty)
     }
 
@@ -4245,9 +4726,123 @@ class ConfigRepository(protected val context: Context) {
         settings: AppSettings,
         allNodes: List<NodeUi>,
         dnsPreResolve: Boolean = false,
-        dnsOverrideConfig: DnsConfig? = null
+        dnsOverrideConfig: DnsConfig? = null,
+        activeProfileAutoSelectionEnabled: Boolean = isProfileAutoSelectionEnabled(activeProfileId)
     ): ConfigRepositoryRunOutboundsContext {
+        fun profileAutoSelectionEnabled(profileId: String): Boolean {
+            return if (profileId == activeProfileId) {
+                activeProfileAutoSelectionEnabled
+            } else {
+                isProfileAutoSelectionEnabled(profileId)
+            }
+        }
+
+        fun resolveNodeRefToId(value: String?): String? {
+            if (value.isNullOrBlank()) return null
+            val parts = value.split("::", limit = 2)
+            if (parts.size == 2) {
+                val refProfileId = parts[0]
+                val nodeName = parts[1]
+                return allNodes.firstOrNull {
+                    it.sourceProfileId == refProfileId && it.name == nodeName
+                }?.id
+            }
+            if (allNodes.any { it.id == value }) return value
+            return allNodes.firstOrNull { it.sourceProfileId == activeProfileId && it.name == value }?.id
+                ?: allNodes.firstOrNull { it.name == value }?.id
+        }
+
+        val protectedNodes = allNodes.filter(NodeUi::meteredProtected)
+        val protectedNodeIds = NodeProtectionStore.protectedNodeIds()
+        val explicitNodeReferences = buildList {
+            if (ConfigRepository.shouldApplyCustomAndAppRules(settings.routingMode)) {
+                settings.appRules
+                    .filter { it.enabled && it.outboundMode == RuleSetOutboundMode.NODE }
+                    .mapNotNullTo(this) { it.outboundValue }
+                settings.appGroups
+                    .filter { it.enabled && it.outboundMode == RuleSetOutboundMode.NODE }
+                    .mapNotNullTo(this) { it.outboundValue }
+                settings.customRules
+                    .filter { it.enabled && it.outboundMode == RuleSetOutboundMode.NODE }
+                    .mapNotNullTo(this) { it.outboundValue }
+            }
+            if (ConfigRepository.shouldApplyRuleSetRules(settings.routingMode)) {
+                settings.ruleSets
+                    .filter { it.enabled && it.outboundMode == RuleSetOutboundMode.NODE }
+                    .mapNotNullTo(this) { it.outboundValue }
+            }
+        }
+        val explicitlyRoutedProtectedNodeIds = explicitNodeReferences
+            .mapNotNull(::resolveNodeRefToId)
+            .filterTo(mutableSetOf(), protectedNodeIds::contains)
+        val allowedProtectedNodeId = activeNode
+            ?.takeIf { node ->
+                node.meteredProtected && NodeProtectionStore.isUseAuthorized(
+                    nodeId = node.id,
+                    activeNodeId = activeNode.id,
+                    autoSelectionEnabled = activeProfileAutoSelectionEnabled
+                )
+            }
+            ?.id
+        MeteredNodeConfigGuard.requireNoViolations(
+            MeteredNodeConfigGuard.findSettingsViolations(
+                settings = settings,
+                nodes = allNodes,
+                allowedProtectedNodeId = allowedProtectedNodeId
+            )
+        )
+        MeteredNodeConfigGuard.requireNoViolations(
+            MeteredNodeConfigGuard.findSourceConfigViolations(
+                config = baseConfig,
+                sourceProfileId = activeProfileId,
+                protectedNodeIds = protectedNodeIds,
+                includeGroupReferences = false
+            )
+        )
+        dnsOverrideConfig?.let { overrideConfig ->
+            MeteredNodeConfigGuard.requireNoViolations(
+                MeteredNodeConfigGuard.findSourceConfigViolations(
+                    config = SingBoxConfig(dns = overrideConfig),
+                    sourceProfileId = activeProfileId,
+                    protectedNodeIds = protectedNodeIds,
+                    includeGroupReferences = false
+                ).map { violation -> "DNS 覆盖：$violation" }
+            )
+        }
+        val routeOnlyProtectedNodeIds = explicitlyRoutedProtectedNodeIds - setOfNotNull(allowedProtectedNodeId)
+        val disallowedProtectedNodes = protectedNodes.filter {
+            it.id != allowedProtectedNodeId && it.id !in explicitlyRoutedProtectedNodeIds
+        }
+        val disallowedProtectedNodeIds = disallowedProtectedNodes.mapTo(mutableSetOf(), NodeUi::id)
+        val disallowedProtectedTags = disallowedProtectedNodes
+            .filter { it.sourceProfileId == activeProfileId }
+            .mapTo(mutableSetOf(), NodeUi::name)
+        val routeOnlyProtectedTags = protectedNodes
+            .filter { it.sourceProfileId == activeProfileId && it.id in routeOnlyProtectedNodeIds }
+            .mapTo(mutableSetOf(), NodeUi::name)
+        val excludedAutomaticTags = allNodes.asSequence()
+            .filter {
+                it.sourceProfileId == activeProfileId &&
+                    (!isNodeAutoSelectionEligible(it.id) || it.meteredProtected)
+            }
+            .map { it.name }
+            .toSet()
         val rawOutbounds = baseConfig.outbounds
+            ?.let { ConfigRepository.filterAutomaticGroupCandidates(it, excludedAutomaticTags) }
+            ?.let { MeteredNodeConfigGuard.removeDisallowedNodes(it, disallowedProtectedTags) }
+            ?.let { MeteredNodeConfigGuard.removeGroupReferences(it, routeOnlyProtectedTags) }
+        rawOutbounds?.let { sanitizedOutbounds ->
+            MeteredNodeConfigGuard.requireNoViolations(
+                MeteredNodeConfigGuard.findSourceConfigViolations(
+                    config = SingBoxConfig(outbounds = sanitizedOutbounds),
+                    sourceProfileId = activeProfileId,
+                    protectedNodeIds = protectedNodeIds,
+                    includeGroupReferences = true,
+                    includeDeclaredNodes = false,
+                    allowedProtectedNodeId = allowedProtectedNodeId
+                )
+            )
+        }
         val runtimeEndpointTags = buildSet {
             baseConfig.endpoints.orEmpty().mapTo(this) { it.tag }
             rawOutbounds.orEmpty()
@@ -4280,22 +4875,8 @@ class ConfigRepository(protected val context: Context) {
         if (fixedOutbounds.none { it.tag == "direct" }) {
             fixedOutbounds.add(Outbound(type = "direct", tag = "direct"))
         }
-        val requiredNodeIds = mutableSetOf<String>()
+        val requiredNodeIds = explicitlyRoutedProtectedNodeIds.toMutableSet()
         val requiredProfileIds = mutableSetOf<String>()
-
-        fun resolveNodeRefToId(value: String?): String? {
-            if (value.isNullOrBlank()) return null
-            val parts = value.split("::", limit = 2)
-            if (parts.size == 2) {
-                val refProfileId = parts[0]
-                val nodeName = parts[1]
-                return allNodes.firstOrNull { it.sourceProfileId == refProfileId && it.name == nodeName }?.id
-            }
-            if (allNodes.any { it.id == value }) return value
-            val node = allNodes.firstOrNull { it.sourceProfileId == activeProfileId && it.name == value }
-                ?: allNodes.firstOrNull { it.name == value }
-            return node?.id
-        }
         settings.appRules
             .filter { ConfigRepository.shouldApplyCustomAndAppRules(settings.routingMode) && it.enabled }
             .forEach { rule ->
@@ -4336,12 +4917,15 @@ class ConfigRepository(protected val context: Context) {
         fixedOutbounds.mapNotNull { it.detour }.forEach { detourValue ->
             resolveNodeRefToId(detourValue)?.let { requiredNodeIds.add(it) }
         }
-        if (isProfileAutoSelectionEnabled(activeProfileId)) {
+        if (activeProfileAutoSelectionEnabled) {
             requiredProfileIds.add(activeProfileId)
         }
-        activeNode?.let { requiredNodeIds.add(it.id) }
+        activeNode?.takeIf { it.id !in disallowedProtectedNodeIds }
+            ?.let { requiredNodeIds.add(it.id) }
         requiredProfileIds.forEach { requiredProfileId ->
-            allNodes.filter { it.sourceProfileId == requiredProfileId }.forEach { node ->
+            allNodes.filter {
+                it.sourceProfileId == requiredProfileId && it.id !in disallowedProtectedNodeIds
+            }.forEach { node ->
                 requiredNodeIds.add(node.id)
             }
         }
@@ -4395,6 +4979,14 @@ class ConfigRepository(protected val context: Context) {
                 Log.e(ConfigRepository.TAG, "Cross-profile outbound not found: nodeName=${node.name}, profileId=$sourceProfileId, available tags: ${sourceConfig.outbounds?.map { it.tag }?.take(10)}")
                 return@forEach
             }
+            MeteredNodeConfigGuard.requireNoViolations(
+                MeteredNodeConfigGuard.findSourceConfigViolations(
+                    config = SingBoxConfig(outbounds = listOf(sourceOutbound)),
+                    sourceProfileId = sourceProfileId,
+                    protectedNodeIds = protectedNodeIds,
+                    includeGroupReferences = false
+                ).map { violation -> "跨配置节点「${node.name}」：$violation" }
+            )
             var finalTag = sourceOutbound.tag
             if (existingTags.contains(finalTag)) {
                 val suffix = sourceProfileId.take(4)
@@ -4429,6 +5021,14 @@ class ConfigRepository(protected val context: Context) {
         requiredProfileIds.forEach { requiredProfileId ->
             val availableProfileNodes = allNodes
                 .filter { it.sourceProfileId == requiredProfileId }
+            val isProfileAutoSelectionEnabled = profileAutoSelectionEnabled(requiredProfileId)
+            val explicitlySelectedNodeId = activeNode
+                ?.takeIf {
+                    requiredProfileId == activeProfileId &&
+                        !isProfileAutoSelectionEnabled &&
+                        (!it.meteredProtected || it.id == allowedProtectedNodeId)
+                }
+                ?.id
             val storedNodeId = getProfileLastSelectedNode(requiredProfileId)
             val rememberedNodeId = storedNodeId?.takeIf { rememberedId ->
                 availableProfileNodes.any { it.id == rememberedId }
@@ -4442,14 +5042,22 @@ class ConfigRepository(protected val context: Context) {
                 .sortedWith(compareBy<NodeUi> { if (it.id == rememberedNodeId) 0 else 1 }.thenBy { it.id })
             val nodeIds = profileNodes.map { it.id }
             val nodeTags = nodeIds.mapNotNull { nodeTagMap[it] }.distinct()
+            val eligibleNodeTags = profileNodes
+                .filter {
+                    (isNodeAutoSelectionEligible(it.id) && !it.meteredProtected) ||
+                        it.id == explicitlySelectedNodeId
+                }
+                .mapNotNull { nodeTagMap[it.id] }
+                .distinct()
             val profileName = _profiles.value.find { it.id == requiredProfileId }?.name ?: "Profile"
             val tag = ConfigRepository.buildProfileRouteTag(requiredProfileId, profileName)
             if (nodeTags.isNotEmpty()) {
                 val routeGroupOutbounds = ConfigRepository.buildProfileRouteGroupOutbounds(
                     groupTag = tag,
                     nodeTags = nodeTags,
+                    eligibleNodeTags = eligibleNodeTags,
                     testUrl = settings.latencyTestUrl,
-                    autoSelectionEnabled = isProfileAutoSelectionEnabled(requiredProfileId),
+                    autoSelectionEnabled = isProfileAutoSelectionEnabled,
                     preferredNodeTag = rememberedNodeId?.let { nodeTagMap[it] }
                 )
                 if (routeGroupOutbounds.isNotEmpty()) {
@@ -4459,19 +5067,23 @@ class ConfigRepository(protected val context: Context) {
                 }
             }
         }
+        val routeOnlyRuntimeTags = routeOnlyProtectedNodeIds.mapNotNullTo(mutableSetOf()) { nodeTagMap[it] }
         val proxyTags = fixedOutbounds.filter {
-            it.type in listOf(
+            it.tag !in routeOnlyRuntimeTags && it.type in listOf(
                 "vless", "vmess", "trojan", "shadowsocks",
                 "hysteria2", "hysteria", "anytls", "tuic",
                 "ssh", "shadowtls", "http", "socks", "naive"
             )
-        }.map { it.tag }.plus(runtimeEndpointTags).distinct().toMutableList()
+        }.map { it.tag }
+            .plus(runtimeEndpointTags.filterNot(routeOnlyRuntimeTags::contains))
+            .distinct()
+            .toMutableList()
         val selectorTag = "PROXY"
         val activeProfileName = _profiles.value.find { it.id == activeProfileId }?.name ?: "Profile"
         val activeAutoTag = ConfigRepository.buildRouteGroupAutoTag(
             ConfigRepository.buildProfileRouteTag(activeProfileId, activeProfileName)
         ).takeIf { autoTag ->
-            isProfileAutoSelectionEnabled(activeProfileId) && fixedOutbounds.any { it.tag == autoTag }
+            activeProfileAutoSelectionEnabled && fixedOutbounds.any { it.tag == autoTag }
         }
         if (activeAutoTag != null) {
             proxyTags.add(0, activeAutoTag)
@@ -4556,7 +5168,10 @@ class ConfigRepository(protected val context: Context) {
             outbounds = safeOutbounds,
             selectorTag = selectorTag,
             nodeTagResolver = nodeTagResolver,
-            nodeTagMap = nodeTagMap
+            nodeTagMap = nodeTagMap,
+            disallowedProtectedTags = disallowedProtectedTags,
+            explicitlyRoutedProtectedNodeIds = explicitlyRoutedProtectedNodeIds,
+            routeOnlyProtectedNodeIds = routeOnlyProtectedNodeIds
         )
     }
 
@@ -4954,6 +5569,8 @@ class ConfigRepository(protected val context: Context) {
         cacheConfig(profileId, newConfig)
         writeConfigFileOrThrow(profileId, newConfig)
         removeNodeLatencies(listOf(nodeId))
+        nodeAutoSelectionMmkv.removeValueForKey(nodeId)
+        NodeProtectionStore.removeNode(nodeId)
 
         val immediateNodes = (profileNodes[profileId] ?: _nodes.value)
             .filter { it.id != nodeId && it.name != node.name }
@@ -5100,49 +5717,210 @@ class ConfigRepository(protected val context: Context) {
         }
     }
 
-    suspend fun updateNode(nodeId: String, newOutbound: Outbound) = withContext(Dispatchers.IO) {
+    suspend fun updateNode(
+        nodeId: String,
+        newOutbound: Outbound,
+        autoSelectionEligible: Boolean = isNodeAutoSelectionEligible(nodeId),
+        meteredProtected: Boolean = isNodeMeteredProtected(nodeId)
+    ) = withContext(Dispatchers.IO) {
         val node = _nodes.value.find { it.id == nodeId } ?: return@withContext
         val profileId = node.sourceProfileId
         val config = loadConfig(profileId) ?: return@withContext
-        val newOutbounds = config.outbounds?.map {
-            if (it.tag == node.name) newOutbound else it
-        }
-        var newConfig = config.copy(outbounds = newOutbounds)
-        newConfig = deduplicateTags(newConfig)
-        cacheConfig(profileId, newConfig)
-        writeConfigFileOrThrow(profileId, newConfig)
-
-        refreshNodesAfterNodeMutation(
+        val effectiveAutoSelectionEligible = autoSelectionEligible && !meteredProtected
+        val (newConfig, previousEligibility, previousProtection) = persistUpdatedNodeConfig(
+            node = node,
+            config = config,
+            newOutbound = newOutbound,
+            autoSelectionEligible = effectiveAutoSelectionEligible,
+            meteredProtected = meteredProtected
+        )
+        val refreshedNodes = refreshNodesAfterNodeMutation(
             profileId = profileId,
             oldNodeId = nodeId,
             newTag = newOutbound.tag,
             newConfig = newConfig
         )
+        applyNodeAutoSelectionEligibilityChange(
+            profileId = profileId,
+            previousEligibility = previousEligibility,
+            autoSelectionEligible = effectiveAutoSelectionEligible,
+            previousProtection = previousProtection,
+            meteredProtected = meteredProtected,
+            refreshedNodes = refreshedNodes
+        )
     }
 
-    protected fun refreshNodesAfterNodeMutation(
+    private fun persistUpdatedNodeConfig(
+        node: NodeUi,
+        config: SingBoxConfig,
+        newOutbound: Outbound,
+        autoSelectionEligible: Boolean,
+        meteredProtected: Boolean
+    ): Triple<SingBoxConfig, Boolean, Boolean> {
+        val profileId = node.sourceProfileId
+        val previousEligibility = isNodeAutoSelectionEligible(node.id)
+        val previousProtection = isNodeMeteredProtected(node.id)
+        val previousAuthorization = NodeProtectionStore.manuallyAuthorizedNodeId()
+        val updatedNodeId = ConfigRepository.stableNodeId(profileId, newOutbound.tag)
+        check(saveNodeAutoSelectionEligibility(updatedNodeId, autoSelectionEligible)) {
+            "Failed to persist automatic selection eligibility for ${node.name}"
+        }
+        check(NodeProtectionStore.setProtected(updatedNodeId, meteredProtected)) {
+            "Failed to persist metered protection for ${node.name}"
+        }
+        NodeProtectionStore.authorizeManualNode(
+            authorizationAfterProtectionUpdate(
+                previousAuthorizedNodeId = previousAuthorization,
+                oldNodeId = node.id,
+                updatedNodeId = updatedNodeId,
+                wasProtected = previousProtection,
+                isProtected = meteredProtected
+            )
+        )
+        val newOutbounds = config.outbounds?.map {
+            if (it.tag == node.name) newOutbound else it
+        }
+        val newConfig = deduplicateTags(config.copy(outbounds = newOutbounds))
+        try {
+            cacheConfig(profileId, newConfig)
+            writeConfigFileOrThrow(profileId, newConfig)
+        } catch (e: Exception) {
+            if (updatedNodeId == node.id) {
+                saveNodeAutoSelectionEligibility(node.id, previousEligibility)
+            } else {
+                nodeAutoSelectionMmkv.removeValueForKey(updatedNodeId)
+            }
+            NodeProtectionStore.setProtected(node.id, previousProtection)
+            if (updatedNodeId != node.id) NodeProtectionStore.removeNode(updatedNodeId)
+            NodeProtectionStore.authorizeManualNode(previousAuthorization)
+            throw e
+        }
+        if (updatedNodeId != node.id) {
+            nodeAutoSelectionMmkv.removeValueForKey(node.id)
+            NodeProtectionStore.removeNode(node.id)
+        }
+        return Triple(newConfig, previousEligibility, previousProtection)
+    }
+
+    @Suppress("LongParameterList", "CognitiveComplexMethod")
+    private suspend fun applyNodeAutoSelectionEligibilityChange(
+        profileId: String,
+        previousEligibility: Boolean,
+        autoSelectionEligible: Boolean,
+        previousProtection: Boolean,
+        meteredProtected: Boolean,
+        refreshedNodes: List<NodeUi>
+    ) {
+        val protectionEnabled = !previousProtection && meteredProtected
+        disableProfileAutoSelectionWithoutCandidates(profileId, autoSelectionEligible, refreshedNodes)
+        if (protectionEnabled) {
+            // 先清空旧配置建立的连接，再生成不含计费节点的新运行配置。
+            resetRuntimeConnectionsForMeteredProtection()
+            if (leaveNewlyProtectedActiveNode(refreshedNodes)) return
+        }
+        val settingsChanged = previousEligibility != autoSelectionEligible || previousProtection != meteredProtected
+        if (!settingsChanged || !shouldReloadNodeSettingsChange()) return
+
+        val generationResult = generateConfigFile()
+        if (generationResult == null) {
+            if (protectionEnabled) stopRuntimeForMeteredProtection()
+            error(lastConfigGenerationError ?: "Failed to generate config after changing node policy")
+        }
+        try {
+            requestFullRuntimeConfigReload(generationResult)
+            lastRunOutboundTags = generationResult.outboundTags
+            lastRunProfileId = _activeProfileId.value
+        } catch (error: Exception) {
+            if (protectionEnabled) stopRuntimeForMeteredProtection()
+            throw error
+        }
+    }
+
+    private fun disableProfileAutoSelectionWithoutCandidates(
+        profileId: String,
+        autoSelectionEligible: Boolean,
+        refreshedNodes: List<NodeUi>
+    ) {
+        if (autoSelectionEligible || refreshedNodes.any { it.autoSelectionEligible }) return
+        if (!saveProfileAutoSelection(profileId, false)) {
+            Log.e(ConfigRepository.TAG, "Failed to disable automatic selection for empty candidate set")
+        }
+    }
+
+    private suspend fun leaveNewlyProtectedActiveNode(refreshedNodes: List<NodeUi>): Boolean {
+        val activeNode = refreshedNodes.firstOrNull { it.id == _activeNodeId.value }
+        if (activeNode?.meteredProtected != true) return false
+
+        val fallbackNode = refreshedNodes.firstOrNull { !it.meteredProtected }
+        if (fallbackNode == null) {
+            stopRuntimeForMeteredProtection()
+            return true
+        }
+        val result = setActiveNodeWithResult(fallbackNode.id)
+        if (result is ConfigRepository.NodeSwitchResult.Failed) {
+            stopRuntimeForMeteredProtection()
+            error("Failed to leave newly protected node: ${result.reason}")
+        }
+        return true
+    }
+
+    private fun resetRuntimeConnectionsForMeteredProtection() {
+        val intent = when (VpnStateStore.getMode()) {
+            VpnStateStore.CoreMode.PROXY -> Intent(context, ProxyOnlyService::class.java).apply {
+                action = ProxyOnlyService.ACTION_RESET_CONNECTIONS
+            }
+            VpnStateStore.CoreMode.VPN -> Intent(context, SingBoxService::class.java).apply {
+                action = SingBoxService.ACTION_RESET_CONNECTIONS
+            }
+            VpnStateStore.CoreMode.NONE -> return
+        }
+        context.startService(intent)
+    }
+
+    private fun stopRuntimeForMeteredProtection() {
+        val intent = when (VpnStateStore.getMode()) {
+            VpnStateStore.CoreMode.PROXY -> Intent(context, ProxyOnlyService::class.java).apply {
+                action = ProxyOnlyService.ACTION_STOP
+            }
+            VpnStateStore.CoreMode.VPN -> Intent(context, SingBoxService::class.java).apply {
+                action = SingBoxService.ACTION_STOP
+            }
+            VpnStateStore.CoreMode.NONE -> return
+        }
+        context.startService(intent)
+        LogRepository.getInstance().addAlwaysLog(
+            "WARN [METERED_GUARD] stopped runtime because protected-node paths could not be purged safely"
+        )
+    }
+
+    private fun shouldReloadNodeSettingsChange(): Boolean {
+        // 运行配置可能通过应用分流或 detour 引用其他配置中的节点。
+        if (SingBoxRemote.isRunning.value || SingBoxRemote.isStarting.value) return true
+        return VpnStateStore.getActive()
+    }
+
+    protected suspend fun refreshNodesAfterNodeMutation(
         profileId: String,
         oldNodeId: String,
         newTag: String,
         newConfig: SingBoxConfig
-    ) {
+    ): List<NodeUi> {
         val oldNodes = profileNodes[profileId] ?: _nodes.value
         val latencyById = oldNodes.associate { it.id to it.latencyMs }
         val updatedNodeId = ConfigRepository.stableNodeId(profileId, newTag)
         val originalLatency = oldNodes.find { it.id == oldNodeId }?.latencyMs
-        scope.launch {
-            val newNodes = extractNodesFromConfig(newConfig, profileId)
-            val mergedNodes = mergeMutatedNodeLatencies(
-                newNodes = newNodes,
-                latencyById = latencyById,
-                updatedNodeId = updatedNodeId,
-                originalLatency = originalLatency
-            )
-            profileNodes[profileId] = mergedNodes
-            updateAllNodesAndGroups()
-            applyMutatedActiveNode(profileId, oldNodeId, newTag, mergedNodes)
-            saveProfiles()
-        }
+        val newNodes = extractNodesFromConfig(newConfig, profileId)
+        val mergedNodes = mergeMutatedNodeLatencies(
+            newNodes = newNodes,
+            latencyById = latencyById,
+            updatedNodeId = updatedNodeId,
+            originalLatency = originalLatency
+        )
+        profileNodes[profileId] = mergedNodes
+        updateAllNodesAndGroups()
+        applyMutatedActiveNode(profileId, oldNodeId, newTag, mergedNodes)
+        saveProfiles()
+        return mergedNodes
     }
 
     protected fun mergeMutatedNodeLatencies(
@@ -5359,11 +6137,13 @@ class ConfigRepository(protected val context: Context) {
         internal fun resolveLatencyRuntimeDetours(
             sourceProfileId: String,
             sourceOutbounds: List<Outbound>,
+            isProtectedReference: (sourceProfileId: String, reference: String) -> Boolean = { _, _ -> false },
             loadProfileOutbounds: (String) -> List<Outbound>?
         ): List<Outbound> {
             return LatencyRuntimeDetourResolver(
                 sourceProfileId,
                 sourceOutbounds,
+                isProtectedReference,
                 loadProfileOutbounds
             ).resolve()
         }
@@ -5371,6 +6151,7 @@ class ConfigRepository(protected val context: Context) {
         private class LatencyRuntimeDetourResolver(
             private val sourceProfileId: String,
             private val sourceOutbounds: List<Outbound>,
+            private val isProtectedReference: (sourceProfileId: String, reference: String) -> Boolean,
             private val loadProfileOutbounds: (String) -> List<Outbound>?
         ) {
             private val outboundsByProfile = mutableMapOf(sourceProfileId to sourceOutbounds)
@@ -5380,6 +6161,8 @@ class ConfigRepository(protected val context: Context) {
             private val usedTags = sourceOutbounds.mapTo(mutableSetOf()) { it.tag }
             private val resolving = mutableSetOf<Pair<String, String>>()
             private val resolvedOutbounds = linkedMapOf<Pair<String, String>, Outbound>()
+            private val blockedOutbounds = mutableSetOf<Pair<String, String>>()
+            private val groupTypes = setOf("selector", "urltest", "url-test")
 
             fun resolve(): List<Outbound> {
                 val sourceKeys = sourceOutbounds.map { sourceProfileId to it.tag }
@@ -5426,19 +6209,57 @@ class ConfigRepository(protected val context: Context) {
                 return candidate
             }
 
+            @Suppress("ReturnCount")
             private fun resolveOutbound(key: Pair<String, String>): String? {
+                if (key in blockedOutbounds) return null
                 val knownTag = resolvedOutbounds[key]?.tag ?: runtimeTags[key]?.takeIf { key in resolving }
                 if (knownTag != null) return knownTag
                 val (profileId, sourceTag) = key
                 val source = outboundsFor(profileId)?.firstOrNull { it.tag == sourceTag } ?: return null
+                if (isProtectedReference(profileId, sourceTag)) {
+                    return blockOutbound(key)
+                }
                 val runtimeTag = allocateRuntimeTag(key)
                 resolving.add(key)
-                val resolvedDetour = source.detour?.takeIf { it.isNotBlank() }?.let { detour ->
-                    resolveReference(profileId, detour)?.let { resolveOutbound(it) } ?: detour
+                val detour = source.detour?.takeIf { it.isNotBlank() }
+                if (detour != null && isProtectedReference(profileId, detour)) {
+                    return blockOutbound(key)
                 }
-                resolvedOutbounds[key] = source.copy(tag = runtimeTag, detour = resolvedDetour)
+                val detourKey = detour?.let { resolveReference(profileId, it) }
+                val resolvedDetour = detourKey?.let { resolveOutbound(it) } ?: detour
+                if (detourKey in blockedOutbounds) {
+                    return blockOutbound(key)
+                }
+                val groupSafeSource = resolveGroupReferences(profileId, source) ?: return blockOutbound(key)
+                resolvedOutbounds[key] = groupSafeSource.copy(tag = runtimeTag, detour = resolvedDetour)
                 resolving.remove(key)
                 return runtimeTag
+            }
+
+            private fun resolveGroupReferences(profileId: String, source: Outbound): Outbound? {
+                if (source.type.lowercase() !in groupTypes) return source
+
+                fun resolveGroupReference(reference: String): String? {
+                    if (isProtectedReference(profileId, reference)) return null
+                    val targetKey = resolveReference(profileId, reference) ?: return reference
+                    val runtimeTag = resolveOutbound(targetKey)
+                    return runtimeTag?.takeUnless { targetKey in blockedOutbounds }
+                }
+
+                val candidates = source.outbounds.orEmpty().map { reference ->
+                    resolveGroupReference(reference) ?: return null
+                }
+                val default = source.default?.let { reference ->
+                    resolveGroupReference(reference) ?: return null
+                }
+                return source.copy(outbounds = candidates, default = default)
+            }
+
+            private fun blockOutbound(key: Pair<String, String>): String? {
+                resolving.remove(key)
+                resolvedOutbounds.remove(key)
+                blockedOutbounds.add(key)
+                return null
             }
         }
 
@@ -5477,6 +6298,7 @@ class ConfigRepository(protected val context: Context) {
 
         private const val RUNTIME_RELOAD_POLL_INTERVAL_MS = 250L
         private const val RUNTIME_RELOAD_TIMEOUT_MS = 30_000L
+        private const val MANUAL_HOT_SWITCH_CONFIRMATION_TIMEOUT_MS = 3_000L
         private const val AUTO_GROUP_RESOLUTION_TIMEOUT_MS = 10_000L
 
         internal fun resolveOutboundServerAddressStrategy(
@@ -5627,6 +6449,19 @@ class ConfigRepository(protected val context: Context) {
             return activeProfileId == null
         }
 
+        internal fun resolveManualProfileTarget(
+            nodes: List<NodeUi>,
+            rememberedNodeId: String?,
+            autoSelectionEnabled: Boolean
+        ): NodeUi? {
+            val candidates = nodes.filter { node ->
+                !node.meteredProtected && (!autoSelectionEnabled || node.autoSelectionEligible)
+            }
+            return candidates.firstOrNull { it.id == rememberedNodeId }
+                ?: candidates.minByOrNull(NodeUi::id)
+                ?: nodes.singleOrNull()?.takeIf(NodeUi::meteredProtected)
+        }
+
         internal var instance: ConfigRepository? = null
 
         fun stableNodeId(profileId: String, outboundTag: String): String {
@@ -5758,6 +6593,20 @@ class ConfigRepository(protected val context: Context) {
             return outbounds.map { outbound ->
                 if (outbound.type == "selector" || outbound.type == "urltest" || outbound.type == "url-test") {
                     sanitizeSelectorLikeOutbound(outbound, allOutboundTags)
+                } else {
+                    outbound
+                }
+            }
+        }
+
+        internal fun filterAutomaticGroupCandidates(
+            outbounds: List<Outbound>,
+            excludedNodeTags: Set<String>
+        ): List<Outbound> {
+            if (excludedNodeTags.isEmpty()) return outbounds
+            return outbounds.map { outbound ->
+                if (outbound.type == "urltest" || outbound.type == "url-test") {
+                    outbound.copy(outbounds = outbound.outbounds?.filterNot(excludedNodeTags::contains))
                 } else {
                     outbound
                 }
@@ -6133,6 +6982,7 @@ class ConfigRepository(protected val context: Context) {
         internal fun buildProfileRouteGroupOutbounds(
             groupTag: String,
             nodeTags: List<String>,
+            eligibleNodeTags: List<String> = nodeTags,
             testUrl: String,
             autoSelectionEnabled: Boolean = false,
             preferredNodeTag: String? = null
@@ -6141,27 +6991,37 @@ class ConfigRepository(protected val context: Context) {
                 .map { it.trim() }
                 .filter { it.isNotBlank() }
                 .distinct()
-            if (distinctNodeTags.isEmpty()) {
+            val distinctEligibleNodeTags = eligibleNodeTags
+                .map { it.trim() }
+                .filter { it.isNotBlank() && it in distinctNodeTags }
+                .distinct()
+            if (distinctNodeTags.isEmpty() || distinctEligibleNodeTags.isEmpty()) {
                 return emptyList()
             }
 
             val autoTag = buildRouteGroupAutoTag(groupTag)
-            val preferred = preferredNodeTag?.takeIf { it in distinctNodeTags } ?: distinctNodeTags.first()
+            val preferred = preferredNodeTag?.takeIf { it in distinctEligibleNodeTags }
+                ?: distinctEligibleNodeTags.first()
+            val automaticSelectionAvailable = autoSelectionEnabled
             val selector = Outbound(
                 type = "selector",
                 tag = groupTag,
-                outbounds = if (autoSelectionEnabled) listOf(autoTag) + distinctNodeTags else distinctNodeTags,
-                default = if (autoSelectionEnabled) autoTag else preferred,
+                outbounds = if (automaticSelectionAvailable) {
+                    listOf(autoTag) + distinctEligibleNodeTags
+                } else {
+                    distinctEligibleNodeTags
+                },
+                default = if (automaticSelectionAvailable) autoTag else preferred,
                 interruptExistConnections = false
             )
-            if (!autoSelectionEnabled) {
+            if (!automaticSelectionAvailable) {
                 return listOf(selector)
             }
             return listOf(
                 Outbound(
                     type = "urltest",
                     tag = autoTag,
-                    outbounds = distinctNodeTags,
+                    outbounds = distinctEligibleNodeTags,
                     url = AppSettings.requireLatencyTestUrl(testUrl),
                     interval = ROUTE_GROUP_AUTO_TEST_INTERVAL,
                     tolerance = ROUTE_GROUP_AUTO_TEST_TOLERANCE,

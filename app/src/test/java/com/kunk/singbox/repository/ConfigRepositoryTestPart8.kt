@@ -57,6 +57,53 @@ abstract class ConfigRepositoryTestPart8 : ConfigRepositoryTestPart7() {
     }
 
     @Test
+    fun buildProfileRouteGroupOutboundsExcludesDisabledNodeFromProfileSelectorAndUrlTest() {
+        val outbounds = ConfigRepository.buildProfileRouteGroupOutbounds(
+            groupTag = "P:HK",
+            nodeTags = listOf("regular", "metered"),
+            eligibleNodeTags = listOf("regular"),
+            testUrl = "https://probe.example/204",
+            autoSelectionEnabled = true,
+            preferredNodeTag = "metered"
+        )
+
+        assertEquals(listOf("regular"), outbounds.first { it.type == "urltest" }.outbounds)
+        assertEquals(
+            listOf("P:HK#AUTO", "regular"),
+            outbounds.first { it.type == "selector" }.outbounds
+        )
+        assertEquals("P:HK#AUTO", outbounds.first { it.type == "selector" }.default)
+    }
+
+    @Test
+    fun filterAutomaticGroupCandidatesKeepsManualReferences() {
+        val filtered = ConfigRepository.filterAutomaticGroupCandidates(
+            outbounds = listOf(
+                Outbound(type = "urltest", tag = "AUTO", outbounds = listOf("regular", "metered")),
+                Outbound(type = "selector", tag = "MANUAL", outbounds = listOf("regular", "metered"))
+            ),
+            excludedNodeTags = setOf("metered")
+        )
+
+        assertEquals(listOf("regular"), filtered.first { it.tag == "AUTO" }.outbounds)
+        assertEquals(listOf("regular", "metered"), filtered.first { it.tag == "MANUAL" }.outbounds)
+    }
+
+    @Test
+    fun buildProfileRouteGroupOutboundsSkipsProfileWhenNoEligibleCandidateExists() {
+        val outbounds = ConfigRepository.buildProfileRouteGroupOutbounds(
+            groupTag = "P:HK",
+            nodeTags = listOf("metered"),
+            eligibleNodeTags = emptyList(),
+            testUrl = "https://probe.example/204",
+            autoSelectionEnabled = true,
+            preferredNodeTag = "metered"
+        )
+
+        assertTrue(outbounds.isEmpty())
+    }
+
+    @Test
     fun buildProfileRouteGroupOutboundsOmitsUrlTestInManualMode() {
         val outbounds = ConfigRepository.buildProfileRouteGroupOutbounds(
             groupTag = "P:HK",
