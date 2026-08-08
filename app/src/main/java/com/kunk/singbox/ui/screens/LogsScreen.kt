@@ -2,7 +2,9 @@ package com.kunk.singbox.ui.screens
 
 import com.kunk.singbox.R
 import com.kunk.singbox.ui.components.FloatingPageLayout
+import android.content.ClipData
 import android.content.Intent
+import android.widget.Toast
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
@@ -88,16 +90,25 @@ fun LogsScreen(navController: NavController, viewModel: LogViewModel = viewModel
             val exportTitle = stringResource(R.string.logs_export)
             IconButton(
                 onClick = {
-                    viewModel.getLogsForExport { logsText ->
-                        val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                            type = "text/plain"
-                            putExtra(Intent.EXTRA_SUBJECT, exportSubject)
-                            putExtra(Intent.EXTRA_TEXT, logsText)
+                    viewModel.getLogsForExport(
+                        onReady = { logsUri ->
+                            val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                type = "text/plain"
+                                putExtra(Intent.EXTRA_SUBJECT, exportSubject)
+                                putExtra(Intent.EXTRA_STREAM, logsUri)
+                                clipData = ClipData.newUri(context.contentResolver, exportSubject, logsUri)
+                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                            }
+                            context.startActivity(
+                                Intent.createChooser(shareIntent, exportTitle).apply {
+                                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                }
+                            )
+                        },
+                        onError = {
+                            Toast.makeText(context, R.string.export_failed, Toast.LENGTH_SHORT).show()
                         }
-                        context.startActivity(
-                            Intent.createChooser(shareIntent, exportTitle)
-                        )
-                    }
+                    )
                 }
             ) {
                 Icon(

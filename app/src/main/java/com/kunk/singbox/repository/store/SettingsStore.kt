@@ -9,6 +9,7 @@ import com.kunk.singbox.database.entity.SettingsEntity
 import com.kunk.singbox.model.AppSettings
 import com.kunk.singbox.model.AppThemeStyle
 import com.kunk.singbox.model.RuleSetOutboundMode
+import com.kunk.singbox.repository.normalizeExclusiveAppAssignments
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -48,7 +49,7 @@ class SettingsStore private constructor(context: Context) {
             result = migrateNetworkAutoSwitch(version, result)
             result = migrateAppThemeStyle(version, result)
             result = migrateLocalDnsIpDoh(version, result)
-            return recoverLatencyTestUrl(result)
+            return normalizeExclusiveAppAssignments(recoverLatencyTestUrl(result))
         }
 
         private fun migrateEarlySettings(version: Int, settings: AppSettings): AppSettings {
@@ -244,7 +245,7 @@ class SettingsStore private constructor(context: Context) {
     private suspend fun updateSettingsLocked(update: (AppSettings) -> AppSettings): Boolean {
         return writeMutex.withLock {
             val previousSettings = _settings.value
-            val newSettings = update(previousSettings)
+            val newSettings = normalizeExclusiveAppAssignments(update(previousSettings))
             _settings.value = newSettings
             val persisted = saveSettingsLocked(newSettings)
             _settings.value = resolveSettingsAfterPersistence(previousSettings, newSettings, persisted)

@@ -96,6 +96,29 @@ class ConnectionStormGuardTest {
     }
 
     @Test
+    fun failedDialBurstTripsOnceEvenWithoutConnectionEvents() {
+        val guard = ConnectionStormGuard(quarantineMs = 60_000L)
+
+        val decision = guard.observeOutboundFailureBurst(
+            outboundTag = "app-route-node",
+            failureCount = 3,
+            nowMs = 1_000L
+        )
+
+        assertEquals(ConnectionStormReason.OUTBOUND_FAILURE_BURST, decision?.reason)
+        assertEquals(mapOf("app-route-node" to 3), decision?.outboundCounts)
+        assertTrue(decision?.closeAll == true)
+        assertEquals(
+            null,
+            guard.observeOutboundFailureBurst(
+                outboundTag = "app-route-node",
+                failureCount = 3,
+                nowMs = 2_000L
+            )
+        )
+    }
+
+    @Test
     fun incidentHistoryPersistsBoundedAttributionSnapshots() {
         val directory = Files.createTempDirectory("kunbox-connection-incidents").toFile()
         val file = directory.resolve("connection_incidents.jsonl")

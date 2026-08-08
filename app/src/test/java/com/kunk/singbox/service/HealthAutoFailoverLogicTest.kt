@@ -276,6 +276,26 @@ class HealthAutoFailoverLogicTest {
         )
     }
 
+    @Test
+    fun transportRecoveryTargetsMainAndAppRouteOutboundsSeparately() {
+        val config = routeFailureConfig()
+
+        assertTrue(
+            SingBoxService.shouldRecoverMainOutboundFailure(
+                failureTag = "node-a",
+                currentProxyTag = "node-a",
+                config = config
+            )
+        )
+        assertFalse(
+            SingBoxService.shouldRecoverMainOutboundFailure(
+                failureTag = "node-b",
+                currentProxyTag = "node-a",
+                config = config
+            )
+        )
+    }
+
     private fun routeFailureConfig(): SingBoxConfig {
         return SingBoxConfig(
             dns = DnsConfig(

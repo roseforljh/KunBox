@@ -7,6 +7,7 @@ internal enum class ConnectionStormReason {
     GLOBAL_CREATION_RATE,
     SOURCE_ACTIVE_LIMIT,
     GLOBAL_ACTIVE_LIMIT,
+    OUTBOUND_FAILURE_BURST,
     QUARANTINED_SOURCE
 }
 
@@ -42,6 +43,7 @@ internal class ConnectionStormGuard(
     private val globalCreationLimit: Int = DEFAULT_GLOBAL_CREATION_LIMIT,
     private val sourceActiveLimit: Int = DEFAULT_SOURCE_ACTIVE_LIMIT,
     private val globalActiveLimit: Int = DEFAULT_GLOBAL_ACTIVE_LIMIT,
+    private val outboundFailureLimit: Int = DEFAULT_OUTBOUND_FAILURE_LIMIT,
     private val windowMs: Long = DEFAULT_WINDOW_MS,
     private val quarantineMs: Long = DEFAULT_QUARANTINE_MS
 ) {
@@ -65,6 +67,7 @@ internal class ConnectionStormGuard(
         require(globalCreationLimit >= sourceCreationLimit)
         require(sourceActiveLimit > 0)
         require(globalActiveLimit >= sourceActiveLimit)
+        require(outboundFailureLimit > 0)
         require(windowMs > 0L)
         require(quarantineMs > 0L)
     }
@@ -113,6 +116,29 @@ internal class ConnectionStormGuard(
         val offender = sourceForKey(reasonAndKey.second)
         offender?.let { quarantinedUntilMs[it.key] = nowMs + quarantineMs }
         return decision(reasonAndKey.first, offender, closeAll = true)
+    }
+
+    @Synchronized
+    fun observeOutboundFailureBurst(
+        outboundTag: String,
+        failureCount: Int,
+        nowMs: Long
+    ): ConnectionStormDecision? {
+        val normalizedTag = outboundTag.trim()
+        if (normalizedTag.isEmpty() || failureCount < outboundFailureLimit) return null
+        trim(nowMs)
+        val quarantineKey = "outbound:$normalizedTag"
+        if (quarantinedUntilMs[quarantineKey]?.let { it > nowMs } == true) return null
+        quarantinedUntilMs[quarantineKey] = nowMs + quarantineMs
+        return ConnectionStormDecision(
+            reason = ConnectionStormReason.OUTBOUND_FAILURE_BURST,
+            offender = null,
+            activeConnections = activeConnections.size,
+            newConnectionsInWindow = failureCount,
+            creationRatePerSecond = failureCount * 1_000.0 / windowMs,
+            closeAll = true,
+            outboundCounts = mapOf(normalizedTag to failureCount)
+        )
     }
 
     @Synchronized
@@ -211,6 +237,7 @@ internal class ConnectionStormGuard(
         const val DEFAULT_GLOBAL_CREATION_LIMIT = 1_024
         const val DEFAULT_SOURCE_ACTIVE_LIMIT = 1_024
         const val DEFAULT_GLOBAL_ACTIVE_LIMIT = 4_096
+        const val DEFAULT_OUTBOUND_FAILURE_LIMIT = 3
         const val DEFAULT_WINDOW_MS = 5_000L
         const val DEFAULT_QUARANTINE_MS = 60_000L
         const val MAX_TARGETED_CLOSES = 32

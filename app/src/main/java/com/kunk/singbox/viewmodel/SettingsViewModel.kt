@@ -3,8 +3,10 @@
 import com.kunk.singbox.R
 import android.app.Application
 import android.net.Uri
+import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.kunk.singbox.manager.VpnServiceManager
 import com.kunk.singbox.model.AppSettings
 import com.kunk.singbox.model.CustomRule
 import com.kunk.singbox.model.DefaultRule
@@ -585,13 +587,13 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 
     fun addAppRule(rule: AppRule) {
         viewModelScope.launch {
-            repository.upsertAppRule(rule)
+            applyAppRoutingChange { repository.upsertAppRule(rule) }
         }
     }
 
     fun updateAppRule(rule: AppRule) {
         viewModelScope.launch {
-            repository.upsertAppRule(rule)
+            applyAppRoutingChange { repository.upsertAppRule(rule) }
         }
     }
 
@@ -599,7 +601,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         viewModelScope.launch {
             val currentRules = settings.value.appRules.toMutableList()
             currentRules.removeAll { it.id == ruleId }
-            repository.setAppRules(currentRules)
+            applyAppRoutingChange { repository.setAppRules(currentRules) }
         }
     }
 
@@ -610,20 +612,20 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             if (index != -1) {
                 val rule = currentRules[index]
                 currentRules[index] = rule.copy(enabled = !rule.enabled)
-                repository.setAppRules(currentRules)
+                applyAppRoutingChange { repository.setAppRules(currentRules) }
             }
         }
     }
 
     fun addAppGroup(group: AppGroup) {
         viewModelScope.launch {
-            repository.upsertAppGroup(group)
+            applyAppRoutingChange { repository.upsertAppGroup(group) }
         }
     }
 
     fun updateAppGroup(group: AppGroup) {
         viewModelScope.launch {
-            repository.upsertAppGroup(group)
+            applyAppRoutingChange { repository.upsertAppGroup(group) }
         }
     }
 
@@ -631,7 +633,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         viewModelScope.launch {
             val currentGroups = settings.value.appGroups.toMutableList()
             currentGroups.removeAll { it.id == groupId }
-            repository.setAppGroups(currentGroups)
+            applyAppRoutingChange { repository.setAppGroups(currentGroups) }
         }
     }
 
@@ -642,9 +644,15 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             if (index != -1) {
                 val group = currentGroups[index]
                 currentGroups[index] = group.copy(enabled = !group.enabled)
-                repository.setAppGroups(currentGroups)
+                applyAppRoutingChange { repository.setAppGroups(currentGroups) }
             }
         }
+    }
+
+    private suspend fun applyAppRoutingChange(update: suspend () -> Boolean) {
+        if (!update()) return
+        VpnServiceManager.applyPerAppRuleChangeIfRunning(getApplication())
+            .onFailure { error -> Log.e("SettingsViewModel", "自动应用应用分流配置失败", error) }
     }
 
     fun exportData(uri: Uri) {

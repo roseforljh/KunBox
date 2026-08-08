@@ -314,21 +314,17 @@ class SettingsRepository(private val context: Context) {
         return settings.value.ruleSets
     }
 
-    suspend fun setAppRules(value: List<AppRule>) {
+    suspend fun setAppRules(value: List<AppRule>): Boolean =
         updateSettingsAndNotifyRestart { it.copy(appRules = value) }
-    }
 
-    suspend fun setAppGroups(value: List<AppGroup>) {
+    suspend fun setAppGroups(value: List<AppGroup>): Boolean =
         updateSettingsAndNotifyRestart { it.copy(appGroups = value) }
-    }
 
-    suspend fun upsertAppRule(value: AppRule) {
+    suspend fun upsertAppRule(value: AppRule): Boolean =
         updateSettingsAndNotifyRestart { upsertExclusiveAppRule(it, value) }
-    }
 
-    suspend fun upsertAppGroup(value: AppGroup) {
+    suspend fun upsertAppGroup(value: AppGroup): Boolean =
         updateSettingsAndNotifyRestart { upsertExclusiveAppGroup(it, value) }
-    }
 
     suspend fun setRuleSetAutoUpdateEnabled(value: Boolean) {
         settingsStore.updateSettingsAndWait { it.copy(ruleSetAutoUpdateEnabled = value) }

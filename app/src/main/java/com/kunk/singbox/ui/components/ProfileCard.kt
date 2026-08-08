@@ -71,7 +71,6 @@ private fun Modifier.profileOverflowMenuPanel(): Modifier {
     val shape = RoundedCornerShape(12.dp)
     return if (isLiquidGlassTheme()) {
         width(100.dp)
-            .liquidGlassPanel(shape = shape, shadowElevation = 8.dp)
     } else {
         background(MaterialTheme.colorScheme.surfaceVariant, shape)
             .border(

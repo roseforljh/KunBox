@@ -33,9 +33,8 @@ fun LiquidGlassDropdownMenu(
             expanded = expanded,
             onDismissRequest = onDismissRequest,
             modifier = Modifier
-                // 关键：在外部加上 padding，这样 liquidGlassPanel 的阴影（hollowShadow）绘制在 padding 内部，
-                // 就绝不会被 DropdownMenu 内部的 Surface 裁剪掉了！
-                .padding(horizontal = 14.dp, vertical = 6.dp)
+                // 为偏移模糊阴影预留完整空间，避免弹窗边界把底部阴影裁成横线。
+                .padding(start = 14.dp, top = 12.dp, end = 14.dp, bottom = 20.dp)
                 .liquidGlassPanel(shape = menuShape, shadowElevation = 12.dp)
                 .then(modifier), // 这里的 modifier 控制具体大小（如 width(100.dp)）
             containerColor = Color.Transparent,

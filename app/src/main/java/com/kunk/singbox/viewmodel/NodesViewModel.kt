@@ -175,10 +175,14 @@ class NodesViewModel(application: Application) : AndroidViewModel(application) {
                 val node = nodes.value.find { it.id == nodeId }
                 val latency = configRepository.testNodeLatency(nodeId)
                 if (latency <= 0) {
-                    val msg = getApplication<Application>().getString(
-                        R.string.nodes_test_failed,
-                        node?.displayName ?: ""
-                    )
+                    val msg = if (latency == PingResultCode.METERED_SELECTION_REQUIRED) {
+                        getApplication<Application>().getString(R.string.nodes_metered_select_to_test)
+                    } else {
+                        getApplication<Application>().getString(
+                            R.string.nodes_test_failed,
+                            node?.displayName ?: ""
+                        )
+                    }
                     emitToast(msg)
                 }
             } finally {

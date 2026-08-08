@@ -167,6 +167,47 @@ class ConfigRepositoryBatchLatencyPolicyTest {
     }
 
     @Test
+    fun runRuntimeLoadsCrossProfileDetourClosureForRequiredNode() {
+        val profileId = "ba0ce4f3-403e-4737-a1ea-7370e1ce56f8"
+        val resolution = ConfigRepository.resolveRuntimeOutboundDependencies(
+            rootReferences = listOf(profileId to "1.88u idc"),
+            reservedTags = setOf("direct", "PROXY")
+        ) { requestedProfileId ->
+            when (requestedProfileId) {
+                profileId -> listOf(
+                    Outbound(
+                        type = "vless",
+                        tag = "1.88u idc",
+                        detour = "$profileId::[anytls]美国 01 10X GIA"
+                    ),
+                    Outbound(type = "anytls", tag = "[anytls]美国 01 10X GIA")
+                )
+                else -> null
+            }
+        }
+
+        val targetTag = resolution.runtimeTags.getValue(profileId to "1.88u idc")
+        val frontTag = resolution.runtimeTags.getValue(profileId to "[anytls]美国 01 10X GIA")
+        val target = resolution.outbounds.first { it.tag == targetTag }
+
+        assertEquals(frontTag, target.detour)
+        assertTrue(resolution.outbounds.any { it.tag == frontTag && it.type == "anytls" })
+    }
+
+    @Test
+    fun runConfigDoesNotSilentlyRemoveMissingDetour() {
+        val source = File("src/main/java/com/kunk/singbox/repository/ConfigRepository.kt")
+            .readText(Charsets.UTF_8)
+        val runOutboundsBody = source
+            .substringAfter("protected fun buildRunOutbounds(")
+            .substringBefore("protected fun applySelectorSafeOutbounds(")
+
+        assertTrue(runOutboundsBody.contains("resolveRuntimeOutboundDependencies("))
+        assertTrue(runOutboundsBody.contains("前置代理「\$detourTag」不存在或形成自引用"))
+        assertFalse(runOutboundsBody.contains("Cleared invalid detour"))
+    }
+
+    @Test
     fun latencyRuntimeDropsTargetWhoseRecursiveDetourUsesProtectedNode() {
         val source = listOf(
             Outbound(type = "vless", tag = "tested", detour = "profile-b::front")

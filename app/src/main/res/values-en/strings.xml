@@ -313,6 +313,7 @@
     <string name="nodes_stop_test">Stop Test</string>
     <string name="nodes_unknown_node">Unknown Node</string>
     <string name="nodes_test_failed">%s test failed/timeout</string>
+    <string name="nodes_metered_select_to_test">Select the metered node before testing</string>
     <string name="nodes_filter_applied">Filter applied</string>
     <string name="nodes_filter_cleared">Filter cleared</string>
     <string name="nodes_unsupported_format">Unsupported link format</string>
