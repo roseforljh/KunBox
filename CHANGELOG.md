@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.23.1](https://github.com/roseforljh/KunBox/compare/v2.23.0...v2.23.1) (2026-08-08)
+
+
+### Bug Fixes
+
+* 修复应用分流及多项稳定性问题 ([bf9be22](https://github.com/roseforljh/KunBox/commit/bf9be22bc0c0f1fe6418850b213f3d7c141a2e68))
+* 修复节点切换与应用分流 ([c216ad2](https://github.com/roseforljh/KunBox/commit/c216ad2de7bc3d200f495cc1e29be58e4bd08c9c))
+
 ## [2.23.0](https://github.com/roseforljh/KunBox/compare/v2.22.0...v2.23.0) (2026-08-08)
 
 
