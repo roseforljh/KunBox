@@ -34,6 +34,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
@@ -42,6 +43,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -62,6 +64,11 @@ import com.kunk.singbox.ui.components.AppNotificationManager
 import com.kunk.singbox.ui.components.AppNavBar
 import com.kunk.singbox.ui.navigation.AppNavigation
 import com.kunk.singbox.ui.theme.SingBoxTheme
+import com.kunk.singbox.ui.theme.LocalLiquidGlassBackdrop
+import com.kunk.singbox.ui.theme.liquidGlassBackdrop
+import com.kyant.backdrop.Backdrop
+import com.kyant.backdrop.backdrops.layerBackdrop
+import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import android.content.ComponentName
 import android.service.quicksettings.TileService
 import kotlinx.coroutines.delay
@@ -110,6 +117,9 @@ class MainActivity : ComponentActivity() {
             navigationBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT)
         )
         super.onCreate(savedInstanceState)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            window.isNavigationBarContrastEnforced = false
+        }
         MainIntentEvents.emit(intent)
         setContent {
             SingBoxApp()
@@ -296,6 +306,8 @@ fun SingBoxApp() {
     SingBoxTheme(appTheme = appTheme, appThemeStyle = appThemeStyle) {
         val navController = rememberNavController()
         val useLiquidGlassNav = appThemeStyle == AppThemeStyle.LIQUID_GLASS
+        val liquidGlassContentBackdrop = rememberLayerBackdrop()
+        val liquidGlassComponentBackdrop = rememberLayerBackdrop()
 
         // Handle pending navigation from App Shortcuts
         LaunchedEffect(pendingNavigation) {
@@ -319,80 +331,105 @@ fun SingBoxApp() {
             "dashboard", "nodes", "profiles", "settings"
         )
         val rootContainerColor = if (useLiquidGlassNav) {
-            MaterialTheme.colorScheme.background
+            Color.Transparent
         } else {
             MaterialTheme.colorScheme.surface
         }
 
         Box(modifier = Modifier.fillMaxSize()) {
-            Scaffold(
-                bottomBar = {
-                    if (!useLiquidGlassNav) {
-                        AnimatedAppNavBar(
-                            visible = showBottomBar,
-                            navController = navController,
-                            themeStyle = appThemeStyle
-                        )
-                    }
-                },
-                containerColor = rootContainerColor,
-                contentWindowInsets = WindowInsets(0, 0, 0, 0)
-            ) { innerPadding ->
-                val rawPadding = WindowInsets.navigationBars
-                    .asPaddingValues()
-                    .calculateBottomPadding()
-                val safeBottomPadding = if (rawPadding < 12.dp) 12.dp else rawPadding
-
-                val dashboardContentBottomPadding = if (useLiquidGlassNav) {
-                    68.dp + safeBottomPadding
-                } else {
-                    0.dp
-                }
-                val topLevelContentBottomPadding = if (useLiquidGlassNav) {
-                    68.dp + safeBottomPadding
-                } else {
-                    0.dp
-                }
-                val bottomPadding =
-                    if (useLiquidGlassNav) 0.dp else innerPadding.calculateBottomPadding()
-
-                val contentModifier = Modifier
+            Box(
+                modifier = Modifier
                     .fillMaxSize()
-                    .padding(bottom = bottomPadding)
+                    .then(
+                        if (useLiquidGlassNav) {
+                            Modifier.layerBackdrop(liquidGlassComponentBackdrop)
+                        } else {
+                            Modifier
+                        }
+                    )
+                    .liquidGlassBackdrop()
+            )
+
+            CompositionLocalProvider(
+                LocalLiquidGlassBackdrop provides if (useLiquidGlassNav) {
+                    liquidGlassComponentBackdrop
+                } else {
+                    null
+                }
+            ) {
+                Scaffold(
+                    bottomBar = {
+                        if (!useLiquidGlassNav) {
+                            AnimatedAppNavBar(
+                                visible = showBottomBar,
+                                navController = navController,
+                                themeStyle = appThemeStyle,
+                                backdrop = liquidGlassContentBackdrop
+                            )
+                        }
+                    },
+                    containerColor = rootContainerColor,
+                    contentWindowInsets = WindowInsets(0, 0, 0, 0)
+                ) { innerPadding ->
+                    val rawPadding = WindowInsets.navigationBars
+                        .asPaddingValues()
+                        .calculateBottomPadding()
+                    val safeBottomPadding = if (rawPadding < 12.dp) 12.dp else rawPadding
+
+                    val dashboardContentBottomPadding = if (useLiquidGlassNav) {
+                        68.dp + safeBottomPadding
+                    } else {
+                        0.dp
+                    }
+                    val topLevelContentBottomPadding = if (useLiquidGlassNav) {
+                        68.dp + safeBottomPadding
+                    } else {
+                        0.dp
+                    }
+                    val bottomPadding =
+                        if (useLiquidGlassNav) 0.dp else innerPadding.calculateBottomPadding()
+
+                    val contentModifier = Modifier
+                        .fillMaxSize()
+                        .padding(bottom = bottomPadding)
+
+                    if (useLiquidGlassNav) {
+                        Box(
+                            modifier = contentModifier
+                                .layerBackdrop(liquidGlassContentBackdrop)
+                                .background(rootContainerColor)
+                        ) {
+                            AppNavigation(
+                                navController = navController,
+                                dashboardViewModel = dashboardViewModel,
+                                dashboardBottomContentPadding = dashboardContentBottomPadding,
+                                topLevelBottomContentPadding = topLevelContentBottomPadding
+                            )
+                        }
+                    } else {
+                        Surface(
+                            modifier = contentModifier,
+                            color = rootContainerColor
+                        ) {
+                            AppNavigation(
+                                navController = navController,
+                                dashboardViewModel = dashboardViewModel,
+                                dashboardBottomContentPadding = dashboardContentBottomPadding,
+                                topLevelBottomContentPadding = topLevelContentBottomPadding
+                            )
+                        }
+                    }
+                }
 
                 if (useLiquidGlassNav) {
-                    Box(
-                        modifier = contentModifier.background(rootContainerColor)
-                    ) {
-                        AppNavigation(
-                            navController = navController,
-                            dashboardViewModel = dashboardViewModel,
-                            dashboardBottomContentPadding = dashboardContentBottomPadding,
-                            topLevelBottomContentPadding = topLevelContentBottomPadding
-                        )
-                    }
-                } else {
-                    Surface(
-                        modifier = contentModifier,
-                        color = rootContainerColor
-                    ) {
-                        AppNavigation(
-                            navController = navController,
-                            dashboardViewModel = dashboardViewModel,
-                            dashboardBottomContentPadding = dashboardContentBottomPadding,
-                            topLevelBottomContentPadding = topLevelContentBottomPadding
-                        )
-                    }
+                    AnimatedAppNavBar(
+                        visible = showBottomBar,
+                        navController = navController,
+                        themeStyle = appThemeStyle,
+                        backdrop = liquidGlassContentBackdrop,
+                        modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth()
+                    )
                 }
-            }
-
-            if (useLiquidGlassNav) {
-                AnimatedAppNavBar(
-                    visible = showBottomBar,
-                    navController = navController,
-                    themeStyle = appThemeStyle,
-                    modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth()
-                )
             }
         }
     }
@@ -403,6 +440,7 @@ private fun AnimatedAppNavBar(
     visible: Boolean,
     navController: NavController,
     themeStyle: AppThemeStyle,
+    backdrop: Backdrop? = null,
     modifier: Modifier = Modifier
 ) {
     AnimatedVisibility(
@@ -423,6 +461,10 @@ private fun AnimatedAppNavBar(
             animationSpec = tween(durationMillis = 400, easing = FastOutSlowInEasing)
         ) + fadeOut(animationSpec = tween(durationMillis = 400))
     ) {
-        AppNavBar(navController = navController, themeStyle = themeStyle)
+        AppNavBar(
+            navController = navController,
+            themeStyle = themeStyle,
+            backdrop = backdrop
+        )
     }
 }

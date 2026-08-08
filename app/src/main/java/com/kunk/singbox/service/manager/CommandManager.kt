@@ -4,10 +4,14 @@ import android.app.NotificationManager
 import android.content.Context
 import android.os.SystemClock
 import android.util.Log
+import com.kunk.singbox.R
 import com.kunk.singbox.core.BoxWrapperManager
+import com.kunk.singbox.core.SelectorManager
 import com.kunk.singbox.ipc.VpnStateStore
 import com.kunk.singbox.repository.ConfigRepository
 import com.kunk.singbox.repository.LogRepository
+import com.kunk.singbox.repository.NodeProtectionStore
+import com.kunk.singbox.repository.RuntimeNodeRef
 import com.kunk.singbox.repository.TrafficRepository
 import com.kunk.singbox.service.notification.VpnNotificationManager
 import com.kunk.singbox.service.network.TrafficMonitor
@@ -45,6 +49,7 @@ class CommandManager(
         private const val PORT_RELEASE_TIMEOUT_MS = 10000L
         private const val PORT_CHECK_INTERVAL_MS = 50L
         private const val MAX_GROUP_SELECTION_DEPTH = 4
+        internal const val GROUP_STATUS_INTERVAL_MS = 500L
 
         internal fun dispatchKernelLog(
             message: String,
@@ -117,6 +122,9 @@ class CommandManager(
         private set
 
     private val trafficMonitor = TrafficMonitor()
+    private val connectionTrafficAttributor = ConnectionTrafficAttributor()
+    private val connectionStormGuard = ConnectionStormGuard()
+    private val connectionIncidentHistory = ConnectionIncidentHistory(context)
     private var lastConnectionsLabelLogged: String? = null
 
     interface Callbacks {
@@ -198,6 +206,7 @@ class CommandManager(
 
     fun startClients(): Result<Unit> = runCatching {
         trafficMonitor.reset()
+        connectionStormGuard.clear()
         trafficStatusGate.start()
         val handler = createClientHandler()
         clientHandler = handler
@@ -211,10 +220,10 @@ class CommandManager(
 
         val optionsGroup = CommandClientOptions()
         optionsGroup.addCommand(Libbox.CommandGroup)
-        optionsGroup.statusInterval = 3000L * 1000L * 1000L // 3s
+        optionsGroup.statusInterval = GROUP_STATUS_INTERVAL_MS * 1000L * 1000L
         commandClientGroup = Libbox.newCommandClient(handler, optionsGroup)
         commandClientGroup?.connect()
-        Log.i(TAG, "CommandClient connected (Group, interval=3s)")
+        Log.i(TAG, "CommandClient connected (Group, interval=${GROUP_STATUS_INTERVAL_MS}ms)")
 
         val optionsLog = CommandClientOptions()
         optionsLog.addCommand(Libbox.CommandLog)
@@ -225,10 +234,10 @@ class CommandManager(
 
         val optionsConn = CommandClientOptions()
         optionsConn.addCommand(Libbox.CommandConnections)
-        optionsConn.statusInterval = 5000L * 1000L * 1000L
+        optionsConn.statusInterval = 1000L * 1000L * 1000L
         commandClientConnections = Libbox.newCommandClient(handler, optionsConn)
         commandClientConnections?.connect()
-        Log.i(TAG, "CommandClient connected (Connections, interval=5s)")
+        Log.i(TAG, "CommandClient connected (Connections, interval=1s)")
 
         serviceScope.launch {
             delay(3500)
@@ -265,6 +274,8 @@ class CommandManager(
 
         BoxWrapperManager.release()
         connectionsSnapshot = null
+        connectionTrafficAttributor.clear()
+        connectionStormGuard.clear()
 
         val closeStart = SystemClock.elapsedRealtime()
         runCatching {
@@ -325,6 +336,8 @@ class CommandManager(
 
         BoxWrapperManager.release()
         connectionsSnapshot = null
+        connectionTrafficAttributor.clear()
+        connectionStormGuard.clear()
 
         runCatching { commandServer?.closeService() }
             .onFailure { Log.w(TAG, "CommandServer.closeService failed: ${it.message}") }
@@ -392,12 +405,9 @@ class CommandManager(
     fun closeConnection(connId: String): Boolean {
         val client = commandClientConnections ?: commandClient ?: return false
         return try {
-            val method = client.javaClass.methods.find {
-                it.name == "closeConnection" && it.parameterCount == 1
-            }
-            method?.invoke(client, connId)
+            client.closeConnection(connId)
             true
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             false
         }
     }
@@ -449,22 +459,6 @@ class CommandManager(
                         sampleTimeMs = SystemClock.elapsedRealtime()
                     )
                     callbacks?.onTrafficUpdate(snapshot)
-
-                    if (snapshot.uploadDelta > 0L || snapshot.downloadDelta > 0L) {
-                        val trafficRepo = TrafficRepository.getInstance(context)
-                        val configRepo = ConfigRepository.getInstance(context)
-
-                        val activeNodeId = configRepo.activeNodeId.value
-                        if (activeNodeId != null) {
-                            val nodeName = configRepo.getNodeById(activeNodeId)?.name
-                            trafficRepo.addTraffic(
-                                activeNodeId,
-                                snapshot.uploadDelta,
-                                snapshot.downloadDelta,
-                                nodeName
-                            )
-                        }
-                    }
                 } catch (e: Exception) {
                     Log.e(TAG, "writeStatus callback error", e)
                 }
@@ -486,6 +480,24 @@ class CommandManager(
         override fun writeConnectionEvents(events: ConnectionEvents?) {
             events ?: return
             try {
+                val runtimeMappings = NodeProtectionStore.runtimeMappings()
+                val eventData = ConnectionTrafficEventReader.read(events)
+                if (events.reset) connectionTrafficAttributor.clear()
+                enforceConnectionStormGuard(
+                    connectionStormGuard.observe(
+                        reset = events.reset,
+                        events = eventData,
+                        nowMs = SystemClock.elapsedRealtime()
+                    )
+                )
+                enforceRuntimeMeteredProtection(eventData, runtimeMappings)
+                recordAttributedTraffic(
+                    connectionTrafficAttributor.apply(
+                        reset = false,
+                        events = eventData,
+                        runtimeMappings = runtimeMappings
+                    )
+                )
                 val snapshot = connectionsSnapshot ?: Libbox.newConnections().also {
                     connectionsSnapshot = it
                 }
@@ -522,6 +534,7 @@ class CommandManager(
         Log.d(TAG, "Processing group: $tag, selected=$selected")
 
         if (!tag.isNullOrBlank() && !selected.isNullOrBlank()) {
+            SelectorManager.recordKernelSelection(tag, selected)
             val prev = groupSelectedOutbounds.put(tag, selected)
             if (prev != selected) {
                 changed = true
@@ -532,8 +545,89 @@ class CommandManager(
         return changed
     }
 
+    private fun enforceRuntimeMeteredProtection(
+        events: List<ConnectionTrafficEventData>,
+        mappings: Map<String, RuntimeNodeRef>
+    ) {
+        val selectedNodeId = VpnStateStore.getSelectedNodeId()
+        events.asSequence()
+            .filter { it.type != ConnectionTrafficAttributor.EVENT_CLOSED }
+            .forEach { event ->
+                val unauthorized = connectionTrafficAttributor.resolveTargets(event, mappings)
+                    .asSequence()
+                    .firstOrNull { ref ->
+                        NodeProtectionStore.isProtected(ref.nodeId) &&
+                            !NodeProtectionStore.isRuntimeRefAuthorized(ref, selectedNodeId)
+                    } ?: return@forEach
+                val closed = closeConnection(event.id) || closeConnections()
+                LogRepository.getInstance().addAlwaysLog(
+                    "ERROR [METERED_GUARD] closed=$closed connection=${event.id} " +
+                        "node=${unauthorized.nodeName} node_id=${unauthorized.nodeId}"
+                )
+            }
+    }
+
+    private fun enforceConnectionStormGuard(decision: ConnectionStormDecision?) {
+        decision ?: return
+        val closed = if (decision.closeAll) {
+            closeConnections()
+        } else {
+            decision.connectionIds.fold(true) { success, id -> closeConnection(id) && success }
+        }
+        if (closed) connectionStormGuard.acknowledgeClosed(decision)
+        persistConnectionIncident(decision, closed)
+        LogRepository.getInstance().addAlwaysLog(
+            "ERROR [CONNECTION_STORM] mode=vpn reason=${decision.reason} closed=$closed " +
+                "active=${decision.activeConnections} created=${decision.newConnectionsInWindow} " +
+                "rate=${String.format(java.util.Locale.US, "%.1f", decision.creationRatePerSecond)} " +
+                "uid=${decision.offender?.uid ?: -1} " +
+                "package=${decision.offender?.packageNames?.joinToString(",").orEmpty()} " +
+                "inbound=${decision.offender?.inbound.orEmpty()} source=${decision.offender?.source.orEmpty()}"
+        )
+    }
+
+    private fun persistConnectionIncident(decision: ConnectionStormDecision, closed: Boolean) {
+        val snapshot = decision.toIncidentSnapshot(
+            mode = "vpn",
+            closeReason = if (decision.closeAll) "close_all" else "close_quarantined_source",
+            closeSucceeded = closed,
+            timestampEpochMs = System.currentTimeMillis(),
+            elapsedRealtimeMs = SystemClock.elapsedRealtime()
+        )
+        serviceScope.launch(Dispatchers.IO) {
+            runCatching { connectionIncidentHistory.append(snapshot) }
+                .onFailure { error -> Log.e(TAG, "Failed to persist connection incident", error) }
+        }
+    }
+
+    private fun recordAttributedTraffic(records: List<AttributedConnectionTraffic>) {
+        val repository = TrafficRepository.getInstance(context)
+        records.forEach { record ->
+            val targets = record.targets.ifEmpty {
+                setOf(
+                    RuntimeNodeRef(
+                        nodeId = TrafficRepository.UNATTRIBUTED_NODE_ID,
+                        nodeName = context.getString(R.string.traffic_unattributed)
+                    )
+                )
+            }
+            targets.forEach { target ->
+                repository.addTraffic(
+                    nodeId = target.nodeId,
+                    uploadDiff = record.uploadDelta,
+                    downloadDiff = record.downloadDelta,
+                    nodeName = target.nodeName
+                )
+            }
+        }
+    }
+
     private fun updateResolvedProxySelection(): Boolean {
         val selected = resolveConcreteGroupSelection("PROXY", groupSelectedOutbounds) ?: return false
+        if (SelectorManager.isSelectionPending()) {
+            Log.d(TAG, "Deferring runtime node publication until explicit switch cleanup: $selected")
+            return false
+        }
         if (selected == realTimeNodeName) return false
 
         // 只更新运行态展示，不写回用户手选节点。
@@ -635,6 +729,8 @@ class CommandManager(
         activeConnectionLabel = null
         recentConnectionIds = emptyList()
         connectionsSnapshot = null
+        connectionTrafficAttributor.clear()
+        connectionStormGuard.clear()
         callbacks = null
         isNonEssentialSuspended = false
     }
@@ -677,7 +773,7 @@ class CommandManager(
         try {
             val optionsConn = CommandClientOptions()
             optionsConn.addCommand(Libbox.CommandConnections)
-            optionsConn.statusInterval = 5000L * 1000L * 1000L
+            optionsConn.statusInterval = 1000L * 1000L * 1000L
             commandClientConnections = Libbox.newCommandClient(handler, optionsConn)
             commandClientConnections?.connect()
             Log.i(TAG, "CommandClient (Connections) resumed")

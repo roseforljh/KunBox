@@ -19,6 +19,7 @@
     <string name="common_cancel">Cancel</string>
     <string name="common_save">Save</string>
     <string name="common_delete">Delete</string>
+    <string name="common_delete_confirm">Delete “%s”? This action cannot be undone.</string>
     <string name="common_edit">Edit</string>
     <string name="common_edit_title">Edit %s</string>
     <string name="common_select_title">Select %s</string>
@@ -50,6 +51,7 @@
     <string name="common_no">No</string>
     <string name="common_auto">Auto</string>
     <string name="common_menu">Menu</string>
+    <string name="common_layout">Layout</string>
     <string name="common_view">View</string>
     <string name="common_downloaded">Downloaded</string>
     <string name="common_ready">Ready</string>
@@ -243,7 +245,7 @@
     <string name="profiles_import_failed">Import failed: %s</string>
     <string name="profiles_add_config">Add Profile</string>
     <string name="profiles_custom_config">Custom Profile</string>
-    <string name="profiles_custom_config_subtitle">Combine nodes selected from existing subscriptions</string>
+    <string name="profiles_custom_config_subtitle">Add or combine nodes</string>
     <string name="profiles_imported_subscription_default_name">Imported Subscription</string>
     <string name="subscription_import_fetching">Fetching subscription content...</string>
     <string name="subscription_import_requesting">Trying subscription request with User-Agent (%1$d/%2$d)...</string>
@@ -254,7 +256,16 @@
     <string name="subscription_import_dns_failed">Failed to resolve domain, please check the subscription link</string>
     <string name="subscription_import_ssl_failed">SSL certificate validation failed</string>
     <string name="subscription_import_failed_generic">Subscription import failed</string>
-    <string name="custom_profile_name_nodes_required">Name is required and at least one node must be selected</string>
+    <string name="custom_profile_name_required">Name is required</string>
+    <string name="custom_profile_name_hint">Enter a profile name</string>
+    <string name="custom_profile_selected_nodes">%d nodes total</string>
+    <string name="custom_profile_nodes_optional">Add or select at least one node</string>
+    <string name="custom_profile_no_available_nodes">No subscription nodes available</string>
+    <string name="profiles_no_safe_node">No node can be selected safely from this profile</string>
+    <string name="custom_profile_paste_link">Paste Link</string>
+    <string name="custom_profile_paste_link_subtitle">Add from clipboard</string>
+    <string name="custom_profile_manual_add_subtitle">Choose a protocol and enter details</string>
+    <string name="custom_profile_added_nodes">Added Nodes</string>
     <string name="custom_profile_creating">Creating custom profile...</string>
     <string name="custom_profile_create_failed">Failed to create custom profile</string>
     <string name="custom_profile_nodes_required">No available nodes selected</string>
@@ -262,6 +273,7 @@
     <string name="profiles_parse_failed">Failed to parse content</string>
     <string name="profiles_content_empty">Content is empty</string>
     <string name="profiles_updated">Profile updated</string>
+    <string name="profiles_custom_no_update">Custom profiles do not require updates</string>
     <string name="profiles_deleted">Profile deleted</string>
     <string name="profiles_auto_update">Auto Update</string>
     <string name="profiles_auto_update_interval">Update Interval (minutes)</string>
@@ -292,6 +304,7 @@
     <string name="nodes_export_link">Export Link</string>
     <string name="nodes_copied_to_clipboard">Copied to clipboard</string>
     <string name="nodes_clear_latency">Clear Latency</string>
+    <string name="nodes_clear_latency_confirm">Clear all node latency records? This action cannot be undone.</string>
     <string name="nodes_latency_cleared">Latency cleared</string>
     <string name="nodes_test_latency">Test Latency</string>
     <string name="nodes_testing_progress">Testing...</string>
@@ -415,8 +428,16 @@
     <string name="node_detail_detour_proxy_subtitle">Select a proxy node from all profiles</string>
     <string name="node_detail_detour_tag">Detour Tag (Advanced)</string>
     <string name="node_detail_detour_tag_subtitle">Manual outbound tag; leave empty to disable</string>
+    <string name="node_detail_auto_selection_eligible">Include in automatic probing and switching</string>
+    <string name="node_detail_auto_selection_eligible_subtitle">When disabled, background probes and automatic switching skip this node; manual selection and testing remain available</string>
+    <string name="node_detail_metered_protection">High-cost metered node protection</string>
+    <string name="node_detail_metered_protection_subtitle">Only enters the runtime config after explicit manual selection; blocks routing, DNS, detours, and background probes</string>
+    <string name="traffic_unattributed">Unattributed traffic</string>
+    <string name="traffic_background_probe">Background probe traffic</string>
+    <string name="traffic_health_check">Health-check traffic</string>
     <string name="node_detail_tcp_fast_open">TCP Fast Open</string>
     <string name="node_detail_select_detour_node">Select Detour Node</string>
+    <string name="node_picker_no_detour">Do not use a detour proxy</string>
     <string name="node_detail_unknown_profile">Unknown Profile (%s)</string>
 
     <!-- Rule Sets -->
@@ -508,6 +529,7 @@
     <string name="logs_title">Logs</string>
     <string name="logs_export">Export</string>
     <string name="logs_clear">Clear</string>
+    <string name="logs_clear_confirm">Clear all runtime logs? This action cannot be undone.</string>
     <string name="logs_search_hint">Search keywords (domain, error, etc.)</string>
 
     <!-- Diagnostics -->

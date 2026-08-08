@@ -2,16 +2,16 @@ package com.kunk.singbox.ui.screens
 
 import com.kunk.singbox.R
 import androidx.compose.foundation.background
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Save
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -20,7 +20,6 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.res.stringResource
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -34,6 +33,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import androidx.compose.material3.MaterialTheme
@@ -41,14 +41,13 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.kunk.singbox.repository.ConfigRepository
 import com.kunk.singbox.ui.components.AppNotificationManager
+import com.kunk.singbox.ui.components.FloatingPageLayout
 import com.kunk.singbox.ui.theme.isLiquidGlassTheme
-import com.kunk.singbox.ui.theme.liquidGlassIconButtonPanel
 import com.kunk.singbox.ui.theme.liquidGlassLoadingStatePanel
 import com.kunk.singbox.ui.theme.liquidGlassPanel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import com.kunk.singbox.ui.theme.liquidGlassTopAppBarContainerColor
-import com.kunk.singbox.ui.theme.liquidGlassTopAppBarColors
 import java.util.Locale
 
 @Composable
@@ -60,7 +59,7 @@ private fun Modifier.profileEditorPanel(): Modifier {
     }
 }
 
-private class ProfileEditorViewModel : ViewModel() {
+internal class ProfileEditorViewModel : ViewModel() {
     var content by mutableStateOf("")
         private set
 
@@ -116,46 +115,51 @@ fun ProfileEditorScreen(navController: NavController, profileId: String) {
         editorViewModel = editorViewModel
     )
 
-    Scaffold(
-        contentWindowInsets = WindowInsets(0, 0, 0, 0),
-        containerColor = liquidGlassTopAppBarContainerColor(MaterialTheme.colorScheme.background),
-        topBar = {
-            ProfileEditorTopBar(
-                saveEnabled = !editorViewModel.isLoading && !editorViewModel.isSaving,
-                onBack = { navController.popBackStack() },
-                onSave = {
+    FloatingPageLayout(
+        title = stringResource(R.string.profile_editor_title),
+        onBack = { navController.popBackStack() },
+        actions = {
+            IconButton(
+                enabled = !editorViewModel.isLoading && !editorViewModel.isSaving,
+                onClick = {
                     if (isProfileContentTooLarge(editorViewModel.content)) {
-                        AppNotificationManager.showMessage(
-                            context,
-                            contentTooLargeMessage
+                        AppNotificationManager.showMessage(context, contentTooLargeMessage)
+                    } else {
+                        configRepository.saveProfileContent(
+                            scope = scope,
+                            profileId = profileId,
+                            content = editorViewModel.content,
+                            onSavingChanged = editorViewModel::updateSaving,
+                            onResult = { result ->
+                                handleProfileSaveResult(context, navController, result)
+                            }
                         )
-                        return@ProfileEditorTopBar
                     }
-
-                    configRepository.saveProfileContent(
-                        scope = scope,
-                        profileId = profileId,
-                        content = editorViewModel.content,
-                        onSavingChanged = editorViewModel::updateSaving,
-                        onResult = { result ->
-                            handleProfileSaveResult(context, navController, result)
-                        }
-                    )
                 }
+            ) {
+                Icon(
+                    Icons.Rounded.Save,
+                    contentDescription = stringResource(R.string.common_save),
+                    tint = MaterialTheme.colorScheme.onBackground
+                )
+            }
+        }
+    ) { contentTopPadding ->
+        Scaffold(
+            contentWindowInsets = WindowInsets(0, 0, 0, 0),
+            containerColor = liquidGlassTopAppBarContainerColor(MaterialTheme.colorScheme.background)
+        ) { padding ->
+            ProfileEditorContent(
+                content = editorViewModel.content,
+                isLoading = editorViewModel.isLoading,
+                isSaving = editorViewModel.isSaving,
+                onContentChange = { editorViewModel.updateContent(it) },
+                contentTopPadding = contentTopPadding,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding)
             )
         }
-    ) { padding ->
-        ProfileEditorContent(
-            content = editorViewModel.content,
-            isLoading = editorViewModel.isLoading,
-            isSaving = editorViewModel.isSaving,
-            onContentChange = { editorViewModel.updateContent(it) },
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .padding(16.dp)
-                .navigationBarsPadding()
-        )
     }
 }
 
@@ -187,52 +191,13 @@ private fun ProfileEditorLoadEffect(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun ProfileEditorTopBar(
-    saveEnabled: Boolean,
-    onBack: () -> Unit,
-    onSave: () -> Unit
-) {
-    TopAppBar(
-        title = {
-            Text(stringResource(R.string.profile_editor_title), color = MaterialTheme.colorScheme.onBackground)
-        },
-        navigationIcon = {
-            IconButton(
-                modifier = Modifier.liquidGlassIconButtonPanel(),
-                onClick = onBack
-            ) {
-                Icon(
-                    Icons.Rounded.ArrowBack,
-                    contentDescription = stringResource(R.string.common_back),
-                    tint = MaterialTheme.colorScheme.onBackground
-                )
-            }
-        },
-        actions = {
-            IconButton(
-                modifier = Modifier.liquidGlassIconButtonPanel(enabled = saveEnabled),
-                enabled = saveEnabled,
-                onClick = onSave
-            ) {
-                Icon(
-                    Icons.Rounded.Save,
-                    contentDescription = stringResource(R.string.common_save),
-                    tint = MaterialTheme.colorScheme.onBackground
-                )
-            }
-        },
-        colors = liquidGlassTopAppBarColors(defaultContainerColor = MaterialTheme.colorScheme.background)
-    )
-}
-
 @Composable
 private fun ProfileEditorContent(
     content: String,
     isLoading: Boolean,
     isSaving: Boolean,
     onContentChange: (String) -> Unit,
+    contentTopPadding: Dp,
     modifier: Modifier = Modifier
 ) {
     Column(modifier = modifier) {
@@ -252,6 +217,13 @@ private fun ProfileEditorContent(
                 modifier = Modifier
                     .fillMaxSize()
                     .profileEditorPanel()
+                    .verticalScroll(rememberScrollState())
+                    .padding(
+                        start = 16.dp,
+                        top = contentTopPadding + 16.dp,
+                        end = 16.dp,
+                        bottom = 16.dp
+                    )
             )
         }
     }

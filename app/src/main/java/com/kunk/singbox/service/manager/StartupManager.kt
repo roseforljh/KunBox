@@ -16,6 +16,7 @@ import com.kunk.singbox.ipc.VpnStateStore
 import com.kunk.singbox.model.AppSettings
 import com.kunk.singbox.model.SingBoxConfig
 import com.kunk.singbox.repository.LogRepository
+import com.kunk.singbox.repository.MeteredNodeConfigGuard
 import com.kunk.singbox.repository.RuleSetRepository
 import com.kunk.singbox.repository.SettingsRepository
 import com.kunk.singbox.service.notification.VpnNotificationManager
@@ -292,6 +293,10 @@ class StartupManager(
             throw IllegalStateException("Config file not found: $configPath")
         }
         val rawConfigContent = configFile.readText()
+        MeteredNodeConfigGuard.requireRuntimeConfigAuthorized(
+            configContent = rawConfigContent,
+            selectedNodeId = VpnStateStore.getSelectedNodeId()
+        )
         log(
             "[parallelInit] readConfig: ${SystemClock.elapsedRealtime() - stepStart}ms, size=${rawConfigContent.length}"
         )

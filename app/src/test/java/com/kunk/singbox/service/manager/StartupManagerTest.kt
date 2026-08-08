@@ -62,9 +62,34 @@ class StartupManagerTest {
         assertTrue(applyPreferred > startClients)
         val preferredBody = source
             .substringAfter("protected fun resolvePreferredProxyTag(")
-            .substringBefore("protected fun applyPreferredProxySelection(preferredTag: String?)")
+            .substringBefore("protected suspend fun applyPreferredProxySelection(preferredTag: String?)")
         assertFalse(preferredBody.contains("VpnStateStore.getSelectedNodeLabel()"))
         assertFalse(preferredBody.contains("activeNodeId"))
+    }
+
+    @Test
+    fun confirmedStartupSelectionIsNotDiscardedByColdVpnRepository() {
+        val source = File("src/main/java/com/kunk/singbox/service/SingBoxService.kt")
+            .readText(Charsets.UTF_8)
+        val body = source
+            .substringAfter("protected suspend fun applyPreferredProxySelection(preferredTag: String?)")
+            .substringBefore("protected fun launchPostStartTasks(configContent: String)")
+
+        assertTrue(body.contains("resolveConfirmedProxyRuntimeLabel("))
+        assertFalse(body.contains("resolveNodeNameFromOutboundTag"))
+        assertFalse(body.contains("VpnStateStore.setActiveLabel(null)"))
+    }
+
+    @Test
+    fun startupDoesNotSelectAlreadySelectedProxyAgain() {
+        val source = File("src/main/java/com/kunk/singbox/service/SingBoxService.kt")
+            .readText(Charsets.UTF_8)
+        val body = source
+            .substringAfter("protected suspend fun applyPreferredProxySelection(preferredTag: String?)")
+            .substringBefore("protected fun launchPostStartTasks(configContent: String)")
+
+        assertTrue(body.contains("commandManager.getSelectedOutbound(\"PROXY\")"))
+        assertTrue(body.contains("equals(preferredTag, ignoreCase = true)"))
     }
 
     private fun assertOrdered(
@@ -107,6 +132,20 @@ class StartupManagerTest {
         assertTrue(serviceSource.contains("override fun cancelPostStartJob(): Job?"))
         assertTrue(shutdownSource.contains("callbacks.cancelPostStartJob()"))
         assertTrue(shutdownSource.contains("jobsToJoin.forEach { it.join() }"))
+    }
+
+    @Test
+    fun stopCompletionClearsStartingBeforeQueuedRestart() {
+        val source = File("src/main/java/com/kunk/singbox/service/SingBoxService.kt")
+            .readText(Charsets.UTF_8)
+        val completionBody = source
+            .substringAfter("override fun completeStop(")
+            .substringBefore("override fun startVpn(configPath: String, recoveryIntentLease: RecoveryIntentLease?)")
+
+        val clearStartingIndex = completionBody.indexOf("SingBoxService.isStarting = false")
+        val clearStoppingIndex = completionBody.indexOf("isStopping = false")
+        assertTrue(clearStartingIndex >= 0)
+        assertTrue(clearStartingIndex < clearStoppingIndex)
     }
 
     @Test

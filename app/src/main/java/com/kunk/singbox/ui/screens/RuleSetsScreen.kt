@@ -18,8 +18,6 @@ import androidx.compose.ui.zIndex
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
-import androidx.compose.material.icons.automirrored.rounded.ArrowBack
-import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.CloudDownload
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material3.*
@@ -34,7 +32,7 @@ import androidx.navigation.NavController
 import com.kunk.singbox.model.RuleSet
 import com.kunk.singbox.ui.components.AppNotificationManager
 import com.kunk.singbox.ui.components.ConfirmDialog
-import com.kunk.singbox.ui.components.ProfileNodeSelectDialog
+import com.kunk.singbox.ui.components.FloatingPageLayout
 import com.kunk.singbox.ui.components.SingleSelectDialog
 import com.kunk.singbox.ui.components.rememberLocalNetworkPermissionRequest
 import com.kunk.singbox.ui.navigation.Screen
@@ -44,12 +42,12 @@ import com.kunk.singbox.viewmodel.ProfilesViewModel
 import com.kunk.singbox.viewmodel.SettingsViewModel
 import com.kunk.singbox.model.RuleSetOutboundMode
 import com.kunk.singbox.model.NodeUi
+import com.kunk.singbox.ui.theme.LiquidGlassDialogEffect
 import com.kunk.singbox.ui.theme.isLiquidGlassTheme
 import com.kunk.singbox.ui.theme.liquidGlassCheckboxColors
 import com.kunk.singbox.ui.theme.liquidGlassDialogContainerColor
 import com.kunk.singbox.ui.theme.liquidGlassDialogPanel
 import com.kunk.singbox.ui.theme.liquidGlassEmptyStatePanel
-import com.kunk.singbox.ui.theme.liquidGlassIconButtonPanel
 import com.kunk.singbox.ui.theme.liquidGlassPanel
 import com.kunk.singbox.ui.theme.liquidGlassPressFeedback
 import com.kunk.singbox.ui.theme.liquidGlassTextButtonContentColor
@@ -57,7 +55,6 @@ import com.kunk.singbox.ui.theme.liquidGlassTextButtonColors
 import com.kunk.singbox.ui.theme.liquidGlassTextButtonPanel
 import kotlinx.coroutines.launch
 import com.kunk.singbox.ui.theme.liquidGlassTopAppBarContainerColor
-import com.kunk.singbox.ui.theme.liquidGlassTopAppBarColors
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
 internal val defaultRuleSetTags = setOf(
@@ -348,14 +345,15 @@ fun RuleSetsScreen(
     if (showNodeSelectionDialog && outboundEditingRuleSet != null) {
         val currentRuleSet = checkNotNull(outboundEditingRuleSet)
         val currentValue = currentRuleSet.outboundValue
-        val currentRef = resolveNodeByStoredValue(currentValue)?.let { toNodeRef(it) } ?: currentValue
-        ProfileNodeSelectDialog(
+        val selectedNode = resolveNodeByStoredValue(currentValue)
+        NodePickerPage(
             title = stringResource(R.string.rulesets_select_node),
             profiles = profiles,
-            nodesForSelection = selectionNodes,
-            selectedNodeRef = currentRef,
-            onSelect = { ref ->
-                val updatedRuleSet = currentRuleSet.copy(outboundValue = ref)
+            allNodes = allNodes,
+            displayedNodes = selectionNodes,
+            selectedNodeId = selectedNode?.id,
+            onSelectNode = { node ->
+                val updatedRuleSet = currentRuleSet.copy(outboundValue = toNodeRef(node))
                 settingsViewModel.updateRuleSet(updatedRuleSet)
             },
             onDismiss = {
@@ -378,6 +376,7 @@ fun RuleSetsScreen(
             shape = RoundedCornerShape(24.dp),
             title = { Text(stringResource(R.string.rulesets_select_inbound), color = MaterialTheme.colorScheme.onSurface) },
             text = {
+                LiquidGlassDialogEffect()
                 Column {
                     availableInbounds.forEach { inbound ->
                         val ruleSet = outboundEditingRuleSet ?: currentRuleSet
@@ -448,313 +447,295 @@ fun RuleSetsScreen(
         )
     }
 
-    Scaffold(
-        contentWindowInsets = WindowInsets(0, 0, 0, 0),
-        containerColor = liquidGlassTopAppBarContainerColor(MaterialTheme.colorScheme.background),
-        topBar = {
-            TopAppBar(
-                title = {
-                    if (isSelectionMode) {
-                        Text(
-                            stringResource(R.string.rulesets_selection_mode, selectedItems.count { it.value }),
-                            color = MaterialTheme.colorScheme.onBackground
-                        )
-                    } else {
-                        Text(stringResource(R.string.rulesets_title), color = MaterialTheme.colorScheme.onBackground)
-                    }
-                },
-                navigationIcon = {
-                    IconButton(
-                        modifier = Modifier.liquidGlassIconButtonPanel(selected = isSelectionMode),
-                        onClick = {
-                            if (isSelectionMode) {
-                                exitSelectionMode()
-                            } else {
-                                navController.popBackStack()
-                            }
-                        }
-                    ) {
-                        Icon(
-                            if (isSelectionMode) Icons.Rounded.Close else Icons.AutoMirrored.Rounded.ArrowBack,
-                            contentDescription = if (isSelectionMode) "Close" else "Back",
-                            tint = MaterialTheme.colorScheme.onBackground
-                        )
-                    }
-                },
-                actions = {
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.padding(end = 8.dp)
-                    ) {
-                        if (isSelectionMode) {
-                            val selectedCount = selectedItems.count { it.value }
-                            IconButton(
-                                modifier = Modifier.liquidGlassIconButtonPanel(
-                                    selected = selectedCount > 0,
-                                    enabled = selectedCount > 0
-                                ),
-                                onClick = { showDeleteConfirmDialog = true },
-                                enabled = selectedCount > 0
-                            ) {
-                                Icon(
-                                    Icons.Rounded.Delete,
-                                    contentDescription = "Delete",
-                                    tint = if (selectedCount > 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
+    FloatingPageLayout(
+        title = if (isSelectionMode) {
+            stringResource(R.string.rulesets_selection_mode, selectedItems.count { it.value })
+        } else {
+            stringResource(R.string.rulesets_title)
+        },
+        onBack = {
+            if (isSelectionMode) {
+                exitSelectionMode()
+            } else {
+                navController.popBackStack()
+            }
+        },
+        actions = {
+            if (isSelectionMode) {
+                val selectedCount = selectedItems.count { it.value }
+                IconButton(
+                    onClick = { showDeleteConfirmDialog = true },
+                    enabled = selectedCount > 0
+                ) {
+                    Icon(
+                        Icons.Rounded.Delete,
+                        contentDescription = "Delete",
+                        tint = if (selectedCount > 0) {
+                            MaterialTheme.colorScheme.error
                         } else {
-                            IconButton(
-                                modifier = Modifier.liquidGlassIconButtonPanel(),
-                                onClick = { navController.navigate(Screen.RuleSetHub.route) }
-                            ) {
-                                Icon(Icons.Rounded.CloudDownload, contentDescription = "Download", tint = MaterialTheme.colorScheme.onBackground)
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        }
+                    )
+                }
+            } else {
+                IconButton(
+                    onClick = { navController.navigate(Screen.RuleSetHub.route) }
+                ) {
+                    Icon(
+                        Icons.Rounded.CloudDownload,
+                        contentDescription = "Download",
+                        tint = MaterialTheme.colorScheme.onBackground
+                    )
+                }
+                IconButton(onClick = { showAddDialog = true }) {
+                    Icon(
+                        Icons.Rounded.Add,
+                        contentDescription = "Add",
+                        tint = MaterialTheme.colorScheme.onBackground
+                    )
+                }
+            }
+        },
+        circularAction = isSelectionMode
+    ) { contentTopPadding ->
+        Scaffold(
+            contentWindowInsets = WindowInsets(0, 0, 0, 0),
+            containerColor = liquidGlassTopAppBarContainerColor(MaterialTheme.colorScheme.background)
+        ) { padding ->
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding),
+                contentPadding = PaddingValues(
+                    start = 16.dp,
+                    top = contentTopPadding + 16.dp,
+                    end = 16.dp,
+                    bottom = 16.dp + WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+                ),
+                state = listState,
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                if (ruleSets.isEmpty() && !defaultRuleSetDownloadState.isActive) {
+                    item {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .liquidGlassEmptyStatePanel()
+                                .padding(32.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = stringResource(R.string.rulesets_empty),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                style = MaterialTheme.typography.bodyLarge
+                            )
+                        }
+                    }
+                }
+                items(ruleSets.size, key = { ruleSets[it].id }) { index ->
+                    val ruleSet = ruleSets[index]
+                    val isDraggingItem = draggingItemIndex == index
+                    val isSettlingItem = settlingItemId == ruleSet.id
+                    val isCurrentlyDragging = isDragging.value
+                    val currentDraggingIndex = draggingItemIndex
+                    val currentDragOffset = draggingItemOffset
+
+                    var targetTranslationY = 0f
+                    var zIndex = 0f
+                    val canDisplace = !isSelectionMode &&
+                        currentDraggingIndex != null &&
+                        itemHeightPx > 0f &&
+                        !isDraggingItem
+                    if (currentDraggingIndex != null && itemHeightPx > 0f) {
+                        if (isDraggingItem) {
+                            targetTranslationY = currentDragOffset
+                            zIndex = 1f
+                        } else if (canDisplace) {
+                            val dragProgress = currentDragOffset / itemHeightPx
+                            val rawEndProgress = when {
+                                dragProgress > 0f -> kotlin.math.ceil(dragProgress)
+                                dragProgress < 0f -> kotlin.math.floor(dragProgress)
+                                else -> 0.0
                             }
-                            IconButton(
-                                modifier = Modifier.liquidGlassIconButtonPanel(),
-                                onClick = { showAddDialog = true }
-                            ) {
-                                Icon(Icons.Rounded.Add, contentDescription = "Add", tint = MaterialTheme.colorScheme.onBackground)
+                            val clampedStart = currentDraggingIndex.coerceIn(0, ruleSets.lastIndex)
+                            val clampedEnd = (currentDraggingIndex + rawEndProgress.toInt())
+                                .coerceIn(0, ruleSets.lastIndex)
+
+                            when {
+                                clampedStart < clampedEnd && index > clampedStart && index <= clampedEnd -> {
+                                    val itemSlotOffset = index - currentDraggingIndex
+                                    targetTranslationY = -(dragProgress - (itemSlotOffset - 1)) * itemHeightPx
+                                    targetTranslationY = targetTranslationY.coerceIn(-itemHeightPx, 0f)
+                                }
+                                clampedStart > clampedEnd && index < clampedStart && index >= clampedEnd -> {
+                                    val itemSlotOffset = currentDraggingIndex - index
+                                    targetTranslationY = (-dragProgress - (itemSlotOffset - 1)) * itemHeightPx
+                                    targetTranslationY = targetTranslationY.coerceIn(0f, itemHeightPx)
+                                }
                             }
                         }
                     }
-                },
-                colors = liquidGlassTopAppBarColors(defaultContainerColor = MaterialTheme.colorScheme.background)
-            )
-        }
-    ) { padding ->
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding),
-            contentPadding = PaddingValues(
-                start = 16.dp,
-                top = 16.dp,
-                end = 16.dp,
-                bottom = 16.dp + WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
-            ),
-            state = listState,
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            if (ruleSets.isEmpty() && !defaultRuleSetDownloadState.isActive) {
-                item {
+
+                    val dragScale by androidx.compose.animation.core.animateFloatAsState(
+                        targetValue = when {
+                            isDraggingItem && isCurrentlyDragging -> 1.02f
+                            isSettlingItem -> 1.01f
+                            else -> 1f
+                        },
+                        animationSpec = androidx.compose.animation.core.spring(dampingRatio = 0.8f, stiffness = 260f),
+                        label = "dragScale"
+                    )
+                    val dragShadow by androidx.compose.animation.core.animateFloatAsState(
+                        targetValue = when {
+                            isDraggingItem && isCurrentlyDragging -> 8f
+                            isSettlingItem -> 4f
+                            else -> 0f
+                        },
+                        animationSpec = androidx.compose.animation.core.spring(dampingRatio = 0.82f, stiffness = 260f),
+                        label = "dragShadow"
+                    )
+                    val dragAlpha by androidx.compose.animation.core.animateFloatAsState(
+                        targetValue = when {
+                            isDraggingItem && isCurrentlyDragging -> 0.94f
+                            isSettlingItem -> 0.98f
+                            else -> 1f
+                        },
+                        animationSpec = androidx.compose.animation.core.spring(dampingRatio = 0.85f, stiffness = 280f),
+                        label = "dragAlpha"
+                    )
+
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .liquidGlassEmptyStatePanel()
-                            .padding(32.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = stringResource(R.string.rulesets_empty),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            style = MaterialTheme.typography.bodyLarge
-                        )
-                    }
-                }
-            }
-            items(ruleSets.size, key = { ruleSets[it].id }) { index ->
-                val ruleSet = ruleSets[index]
-                val isDraggingItem = draggingItemIndex == index
-                val isSettlingItem = settlingItemId == ruleSet.id
-                val isCurrentlyDragging = isDragging.value
-                val currentDraggingIndex = draggingItemIndex
-                val currentDragOffset = draggingItemOffset
-
-                var targetTranslationY = 0f
-                var zIndex = 0f
-                val canDisplace = !isSelectionMode &&
-                    currentDraggingIndex != null &&
-                    itemHeightPx > 0f &&
-                    !isDraggingItem
-                if (currentDraggingIndex != null && itemHeightPx > 0f) {
-                    if (isDraggingItem) {
-                        targetTranslationY = currentDragOffset
-                        zIndex = 1f
-                    } else if (canDisplace) {
-                        val dragProgress = currentDragOffset / itemHeightPx
-                        val rawEndProgress = when {
-                            dragProgress > 0f -> kotlin.math.ceil(dragProgress)
-                            dragProgress < 0f -> kotlin.math.floor(dragProgress)
-                            else -> 0.0
-                        }
-                        val clampedStart = currentDraggingIndex.coerceIn(0, ruleSets.lastIndex)
-                        val clampedEnd = (currentDraggingIndex + rawEndProgress.toInt()).coerceIn(0, ruleSets.lastIndex)
-
-                        when {
-                            clampedStart < clampedEnd && index > clampedStart && index <= clampedEnd -> {
-                                val itemSlotOffset = index - currentDraggingIndex
-                                targetTranslationY = -(dragProgress - (itemSlotOffset - 1)) * itemHeightPx
-                                targetTranslationY = targetTranslationY.coerceIn(-itemHeightPx, 0f)
+                            .zIndex(zIndex)
+                            .onGloballyPositioned { coordinates ->
+                                if (itemHeightPx == 0f) {
+                                    val spacingPx = with(density) { 16.dp.toPx() }
+                                    itemHeightPx = coordinates.size.height.toFloat() + spacingPx
+                                }
                             }
-                            clampedStart > clampedEnd && index < clampedStart && index >= clampedEnd -> {
-                                val itemSlotOffset = currentDraggingIndex - index
-                                targetTranslationY = (-dragProgress - (itemSlotOffset - 1)) * itemHeightPx
-                                targetTranslationY = targetTranslationY.coerceIn(0f, itemHeightPx)
+                            .graphicsLayer {
+                                this.translationY = targetTranslationY
+                                scaleX = dragScale
+                                scaleY = dragScale
+                                shadowElevation = dragShadow
+                                alpha = dragAlpha
+                                compositingStrategy = CompositingStrategy.ModulateAlpha
                             }
-                        }
-                    }
-                }
-
-                val dragScale by androidx.compose.animation.core.animateFloatAsState(
-                    targetValue = when {
-                        isDraggingItem && isCurrentlyDragging -> 1.02f
-                        isSettlingItem -> 1.01f
-                        else -> 1f
-                    },
-                    animationSpec = androidx.compose.animation.core.spring(dampingRatio = 0.8f, stiffness = 260f),
-                    label = "dragScale"
-                )
-                val dragShadow by androidx.compose.animation.core.animateFloatAsState(
-                    targetValue = when {
-                        isDraggingItem && isCurrentlyDragging -> 8f
-                        isSettlingItem -> 4f
-                        else -> 0f
-                    },
-                    animationSpec = androidx.compose.animation.core.spring(dampingRatio = 0.82f, stiffness = 260f),
-                    label = "dragShadow"
-                )
-                val dragAlpha by androidx.compose.animation.core.animateFloatAsState(
-                    targetValue = when {
-                        isDraggingItem && isCurrentlyDragging -> 0.94f
-                        isSettlingItem -> 0.98f
-                        else -> 1f
-                    },
-                    animationSpec = androidx.compose.animation.core.spring(dampingRatio = 0.85f, stiffness = 280f),
-                    label = "dragAlpha"
-                )
-
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .zIndex(zIndex)
-                        .onGloballyPositioned { coordinates ->
-                            if (itemHeightPx == 0f) {
-                                val spacingPx = with(density) { 16.dp.toPx() }
-                                itemHeightPx = coordinates.size.height.toFloat() + spacingPx
+                            .then(
+                                if (!enablePlacementAnimation || suppressPlacementAnimation) {
+                                    Modifier
+                                } else {
+                                    Modifier.animateItem()
+                                }
+                            )
+                            .ruleSetSortItemPressFeedback(
+                                enabled = !isDraggingItem || !isCurrentlyDragging
+                            ) {
+                                if (isSelectionMode) {
+                                    toggleSelection(ruleSet.id)
+                                }
                             }
-                        }
-                        .graphicsLayer {
-                            this.translationY = targetTranslationY
-                            scaleX = dragScale
-                            scaleY = dragScale
-                            shadowElevation = dragShadow
-                            alpha = dragAlpha
-                            compositingStrategy = CompositingStrategy.ModulateAlpha
-                        }
-                        .then(
-                            if (!enablePlacementAnimation || suppressPlacementAnimation) {
-                                Modifier
-                            } else {
-                                Modifier.animateItem()
-                            }
-                        )
-                        .ruleSetSortItemPressFeedback(
-                            enabled = !isDraggingItem || !isCurrentlyDragging
-                        ) {
-                            if (isSelectionMode) {
-                                toggleSelection(ruleSet.id)
-                            }
-                        }
-                        .pointerInput(index) {
-                            detectDragGesturesAfterLongPress(
-                                onDragStart = {
-                                    if (!isSelectionMode) {
-                                        draggingItemIndex = index
-                                        draggingItemId = ruleSet.id
-                                        draggingItemOffset = 0f
-                                        isDragging.value = true
-                                        haptic.performHapticFeedback(
-                                            androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress
-                                        )
-                                    }
-                                },
-                                onDragEnd = {
-                                    draggingItemIndex?.let { startIdx ->
-                                        val dist = if (itemHeightPx > 0f) {
-                                            val progress = draggingItemOffset / itemHeightPx
-                                            when {
-                                                progress > 0f -> kotlin.math.ceil(progress).toInt()
-                                                progress < 0f -> kotlin.math.floor(progress).toInt()
-                                                else -> 0
+                            .pointerInput(index) {
+                                detectDragGesturesAfterLongPress(
+                                    onDragStart = {
+                                        if (!isSelectionMode) {
+                                            draggingItemIndex = index
+                                            draggingItemId = ruleSet.id
+                                            draggingItemOffset = 0f
+                                            isDragging.value = true
+                                            haptic.performHapticFeedback(
+                                                androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress
+                                            )
+                                        }
+                                    },
+                                    onDragEnd = {
+                                        draggingItemIndex?.let { startIdx ->
+                                            val dist = if (itemHeightPx > 0f) {
+                                                val progress = draggingItemOffset / itemHeightPx
+                                                when {
+                                                    progress > 0f -> kotlin.math.ceil(progress).toInt()
+                                                    progress < 0f -> kotlin.math.floor(progress).toInt()
+                                                    else -> 0
+                                                }
+                                            } else {
+                                                0
                                             }
-                                        } else {
-                                            0
+                                            val endIdx = (startIdx + dist).coerceIn(0, ruleSets.lastIndex)
+
+                                            val settledRuleSetId = ruleSet.id
+                                            settlingItemId = settledRuleSetId
+                                            suppressPlacementAnimation = true
+
+                                            if (startIdx != endIdx) {
+                                                val item = ruleSets.removeAt(startIdx)
+                                                ruleSets.add(endIdx, item)
+                                                settingsViewModel.reorderRuleSets(ruleSets.toList())
+                                            }
+
+                                            draggingItemIndex = null
+                                            draggingItemId = null
+                                            draggingItemOffset = 0f
+                                            isDragging.value = false
+
+                                            scope.launch {
+                                                androidx.compose.runtime.withFrameNanos { }
+                                                suppressPlacementAnimation = false
+                                            }
+                                            scope.launch {
+                                                kotlinx.coroutines.delay(220)
+                                                if (settlingItemId == settledRuleSetId) {
+                                                    settlingItemId = null
+                                                }
+                                            }
                                         }
-                                        val endIdx = (startIdx + dist).coerceIn(0, ruleSets.lastIndex)
-
-                                        val settledRuleSetId = ruleSet.id
-                                        settlingItemId = settledRuleSetId
-                                        suppressPlacementAnimation = true
-
-                                        if (startIdx != endIdx) {
-                                            val item = ruleSets.removeAt(startIdx)
-                                            ruleSets.add(endIdx, item)
-                                            settingsViewModel.reorderRuleSets(ruleSets.toList())
-                                        }
-
+                                    },
+                                    onDragCancel = {
                                         draggingItemIndex = null
                                         draggingItemId = null
                                         draggingItemOffset = 0f
+                                        settlingItemId = null
                                         isDragging.value = false
-
-                                        scope.launch {
-                                            androidx.compose.runtime.withFrameNanos { }
-                                            suppressPlacementAnimation = false
-                                        }
-                                        scope.launch {
-                                            kotlinx.coroutines.delay(220)
-                                            if (settlingItemId == settledRuleSetId) {
-                                                settlingItemId = null
-                                            }
-                                        }
+                                        suppressPlacementAnimation = false
+                                    },
+                                    onDrag = { change, dragAmount ->
+                                        change.consume()
+                                        draggingItemOffset += dragAmount.y
                                     }
-                                },
-                                onDragCancel = {
-                                    draggingItemIndex = null
-                                    draggingItemId = null
-                                    draggingItemOffset = 0f
-                                    settlingItemId = null
-                                    isDragging.value = false
-                                    suppressPlacementAnimation = false
-                                },
-                                onDrag = { change, dragAmount ->
-                                    change.consume()
-                                    draggingItemOffset += dragAmount.y
-                                }
-                            )
-                        }
-                ) {
-                    RuleSetItem(
-                        ruleSet = ruleSet,
-                        isSelectionMode = isSelectionMode,
-                        isSelected = selectedItems[ruleSet.id] ?: false,
-                        isDownloading = downloadingRuleSets.contains(ruleSet.tag),
-                        onClick = {
-                            if (isSelectionMode) {
-                                toggleSelection(ruleSet.id)
+                                )
                             }
-                        },
-                        onToggle = { enabled ->
-                            if (enabled && ruleSet.outboundMode == RuleSetOutboundMode.DIRECT) {
-                                requestLocalNetworkPermission {
-                                    settingsViewModel.updateRuleSet(ruleSet.copy(enabled = true))
+                    ) {
+                        RuleSetItem(
+                            ruleSet = ruleSet,
+                            isSelectionMode = isSelectionMode,
+                            isSelected = selectedItems[ruleSet.id] ?: false,
+                            isDownloading = downloadingRuleSets.contains(ruleSet.tag),
+                            onClick = {
+                                if (isSelectionMode) {
+                                    toggleSelection(ruleSet.id)
                                 }
-                            } else {
-                                settingsViewModel.updateRuleSet(ruleSet.copy(enabled = enabled))
+                            },
+                            onToggle = { enabled ->
+                                if (enabled && ruleSet.outboundMode == RuleSetOutboundMode.DIRECT) {
+                                    requestLocalNetworkPermission {
+                                        settingsViewModel.updateRuleSet(ruleSet.copy(enabled = true))
+                                    }
+                                } else {
+                                    settingsViewModel.updateRuleSet(ruleSet.copy(enabled = enabled))
+                                }
+                            },
+                            onEditClick = { editingRuleSet = ruleSet },
+                            onDeleteClick = { settingsViewModel.deleteRuleSet(ruleSet.id) },
+                            onOutboundClick = {
+                                outboundEditingRuleSet = ruleSet
+                                showOutboundModeDialog = true
+                            },
+                            onInboundClick = {
+                                outboundEditingRuleSet = ruleSet
+                                showInboundDialog = true
                             }
-                        },
-                        onEditClick = { editingRuleSet = ruleSet },
-                        onDeleteClick = { settingsViewModel.deleteRuleSet(ruleSet.id) },
-                        onOutboundClick = {
-                            outboundEditingRuleSet = ruleSet
-                            showOutboundModeDialog = true
-                        },
-                        onInboundClick = {
-                            outboundEditingRuleSet = ruleSet
-                            showInboundDialog = true
-                        }
-                    )
+                        )
+                    }
                 }
             }
         }

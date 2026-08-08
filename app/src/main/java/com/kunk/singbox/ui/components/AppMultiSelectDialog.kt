@@ -8,44 +8,44 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.scale
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Dialog
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material3.IconButton
@@ -54,39 +54,23 @@ import com.kunk.singbox.repository.InstalledAppsRepository
 import com.kunk.singbox.viewmodel.InstalledAppsViewModel
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.kunk.singbox.ui.theme.isLiquidGlassTheme
-import com.kunk.singbox.ui.theme.liquidGlassButtonColors
-import com.kunk.singbox.ui.theme.liquidGlassButtonContentColor
-import com.kunk.singbox.ui.theme.liquidGlassButtonPanel
 import com.kunk.singbox.ui.theme.liquidGlassCheckboxColors
-import com.kunk.singbox.ui.theme.liquidGlassDividerColor
+import com.kunk.singbox.ui.theme.LiquidGlassFilterChip
 import com.kunk.singbox.ui.theme.liquidGlassIconButtonPanel
 import com.kunk.singbox.ui.theme.liquidGlassPanel
 import com.kunk.singbox.ui.theme.liquidGlassPressFeedback
 import com.kunk.singbox.ui.theme.liquidGlassProgressColor
 import com.kunk.singbox.ui.theme.liquidGlassProgressTrackColor
-import com.kunk.singbox.ui.theme.liquidGlassOutlinedTextFieldColors
-import com.kunk.singbox.ui.theme.liquidGlassTextFieldBorderColor
-import com.kunk.singbox.ui.theme.liquidGlassTextFieldContainerColor
-import com.kunk.singbox.ui.theme.liquidGlassTextFieldPanel
-import com.kunk.singbox.ui.theme.liquidGlassTextButtonColors
-import com.kunk.singbox.ui.theme.liquidGlassTextButtonContentColor
-import com.kunk.singbox.ui.theme.liquidGlassTextButtonPanel
 
-import com.kunk.singbox.ui.theme.liquidGlassDialogPanel
-import com.kunk.singbox.ui.theme.LiquidGlassDialogEffect
-
-@Composable
-private fun Modifier.appSelectDialogPanel(shape: RoundedCornerShape = RoundedCornerShape(28.dp)): Modifier {
-    return this.liquidGlassDialogPanel(shape = shape, shadowElevation = 24.dp)
-        .then(if (!isLiquidGlassTheme()) Modifier.background(MaterialTheme.colorScheme.surface, shape) else Modifier)
-}
-
-@Composable
-private fun Modifier.appSelectActionPanel(shape: RoundedCornerShape = RoundedCornerShape(10.dp)): Modifier {
-    return if (isLiquidGlassTheme()) {
-        liquidGlassPanel(shape = shape, selected = true, shadowElevation = 6.dp)
+internal fun toggleQuickSelectionPreset(
+    currentSelection: Set<String>,
+    quickTargets: Set<String>,
+    selectionBeforeQuickSelect: Set<String>?
+): Pair<Set<String>, Set<String>?> {
+    return if (selectionBeforeQuickSelect == null) {
+        (currentSelection + quickTargets) to currentSelection
     } else {
-        background(MaterialTheme.colorScheme.primary.copy(alpha = 0.1f))
+        selectionBeforeQuickSelect to null
     }
 }
 
@@ -99,12 +83,120 @@ private fun Modifier.appSelectIconPanel(shape: RoundedCornerShape = RoundedCorne
     }
 }
 
+private fun Modifier.appSelectItemPanel(
+    shape: RoundedCornerShape = RoundedCornerShape(12.dp)
+): Modifier {
+    return clip(shape)
+}
+
 @Composable
-private fun Modifier.appSelectFilterPanel(shape: RoundedCornerShape = RoundedCornerShape(8.dp)): Modifier {
-    return if (isLiquidGlassTheme()) {
-        liquidGlassPanel(shape = shape, shadowElevation = 3.dp)
-    } else {
-        clip(shape)
+@Suppress("LongParameterList", "LongMethod")
+private fun AppSelectorTopControls(
+    query: String,
+    onQueryChange: (String) -> Unit,
+    isSearchExpanded: Boolean,
+    onSearchToggle: () -> Unit,
+    selectedCount: Int,
+    showSystemApps: Boolean,
+    onSystemAppsToggle: () -> Unit,
+    showNoLauncherApps: Boolean,
+    onNoLauncherAppsToggle: () -> Unit,
+    enableQuickSelectCommonApps: Boolean,
+    quickSelectSelected: Boolean,
+    onQuickSelect: () -> Unit,
+    isLoading: Boolean,
+    onRefresh: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(horizontal = 16.dp, vertical = 4.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(40.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            ExpandableSearchBar(
+                query = query,
+                onQueryChange = onQueryChange,
+                isExpanded = isSearchExpanded,
+                onToggle = onSearchToggle,
+                placeholder = stringResource(R.string.app_list_search_hint),
+                modifier = Modifier.weight(1f)
+            ) {
+                Text(
+                    text = stringResource(R.string.rulesets_selection_mode, selectedCount),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1
+                )
+            }
+
+            Spacer(modifier = Modifier.width(8.dp))
+            IconButton(
+                onClick = onRefresh,
+                enabled = !isLoading,
+                modifier = Modifier
+                    .size(40.dp)
+                    .liquidGlassIconButtonPanel(enabled = !isLoading)
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.Refresh,
+                    contentDescription = stringResource(R.string.common_refresh),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(
+                        alpha = if (isLoading) 0.45f else 1f
+                    )
+                )
+            }
+        }
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            LiquidGlassFilterChip(
+                selected = showSystemApps,
+                onClick = onSystemAppsToggle,
+                modifier = Modifier.weight(1f),
+                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 7.dp),
+                label = {
+                    Text(
+                        text = stringResource(R.string.common_system),
+                        maxLines = 1
+                    )
+                }
+            )
+            LiquidGlassFilterChip(
+                selected = showNoLauncherApps,
+                onClick = onNoLauncherAppsToggle,
+                modifier = Modifier.weight(1f),
+                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 7.dp),
+                label = {
+                    Text(
+                        text = stringResource(R.string.common_background),
+                        maxLines = 1
+                    )
+                }
+            )
+            if (enableQuickSelectCommonApps) {
+                LiquidGlassFilterChip(
+                    selected = quickSelectSelected,
+                    onClick = onQuickSelect,
+                    modifier = Modifier.weight(1f),
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 7.dp),
+                    label = {
+                        Text(
+                            text = stringResource(R.string.app_list_quick_select),
+                            maxLines = 1
+                        )
+                    }
+                )
+            }
+        }
     }
 }
 
@@ -128,9 +220,11 @@ fun AppMultiSelectDialog(
     }
 
     var query by remember { mutableStateOf("") }
+    var isSearchExpanded by remember { mutableStateOf(false) }
     var showSystemApps by remember { mutableStateOf(false) }
     var showNoLauncherApps by remember { mutableStateOf(false) }
     var tempSelected by remember(selectedPackages) { mutableStateOf(selectedPackages.toSet()) }
+    var selectionBeforeQuickSelect by remember(selectedPackages) { mutableStateOf<Set<String>?>(null) }
 
     val commonExactPackages = remember {
         setOf(
@@ -174,6 +268,18 @@ fun AppMultiSelectDialog(
             }
             .toSet()
     }
+    val quickSelectMatches = remember(allApps, commonMatches, quickSelectExcludeCommonApps) {
+        if (quickSelectExcludeCommonApps) {
+            allApps
+                .asSequence()
+                .map { it.packageName }
+                .filter { it !in commonMatches }
+                .toSet()
+        } else {
+            commonMatches
+        }
+    }
+    val quickSelectSelected = selectionBeforeQuickSelect != null
 
     val filteredApps = remember(query, showSystemApps, showNoLauncherApps, allApps, tempSelected) {
 
@@ -193,345 +299,201 @@ fun AppMultiSelectDialog(
     }
 
     val isLoading = loadingState is InstalledAppsRepository.LoadingState.Loading
-    val useLiquidGlass = isLiquidGlassTheme()
-
-    Dialog(onDismissRequest = onDismiss) {
-        LiquidGlassDialogEffect()
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .fillMaxHeight(0.92f)
-                .appSelectDialogPanel()
-                .padding(16.dp)
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
+    val listState = rememberLazyListState()
+    val showTopControls by remember {
+        derivedStateOf { !listState.canScrollBackward }
+    }
+    LaunchedEffect(showTopControls) {
+        if (!showTopControls) {
+            isSearchExpanded = false
+        }
+    }
+    val quickSelectApps = {
+        val (selection, previousSelection) = toggleQuickSelectionPreset(
+            currentSelection = tempSelected,
+            quickTargets = quickSelectMatches,
+            selectionBeforeQuickSelect = selectionBeforeQuickSelect
+        )
+        tempSelected = selection
+        selectionBeforeQuickSelect = previousSelection
+    }
+    val updateAppSelection = { packageName: String, selected: Boolean ->
+        selectionBeforeQuickSelect = null
+        tempSelected = if (selected) {
+            tempSelected + packageName
+        } else {
+            tempSelected - packageName
+        }
+    }
+    FullScreenDialogPage(
+        title = title,
+        onDismiss = onDismiss,
+        actions = {
+            IconButton(
+                modifier = Modifier.fillMaxSize(),
+                onClick = {
+                    onConfirm(
+                        resolveVisibleSelectedPackages(
+                            selectedPackages = tempSelected,
+                            visiblePackages = allApps.map { it.packageName }.toSet(),
+                            originalSelectedPackages = selectedPackages
+                        )
+                    )
+                }
             ) {
                 Text(
-                    text = title,
-                    style = MaterialTheme.typography.titleLarge,
+                    text = confirmText,
+                    style = MaterialTheme.typography.labelMedium,
                     fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.weight(1f)
+                    color = MaterialTheme.colorScheme.onBackground
                 )
-                IconButton(
-                    onClick = installedAppsViewModel::reloadApps,
-                    enabled = !isLoading,
-                    modifier = Modifier
-                        .size(32.dp)
-                        .liquidGlassIconButtonPanel(enabled = !isLoading, shadowElevation = 3.dp)
-                ) {
-                    val tintColor = if (isLoading) {
-                        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-                    } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    }
-                    Icon(
-                        imageVector = Icons.Rounded.Refresh,
-                        contentDescription = stringResource(R.string.common_refresh),
-                        tint = tintColor,
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
             }
-
-            Spacer(modifier = Modifier.height(8.dp))
-
+        },
+        supportingContentHeight = 92.dp,
+        supportingContent = {
+            TopOnlySupportingContent(visible = showTopControls) {
+                AppSelectorTopControls(
+                    query = query,
+                    onQueryChange = { query = it },
+                    isSearchExpanded = isSearchExpanded,
+                    onSearchToggle = { isSearchExpanded = !isSearchExpanded },
+                    selectedCount = tempSelected.size,
+                    showSystemApps = showSystemApps,
+                    onSystemAppsToggle = { showSystemApps = !showSystemApps },
+                    showNoLauncherApps = showNoLauncherApps,
+                    onNoLauncherAppsToggle = { showNoLauncherApps = !showNoLauncherApps },
+                    enableQuickSelectCommonApps = enableQuickSelectCommonApps,
+                    quickSelectSelected = quickSelectSelected,
+                    onQuickSelect = quickSelectApps,
+                    isLoading = isLoading,
+                    onRefresh = installedAppsViewModel::reloadApps
+                )
+            }
+        }
+    ) { headerPadding ->
+        LazyColumn(
+            state = listState,
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(
+                start = 16.dp,
+                top = headerPadding + 12.dp,
+                end = 16.dp,
+                bottom = WindowInsets.navigationBars
+                    .asPaddingValues()
+                    .calculateBottomPadding() + 12.dp
+            ),
+            verticalArrangement = Arrangement.spacedBy(2.dp)
+        ) {
             if (isLoading) {
-                val loading = loadingState as InstalledAppsRepository.LoadingState.Loading
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    CircularProgressIndicator(
-                        progress = { loading.progress },
-                        modifier = Modifier.size(48.dp),
-                        color = liquidGlassProgressColor(MaterialTheme.colorScheme.primary),
-                        strokeWidth = 4.dp,
-                        trackColor = liquidGlassProgressTrackColor(MaterialTheme.colorScheme.outline)
-                    )
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Text(
-                        text = stringResource(R.string.app_list_loading),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = stringResource(R.string.app_list_loaded, loading.current, loading.total),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(modifier = Modifier.height(12.dp))
-                    LinearProgressIndicator(
-                        progress = { loading.progress },
-                        modifier = Modifier.fillMaxWidth().height(4.dp),
-                        color = liquidGlassProgressColor(MaterialTheme.colorScheme.primary),
-                        trackColor = liquidGlassProgressTrackColor(MaterialTheme.colorScheme.outline)
-                    )
-                    Spacer(modifier = Modifier.height(16.dp))
-                }
-            }
-
-            val searchFieldShape = RoundedCornerShape(12.dp)
-            OutlinedTextField(
-                value = query,
-                onValueChange = { query = it },
-                placeholder = { Text(stringResource(R.string.app_list_search_hint), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)) },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .liquidGlassTextFieldPanel(shape = searchFieldShape),
-                singleLine = true,
-                textStyle = MaterialTheme.typography.bodyMedium,
-                colors = liquidGlassOutlinedTextFieldColors(
-                    focusedTextColor = MaterialTheme.colorScheme.onSurface,
-                    unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
-                    focusedBorderColor = liquidGlassTextFieldBorderColor(MaterialTheme.colorScheme.primary),
-                    unfocusedBorderColor = liquidGlassTextFieldBorderColor(MaterialTheme.colorScheme.outline),
-                    focusedContainerColor = liquidGlassTextFieldContainerColor(Color.Transparent),
-                    unfocusedContainerColor = liquidGlassTextFieldContainerColor(Color.Transparent),
-                    focusedLabelColor = MaterialTheme.colorScheme.primary,
-                    unfocusedLabelColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                    cursorColor = MaterialTheme.colorScheme.primary
-                ),
-                shape = searchFieldShape
-            )
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(
-                    modifier = Modifier
-                        .appSelectFilterPanel()
-                        .liquidGlassPressFeedback(
-                            label = "liquid_glass_app_select_system_filter_scale"
-                        ) {
-                            showSystemApps = !showSystemApps
-                        }
-                        .padding(4.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Checkbox(
-                        checked = showSystemApps,
-                        onCheckedChange = { showSystemApps = it },
-                        modifier = Modifier.scale(0.8f).size(16.dp),
-                        colors = liquidGlassCheckboxColors()
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text(stringResource(R.string.app_list_show_system), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-
-                Spacer(modifier = Modifier.width(8.dp))
-
-                Row(
-                    modifier = Modifier
-                        .appSelectFilterPanel()
-                        .liquidGlassPressFeedback(
-                            label = "liquid_glass_app_select_no_launcher_filter_scale"
-                        ) {
-                            showNoLauncherApps = !showNoLauncherApps
-                        }
-                        .padding(4.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Checkbox(
-                        checked = showNoLauncherApps,
-                        onCheckedChange = { showNoLauncherApps = it },
-                        modifier = Modifier.scale(0.8f).size(16.dp),
-                        colors = liquidGlassCheckboxColors()
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text(stringResource(R.string.app_list_show_no_launcher), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-
-                Spacer(modifier = Modifier.weight(1f))
-
-                if (enableQuickSelectCommonApps) {
-                    Box(
-                        modifier = Modifier
-                            .padding(end = 2.dp)
-                            .clip(RoundedCornerShape(10.dp))
-                            .appSelectActionPanel()
-                            .liquidGlassPressFeedback(
-                                label = "liquid_glass_app_select_quick_select_scale"
-                            ) {
-                                val matches = if (quickSelectExcludeCommonApps) {
-                                    allApps
-                                        .asSequence()
-                                        .map { it.packageName }
-                                        .filter { pkg -> pkg !in commonMatches }
-                                        .toSet()
-                                } else {
-                                    commonMatches
-                                }
-
-                                tempSelected = tempSelected + matches
-                            }
-                            .padding(horizontal = 12.dp, vertical = 6.dp)
-                    ) {
-                        Text(
-                            text = stringResource(R.string.app_list_quick_select),
-                            style = MaterialTheme.typography.labelMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(8.dp))
-            HorizontalDivider(
-                color = liquidGlassDividerColor(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                items(filteredApps, key = { it.packageName }) { app ->
-                    val checked = tempSelected.contains(app.packageName)
-                    val iconSize = 40.dp
-                    var icon by remember(app.packageName) { mutableStateOf<Bitmap?>(null) }
-                    LaunchedEffect(app.packageName) {
-                        icon = installedAppsViewModel.loadIcon(app.packageName)
-                    }
-                    val iconBitmap = remember(icon) { icon?.asImageBitmap() }
-                    Row(
+                item(key = "app_selector_loading") {
+                    val loading = loadingState as InstalledAppsRepository.LoadingState.Loading
+                    Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clip(RoundedCornerShape(12.dp))
-                            .then(
-                                if (useLiquidGlass) {
-                                    Modifier.liquidGlassPanel(
-                                        shape = RoundedCornerShape(12.dp),
-                                        selected = checked,
-                                        shadowElevation = 0.dp
-                                    )
-                                } else {
-                                    Modifier
-                                }
-                            )
-                            .liquidGlassPressFeedback(
-                                label = "liquid_glass_app_select_item_scale"
-                            ) {
-                                tempSelected = if (checked) {
-                                    tempSelected - app.packageName
-                                } else {
-                                    tempSelected + app.packageName
-                                }
-                            }
-                            .padding(vertical = 4.dp, horizontal = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                            .padding(vertical = 20.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        Checkbox(
-                            checked = checked,
-                            onCheckedChange = { newChecked ->
-                                tempSelected = if (newChecked) {
-                                    tempSelected + app.packageName
-                                } else {
-                                    tempSelected - app.packageName
-                                }
-                            },
-                            colors = liquidGlassCheckboxColors()
+                        CircularProgressIndicator(
+                            progress = { loading.progress },
+                            modifier = Modifier.size(48.dp),
+                            color = liquidGlassProgressColor(MaterialTheme.colorScheme.primary),
+                            strokeWidth = 4.dp,
+                            trackColor = liquidGlassProgressTrackColor(MaterialTheme.colorScheme.outline)
                         )
-                        Spacer(modifier = Modifier.width(12.dp))
-                        if (iconBitmap != null) {
-                            Image(
-                                bitmap = iconBitmap,
-                                contentDescription = null,
-                                modifier = Modifier
-                                    .size(iconSize)
-                                    .clip(RoundedCornerShape(10.dp)),
-                                contentScale = ContentScale.Crop
-                            )
-                        } else {
-                            Box(
-                                modifier = Modifier
-                                    .size(iconSize)
-                                    .appSelectIconPanel()
-                            )
-                        }
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = app.appName,
-                                color = MaterialTheme.colorScheme.onSurface,
-                                style = MaterialTheme.typography.bodyLarge
-                            )
-                            Text(
-                                text = app.packageName,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                style = MaterialTheme.typography.bodySmall
-                            )
-                        }
-                        if (app.isSystemApp || !app.hasLauncher) {
-                            Text(
-                                text = when {
-                                    app.isSystemApp -> stringResource(R.string.common_system)
-                                    else -> stringResource(R.string.common_background)
-                                },
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                style = MaterialTheme.typography.bodySmall
-                            )
-                        }
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Text(
+                            text = stringResource(R.string.app_list_loading),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = stringResource(R.string.app_list_loaded, loading.current, loading.total),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+                        LinearProgressIndicator(
+                            progress = { loading.progress },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(4.dp),
+                            color = liquidGlassProgressColor(MaterialTheme.colorScheme.primary),
+                            trackColor = liquidGlassProgressTrackColor(MaterialTheme.colorScheme.outline)
+                        )
                     }
                 }
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                TextButton(
-                    onClick = onDismiss,
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(50.dp)
-                        .liquidGlassTextButtonPanel(shape = RoundedCornerShape(25.dp)),
-                    colors = liquidGlassTextButtonColors(
-                        contentColor = liquidGlassTextButtonContentColor(
-                            defaultColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                            liquidColor = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    )
-                ) {
-                    Text(stringResource(R.string.common_cancel))
+            items(filteredApps, key = { it.packageName }) { app ->
+                val checked = tempSelected.contains(app.packageName)
+                val iconSize = 40.dp
+                var icon by remember(app.packageName) { mutableStateOf<Bitmap?>(null) }
+                LaunchedEffect(app.packageName) {
+                    icon = installedAppsViewModel.loadIcon(app.packageName)
                 }
-
-                Button(
-                    onClick = {
-                        onConfirm(
-                            resolveVisibleSelectedPackages(
-                                selectedPackages = tempSelected,
-                                visiblePackages = allApps.map { it.packageName }.toSet(),
-                                originalSelectedPackages = selectedPackages
-                            )
-                        )
-                    },
+                val iconBitmap = remember(icon) { icon?.asImageBitmap() }
+                Row(
                     modifier = Modifier
-                        .weight(1f)
-                        .height(50.dp)
-                        .liquidGlassButtonPanel(shape = RoundedCornerShape(25.dp)),
-                    colors = liquidGlassButtonColors(
-                        defaultContainerColor = MaterialTheme.colorScheme.primary,
-                        defaultContentColor = MaterialTheme.colorScheme.onPrimary
-                    ),
-                    shape = RoundedCornerShape(25.dp)
+                        .fillMaxWidth()
+                        .appSelectItemPanel()
+                        .liquidGlassPressFeedback(
+                            label = "liquid_glass_app_select_item_scale"
+                        ) {
+                            updateAppSelection(app.packageName, !checked)
+                        }
+                        .padding(vertical = 8.dp, horizontal = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
-                        text = confirmText,
-                        fontWeight = FontWeight.Bold,
-                        color = liquidGlassButtonContentColor(MaterialTheme.colorScheme.onPrimary)
+                    Checkbox(
+                        checked = checked,
+                        onCheckedChange = { updateAppSelection(app.packageName, it) },
+                        colors = liquidGlassCheckboxColors()
                     )
+                    Spacer(modifier = Modifier.width(12.dp))
+                    if (iconBitmap != null) {
+                        Image(
+                            bitmap = iconBitmap,
+                            contentDescription = null,
+                            modifier = Modifier
+                                .size(iconSize)
+                                .clip(RoundedCornerShape(10.dp)),
+                            contentScale = ContentScale.Crop
+                        )
+                    } else {
+                        Box(
+                            modifier = Modifier
+                                .size(iconSize)
+                                .appSelectIconPanel()
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = app.appName,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            style = MaterialTheme.typography.bodyLarge,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Text(
+                            text = app.packageName,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            style = MaterialTheme.typography.bodySmall,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                    if (app.isSystemApp || !app.hasLauncher) {
+                        Text(
+                            text = when {
+                                app.isSystemApp -> stringResource(R.string.common_system)
+                                else -> stringResource(R.string.common_background)
+                            },
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
                 }
             }
         }

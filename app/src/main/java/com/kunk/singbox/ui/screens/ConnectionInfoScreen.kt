@@ -13,9 +13,11 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -29,7 +31,6 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Info
@@ -47,7 +48,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -74,6 +74,8 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import com.kunk.singbox.R
 import com.kunk.singbox.model.ClashConnection
+import com.kunk.singbox.ui.components.FloatingPageLayout
+import com.kunk.singbox.ui.theme.LiquidGlassDialogEffect
 import com.kunk.singbox.ui.theme.Neutral500
 import com.kunk.singbox.ui.theme.isLiquidGlassTheme
 import com.kunk.singbox.ui.theme.liquidGlassDividerColor
@@ -82,7 +84,6 @@ import com.kunk.singbox.ui.theme.liquidGlassPanel
 import com.kunk.singbox.ui.theme.liquidGlassDialogContainerColor
 import com.kunk.singbox.ui.theme.liquidGlassDialogPanel
 import com.kunk.singbox.ui.theme.liquidGlassIconButtonColors
-import com.kunk.singbox.ui.theme.liquidGlassIconButtonPanel
 import com.kunk.singbox.ui.theme.liquidGlassMutedContentColor
 import com.kunk.singbox.ui.theme.liquidGlassTextButtonContentColor
 import com.kunk.singbox.ui.theme.liquidGlassTextButtonColors
@@ -90,7 +91,6 @@ import com.kunk.singbox.ui.theme.liquidGlassTextButtonPanel
 import com.kunk.singbox.viewmodel.ConnectionInfoViewModel
 import java.util.Locale
 import com.kunk.singbox.ui.theme.liquidGlassTopAppBarContainerColor
-import com.kunk.singbox.ui.theme.liquidGlassTopAppBarColors
 
 @Composable
 private fun Modifier.connectionEmptyIconPanel(): Modifier {
@@ -289,7 +289,10 @@ fun ConnectionInfoScreen(
             containerColor = liquidGlassDialogContainerColor(),
             onDismissRequest = { showConfirmDeleteAll = false },
             title = { Text(stringResource(R.string.connection_info_close_all)) },
-            text = { Text(stringResource(R.string.connection_info_close_all_confirm)) },
+            text = {
+                LiquidGlassDialogEffect()
+                Text(stringResource(R.string.connection_info_close_all_confirm))
+            },
             confirmButton = {
                 TextButton(
                     modifier = Modifier.liquidGlassTextButtonPanel(),
@@ -330,172 +333,146 @@ fun ConnectionInfoScreen(
         )
     }
 
-    Scaffold(
-        contentWindowInsets = WindowInsets(0, 0, 0, 0),
-        containerColor = liquidGlassTopAppBarContainerColor(MaterialTheme.colorScheme.background),
-        topBar = {
-            TopAppBar(
-                title = {
-                    Text(
-                        stringResource(R.string.connection_info_title),
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onBackground
-                    )
-                },
-                navigationIcon = {
-                    IconButton(
-                        modifier = Modifier.liquidGlassIconButtonPanel(),
-                        onClick = { navController.popBackStack() }
-                    ) {
-                        Icon(
-                            Icons.Rounded.ArrowBack,
-                            contentDescription = stringResource(R.string.common_back),
-                            tint = MaterialTheme.colorScheme.onBackground
-                        )
+    FloatingPageLayout(
+        title = stringResource(R.string.connection_info_title),
+        onBack = { navController.popBackStack() },
+        actions = {
+            IconButton(
+                onClick = {
+                    isSearchExpanded = !isSearchExpanded
+                    if (!isSearchExpanded) searchQuery = ""
+                }
+            ) {
+                Icon(
+                    Icons.Rounded.Search,
+                    contentDescription = null,
+                    tint = if (isSearchExpanded) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.onBackground
                     }
-                },
-                actions = {
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.padding(end = 8.dp)
-                    ) {
-                        // 搜索按钮
-                        IconButton(
-                            modifier = Modifier.liquidGlassIconButtonPanel(selected = false),
-                            onClick = {
-                                isSearchExpanded = !isSearchExpanded
-                                if (!isSearchExpanded) searchQuery = ""
-                            }
-                        ) {
-                            Icon(
-                                Icons.Rounded.Search,
-                                contentDescription = null,
-                                tint = if (isSearchExpanded)
-                                    MaterialTheme.colorScheme.primary
-                                else
-                                    MaterialTheme.colorScheme.onBackground
-                            )
-                        }
-                        IconButton(
-                            modifier = Modifier.liquidGlassIconButtonPanel(selected = false),
-                            onClick = { viewModel.setRefreshing(!isRefreshing) }
-                        ) {
-                            Icon(
-                                if (isRefreshing) Icons.Rounded.Pause
-                                else Icons.Rounded.PlayArrow,
-                                contentDescription = stringResource(
-                                    if (isRefreshing) R.string.connection_info_pause
-                                    else R.string.connection_info_resume
-                                ),
-                                tint = MaterialTheme.colorScheme.onBackground
-                            )
-                        }
-                        IconButton(
-                            modifier = Modifier.liquidGlassIconButtonPanel(enabled = canCloseAll),
-                            onClick = { showConfirmDeleteAll = true },
-                            enabled = canCloseAll
-                        ) {
-                            Icon(
-                                Icons.Rounded.Delete,
-                                contentDescription = stringResource(
-                                    R.string.connection_info_close_all
-                                ),
-                                tint = if (canCloseAll)
-                                    MaterialTheme.colorScheme.error
-                                else
-                                    MaterialTheme.colorScheme.onBackground.copy(
-                                        alpha = 0.4f
-                                    )
-                            )
-                        }
-                    }
-                },
-                colors = liquidGlassTopAppBarColors(defaultContainerColor = MaterialTheme.colorScheme.background)
-            )
-        }
-    ) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-        ) {
-            // 可展开搜索栏（与节点页面一致的样式）
-            val searchAlpha by animateFloatAsState(
-                targetValue = if (isSearchExpanded) 1f else 0f,
-                animationSpec = tween(durationMillis = 300),
-                label = "searchAlpha"
-            )
-
-            if (searchAlpha > 0f) {
-                ConnectionSearchBar(
-                    query = searchQuery,
-                    onQueryChange = { searchQuery = it },
-                    modifier = Modifier
-                        .graphicsLayer {
-                            alpha = searchAlpha
-                            scaleY = 0.96f + 0.04f * searchAlpha
-                            translationY = (1f - searchAlpha) * (-10.dp.toPx())
-                            compositingStrategy = CompositingStrategy.ModulateAlpha
-                        }
-                        .padding(horizontal = 16.dp, vertical = 6.dp)
                 )
             }
-
-            // 概览信息栏
-            if (vpnActive) {
-                OverviewCard(
-                    totalConnections = allConnections.size,
-                    uploadTotal = response?.uploadTotal ?: 0,
-                    downloadTotal = response?.downloadTotal ?: 0
+            IconButton(
+                onClick = { viewModel.setRefreshing(!isRefreshing) }
+            ) {
+                Icon(
+                    if (isRefreshing) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
+                    contentDescription = stringResource(
+                        if (isRefreshing) {
+                            R.string.connection_info_pause
+                        } else {
+                            R.string.connection_info_resume
+                        }
+                    ),
+                    tint = MaterialTheme.colorScheme.onBackground
                 )
             }
-
-            // 连接列表与空状态
-            Box(
+            IconButton(
+                onClick = { showConfirmDeleteAll = true },
+                enabled = canCloseAll
+            ) {
+                Icon(
+                    Icons.Rounded.Delete,
+                    contentDescription = stringResource(R.string.connection_info_close_all),
+                    tint = if (canCloseAll) {
+                        MaterialTheme.colorScheme.error
+                    } else {
+                        MaterialTheme.colorScheme.onBackground.copy(alpha = 0.4f)
+                    }
+                )
+            }
+        },
+        circularAction = false
+    ) { contentTopPadding ->
+        val searchAlpha by animateFloatAsState(
+            targetValue = if (isSearchExpanded) 1f else 0f,
+            animationSpec = tween(durationMillis = 300),
+            label = "searchAlpha"
+        )
+        Scaffold(
+            contentWindowInsets = WindowInsets(0, 0, 0, 0),
+            containerColor = liquidGlassTopAppBarContainerColor(MaterialTheme.colorScheme.background)
+        ) { padding ->
+            LazyColumn(
+                state = listState,
                 modifier = Modifier
                     .fillMaxSize()
-                    .weight(1f)
+                    .padding(padding),
+                contentPadding = PaddingValues(
+                    top = contentTopPadding + 6.dp,
+                    bottom = WindowInsets.navigationBars.asPaddingValues()
+                        .calculateBottomPadding() + 16.dp
+                ),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                if (!vpnActive) {
-                    ConnectionEmptyState(
-                        icon = Icons.Rounded.LinkOff,
-                        title = stringResource(R.string.connection_info_vpn_not_running),
-                        subtitle = stringResource(R.string.traffic_stats_no_data_hint)
-                    )
-                } else if (connections.isEmpty()) {
-                    ConnectionEmptyState(
-                        icon = Icons.Rounded.Info,
-                        title = stringResource(
-                            ConnectionInfoUiPolicy.emptyTitleRes(
-                                searchQuery = searchQuery,
-                                allConnections = allConnections,
-                                filteredConnections = connections
-                            )
-                        ),
-                        subtitle = stringResource(
-                            ConnectionInfoUiPolicy.emptySubtitleRes(
-                                searchQuery = searchQuery,
-                                allConnections = allConnections,
-                                filteredConnections = connections
-                            )
+                if (searchAlpha > 0f) {
+                    item(key = "connection_search") {
+                        ConnectionSearchBar(
+                            query = searchQuery,
+                            onQueryChange = { searchQuery = it },
+                            modifier = Modifier
+                                .graphicsLayer {
+                                    alpha = searchAlpha
+                                    scaleY = 0.96f + 0.04f * searchAlpha
+                                    translationY = (1f - searchAlpha) * (-10.dp.toPx())
+                                    compositingStrategy = CompositingStrategy.ModulateAlpha
+                                }
+                                .padding(horizontal = 16.dp, vertical = 6.dp)
                         )
-                    )
+                    }
+                }
+
+                if (vpnActive) {
+                    item(key = "connection_overview") {
+                        OverviewCard(
+                            totalConnections = allConnections.size,
+                            uploadTotal = response?.uploadTotal ?: 0,
+                            downloadTotal = response?.downloadTotal ?: 0
+                        )
+                    }
+                }
+
+                if (!vpnActive) {
+                    item(key = "connection_vpn_inactive") {
+                        ConnectionEmptyState(
+                            icon = Icons.Rounded.LinkOff,
+                            title = stringResource(R.string.connection_info_vpn_not_running),
+                            subtitle = stringResource(R.string.traffic_stats_no_data_hint),
+                            modifier = Modifier.fillParentMaxHeight(0.72f)
+                        )
+                    }
+                } else if (connections.isEmpty()) {
+                    item(key = "connection_empty") {
+                        ConnectionEmptyState(
+                            icon = Icons.Rounded.Info,
+                            title = stringResource(
+                                ConnectionInfoUiPolicy.emptyTitleRes(
+                                    searchQuery = searchQuery,
+                                    allConnections = allConnections,
+                                    filteredConnections = connections
+                                )
+                            ),
+                            subtitle = stringResource(
+                                ConnectionInfoUiPolicy.emptySubtitleRes(
+                                    searchQuery = searchQuery,
+                                    allConnections = allConnections,
+                                    filteredConnections = connections
+                                )
+                            ),
+                            modifier = Modifier.fillParentMaxHeight(0.62f)
+                        )
+                    }
                 } else {
-                    LazyColumn(
-                        state = listState,
-                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-                        verticalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        items(
-                            items = connections,
-                            key = { it.id }
-                        ) { connection ->
-                            ConnectionItemCard(
-                                connection = connection,
-                                onClose = { viewModel.closeConnection(connection.id) }
-                            )
-                        }
+                    items(
+                        items = connections,
+                        key = { it.id }
+                    ) { connection ->
+                        ConnectionItemCard(
+                            connection = connection,
+                            onClose = { viewModel.closeConnection(connection.id) },
+                            modifier = Modifier.padding(horizontal = 16.dp)
+                        )
                     }
                 }
             }
@@ -703,7 +680,8 @@ private fun OverviewCardContent(
 @Composable
 private fun ConnectionItemCard(
     connection: ClashConnection,
-    onClose: () -> Unit
+    onClose: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
     val isDark = isSystemInDarkTheme()
     val borderColor = if (isDark) {
@@ -716,7 +694,7 @@ private fun ConnectionItemCard(
 
     if (useLiquidGlass) {
         Column(
-            modifier = Modifier
+            modifier = modifier
                 .fillMaxWidth()
                 .connectionItemPanel()
                 .padding(12.dp)
@@ -730,7 +708,7 @@ private fun ConnectionItemCard(
     }
 
     Card(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .border(
                 1.dp,
@@ -915,11 +893,12 @@ private fun ConnectionItemCardContent(
 private fun ConnectionEmptyState(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     title: String,
-    subtitle: String
+    subtitle: String,
+    modifier: Modifier = Modifier
 ) {
     Box(
-        modifier = Modifier
-            .fillMaxSize()
+        modifier = modifier
+            .fillMaxWidth()
             .padding(32.dp),
         contentAlignment = Alignment.Center
     ) {

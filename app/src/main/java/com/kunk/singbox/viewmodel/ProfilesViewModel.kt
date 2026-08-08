@@ -2,10 +2,10 @@ package com.kunk.singbox.viewmodel
 
 import com.kunk.singbox.R
 import android.app.Application
-import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.kunk.singbox.ipc.SingBoxRemote
+import com.kunk.singbox.model.Outbound
 import com.kunk.singbox.model.ProfileUi
 import com.kunk.singbox.model.NodeUi
 import com.kunk.singbox.model.ProfileType
@@ -19,8 +19,10 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
+@Suppress("TooManyFunctions")
 class ProfilesViewModel(application: Application) : AndroidViewModel(application) {
 
     companion object {
@@ -41,6 +43,9 @@ class ProfilesViewModel(application: Application) : AndroidViewModel(application
     private val _toastEvents = MutableSharedFlow<String>(extraBufferCapacity = 8)
     val toastEvents: SharedFlow<String> = _toastEvents.asSharedFlow()
 
+    private val _customDraftOutbounds = MutableStateFlow<List<Outbound>>(emptyList())
+    val customDraftOutbounds: StateFlow<List<Outbound>> = _customDraftOutbounds.asStateFlow()
+
     private fun emitToast(message: String) {
         _toastEvents.tryEmit(message)
     }
@@ -50,23 +55,17 @@ class ProfilesViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun setActiveProfile(profileId: String) {
-        configRepository.setActiveProfile(profileId)
-
-        // Only show toast when VPN is running
         val isVpnRunning = SingBoxRemote.isRunning.value || SingBoxRemote.isStarting.value
-        if (isVpnRunning) {
+        viewModelScope.launch {
+            val result = configRepository.setActiveProfileWithResult(profileId)
             val name = profiles.value.find { it.id == profileId }?.name
-            if (!name.isNullOrBlank()) {
+            if (result is ConfigRepository.NodeSwitchResult.Failed) {
+                emitToast(
+                    getApplication<Application>().getString(R.string.node_switch_failed, name ?: profileId) +
+                        "：${result.reason}"
+                )
+            } else if (isVpnRunning && !name.isNullOrBlank()) {
                 emitToast(getApplication<Application>().getString(R.string.profiles_updated) + ": $name")
-            }
-
-            viewModelScope.launch {
-                configRepository.setActiveProfileAndWait(profileId)
-                val currentNodeId = configRepository.activeNodeId.value
-                if (currentNodeId != null) {
-                    Log.i("ProfilesViewModel", "Profile switched while VPN running, triggering node switch for: $currentNodeId")
-                    configRepository.setActiveNodeWithResult(currentNodeId)
-                }
             }
         }
     }
@@ -107,6 +106,10 @@ class ProfilesViewModel(application: Application) : AndroidViewModel(application
 
     @Suppress("CognitiveComplexMethod")
     fun updateProfile(profileId: String) {
+        if (profiles.value.find { it.id == profileId }?.type == ProfileType.Custom) {
+            emitToast(getApplication<Application>().getString(R.string.profiles_custom_no_update))
+            return
+        }
         viewModelScope.launch {
             emitToast(getApplication<Application>().getString(R.string.common_loading))
             val result = configRepository.updateProfile(profileId)
@@ -204,14 +207,55 @@ class ProfilesViewModel(application: Application) : AndroidViewModel(application
         return true
     }
 
-    fun createCustomConfig(name: String, selectedNodeIds: List<String>) {
+    fun addCustomDraftOutbound(outbound: Outbound) {
+        _customDraftOutbounds.update { it + outbound }
+    }
+
+    fun addCustomDraftNodeLink(content: String): Boolean {
+        return configRepository.parseNodeLinkForCustomProfile(content).fold(
+            onSuccess = { outbound ->
+                addCustomDraftOutbound(outbound)
+                emitToast(getApplication<Application>().getString(R.string.common_add) + ": ${outbound.tag}")
+                true
+            },
+            onFailure = { error ->
+                emitToast(error.message ?: getApplication<Application>().getString(R.string.nodes_add_failed))
+                false
+            }
+        )
+    }
+
+    fun removeCustomDraftOutbound(index: Int) {
+        _customDraftOutbounds.update { outbounds ->
+            outbounds.filterIndexed { currentIndex, _ -> currentIndex != index }
+        }
+    }
+
+    fun clearCustomDraftNodes() {
+        _customDraftOutbounds.value = emptyList()
+    }
+
+    fun createCustomConfig(
+        name: String,
+        selectedNodeIds: List<String>,
+        onResult: (Boolean) -> Unit
+    ) {
         if (_importState.value is ImportState.Loading) {
             return
         }
-        if (name.isBlank() || selectedNodeIds.isEmpty()) {
+        if (name.isBlank()) {
             _importState.value = ImportState.Error(
-                getApplication<Application>().getString(R.string.custom_profile_name_nodes_required)
+                getApplication<Application>().getString(R.string.custom_profile_name_required)
             )
+            onResult(false)
+            return
+        }
+        val additionalOutbounds = customDraftOutbounds.value
+        if (selectedNodeIds.isEmpty() && additionalOutbounds.isEmpty()) {
+            _importState.value = ImportState.Error(
+                getApplication<Application>().getString(R.string.custom_profile_nodes_required)
+            )
+            onResult(false)
             return
         }
 
@@ -222,14 +266,17 @@ class ProfilesViewModel(application: Application) : AndroidViewModel(application
 
             val result = configRepository.createCustomProfile(
                 name = name,
-                selectedNodeIds = selectedNodeIds
+                selectedNodeIds = selectedNodeIds,
+                additionalOutbounds = additionalOutbounds
             )
 
             coroutineContext.ensureActive()
 
             result.fold(
                 onSuccess = { profile ->
+                    clearCustomDraftNodes()
                     _importState.value = ImportState.Success(profile)
+                    onResult(true)
                 },
                 onFailure = { error ->
                     if (error is kotlinx.coroutines.CancellationException) {
@@ -240,6 +287,7 @@ class ProfilesViewModel(application: Application) : AndroidViewModel(application
                                 ?: getApplication<Application>().getString(R.string.custom_profile_create_failed)
                         )
                     }
+                    onResult(false)
                 }
             )
         }

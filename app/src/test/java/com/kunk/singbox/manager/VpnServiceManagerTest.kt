@@ -1,5 +1,6 @@
 package com.kunk.singbox.manager
 
+import com.kunk.singbox.ipc.VpnStateStore
 import com.kunk.singbox.service.ProxyOnlyService
 import com.kunk.singbox.service.SingBoxService
 import org.junit.Assert.assertEquals
@@ -58,7 +59,51 @@ class VpnServiceManagerTest {
     }
 
     @Test
-    fun stopVpnSendsStopToBothRuntimeServices() {
+    fun knownRuntimeModeStopsOnlyMatchingService() {
+        assertTrue(
+            VpnServiceManager.shouldDispatchStopToService(
+                activeMode = VpnStateStore.CoreMode.VPN,
+                serviceMode = VpnStateStore.CoreMode.VPN
+            )
+        )
+        assertFalse(
+            VpnServiceManager.shouldDispatchStopToService(
+                activeMode = VpnStateStore.CoreMode.VPN,
+                serviceMode = VpnStateStore.CoreMode.PROXY
+            )
+        )
+        assertTrue(
+            VpnServiceManager.shouldDispatchStopToService(
+                activeMode = VpnStateStore.CoreMode.PROXY,
+                serviceMode = VpnStateStore.CoreMode.PROXY
+            )
+        )
+        assertFalse(
+            VpnServiceManager.shouldDispatchStopToService(
+                activeMode = VpnStateStore.CoreMode.PROXY,
+                serviceMode = VpnStateStore.CoreMode.VPN
+            )
+        )
+    }
+
+    @Test
+    fun unknownRuntimeModeKeepsBothStopFallbacks() {
+        assertTrue(
+            VpnServiceManager.shouldDispatchStopToService(
+                activeMode = VpnStateStore.CoreMode.NONE,
+                serviceMode = VpnStateStore.CoreMode.VPN
+            )
+        )
+        assertTrue(
+            VpnServiceManager.shouldDispatchStopToService(
+                activeMode = VpnStateStore.CoreMode.NONE,
+                serviceMode = VpnStateStore.CoreMode.PROXY
+            )
+        )
+    }
+
+    @Test
+    fun stopVpnUsesPersistedModeBeforeDispatching() {
         val source = File("src/main/java/com/kunk/singbox/manager/VpnServiceManager.kt").readText()
         val start = source.indexOf("fun stopVpn(context: Context)")
         val body = source.substring(
@@ -68,5 +113,8 @@ class VpnServiceManagerTest {
 
         assertTrue(body.contains("SingBoxService::class.java"))
         assertTrue(body.contains("ProxyOnlyService::class.java"))
+        assertTrue(body.contains("val activeMode = VpnStateStore.getMode()"))
+        assertTrue(body.contains("shouldDispatchStopToService(activeMode, VpnStateStore.CoreMode.VPN)"))
+        assertTrue(body.contains("shouldDispatchStopToService(activeMode, VpnStateStore.CoreMode.PROXY)"))
     }
 }

@@ -6,13 +6,10 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -61,6 +58,7 @@ import com.kunk.singbox.ui.components.AboutDialog
 import com.kunk.singbox.ui.components.AppNotificationManager
 import com.kunk.singbox.ui.components.EditableTextItem
 import com.kunk.singbox.ui.components.ExportProgressDialog
+import com.kunk.singbox.ui.components.FloatingMainPageLayout
 import com.kunk.singbox.ui.components.ImportPreviewDialog
 import com.kunk.singbox.ui.components.ImportProgressDialog
 import com.kunk.singbox.ui.components.SettingItem
@@ -187,236 +185,246 @@ fun SettingsScreen(
     if (importState is ImportState.Validating) {
         ValidatingDialog()
     }
-    val statusBarPadding = WindowInsets.statusBars.asPaddingValues()
-
-    Column(
+    FloatingMainPageLayout(
+        title = stringResource(R.string.settings_title),
         modifier = Modifier
             .fillMaxSize()
             .background(liquidGlassScreenContainerColor(MaterialTheme.colorScheme.background))
-            .verticalScroll(scrollState)
-            .padding(
-                top = statusBarPadding.calculateTopPadding() + 16.dp,
-                start = 16.dp,
-                end = 16.dp,
-                bottom = 16.dp
-            )
-    ) {
-        Text(
-            text = stringResource(R.string.settings_title),
-            style = MaterialTheme.typography.headlineMedium,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onBackground,
-            modifier = Modifier.padding(bottom = 16.dp)
-        )
+    ) { contentTopPadding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(scrollState)
+                .padding(
+                    top = contentTopPadding + 16.dp,
+                    start = 16.dp,
+                    end = 16.dp,
+                    bottom = 16.dp
+                )
+        ) {
+            // 1. Connection & Startup
+            SettingsGroupTitle(stringResource(R.string.settings_general))
+            StandardCard {
+                SettingItem(
+                    title = stringResource(R.string.settings_app_theme),
+                    value = stringResource(settings.appTheme.displayNameRes),
+                    icon = Icons.Rounded.Brightness6,
+                    onClick = { showThemeDialog = true }
+                )
+                SettingItem(
+                    title = stringResource(R.string.settings_theme_style),
+                    value = stringResource(settings.appThemeStyle.displayNameRes),
+                    icon = Icons.Rounded.Palette,
+                    onClick = { showThemeStyleDialog = true }
+                )
+                SettingItem(
+                    title = stringResource(R.string.settings_app_language),
+                    value = stringResource(settings.appLanguage.displayNameRes),
+                    icon = Icons.Rounded.Language,
+                    onClick = { showLanguageDialog = true }
+                )
+                SettingSwitchItem(
+                    title = "自动检查更新",
+                    subtitle = "启动应用时自动检查新版本",
+                    icon = Icons.Rounded.SystemUpdate,
+                    checked = settings.autoCheckUpdate,
+                    onCheckedChange = { scope.launch { viewModel.setAutoCheckUpdate(it) } }
+                )
+                SettingItem(
+                    title = stringResource(R.string.settings_connection_startup),
+                    subtitle = stringResource(R.string.settings_connection_startup_subtitle),
+                    icon = Icons.Rounded.PowerSettingsNew,
+                    onClick = { navController.navigate(Screen.ConnectionSettings.route) }
+                )
+            }
 
-        // 1. Connection & Startup
-        SettingsGroupTitle(stringResource(R.string.settings_general))
-        StandardCard {
-            SettingItem(
-                title = stringResource(R.string.settings_app_theme),
-                value = stringResource(settings.appTheme.displayNameRes),
-                icon = Icons.Rounded.Brightness6,
-                onClick = { showThemeDialog = true }
-            )
-            SettingItem(
-                title = stringResource(R.string.settings_theme_style),
-                value = stringResource(settings.appThemeStyle.displayNameRes),
-                icon = Icons.Rounded.Palette,
-                onClick = { showThemeStyleDialog = true }
-            )
-            SettingItem(
-                title = stringResource(R.string.settings_app_language),
-                value = stringResource(settings.appLanguage.displayNameRes),
-                icon = Icons.Rounded.Language,
-                onClick = { showLanguageDialog = true }
-            )
-            SettingSwitchItem(
-                title = "自动检查更新",
-                subtitle = "启动应用时自动检查新版本",
-                icon = Icons.Rounded.SystemUpdate,
-                checked = settings.autoCheckUpdate,
-                onCheckedChange = { scope.launch { viewModel.setAutoCheckUpdate(it) } }
-            )
-            SettingItem(
-                title = stringResource(R.string.settings_connection_startup),
-                subtitle = stringResource(R.string.settings_connection_startup_subtitle),
-                icon = Icons.Rounded.PowerSettingsNew,
-                onClick = { navController.navigate(Screen.ConnectionSettings.route) }
-            )
-        }
+            Spacer(modifier = Modifier.height(16.dp))
 
-        Spacer(modifier = Modifier.height(16.dp))
+            // 2. Network
+            SettingsGroupTitle(stringResource(R.string.settings_network))
+            StandardCard {
+                SettingItem(
+                    title = stringResource(R.string.settings_routing),
+                    subtitle = stringResource(R.string.settings_routing_subtitle),
+                    icon = Icons.Rounded.Route,
+                    onClick = { navController.navigate(Screen.RoutingSettings.route) }
+                )
+                SettingItem(
+                    title = stringResource(R.string.settings_dns),
+                    value = stringResource(R.string.settings_dns_auto),
+                    icon = Icons.Rounded.Dns,
+                    onClick = { navController.navigate(Screen.DnsSettings.route) }
+                )
+                SettingItem(
+                    title = stringResource(R.string.settings_tun_vpn),
+                    subtitle = stringResource(R.string.settings_tun_vpn_subtitle),
+                    icon = Icons.Rounded.VpnKey,
+                    onClick = { navController.navigate(Screen.TunSettings.route) }
+                )
+                SettingItem(
+                    title = stringResource(R.string.settings_connection_info),
+                    subtitle = stringResource(R.string.settings_connection_info_subtitle),
+                    icon = Icons.Rounded.SwapVert,
+                    onClick = { navController.navigate(Screen.ConnectionInfo.route) }
+                )
+            }
 
-        // 2. Network
-        SettingsGroupTitle(stringResource(R.string.settings_network))
-        StandardCard {
-            SettingItem(
-                title = stringResource(R.string.settings_routing),
-                subtitle = stringResource(R.string.settings_routing_subtitle),
-                icon = Icons.Rounded.Route,
-                onClick = { navController.navigate(Screen.RoutingSettings.route) }
-            )
-            SettingItem(
-                title = stringResource(R.string.settings_dns),
-                value = stringResource(R.string.settings_dns_auto),
-                icon = Icons.Rounded.Dns,
-                onClick = { navController.navigate(Screen.DnsSettings.route) }
-            )
-            SettingItem(
-                title = stringResource(R.string.settings_tun_vpn),
-                subtitle = stringResource(R.string.settings_tun_vpn_subtitle),
-                icon = Icons.Rounded.VpnKey,
-                onClick = { navController.navigate(Screen.TunSettings.route) }
-            )
-            SettingItem(
-                title = stringResource(R.string.settings_connection_info),
-                subtitle = stringResource(R.string.settings_connection_info_subtitle),
-                icon = Icons.Rounded.SwapVert,
-                onClick = { navController.navigate(Screen.ConnectionInfo.route) }
-            )
-        }
+            Spacer(modifier = Modifier.height(16.dp))
 
-        Spacer(modifier = Modifier.height(16.dp))
+            // 3. Tools
+            // Pre-define string resources for use in click handlers
+            val preparingUpdateMsg = stringResource(R.string.settings_preparing_update)
+            val updateSuccessMsg = stringResource(R.string.settings_update_success)
+            val updateFailedMsg = stringResource(R.string.settings_update_failed)
+            val rulesetUpdateSuccessMsg = stringResource(R.string.settings_ruleset_update_success)
+            val rulesetUpdateFailedMsg = stringResource(R.string.settings_ruleset_update_failed)
 
-        // 3. Tools
-        // Pre-define string resources for use in click handlers
-        val preparingUpdateMsg = stringResource(R.string.settings_preparing_update)
-        val updateSuccessMsg = stringResource(R.string.settings_update_success)
-        val updateFailedMsg = stringResource(R.string.settings_update_failed)
-        val rulesetUpdateSuccessMsg = stringResource(R.string.settings_ruleset_update_success)
-        val rulesetUpdateFailedMsg = stringResource(R.string.settings_ruleset_update_failed)
-
-        SettingsGroupTitle(stringResource(R.string.settings_tools))
-        StandardCard {
-            SettingItem(
-                title = if (isUpdatingRuleSets) updateMessage else stringResource(R.string.settings_update_rulesets),
-                subtitle = if (isUpdatingRuleSets) stringResource(R.string.settings_updating) else stringResource(R.string.settings_update_rulesets_subtitle),
-                icon = Icons.Rounded.Sync,
-                trailing = {
-                    if (isUpdatingRuleSets) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(18.dp).padding(end = 8.dp),
-                            color = liquidGlassProgressColor(MaterialTheme.colorScheme.primary),
-                            strokeWidth = 2.dp,
-                            trackColor = liquidGlassProgressTrackColor(Color.Transparent)
-                        )
-                    }
-                },
-                onClick = {
-                    if (!isUpdatingRuleSets) {
-                        isUpdatingRuleSets = true
-                        updateMessage = preparingUpdateMsg
-                        scope.launch {
-                            try {
-                                val success = RuleSetRepository.getInstance(context).ensureRuleSetsReady(
-                                    forceUpdate = true,
-                                    allowNetwork = true
-                                ) {
-                                    updateMessage = it
+            SettingsGroupTitle(stringResource(R.string.settings_tools))
+            StandardCard {
+                SettingItem(
+                    title = if (isUpdatingRuleSets) {
+                        updateMessage
+                    } else {
+                        stringResource(R.string.settings_update_rulesets)
+                    },
+                    subtitle = if (isUpdatingRuleSets) {
+                        stringResource(R.string.settings_updating)
+                    } else {
+                        stringResource(R.string.settings_update_rulesets_subtitle)
+                    },
+                    icon = Icons.Rounded.Sync,
+                    trailing = {
+                        if (isUpdatingRuleSets) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(18.dp).padding(end = 8.dp),
+                                color = liquidGlassProgressColor(MaterialTheme.colorScheme.primary),
+                                strokeWidth = 2.dp,
+                                trackColor = liquidGlassProgressTrackColor(Color.Transparent)
+                            )
+                        }
+                    },
+                    onClick = {
+                        if (!isUpdatingRuleSets) {
+                            isUpdatingRuleSets = true
+                            updateMessage = preparingUpdateMsg
+                            scope.launch {
+                                try {
+                                    val success = RuleSetRepository.getInstance(context).ensureRuleSetsReady(
+                                        forceUpdate = true,
+                                        allowNetwork = true
+                                    ) {
+                                        updateMessage = it
+                                    }
+                                    updateMessage = if (success) updateSuccessMsg else updateFailedMsg
+                                    AppNotificationManager.showMessage(
+                                        context = context,
+                                        message = if (success) rulesetUpdateSuccessMsg else rulesetUpdateFailedMsg
+                                    )
+                                } catch (e: Exception) {
+                                    updateMessage = "Error: ${e.message}"
+                                    AppNotificationManager.showMessage(
+                                        context = context,
+                                        message = "$rulesetUpdateFailedMsg: ${e.message}"
+                                    )
+                                } finally {
+                                    kotlinx.coroutines.delay(1000)
+                                    isUpdatingRuleSets = false
                                 }
-                                updateMessage = if (success) updateSuccessMsg else updateFailedMsg
-                                AppNotificationManager.showMessage(
-                                    context = context,
-                                    message = if (success) rulesetUpdateSuccessMsg else rulesetUpdateFailedMsg
-                                )
-                            } catch (e: Exception) {
-                                updateMessage = "Error: ${e.message}"
-                                AppNotificationManager.showMessage(
-                                    context = context,
-                                    message = "$rulesetUpdateFailedMsg: ${e.message}"
-                                )
-                            } finally {
-                                kotlinx.coroutines.delay(1000)
-                                isUpdatingRuleSets = false
                             }
                         }
                     }
-                }
-            )
-            SettingSwitchItem(
-                title = stringResource(R.string.settings_ruleset_auto_update),
-                subtitle = if (settings.ruleSetAutoUpdateEnabled)
-                    stringResource(R.string.settings_ruleset_auto_update_enabled, settings.ruleSetAutoUpdateInterval)
-                else
-                    stringResource(R.string.settings_ruleset_auto_update_disabled),
-                icon = Icons.Rounded.Schedule,
-                checked = settings.ruleSetAutoUpdateEnabled,
-                onCheckedChange = { viewModel.setRuleSetAutoUpdateEnabled(it) }
-            )
-            if (settings.ruleSetAutoUpdateEnabled) {
-                val intervalMinMsg = stringResource(R.string.settings_update_interval_min)
-                EditableTextItem(
-                    title = stringResource(R.string.settings_update_interval),
-                    value = stringResource(R.string.settings_update_interval_value, settings.ruleSetAutoUpdateInterval),
-                    onValueChange = { newValue ->
-                        val interval = newValue.filter { it.isDigit() }.toIntOrNull()
-                        if (interval != null && interval >= 15) {
-                            viewModel.setRuleSetAutoUpdateInterval(interval)
-                        } else {
-                            AppNotificationManager.showMessage(context, intervalMinMsg)
+                )
+                SettingSwitchItem(
+                    title = stringResource(R.string.settings_ruleset_auto_update),
+                    subtitle = if (settings.ruleSetAutoUpdateEnabled)
+                        stringResource(
+                            R.string.settings_ruleset_auto_update_enabled,
+                            settings.ruleSetAutoUpdateInterval
+                        )
+                    else
+                        stringResource(R.string.settings_ruleset_auto_update_disabled),
+                    icon = Icons.Rounded.Schedule,
+                    checked = settings.ruleSetAutoUpdateEnabled,
+                    onCheckedChange = { viewModel.setRuleSetAutoUpdateEnabled(it) }
+                )
+                if (settings.ruleSetAutoUpdateEnabled) {
+                    val intervalMinMsg = stringResource(R.string.settings_update_interval_min)
+                    EditableTextItem(
+                        title = stringResource(R.string.settings_update_interval),
+                        value = stringResource(
+                            R.string.settings_update_interval_value,
+                            settings.ruleSetAutoUpdateInterval
+                        ),
+                        onValueChange = { newValue ->
+                            val interval = newValue.filter { it.isDigit() }.toIntOrNull()
+                            if (interval != null && interval >= 15) {
+                                viewModel.setRuleSetAutoUpdateInterval(interval)
+                            } else {
+                                AppNotificationManager.showMessage(context, intervalMinMsg)
+                            }
                         }
+                    )
+                }
+                SettingSwitchItem(
+                    title = stringResource(R.string.settings_debug_mode),
+                    subtitle = stringResource(R.string.settings_debug_mode_subtitle),
+                    icon = Icons.Rounded.BugReport,
+                    checked = settings.debugLoggingEnabled,
+                    onCheckedChange = { viewModel.setDebugLoggingEnabled(it) }
+                )
+                SettingItem(
+                    title = stringResource(R.string.settings_logs),
+                    icon = Icons.Rounded.History,
+                    onClick = { navController.navigate(Screen.Logs.route) }
+                )
+                SettingItem(
+                    title = stringResource(R.string.settings_network_diagnostics),
+                    icon = Icons.Rounded.BugReport,
+                    onClick = { navController.navigate(Screen.Diagnostics.route) }
+                )
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            SettingsGroupTitle(stringResource(R.string.settings_data_management))
+            StandardCard {
+                SettingItem(
+                    title = stringResource(R.string.traffic_stats_settings_title),
+                    subtitle = stringResource(R.string.traffic_stats_settings_subtitle),
+                    icon = Icons.Rounded.Analytics,
+                    onClick = { navController.navigate(Screen.TrafficStats.route) }
+                )
+                SettingItem(
+                    title = stringResource(R.string.settings_export_data),
+                    subtitle = stringResource(R.string.settings_export_data_subtitle),
+                    icon = Icons.Rounded.Upload,
+                    onClick = {
+                        exportLauncher.launch(generateExportFileName())
+                    }
+                )
+                SettingItem(
+                    title = stringResource(R.string.settings_import_data),
+                    subtitle = stringResource(R.string.settings_import_data_subtitle),
+                    icon = Icons.Rounded.Download,
+                    onClick = {
+                        importLauncher.launch(arrayOf("application/json", "*/*"))
                     }
                 )
             }
-            SettingSwitchItem(
-                title = stringResource(R.string.settings_debug_mode),
-                subtitle = stringResource(R.string.settings_debug_mode_subtitle),
-                icon = Icons.Rounded.BugReport,
-                checked = settings.debugLoggingEnabled,
-                onCheckedChange = { viewModel.setDebugLoggingEnabled(it) }
-            )
-            SettingItem(
-                title = stringResource(R.string.settings_logs),
-                icon = Icons.Rounded.History,
-                onClick = { navController.navigate(Screen.Logs.route) }
-            )
-            SettingItem(
-                title = stringResource(R.string.settings_network_diagnostics),
-                icon = Icons.Rounded.BugReport,
-                onClick = { navController.navigate(Screen.Diagnostics.route) }
-            )
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // 5. About
+            SettingsGroupTitle(stringResource(R.string.settings_about))
+            StandardCard {
+                SettingItem(
+                    title = stringResource(R.string.settings_about_app),
+                    icon = Icons.Rounded.Info,
+                    onClick = { showAboutDialog = true }
+                )
+            }
+            Spacer(modifier = Modifier.height(32.dp + bottomContentPadding))
         }
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        SettingsGroupTitle(stringResource(R.string.settings_data_management))
-        StandardCard {
-            SettingItem(
-                title = stringResource(R.string.traffic_stats_settings_title),
-                subtitle = stringResource(R.string.traffic_stats_settings_subtitle),
-                icon = Icons.Rounded.Analytics,
-                onClick = { navController.navigate(Screen.TrafficStats.route) }
-            )
-            SettingItem(
-                title = stringResource(R.string.settings_export_data),
-                subtitle = stringResource(R.string.settings_export_data_subtitle),
-                icon = Icons.Rounded.Upload,
-                onClick = {
-                    exportLauncher.launch(generateExportFileName())
-                }
-            )
-            SettingItem(
-                title = stringResource(R.string.settings_import_data),
-                subtitle = stringResource(R.string.settings_import_data_subtitle),
-                icon = Icons.Rounded.Download,
-                onClick = {
-                    importLauncher.launch(arrayOf("application/json", "*/*"))
-                }
-            )
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // 5. About
-        SettingsGroupTitle(stringResource(R.string.settings_about))
-        StandardCard {
-            SettingItem(
-                title = stringResource(R.string.settings_about_app),
-                icon = Icons.Rounded.Info,
-                onClick = { showAboutDialog = true }
-            )
-        }
-        Spacer(modifier = Modifier.height(32.dp + bottomContentPadding))
     }
 }
 

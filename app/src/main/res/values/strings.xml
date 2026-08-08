@@ -19,6 +19,7 @@
     <string name="common_cancel">取消</string>
     <string name="common_save">保存</string>
     <string name="common_delete">删除</string>
+    <string name="common_delete_confirm">确定要删除“%s”吗？此操作无法撤销。</string>
     <string name="common_edit">编辑</string>
     <string name="common_edit_title">修改 %s</string>
     <string name="common_select_title">选择 %s</string>
@@ -50,6 +51,7 @@
     <string name="common_no">否</string>
     <string name="common_auto">自动</string>
     <string name="common_menu">菜单</string>
+    <string name="common_layout">布局</string>
     <string name="common_view">查看</string>
     <string name="common_downloaded">已下载</string>
     <string name="common_ready">已就绪</string>
@@ -246,7 +248,7 @@
     <string name="profiles_import_failed">导入失败: %s</string>
     <string name="profiles_add_config">添加配置</string>
     <string name="profiles_custom_config">自定义配置</string>
-    <string name="profiles_custom_config_subtitle">从现有订阅选择节点组合</string>
+    <string name="profiles_custom_config_subtitle">添加或组合节点</string>
     <string name="profiles_imported_subscription_default_name">导入的订阅</string>
     <string name="subscription_import_fetching">正在获取订阅内容...</string>
     <string name="subscription_import_requesting">正在尝试订阅请求（User-Agent %1$d/%2$d）...</string>
@@ -257,7 +259,16 @@
     <string name="subscription_import_dns_failed">域名解析失败，请检查订阅链接</string>
     <string name="subscription_import_ssl_failed">SSL 证书校验失败</string>
     <string name="subscription_import_failed_generic">订阅导入失败</string>
-    <string name="custom_profile_name_nodes_required">名称不能为空，且至少选择一个节点</string>
+    <string name="custom_profile_name_required">名称不能为空</string>
+    <string name="custom_profile_name_hint">请输入配置名称</string>
+    <string name="custom_profile_selected_nodes">共 %d 个节点</string>
+    <string name="custom_profile_nodes_optional">至少添加或选择一个节点</string>
+    <string name="custom_profile_no_available_nodes">暂无可复制的订阅节点</string>
+    <string name="profiles_no_safe_node">配置中没有可安全选择的节点</string>
+    <string name="custom_profile_paste_link">粘贴连接</string>
+    <string name="custom_profile_paste_link_subtitle">从剪贴板快速添加</string>
+    <string name="custom_profile_manual_add_subtitle">选择协议并填写参数</string>
+    <string name="custom_profile_added_nodes">已添加节点</string>
     <string name="custom_profile_creating">正在创建自定义配置...</string>
     <string name="custom_profile_create_failed">创建自定义配置失败</string>
     <string name="custom_profile_nodes_required">未选择可用节点</string>
@@ -265,6 +276,7 @@
     <string name="profiles_parse_failed">无法解析内容</string>
     <string name="profiles_content_empty">内容为空</string>
     <string name="profiles_updated">配置已更新</string>
+    <string name="profiles_custom_no_update">自定义配置无需更新</string>
     <string name="profiles_deleted">已删除配置</string>
     <string name="profiles_auto_update">自动更新</string>
     <string name="profiles_auto_update_interval">更新间隔（分钟）</string>
@@ -295,6 +307,7 @@
     <string name="nodes_export_link">导出链接</string>
     <string name="nodes_copied_to_clipboard">已复制到剪贴板</string>
     <string name="nodes_clear_latency">清空延迟</string>
+    <string name="nodes_clear_latency_confirm">确定要清空全部节点延迟记录吗？此操作无法撤销。</string>
     <string name="nodes_latency_cleared">已清空延迟</string>
     <string name="nodes_test_latency">测试延迟</string>
     <string name="nodes_testing_progress">测速中...</string>
@@ -418,8 +431,16 @@
     <string name="node_detail_detour_proxy_subtitle">从所有配置中选择一个代理节点</string>
     <string name="node_detail_detour_tag">前置代理标签 (高级)</string>
     <string name="node_detail_detour_tag_subtitle">手动填写出站标签；留空禁用</string>
+    <string name="node_detail_auto_selection_eligible">参与自动探测与切换</string>
+    <string name="node_detail_auto_selection_eligible_subtitle">关闭后不会被后台探测或自动切换选中，仍可手动选择和测速</string>
+    <string name="node_detail_metered_protection">高价计费节点保护</string>
+    <string name="node_detail_metered_protection_subtitle">仅在明确手动选中时进入运行配置；阻止分流、DNS、链式代理和后台探测偷跑流量</string>
+    <string name="traffic_unattributed">未归属流量</string>
+    <string name="traffic_background_probe">后台测速流量</string>
+    <string name="traffic_health_check">健康检查流量</string>
     <string name="node_detail_tcp_fast_open">TCP Fast Open</string>
     <string name="node_detail_select_detour_node">选择前置代理节点</string>
+    <string name="node_picker_no_detour">不使用前置代理</string>
     <string name="node_detail_unknown_profile">未知配置 (%s)</string>
 
     <!-- Rule Sets -->
@@ -508,6 +529,7 @@
     <string name="logs_title">运行日志</string>
     <string name="logs_export">导出</string>
     <string name="logs_clear">清空</string>
+    <string name="logs_clear_confirm">确定要清空全部运行日志吗？此操作无法撤销。</string>
     <string name="logs_search_hint">搜索关键词（域名、错误等）</string>
 
     <!-- Diagnostics -->

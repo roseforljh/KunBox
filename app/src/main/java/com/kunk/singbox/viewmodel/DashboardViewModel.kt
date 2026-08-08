@@ -140,23 +140,16 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     fun setActiveProfile(profileId: String) {
-        configRepository.setActiveProfile(profileId)
-        val name = profiles.value.find { it.id == profileId }?.name
-        if (!name.isNullOrBlank()) {
-            emitToast(getApplication<Application>().getString(R.string.node_switch_success, name))
-        }
-
-        // 否则VPN仍然使用旧配置，导致用户看到"选中"了新配置的节点但实际没联网
-        if (SingBoxRemote.isRunning.value || SingBoxRemote.isStarting.value) {
-            viewModelScope.launch {
-                configRepository.setActiveProfileAndWait(profileId)
-                if (configRepository.isProfileAutoSelectionEnabled(profileId)) {
-                    configRepository.enableAutoSelectionWithResult(profileId)
+        viewModelScope.launch {
+            val result = configRepository.setActiveProfileWithResult(profileId)
+            val name = profiles.value.find { it.id == profileId }?.name
+            if (!name.isNullOrBlank()) {
+                val message = if (result is ConfigRepository.NodeSwitchResult.Failed) {
+                    getApplication<Application>().getString(R.string.node_switch_failed, name) + "：${result.reason}"
                 } else {
-                    val currentNodeId = configRepository.activeNodeId.value ?: return@launch
-                    Log.i(TAG, "Profile switched while VPN running, triggering node switch for: $currentNodeId")
-                    configRepository.setActiveNodeWithResult(currentNodeId)
+                    getApplication<Application>().getString(R.string.node_switch_success, name)
                 }
+                emitToast(message)
             }
         }
     }
@@ -574,6 +567,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         }
     }
 
+    @Suppress("LongMethod", "CognitiveComplexMethod")
     fun restartVpn() {
         viewModelScope.launch {
             val context = getApplication<Application>()
@@ -594,7 +588,10 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
             }
 
             if (configResult == null) {
-                emitToast(getApplication<Application>().getString(R.string.dashboard_config_generation_failed))
+                emitToast(
+                    configRepository.getLastConfigGenerationError()
+                        ?: getApplication<Application>().getString(R.string.dashboard_config_generation_failed)
+                )
                 return@launch
             }
 
@@ -822,7 +819,10 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                 }
                 if (configResult == null) {
                     _connectionState.value = ConnectionState.Error
-                    emitToast(getApplication<Application>().getString(R.string.dashboard_config_generation_failed))
+                    emitToast(
+                        configRepository.getLastConfigGenerationError()
+                            ?: getApplication<Application>().getString(R.string.dashboard_config_generation_failed)
+                    )
                     return@launch
                 }
 
@@ -990,7 +990,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         pingTestJob = viewModelScope.launch {
             _isPingTesting.value = true
             try {
-                configRepository.testAllNodesLatency(targetNodeIds = listOf(targetNodeId))
+                configRepository.testNodeLatency(targetNodeId)
             } catch (e: Exception) {
                 Log.e(TAG, "Error during ping test", e)
             } finally {

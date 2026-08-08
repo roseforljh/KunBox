@@ -201,6 +201,18 @@ class DashboardViewModelStateResolutionTest {
     }
 
     @Test
+    fun currentNodePingUsesTheManualSingleNodeLatencyPath() {
+        val source = File("src/main/java/com/kunk/singbox/viewmodel/DashboardViewModel.kt")
+            .readText(Charsets.UTF_8)
+        val body = source
+            .substringAfter("private fun startPingTest()")
+            .substringBefore("private fun stopPingTest()")
+
+        assertTrue(body.contains("configRepository.testNodeLatency(targetNodeId)"))
+        assertFalse(body.contains("configRepository.testAllNodesLatency"))
+    }
+
+    @Test
     fun mainActivityGatesAutoConnectOnRecoveryPolicy() {
         val source = File("src/main/java/com/kunk/singbox/MainActivity.kt")
             .readText(Charsets.UTF_8)

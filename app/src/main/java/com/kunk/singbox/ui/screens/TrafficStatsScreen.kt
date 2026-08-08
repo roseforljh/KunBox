@@ -28,7 +28,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.ArrowDownward
 import androidx.compose.material.icons.rounded.ArrowUpward
 import androidx.compose.material.icons.rounded.Delete
@@ -41,7 +40,6 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
@@ -68,17 +66,16 @@ import com.kunk.singbox.R
 import com.kunk.singbox.repository.NodeTrafficStats
 import com.kunk.singbox.repository.TrafficPeriod
 import com.kunk.singbox.ui.components.ConfirmDialog
+import com.kunk.singbox.ui.components.FloatingPageLayout
 import com.kunk.singbox.ui.components.StandardCard
 import com.kunk.singbox.ui.theme.LiquidGlassFilterChip
 import com.kunk.singbox.ui.theme.isLiquidGlassTheme
-import com.kunk.singbox.ui.theme.liquidGlassIconButtonPanel
 import com.kunk.singbox.ui.theme.liquidGlassPanel
 import com.kunk.singbox.ui.theme.liquidGlassPressFeedback
 import com.kunk.singbox.ui.theme.liquidGlassProgressColor
 import com.kunk.singbox.ui.theme.liquidGlassProgressTrackColor
 import com.kunk.singbox.viewmodel.TrafficStatsViewModel
 import com.kunk.singbox.ui.theme.liquidGlassTopAppBarContainerColor
-import com.kunk.singbox.ui.theme.liquidGlassTopAppBarColors
 
 private val chartColors = listOf(
     Color(0xFF6366F1),
@@ -182,136 +179,114 @@ fun TrafficStatsScreen(
         )
     }
 
-    Scaffold(
-        contentWindowInsets = WindowInsets(0, 0, 0, 0),
-        containerColor = liquidGlassTopAppBarContainerColor(MaterialTheme.colorScheme.background),
-        topBar = {
-            TopAppBar(
-                title = {
-                    Text(
-                        stringResource(R.string.traffic_stats_title),
-                        color = MaterialTheme.colorScheme.onBackground
+    FloatingPageLayout(
+        title = stringResource(R.string.traffic_stats_title),
+        onBack = { navController.popBackStack() },
+        actions = {
+            Box(
+                modifier = Modifier
+                    .size(48.dp)
+                    .clip(CircleShape)
+                    .background(
+                        if (isRefreshPressed || uiState.isLoading) {
+                            MaterialTheme.colorScheme.primary.copy(
+                                alpha = if (useLiquidGlass) 0.12f else 0.2f
+                            )
+                        } else {
+                            Color.Transparent
+                        }
                     )
-                },
-                navigationIcon = {
-                    IconButton(
-                        modifier = Modifier.liquidGlassIconButtonPanel(),
-                        onClick = { navController.popBackStack() }
-                    ) {
-                        Icon(
-                            Icons.AutoMirrored.Rounded.ArrowBack,
-                            contentDescription = stringResource(R.string.common_back),
-                            tint = MaterialTheme.colorScheme.onBackground
-                        )
+                    .liquidGlassPressFeedback(
+                        useLiquidGlass = useLiquidGlass,
+                        pressedScale = 0.96f,
+                        animationSpec = tween(durationMillis = 150),
+                        label = "liquid_glass_traffic_refresh_scale",
+                        interactionSource = refreshInteractionSource,
+                        onClick = viewModel::refresh
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    Icons.Rounded.Refresh,
+                    contentDescription = stringResource(R.string.common_refresh),
+                    tint = if (uiState.isLoading) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.onBackground
+                    },
+                    modifier = if (uiState.isLoading) {
+                        Modifier.rotate(refreshRotation)
+                    } else {
+                        Modifier
                     }
-                },
-                actions = {
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.padding(end = 8.dp)
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(48.dp)
-                                .liquidGlassIconButtonPanel(
-                                    selected = isRefreshPressed || uiState.isLoading
-                                )
-                                .clip(CircleShape)
-                                .background(
-                                    if (!useLiquidGlass && (isRefreshPressed || uiState.isLoading)) {
-                                        MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)
-                                    } else {
-                                        Color.Transparent
-                                    }
-                                )
-                                .liquidGlassPressFeedback(
-                                    useLiquidGlass = useLiquidGlass,
-                                    pressedScale = 0.96f,
-                                    animationSpec = tween(durationMillis = 150),
-                                    label = "liquid_glass_traffic_refresh_scale",
-                                    interactionSource = refreshInteractionSource,
-                                    onClick = viewModel::refresh
-                                ),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                Icons.Rounded.Refresh,
-                                contentDescription = stringResource(R.string.common_refresh),
-                                tint = if (uiState.isLoading) {
-                                    MaterialTheme.colorScheme.primary
-                                } else {
-                                    MaterialTheme.colorScheme.onBackground
-                                },
-                                modifier = if (uiState.isLoading) {
-                                    Modifier.rotate(refreshRotation)
-                                } else {
-                                    Modifier
-                                }
-                            )
-                        }
-                        IconButton(
-                            modifier = Modifier.liquidGlassIconButtonPanel(),
-                            onClick = { showClearDialog = true }
-                        ) {
-                            Icon(
-                                Icons.Rounded.Delete,
-                                contentDescription = stringResource(R.string.traffic_stats_clear_title),
-                                tint = MaterialTheme.colorScheme.onBackground
-                            )
-                        }
-                    }
-                },
-                colors = liquidGlassTopAppBarColors(defaultContainerColor = MaterialTheme.colorScheme.background)
-            )
-        }
-    ) { innerPadding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding)
-                .verticalScroll(scrollState)
-                .padding(16.dp)
-                .navigationBarsPadding()
-        ) {
-            PeriodSelector(
-                selectedPeriod = uiState.selectedPeriod,
-                onPeriodSelected = { viewModel.selectPeriod(it) }
-            )
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            uiState.summary?.let { summary ->
-                TotalTrafficCard(
-                    totalUpload = summary.totalUpload,
-                    totalDownload = summary.totalDownload
+                )
+            }
+            IconButton(onClick = { showClearDialog = true }) {
+                Icon(
+                    Icons.Rounded.Delete,
+                    contentDescription = stringResource(R.string.traffic_stats_clear_title),
+                    tint = MaterialTheme.colorScheme.onBackground
+                )
+            }
+        },
+        circularAction = false
+    ) { contentTopPadding ->
+        Scaffold(
+            contentWindowInsets = WindowInsets(0, 0, 0, 0),
+            containerColor = liquidGlassTopAppBarContainerColor(MaterialTheme.colorScheme.background)
+        ) { innerPadding ->
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding)
+                    .verticalScroll(scrollState)
+                    .padding(
+                        start = 16.dp,
+                        top = contentTopPadding + 16.dp,
+                        end = 16.dp,
+                        bottom = 16.dp
+                    )
+                    .navigationBarsPadding()
+            ) {
+                PeriodSelector(
+                    selectedPeriod = uiState.selectedPeriod,
+                    onPeriodSelected = { viewModel.selectPeriod(it) }
                 )
 
                 Spacer(modifier = Modifier.height(16.dp))
 
-                if (uiState.nodePercentages.isNotEmpty()) {
-                    TrafficDistributionCard(
-                        nodePercentages = uiState.nodePercentages.take(8),
-                        nodeNames = uiState.nodeNames
+                uiState.summary?.let { summary ->
+                    TotalTrafficCard(
+                        totalUpload = summary.totalUpload,
+                        totalDownload = summary.totalDownload
                     )
 
                     Spacer(modifier = Modifier.height(16.dp))
+
+                    if (uiState.nodePercentages.isNotEmpty()) {
+                        TrafficDistributionCard(
+                            nodePercentages = uiState.nodePercentages.take(8),
+                            nodeNames = uiState.nodeNames
+                        )
+
+                        Spacer(modifier = Modifier.height(16.dp))
+                    }
+
+                    if (uiState.topNodes.isNotEmpty()) {
+                        NodeRankingCard(
+                            nodes = uiState.topNodes,
+                            totalTraffic = summary.totalUpload + summary.totalDownload,
+                            nodeNames = uiState.nodeNames
+                        )
+                    }
                 }
 
-                if (uiState.topNodes.isNotEmpty()) {
-                    NodeRankingCard(
-                        nodes = uiState.topNodes,
-                        totalTraffic = summary.totalUpload + summary.totalDownload,
-                        nodeNames = uiState.nodeNames
-                    )
+                if (uiState.summary == null || uiState.topNodes.isEmpty()) {
+                    EmptyStateCard()
                 }
-            }
 
-            if (uiState.summary == null || uiState.topNodes.isEmpty()) {
-                EmptyStateCard()
+                Spacer(modifier = Modifier.height(32.dp))
             }
-
-            Spacer(modifier = Modifier.height(32.dp))
         }
     }
 }

@@ -21,7 +21,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
-import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -35,7 +34,6 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.ui.res.stringResource
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
@@ -58,7 +56,8 @@ import com.kunk.singbox.model.OutboundTag
 import com.kunk.singbox.model.RuleType
 import com.kunk.singbox.model.RuleSetOutboundMode
 import com.kunk.singbox.ui.components.ConfirmDialog
-import com.kunk.singbox.ui.components.ProfileNodeSelectDialog
+import com.kunk.singbox.ui.components.ClickableSelectionButton
+import com.kunk.singbox.ui.components.FloatingPageLayout
 import com.kunk.singbox.ui.components.SingleSelectDialog
 import com.kunk.singbox.ui.components.StandardCard
 import com.kunk.singbox.ui.components.StyledTextField
@@ -71,7 +70,6 @@ import com.kunk.singbox.ui.theme.liquidGlassDialogContainerColor
 import com.kunk.singbox.ui.theme.liquidGlassDialogPanel
 import com.kunk.singbox.ui.theme.LiquidGlassDialogEffect
 import com.kunk.singbox.ui.theme.liquidGlassEmptyStatePanel
-import com.kunk.singbox.ui.theme.liquidGlassIconButtonPanel
 import com.kunk.singbox.ui.theme.liquidGlassOutlinedButtonBorder
 import com.kunk.singbox.ui.theme.liquidGlassOutlinedButtonColors
 import com.kunk.singbox.ui.theme.liquidGlassPanel
@@ -83,7 +81,6 @@ import com.kunk.singbox.viewmodel.NodesViewModel
 import com.kunk.singbox.viewmodel.ProfilesViewModel
 import com.kunk.singbox.viewmodel.SettingsViewModel
 import com.kunk.singbox.ui.theme.liquidGlassTopAppBarContainerColor
-import com.kunk.singbox.ui.theme.liquidGlassTopAppBarColors
 import com.kunk.singbox.utils.LocalNetworkPermission
 
 @Composable
@@ -236,73 +233,65 @@ fun DomainRulesScreen(
         )
     }
 
-    Scaffold(
-        contentWindowInsets = WindowInsets(0, 0, 0, 0),
-        containerColor = liquidGlassTopAppBarContainerColor(MaterialTheme.colorScheme.background),
-        topBar = {
-            TopAppBar(
-                title = { Text(stringResource(R.string.domain_rules_title), color = MaterialTheme.colorScheme.onBackground) },
-                navigationIcon = {
-                    IconButton(
-                        modifier = Modifier.liquidGlassIconButtonPanel(),
-                        onClick = { navController.popBackStack() }
-                    ) {
-                        Icon(
-                            Icons.AutoMirrored.Rounded.ArrowBack,
-                            contentDescription = stringResource(R.string.common_back),
-                            tint = MaterialTheme.colorScheme.onBackground
-                        )
-                    }
-                },
-                actions = {
-                    IconButton(
-                        modifier = Modifier.liquidGlassIconButtonPanel(),
-                        onClick = { showAddDialog = true }
-                    ) {
-                        Icon(Icons.Rounded.Add, contentDescription = stringResource(R.string.common_add), tint = MaterialTheme.colorScheme.onBackground)
-                    }
-                },
-                colors = liquidGlassTopAppBarColors(defaultContainerColor = MaterialTheme.colorScheme.background)
-            )
+    FloatingPageLayout(
+        title = stringResource(R.string.domain_rules_title),
+        onBack = { navController.popBackStack() },
+        actions = {
+            IconButton(onClick = { showAddDialog = true }) {
+                Icon(
+                    Icons.Rounded.Add,
+                    contentDescription = stringResource(R.string.common_add),
+                    tint = MaterialTheme.colorScheme.onBackground
+                )
+            }
         }
-    ) { padding ->
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding),
-            contentPadding = PaddingValues(
-                start = 16.dp,
-                top = 16.dp,
-                end = 16.dp,
-                bottom = 16.dp + WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
-            ),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            if (domainRules.isEmpty()) {
-                item {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .liquidGlassEmptyStatePanel()
-                            .padding(32.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = stringResource(R.string.domain_rules_empty),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            style = MaterialTheme.typography.bodyLarge
+    ) { contentTopPadding ->
+        Scaffold(
+            contentWindowInsets = WindowInsets(0, 0, 0, 0),
+            containerColor = liquidGlassTopAppBarContainerColor(MaterialTheme.colorScheme.background)
+        ) { padding ->
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding),
+                contentPadding = PaddingValues(
+                    start = 16.dp,
+                    top = contentTopPadding + 16.dp,
+                    end = 16.dp,
+                    bottom = 16.dp + WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+                ),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                if (domainRules.isEmpty()) {
+                    item {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .liquidGlassEmptyStatePanel()
+                                .padding(32.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = stringResource(R.string.domain_rules_empty),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                style = MaterialTheme.typography.bodyLarge
+                            )
+                        }
+                    }
+                } else {
+                    items(domainRules) { rule ->
+                        val mode = rule.outboundMode ?: when (rule.outbound) {
+                            OutboundTag.DIRECT -> RuleSetOutboundMode.DIRECT
+                            OutboundTag.BLOCK -> RuleSetOutboundMode.BLOCK
+                            OutboundTag.PROXY -> RuleSetOutboundMode.PROXY
+                        }
+                        val outboundText = resolveOutboundText(mode, rule.outboundValue, allNodes, profiles)
+                        DomainRuleItem(
+                            rule = rule,
+                            outboundText = "${stringResource(mode.displayNameRes)} - $outboundText",
+                            onClick = { editingRule = rule }
                         )
                     }
-                }
-            } else {
-                items(domainRules) { rule ->
-                    val mode = rule.outboundMode ?: when (rule.outbound) {
-                        OutboundTag.DIRECT -> RuleSetOutboundMode.DIRECT
-                        OutboundTag.BLOCK -> RuleSetOutboundMode.BLOCK
-                        OutboundTag.PROXY -> RuleSetOutboundMode.PROXY
-                    }
-                    val outboundText = resolveOutboundText(mode, rule.outboundValue, allNodes, profiles)
-                    DomainRuleItem(rule = rule, outboundText = "${stringResource(mode.displayNameRes)} - $outboundText", onClick = { editingRule = rule })
                 }
             }
         }
@@ -436,13 +425,14 @@ private fun DomainRuleEditorDialog(
     }
 
     if (showNodeSelectionDialog) {
-        val currentRef = resolveNodeByStoredValue(outboundValue)?.let { toNodeRef(it) } ?: outboundValue
-        ProfileNodeSelectDialog(
+        val selectedNode = resolveNodeByStoredValue(outboundValue)
+        NodePickerPage(
             title = stringResource(R.string.rulesets_select_node),
             profiles = profiles,
-            nodesForSelection = selectionNodes,
-            selectedNodeRef = currentRef,
-            onSelect = { ref -> outboundValue = ref },
+            allNodes = nodes,
+            displayedNodes = selectionNodes,
+            selectedNodeId = selectedNode?.id,
+            onSelectNode = { node -> outboundValue = toNodeRef(node) },
             onDismiss = { showNodeSelectionDialog = false }
         )
     }
@@ -533,42 +523,53 @@ private fun DomainRuleEditorDialog(
                         RuleSetOutboundMode.PROFILE -> profiles.find { it.id == outboundValue }?.name
                         else -> null
                     } ?: stringResource(R.string.rulesets_tap_to_select)
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .domainRuleSelectorPanel()
-                            .liquidGlassPressFeedback(
-                                label = "liquid_glass_domain_rule_target_selector_scale"
-                            ) {
-                                when (outboundMode) {
-                                    RuleSetOutboundMode.NODE -> {
-                                        showNodeSelectionDialog = true
-                                    }
-                                    RuleSetOutboundMode.PROFILE -> {
-                                        targetSelectionTitle = selectProfileTitle
-                                        targetOptions = profiles.map { it.name to it.id }
-                                    }
-                                    else -> {}
-                                }
-                                if (outboundMode != RuleSetOutboundMode.NODE) {
-                                    showTargetSelectionDialog = true
-                                }
+                    val onTargetClick = {
+                        when (outboundMode) {
+                            RuleSetOutboundMode.NODE -> showNodeSelectionDialog = true
+                            RuleSetOutboundMode.PROFILE -> {
+                                targetSelectionTitle = selectProfileTitle
+                                targetOptions = profiles.map { it.name to it.id }
                             }
-                            .padding(horizontal = 12.dp, vertical = 12.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(stringResource(R.string.app_rules_select_target), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        val isTapToSelect = targetName == stringResource(R.string.rulesets_tap_to_select)
-                        Text(
-                            targetName,
-                            color = if (isTapToSelect) {
-                                MaterialTheme.colorScheme.onSurfaceVariant
-                            } else {
-                                MaterialTheme.colorScheme.primary
-                            },
-                            fontWeight = if (isTapToSelect) FontWeight.Normal else FontWeight.SemiBold
+                            else -> {}
+                        }
+                        if (outboundMode != RuleSetOutboundMode.NODE) {
+                            showTargetSelectionDialog = true
+                        }
+                    }
+                    if (outboundMode == RuleSetOutboundMode.NODE) {
+                        ClickableSelectionButton(
+                            label = stringResource(R.string.app_rules_select_target),
+                            value = targetName,
+                            onClick = onTargetClick
                         )
+                    } else {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .domainRuleSelectorPanel()
+                                .liquidGlassPressFeedback(
+                                    label = "liquid_glass_domain_rule_target_selector_scale",
+                                    onClick = onTargetClick
+                                )
+                                .padding(horizontal = 12.dp, vertical = 12.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                stringResource(R.string.app_rules_select_target),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            val isTapToSelect = targetName == stringResource(R.string.rulesets_tap_to_select)
+                            Text(
+                                targetName,
+                                color = if (isTapToSelect) {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                } else {
+                                    MaterialTheme.colorScheme.primary
+                                },
+                                fontWeight = if (isTapToSelect) FontWeight.Normal else FontWeight.SemiBold
+                            )
+                        }
                     }
                 }
 

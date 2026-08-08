@@ -10,7 +10,11 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
@@ -18,7 +22,10 @@ import androidx.navigation.NavBackStackEntry
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.kunk.singbox.ui.screens.AddNodeScreen
 import com.kunk.singbox.ui.screens.DashboardScreen
+import com.kunk.singbox.ui.screens.NodeProtocolSelectScreen
 import com.kunk.singbox.ui.screens.NodesScreen
 import com.kunk.singbox.ui.screens.ProfilesScreen
 import com.kunk.singbox.ui.screens.SettingsScreen
@@ -38,7 +45,10 @@ import com.kunk.singbox.ui.screens.RuleSetHubScreen
 import com.kunk.singbox.ui.screens.DomainRulesScreen
 import com.kunk.singbox.ui.screens.TrafficStatsScreen
 import com.kunk.singbox.ui.screens.ConnectionInfoScreen
+import com.kunk.singbox.ui.theme.liquidGlassBackdrop
 import com.kunk.singbox.viewmodel.DashboardViewModel
+import com.kunk.singbox.viewmodel.NodesViewModel
+import com.kunk.singbox.viewmodel.ProfilesViewModel
 
 sealed class Screen(val route: String) {
     object Dashboard : Screen("dashboard")
@@ -56,6 +66,12 @@ sealed class Screen(val route: String) {
     object NodeCreate : Screen("node_create/{protocol}") {
         fun createRoute(protocol: String) = "node_create/$protocol"
     }
+    object CustomProfileNodeCreate : Screen("custom_profile_node_create/{protocol}") {
+        fun createRoute(protocol: String) = "custom_profile_node_create/$protocol"
+    }
+    object NodeAdd : Screen("node_add")
+    object NodeProtocolSelect : Screen("node_protocol_select")
+    object CustomProfileNodeProtocolSelect : Screen("custom_profile_node_protocol_select")
     object RoutingSettings : Screen("routing_settings")
     object DnsSettings : Screen("dns_settings")
     object TunSettings : Screen("tun_settings")
@@ -74,7 +90,6 @@ sealed class Screen(val route: String) {
 const val NAV_ANIMATION_DURATION = 450
 
 private fun tabIndex(route: String?): Int {
-
     val tab = getTabForRoute(route)
     return when (tab) {
         Screen.Dashboard.route -> 0
@@ -82,6 +97,17 @@ private fun tabIndex(route: String?): Int {
         Screen.Profiles.route -> 2
         Screen.Settings.route -> 3
         else -> 0
+    }
+}
+
+@Composable
+private fun TopLevelPage(content: @Composable () -> Unit) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .liquidGlassBackdrop()
+    ) {
+        content()
     }
 }
 
@@ -94,9 +120,12 @@ fun getTabForRoute(route: String?): String {
         route == Screen.Nodes.route -> Screen.Nodes.route
         route.startsWith("node_detail") -> Screen.Nodes.route
         route.startsWith("node_create") -> Screen.Nodes.route
+        route == Screen.NodeAdd.route -> Screen.Nodes.route
+        route == Screen.NodeProtocolSelect.route -> Screen.Nodes.route
 
         route == Screen.Profiles.route -> Screen.Profiles.route
         route.startsWith("profile_editor") -> Screen.Profiles.route
+        route.startsWith("custom_profile_node_") -> Screen.Profiles.route
 
         route == Screen.Settings.route -> Screen.Settings.route
         route == Screen.RoutingSettings.route -> Screen.Settings.route
@@ -227,11 +256,13 @@ fun AppNavigation(
             popEnterTransition = tabPopEnterTransition,
             popExitTransition = tabExitTransition
         ) {
-            DashboardScreen(
-                navController = navController,
-                viewModel = dashboardViewModel,
-                bottomContentPadding = dashboardBottomContentPadding
-            )
+            TopLevelPage {
+                DashboardScreen(
+                    navController = navController,
+                    viewModel = dashboardViewModel,
+                    bottomContentPadding = dashboardBottomContentPadding
+                )
+            }
         }
         composable(
             route = Screen.Nodes.route,
@@ -240,10 +271,12 @@ fun AppNavigation(
             popEnterTransition = tabPopEnterTransition,
             popExitTransition = tabExitTransition
         ) {
-            NodesScreen(
-                navController = navController,
-                bottomContentPadding = topLevelBottomContentPadding
-            )
+            TopLevelPage {
+                NodesScreen(
+                    navController = navController,
+                    bottomContentPadding = topLevelBottomContentPadding
+                )
+            }
         }
         composable(
             route = Screen.Profiles.route,
@@ -252,10 +285,12 @@ fun AppNavigation(
             popEnterTransition = tabPopEnterTransition,
             popExitTransition = tabExitTransition
         ) {
-            ProfilesScreen(
-                navController = navController,
-                bottomContentPadding = topLevelBottomContentPadding
-            )
+            TopLevelPage {
+                ProfilesScreen(
+                    navController = navController,
+                    bottomContentPadding = topLevelBottomContentPadding
+                )
+            }
         }
         composable(
             route = Screen.Settings.route,
@@ -264,10 +299,12 @@ fun AppNavigation(
             popEnterTransition = tabPopEnterTransition,
             popExitTransition = tabExitTransition
         ) {
-            SettingsScreen(
-                navController = navController,
-                bottomContentPadding = topLevelBottomContentPadding
-            )
+            TopLevelPage {
+                SettingsScreen(
+                    navController = navController,
+                    bottomContentPadding = topLevelBottomContentPadding
+                )
+            }
         }
 
         // Sub Screens
@@ -310,6 +347,73 @@ fun AppNavigation(
         ) { backStackEntry ->
             val protocol = backStackEntry.arguments?.getString("protocol") ?: "vmess"
             NodeDetailScreen(navController = navController, nodeId = "", createProtocol = protocol)
+        }
+        composable(
+            route = Screen.CustomProfileNodeCreate.route,
+            arguments = listOf(
+                androidx.navigation.navArgument("protocol") { type = androidx.navigation.NavType.StringType }
+            ),
+            enterTransition = enterTransition,
+            exitTransition = exitTransition,
+            popEnterTransition = popEnterTransition,
+            popExitTransition = popExitTransition
+        ) { backStackEntry ->
+            val protocol = backStackEntry.arguments?.getString("protocol") ?: "vmess"
+            val profilesEntry = remember(backStackEntry) {
+                navController.getBackStackEntry(Screen.Profiles.route)
+            }
+            val profilesViewModel = viewModel<ProfilesViewModel>(profilesEntry)
+            NodeDetailScreen(
+                navController = navController,
+                nodeId = "",
+                createProtocol = protocol,
+                onCreateDraft = { outbound ->
+                    profilesViewModel.addCustomDraftOutbound(outbound)
+                    navController.popBackStack(Screen.Profiles.route, false)
+                }
+            )
+        }
+        composable(
+            route = Screen.NodeAdd.route,
+            enterTransition = enterTransition,
+            exitTransition = exitTransition,
+            popEnterTransition = popEnterTransition,
+            popExitTransition = popExitTransition
+        ) { backStackEntry ->
+            val nodesEntry = remember(backStackEntry) {
+                navController.getBackStackEntry(Screen.Nodes.route)
+            }
+            AddNodeScreen(
+                navController = navController,
+                viewModel = viewModel<NodesViewModel>(nodesEntry)
+            )
+        }
+        composable(
+            route = Screen.NodeProtocolSelect.route,
+            enterTransition = enterTransition,
+            exitTransition = exitTransition,
+            popEnterTransition = popEnterTransition,
+            popExitTransition = popExitTransition
+        ) {
+            NodeProtocolSelectScreen(navController = navController)
+        }
+        composable(
+            route = Screen.CustomProfileNodeProtocolSelect.route,
+            enterTransition = enterTransition,
+            exitTransition = exitTransition,
+            popEnterTransition = popEnterTransition,
+            popExitTransition = popExitTransition
+        ) {
+            NodeProtocolSelectScreen(
+                navController = navController,
+                onProtocolSelected = { protocol ->
+                    navController.navigate(Screen.CustomProfileNodeCreate.createRoute(protocol)) {
+                        popUpTo(Screen.CustomProfileNodeProtocolSelect.route) {
+                            inclusive = true
+                        }
+                    }
+                }
+            )
         }
         composable(
             route = Screen.RoutingSettings.route,

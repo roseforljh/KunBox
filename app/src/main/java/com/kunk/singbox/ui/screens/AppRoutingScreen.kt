@@ -8,9 +8,6 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
-import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
@@ -34,6 +31,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import com.kunk.singbox.model.*
 import com.kunk.singbox.ui.components.ConfirmDialog
+import com.kunk.singbox.ui.components.FloatingPageLayout
 import com.kunk.singbox.ui.components.rememberLocalNetworkPermissionRequest
 import com.kunk.singbox.ui.theme.Neutral500
 import com.kunk.singbox.viewmodel.InstalledAppsViewModel
@@ -43,23 +41,16 @@ import com.kunk.singbox.viewmodel.SettingsViewModel
 import com.kunk.singbox.ui.theme.isLiquidGlassTheme
 import com.kunk.singbox.ui.theme.liquidGlassEmptyStatePanel
 import com.kunk.singbox.ui.theme.liquidGlassMutedContentColor
+import com.kunk.singbox.ui.theme.liquidGlassPanel
 import com.kunk.singbox.ui.theme.liquidGlassTopAppBarContainerColor
-import com.kunk.singbox.ui.theme.liquidGlassTopAppBarColors
-import com.kunk.singbox.ui.theme.liquidGlassIconButtonPanel
 import com.kunk.singbox.ui.theme.liquidGlassTabIndicatorColor
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.luminance
 import com.kunk.singbox.utils.LocalNetworkPermission
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
 @Composable
 private fun CapsuleSlidingIndicator(
     indicatorOffset: androidx.compose.ui.unit.Dp,
-    slotWidth: androidx.compose.ui.unit.Dp,
-    selectedBrush: Brush
+    slotWidth: androidx.compose.ui.unit.Dp
 ) {
     val indicatorShape = RoundedCornerShape(percent = 50)
     Box(
@@ -68,8 +59,11 @@ private fun CapsuleSlidingIndicator(
             .width(slotWidth)
             .fillMaxHeight()
             .padding(4.dp)
-            .clip(indicatorShape)
-            .background(brush = selectedBrush)
+            .liquidGlassPanel(
+                shape = indicatorShape,
+                selected = true,
+                shadowElevation = 4.dp
+            )
     )
 }
 
@@ -110,36 +104,15 @@ private fun LiquidGlassTabCapsule(
     tabs: List<String>,
     onTabSelected: (Int) -> Unit
 ) {
-    val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
     val capsuleShape = RoundedCornerShape(percent = 50)
     val itemCount = tabs.size
-    val capsuleBorderColor = if (isDark) Color.White.copy(alpha = 0.14f) else Color.White.copy(alpha = 0.62f)
-
-    val capsuleBrush = Brush.verticalGradient(
-        colors = listOf(
-            Color.White.copy(alpha = if (isDark) 0.14f else 0.48f),
-            MaterialTheme.colorScheme.surface.copy(alpha = if (isDark) 0.48f else 0.58f),
-            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = if (isDark) 0.24f else 0.34f)
-        )
-    )
-
-    val selectedBrush = Brush.verticalGradient(
-        colors = listOf(
-            Color.White.copy(alpha = if (isDark) 0.24f else 0.78f),
-            Color.White.copy(alpha = if (isDark) 0.16f else 0.48f),
-            Color.White.copy(alpha = if (isDark) 0.10f else 0.26f)
-        )
-    )
 
     BoxWithConstraints(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 8.dp)
             .height(48.dp)
-            .shadow(elevation = 8.dp, shape = capsuleShape, clip = false)
-            .clip(capsuleShape)
-            .background(brush = capsuleBrush)
-            .border(BorderStroke(1.dp, capsuleBorderColor), capsuleShape),
+            .liquidGlassPanel(shape = capsuleShape, shadowElevation = 10.dp),
         contentAlignment = Alignment.CenterStart
     ) {
         val slotWidth = maxWidth / itemCount.toFloat()
@@ -149,8 +122,7 @@ private fun LiquidGlassTabCapsule(
 
         CapsuleSlidingIndicator(
             indicatorOffset = indicatorOffset,
-            slotWidth = slotWidth,
-            selectedBrush = selectedBrush
+            slotWidth = slotWidth
         )
 
         CapsuleTabLabels(
@@ -372,141 +344,134 @@ fun AppRoutingScreen(
         )
     }
 
-    Scaffold(
-        contentWindowInsets = WindowInsets(0, 0, 0, 0),
-        containerColor = liquidGlassTopAppBarContainerColor(MaterialTheme.colorScheme.background),
-        topBar = {
-            Column {
-                TopAppBar(
-                    title = { Text(stringResource(R.string.app_rules_title), color = MaterialTheme.colorScheme.onBackground) },
-                    navigationIcon = {
-                        IconButton(
-                            modifier = Modifier.liquidGlassIconButtonPanel(),
-                            onClick = { navController.popBackStack() }
-                        ) {
-                            Icon(Icons.Rounded.ArrowBack, contentDescription = stringResource(R.string.common_back), tint = MaterialTheme.colorScheme.onBackground)
-                        }
-                    },
-                    actions = {
-                        IconButton(
-                            modifier = Modifier.liquidGlassIconButtonPanel(),
-                            onClick = {
-                                if (selectedTab == 0) showAddGroupDialog = true
-                                else showAddRuleDialog = true
-                            }
-                        ) {
-                            Icon(Icons.Rounded.Add, contentDescription = stringResource(R.string.common_add), tint = MaterialTheme.colorScheme.onBackground)
-                        }
-                    },
-                    colors = liquidGlassTopAppBarColors(defaultContainerColor = MaterialTheme.colorScheme.background)
-                )
-                if (useLiquidGlass) {
-                    LiquidGlassTabCapsule(
-                        selectedIndex = selectedTab,
-                        tabs = tabs,
-                        onTabSelected = { selectedTab = it }
-                    )
-                } else {
-                    TabRow(
-                        selectedTabIndex = selectedTab,
-                        containerColor = MaterialTheme.colorScheme.background,
-                        contentColor = MaterialTheme.colorScheme.onBackground,
-                        indicator = { tabPositions ->
-                            TabRowDefaults.Indicator(
-                                Modifier.tabIndicatorOffset(tabPositions[selectedTab]),
-                                color = liquidGlassTabIndicatorColor(MaterialTheme.colorScheme.primary)
-                            )
-                        },
-                        divider = {}
-                    ) {
-                        tabs.forEachIndexed { index, title ->
-                            Tab(
-                                selected = selectedTab == index,
-                                onClick = { selectedTab = index },
-                                text = {
-                                    AppRoutingTabLabel(selected = selectedTab == index, title = title)
-                                }
-                            )
-                        }
-                    }
+    FloatingPageLayout(
+        title = stringResource(R.string.app_rules_title),
+        onBack = { navController.popBackStack() },
+        actions = {
+            IconButton(
+                onClick = {
+                    if (selectedTab == 0) showAddGroupDialog = true
+                    else showAddRuleDialog = true
                 }
+            ) {
+                Icon(Icons.Rounded.Add, contentDescription = stringResource(R.string.common_add), tint = MaterialTheme.colorScheme.onBackground)
             }
         }
-    ) { padding ->
-        AnimatedContent(
-            targetState = selectedTab,
-            transitionSpec = {
-                val animDuration = 350
-                if (targetState > initialState) {
-                    (slideInHorizontally(
-                        initialOffsetX = { it / 4 },
-                        animationSpec = tween(animDuration)
-                    ) + fadeIn(animationSpec = tween(animDuration))) togetherWith
-                        (slideOutHorizontally(
-                            targetOffsetX = { -it / 4 },
+    ) { contentTopPadding ->
+        Scaffold(
+            contentWindowInsets = WindowInsets(0, 0, 0, 0),
+            containerColor = liquidGlassTopAppBarContainerColor(MaterialTheme.colorScheme.background)
+        ) { padding ->
+            AnimatedContent(
+                targetState = selectedTab,
+                transitionSpec = {
+                    val animDuration = 350
+                    if (targetState > initialState) {
+                        (slideInHorizontally(
+                            initialOffsetX = { it / 4 },
                             animationSpec = tween(animDuration)
-                        ) + fadeOut(animationSpec = tween(animDuration)))
-                } else {
-                    (slideInHorizontally(
-                        initialOffsetX = { -it / 4 },
-                        animationSpec = tween(animDuration)
-                    ) + fadeIn(animationSpec = tween(animDuration))) togetherWith
-                        (slideOutHorizontally(
-                            targetOffsetX = { it / 4 },
-                            animationSpec = tween(animDuration)
-                        ) + fadeOut(animationSpec = tween(animDuration)))
-                }
-            },
-            label = "app_routing_tab_content"
-        ) { tab ->
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding),
-                contentPadding = PaddingValues(
-                    start = 16.dp,
-                    top = 16.dp,
-                    end = 16.dp,
-                    bottom = 16.dp + WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
-                ),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                if (tab == 0) {
-                    if (settings.appGroups.isEmpty()) {
-                        item {
-                            EmptyState(Icons.Rounded.Folder, stringResource(R.string.app_rules_empty_groups), stringResource(R.string.app_rules_empty_groups_hint))
-                        }
+                        ) + fadeIn(animationSpec = tween(animDuration))) togetherWith
+                            (slideOutHorizontally(
+                                targetOffsetX = { -it / 4 },
+                                animationSpec = tween(animDuration)
+                            ) + fadeOut(animationSpec = tween(animDuration)))
                     } else {
-                        items(settings.appGroups) { group ->
-                            val mode = group.outboundMode ?: RuleSetOutboundMode.PROXY
-                            val outboundText = resolveOutboundText(mode, group.outboundValue, allNodes, profiles)
-                            AppGroupCard(
-                                group = group,
-                                outboundText = "${stringResource(mode.displayNameRes)} -> $outboundText",
-                                loadIcon = loadAppIcon,
-                                onClick = { editingGroup = group },
-                                onToggle = { toggleGroupWithPermissionCheck(group) },
-                                onDelete = { showDeleteGroupConfirm = group }
+                        (slideInHorizontally(
+                            initialOffsetX = { -it / 4 },
+                            animationSpec = tween(animDuration)
+                        ) + fadeIn(animationSpec = tween(animDuration))) togetherWith
+                            (slideOutHorizontally(
+                                targetOffsetX = { it / 4 },
+                                animationSpec = tween(animDuration)
+                            ) + fadeOut(animationSpec = tween(animDuration)))
+                    }
+                },
+                label = "app_routing_tab_content"
+            ) { tab ->
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(padding),
+                    contentPadding = PaddingValues(
+                        start = 16.dp,
+                        top = contentTopPadding + 16.dp,
+                        end = 16.dp,
+                        bottom = 16.dp + WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+                    ),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    item(key = "app_routing_tabs") {
+                        if (useLiquidGlass) {
+                            LiquidGlassTabCapsule(
+                                selectedIndex = selectedTab,
+                                tabs = tabs,
+                                onTabSelected = { selectedTab = it }
                             )
+                        } else {
+                            TabRow(
+                                selectedTabIndex = selectedTab,
+                                containerColor = MaterialTheme.colorScheme.background,
+                                contentColor = MaterialTheme.colorScheme.onBackground,
+                                indicator = { tabPositions ->
+                                    TabRowDefaults.Indicator(
+                                        Modifier.tabIndicatorOffset(tabPositions[selectedTab]),
+                                        color = liquidGlassTabIndicatorColor(MaterialTheme.colorScheme.primary)
+                                    )
+                                },
+                                divider = {}
+                            ) {
+                                tabs.forEachIndexed { index, title ->
+                                    Tab(
+                                        selected = selectedTab == index,
+                                        onClick = { selectedTab = index },
+                                        text = {
+                                            AppRoutingTabLabel(
+                                                selected = selectedTab == index,
+                                                title = title
+                                            )
+                                        }
+                                    )
+                                }
+                            }
                         }
                     }
-                } else {
-                    if (settings.appRules.isEmpty()) {
-                        item {
-                            EmptyState(Icons.Rounded.Apps, stringResource(R.string.app_rules_empty_individual), stringResource(R.string.app_rules_empty_individual_hint))
+                    if (tab == 0) {
+                        if (settings.appGroups.isEmpty()) {
+                            item {
+                                EmptyState(Icons.Rounded.Folder, stringResource(R.string.app_rules_empty_groups), stringResource(R.string.app_rules_empty_groups_hint))
+                            }
+                        } else {
+                            items(settings.appGroups) { group ->
+                                val mode = group.outboundMode ?: RuleSetOutboundMode.PROXY
+                                val outboundText = resolveOutboundText(mode, group.outboundValue, allNodes, profiles)
+                                AppGroupCard(
+                                    group = group,
+                                    outboundText = "${stringResource(mode.displayNameRes)} -> $outboundText",
+                                    loadIcon = loadAppIcon,
+                                    onClick = { editingGroup = group },
+                                    onToggle = { toggleGroupWithPermissionCheck(group) },
+                                    onDelete = { showDeleteGroupConfirm = group }
+                                )
+                            }
                         }
                     } else {
-                        items(settings.appRules) { rule ->
-                            val mode = rule.outboundMode ?: RuleSetOutboundMode.PROXY
-                            val outboundText = resolveOutboundText(mode, rule.outboundValue, allNodes, profiles)
-                            AppRuleItem(
-                                rule = rule,
-                                outboundText = "${stringResource(mode.displayNameRes)} -> $outboundText",
-                                loadIcon = loadAppIcon,
-                                onClick = { editingRule = rule },
-                                onToggle = { toggleRuleWithPermissionCheck(rule) },
-                                onDelete = { showDeleteRuleConfirm = rule }
-                            )
+                        if (settings.appRules.isEmpty()) {
+                            item {
+                                EmptyState(Icons.Rounded.Apps, stringResource(R.string.app_rules_empty_individual), stringResource(R.string.app_rules_empty_individual_hint))
+                            }
+                        } else {
+                            items(settings.appRules) { rule ->
+                                val mode = rule.outboundMode ?: RuleSetOutboundMode.PROXY
+                                val outboundText = resolveOutboundText(mode, rule.outboundValue, allNodes, profiles)
+                                AppRuleItem(
+                                    rule = rule,
+                                    outboundText = "${stringResource(mode.displayNameRes)} -> $outboundText",
+                                    loadIcon = loadAppIcon,
+                                    onClick = { editingRule = rule },
+                                    onToggle = { toggleRuleWithPermissionCheck(rule) },
+                                    onDelete = { showDeleteRuleConfirm = rule }
+                                )
+                            }
                         }
                     }
                 }

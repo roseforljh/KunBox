@@ -10,16 +10,10 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.ArrowBack
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
 import androidx.compose.ui.res.stringResource
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -37,6 +31,7 @@ import com.kunk.singbox.model.TunStack
 import com.kunk.singbox.model.VpnAppMode
 import com.kunk.singbox.model.VpnRouteMode
 import com.kunk.singbox.ui.components.AppMultiSelectDialog
+import com.kunk.singbox.ui.components.FloatingPageLayout
 import com.kunk.singbox.ui.components.InputDialog
 import com.kunk.singbox.ui.components.SettingItem
 import com.kunk.singbox.ui.components.SettingSwitchItem
@@ -44,9 +39,7 @@ import com.kunk.singbox.ui.components.SingleSelectDialog
 import com.kunk.singbox.ui.components.StandardCard
 import com.kunk.singbox.repository.InstalledAppsRepository
 import com.kunk.singbox.viewmodel.SettingsViewModel
-import com.kunk.singbox.ui.theme.liquidGlassIconButtonPanel
 import com.kunk.singbox.ui.theme.liquidGlassTopAppBarContainerColor
-import com.kunk.singbox.ui.theme.liquidGlassTopAppBarColors
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Suppress("LongMethod", "CognitiveComplexMethod", "CyclomaticComplexMethod")
@@ -205,157 +198,144 @@ fun TunSettingsScreen(
         )
     }
 
-    Scaffold(
-        contentWindowInsets = WindowInsets(0, 0, 0, 0),
-        containerColor = liquidGlassTopAppBarContainerColor(MaterialTheme.colorScheme.background),
-        topBar = {
-            TopAppBar(
-                title = {
-                    Text(
-                        stringResource(R.string.tun_settings_title),
-                        color = MaterialTheme.colorScheme.onBackground
+    FloatingPageLayout(
+        title = stringResource(R.string.tun_settings_title),
+        onBack = { navController.popBackStack() }
+    ) { contentTopPadding ->
+        Scaffold(
+            contentWindowInsets = WindowInsets(0, 0, 0, 0),
+            containerColor = liquidGlassTopAppBarContainerColor(MaterialTheme.colorScheme.background)
+        ) { padding ->
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding)
+                    .verticalScroll(scrollState)
+                    .padding(
+                        start = 16.dp,
+                        top = contentTopPadding + 16.dp,
+                        end = 16.dp,
+                        bottom = 16.dp
                     )
-                },
-                navigationIcon = {
-                    IconButton(
-                        modifier = Modifier.liquidGlassIconButtonPanel(),
-                        onClick = { navController.popBackStack() }
-                    ) {
-                        Icon(
-                            Icons.Rounded.ArrowBack,
-                            contentDescription = stringResource(R.string.common_back),
-                            tint = MaterialTheme.colorScheme.onBackground
-                        )
-                    }
-                },
-                colors = liquidGlassTopAppBarColors(defaultContainerColor = MaterialTheme.colorScheme.background)
-            )
-        }
-    ) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .verticalScroll(scrollState)
-                .padding(16.dp)
-                .navigationBarsPadding()
-        ) {
-            StandardCard {
-                SettingSwitchItem(
-                    title = stringResource(R.string.tun_settings_enable),
-                    subtitle = stringResource(R.string.tun_settings_enable_subtitle),
-                    checked = settings.tunEnabled,
-                    onCheckedChange = { settingsViewModel.setTunEnabled(it) }
-                )
-            }
+                    .navigationBarsPadding()
+            ) {
+                StandardCard {
+                    SettingSwitchItem(
+                        title = stringResource(R.string.tun_settings_enable),
+                        subtitle = stringResource(R.string.tun_settings_enable_subtitle),
+                        checked = settings.tunEnabled,
+                        onCheckedChange = { settingsViewModel.setTunEnabled(it) }
+                    )
+                }
 
-            Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(16.dp))
 
-            StandardCard {
-                SettingItem(
-                    title = stringResource(R.string.tun_settings_stack),
-                    value = stringResource(settings.tunStack.displayNameRes),
-                    onClick = { showStackDialog = true }
-                )
-                SettingItem(
-                    title = stringResource(R.string.tun_settings_ip_version_mode),
-                    value = stringResource(settings.ipVersionMode.displayNameRes),
-                    onClick = { showIpVersionDialog = true }
-                )
-                SettingSwitchItem(
-                    title = stringResource(R.string.tun_settings_mtu_auto),
-                    subtitle = stringResource(R.string.tun_settings_mtu_auto_subtitle),
-                    checked = settings.tunMtuAuto,
-                    onCheckedChange = { settingsViewModel.setTunMtuAuto(it) }
-                )
-                SettingItem(
-                    title = stringResource(R.string.tun_settings_mtu),
-                    value = if (settings.tunMtuAuto) {
-                        stringResource(R.string.common_auto)
-                    } else {
-                        settings.tunMtu.toString()
-                    },
-                    enabled = !settings.tunMtuAuto,
-                    onClick = { showMtuDialog = true }
-                )
-            }
+                StandardCard {
+                    SettingItem(
+                        title = stringResource(R.string.tun_settings_stack),
+                        value = stringResource(settings.tunStack.displayNameRes),
+                        onClick = { showStackDialog = true }
+                    )
+                    SettingItem(
+                        title = stringResource(R.string.tun_settings_ip_version_mode),
+                        value = stringResource(settings.ipVersionMode.displayNameRes),
+                        onClick = { showIpVersionDialog = true }
+                    )
+                    SettingSwitchItem(
+                        title = stringResource(R.string.tun_settings_mtu_auto),
+                        subtitle = stringResource(R.string.tun_settings_mtu_auto_subtitle),
+                        checked = settings.tunMtuAuto,
+                        onCheckedChange = { settingsViewModel.setTunMtuAuto(it) }
+                    )
+                    SettingItem(
+                        title = stringResource(R.string.tun_settings_mtu),
+                        value = if (settings.tunMtuAuto) {
+                            stringResource(R.string.common_auto)
+                        } else {
+                            settings.tunMtu.toString()
+                        },
+                        enabled = !settings.tunMtuAuto,
+                        onClick = { showMtuDialog = true }
+                    )
+                }
 
-            Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(16.dp))
 
-            StandardCard {
-                SettingSwitchItem(
-                    title = stringResource(R.string.tun_settings_auto_route),
-                    subtitle = stringResource(R.string.tun_settings_auto_route_subtitle),
-                    checked = settings.autoRoute,
-                    onCheckedChange = { settingsViewModel.setAutoRoute(it) }
-                )
-                SettingSwitchItem(
-                    title = stringResource(R.string.tun_settings_strict_route),
-                    subtitle = stringResource(R.string.tun_settings_strict_route_subtitle),
-                    checked = settings.strictRoute,
-                    onCheckedChange = { settingsViewModel.setStrictRoute(it) }
-                )
-            }
+                StandardCard {
+                    SettingSwitchItem(
+                        title = stringResource(R.string.tun_settings_auto_route),
+                        subtitle = stringResource(R.string.tun_settings_auto_route_subtitle),
+                        checked = settings.autoRoute,
+                        onCheckedChange = { settingsViewModel.setAutoRoute(it) }
+                    )
+                    SettingSwitchItem(
+                        title = stringResource(R.string.tun_settings_strict_route),
+                        subtitle = stringResource(R.string.tun_settings_strict_route_subtitle),
+                        checked = settings.strictRoute,
+                        onCheckedChange = { settingsViewModel.setStrictRoute(it) }
+                    )
+                }
 
-            Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(16.dp))
 
-            val cidrCount = settings.vpnRouteIncludeCidrs
-                .split("\n", "\r", ",", ";", " ", "\t")
-                .map { it.trim() }
-                .count { it.isNotEmpty() }
-            val allowCount = settings.vpnAllowlist
-                .split("\n", "\r", ",", ";", " ", "\t")
-                .map { it.trim() }
-                .count { it.isNotEmpty() && (installedPackageNames.isEmpty() || it in installedPackageNames) }
-            val blockCount = settings.vpnBlocklist
-                .split("\n", "\r", ",", ";", " ", "\t")
-                .map { it.trim() }
-                .count { it.isNotEmpty() && (installedPackageNames.isEmpty() || it in installedPackageNames) }
+                val cidrCount = settings.vpnRouteIncludeCidrs
+                    .split("\n", "\r", ",", ";", " ", "\t")
+                    .map { it.trim() }
+                    .count { it.isNotEmpty() }
+                val allowCount = settings.vpnAllowlist
+                    .split("\n", "\r", ",", ";", " ", "\t")
+                    .map { it.trim() }
+                    .count { it.isNotEmpty() && (installedPackageNames.isEmpty() || it in installedPackageNames) }
+                val blockCount = settings.vpnBlocklist
+                    .split("\n", "\r", ",", ";", " ", "\t")
+                    .map { it.trim() }
+                    .count { it.isNotEmpty() && (installedPackageNames.isEmpty() || it in installedPackageNames) }
 
-            StandardCard {
-                SettingItem(
-                    title = stringResource(R.string.tun_settings_route_mode),
-                    value = stringResource(settings.vpnRouteMode.displayNameRes),
-                    onClick = { showRouteModeDialog = true }
-                )
-                SettingItem(
-                    title = stringResource(R.string.tun_settings_route_cidrs),
-                    value = if (settings.vpnRouteMode == VpnRouteMode.CUSTOM) {
-                        stringResource(R.string.tun_settings_route_cidrs_configured, cidrCount)
-                    } else {
-                        "-"
-                    },
-                    onClick = { if (settings.vpnRouteMode == VpnRouteMode.CUSTOM) showRouteCidrsDialog = true }
-                )
-                SettingItem(
-                    title = stringResource(R.string.tun_settings_app_mode),
-                    value = stringResource(settings.vpnAppMode.displayNameRes),
-                    onClick = { showAppModeDialog = true }
-                )
-                SettingSwitchItem(
-                    title = stringResource(R.string.tun_settings_follow_new_apps),
-                    subtitle = stringResource(R.string.tun_settings_follow_new_apps_subtitle),
-                    checked = settings.autoIncludeNewAppsInPerAppRules,
-                    onCheckedChange = settingsViewModel::setAutoIncludeNewAppsInPerAppRules
-                )
-                SettingItem(
-                    title = stringResource(R.string.tun_settings_allowlist),
-                    value = if (settings.vpnAppMode == VpnAppMode.ALLOWLIST) {
-                        stringResource(R.string.tun_settings_allowlist_configured, allowCount)
-                    } else {
-                        "-"
-                    },
-                    onClick = { if (settings.vpnAppMode == VpnAppMode.ALLOWLIST) showAllowlistDialog = true }
-                )
-                SettingItem(
-                    title = stringResource(R.string.tun_settings_blocklist),
-                    value = if (settings.vpnAppMode == VpnAppMode.BLOCKLIST) {
-                        stringResource(R.string.tun_settings_blocklist_configured, blockCount)
-                    } else {
-                        "-"
-                    },
-                    onClick = { if (settings.vpnAppMode == VpnAppMode.BLOCKLIST) showBlocklistDialog = true }
-                )
+                StandardCard {
+                    SettingItem(
+                        title = stringResource(R.string.tun_settings_route_mode),
+                        value = stringResource(settings.vpnRouteMode.displayNameRes),
+                        onClick = { showRouteModeDialog = true }
+                    )
+                    SettingItem(
+                        title = stringResource(R.string.tun_settings_route_cidrs),
+                        value = if (settings.vpnRouteMode == VpnRouteMode.CUSTOM) {
+                            stringResource(R.string.tun_settings_route_cidrs_configured, cidrCount)
+                        } else {
+                            "-"
+                        },
+                        onClick = { if (settings.vpnRouteMode == VpnRouteMode.CUSTOM) showRouteCidrsDialog = true }
+                    )
+                    SettingItem(
+                        title = stringResource(R.string.tun_settings_app_mode),
+                        value = stringResource(settings.vpnAppMode.displayNameRes),
+                        onClick = { showAppModeDialog = true }
+                    )
+                    SettingSwitchItem(
+                        title = stringResource(R.string.tun_settings_follow_new_apps),
+                        subtitle = stringResource(R.string.tun_settings_follow_new_apps_subtitle),
+                        checked = settings.autoIncludeNewAppsInPerAppRules,
+                        onCheckedChange = settingsViewModel::setAutoIncludeNewAppsInPerAppRules
+                    )
+                    SettingItem(
+                        title = stringResource(R.string.tun_settings_allowlist),
+                        value = if (settings.vpnAppMode == VpnAppMode.ALLOWLIST) {
+                            stringResource(R.string.tun_settings_allowlist_configured, allowCount)
+                        } else {
+                            "-"
+                        },
+                        onClick = { if (settings.vpnAppMode == VpnAppMode.ALLOWLIST) showAllowlistDialog = true }
+                    )
+                    SettingItem(
+                        title = stringResource(R.string.tun_settings_blocklist),
+                        value = if (settings.vpnAppMode == VpnAppMode.BLOCKLIST) {
+                            stringResource(R.string.tun_settings_blocklist_configured, blockCount)
+                        } else {
+                            "-"
+                        },
+                        onClick = { if (settings.vpnAppMode == VpnAppMode.BLOCKLIST) showBlocklistDialog = true }
+                    )
+                }
             }
         }
     }

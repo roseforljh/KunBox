@@ -18,6 +18,16 @@ internal fun resolveNotificationNodeLabel(
         ?: selectedNodeName?.takeIf { it.isNotBlank() }
 }
 
+internal fun resolveConfirmedProxyRuntimeLabel(
+    kernelResolvedTag: String?,
+    preferredTag: String?,
+    currentRuntimeTag: String?
+): String? {
+    return sequenceOf(kernelResolvedTag, preferredTag, currentRuntimeTag)
+        .filterNotNull()
+        .firstOrNull { it.isNotBlank() && !it.endsWith("#AUTO", ignoreCase = true) }
+}
+
 internal fun resolveStartupProxyTag(configPath: String, gson: Gson, explicitTag: String? = null): String? {
     val config = gson.fromJson(File(configPath).readText(), SingBoxConfig::class.java) ?: return null
     return resolveStartupProxyTag(config, explicitTag)

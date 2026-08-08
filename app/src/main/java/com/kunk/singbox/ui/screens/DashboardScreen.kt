@@ -63,7 +63,6 @@ import com.kunk.singbox.ui.components.ConfirmDialog
 import com.kunk.singbox.ui.components.InfoCard
 import com.kunk.singbox.ui.components.StandardCard
 import com.kunk.singbox.ui.components.ModeChip
-import com.kunk.singbox.ui.components.NodeSelectorDialog
 import com.kunk.singbox.ui.components.SingleSelectDialog
 import com.kunk.singbox.ui.components.StatusChip
 import com.kunk.singbox.ui.components.AppNotificationManager
@@ -113,6 +112,7 @@ fun DashboardScreen(
     val runtimeNodeLabel by SingBoxRemote.activeLabel.collectAsStateWithLifecycle()
 
     val nodesForSelector by nodesViewModel.nodes.collectAsStateWithLifecycle()
+    val rawNodesForSelector by nodesViewModel.rawNodes.collectAsStateWithLifecycle()
     val testingNodeIds by nodesViewModel.testingNodeIds.collectAsStateWithLifecycle()
 
     val activeProfileName by remember {
@@ -250,16 +250,18 @@ fun DashboardScreen(
     }
 
     if (showNodeDialog) {
-        NodeSelectorDialog(
+        NodePickerPage(
             title = stringResource(R.string.dashboard_select_node),
-            nodes = nodesForSelector,
+            profiles = profiles,
+            allNodes = rawNodesForSelector,
+            displayedNodes = nodesForSelector,
             selectedNodeId = activeNodeId,
             isAutoSelectionEnabled = isAutoSelectionEnabled,
             autoSelectionSubtitle = autoSelectionSubtitle,
             testingNodeIds = testingNodeIds,
             onSelectAuto = viewModel::enableAutoSelection,
-            onSelect = { nodeId ->
-                viewModel.setActiveNode(nodeId)
+            onSelectNode = { node ->
+                viewModel.setActiveNode(node.id)
             },
             onDismiss = { showNodeDialog = false }
         )
@@ -500,6 +502,7 @@ fun DashboardScreen(
                         null
                     }
                 )
+                Spacer(modifier = Modifier.height(16.dp))
 
                 // Quick Actions Card
                 StandardCard(modifier = Modifier.fillMaxWidth(), border = null) {

@@ -51,6 +51,37 @@ class NotificationNodeLabelTest {
     }
 
     @Test
+    fun confirmedProxyRuntimeLabelTrustsKernelTagWithoutRepositoryMapping() {
+        assertEquals(
+            "香港节点",
+            resolveConfirmedProxyRuntimeLabel(
+                kernelResolvedTag = "香港节点",
+                preferredTag = "香港节点",
+                currentRuntimeTag = "日本节点"
+            )
+        )
+    }
+
+    @Test
+    fun confirmedProxyRuntimeLabelKeepsConcreteStateForUnresolvedAutoGroup() {
+        assertEquals(
+            "现有节点",
+            resolveConfirmedProxyRuntimeLabel(
+                kernelResolvedTag = null,
+                preferredTag = "P:配置#AUTO",
+                currentRuntimeTag = "现有节点"
+            )
+        )
+        assertNull(
+            resolveConfirmedProxyRuntimeLabel(
+                kernelResolvedTag = null,
+                preferredTag = "P:配置#AUTO",
+                currentRuntimeTag = null
+            )
+        )
+    }
+
+    @Test
     fun resolveStartupProxyTagPrefersExplicitThenDefaultThenFirstOutbound() {
         val proxy = Outbound(type = "selector", tag = "PROXY", outbounds = listOf("node-a"))
 

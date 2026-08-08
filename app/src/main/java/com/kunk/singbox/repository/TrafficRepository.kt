@@ -223,6 +223,40 @@ internal class TrafficSnapshotFileStore(
         }
     }
 
+    /** 在文件锁内合并增量，避免主进程测速与 VPN 进程连接统计互相覆盖。 */
+    fun mergeDeltas(
+        deltas: TrafficPersistenceSnapshot,
+        clearCutoffGeneration: Long
+    ): TrafficPersistenceSnapshot? = withFileLock {
+        val effectiveCutoff = persistCutoffLocked(clearCutoffGeneration)
+        if (!canCommitTrafficSnapshot(deltas.generation, effectiveCutoff)) {
+            return@withFileLock null
+        }
+
+        val stored = readSnapshotLocked()
+            ?.takeIf { it.generation >= effectiveCutoff }
+            ?: TrafficPersistenceSnapshot(
+                generation = effectiveCutoff,
+                traffic = emptyMap(),
+                daily = emptyMap(),
+                monthKey = deltas.monthKey
+            )
+        if (stored.generation > deltas.generation) return@withFileLock null
+
+        val merged = TrafficPersistenceSnapshot(
+            generation = maxOf(stored.generation, deltas.generation),
+            traffic = mergeNodeStats(
+                base = stored.traffic.takeIf { stored.monthKey == deltas.monthKey }.orEmpty(),
+                deltas = deltas.traffic
+            ),
+            daily = mergeDailyStats(stored.daily, deltas.daily),
+            monthKey = deltas.monthKey
+        )
+        writeSnapshotLocked(merged)
+        deleteLegacyFilesLocked()
+        merged
+    }
+
     fun clear(
         minimumGeneration: Long,
         monthKey: String,
@@ -258,6 +292,45 @@ internal class TrafficSnapshotFileStore(
             traffic = readLegacyStatsLocked(),
             daily = readLegacyDailyLocked()
         )
+    }
+
+    private fun mergeNodeStats(
+        base: Map<String, NodeTrafficStats>,
+        deltas: Map<String, NodeTrafficStats>
+    ): Map<String, NodeTrafficStats> {
+        val merged = base.mapValuesTo(mutableMapOf()) { (_, stats) -> stats.copy() }
+        deltas.forEach { (nodeId, delta) ->
+            val target = merged.getOrPut(nodeId) { NodeTrafficStats(nodeId = nodeId) }
+            target.upload = addTrafficValue(target.upload, delta.upload)
+            target.download = addTrafficValue(target.download, delta.download)
+            target.lastUpdated = maxOf(target.lastUpdated, delta.lastUpdated)
+            if (!delta.nodeName.isNullOrBlank()) target.nodeName = delta.nodeName
+        }
+        return merged
+    }
+
+    private fun mergeDailyStats(
+        base: Map<String, DailyTrafficRecord>,
+        deltas: Map<String, DailyTrafficRecord>
+    ): Map<String, DailyTrafficRecord> {
+        val merged = base.mapValuesTo(mutableMapOf()) { (dateKey, record) ->
+            DailyTrafficRecord(dateKey).apply {
+                nodeStats.putAll(record.nodeStats.mapValues { (_, stats) -> stats.copy() })
+            }
+        }
+        deltas.forEach { (dateKey, deltaRecord) ->
+            val target = merged.getOrPut(dateKey) { DailyTrafficRecord(dateKey) }
+            val combined = mergeNodeStats(target.nodeStats, deltaRecord.nodeStats)
+            target.nodeStats.clear()
+            target.nodeStats.putAll(combined)
+        }
+        return merged
+    }
+
+    private fun addTrafficValue(current: Long, delta: Long): Long {
+        val safeCurrent = current.coerceAtLeast(0L)
+        val safeDelta = delta.coerceAtLeast(0L)
+        return if (Long.MAX_VALUE - safeCurrent < safeDelta) Long.MAX_VALUE else safeCurrent + safeDelta
     }
 
     private fun readSnapshotLocked(): TrafficPersistenceSnapshot? {
@@ -407,6 +480,9 @@ private fun moveTempFileWithNio(tempFile: File, targetFile: File, atomic: Boolea
 class TrafficRepository private constructor(private val context: Context) {
 
     companion object {
+        const val UNATTRIBUTED_NODE_ID = "__unattributed__"
+        const val BACKGROUND_PROBE_NODE_ID = "__background_probe__"
+        const val HEALTH_CHECK_NODE_ID = "__health_check__"
         private const val TAG = "TrafficRepository"
         private const val SAVE_DELAY_MS = 30_000L
 
@@ -433,6 +509,8 @@ class TrafficRepository private constructor(private val context: Context) {
     private val statsLock = Any()
     private val trafficMap = mutableMapOf<String, NodeTrafficStats>()
     private val dailyRecords = mutableMapOf<String, DailyTrafficRecord>()
+    private val pendingTrafficDeltas = mutableMapOf<String, NodeTrafficStats>()
+    private val pendingDailyDeltas = mutableMapOf<String, DailyTrafficRecord>()
     private val snapshotStore = TrafficSnapshotFileStore(context.filesDir)
     private var lastKnownClearTimestamp = 0L
     private var lastKnownMonthKey = getCurrentMonthKey()
@@ -509,56 +587,130 @@ class TrafficRepository private constructor(private val context: Context) {
         saveScheduler.flush()
     }
 
+    @Suppress("LongMethod")
     private fun persistCurrentSnapshot(): Boolean {
         val currentClearTimestamp = VpnStateStore.getTrafficClearTimestamp()
-        val snapshot = synchronized(statsLock) {
+        val deltas = synchronized(statsLock) {
             checkCrossProcessClearLocked(currentClearTimestamp)
             checkMonthChangedLocked(getCurrentMonthKey())
+            if (pendingTrafficDeltas.isEmpty() && pendingDailyDeltas.isEmpty()) {
+                return true
+            }
             TrafficPersistenceSnapshot(
                 generation = lastKnownClearTimestamp,
-                traffic = trafficMap.mapValues { it.value.snapshot() },
-                daily = dailyRecords.mapValues { it.value.snapshot() },
+                traffic = pendingTrafficDeltas.mapValues { it.value.snapshot() },
+                daily = pendingDailyDeltas.mapValues { it.value.snapshot() },
                 monthKey = getCurrentMonthKey()
-            )
+            ).also {
+                pendingTrafficDeltas.clear()
+                pendingDailyDeltas.clear()
+            }
         }
-        return try {
-            snapshotStore.save(
-                snapshot = snapshot,
+
+        val merged = try {
+            snapshotStore.mergeDeltas(
+                deltas = deltas,
                 clearCutoffGeneration = VpnStateStore.getTrafficClearTimestamp()
             )
         } catch (e: Exception) {
             Log.e(TAG, "Failed to save traffic stats", e)
-            false
+            null
         }
+        if (merged == null) {
+            val latestClearTimestamp = VpnStateStore.getTrafficClearTimestamp()
+            synchronized(statsLock) {
+                if (deltas.generation >= latestClearTimestamp) {
+                    restorePendingDeltasLocked(deltas)
+                } else {
+                    checkCrossProcessClearLocked(latestClearTimestamp)
+                }
+            }
+            return deltas.generation < latestClearTimestamp
+        }
+
+        synchronized(statsLock) {
+            if (lastKnownClearTimestamp != deltas.generation ||
+                VpnStateStore.getTrafficClearTimestamp() > deltas.generation
+            ) {
+                return@synchronized
+            }
+            trafficMap.clear()
+            trafficMap.putAll(merged.traffic.mapValues { (_, stats) -> stats.snapshot() })
+            pendingTrafficDeltas.forEach { (nodeId, delta) ->
+                applyNodeTrafficDelta(trafficMap, nodeId, delta)
+            }
+            dailyRecords.clear()
+            dailyRecords.putAll(
+                removeExpiredDailyRecords(merged.daily).mapValues { (_, record) -> record.snapshot() }
+            )
+            pendingDailyDeltas.forEach { (dateKey, record) ->
+                record.nodeStats.forEach { (nodeId, delta) ->
+                    applyDailyTrafficDelta(dailyRecords, dateKey, nodeId, delta)
+                }
+            }
+            lastKnownMonthKey = merged.monthKey ?: getCurrentMonthKey()
+        }
+        return true
     }
 
     fun addTraffic(nodeId: String, uploadDiff: Long, downloadDiff: Long, nodeName: String? = null) {
         if (uploadDiff <= 0 && downloadDiff <= 0) return
         val currentClearTimestamp = VpnStateStore.getTrafficClearTimestamp()
+        val upload = uploadDiff.coerceAtLeast(0L)
+        val download = downloadDiff.coerceAtLeast(0L)
+        val now = System.currentTimeMillis()
 
         synchronized(statsLock) {
             checkCrossProcessClearLocked(currentClearTimestamp)
             checkMonthChangedLocked(getCurrentMonthKey())
 
-            val stats = trafficMap.getOrPut(nodeId) { NodeTrafficStats(nodeId) }
-            stats.upload += uploadDiff
-            stats.download += downloadDiff
-            stats.lastUpdated = System.currentTimeMillis()
-            if (!nodeName.isNullOrBlank()) {
-                stats.nodeName = nodeName
-            }
-
             val todayKey = getTodayKey()
-            val dailyRecord = dailyRecords.getOrPut(todayKey) { DailyTrafficRecord(todayKey) }
-            val dailyStats = dailyRecord.nodeStats.getOrPut(nodeId) { NodeTrafficStats(nodeId) }
-            dailyStats.upload += uploadDiff
-            dailyStats.download += downloadDiff
-            dailyStats.lastUpdated = System.currentTimeMillis()
-            if (!nodeName.isNullOrBlank()) {
-                dailyStats.nodeName = nodeName
-            }
+            val delta = NodeTrafficStats(nodeId, upload, download, now, nodeName)
+            applyNodeTrafficDelta(trafficMap, nodeId, delta)
+            applyDailyTrafficDelta(dailyRecords, todayKey, nodeId, delta)
+            applyNodeTrafficDelta(pendingTrafficDeltas, nodeId, delta)
+            applyDailyTrafficDelta(pendingDailyDeltas, todayKey, nodeId, delta)
         }
         saveScheduler.requestSave()
+    }
+
+    private fun applyNodeTrafficDelta(
+        target: MutableMap<String, NodeTrafficStats>,
+        nodeId: String,
+        delta: NodeTrafficStats
+    ) {
+        val stats = target.getOrPut(nodeId) { NodeTrafficStats(nodeId) }
+        stats.upload = addTrafficValue(stats.upload, delta.upload)
+        stats.download = addTrafficValue(stats.download, delta.download)
+        stats.lastUpdated = maxOf(stats.lastUpdated, delta.lastUpdated)
+        if (!delta.nodeName.isNullOrBlank()) stats.nodeName = delta.nodeName
+    }
+
+    private fun applyDailyTrafficDelta(
+        target: MutableMap<String, DailyTrafficRecord>,
+        dateKey: String,
+        nodeId: String,
+        delta: NodeTrafficStats
+    ) {
+        val record = target.getOrPut(dateKey) { DailyTrafficRecord(dateKey) }
+        applyNodeTrafficDelta(record.nodeStats, nodeId, delta)
+    }
+
+    private fun restorePendingDeltasLocked(deltas: TrafficPersistenceSnapshot) {
+        deltas.traffic.forEach { (nodeId, delta) ->
+            applyNodeTrafficDelta(pendingTrafficDeltas, nodeId, delta)
+        }
+        deltas.daily.forEach { (dateKey, record) ->
+            record.nodeStats.forEach { (nodeId, delta) ->
+                applyDailyTrafficDelta(pendingDailyDeltas, dateKey, nodeId, delta)
+            }
+        }
+    }
+
+    private fun addTrafficValue(current: Long, delta: Long): Long {
+        val safeCurrent = current.coerceAtLeast(0L)
+        val safeDelta = delta.coerceAtLeast(0L)
+        return if (Long.MAX_VALUE - safeCurrent < safeDelta) Long.MAX_VALUE else safeCurrent + safeDelta
     }
 
     private fun checkCrossProcessClearLocked(currentClearTs: Long) {
@@ -566,6 +718,8 @@ class TrafficRepository private constructor(private val context: Context) {
             Log.i(TAG, "Cross-process clear detected, clearing local data")
             trafficMap.clear()
             dailyRecords.clear()
+            pendingTrafficDeltas.clear()
+            pendingDailyDeltas.clear()
             lastKnownClearTimestamp = currentClearTs
         }
     }
@@ -574,6 +728,7 @@ class TrafficRepository private constructor(private val context: Context) {
         if (currentMonthKey == lastKnownMonthKey) return
         Log.i(TAG, "Month changed ($lastKnownMonthKey -> $currentMonthKey), resetting monthly traffic")
         trafficMap.clear()
+        pendingTrafficDeltas.clear()
         lastKnownMonthKey = currentMonthKey
     }
 
@@ -763,10 +918,16 @@ class TrafficRepository private constructor(private val context: Context) {
     }
 
     fun reloadFromDisk() {
+        if (!saveScheduler.flush()) {
+            Log.e(TAG, "Reload skipped because pending traffic could not be persisted")
+            return
+        }
         saveScheduler.cancel()
         synchronized(statsLock) {
             trafficMap.clear()
             dailyRecords.clear()
+            pendingTrafficDeltas.clear()
+            pendingDailyDeltas.clear()
             loadSnapshotLocked()
             Log.i(TAG, "Reloaded traffic stats from disk: ${trafficMap.size} nodes")
         }
@@ -793,13 +954,27 @@ class TrafficRepository private constructor(private val context: Context) {
             }
             trafficMap.clear()
             dailyRecords.clear()
+            pendingTrafficDeltas.clear()
+            pendingDailyDeltas.clear()
             lastKnownClearTimestamp = appliedGeneration
             lastKnownMonthKey = getCurrentMonthKey()
             appliedGeneration
         }
         clearFailure?.let { error ->
             Log.e(TAG, "Failed to persist cleared traffic snapshot", error)
-            saveScheduler.requestSave()
+            runCatching {
+                snapshotStore.save(
+                    snapshot = TrafficPersistenceSnapshot(
+                        generation = clearGeneration,
+                        traffic = emptyMap(),
+                        daily = emptyMap(),
+                        monthKey = getCurrentMonthKey()
+                    ),
+                    clearCutoffGeneration = clearGeneration
+                )
+            }.onFailure { retryError ->
+                Log.e(TAG, "Failed to retry cleared traffic snapshot", retryError)
+            }
         }
         Log.i(TAG, "All traffic stats cleared, generation=$clearGeneration")
     }

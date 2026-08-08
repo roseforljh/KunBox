@@ -23,17 +23,13 @@ import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -44,7 +40,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
 import androidx.compose.ui.res.stringResource
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -55,6 +50,7 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.zIndex
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -64,11 +60,11 @@ import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.navigation.NavController
+import androidx.navigation.compose.currentBackStackEntryAsState
 import com.journeyapps.barcodescanner.ScanContract
 import com.journeyapps.barcodescanner.ScanOptions
 import com.kunk.singbox.model.NodeUi
@@ -77,6 +73,7 @@ import com.kunk.singbox.model.UpdateStatus
 import com.kunk.singbox.ui.scanner.QrScannerActivity
 import com.kunk.singbox.ui.components.AppNotificationManager
 import com.kunk.singbox.ui.components.ConfirmDialog
+import com.kunk.singbox.ui.components.FloatingMainPageLayout
 import com.kunk.singbox.ui.components.InputDialog
 import com.kunk.singbox.ui.components.ProfileCard
 import com.kunk.singbox.ui.navigation.Screen
@@ -88,7 +85,6 @@ import com.kunk.singbox.ui.theme.liquidGlassScreenContainerColor
 import com.kunk.singbox.utils.DeepLinkHandler
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -163,13 +159,19 @@ fun ProfilesScreen(
     val allNodes by viewModel.allNodes.collectAsStateWithLifecycle()
     val activeProfileId by viewModel.activeProfileId.collectAsStateWithLifecycle()
     val importState by viewModel.importState.collectAsStateWithLifecycle()
+    val customDraftOutbounds by viewModel.customDraftOutbounds.collectAsStateWithLifecycle()
+    val currentBackStackEntry by navController.currentBackStackEntryAsState()
+    val currentRoute = currentBackStackEntry?.destination?.route
 
     var showSearchDialog by remember { mutableStateOf(false) }
     var showImportSelection by remember { mutableStateOf(false) }
     var showSubscriptionInput by remember { mutableStateOf(false) }
     var showClipboardInput by remember { mutableStateOf(false) }
-    var showCustomConfigInput by remember { mutableStateOf(false) }
+    var showCustomConfigPage by rememberSaveable { mutableStateOf(false) }
+    var customProfileName by rememberSaveable { mutableStateOf("") }
+    var customSelectedNodeIds by rememberSaveable { mutableStateOf(emptyList<String>()) }
     var editingProfile by remember { mutableStateOf<com.kunk.singbox.model.ProfileUi?>(null) }
+    var profileToDelete by remember { mutableStateOf<com.kunk.singbox.model.ProfileUi?>(null) }
 
     val context = LocalContext.current
     val clipboardManager = androidx.compose.ui.platform.LocalClipboardManager.current
@@ -181,6 +183,7 @@ fun ProfilesScreen(
     val qrcodeImportName = stringResource(R.string.profiles_qrcode_import)
     val qrcodeSubscriptionName = stringResource(R.string.profiles_qrcode_subscription)
     val cameraPermissionRequiredMessage = stringResource(R.string.profiles_camera_permission_required)
+    val clipboardEmptyMessage = stringResource(R.string.profiles_clipboard_empty)
 
     // Reordering state
     val profileList = remember { mutableStateListOf<com.kunk.singbox.model.ProfileUi>() }
@@ -223,6 +226,21 @@ fun ProfilesScreen(
     }
 
     val pendingImport by DeepLinkHandler.pendingSubscriptionImport.collectAsStateWithLifecycle()
+
+    val pendingProfileDelete = profileToDelete
+    if (pendingProfileDelete != null) {
+        ConfirmDialog(
+            title = stringResource(R.string.common_delete),
+            message = stringResource(R.string.common_delete_confirm, pendingProfileDelete.name),
+            confirmText = stringResource(R.string.common_delete),
+            isDestructive = true,
+            onConfirm = {
+                viewModel.deleteProfile(pendingProfileDelete.id)
+                profileToDelete = null
+            },
+            onDismiss = { profileToDelete = null }
+        )
+    }
 
     pendingImport?.let { data ->
         ConfirmDialog(
@@ -426,7 +444,12 @@ fun ProfilesScreen(
                 when (type) {
                     ProfileImportType.Subscription -> showSubscriptionInput = true
                     ProfileImportType.Clipboard -> showClipboardInput = true
-                    ProfileImportType.Custom -> showCustomConfigInput = true
+                    ProfileImportType.Custom -> {
+                        viewModel.clearCustomDraftNodes()
+                        customProfileName = ""
+                        customSelectedNodeIds = emptyList()
+                        showCustomConfigPage = true
+                    }
                     ProfileImportType.File -> {
 
                         filePickerLauncher.launch(arrayOf(
@@ -502,7 +525,7 @@ fun ProfilesScreen(
         )
     }
 
-    if (showCustomConfigInput) {
+    if (showCustomConfigPage && currentRoute == Screen.Profiles.route) {
         DisposableEffect(Unit) {
             viewModel.setAllNodesUiActive(true)
             onDispose {
@@ -521,13 +544,40 @@ fun ProfilesScreen(
                 .sortedWith(compareBy<NodeUi>({ subscriptionProfileNames[it.sourceProfileId] ?: "" }, { it.name }))
         }
 
-        CustomConfigDialog(
+        CustomConfigPage(
             nodes = selectableNodes,
             profileNames = subscriptionProfileNames,
-            onDismiss = { showCustomConfigInput = false },
+            addedNodes = customDraftOutbounds,
+            name = customProfileName,
+            selectedNodeIds = customSelectedNodeIds,
+            onNameChange = { customProfileName = it },
+            onSelectedNodeIdsChange = { customSelectedNodeIds = it },
+            onPasteNodeLink = {
+                val content = clipboardManager.getText()?.text.orEmpty()
+                if (content.isBlank()) {
+                    AppNotificationManager.showMessage(context, clipboardEmptyMessage)
+                } else {
+                    viewModel.addCustomDraftNodeLink(content)
+                }
+            },
+            onManualAddNode = {
+                navController.navigate(Screen.CustomProfileNodeProtocolSelect.route)
+            },
+            onRemoveAddedNode = viewModel::removeCustomDraftOutbound,
+            onDismiss = {
+                viewModel.clearCustomDraftNodes()
+                customProfileName = ""
+                customSelectedNodeIds = emptyList()
+                showCustomConfigPage = false
+            },
             onConfirm = { name, selectedNodeIds ->
-                viewModel.createCustomConfig(name, selectedNodeIds)
-                showCustomConfigInput = false
+                viewModel.createCustomConfig(name, selectedNodeIds) { success ->
+                    if (success) {
+                        customProfileName = ""
+                        customSelectedNodeIds = emptyList()
+                        showCustomConfigPage = false
+                    }
+                }
             }
         )
     }
@@ -573,8 +623,8 @@ fun ProfilesScreen(
             containerColor = liquidGlassScreenContainerColor(MaterialTheme.colorScheme.background),
             contentWindowInsets = WindowInsets(0, 0, 0, 0)
         ) { padding ->
-            val statusBarPadding = WindowInsets.statusBars.asPaddingValues()
-            Column(
+            FloatingMainPageLayout(
+                title = stringResource(R.string.profiles_title),
                 modifier = Modifier
                     .fillMaxSize()
                     .pointerInput(Unit) {
@@ -595,23 +645,8 @@ fun ProfilesScreen(
                         }
                     }
                     .nestedScroll(nestedScrollConnection)
-                    .padding(top = statusBarPadding.calculateTopPadding())
-                    .padding(bottom = padding.calculateBottomPadding())
-            ) {
-                // Header
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Text(
-                        text = stringResource(R.string.profiles_title),
-                        style = MaterialTheme.typography.headlineMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onBackground
-                    )
+                    .padding(bottom = padding.calculateBottomPadding()),
+                actions = {
                     IconButton(
                         modifier = Modifier.liquidGlassIconButtonPanel(),
                         onClick = { showSearchDialog = true }
@@ -619,17 +654,19 @@ fun ProfilesScreen(
                         Icon(Icons.Rounded.Search, contentDescription = "Search", tint = MaterialTheme.colorScheme.onBackground)
                     }
                 }
-                // List
+            ) { contentTopPadding ->
                 LazyColumn(
                     state = listState,
-                    modifier = Modifier.onGloballyPositioned { coordinates ->
-                        val top = coordinates.positionInWindow().y
-                        listViewportTop = top
-                        listViewportBottom = top + coordinates.size.height
-                    },
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .onGloballyPositioned { coordinates ->
+                            val top = coordinates.positionInWindow().y
+                            listViewportTop = top
+                            listViewportBottom = top + coordinates.size.height
+                        },
                     contentPadding = PaddingValues(
                         start = 16.dp,
-                        top = 16.dp,
+                        top = contentTopPadding + 16.dp,
                         end = 16.dp,
                         bottom = 16.dp + bottomContentPadding
                     ),
@@ -637,20 +674,7 @@ fun ProfilesScreen(
                 ) {
                     items(profileList.size, key = { profileList[it].id }) { index ->
                         val profile = profileList[index]
-                        var visible by remember { mutableStateOf(false) }
                         var itemWindowTop by remember(profile.id) { mutableFloatStateOf(0f) }
-                        androidx.compose.runtime.LaunchedEffect(Unit) {
-                            if (index < 15) {
-                                delay(index * 30L)
-                            }
-                            visible = true
-                        }
-
-                        val alpha by animateFloatAsState(
-                            targetValue = if (visible) 1f else 0f,
-                            animationSpec = tween(durationMillis = 300),
-                            label = "alpha"
-                        )
 
                         val isDraggingItem = draggingItemIndex == index
                         val isCurrentlyDragging = isDragging.value
@@ -659,7 +683,7 @@ fun ProfilesScreen(
                             itemHeightPx > 0 &&
                             !isDraggingItem
 
-                        var translationY = if (visible) 0f else 40f
+                        var translationY = 0f
                         if (canDisplace) {
                             val startIdx = draggingItemIndex ?: index
                             val dragProgress = draggingItemOffset / itemHeightPx
@@ -698,7 +722,6 @@ fun ProfilesScreen(
                                 }
                                 .graphicsLayer {
                                     this.translationY = if (isDraggingItem) draggingItemOffset else translationY
-                                    this.alpha = alpha
                                 }
                                 .profileSortItemClick(
                                     enabled = !isDraggingItem || !isCurrentlyDragging
@@ -835,7 +858,7 @@ fun ProfilesScreen(
                                         navController.navigate(Screen.ProfileEditor.createRoute(profile.id))
                                     }
                                 },
-                                onDelete = { viewModel.deleteProfile(profile.id) }
+                                onDelete = { profileToDelete = profile }
                             )
                         }
                     }

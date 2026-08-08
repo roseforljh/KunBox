@@ -43,7 +43,7 @@ class ProfileCardLayoutTest {
     }
 
     @Test
-    fun profileListCardUsesStableLightLiquidGlassShadow() {
+    fun profileListCardUsesStableNeutralEmbossedShadow() {
         val source = File("src/main/java/com/kunk/singbox/ui/components/ProfileCard.kt")
             .readNormalizedText()
         val cardModifierBody = source
@@ -55,15 +55,17 @@ class ProfileCardLayoutTest {
             .substringAfter("fun Modifier.liquidGlassPanel(")
             .substringBefore("fun Modifier.hollowShadow(")
 
-        // 全局默认保持仓库原强度，只给配置主卡单独轻阴影，并 remember 阴影段
+        // 全局控件使用同色浮雕边缘，配置主卡保留独立轻阴影，并 remember 阴影段
         assertTrue(panelBody.contains("shadowElevation: Dp = 12.dp"))
-        assertTrue(panelBody.contains("val shadowAlpha = if (isDark) 0.35f else 0.12f"))
-        assertTrue(panelBody.contains("offsetY = shadowElevation / 2"))
+        assertTrue(panelBody.contains("val edgeShadowColor = if (isDark) Color.White else Color.Black"))
+        assertTrue(panelBody.contains("val edgeShadowAlpha = if (isDark) 0.08f else 0.12f"))
+        assertTrue(panelBody.contains("offsetY = edgeShadowOffsetY"))
         assertTrue(source.contains("private val ProfileCardShadowBlur = 4.dp"))
         assertTrue(source.contains("private val ProfileCardShadowOffsetY = 1.5.dp"))
         assertTrue(source.contains("private const val PROFILE_CARD_SHADOW_ALPHA_DARK = 0.10f"))
         assertTrue(source.contains("private const val PROFILE_CARD_SHADOW_ALPHA_LIGHT = 0.03f"))
         assertTrue(source.contains("remember(shape, isDark)"))
+        assertTrue(source.contains(".liquidGlassMaterial(shape = shape, selected = selected)"))
         assertTrue(source.contains("profileListCardPanel("))
         assertTrue(source.contains("val shape = remember { RoundedCornerShape(16.dp) }"))
         assertTrue(
@@ -71,11 +73,11 @@ class ProfileCardLayoutTest {
                 "liquidGlassPanel(shape = shape, selected = true, shadowElevation = 0.dp)"
             )
         )
-        assertTrue(
-            source.contains(
-                "liquidGlassPanel(shape = CircleShape, selected = true, shadowElevation = 0.dp)"
-            )
-        )
+        assertTrue(source.contains("SelectedPulseIndicator("))
+        assertTrue(source.contains("selected = isSelected"))
+        assertTrue(source.contains("animationLabel = \"profile_selected\""))
+        assertTrue(source.contains("semantics { selected = isSelected }"))
+        assertTrue(!source.contains("imageVector = Icons.Rounded.Check,"))
         assertTrue(
             cardModifierBody.indexOf("profileListCardPanel(") <
                 cardModifierBody.indexOf("profileCardPressFeedback(")

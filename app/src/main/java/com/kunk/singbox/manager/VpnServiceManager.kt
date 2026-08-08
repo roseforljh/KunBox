@@ -103,6 +103,13 @@ object VpnServiceManager {
         }
     }
 
+    internal fun shouldDispatchStopToService(
+        activeMode: VpnStateStore.CoreMode,
+        serviceMode: VpnStateStore.CoreMode
+    ): Boolean {
+        return activeMode == VpnStateStore.CoreMode.NONE || activeMode == serviceMode
+    }
+
     suspend fun applyPerAppRuleChangeIfRunning(context: Context): Result<Boolean> {
         val appContext = context.applicationContext
         val modeBefore = VpnStateStore.getMode()
@@ -171,19 +178,25 @@ object VpnServiceManager {
 
         return runCatching {
             val appContext = context.applicationContext
-            val tunResult = runCatching {
-                appContext.startService(Intent(appContext, SingBoxService::class.java).apply {
-                    action = SingBoxService.ACTION_STOP
-                })
+            val activeMode = VpnStateStore.getMode()
+            val stopResults = buildList {
+                if (shouldDispatchStopToService(activeMode, VpnStateStore.CoreMode.VPN)) {
+                    add(runCatching {
+                        appContext.startService(Intent(appContext, SingBoxService::class.java).apply {
+                            action = SingBoxService.ACTION_STOP
+                        })
+                    })
+                }
+                if (shouldDispatchStopToService(activeMode, VpnStateStore.CoreMode.PROXY)) {
+                    add(runCatching {
+                        appContext.startService(Intent(appContext, ProxyOnlyService::class.java).apply {
+                            action = ProxyOnlyService.ACTION_STOP
+                        })
+                    })
+                }
             }
-            val proxyResult = runCatching {
-                appContext.startService(Intent(appContext, ProxyOnlyService::class.java).apply {
-                    action = ProxyOnlyService.ACTION_STOP
-                })
-            }
-
-            if (tunResult.isFailure && proxyResult.isFailure) {
-                throw tunResult.exceptionOrNull() ?: proxyResult.exceptionOrNull()
+            if (stopResults.none { it.isSuccess }) {
+                throw stopResults.firstNotNullOfOrNull { it.exceptionOrNull() }
                     ?: IllegalStateException("Failed to send stop commands")
             }
             Unit

@@ -7,6 +7,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.ConnectivityManager
 import android.net.Network
+import android.net.NetworkCapabilities
 import android.net.VpnService
 import android.os.Build
 import android.os.ParcelFileDescriptor
@@ -17,6 +18,7 @@ import android.util.Log
 import com.google.gson.Gson
 import com.kunk.singbox.R
 import com.kunk.singbox.core.BoxWrapperManager
+import com.kunk.singbox.core.LatencyProbeTrafficKind
 import com.kunk.singbox.core.SelectorManager
 import com.kunk.singbox.core.SingBoxCore
 import com.kunk.singbox.ipc.SingBoxIpcHub
@@ -27,6 +29,7 @@ import com.kunk.singbox.model.Outbound
 import com.kunk.singbox.model.SingBoxConfig
 import com.kunk.singbox.repository.ConfigRepository
 import com.kunk.singbox.repository.LogRepository
+import com.kunk.singbox.repository.MeteredNodeConfigGuard
 import com.kunk.singbox.repository.RuleSetRepository
 import com.kunk.singbox.repository.SettingsRepository
 import com.kunk.singbox.repository.buildServiceLifecycleDiagnostic
@@ -34,15 +37,26 @@ import com.kunk.singbox.service.manager.BackgroundPowerManager
 import com.kunk.singbox.service.manager.CommandManager
 import com.kunk.singbox.service.manager.CoreManager
 import com.kunk.singbox.service.manager.ForeignVpnMonitor
+import com.kunk.singbox.service.manager.LayeredNetworkHealthSampler
 import com.kunk.singbox.service.manager.NetworkHelper
 import com.kunk.singbox.service.manager.NodeSwitchManager
 import com.kunk.singbox.service.manager.PlatformInterfaceImpl
 import com.kunk.singbox.service.manager.RecoveryPolicy
 import com.kunk.singbox.service.manager.RecoveryIntentLease
 import com.kunk.singbox.service.manager.ScreenStateManager
+import com.kunk.singbox.service.manager.SameNodeFailureLayer
+import com.kunk.singbox.service.manager.SameNodeRecoveryCoordinator
+import com.kunk.singbox.service.manager.SameNodeRecoveryGate
+import com.kunk.singbox.service.manager.SameNodeRecoveryOutcome
+import com.kunk.singbox.service.manager.SameNodeRecoveryPermit
+import com.kunk.singbox.service.manager.SameNodeRecoveryStage
+import com.kunk.singbox.service.manager.SameNodeRecoveryVerification
 import com.kunk.singbox.service.manager.ServiceStateHolder
 import com.kunk.singbox.service.manager.ShutdownManager
+import com.kunk.singbox.service.manager.TimedProbeResult
 import com.kunk.singbox.service.manager.UrlTestTagMatcher
+import com.kunk.singbox.service.manager.probePhysicalDns
+import com.kunk.singbox.service.manager.toProbeDiagnosticFields
 import com.kunk.singbox.service.network.TrafficMonitor
 import com.kunk.singbox.service.notification.VpnNotificationManager
 import com.kunk.singbox.ui.components.AppNotificationManager
@@ -447,6 +461,7 @@ class SingBoxService : VpnService() {
         override fun cancelAutoFailoverJob() {
             autoFailoverJob?.cancel()
             autoFailoverJob = null
+            sameNodeRecoveryInFlight.set(false)
             autoFailoverServiceStartedAtMs = 0L
         }
 
@@ -502,6 +517,7 @@ class SingBoxService : VpnService() {
                 hardStopRecoveryIntentLease = completion.recoveryIntentLease.takeIf { completion.stopService }
                 pendingStartConfigPath = null
                 pendingStartRecoveryIntentLease = null
+                SingBoxService.isStarting = false
                 isStopping = false
                 completion
             }
@@ -590,6 +606,9 @@ class SingBoxService : VpnService() {
     protected var currentDownloadSpeed: Long = 0L
 
     private val healthSignalAggregator = HealthSignalAggregator()
+    private val sameNodeRecoveryGate = SameNodeRecoveryGate()
+    private val layeredNetworkHealthSampler = LayeredNetworkHealthSampler()
+    private val sameNodeRecoveryInFlight = AtomicBoolean(false)
     private val autoFailoverCandidateCache = AutoFailoverCandidateCache()
     private val autoGroupRestoreInFlight = AtomicBoolean(false)
     @Volatile private var autoFailoverOverrideActive = false
@@ -815,7 +834,7 @@ class SingBoxService : VpnService() {
             val outboundTags = proxySelector.outbounds?.filter { it.isNotBlank() } ?: emptyList()
             val preferredTag = resolvePreferredProxyTag(outboundTags, proxySelector.default)
 
-            SelectorManager.recordSelectorSignature(outboundTags, preferredTag)
+            SelectorManager.recordSelectorSignature(outboundTags)
             Log.i(
                 SingBoxService.TAG,
                 "SelectorManager initialized: ${outboundTags.size} outbounds, selected=$preferredTag"
@@ -844,18 +863,36 @@ class SingBoxService : VpnService() {
         return pick(pendingNodeName) ?: pick(configDefault) ?: outboundTags.firstOrNull()
     }
 
-    protected fun applyPreferredProxySelection(preferredTag: String?) {
+    protected suspend fun applyPreferredProxySelection(preferredTag: String?) {
         if (preferredTag.isNullOrBlank()) return
 
-        val result = SelectorManager.switchNode(preferredTag)
-        val concreteTag = preferredTag.takeIf {
-            ConfigRepository.getInstance(applicationContext).resolveNodeNameFromOutboundTag(it) != null
+        val currentSelectedTag = commandManager.getSelectedOutbound("PROXY")
+        if (currentSelectedTag.isNullOrBlank()) {
+            Log.w(SingBoxService.TAG, "Waiting for initial PROXY selection callback: $preferredTag")
+            return
         }
-        realTimeNodeName = concreteTag
-        commandManager.realTimeNodeName = concreteTag
-        VpnStateStore.setActiveLabel(concreteTag)
+        val result = if (currentSelectedTag.equals(preferredTag, ignoreCase = true)) {
+            SelectorManager.SwitchResult.Success("AlreadySelected")
+        } else {
+            SelectorManager.switchNode(preferredTag)
+        }
         when (result) {
             is SelectorManager.SwitchResult.Success -> {
+                val concreteTag = resolveConfirmedProxyRuntimeLabel(
+                    kernelResolvedTag = commandManager.getResolvedSelectedOutbound("PROXY"),
+                    preferredTag = preferredTag,
+                    currentRuntimeTag = commandManager.realTimeNodeName ?: realTimeNodeName
+                )
+                if (concreteTag != null) {
+                    realTimeNodeName = concreteTag
+                    commandManager.realTimeNodeName = concreteTag
+                    VpnStateStore.setActiveLabel(concreteTag)
+                } else {
+                    Log.w(
+                        SingBoxService.TAG,
+                        "Kernel confirmed automatic group but concrete node is not available yet: $preferredTag"
+                    )
+                }
                 if (pendingNodeName == preferredTag) {
                     pendingNodeName = null
                 }
@@ -1020,8 +1057,9 @@ class SingBoxService : VpnService() {
         }.onFailure { e ->
             Log.w(SingBoxService.TAG, "Failed to resolve startup node label", e)
         }.getOrNull()
-        realTimeNodeName = startupTag
-        VpnStateStore.setActiveLabel(startupTag)
+        realTimeNodeName = null
+        VpnStateStore.setActiveLabel(null)
+        Log.i(SingBoxService.TAG, "Startup selection pending kernel confirmation: ${startupTag ?: "(none)"}")
     }
 
     protected fun updateServiceState(state: ServiceState) {
@@ -1174,7 +1212,7 @@ class SingBoxService : VpnService() {
      *
      * 核心原理:
      * PROXY selector 固定使用 interrupt_exist_connections=false。
-     * selectOutbound 只切换后续新连接，已有连接自然结束，避免全量重连风暴。
+     * 内核确认新选择后主动关闭旧连接，防止旧节点的 TCP、QUIC 和复用连接继续产生流量。
      */
 
     suspend fun hotSwitchNode(nodeTag: String): Boolean {
@@ -1191,6 +1229,11 @@ class SingBoxService : VpnService() {
 
             when (val result = SelectorManager.switchNode(nodeTag)) {
                 is SelectorManager.SwitchResult.Success -> {
+                    val connectionsClosed = commandManager.closeConnections()
+                    if (!connectionsClosed) {
+                        L.warn("HotSwitch", "Kernel selected $nodeTag but old connections could not be closed")
+                        return false
+                    }
                     L.result("HotSwitch", true, "Switched to $nodeTag via ${result.method}")
                     requestNotificationUpdate(force = true)
                     return true
@@ -1254,14 +1297,17 @@ class SingBoxService : VpnService() {
             nowMs = SystemClock.elapsedRealtime()
         ) ?: return
 
-        LogRepository.getInstance().addLog(HealthSignalAggregator.buildSummary(signal))
+        LogRepository.getInstance().addAlwaysLog(HealthSignalAggregator.buildSummary(signal))
         when (signal.kind) {
             HealthSignalKind.RESOURCE_EXHAUSTED -> {
                 handleResourceExhaustionSignal("kernel_emfile")
                 return
             }
             HealthSignalKind.ACTIVE_PROBE_FAILED -> {
-                submitAutoFailoverSuspicion("active_probe_failed:${signal.outboundTag.orEmpty()}")
+                submitSameNodeRecovery(
+                    layer = SameNodeFailureLayer.PROXY,
+                    trigger = "active_probe_failed:${signal.outboundTag.orEmpty()}"
+                )
                 return
             }
             HealthSignalKind.REMOTE_DNS_TIMEOUT -> Unit
@@ -1279,7 +1325,10 @@ class SingBoxService : VpnService() {
                 config = runningConfig
             )
         ) {
-            submitAutoFailoverSuspicion("dns_remote_timeout")
+            submitSameNodeRecovery(
+                layer = SameNodeFailureLayer.DNS,
+                trigger = "dns_remote_timeout"
+            )
         }
     }
 
@@ -1329,6 +1378,251 @@ class SingBoxService : VpnService() {
             delay(8000)
             notificationManager.cancelNotification(VpnNotificationManager.NOTIFICATION_ID + notificationId)
         }
+    }
+
+    @Suppress("CognitiveComplexMethod", "ComplexCondition")
+    private fun submitSameNodeRecovery(layer: SameNodeFailureLayer, trigger: String) {
+        if (!SingBoxService.isRunning || SingBoxService.isStarting || isStopping || SingBoxService.isManuallyStopped) {
+            return
+        }
+        if (autoFailoverJob?.isActive == true || !sameNodeRecoveryInFlight.compareAndSet(false, true)) {
+            Log.d(SingBoxService.TAG, "[SameNodeRecovery] ignored because recovery/failover is already running")
+            return
+        }
+
+        when (sameNodeRecoveryGate.acquire(SystemClock.elapsedRealtime())) {
+            SameNodeRecoveryPermit.COOLDOWN -> {
+                sameNodeRecoveryInFlight.set(false)
+                LogRepository.getInstance().addAlwaysLog(
+                    "INFO recovery same_node skipped=cooldown layer=$layer trigger=$trigger"
+                )
+            }
+            SameNodeRecoveryPermit.BUDGET_EXHAUSTED -> {
+                sameNodeRecoveryInFlight.set(false)
+                LogRepository.getInstance().addAlwaysLog(
+                    "WARN recovery same_node budget_exhausted layer=$layer trigger=$trigger escalate=auto_failover"
+                )
+                submitAutoFailoverSuspicion(trigger)
+            }
+            SameNodeRecoveryPermit.ACQUIRED -> {
+                val recoveryJob = autoFailoverScope.launch(start = CoroutineStart.LAZY) {
+                    var escalateToFailover = false
+                    try {
+                        val outcome = createSameNodeRecoveryCoordinator(layer, trigger).recover(layer)
+                        escalateToFailover = outcome == SameNodeRecoveryOutcome.Failed
+                        LogRepository.getInstance().addAlwaysLog(
+                            "INFO recovery same_node completed layer=$layer trigger=$trigger outcome=$outcome"
+                        )
+                    } catch (error: CancellationException) {
+                        throw error
+                    } catch (error: Exception) {
+                        escalateToFailover = true
+                        Log.e(SingBoxService.TAG, "[SameNodeRecovery] failed", error)
+                        LogRepository.getInstance().addAlwaysLog(
+                            "ERROR recovery same_node exception=${error.javaClass.simpleName} " +
+                                "message=${error.message.orEmpty()} layer=$layer trigger=$trigger"
+                        )
+                    } finally {
+                        sameNodeRecoveryInFlight.set(false)
+                        val currentJob = coroutineContext[Job]
+                        if (autoFailoverJob === currentJob) {
+                            autoFailoverJob = null
+                        }
+                    }
+                    if (escalateToFailover) {
+                        submitAutoFailoverSuspicion(trigger)
+                    }
+                }
+                autoFailoverJob = recoveryJob
+                recoveryJob.start()
+            }
+        }
+    }
+
+    private fun createSameNodeRecoveryCoordinator(
+        layer: SameNodeFailureLayer,
+        trigger: String
+    ): SameNodeRecoveryCoordinator {
+        return SameNodeRecoveryCoordinator(object : SameNodeRecoveryCoordinator.Actions {
+            override fun hasPhysicalNetwork(): Boolean = hasValidatedPhysicalNetwork()
+
+            override fun currentNodeTag(): String? = resolveCurrentProxyOutboundTag()
+
+            override suspend fun closeConnections(): Boolean {
+                healthSignalAggregator.clearDnsFailures()
+                return commandManager.closeConnections()
+            }
+
+            override suspend fun resetNetwork(): Boolean {
+                healthSignalAggregator.clearDnsFailures()
+                return BoxWrapperManager.resetNetwork()
+            }
+
+            override suspend fun reloadCurrentConfig(): Boolean {
+                healthSignalAggregator.clearDnsFailures()
+                return reloadCurrentConfigForSameNodeRecovery()
+            }
+
+            override fun restartCurrentConfig(): Boolean {
+                return restartCurrentConfigForSameNodeRecovery()
+            }
+
+            override suspend fun verify(
+                nodeTag: String,
+                layer: SameNodeFailureLayer
+            ): SameNodeRecoveryVerification {
+                return verifySameNodeRecovery(nodeTag, layer)
+            }
+
+            override fun record(stage: SameNodeRecoveryStage, verification: SameNodeRecoveryVerification?) {
+                recordSameNodeRecoveryStage(stage, layer, trigger, verification)
+            }
+        })
+    }
+
+    private suspend fun verifySameNodeRecovery(
+        nodeTag: String,
+        layer: SameNodeFailureLayer
+    ): SameNodeRecoveryVerification {
+        delay(SingBoxService.SAME_NODE_RECOVERY_SETTLE_MS)
+        val selectedTag = resolveCurrentProxyOutboundTag()
+        val selectorMatches = !selectedTag.isNullOrBlank() &&
+            UrlTestTagMatcher.normalizeTag(selectedTag) == UrlTestTagMatcher.normalizeTag(nodeTag)
+        val probeHost = resolveSameNodeProbeHost()
+        val probes = layeredNetworkHealthSampler.sample(
+            physicalProbe = {
+                TimedProbeResult(succeeded = hasValidatedPhysicalNetwork())
+            },
+            dnsProbe = {
+                probePhysicalDns(
+                    network = getCurrentPhysicalNetwork(),
+                    host = probeHost,
+                    timeoutMs = SingBoxService.SAME_NODE_DNS_PROBE_TIMEOUT_MS
+                )
+            },
+            proxyProbe = {
+                val latency = probeAutoFailoverTargetLatency(nodeTag)
+                TimedProbeResult(succeeded = latency != null, latencyMs = latency)
+            }
+        )
+        val physicalNetworkHealthy = probes.physical.hasMajoritySuccess
+        val proxyHealthy = physicalNetworkHealthy && selectorMatches && probes.proxy.hasMajoritySuccess
+        val dnsFailures = healthSignalAggregator.recentRemoteDnsFailureCount(
+            nowMs = SystemClock.elapsedRealtime(),
+            windowMs = SingBoxService.SAME_NODE_RECOVERY_DNS_OBSERVE_MS
+        )
+        return SameNodeRecoveryVerification(
+            physicalNetworkHealthy = physicalNetworkHealthy,
+            selectorMatches = selectorMatches,
+            dnsHealthy = proxyHealthy && dnsFailures == 0,
+            proxyHealthy = proxyHealthy,
+            probeAttempts = probes.proxy.attempts,
+            probeFailures = probes.proxy.failures,
+            physicalProbe = probes.physical,
+            dnsProbe = probes.dns,
+            proxyProbe = probes.proxy,
+            remoteDnsFailures = dnsFailures
+        ).also { verification ->
+            if (layer == SameNodeFailureLayer.DNS && dnsFailures > 0) {
+                Log.w(SingBoxService.TAG, "[SameNodeRecovery] DNS still failing count=$dnsFailures")
+            }
+        }
+    }
+
+    private suspend fun resolveSameNodeProbeHost(): String? {
+        return runCatching {
+            val settings = SettingsRepository.getInstance(applicationContext).settings.first()
+            AppSettings.latencyTestUri(settings.latencyTestUrl).host.takeIf(String::isNotBlank)
+        }.onFailure { error ->
+            Log.w(SingBoxService.TAG, "[SameNodeRecovery] failed to resolve probe host", error)
+        }.getOrNull()
+    }
+
+    private suspend fun reloadCurrentConfigForSameNodeRecovery(): Boolean {
+        if (!SingBoxService.isRunning || isStopping) return false
+        val configFile = resolveCurrentRuntimeConfigFile() ?: return false
+        return runCatching {
+            val configContent = withContext(Dispatchers.IO) { configFile.readText(Charsets.UTF_8) }
+            MeteredNodeConfigGuard.requireRuntimeConfigAuthorized(
+                configContent = configContent,
+                selectedNodeId = VpnStateStore.getSelectedNodeId()
+            )
+            val settingsRepository = SettingsRepository.getInstance(applicationContext)
+            settingsRepository.reloadFromStorage()
+            val settings = settingsRepository.settings.first()
+            coreManager.setCurrentSettings(settings)
+            val startToken = coreManager.captureStartToken() ?: return false
+            val runtimeConfig = prepareRuntimeConfigForLocalNetwork(configContent, settings)
+            val reloaded = coreManager.hotReloadConfig(runtimeConfig, startToken).getOrThrow()
+            if (reloaded) {
+                commandManager.getCommandServer()?.let(BoxWrapperManager::init)
+            }
+            reloaded
+        }.onFailure { error ->
+            Log.w(SingBoxService.TAG, "[SameNodeRecovery] hot reload failed", error)
+        }.getOrDefault(false)
+    }
+
+    private fun restartCurrentConfigForSameNodeRecovery(): Boolean {
+        val configFile = resolveCurrentRuntimeConfigFile() ?: return false
+        return performFullRestart(
+            configPath = configFile.absolutePath,
+            recoveryIntentLease = setNonResourceRecoveryIntent(false)
+        )
+    }
+
+    private fun resolveCurrentRuntimeConfigFile(): File? {
+        return SingBoxService.lastConfigPath
+            ?.let(::File)
+            ?.takeIf(File::isFile)
+            ?: File(filesDir, "running_config.json").takeIf(File::isFile)
+    }
+
+    private fun hasValidatedPhysicalNetwork(): Boolean {
+        val network = getCurrentPhysicalNetwork() ?: return false
+        val capabilities = connectivityManager?.getNetworkCapabilities(network) ?: return false
+        return capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+            capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN) &&
+            capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+    }
+
+    private fun recordSameNodeRecoveryStage(
+        stage: SameNodeRecoveryStage,
+        layer: SameNodeFailureLayer,
+        trigger: String,
+        verification: SameNodeRecoveryVerification?
+    ) {
+        val probeLossPercent = verification?.let { result ->
+            if (result.probeAttempts <= 0) 0 else result.probeFailures * 100 / result.probeAttempts
+        }
+        LogRepository.getInstance().addAlwaysLog(
+            buildString {
+                append("INFO recovery same_node stage=$stage ")
+                append("phase=${if (verification == null) "action" else "verify"} ")
+                append("layer=$layer trigger=$trigger ")
+                append("network=${physicalNetworkSummary()} ")
+                append("selected=${resolveCurrentProxyOutboundTag() ?: "(none)"} ")
+                append("connections=${recentConnectionIds.size} ")
+                append("dns=${verification?.dnsHealthy ?: "unknown"} ")
+                append("proxy=${verification?.proxyHealthy ?: "unknown"} ")
+                append("selector=${verification?.selectorMatches ?: "unknown"} ")
+                append("probe_attempts=${verification?.probeAttempts ?: 0} ")
+                append("probe_loss_pct=${probeLossPercent ?: -1} ")
+                append(verification?.toProbeDiagnosticFields() ?: "remote_dns_failures=-1")
+            }
+        )
+    }
+
+    private fun physicalNetworkSummary(): String {
+        val network = getCurrentPhysicalNetwork() ?: return "missing"
+        val capabilities = connectivityManager?.getNetworkCapabilities(network) ?: return "unknown"
+        val transport = when {
+            capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) -> "wifi"
+            capabilities.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) -> "cellular"
+            capabilities.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) -> "ethernet"
+            else -> "other"
+        }
+        return "$transport:validated=${capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)}"
     }
 
     protected fun submitAutoFailoverSuspicion(trigger: String) {
@@ -1638,6 +1932,7 @@ class SingBoxService : VpnService() {
         return groupCandidates.filter { it.tag in selectedTags }
     }
 
+    @Suppress("CognitiveComplexMethod")
     private suspend fun measureAutoFailoverCandidateLatencies(
         groupCandidates: List<Outbound>,
         outbounds: List<Outbound>,
@@ -1666,7 +1961,12 @@ class SingBoxService : VpnService() {
                         core.testOutboundLatency(
                             outbound = outbound,
                             allOutbounds = outbounds,
-                            timeoutOverrideMs = timeoutMs
+                            timeoutOverrideMs = timeoutMs,
+                            trafficKind = if (trigger.isBlank()) {
+                                LatencyProbeTrafficKind.BACKGROUND_PROBE
+                            } else {
+                                LatencyProbeTrafficKind.HEALTH_CHECK
+                            }
                         )
                     }.getOrDefault(-1L)
                     if (latency > 0L && latency <= Int.MAX_VALUE) {
@@ -1699,7 +1999,12 @@ class SingBoxService : VpnService() {
             allOutbounds = outbounds,
             timeoutOverrideMs = timeoutMs,
             concurrencyOverride = concurrency,
-            portReadyTimeoutOverrideMs = SingBoxService.resolveAutoFailoverPortReadyTimeoutMs(trigger)
+            portReadyTimeoutOverrideMs = SingBoxService.resolveAutoFailoverPortReadyTimeoutMs(trigger),
+            trafficKind = if (trigger.isBlank()) {
+                LatencyProbeTrafficKind.BACKGROUND_PROBE
+            } else {
+                LatencyProbeTrafficKind.HEALTH_CHECK
+            }
         ) { tag, latency ->
             if (latency > 0L && latency <= Int.MAX_VALUE) {
                 results[tag] = latency.toInt()
@@ -1733,22 +2038,27 @@ class SingBoxService : VpnService() {
         }.getOrNull()
     }
 
-    private suspend fun verifyAutoFailoverTargetConnectivity(targetTag: String): Boolean {
-        val config = loadLastRunningConfig() ?: return false
+    private suspend fun probeAutoFailoverTargetLatency(targetTag: String): Long? {
+        val config = loadLastRunningConfig() ?: return null
         val outbounds = config.outbounds.orEmpty()
         val target = outbounds.firstOrNull {
             UrlTestTagMatcher.normalizeTag(it.tag) == UrlTestTagMatcher.normalizeTag(targetTag)
-        } ?: return false
+        } ?: return null
         return runCatching {
             SingBoxCore.getInstance(this@SingBoxService).testOutboundLatency(
                 outbound = target,
                 allOutbounds = outbounds,
                 dnsConfig = config.dns,
-                timeoutOverrideMs = SingBoxService.HEALTH_FAST_FAILOVER_CANDIDATE_TIMEOUT_MS
-            ) > 0L
+                timeoutOverrideMs = SingBoxService.HEALTH_FAST_FAILOVER_CANDIDATE_TIMEOUT_MS,
+                trafficKind = LatencyProbeTrafficKind.HEALTH_CHECK
+            ).takeIf { it > 0L }
         }.onFailure { error ->
             Log.w(SingBoxService.TAG, "[AutoFailover] target HTTPS probe failed: $targetTag", error)
-        }.getOrDefault(false)
+        }.getOrNull()
+    }
+
+    private suspend fun verifyAutoFailoverTargetConnectivity(targetTag: String): Boolean {
+        return probeAutoFailoverTargetLatency(targetTag) != null
     }
 
     private fun handleAutoGroupSelectionChanged(groupTag: String, selectedTag: String) {
@@ -2278,10 +2588,7 @@ class SingBoxService : VpnService() {
                     nodeSwitchManager.performHotSwitch(
                         nodeId = targetNodeId,
                         outboundTag = outboundTag,
-                        targetNodeName = targetNodeName,
-                        serviceClass = SingBoxService::class.java,
-                        actionStart = SingBoxService.ACTION_START,
-                        extraConfigPath = SingBoxService.EXTRA_CONFIG_PATH
+                        targetNodeName = targetNodeName
                     )
                 } else {
                     nodeSwitchManager.switchNextNode(
@@ -2578,6 +2885,12 @@ class SingBoxService : VpnService() {
                 val startedAtMs = SystemClock.elapsedRealtime()
                 try {
                     Log.i(SingBoxService.TAG, "[HotReload] Starting kernel-level hot reload...")
+                    LogRepository.getInstance().addAlwaysLog("INFO [HotReload] phase=request source=service")
+
+                    MeteredNodeConfigGuard.requireRuntimeConfigAuthorized(
+                        configContent = configContent,
+                        selectedNodeId = VpnStateStore.getSelectedNodeId()
+                    )
 
                     val settingsRepository = SettingsRepository.getInstance(applicationContext)
                     settingsRepository.reloadFromStorage()
@@ -2595,7 +2908,10 @@ class SingBoxService : VpnService() {
                                 "success"
                             )
                             Log.i(SingBoxService.TAG, "[HotReload] Kernel hot reload succeeded")
-                            LogRepository.getInstance().addLog("INFO [HotReload] Config reloaded successfully")
+                            LogRepository.getInstance().addAlwaysLog(
+                                "INFO [HotReload] phase=complete outcome=success " +
+                                    "duration_ms=${SystemClock.elapsedRealtime() - startedAtMs}"
+                            )
 
                             commandManager.getCommandServer()?.let { server ->
                                 BoxWrapperManager.init(server)
@@ -2627,6 +2943,10 @@ class SingBoxService : VpnService() {
                         "cancelled"
                     )
                     Log.i(SingBoxService.TAG, "performHotReload cancelled")
+                    LogRepository.getInstance().addAlwaysLog(
+                        "INFO [HotReload] phase=complete outcome=cancelled " +
+                            "duration_ms=${SystemClock.elapsedRealtime() - startedAtMs}"
+                    )
                     throw e
                 } catch (e: Exception) {
                     PerfTracer.recordDuration(
@@ -2651,7 +2971,7 @@ class SingBoxService : VpnService() {
 
     protected fun handleHotReloadFailure(errorMsg: String) {
         Log.e(SingBoxService.TAG, "[HotReload] $errorMsg, stopping VPN")
-        LogRepository.getInstance().addLog("ERROR [HotReload] $errorMsg")
+        LogRepository.getInstance().addAlwaysLog("ERROR [HotReload] phase=complete outcome=failed reason=$errorMsg")
 
         serviceScope.launch(Dispatchers.Main) {
             AppNotificationManager.showMessage(
@@ -2729,10 +3049,17 @@ class SingBoxService : VpnService() {
             return false
         }
         val startToken = coreManager.captureStartToken() ?: return false
+        val startedAtMs = SystemClock.elapsedRealtime()
 
         return try {
             kotlinx.coroutines.runBlocking(kotlinx.coroutines.Dispatchers.IO) {
                 Log.i(SingBoxService.TAG, "[HotReload-Sync] Starting kernel-level hot reload...")
+                LogRepository.getInstance().addAlwaysLog("INFO [HotReload] phase=request source=ipc")
+
+                MeteredNodeConfigGuard.requireRuntimeConfigAuthorized(
+                    configContent = configContent,
+                    selectedNodeId = VpnStateStore.getSelectedNodeId()
+                )
 
                 val settingsRepository = SettingsRepository.getInstance(applicationContext)
                 settingsRepository.reloadFromStorage()
@@ -2742,24 +3069,41 @@ class SingBoxService : VpnService() {
 
                 val result = coreManager.hotReloadConfig(runtimeConfigContent, startToken)
 
-                result.getOrNull() == true && result.isSuccess.also { success ->
-                    if (success && result.getOrNull() == true) {
-                        Log.i(SingBoxService.TAG, "[HotReload-Sync] Kernel hot reload succeeded")
-                        LogRepository.getInstance().addLog("INFO [HotReload] Config reloaded successfully via IPC")
+                val success = result.getOrNull() == true
+                if (success) {
+                    Log.i(SingBoxService.TAG, "[HotReload-Sync] Kernel hot reload succeeded")
+                    LogRepository.getInstance().addAlwaysLog(
+                        "INFO [HotReload] phase=complete outcome=success source=ipc " +
+                            "duration_ms=${SystemClock.elapsedRealtime() - startedAtMs}"
+                    )
 
-                        commandManager.getCommandServer()?.let { server ->
-                            BoxWrapperManager.init(server)
-                        }
-
-                        requestNotificationUpdate(force = true)
-                        requestRemoteStateUpdate(force = true)
+                    commandManager.getCommandServer()?.let { server ->
+                        BoxWrapperManager.init(server)
                     }
+
+                    requestNotificationUpdate(force = true)
+                    requestRemoteStateUpdate(force = true)
+                } else {
+                    val reason = result.exceptionOrNull()?.message ?: "kernel_returned_false"
+                    LogRepository.getInstance().addAlwaysLog(
+                        "ERROR [HotReload] phase=complete outcome=failed source=ipc " +
+                            "duration_ms=${SystemClock.elapsedRealtime() - startedAtMs} reason=$reason"
+                    )
                 }
+                success
             }
         } catch (e: CancellationException) {
+            LogRepository.getInstance().addAlwaysLog(
+                "INFO [HotReload] phase=complete outcome=cancelled source=ipc " +
+                    "duration_ms=${SystemClock.elapsedRealtime() - startedAtMs}"
+            )
             throw e
         } catch (e: Exception) {
             Log.e(SingBoxService.TAG, "performHotReloadSync error", e)
+            LogRepository.getInstance().addAlwaysLog(
+                "ERROR [HotReload] phase=complete outcome=failed source=ipc " +
+                    "duration_ms=${SystemClock.elapsedRealtime() - startedAtMs} reason=${e.message.orEmpty()}"
+            )
             false
         }
     }
@@ -3117,6 +3461,7 @@ class SingBoxService : VpnService() {
         serviceSupervisorJob.cancel()
         autoFailoverJob?.cancel()
         autoFailoverJob = null
+        sameNodeRecoveryInFlight.set(false)
         autoFailoverSupervisorJob.cancel()
         // cleanupSupervisorJob.cancel() // Allow cleanup to finish naturally
 
@@ -3304,6 +3649,12 @@ class SingBoxService : VpnService() {
 
         /** 切换后 live 观察窗：等内核日志暴露远程 DNS 超时。 */
         internal const val AUTO_FAILOVER_LIVE_OBSERVE_MS = 2_000L
+
+        internal const val SAME_NODE_RECOVERY_SETTLE_MS = 350L
+
+        internal const val SAME_NODE_RECOVERY_DNS_OBSERVE_MS = 5_000L
+
+        internal const val SAME_NODE_DNS_PROBE_TIMEOUT_MS = 1_000L
 
         internal const val SINGLE_NODE_ROUTE_FAILURE_NOTIFICATION_DEBOUNCE_MS = 60_000L
 

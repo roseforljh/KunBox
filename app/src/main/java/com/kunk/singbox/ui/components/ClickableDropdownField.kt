@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
+import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -25,6 +26,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.graphics.vector.ImageVector
 import com.kunk.singbox.ui.theme.isLiquidGlassTheme
 import com.kunk.singbox.ui.theme.liquidGlassOutlinedTextFieldColors
 import com.kunk.singbox.ui.theme.liquidGlassPanel
@@ -52,7 +54,8 @@ fun ClickableDropdownField(
     label: String,
     value: String,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    trailingIcon: ImageVector = Icons.Rounded.KeyboardArrowDown
 ) {
     val useLiquidGlass = isLiquidGlassTheme()
     val fieldShape = RoundedCornerShape(16.dp)
@@ -99,7 +102,7 @@ fun ClickableDropdownField(
                     fontWeight = FontWeight.Normal
                 )
                 Icon(
-                    imageVector = Icons.Rounded.KeyboardArrowDown,
+                    imageVector = trailingIcon,
                     contentDescription = stringResource(R.string.app_rules_click_to_select),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.size(20.dp)
@@ -107,6 +110,22 @@ fun ClickableDropdownField(
             }
         }
     }
+}
+
+@Composable
+fun ClickableSelectionButton(
+    label: String,
+    value: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    ClickableDropdownField(
+        label = label,
+        value = value,
+        onClick = onClick,
+        modifier = modifier,
+        trailingIcon = Icons.Rounded.ChevronRight
+    )
 }
 
 /**

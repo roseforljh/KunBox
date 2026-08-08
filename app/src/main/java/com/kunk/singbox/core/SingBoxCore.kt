@@ -4,6 +4,7 @@ import android.content.Context
 import android.os.Process
 import android.util.Log
 import com.google.gson.Gson
+import com.kunk.singbox.R
 import com.kunk.singbox.model.AppSettings
 import com.kunk.singbox.model.DnsConfig
 import com.kunk.singbox.model.DnsRule
@@ -15,6 +16,7 @@ import com.kunk.singbox.model.SingBoxConfig
 import com.kunk.singbox.model.LatencyTestMethod
 import com.kunk.singbox.repository.ConfigRepository
 import com.kunk.singbox.repository.SettingsRepository
+import com.kunk.singbox.repository.TrafficRepository
 import com.kunk.singbox.repository.config.OutboundFixer
 import com.kunk.singbox.ipc.VpnStateStore
 import kotlinx.coroutines.flow.first
@@ -23,10 +25,13 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
 import java.net.ServerSocket
 import java.net.URI
@@ -35,11 +40,81 @@ import java.net.Socket
 import com.kunk.singbox.utils.PreciseLatencyTester
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
 
 internal data class LatencyProbeParts(
     val outbounds: List<Outbound>,
     val endpoints: List<Endpoint>
 )
+
+enum class LatencyProbeTrafficKind {
+    BACKGROUND_PROBE,
+    HEALTH_CHECK
+}
+
+private class TemporaryProbeTrafficRecorder(
+    private val context: Context,
+    private val kind: LatencyProbeTrafficKind
+) : CommandClientHandler {
+    private val uploadTotal = AtomicLong(0L)
+    private val downloadTotal = AtomicLong(0L)
+    private val firstSample = CompletableDeferred<Unit>()
+    private val stopped = AtomicBoolean(false)
+    private var client: CommandClient? = null
+
+    fun start() {
+        val options = CommandClientOptions().apply {
+            addCommand(Libbox.CommandStatus)
+            statusInterval = STATUS_INTERVAL_NS
+        }
+        val created = Libbox.newCommandClient(this, options)
+        client = created
+        created.connect()
+    }
+
+    suspend fun stopAndRecord() {
+        if (!stopped.compareAndSet(false, true)) return
+        withTimeoutOrNull(FINAL_SAMPLE_TIMEOUT_MS) { firstSample.await() }
+        runCatching { client?.disconnect() }
+            .onFailure { Log.w(TAG, "Failed to disconnect probe traffic client", it) }
+        client = null
+
+        val upload = uploadTotal.get().coerceAtLeast(0L)
+        val download = downloadTotal.get().coerceAtLeast(0L)
+        val (nodeId, nodeName) = when (kind) {
+            LatencyProbeTrafficKind.BACKGROUND_PROBE -> {
+                TrafficRepository.BACKGROUND_PROBE_NODE_ID to context.getString(R.string.traffic_background_probe)
+            }
+            LatencyProbeTrafficKind.HEALTH_CHECK -> {
+                TrafficRepository.HEALTH_CHECK_NODE_ID to context.getString(R.string.traffic_health_check)
+            }
+        }
+        TrafficRepository.getInstance(context).addTraffic(nodeId, upload, download, nodeName)
+    }
+
+    override fun connected() = Unit
+    override fun disconnected(message: String?) = Unit
+    override fun clearLogs() = Unit
+    override fun setDefaultLogLevel(level: Int) = Unit
+    override fun writeLogs(messageList: LogIterator?) = Unit
+    override fun initializeClashMode(modeList: StringIterator?, currentMode: String?) = Unit
+    override fun updateClashMode(newMode: String?) = Unit
+    override fun writeConnectionEvents(events: ConnectionEvents?) = Unit
+    override fun writeGroups(groups: OutboundGroupIterator?) = Unit
+
+    override fun writeStatus(message: StatusMessage?) {
+        message ?: return
+        uploadTotal.accumulateAndGet(message.uplinkTotal.coerceAtLeast(0L), ::maxOf)
+        downloadTotal.accumulateAndGet(message.downlinkTotal.coerceAtLeast(0L), ::maxOf)
+        firstSample.complete(Unit)
+    }
+
+    private companion object {
+        private const val TAG = "ProbeTrafficRecorder"
+        private const val STATUS_INTERVAL_NS = 50L * 1_000L * 1_000L
+        private const val FINAL_SAMPLE_TIMEOUT_MS = 250L
+    }
+}
 
 class SingBoxCore private constructor(private val context: Context) {
 
@@ -298,7 +373,8 @@ class SingBoxCore private constructor(private val context: Context) {
         outbound: Outbound,
         settings: com.kunk.singbox.model.AppSettings? = null,
         dependencyOutbounds: List<Outbound> = emptyList(),
-        dnsConfig: DnsConfig? = null
+        dnsConfig: DnsConfig? = null,
+        trafficKind: LatencyProbeTrafficKind
     ): Long = withContext(Dispatchers.IO) {
         if (!libboxAvailable) return@withContext -1L
 
@@ -316,7 +392,8 @@ class SingBoxCore private constructor(private val context: Context) {
                 timeoutMs,
                 dependencyOutbounds,
                 finalSettings,
-                dnsConfig
+                dnsConfig,
+                trafficKind
             )
         } catch (e: Exception) {
             Log.w(TAG, "Temporary HTTP proxy latency test failed: ${e.message}")
@@ -382,18 +459,22 @@ class SingBoxCore private constructor(private val context: Context) {
         timeoutMs: Int,
         dependencyOutbounds: List<Outbound> = emptyList(),
         settings: AppSettings,
-        dnsConfig: DnsConfig? = null
+        dnsConfig: DnsConfig? = null,
+        trafficKind: LatencyProbeTrafficKind
     ): Long = withContext(Dispatchers.IO) {
 
         httpProxySemaphore.withPermit {
-            testWithLocalHttpProxyInternal(
-                outbound,
-                targetUrl,
-                timeoutMs,
-                dependencyOutbounds,
-                settings,
-                dnsConfig
-            )
+            libboxMutex.withLock {
+                testWithLocalHttpProxyInternal(
+                    outbound,
+                    targetUrl,
+                    timeoutMs,
+                    dependencyOutbounds,
+                    settings,
+                    dnsConfig,
+                    trafficKind
+                )
+            }
         }
     }
 
@@ -404,7 +485,8 @@ class SingBoxCore private constructor(private val context: Context) {
         timeoutMs: Int,
         dependencyOutbounds: List<Outbound> = emptyList(),
         settings: AppSettings,
-        dnsConfig: DnsConfig? = null
+        dnsConfig: DnsConfig? = null,
+        trafficKind: LatencyProbeTrafficKind
     ): Long {
 
         val port = allocateLocalPort()
@@ -456,6 +538,7 @@ class SingBoxCore private constructor(private val context: Context) {
 
             val configJson = gson.toJson(stripLatencyRuntimeMetadata(config))
             var commandServer: io.nekohasekai.libbox.CommandServer? = null
+            var trafficRecorder: TemporaryProbeTrafficRecorder? = null
             try {
                 ensureLibboxSetup(context)
                 val platformInterface = TestPlatformInterface(context)
@@ -467,6 +550,7 @@ class SingBoxCore private constructor(private val context: Context) {
                     autoRedirect = false
                 }
                 commandServer.startOrReloadService(configJson, overrideOptions)
+                trafficRecorder = TemporaryProbeTrafficRecorder(context, trafficKind).also { it.start() }
 
                 val deadline = System.currentTimeMillis() + 500L
                 while (System.currentTimeMillis() < deadline) {
@@ -494,6 +578,7 @@ class SingBoxCore private constructor(private val context: Context) {
                     -1L
                 }
             } finally {
+                trafficRecorder?.stopAndRecord()
                 try {
                     runCatching { commandServer?.closeService() }
                     commandServer?.close()
@@ -542,6 +627,7 @@ class SingBoxCore private constructor(private val context: Context) {
         dnsConfig: DnsConfig? = null,
         dependencySourceOutbounds: List<Outbound> = outbounds,
         portReadyTimeoutMs: Long = DEFAULT_PORT_READY_TIMEOUT_MS,
+        trafficKind: LatencyProbeTrafficKind,
         onResult: (tag: String, latency: Long) -> Unit
     ) = withContext(Dispatchers.IO) {
 
@@ -557,6 +643,7 @@ class SingBoxCore private constructor(private val context: Context) {
                 dnsConfig,
                 dependencySourceOutbounds,
                 portReadyTimeoutMs,
+                trafficKind,
                 onResult
             )
         }
@@ -571,6 +658,7 @@ class SingBoxCore private constructor(private val context: Context) {
         dnsConfig: DnsConfig? = null,
         dependencySourceOutbounds: List<Outbound> = batchOutbounds,
         portReadyTimeoutMs: Long = DEFAULT_PORT_READY_TIMEOUT_MS,
+        trafficKind: LatencyProbeTrafficKind,
         onResult: (tag: String, latency: Long) -> Unit
     ) {
         if (batchOutbounds.isEmpty()) return
@@ -592,17 +680,20 @@ class SingBoxCore private constructor(private val context: Context) {
             batchOutbounds.forEach { onResult(it.tag, -1L) }
             return
         }
-        runLatencyBatchService(
-            config = config,
-            ports = ports,
-            portToTagMap = portToTagMap,
-            targetUrl = targetUrl,
-            timeoutMs = timeoutMs,
-            settings = settings,
-            portReadyTimeoutMs = portReadyTimeoutMs,
-            batchOutbounds = batchOutbounds,
-            onResult = onResult
-        )
+        libboxMutex.withLock {
+            runLatencyBatchService(
+                config = config,
+                ports = ports,
+                portToTagMap = portToTagMap,
+                targetUrl = targetUrl,
+                timeoutMs = timeoutMs,
+                settings = settings,
+                portReadyTimeoutMs = portReadyTimeoutMs,
+                batchOutbounds = batchOutbounds,
+                trafficKind = trafficKind,
+                onResult = onResult
+            )
+        }
     }
 
     private data class LatencyBatchPrepared(
@@ -653,11 +744,13 @@ class SingBoxCore private constructor(private val context: Context) {
         settings: AppSettings,
         portReadyTimeoutMs: Long,
         batchOutbounds: List<Outbound>,
+        trafficKind: LatencyProbeTrafficKind,
         onResult: (tag: String, latency: Long) -> Unit
     ) {
         val configJson = gson.toJson(stripLatencyRuntimeMetadata(config))
         val batchTestDbPath = config.experimental?.cacheFile?.path
         var commandServer: CommandServer? = null
+        var trafficRecorder: TemporaryProbeTrafficRecorder? = null
         try {
             ensureLibboxSetup(context)
             val platformInterface = TestPlatformInterface(context)
@@ -668,6 +761,7 @@ class SingBoxCore private constructor(private val context: Context) {
                 autoRedirect = false
             }
             commandServer.startOrReloadService(configJson, overrideOptions)
+            trafficRecorder = TemporaryProbeTrafficRecorder(context, trafficKind).also { it.start() }
             val portsReady = waitForPortsReady(ports, portReadyTimeoutMs)
             if (!portsReady) {
                 Log.e(TAG, "Batch test: ports not ready")
@@ -679,6 +773,7 @@ class SingBoxCore private constructor(private val context: Context) {
             Log.e(TAG, "Batch test failed", e)
             batchOutbounds.forEach { onResult(it.tag, -1L) }
         } finally {
+            trafficRecorder?.stopAndRecord()
             runCatching { commandServer?.closeService() }
             runCatching { commandServer?.close() }
             batchTestDbPath?.let { path ->
@@ -852,7 +947,8 @@ class SingBoxCore private constructor(private val context: Context) {
         outbound: Outbound,
         allOutbounds: List<Outbound> = emptyList(),
         dnsConfig: DnsConfig? = null,
-        timeoutOverrideMs: Int? = null
+        timeoutOverrideMs: Int? = null,
+        trafficKind: LatencyProbeTrafficKind = LatencyProbeTrafficKind.BACKGROUND_PROBE
     ): Long = withContext(Dispatchers.IO) {
         val settings = SettingsRepository.getInstance(context).settings.first()
             .let { currentSettings ->
@@ -872,7 +968,8 @@ class SingBoxCore private constructor(private val context: Context) {
             outbound = outbound,
             settings = settings,
             dependencyOutbounds = dependencyOutbounds,
-            dnsConfig = dnsConfig
+            dnsConfig = dnsConfig,
+            trafficKind = trafficKind
         )
     }
     @Suppress("LongParameterList")
@@ -883,6 +980,7 @@ class SingBoxCore private constructor(private val context: Context) {
         timeoutOverrideMs: Int? = null,
         concurrencyOverride: Int? = null,
         portReadyTimeoutOverrideMs: Long? = null,
+        trafficKind: LatencyProbeTrafficKind = LatencyProbeTrafficKind.BACKGROUND_PROBE,
         onResult: (tag: String, latency: Long) -> Unit
     ) = withContext(Dispatchers.IO) {
         val settings = SettingsRepository.getInstance(context).settings.first()
@@ -911,6 +1009,7 @@ class SingBoxCore private constructor(private val context: Context) {
             dnsConfig = dnsConfig,
             dependencySourceOutbounds = allOutbounds,
             portReadyTimeoutMs = portReadyTimeoutMs,
+            trafficKind = trafficKind,
             onResult = onResult
         )
     }

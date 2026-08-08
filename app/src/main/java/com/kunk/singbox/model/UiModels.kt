@@ -105,7 +105,9 @@ data class NodeUi(
     @SerializedName("isFavorite") val isFavorite: Boolean = false,
     @SerializedName("sourceProfileId") val sourceProfileId: String,
     @SerializedName("tags") val tags: List<String> = emptyList(),
-    @SerializedName("trafficUsed") val trafficUsed: Long = 0
+    @SerializedName("trafficUsed") val trafficUsed: Long = 0,
+    @SerializedName("autoSelectionEligible") val autoSelectionEligible: Boolean = true,
+    @SerializedName("meteredProtected") val meteredProtected: Boolean = false
 ) {
     val displayName: String
         get() = name

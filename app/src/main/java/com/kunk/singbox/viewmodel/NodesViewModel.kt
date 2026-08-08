@@ -51,6 +51,9 @@ class NodesViewModel(application: Application) : AndroidViewModel(application) {
     private val _testingNodeIds = MutableStateFlow<Set<String>>(emptySet())
     val testingNodeIds: StateFlow<Set<String>> = _testingNodeIds.asStateFlow()
 
+    private val _switchingNodeId = MutableStateFlow<String?>(null)
+    val switchingNodeId: StateFlow<String?> = _switchingNodeId.asStateFlow()
+
     val sortType: StateFlow<NodeSortType> = displaySettings.sortType
     val nodeFilter: StateFlow<NodeFilter> = displaySettings.nodeFilter
 
@@ -62,6 +65,8 @@ class NodesViewModel(application: Application) : AndroidViewModel(application) {
             started = SharingStarted.WhileSubscribed(5000),
             initialValue = 1
         )
+
+    val rawNodes: StateFlow<List<NodeUi>> = configRepository.nodes
 
     val nodes: StateFlow<List<NodeUi>> = combine(
         configRepository.nodes,
@@ -114,22 +119,27 @@ class NodesViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun setActiveNode(nodeId: String) {
+        if (_switchingNodeId.value != null) return
+        _switchingNodeId.value = nodeId
         viewModelScope.launch {
+            try {
+                val node = configRepository.getNodeById(nodeId)
+                val success = configRepository.setActiveNode(nodeId)
 
-            val node = configRepository.getNodeById(nodeId)
-
-            val success = configRepository.setActiveNode(nodeId)
-
-            // Only show toast when VPN is running
-            val isVpnRunning = VpnStateStore.getActive()
-            if (isVpnRunning) {
-                val nodeName = node?.displayName ?: getApplication<Application>().getString(R.string.nodes_unknown_node)
-                val msg = if (success) {
-                    getApplication<Application>().getString(R.string.profiles_updated) + ": $nodeName"
-                } else {
-                    "Failed to switch to $nodeName"
+                // VPN 运行时才显示切换结果
+                val isVpnRunning = VpnStateStore.getActive()
+                if (isVpnRunning) {
+                    val nodeName = node?.displayName
+                        ?: getApplication<Application>().getString(R.string.nodes_unknown_node)
+                    val msg = if (success) {
+                        getApplication<Application>().getString(R.string.profiles_updated) + ": $nodeName"
+                    } else {
+                        "Failed to switch to $nodeName"
+                    }
+                    emitToast(msg)
                 }
-                emitToast(msg)
+            } finally {
+                _switchingNodeId.value = null
             }
         }
     }
@@ -313,7 +323,8 @@ class NodesViewModel(application: Application) : AndroidViewModel(application) {
     fun addNode(
         content: String,
         targetProfileId: String? = null,
-        newProfileName: String? = null
+        newProfileName: String? = null,
+        onResult: (Boolean) -> Unit = {}
     ) {
         viewModelScope.launch {
             val trimmedContent = content.trim()
@@ -321,6 +332,7 @@ class NodesViewModel(application: Application) : AndroidViewModel(application) {
             if (!NodeLinkParser.isSupportedLink(trimmedContent)) {
                 val msg = getApplication<Application>().getString(R.string.nodes_unsupported_format)
                 emitToast(msg)
+                onResult(false)
                 return@launch
             }
 
@@ -332,9 +344,11 @@ class NodesViewModel(application: Application) : AndroidViewModel(application) {
             result.onSuccess { node ->
                 val msg = getApplication<Application>().getString(R.string.common_add) + ": ${node.displayName}"
                 emitToast(msg)
+                onResult(true)
             }.onFailure { e ->
                 val msg = e.message ?: getApplication<Application>().getString(R.string.nodes_add_failed)
                 emitToast(msg)
+                onResult(false)
             }
         }
     }
