@@ -186,5 +186,5 @@ object SelectorManager {
         return tags.sorted().hashCode().toString()
     }
 
-    private const val SELECTION_CONFIRMATION_TIMEOUT_MS = 2_500L
+    internal const val SELECTION_CONFIRMATION_TIMEOUT_MS = 2_500L
 }

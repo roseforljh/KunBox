@@ -67,7 +67,17 @@ class LogRepositoryTest {
         assertTrue(LogRepository.isPreservedDiagnosticLine("INFO [Lifecycle] service=vpn event=create"))
         assertTrue(LogRepository.isPreservedDiagnosticLine("METRIC resource_fd process=bg count=32700"))
         assertTrue(LogRepository.isPreservedDiagnosticLine("WARN recovery resource_exhausted stage=restart_core"))
+        assertTrue(LogRepository.isPreservedDiagnosticLine("INFO recovery same_node stage=RESET_NETWORK"))
+        assertTrue(LogRepository.isPreservedDiagnosticLine("ERROR [METERED_GUARD] closed=true"))
+        assertTrue(LogRepository.isPreservedDiagnosticLine("ERROR [CONNECTION_STORM] closed=true"))
+        assertTrue(LogRepository.isPreservedDiagnosticLine("INFO [HOT_SWITCH] outcome=success"))
+        assertTrue(LogRepository.isPreservedDiagnosticLine("WARN diagnosis=remote_dns_timeout"))
         assertFalse(LogRepository.isPreservedDiagnosticLine("INFO [IPC] state update"))
+    }
+
+    @Test
+    fun persistedLogTimestampContainsDateAndMilliseconds() {
+        assertEquals("yyyy-MM-dd HH:mm:ss.SSS", LOG_TIMESTAMP_PATTERN)
     }
 
     @Test

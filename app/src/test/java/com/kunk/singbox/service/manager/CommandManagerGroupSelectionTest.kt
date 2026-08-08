@@ -1,5 +1,6 @@
 package com.kunk.singbox.service.manager
 
+import com.kunk.singbox.core.SelectorManager
 import java.io.File
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -60,5 +61,14 @@ class CommandManagerGroupSelectionTest {
         assertTrue(serviceSource.contains("override fun onRuntimeNodeChanged(nodeName: String)"))
         assertTrue(serviceSource.contains("realTimeNodeName = nodeName"))
         assertTrue(serviceSource.contains("requestRemoteStateUpdate(force = false)"))
+    }
+
+    @Test
+    fun selectorCallbacksHaveSeveralChancesBeforeTheThreeSecondConfirmationDeadline() {
+        assertTrue(SelectorManager.SELECTION_CONFIRMATION_TIMEOUT_MS <= 3_000L)
+        assertTrue(
+            CommandManager.GROUP_STATUS_INTERVAL_MS * 3 <=
+                SelectorManager.SELECTION_CONFIRMATION_TIMEOUT_MS
+        )
     }
 }

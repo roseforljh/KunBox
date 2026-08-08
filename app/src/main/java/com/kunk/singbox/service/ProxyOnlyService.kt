@@ -24,6 +24,7 @@ import com.kunk.singbox.core.SingBoxCore
 import com.kunk.singbox.core.StringIteratorImpl
 import com.kunk.singbox.ipc.SingBoxIpcHub
 import com.kunk.singbox.ipc.VpnStateStore
+import com.kunk.singbox.model.AppSettings
 import com.kunk.singbox.model.SingBoxConfig
 import com.kunk.singbox.repository.ConfigRepository
 import com.kunk.singbox.repository.LogRepository
@@ -38,6 +39,10 @@ import com.kunk.singbox.service.manager.AttributedConnectionTraffic
 import com.kunk.singbox.service.manager.ConnectionTrafficAttributor
 import com.kunk.singbox.service.manager.ConnectionTrafficEventData
 import com.kunk.singbox.service.manager.ConnectionTrafficEventReader
+import com.kunk.singbox.service.manager.ConnectionIncidentHistory
+import com.kunk.singbox.service.manager.ConnectionStormDecision
+import com.kunk.singbox.service.manager.ConnectionStormGuard
+import com.kunk.singbox.service.manager.LayeredNetworkHealthSampler
 import com.kunk.singbox.service.manager.RecoveryIntentLease
 import com.kunk.singbox.service.manager.RecoveryPolicy
 import com.kunk.singbox.service.manager.SameNodeFailureLayer
@@ -49,7 +54,11 @@ import com.kunk.singbox.service.manager.SameNodeRecoveryStage
 import com.kunk.singbox.service.manager.SameNodeRecoveryVerification
 import com.kunk.singbox.service.manager.ServiceStateHolder
 import com.kunk.singbox.service.manager.CommandManager
+import com.kunk.singbox.service.manager.TimedProbeResult
 import com.kunk.singbox.service.manager.UrlTestTagMatcher
+import com.kunk.singbox.service.manager.probePhysicalDns
+import com.kunk.singbox.service.manager.toIncidentSnapshot
+import com.kunk.singbox.service.manager.toProbeDiagnosticFields
 import com.kunk.singbox.service.network.TrafficMonitor
 import com.kunk.singbox.utils.LocalNetworkPermission
 import com.kunk.singbox.utils.LocaleHelper
@@ -186,9 +195,12 @@ class ProxyOnlyService : Service() {
     private val activeRuntimeConnectionIds = ConcurrentHashMap.newKeySet<String>()
     private val trafficMonitor = TrafficMonitor()
     private val connectionTrafficAttributor = ConnectionTrafficAttributor()
+    private val connectionStormGuard = ConnectionStormGuard()
+    private val connectionIncidentHistory by lazy { ConnectionIncidentHistory(this) }
     private val gson = Gson()
     private val healthSignalAggregator = HealthSignalAggregator()
     private val sameNodeRecoveryGate = SameNodeRecoveryGate()
+    private val layeredNetworkHealthSampler = LayeredNetworkHealthSampler()
     private val sameNodeRecoveryInFlight = java.util.concurrent.atomic.AtomicBoolean(false)
     @Volatile private var sameNodeRecoveryJob: Job? = null
 
@@ -980,6 +992,8 @@ class ProxyOnlyService : Service() {
         fallbackConfigPath: String?,
         recoveryIntentLease: RecoveryIntentLease
     ) {
+        val startedAtMs = SystemClock.elapsedRealtime()
+        recordProxyHotSwitchEvent(startedAtMs, nodeId, outboundTag, "pending")
         val configPath = fallbackConfigPath?.takeIf { File(it).isFile }
             ?: currentConfigPath?.takeIf { File(it).isFile }
         val failure = runCatching {
@@ -1017,6 +1031,7 @@ class ProxyOnlyService : Service() {
                     notifyRemoteState(state = ServiceState.RUNNING)
                     requestNotificationUpdate(force = true)
                     Log.i(TAG, "Proxy hot switch confirmed and old connections closed: $outboundTag")
+                    recordProxyHotSwitchEvent(startedAtMs, nodeId, outboundTag, "success")
                 }
                 is SelectorManager.SwitchResult.NeedRestart -> error(result.reason)
             }
@@ -1024,9 +1039,27 @@ class ProxyOnlyService : Service() {
 
         if (failure == null) return
         Log.w(TAG, "Proxy hot switch failed, keeping current runtime: ${failure.message}", failure)
+        recordProxyHotSwitchEvent(startedAtMs, nodeId, outboundTag, "failed", failure.message)
         if (completeRecoveryIntentOnSuccess(recoveryIntentLease) == null) return
         notifyRemoteState(state = ServiceState.RUNNING)
         requestNotificationUpdate(force = true)
+    }
+
+    private fun recordProxyHotSwitchEvent(
+        startedAtMs: Long,
+        nodeId: String,
+        outboundTag: String,
+        outcome: String,
+        reason: String? = null
+    ) {
+        val phase = if (outcome == "pending") "request" else "complete"
+        val level = if (outcome == "failed") "WARN" else "INFO"
+        LogRepository.getInstance().addAlwaysLog(
+            "$level [HOT_SWITCH] mode=proxy phase=$phase outcome=$outcome " +
+                "duration_ms=${SystemClock.elapsedRealtime() - startedAtMs} node_id=$nodeId " +
+                "outbound=$outboundTag actual=${SelectorManager.getSelectedOutbound().orEmpty()} " +
+                reason?.let { "reason=$it" }.orEmpty()
+        )
     }
 
     private fun initializeRuntimeSelector(configContent: String) {
@@ -1178,6 +1211,7 @@ class ProxyOnlyService : Service() {
         activeRuntimeConnectionIds.clear()
         trafficMonitor.reset()
         connectionTrafficAttributor.clear()
+        connectionStormGuard.clear()
         healthSignalAggregator.clearDnsFailures()
         if (stopService) {
             sameNodeRecoveryJob?.cancel()
@@ -1327,6 +1361,7 @@ class ProxyOnlyService : Service() {
     private fun startRuntimeCommandClient() {
         trafficMonitor.reset()
         connectionTrafficAttributor.clear()
+        connectionStormGuard.clear()
         activeRuntimeConnectionIds.clear()
         healthSignalAggregator.clearDnsFailures()
         val options = createRuntimeCommandOptions()
@@ -1355,7 +1390,7 @@ class ProxyOnlyService : Service() {
             addCommand(Libbox.CommandGroup)
             addCommand(Libbox.CommandConnections)
             addCommand(Libbox.CommandLog)
-            statusInterval = 3_000L * 1_000L * 1_000L
+            statusInterval = 1_000L * 1_000L * 1_000L
         }
     }
 
@@ -1389,7 +1424,7 @@ class ProxyOnlyService : Service() {
             line = message,
             nowMs = SystemClock.elapsedRealtime()
         ) ?: return
-        LogRepository.getInstance().addLog(HealthSignalAggregator.buildSummary(signal))
+        LogRepository.getInstance().addAlwaysLog(HealthSignalAggregator.buildSummary(signal))
 
         when (signal.kind) {
             HealthSignalKind.RESOURCE_EXHAUSTED -> {
@@ -1506,11 +1541,28 @@ class ProxyOnlyService : Service() {
         layer: SameNodeFailureLayer
     ): SameNodeRecoveryVerification {
         delay(SingBoxService.SAME_NODE_RECOVERY_SETTLE_MS)
-        val physicalNetworkHealthy = hasValidatedPhysicalNetwork()
         val selectedTag = resolveCurrentProxyOutboundTag()
         val selectorMatches = !selectedTag.isNullOrBlank() &&
             UrlTestTagMatcher.normalizeTag(selectedTag) == UrlTestTagMatcher.normalizeTag(nodeTag)
-        val proxyHealthy = physicalNetworkHealthy && selectorMatches && verifyProxyConnectivity(nodeTag)
+        val probeHost = resolveSameNodeProbeHost()
+        val probes = layeredNetworkHealthSampler.sample(
+            physicalProbe = {
+                TimedProbeResult(succeeded = hasValidatedPhysicalNetwork())
+            },
+            dnsProbe = {
+                probePhysicalDns(
+                    network = currentPhysicalNetwork(),
+                    host = probeHost,
+                    timeoutMs = SingBoxService.SAME_NODE_DNS_PROBE_TIMEOUT_MS
+                )
+            },
+            proxyProbe = {
+                val latency = probeProxyLatency(nodeTag)
+                TimedProbeResult(succeeded = latency != null, latencyMs = latency)
+            }
+        )
+        val physicalNetworkHealthy = probes.physical.hasMajoritySuccess
+        val proxyHealthy = physicalNetworkHealthy && selectorMatches && probes.proxy.hasMajoritySuccess
         val dnsFailures = healthSignalAggregator.recentRemoteDnsFailureCount(
             nowMs = SystemClock.elapsedRealtime(),
             windowMs = SingBoxService.SAME_NODE_RECOVERY_DNS_OBSERVE_MS
@@ -1520,8 +1572,12 @@ class ProxyOnlyService : Service() {
             selectorMatches = selectorMatches,
             dnsHealthy = proxyHealthy && dnsFailures == 0,
             proxyHealthy = proxyHealthy,
-            probeAttempts = 1,
-            probeFailures = if (proxyHealthy) 0 else 1
+            probeAttempts = probes.proxy.attempts,
+            probeFailures = probes.proxy.failures,
+            physicalProbe = probes.physical,
+            dnsProbe = probes.dns,
+            proxyProbe = probes.proxy,
+            remoteDnsFailures = dnsFailures
         ).also {
             if (layer == SameNodeFailureLayer.DNS && dnsFailures > 0) {
                 Log.w(TAG, "Proxy DNS still failing after recovery stage: count=$dnsFailures")
@@ -1529,12 +1585,21 @@ class ProxyOnlyService : Service() {
         }
     }
 
-    private suspend fun verifyProxyConnectivity(targetTag: String): Boolean {
-        val config = loadCurrentRuntimeConfig() ?: return false
+    private suspend fun resolveSameNodeProbeHost(): String? {
+        return runCatching {
+            val settings = SettingsRepository.getInstance(applicationContext).settings.first()
+            AppSettings.latencyTestUri(settings.latencyTestUrl).host.takeIf(String::isNotBlank)
+        }.onFailure { error ->
+            Log.w(TAG, "Failed to resolve proxy same-node probe host", error)
+        }.getOrNull()
+    }
+
+    private suspend fun probeProxyLatency(targetTag: String): Long? {
+        val config = loadCurrentRuntimeConfig() ?: return null
         val outbounds = config.outbounds.orEmpty()
         val target = outbounds.firstOrNull {
             UrlTestTagMatcher.normalizeTag(it.tag) == UrlTestTagMatcher.normalizeTag(targetTag)
-        } ?: return false
+        } ?: return null
         return runCatching {
             SingBoxCore.getInstance(this@ProxyOnlyService).testOutboundLatency(
                 outbound = target,
@@ -1542,10 +1607,10 @@ class ProxyOnlyService : Service() {
                 dnsConfig = config.dns,
                 timeoutOverrideMs = SingBoxService.HEALTH_FAST_FAILOVER_CANDIDATE_TIMEOUT_MS,
                 trafficKind = LatencyProbeTrafficKind.HEALTH_CHECK
-            ) > 0L
+            ).takeIf { it > 0L }
         }.onFailure { error ->
             Log.w(TAG, "Proxy same-node HTTPS verification failed: $targetTag", error)
-        }.getOrDefault(false)
+        }.getOrNull()
     }
 
     private suspend fun reloadCurrentConfigForSameNodeRecovery(): Boolean {
@@ -1601,13 +1666,21 @@ class ProxyOnlyService : Service() {
             ?: SelectorManager.getSelectedOutbound()
     }
 
+    private fun currentPhysicalNetwork(): Network? {
+        val manager = connectivityManager ?: getSystemService(ConnectivityManager::class.java)
+        val network = manager.activeNetwork ?: return null
+        val capabilities = manager.getNetworkCapabilities(network) ?: return null
+        return network.takeIf {
+            capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+                capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN)
+        }
+    }
+
     private fun hasValidatedPhysicalNetwork(): Boolean {
         val manager = connectivityManager ?: getSystemService(ConnectivityManager::class.java)
-        val network = manager.activeNetwork ?: return false
-        val capabilities = manager.getNetworkCapabilities(network) ?: return false
-        return capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
-            capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN) &&
-            capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+        val network = currentPhysicalNetwork() ?: return false
+        return manager.getNetworkCapabilities(network)
+            ?.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED) == true
     }
 
     private fun recordSameNodeRecoveryStage(
@@ -1629,6 +1702,7 @@ class ProxyOnlyService : Service() {
                 append("proxy=${verification?.proxyHealthy ?: "unknown"} ")
                 append("selector=${verification?.selectorMatches ?: "unknown"} ")
                 append("loss=${probeLossPercent?.let { "$it%" } ?: "unknown"} ")
+                append("${verification?.toProbeDiagnosticFields() ?: "remote_dns_failures=-1"} ")
                 append("connections=${activeRuntimeConnectionIds.size} ")
                 append("outbound=${resolveCurrentProxyOutboundTag() ?: "unknown"}")
             }
@@ -1664,6 +1738,13 @@ class ProxyOnlyService : Service() {
                 activeRuntimeConnectionIds.clear()
                 connectionTrafficAttributor.clear()
             }
+            enforceConnectionStormGuard(
+                connectionStormGuard.observe(
+                    reset = events.reset,
+                    events = eventData,
+                    nowMs = SystemClock.elapsedRealtime()
+                )
+            )
             eventData.forEach { event ->
                 if (event.type == ConnectionTrafficAttributor.EVENT_CLOSED) {
                     activeRuntimeConnectionIds.remove(event.id)
@@ -1701,9 +1782,42 @@ class ProxyOnlyService : Service() {
                 val closed = closeRuntimeConnection(event.id) || closeRuntimeConnections()
                 LogRepository.getInstance().addAlwaysLog(
                     "ERROR [METERED_GUARD] mode=proxy closed=$closed connection=${event.id} " +
-                        "node=${unauthorized.nodeName} nodeId=${unauthorized.nodeId}"
+                        "node=${unauthorized.nodeName} node_id=${unauthorized.nodeId}"
                 )
             }
+    }
+
+    private fun enforceConnectionStormGuard(decision: ConnectionStormDecision?) {
+        decision ?: return
+        val closed = if (decision.closeAll) {
+            closeRuntimeConnections()
+        } else {
+            decision.connectionIds.fold(true) { success, id -> closeRuntimeConnection(id) && success }
+        }
+        if (closed) connectionStormGuard.acknowledgeClosed(decision)
+        persistConnectionIncident(decision, closed)
+        LogRepository.getInstance().addAlwaysLog(
+            "ERROR [CONNECTION_STORM] mode=proxy reason=${decision.reason} closed=$closed " +
+                "active=${decision.activeConnections} created=${decision.newConnectionsInWindow} " +
+                "rate=${String.format(java.util.Locale.US, "%.1f", decision.creationRatePerSecond)} " +
+                "uid=${decision.offender?.uid ?: -1} " +
+                "package=${decision.offender?.packageNames?.joinToString(",").orEmpty()} " +
+                "inbound=${decision.offender?.inbound.orEmpty()} source=${decision.offender?.source.orEmpty()}"
+        )
+    }
+
+    private fun persistConnectionIncident(decision: ConnectionStormDecision, closed: Boolean) {
+        val snapshot = decision.toIncidentSnapshot(
+            mode = "proxy",
+            closeReason = if (decision.closeAll) "close_all" else "close_quarantined_source",
+            closeSucceeded = closed,
+            timestampEpochMs = System.currentTimeMillis(),
+            elapsedRealtimeMs = SystemClock.elapsedRealtime()
+        )
+        serviceScope.launch(Dispatchers.IO) {
+            runCatching { connectionIncidentHistory.append(snapshot) }
+                .onFailure { error -> Log.e(TAG, "Failed to persist proxy connection incident", error) }
+        }
     }
 
     private fun recordAttributedTraffic(records: List<AttributedConnectionTraffic>) {

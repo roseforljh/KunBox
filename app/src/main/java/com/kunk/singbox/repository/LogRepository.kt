@@ -33,6 +33,8 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 
+internal const val LOG_TIMESTAMP_PATTERN = "yyyy-MM-dd HH:mm:ss.SSS"
+
 internal data class LogPersistenceBatch(
     val lines: List<String>,
     val rewriteAll: Boolean,
@@ -316,7 +318,7 @@ class LogRepository private constructor() {
 
     private val maxLogSize = 2000
     private val maxLogLineLength = 2000
-    private val dateFormat = SimpleDateFormat("HH:mm:ss", Locale.getDefault())
+    private val dateFormat = SimpleDateFormat(LOG_TIMESTAMP_PATTERN, Locale.getDefault())
 
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
     private val buffer = ArrayDeque<String>(maxLogSize)
@@ -594,9 +596,16 @@ class LogRepository private constructor() {
         internal fun isPreservedDiagnosticLine(line: String): Boolean {
             return line.contains(PRESERVED_DIAGNOSTIC_MARKER) ||
                 line.contains(LIFECYCLE_DIAGNOSTIC_MARKER) ||
+                line.contains("[METERED_GUARD]") ||
+                line.contains("[CONNECTION_STORM]") ||
+                line.contains("[HOT_SWITCH]") ||
+                line.contains("[HotReload]") ||
                 line.contains(" resource_fd ") ||
                 line.contains(" resource_fd_breakdown ") ||
-                line.contains(" resource_exhausted ")
+                line.contains(" resource_exhausted ") ||
+                line.contains(" recovery same_node ") ||
+                line.contains("diagnosis=remote_dns_timeout") ||
+                line.contains("diagnosis=active_probe_failed")
         }
     }
 

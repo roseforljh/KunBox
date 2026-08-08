@@ -317,6 +317,37 @@ internal fun parseProcSocketRows(
     }
 }
 
+internal data class ProcSocketTableReadResult(
+    val rows: Map<String, String>?,
+    val failures: List<String>
+)
+
+internal fun readProcSocketTableRows(
+    pid: Int,
+    fileName: String,
+    inodeColumn: Int,
+    stateColumn: Int,
+    readLines: (String) -> List<String> = { path -> File(path).readLines(Charsets.UTF_8) }
+): ProcSocketTableReadResult {
+    val failures = mutableListOf<String>()
+    val paths = listOf(
+        "/proc/self/net/$fileName",
+        "/proc/net/$fileName",
+        "/proc/$pid/net/$fileName"
+    ).distinct()
+    paths.forEach { path ->
+        try {
+            return ProcSocketTableReadResult(
+                rows = parseProcSocketRows(readLines(path).asSequence(), inodeColumn, stateColumn),
+                failures = emptyList()
+            )
+        } catch (error: Exception) {
+            failures += "${path.substringBeforeLast('/')}:${error.javaClass.simpleName}"
+        }
+    }
+    return ProcSocketTableReadResult(rows = null, failures = failures)
+}
+
 internal fun calculateProcessCpuPercent(
     previous: ProcessResourcePoint,
     current: ProcessResourcePoint
@@ -356,6 +387,12 @@ internal class DiagnosticResourceSampler(context: Context) {
         ?: DEFAULT_TICKS_PER_SECOND
     private val appVersion = VersionInfo.getAppVersionName(appContext)
     private val appVersionCode = VersionInfo.getAppVersionCode(appContext)
+    private val currentPid = Process.myPid()
+    private val currentProcessName = currentProcessName()
+    private val currentFdSoftLimit by lazy(LazyThreadSafetyMode.NONE) { readFdSoftLimit(currentPid) }
+    private val currentProcessStartedAtEpochMs by lazy(LazyThreadSafetyMode.NONE) {
+        readProcessStartedAtEpochMs(currentPid)
+    }
 
     fun reset() {
         cpuBaseline.reset()
@@ -383,7 +420,7 @@ internal class DiagnosticResourceSampler(context: Context) {
     }
 
     fun captureCurrentProcess(includeFdBreakdown: Boolean = false): DiagnosticResourceSample {
-        val process = ObservedProcess(Process.myPid(), currentProcessName())
+        val process = ObservedProcess(currentPid, currentProcessName)
         val memoryByPid = readMemoryByPid(intArrayOf(process.pid))
         return captureProcess(
             process = process,
@@ -392,6 +429,31 @@ internal class DiagnosticResourceSampler(context: Context) {
             pssKb = memoryByPid[process.pid],
             includeFdBreakdown = includeFdBreakdown
         ).also { cpuBaseline.retainPids(setOf(process.pid)) }
+    }
+
+    fun captureCurrentFdPressure(): DiagnosticResourceSample {
+        val elapsedRealtimeMs = SystemClock.elapsedRealtime()
+        val fdCount = readFdCount(currentPid)
+        val fdSoftLimit = currentFdSoftLimit
+        return DiagnosticResourceSample(
+            timestampEpochMs = System.currentTimeMillis(),
+            elapsedRealtimeMs = elapsedRealtimeMs,
+            processName = currentProcessName,
+            pid = currentPid,
+            pssKb = null,
+            cpuTimeMs = null,
+            cpuPercent = null,
+            fdCount = fdCount,
+            fdSoftLimit = fdSoftLimit,
+            fdRatio = if (fdCount != null && fdSoftLimit != null && fdSoftLimit > 0L) {
+                fdCount.toDouble() / fdSoftLimit.toDouble()
+            } else {
+                null
+            },
+            appVersion = appVersion,
+            appVersionCode = appVersionCode,
+            processStartedAtEpochMs = currentProcessStartedAtEpochMs
+        )
     }
 
     private fun captureProcess(
@@ -506,14 +568,17 @@ internal class DiagnosticResourceSampler(context: Context) {
         val result = mutableMapOf<String, SocketDetail>()
         val failures = mutableSetOf<String>()
         SOCKET_TABLES.forEach { table ->
-            runCatching {
-                File("/proc/$pid/net/${table.fileName}").useLines(Charsets.UTF_8) { lines ->
-                    parseProcSocketRows(lines, table.inodeColumn, table.stateColumn).forEach { (inode, state) ->
-                        result[inode] = SocketDetail(table.protocol, state)
-                    }
-                }
-            }.onFailure { error ->
-                failures += "${table.protocol}:${error.javaClass.simpleName}"
+            val readResult = readProcSocketTableRows(
+                pid = pid,
+                fileName = table.fileName,
+                inodeColumn = table.inodeColumn,
+                stateColumn = table.stateColumn
+            )
+            val rows = readResult.rows
+            if (rows == null) {
+                failures += "${table.protocol}:${readResult.failures.joinToString(",")}"
+            } else {
+                rows.forEach { (inode, state) -> result[inode] = SocketDetail(table.protocol, state) }
             }
         }
         return SocketDetails(result, failures)
@@ -640,7 +705,8 @@ internal fun evaluateFdPressure(
     fdCount: Int?,
     fdSoftLimit: Long?,
     growthOverFiveMinutes: Int,
-    consecutiveHighSamples: Int
+    consecutiveHighSamples: Int,
+    rapidGrowth: Boolean = false
 ): FdPressureDecision {
     val ratio = if (fdCount != null && fdSoftLimit != null && fdSoftLimit > 0L) {
         fdCount.toDouble() / fdSoftLimit.toDouble()
@@ -650,6 +716,12 @@ internal fun evaluateFdPressure(
     return when {
         ratio != null && ratio >= FD_EMERGENCY_RATIO -> FdPressureDecision(
             FdPressureLevel.EMERGENCY,
+            FD_WARNING_SAMPLE_INTERVAL_MS,
+            shouldClassify = true,
+            shouldRecover = true
+        )
+        rapidGrowth || fdCount != null && fdCount >= FD_ABSOLUTE_RECOVERY_COUNT -> FdPressureDecision(
+            FdPressureLevel.RECOVERY,
             FD_WARNING_SAMPLE_INTERVAL_MS,
             shouldClassify = true,
             shouldRecover = true
@@ -726,7 +798,18 @@ internal class ResourceFdTracker {
             0
         }
         val growth = if (samples.size >= 2) samples.last().second - samples.first().second else 0
-        return evaluateFdPressure(count, sample.fdSoftLimit, growth, consecutiveHighSamples)
+        val rapidGrowth = count != null && samples.firstOrNull { point ->
+            sample.elapsedRealtimeMs - point.first <= FD_RAPID_GROWTH_WINDOW_MS
+        }?.let { point ->
+            count >= FD_RAPID_GROWTH_MIN_COUNT && count - point.second >= FD_RAPID_GROWTH_THRESHOLD
+        } == true
+        return evaluateFdPressure(
+            count,
+            sample.fdSoftLimit,
+            growth,
+            consecutiveHighSamples,
+            rapidGrowth
+        )
     }
 }
 
@@ -964,7 +1047,7 @@ internal object BackgroundResourceGuard {
             sampler
         }
         val sample = runCatching {
-            activeSampler?.captureCurrentProcess(includeFdBreakdown = true)
+            activeSampler?.captureCurrentFdPressure()
         }.getOrNull()
         requestRecovery(registration, reason, sample)
     }
@@ -995,29 +1078,46 @@ internal object BackgroundResourceGuard {
         gate.isAttemptCurrent(ownerId, attemptId)
     }
 
+    @Suppress("CyclomaticComplexMethod", "CognitiveComplexMethod", "NestedBlockDepth")
     private suspend fun monitor(
         registration: ResourceGuardRegistration,
         activeSampler: DiagnosticResourceSampler,
         activeHistory: DiagnosticResourceHistory
     ) {
         val tracker = ResourceFdTracker()
+        var lastFullSampleAtMs: Long? = null
+        var lastBreakdownAtMs: Long? = null
+        var previousLevel = FdPressureLevel.NORMAL
         while (kotlin.coroutines.coroutineContext.isActive && isCurrent(registration)) {
             try {
-                var sample = activeSampler.captureCurrentProcess()
-                val decision = tracker.observe(sample)
-                if (decision.shouldClassify) {
-                    sample = activeSampler.captureCurrentProcess(includeFdBreakdown = true)
-                }
-                runCatching { activeHistory.append(sample) }
-                    .onFailure { Log.w(TAG, "Failed to persist resource sample: ${it.message}") }
-                logSample(sample, decision)
+                val pressureSample = activeSampler.captureCurrentFdPressure()
+                val decision = tracker.observe(pressureSample)
+                val levelChanged = decision.level != previousLevel
                 if (decision.shouldRecover) {
-                    requestRecovery(
-                        registration,
-                        "fd_${decision.level.name.lowercase(Locale.US)}",
-                        sample
-                    )
+                    startImmediateFdRecovery(registration, activeHistory, pressureSample, decision)
+                    previousLevel = decision.level
+                    delay(decision.sampleIntervalMs)
+                    continue
                 }
+                val breakdownDue = decision.shouldClassify && (
+                    levelChanged || lastBreakdownAtMs == null ||
+                        pressureSample.elapsedRealtimeMs - checkNotNull(lastBreakdownAtMs) >= FD_BREAKDOWN_INTERVAL_MS
+                    )
+                val fullSampleDue = lastFullSampleAtMs == null || breakdownDue ||
+                    pressureSample.elapsedRealtimeMs - checkNotNull(lastFullSampleAtMs) >= FD_FULL_SAMPLE_INTERVAL_MS
+                val sample = if (fullSampleDue) {
+                    activeSampler.captureCurrentProcess(includeFdBreakdown = breakdownDue)
+                } else {
+                    pressureSample
+                }
+                if (fullSampleDue) {
+                    runCatching { activeHistory.append(sample) }
+                        .onFailure { Log.w(TAG, "Failed to persist resource sample: ${it.message}") }
+                    lastFullSampleAtMs = sample.elapsedRealtimeMs
+                    if (sample.fdBreakdown != null) lastBreakdownAtMs = sample.elapsedRealtimeMs
+                }
+                if (levelChanged || fullSampleDue) logSample(sample, decision)
+                previousLevel = decision.level
                 delay(decision.sampleIntervalMs)
             } catch (e: CancellationException) {
                 throw e
@@ -1026,6 +1126,22 @@ internal object BackgroundResourceGuard {
                 delay(FD_NORMAL_SAMPLE_INTERVAL_MS)
             }
         }
+    }
+
+    private fun startImmediateFdRecovery(
+        registration: ResourceGuardRegistration,
+        activeHistory: DiagnosticResourceHistory,
+        pressureSample: DiagnosticResourceSample,
+        decision: FdPressureDecision
+    ) {
+        runCatching { activeHistory.append(pressureSample) }
+            .onFailure { Log.w(TAG, "Failed to persist recovery pressure sample: ${it.message}") }
+        logSample(pressureSample, decision)
+        requestRecovery(
+            registration,
+            "fd_${decision.level.name.lowercase(Locale.US)}",
+            pressureSample
+        )
     }
 
     @Suppress("CyclomaticComplexMethod")
@@ -1332,11 +1448,17 @@ internal object BackgroundResourceGuard {
 
 internal const val RESOURCE_HISTORY_RELATIVE_PATH = "diagnostics/resource_history.csv"
 internal const val MAX_BACKGROUND_RESOURCE_SAMPLES = 4_096
-internal const val FD_NORMAL_SAMPLE_INTERVAL_MS = 60_000L
-internal const val FD_OBSERVE_SAMPLE_INTERVAL_MS = 15_000L
-internal const val FD_WARNING_SAMPLE_INTERVAL_MS = 5_000L
+internal const val FD_NORMAL_SAMPLE_INTERVAL_MS = 1_000L
+internal const val FD_OBSERVE_SAMPLE_INTERVAL_MS = 1_000L
+internal const val FD_WARNING_SAMPLE_INTERVAL_MS = 1_000L
+internal const val FD_FULL_SAMPLE_INTERVAL_MS = 60_000L
+internal const val FD_BREAKDOWN_INTERVAL_MS = 5_000L
 internal const val FD_GROWTH_WINDOW_MS = 5 * 60_000L
 internal const val FD_FIVE_MINUTE_GROWTH_WARNING = 1_024
+internal const val FD_RAPID_GROWTH_WINDOW_MS = 5_000L
+internal const val FD_RAPID_GROWTH_THRESHOLD = 512
+internal const val FD_RAPID_GROWTH_MIN_COUNT = 1_024
+internal const val FD_ABSOLUTE_RECOVERY_COUNT = 4_096
 internal const val FD_OBSERVE_RATIO = 0.50
 internal const val FD_WARNING_RATIO = 0.70
 internal const val FD_RECOVERY_RATIO = 0.85

@@ -4,9 +4,11 @@ import android.content.Context
 import android.content.Intent
 import android.os.SystemClock
 import android.util.Log
+import com.kunk.singbox.core.SelectorManager
 import com.kunk.singbox.ipc.VpnStateStore
 import com.kunk.singbox.model.NodeUi
 import com.kunk.singbox.repository.ConfigRepository
+import com.kunk.singbox.repository.LogRepository
 import com.kunk.singbox.repository.NodeProtectionStore
 import com.kunk.singbox.utils.perf.PerfTracer
 import kotlinx.coroutines.CoroutineScope
@@ -68,11 +70,13 @@ class NodeSwitchManager(
 
             if (nodeTag == null) {
                 Log.w(TAG, "Hot switch failed: node not found $nodeId and no outboundTag provided")
+                recordHotSwitchEvent(startedAtMs, nodeId, null, "invalid_target")
                 recordSwitchMetric(startedAtMs, "invalid_target")
                 return@launch
             }
             if (NodeProtectionStore.effectiveSelectedNodeId(VpnStateStore.getSelectedNodeId()) != nodeId) {
                 Log.w(TAG, "Hot switch rejected because the manual selection transaction is missing: $nodeId")
+                recordHotSwitchEvent(startedAtMs, nodeId, nodeTag, "unauthorized_target")
                 recordSwitchMetric(startedAtMs, "unauthorized_target")
                 return@launch
             }
@@ -81,9 +85,14 @@ class NodeSwitchManager(
                 !NodeProtectionStore.isRuntimeUseAuthorized(nodeId, VpnStateStore.getSelectedNodeId())
             ) {
                 Log.w(TAG, "Hot switch rejected because runtime outbound ownership is invalid: $nodeTag")
+                recordHotSwitchEvent(startedAtMs, nodeId, nodeTag, "invalid_runtime_mapping")
                 recordSwitchMetric(startedAtMs, "invalid_runtime_mapping")
                 return@launch
             }
+
+            LogRepository.getInstance().addAlwaysLog(
+                "INFO [HOT_SWITCH] mode=vpn phase=request node_id=$nodeId outbound=$nodeTag"
+            )
 
             val displayName = resolveExplicitHotSwitchDisplayName(
                 node = node,
@@ -100,11 +109,13 @@ class NodeSwitchManager(
                 }
                 callbacks?.requestNotificationUpdate(force = FORCE_NOTIFICATION_AFTER_EXPLICIT_HOT_SWITCH)
                 callbacks?.notifyRemoteStateUpdate(force = true)
+                recordHotSwitchEvent(startedAtMs, nodeId, nodeTag, "success")
                 recordSwitchMetric(startedAtMs, "success")
             } else {
                 Log.w(TAG, "Hot switch failed for $nodeTag, keeping current runtime")
                 callbacks?.requestNotificationUpdate(force = true)
                 callbacks?.notifyRemoteStateUpdate(force = true)
+                recordHotSwitchEvent(startedAtMs, nodeId, nodeTag, "failed")
                 recordSwitchMetric(startedAtMs, "failed")
             }
         }
@@ -206,6 +217,19 @@ class NodeSwitchManager(
             name = PerfTracer.Phases.NODE_SWITCH,
             durationMs = SystemClock.elapsedRealtime() - startedAtMs,
             outcome = outcome
+        )
+    }
+
+    private fun recordHotSwitchEvent(
+        startedAtMs: Long,
+        nodeId: String,
+        outboundTag: String?,
+        outcome: String
+    ) {
+        LogRepository.getInstance().addAlwaysLog(
+            "INFO [HOT_SWITCH] mode=vpn phase=complete outcome=$outcome " +
+                "duration_ms=${SystemClock.elapsedRealtime() - startedAtMs} node_id=$nodeId " +
+                "outbound=${outboundTag.orEmpty()} actual=${SelectorManager.getSelectedOutbound().orEmpty()}"
         )
     }
 

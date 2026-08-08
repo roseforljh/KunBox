@@ -37,6 +37,7 @@ import com.kunk.singbox.service.manager.BackgroundPowerManager
 import com.kunk.singbox.service.manager.CommandManager
 import com.kunk.singbox.service.manager.CoreManager
 import com.kunk.singbox.service.manager.ForeignVpnMonitor
+import com.kunk.singbox.service.manager.LayeredNetworkHealthSampler
 import com.kunk.singbox.service.manager.NetworkHelper
 import com.kunk.singbox.service.manager.NodeSwitchManager
 import com.kunk.singbox.service.manager.PlatformInterfaceImpl
@@ -52,7 +53,10 @@ import com.kunk.singbox.service.manager.SameNodeRecoveryStage
 import com.kunk.singbox.service.manager.SameNodeRecoveryVerification
 import com.kunk.singbox.service.manager.ServiceStateHolder
 import com.kunk.singbox.service.manager.ShutdownManager
+import com.kunk.singbox.service.manager.TimedProbeResult
 import com.kunk.singbox.service.manager.UrlTestTagMatcher
+import com.kunk.singbox.service.manager.probePhysicalDns
+import com.kunk.singbox.service.manager.toProbeDiagnosticFields
 import com.kunk.singbox.service.network.TrafficMonitor
 import com.kunk.singbox.service.notification.VpnNotificationManager
 import com.kunk.singbox.ui.components.AppNotificationManager
@@ -603,6 +607,7 @@ class SingBoxService : VpnService() {
 
     private val healthSignalAggregator = HealthSignalAggregator()
     private val sameNodeRecoveryGate = SameNodeRecoveryGate()
+    private val layeredNetworkHealthSampler = LayeredNetworkHealthSampler()
     private val sameNodeRecoveryInFlight = AtomicBoolean(false)
     private val autoFailoverCandidateCache = AutoFailoverCandidateCache()
     private val autoGroupRestoreInFlight = AtomicBoolean(false)
@@ -1292,7 +1297,7 @@ class SingBoxService : VpnService() {
             nowMs = SystemClock.elapsedRealtime()
         ) ?: return
 
-        LogRepository.getInstance().addLog(HealthSignalAggregator.buildSummary(signal))
+        LogRepository.getInstance().addAlwaysLog(HealthSignalAggregator.buildSummary(signal))
         when (signal.kind) {
             HealthSignalKind.RESOURCE_EXHAUSTED -> {
                 handleResourceExhaustionSignal("kernel_emfile")
@@ -1480,12 +1485,28 @@ class SingBoxService : VpnService() {
         layer: SameNodeFailureLayer
     ): SameNodeRecoveryVerification {
         delay(SingBoxService.SAME_NODE_RECOVERY_SETTLE_MS)
-        val physicalNetworkHealthy = hasValidatedPhysicalNetwork()
         val selectedTag = resolveCurrentProxyOutboundTag()
         val selectorMatches = !selectedTag.isNullOrBlank() &&
             UrlTestTagMatcher.normalizeTag(selectedTag) == UrlTestTagMatcher.normalizeTag(nodeTag)
-        val proxyHealthy = physicalNetworkHealthy && selectorMatches &&
-            verifyAutoFailoverTargetConnectivity(nodeTag)
+        val probeHost = resolveSameNodeProbeHost()
+        val probes = layeredNetworkHealthSampler.sample(
+            physicalProbe = {
+                TimedProbeResult(succeeded = hasValidatedPhysicalNetwork())
+            },
+            dnsProbe = {
+                probePhysicalDns(
+                    network = getCurrentPhysicalNetwork(),
+                    host = probeHost,
+                    timeoutMs = SingBoxService.SAME_NODE_DNS_PROBE_TIMEOUT_MS
+                )
+            },
+            proxyProbe = {
+                val latency = probeAutoFailoverTargetLatency(nodeTag)
+                TimedProbeResult(succeeded = latency != null, latencyMs = latency)
+            }
+        )
+        val physicalNetworkHealthy = probes.physical.hasMajoritySuccess
+        val proxyHealthy = physicalNetworkHealthy && selectorMatches && probes.proxy.hasMajoritySuccess
         val dnsFailures = healthSignalAggregator.recentRemoteDnsFailureCount(
             nowMs = SystemClock.elapsedRealtime(),
             windowMs = SingBoxService.SAME_NODE_RECOVERY_DNS_OBSERVE_MS
@@ -1495,13 +1516,26 @@ class SingBoxService : VpnService() {
             selectorMatches = selectorMatches,
             dnsHealthy = proxyHealthy && dnsFailures == 0,
             proxyHealthy = proxyHealthy,
-            probeAttempts = 1,
-            probeFailures = if (proxyHealthy) 0 else 1
+            probeAttempts = probes.proxy.attempts,
+            probeFailures = probes.proxy.failures,
+            physicalProbe = probes.physical,
+            dnsProbe = probes.dns,
+            proxyProbe = probes.proxy,
+            remoteDnsFailures = dnsFailures
         ).also { verification ->
             if (layer == SameNodeFailureLayer.DNS && dnsFailures > 0) {
                 Log.w(SingBoxService.TAG, "[SameNodeRecovery] DNS still failing count=$dnsFailures")
             }
         }
+    }
+
+    private suspend fun resolveSameNodeProbeHost(): String? {
+        return runCatching {
+            val settings = SettingsRepository.getInstance(applicationContext).settings.first()
+            AppSettings.latencyTestUri(settings.latencyTestUrl).host.takeIf(String::isNotBlank)
+        }.onFailure { error ->
+            Log.w(SingBoxService.TAG, "[SameNodeRecovery] failed to resolve probe host", error)
+        }.getOrNull()
     }
 
     private suspend fun reloadCurrentConfigForSameNodeRecovery(): Boolean {
@@ -1573,7 +1607,8 @@ class SingBoxService : VpnService() {
                 append("proxy=${verification?.proxyHealthy ?: "unknown"} ")
                 append("selector=${verification?.selectorMatches ?: "unknown"} ")
                 append("probe_attempts=${verification?.probeAttempts ?: 0} ")
-                append("probe_loss_pct=${probeLossPercent ?: -1}")
+                append("probe_loss_pct=${probeLossPercent ?: -1} ")
+                append(verification?.toProbeDiagnosticFields() ?: "remote_dns_failures=-1")
             }
         )
     }
@@ -2003,12 +2038,12 @@ class SingBoxService : VpnService() {
         }.getOrNull()
     }
 
-    private suspend fun verifyAutoFailoverTargetConnectivity(targetTag: String): Boolean {
-        val config = loadLastRunningConfig() ?: return false
+    private suspend fun probeAutoFailoverTargetLatency(targetTag: String): Long? {
+        val config = loadLastRunningConfig() ?: return null
         val outbounds = config.outbounds.orEmpty()
         val target = outbounds.firstOrNull {
             UrlTestTagMatcher.normalizeTag(it.tag) == UrlTestTagMatcher.normalizeTag(targetTag)
-        } ?: return false
+        } ?: return null
         return runCatching {
             SingBoxCore.getInstance(this@SingBoxService).testOutboundLatency(
                 outbound = target,
@@ -2016,10 +2051,14 @@ class SingBoxService : VpnService() {
                 dnsConfig = config.dns,
                 timeoutOverrideMs = SingBoxService.HEALTH_FAST_FAILOVER_CANDIDATE_TIMEOUT_MS,
                 trafficKind = LatencyProbeTrafficKind.HEALTH_CHECK
-            ) > 0L
+            ).takeIf { it > 0L }
         }.onFailure { error ->
             Log.w(SingBoxService.TAG, "[AutoFailover] target HTTPS probe failed: $targetTag", error)
-        }.getOrDefault(false)
+        }.getOrNull()
+    }
+
+    private suspend fun verifyAutoFailoverTargetConnectivity(targetTag: String): Boolean {
+        return probeAutoFailoverTargetLatency(targetTag) != null
     }
 
     private fun handleAutoGroupSelectionChanged(groupTag: String, selectedTag: String) {
@@ -2846,6 +2885,7 @@ class SingBoxService : VpnService() {
                 val startedAtMs = SystemClock.elapsedRealtime()
                 try {
                     Log.i(SingBoxService.TAG, "[HotReload] Starting kernel-level hot reload...")
+                    LogRepository.getInstance().addAlwaysLog("INFO [HotReload] phase=request source=service")
 
                     MeteredNodeConfigGuard.requireRuntimeConfigAuthorized(
                         configContent = configContent,
@@ -2868,7 +2908,10 @@ class SingBoxService : VpnService() {
                                 "success"
                             )
                             Log.i(SingBoxService.TAG, "[HotReload] Kernel hot reload succeeded")
-                            LogRepository.getInstance().addLog("INFO [HotReload] Config reloaded successfully")
+                            LogRepository.getInstance().addAlwaysLog(
+                                "INFO [HotReload] phase=complete outcome=success " +
+                                    "duration_ms=${SystemClock.elapsedRealtime() - startedAtMs}"
+                            )
 
                             commandManager.getCommandServer()?.let { server ->
                                 BoxWrapperManager.init(server)
@@ -2900,6 +2943,10 @@ class SingBoxService : VpnService() {
                         "cancelled"
                     )
                     Log.i(SingBoxService.TAG, "performHotReload cancelled")
+                    LogRepository.getInstance().addAlwaysLog(
+                        "INFO [HotReload] phase=complete outcome=cancelled " +
+                            "duration_ms=${SystemClock.elapsedRealtime() - startedAtMs}"
+                    )
                     throw e
                 } catch (e: Exception) {
                     PerfTracer.recordDuration(
@@ -2924,7 +2971,7 @@ class SingBoxService : VpnService() {
 
     protected fun handleHotReloadFailure(errorMsg: String) {
         Log.e(SingBoxService.TAG, "[HotReload] $errorMsg, stopping VPN")
-        LogRepository.getInstance().addLog("ERROR [HotReload] $errorMsg")
+        LogRepository.getInstance().addAlwaysLog("ERROR [HotReload] phase=complete outcome=failed reason=$errorMsg")
 
         serviceScope.launch(Dispatchers.Main) {
             AppNotificationManager.showMessage(
@@ -3002,10 +3049,12 @@ class SingBoxService : VpnService() {
             return false
         }
         val startToken = coreManager.captureStartToken() ?: return false
+        val startedAtMs = SystemClock.elapsedRealtime()
 
         return try {
             kotlinx.coroutines.runBlocking(kotlinx.coroutines.Dispatchers.IO) {
                 Log.i(SingBoxService.TAG, "[HotReload-Sync] Starting kernel-level hot reload...")
+                LogRepository.getInstance().addAlwaysLog("INFO [HotReload] phase=request source=ipc")
 
                 MeteredNodeConfigGuard.requireRuntimeConfigAuthorized(
                     configContent = configContent,
@@ -3020,24 +3069,41 @@ class SingBoxService : VpnService() {
 
                 val result = coreManager.hotReloadConfig(runtimeConfigContent, startToken)
 
-                result.getOrNull() == true && result.isSuccess.also { success ->
-                    if (success && result.getOrNull() == true) {
-                        Log.i(SingBoxService.TAG, "[HotReload-Sync] Kernel hot reload succeeded")
-                        LogRepository.getInstance().addLog("INFO [HotReload] Config reloaded successfully via IPC")
+                val success = result.getOrNull() == true
+                if (success) {
+                    Log.i(SingBoxService.TAG, "[HotReload-Sync] Kernel hot reload succeeded")
+                    LogRepository.getInstance().addAlwaysLog(
+                        "INFO [HotReload] phase=complete outcome=success source=ipc " +
+                            "duration_ms=${SystemClock.elapsedRealtime() - startedAtMs}"
+                    )
 
-                        commandManager.getCommandServer()?.let { server ->
-                            BoxWrapperManager.init(server)
-                        }
-
-                        requestNotificationUpdate(force = true)
-                        requestRemoteStateUpdate(force = true)
+                    commandManager.getCommandServer()?.let { server ->
+                        BoxWrapperManager.init(server)
                     }
+
+                    requestNotificationUpdate(force = true)
+                    requestRemoteStateUpdate(force = true)
+                } else {
+                    val reason = result.exceptionOrNull()?.message ?: "kernel_returned_false"
+                    LogRepository.getInstance().addAlwaysLog(
+                        "ERROR [HotReload] phase=complete outcome=failed source=ipc " +
+                            "duration_ms=${SystemClock.elapsedRealtime() - startedAtMs} reason=$reason"
+                    )
                 }
+                success
             }
         } catch (e: CancellationException) {
+            LogRepository.getInstance().addAlwaysLog(
+                "INFO [HotReload] phase=complete outcome=cancelled source=ipc " +
+                    "duration_ms=${SystemClock.elapsedRealtime() - startedAtMs}"
+            )
             throw e
         } catch (e: Exception) {
             Log.e(SingBoxService.TAG, "performHotReloadSync error", e)
+            LogRepository.getInstance().addAlwaysLog(
+                "ERROR [HotReload] phase=complete outcome=failed source=ipc " +
+                    "duration_ms=${SystemClock.elapsedRealtime() - startedAtMs} reason=${e.message.orEmpty()}"
+            )
             false
         }
     }
@@ -3586,7 +3652,9 @@ class SingBoxService : VpnService() {
 
         internal const val SAME_NODE_RECOVERY_SETTLE_MS = 350L
 
-        internal const val SAME_NODE_RECOVERY_DNS_OBSERVE_MS = 2_000L
+        internal const val SAME_NODE_RECOVERY_DNS_OBSERVE_MS = 5_000L
+
+        internal const val SAME_NODE_DNS_PROBE_TIMEOUT_MS = 1_000L
 
         internal const val SINGLE_NODE_ROUTE_FAILURE_NOTIFICATION_DEBOUNCE_MS = 60_000L
 

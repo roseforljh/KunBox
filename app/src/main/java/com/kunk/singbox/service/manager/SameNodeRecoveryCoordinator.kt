@@ -18,13 +18,23 @@ internal data class SameNodeRecoveryVerification(
     val dnsHealthy: Boolean,
     val proxyHealthy: Boolean,
     val probeAttempts: Int = 1,
-    val probeFailures: Int = 0
+    val probeFailures: Int = 0,
+    val physicalProbe: ProbeStatistics? = null,
+    val dnsProbe: ProbeStatistics? = null,
+    val proxyProbe: ProbeStatistics? = null,
+    val remoteDnsFailures: Int = 0
 ) {
     fun recovered(layer: SameNodeFailureLayer): Boolean {
         if (!physicalNetworkHealthy || !selectorMatches || !proxyHealthy) return false
         return layer != SameNodeFailureLayer.DNS || dnsHealthy
     }
 }
+
+internal fun SameNodeRecoveryVerification.toProbeDiagnosticFields(): String = listOfNotNull(
+    physicalProbe?.toDiagnosticFields("physical"),
+    dnsProbe?.toDiagnosticFields("dns"),
+    proxyProbe?.toDiagnosticFields("proxy")
+).plus("remote_dns_failures=$remoteDnsFailures").joinToString(" ")
 
 internal sealed class SameNodeRecoveryOutcome {
     data class Recovered(val stage: SameNodeRecoveryStage) : SameNodeRecoveryOutcome()
@@ -59,16 +69,19 @@ internal class SameNodeRecoveryCoordinator(
         actions.record(SameNodeRecoveryStage.CLOSE_CONNECTIONS, null)
         verify(nodeTag, layer, SameNodeRecoveryStage.CLOSE_CONNECTIONS)?.let { return it }
 
+        if (!actions.hasPhysicalNetwork()) return SameNodeRecoveryOutcome.NoPhysicalNetwork
         actions.resetNetwork()
         actions.record(SameNodeRecoveryStage.RESET_NETWORK, null)
         verify(nodeTag, layer, SameNodeRecoveryStage.RESET_NETWORK)?.let { return it }
 
+        if (!actions.hasPhysicalNetwork()) return SameNodeRecoveryOutcome.NoPhysicalNetwork
         val reloaded = actions.reloadCurrentConfig()
         actions.record(SameNodeRecoveryStage.RELOAD_CORE, null)
         if (reloaded) {
             verify(nodeTag, layer, SameNodeRecoveryStage.RELOAD_CORE)?.let { return it }
         }
 
+        if (!actions.hasPhysicalNetwork()) return SameNodeRecoveryOutcome.NoPhysicalNetwork
         val restarting = actions.restartCurrentConfig()
         actions.record(SameNodeRecoveryStage.FULL_RESTART, null)
         return if (restarting) SameNodeRecoveryOutcome.Restarting else SameNodeRecoveryOutcome.Failed
@@ -78,9 +91,10 @@ internal class SameNodeRecoveryCoordinator(
         nodeTag: String,
         layer: SameNodeFailureLayer,
         stage: SameNodeRecoveryStage
-    ): SameNodeRecoveryOutcome.Recovered? {
+    ): SameNodeRecoveryOutcome? {
         val verification = actions.verify(nodeTag, layer)
         actions.record(stage, verification)
+        if (!verification.physicalNetworkHealthy) return SameNodeRecoveryOutcome.NoPhysicalNetwork
         return SameNodeRecoveryOutcome.Recovered(stage).takeIf { verification.recovered(layer) }
     }
 }

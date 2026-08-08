@@ -39,6 +39,22 @@ class SameNodeRecoveryCoordinatorTest {
     }
 
     @Test
+    fun recoveryStopsBeforeNetworkResetWhenPhysicalNetworkDisappearsDuringVerification() = runBlocking {
+        val actions = FakeActions(
+            verifications = ArrayDeque(
+                listOf(
+                    failedVerification(physicalNetworkHealthy = false)
+                )
+            )
+        )
+
+        val outcome = SameNodeRecoveryCoordinator(actions).recover(SameNodeFailureLayer.PROXY)
+
+        assertEquals(SameNodeRecoveryOutcome.NoPhysicalNetwork, outcome)
+        assertEquals(listOf("close", "verify"), actions.calls)
+    }
+
+    @Test
     fun recoveryReloadsThenRequestsFullRestartWhenVerificationStillFails() = runBlocking {
         val actions = FakeActions(
             reloadResult = true,
@@ -124,8 +140,10 @@ class SameNodeRecoveryCoordinatorTest {
             proxyHealthy = true
         )
 
-        private fun failedVerification() = SameNodeRecoveryVerification(
-            physicalNetworkHealthy = true,
+        private fun failedVerification(
+            physicalNetworkHealthy: Boolean = true
+        ) = SameNodeRecoveryVerification(
+            physicalNetworkHealthy = physicalNetworkHealthy,
             selectorMatches = true,
             dnsHealthy = false,
             proxyHealthy = false,

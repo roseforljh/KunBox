@@ -1,15 +1,21 @@
 package com.kunk.singbox.service.manager
 
 import com.kunk.singbox.repository.RuntimeNodeRef
-import io.nekohasekai.libbox.Connection
-import io.nekohasekai.libbox.ConnectionEvents
 
 internal data class ConnectionTrafficEventData(
     val type: Int,
     val id: String,
     val tags: List<String> = emptyList(),
     val uploadDelta: Long = 0L,
-    val downloadDelta: Long = 0L
+    val downloadDelta: Long = 0L,
+    val uid: Int? = null,
+    val packageNames: List<String> = emptyList(),
+    val inbound: String? = null,
+    val network: String? = null,
+    val protocol: String? = null,
+    val source: String? = null,
+    val outbound: String? = null,
+    val chain: List<String> = emptyList()
 )
 
 internal data class AttributedConnectionTraffic(
@@ -19,7 +25,7 @@ internal data class AttributedConnectionTraffic(
 )
 
 internal object ConnectionTrafficEventReader {
-    fun read(events: ConnectionEvents): List<ConnectionTrafficEventData> {
+    fun read(events: io.nekohasekai.libbox.ConnectionEvents): List<ConnectionTrafficEventData> {
         val iterator = events.iterator()
         return buildList {
             while (iterator.hasNext()) {
@@ -29,13 +35,36 @@ internal object ConnectionTrafficEventReader {
                     val id = event.id?.takeIf(String::isNotBlank)
                         ?: connection?.id?.takeIf(String::isNotBlank)
                     if (id != null) {
+                        val chain = readIterator(runCatching { connection?.chain() }.getOrNull())
+                        val outbound = runCatching { connection?.outbound }.getOrNull()?.takeIf(String::isNotBlank)
+                        val fromOutbound = runCatching { connection?.fromOutbound }.getOrNull()
+                            ?.takeIf(String::isNotBlank)
+                        val processInfo = runCatching { connection?.processInfo }.getOrNull()
                         add(
                             ConnectionTrafficEventData(
                                 type = event.type,
                                 id = id,
-                                tags = readTags(connection),
+                                tags = buildList {
+                                    outbound?.let(::add)
+                                    fromOutbound?.let(::add)
+                                    addAll(chain)
+                                }.distinct(),
                                 uploadDelta = event.uplinkDelta,
-                                downloadDelta = event.downlinkDelta
+                                downloadDelta = event.downlinkDelta,
+                                uid = runCatching { processInfo?.userID }.getOrNull()?.takeIf { it > 0 },
+                                packageNames = readIterator(
+                                    runCatching { processInfo?.packageNames() }.getOrNull()
+                                ),
+                                inbound = runCatching { connection?.inbound }.getOrNull()
+                                    ?.takeIf(String::isNotBlank),
+                                network = runCatching { connection?.network }.getOrNull()
+                                    ?.takeIf(String::isNotBlank),
+                                protocol = runCatching { connection?.protocol }.getOrNull()
+                                    ?.takeIf(String::isNotBlank),
+                                source = runCatching { connection?.source }.getOrNull()
+                                    ?.takeIf(String::isNotBlank),
+                                outbound = outbound,
+                                chain = chain
                             )
                         )
                     }
@@ -44,14 +73,11 @@ internal object ConnectionTrafficEventReader {
         }
     }
 
-    private fun readTags(connection: Connection?): List<String> {
-        connection ?: return emptyList()
+    private fun readIterator(iterator: io.nekohasekai.libbox.StringIterator?): List<String> {
+        iterator ?: return emptyList()
         return buildList {
-            connection.outbound?.takeIf(String::isNotBlank)?.let(::add)
-            connection.fromOutbound?.takeIf(String::isNotBlank)?.let(::add)
-            val chain = connection.chain()
-            while (chain?.hasNext() == true) {
-                chain.next()?.takeIf(String::isNotBlank)?.let(::add)
+            while (iterator.hasNext()) {
+                iterator.next()?.takeIf(String::isNotBlank)?.let(::add)
             }
         }.distinct()
     }

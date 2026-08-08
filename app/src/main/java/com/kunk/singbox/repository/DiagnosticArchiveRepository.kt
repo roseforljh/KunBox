@@ -17,6 +17,8 @@ import com.kunk.singbox.utils.perf.DiagnosticResourceSample
 import com.kunk.singbox.utils.perf.DiagnosticResourceHistory
 import com.kunk.singbox.utils.perf.formatDiagnosticResourceSamplesCsv
 import com.kunk.singbox.utils.perf.mergeDiagnosticResourceSamples
+import com.kunk.singbox.service.manager.ConnectionIncidentHistory
+import com.kunk.singbox.service.manager.formatConnectionIncidentSnapshotsJsonl
 import java.io.BufferedOutputStream
 import java.io.File
 import java.io.FileOutputStream
@@ -65,6 +67,23 @@ internal data class DiagnosticResourceSummary(
     val latestProcessStartedAtEpochMs: Long?,
     val latestSessionSampleCount: Int
 )
+
+@Suppress("LongParameterList")
+internal fun buildDiagnosticArchiveEntries(
+    manifest: String,
+    logs: String,
+    runningConfig: String?,
+    resourcesCsv: String,
+    connectionIncidentsJsonl: String,
+    redactor: DiagnosticRedactor
+): Map<String, String> = linkedMapOf<String, String>().apply {
+    put("manifest.json", manifest)
+    put("redaction-policy.txt", DiagnosticArchiveRepository.REDACTION_POLICY)
+    put("logs.txt", redactor.redactText(logs))
+    if (runningConfig != null) put("running_config.json", redactor.redactJson(runningConfig))
+    put("resources.csv", resourcesCsv)
+    put("connection_incidents.jsonl", redactor.redactJsonLines(connectionIncidentsJsonl))
+}
 
 private const val PROCESS_START_JITTER_TOLERANCE_MS = 2L
 
@@ -145,17 +164,23 @@ internal class DiagnosticArchiveRepository(
         val runningConfig = File(appContext.filesDir, RUNNING_CONFIG_FILE)
             .takeIf(File::isFile)
             ?.readText(Charsets.UTF_8)
-        return linkedMapOf<String, String>().apply {
-            put("manifest.json", buildManifest(mergedSamples, runningConfig != null))
-            put("redaction-policy.txt", REDACTION_POLICY)
-            put("logs.txt", redactor.redactText(logRepository.getLogsAsTextForExport()))
-            if (runningConfig != null) put("running_config.json", redactor.redactJson(runningConfig))
-            put("resources.csv", formatDiagnosticResourceSamplesCsv(mergedSamples))
-        }
+        val connectionIncidents = ConnectionIncidentHistory(appContext).read()
+        return buildDiagnosticArchiveEntries(
+            manifest = buildManifest(mergedSamples, runningConfig != null, connectionIncidents.size),
+            logs = logRepository.getLogsAsTextForExport(),
+            runningConfig = runningConfig,
+            resourcesCsv = formatDiagnosticResourceSamplesCsv(mergedSamples),
+            connectionIncidentsJsonl = formatConnectionIncidentSnapshotsJsonl(connectionIncidents),
+            redactor = redactor
+        )
     }
 
     @Suppress("DEPRECATION")
-    private fun buildManifest(samples: List<DiagnosticResourceSample>, hasRunningConfig: Boolean): String {
+    private fun buildManifest(
+        samples: List<DiagnosticResourceSample>,
+        hasRunningConfig: Boolean,
+        connectionIncidentCount: Int
+    ): String {
         val packageInfo = appContext.packageManager.getPackageInfo(appContext.packageName, 0)
         val versionCode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             packageInfo.longVersionCode
@@ -165,7 +190,7 @@ internal class DiagnosticArchiveRepository(
         val resourceSummary = summarizeDiagnosticResources(samples, versionCode)
         return gson.toJson(
             JsonObject().apply {
-                addProperty("format_version", 2)
+                addProperty("format_version", 3)
                 addProperty("created_at_epoch_ms", System.currentTimeMillis())
                 addProperty("app_version", packageInfo.versionName.orEmpty())
                 addProperty("app_version_code", versionCode)
@@ -187,6 +212,7 @@ internal class DiagnosticArchiveRepository(
                 )
                 addProperty("latest_resource_session_sample_count", resourceSummary.latestSessionSampleCount)
                 addProperty("running_config_included", hasRunningConfig)
+                addProperty("connection_incident_count", connectionIncidentCount)
                 addProperty("redaction", "salted-pseudonym-v1")
             }
         )
@@ -246,7 +272,7 @@ internal class DiagnosticArchiveRepository(
         return DiagnosticArchiveResult(target.absolutePath, target.length())
     }
 
-    private companion object {
+    internal companion object {
         const val RUNNING_CONFIG_FILE = "running_config.json"
         const val ZIP_MIME_TYPE = "application/zip"
         const val REDACTION_SALT_BYTES = 32
@@ -263,6 +289,7 @@ internal class DiagnosticArchiveRepository(
 internal class DiagnosticRedactor(private val salt: ByteArray) {
 
     private val gson = GsonBuilder().setPrettyPrinting().disableHtmlEscaping().create()
+    private val compactGson = GsonBuilder().disableHtmlEscaping().create()
 
     fun redactJson(source: String): String {
         val root = runCatching { JsonParser.parseString(source) }.getOrElse { return INVALID_JSON_REDACTION }
@@ -304,6 +331,17 @@ internal class DiagnosticRedactor(private val salt: ByteArray) {
         redacted = IPV6_REGEX.replace(redacted) { match -> "<ip:${fingerprint(match.value)}>" }
         redacted = UUID_REGEX.replace(redacted, REDACTED)
         return DOMAIN_REGEX.replace(redacted) { match -> "<host:${fingerprint(match.value)}>" }
+    }
+
+    fun redactJsonLines(source: String): String {
+        return source.lineSequence()
+            .filter(String::isNotBlank)
+            .joinToString(separator = "\n", postfix = if (source.isBlank()) "" else "\n") { line ->
+                val redacted = runCatching {
+                    redactElement(JsonParser.parseString(line), null)
+                }.getOrElse { JsonPrimitive(INVALID_JSON_REDACTION) }
+                compactGson.toJson(redacted)
+            }
     }
 
     private fun redactElement(element: JsonElement, key: String?): JsonElement {
@@ -415,21 +453,32 @@ internal class DiagnosticRedactor(private val salt: ByteArray) {
             "url"
         )
         val IDENTIFIER_KEYS = setOf(
+            "actual",
             "auth_user",
+            "chain",
+            "connection",
             "detour",
             "domain",
             "domain_keyword",
             "domain_suffix",
+            "inbound",
             "destination_ip_cidr",
             "final",
             "geoip",
             "geosite",
             "ip_cidr",
+            "node",
+            "node_id",
             "outbound",
+            "outbound_tag",
             "package_name",
+            "package_names",
             "public_key",
             "rule_set",
             "source_ip_cidr",
+            "source",
+            "selected",
+            "target_node_name",
             "tag",
             "user",
             "username"
