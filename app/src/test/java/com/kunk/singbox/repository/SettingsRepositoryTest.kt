@@ -142,4 +142,21 @@ class SettingsRepositoryTest {
         assertTrue(body.contains("return persisted && changed"))
         assertFalse(body.contains("notifyRestartRequired()"))
     }
+
+    @Test
+    fun appRoutingWritesUseExclusiveAtomicUpserts() {
+        val repository = File("src/main/java/com/kunk/singbox/repository/SettingsRepository.kt")
+            .readText(Charsets.UTF_8)
+        val viewModel = File("src/main/java/com/kunk/singbox/viewmodel/SettingsViewModel.kt")
+            .readText(Charsets.UTF_8)
+
+        assertTrue(repository.contains("updateSettingsAndNotifyRestart { upsertExclusiveAppRule(it, value) }"))
+        assertTrue(repository.contains("updateSettingsAndNotifyRestart { upsertExclusiveAppGroup(it, value) }"))
+        assertEquals(2, viewModel.windowed("repository.upsertAppRule(rule)".length).count {
+            it == "repository.upsertAppRule(rule)"
+        })
+        assertEquals(2, viewModel.windowed("repository.upsertAppGroup(group)".length).count {
+            it == "repository.upsertAppGroup(group)"
+        })
+    }
 }

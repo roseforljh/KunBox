@@ -6,7 +6,6 @@ import com.kunk.singbox.service.ServiceState
 import java.io.File
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -31,6 +30,35 @@ class ManualSelectionTransactionPolicyTest {
     }
 
     @Test
+    fun runningMeteredSelectionIsRejectedBeforeManualAuthorization() {
+        val body = source
+            .substringAfter("suspend fun setActiveNodeWithResult(nodeId: String)")
+            .substringBefore("private fun commitManualSelectionState(")
+        val rejectionIndex = body.indexOf("if (remoteRunning && targetNode.meteredProtected)")
+        val authorizationIndex = body.indexOf("NodeProtectionStore.beginManualSelection(nodeId)")
+
+        assertTrue(rejectionIndex >= 0)
+        assertTrue(rejectionIndex < authorizationIndex)
+        assertTrue(body.contains("R.string.node_metered_hot_reload_unsupported"))
+    }
+
+    @Test
+    fun meteredHotReloadFailureUsesTheRepositoryToastMessage() {
+        val nodes = File("src/main/java/com/kunk/singbox/viewmodel/NodesViewModel.kt")
+            .readText(Charsets.UTF_8)
+        val dashboard = File("src/main/java/com/kunk/singbox/viewmodel/DashboardViewModel.kt")
+            .readText(Charsets.UTF_8)
+        val profiles = File("src/main/java/com/kunk/singbox/viewmodel/ProfilesViewModel.kt")
+            .readText(Charsets.UTF_8)
+        val strings = File("src/main/res/values/strings.xml").readText(Charsets.UTF_8)
+
+        assertTrue(nodes.contains("is ConfigRepository.NodeSwitchResult.Failed -> result.reason"))
+        assertTrue(dashboard.contains("is ConfigRepository.NodeSwitchResult.Failed -> result.reason"))
+        assertTrue(profiles.contains("emitToast(result.reason)"))
+        assertTrue(strings.contains(">高价保护节点不支持热重载</string>"))
+    }
+
+    @Test
     fun profileSelectionUsesGuardedManualTargetResolution() {
         val body = source
             .substringAfter("suspend fun setActiveProfileWithResult(profileId: String)")
@@ -39,6 +67,7 @@ class ManualSelectionTransactionPolicyTest {
         assertTrue(body.contains("resolveManualProfileTarget("))
         assertTrue(body.contains("setActiveNodeWithResult(targetNode.id)"))
         assertTrue(body.contains("targetNode.meteredProtected"))
+        assertTrue(body.contains("!targetNode.autoSelectionEligible"))
     }
 
     @Test
@@ -71,17 +100,35 @@ class ManualSelectionTransactionPolicyTest {
     }
 
     @Test
-    fun explicitProfileCardSelectionRejectsAmbiguousProtectedNodes() {
+    fun explicitProfileCardSelectionUsesRememberedProtectedNodeWhenNoSafeCandidateExists() {
         val protectedNodes = listOf(
             node(id = "protected-a", meteredProtected = true),
             node(id = "protected-b", meteredProtected = true)
         )
 
-        assertNull(
+        assertEquals(
+            protectedNodes.first(),
             ConfigRepository.resolveManualProfileTarget(
                 nodes = protectedNodes,
                 rememberedNodeId = protectedNodes.first().id,
                 autoSelectionEnabled = false
+            )
+        )
+    }
+
+    @Test
+    fun explicitProfileCardSelectionUsesStableProtectedFallbackWithoutMemory() {
+        val protectedNodes = listOf(
+            node(id = "protected-b", meteredProtected = true),
+            node(id = "protected-a", meteredProtected = true)
+        )
+
+        assertEquals(
+            protectedNodes.last(),
+            ConfigRepository.resolveManualProfileTarget(
+                nodes = protectedNodes,
+                rememberedNodeId = null,
+                autoSelectionEnabled = true
             )
         )
     }
@@ -145,6 +192,17 @@ class ManualSelectionTransactionPolicyTest {
 
         assertTrue(isRuntimeSelectionConfirmed(snapshot, 10L, setOf("target")))
         assertFalse(isRuntimeSelectionConfirmed(snapshot.copy(generation = 10L), 10L, setOf("target")))
+    }
+
+    @Test
+    fun runtimeSelectionConfirmationIgnoresBoundaryWhitespaceInLabels() {
+        val snapshot = VpnStateStore.RuntimeStateSnapshot(
+            generation = 11L,
+            stateOrdinal = ServiceState.RUNNING.ordinal,
+            activeLabel = "1.88u idc"
+        )
+
+        assertTrue(isRuntimeSelectionConfirmed(snapshot, 10L, setOf("1.88u idc ")))
     }
 
     @Test

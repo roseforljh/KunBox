@@ -39,6 +39,17 @@ class KernelSelectionTrackerTest {
     }
 
     @Test
+    fun confirmsSelectionWhenKernelTrimsBoundaryWhitespace() = runBlocking {
+        val tracker = KernelSelectionTracker()
+        val revision = tracker.currentRevision()
+        tracker.record("PROXY", "1.88u idc")
+
+        val selected = tracker.awaitSelection("PROXY", "1.88u idc ", revision, 20L)
+
+        assertEquals("1.88u idc ", selected)
+    }
+
+    @Test
     fun returnsNullWhenKernelDoesNotReportSelection() = runBlocking {
         val tracker = KernelSelectionTracker()
 

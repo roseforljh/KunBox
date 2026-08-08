@@ -757,6 +757,7 @@
     <!-- Node Switch Messages -->
     <string name="node_switch_success">Switched to %s</string>
     <string name="node_switch_failed">Failed to switch to %s</string>
+    <string name="node_metered_hot_reload_unsupported">High-cost protected nodes do not support hot reload</string>
     <string name="node_start_failed">Start failed: %s</string>
     <string name="nodes_no_valid_found">No valid nodes found</string>
 

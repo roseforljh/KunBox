@@ -757,6 +757,7 @@
     <!-- Node Switch Messages -->
     <string name="node_switch_success">已切换到 %s</string>
     <string name="node_switch_failed">切换到 %s 失败</string>
+    <string name="node_metered_hot_reload_unsupported">高价保护节点不支持热重载</string>
     <string name="node_start_failed">启动失败: %s</string>
     <string name="nodes_no_valid_found">未找到有效节点</string>
 

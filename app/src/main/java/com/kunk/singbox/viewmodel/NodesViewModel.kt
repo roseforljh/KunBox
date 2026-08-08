@@ -124,17 +124,18 @@ class NodesViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             try {
                 val node = configRepository.getNodeById(nodeId)
-                val success = configRepository.setActiveNode(nodeId)
+                val result = configRepository.setActiveNodeWithResult(nodeId)
 
                 // VPN 运行时才显示切换结果
                 val isVpnRunning = VpnStateStore.getActive()
                 if (isVpnRunning) {
                     val nodeName = node?.displayName
                         ?: getApplication<Application>().getString(R.string.nodes_unknown_node)
-                    val msg = if (success) {
-                        getApplication<Application>().getString(R.string.profiles_updated) + ": $nodeName"
-                    } else {
-                        "Failed to switch to $nodeName"
+                    val msg = when (result) {
+                        is ConfigRepository.NodeSwitchResult.Success,
+                        is ConfigRepository.NodeSwitchResult.NotRunning ->
+                            getApplication<Application>().getString(R.string.profiles_updated) + ": $nodeName"
+                        is ConfigRepository.NodeSwitchResult.Failed -> result.reason
                     }
                     emitToast(msg)
                 }

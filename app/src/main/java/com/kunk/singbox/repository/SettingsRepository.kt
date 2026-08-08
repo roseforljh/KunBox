@@ -322,6 +322,14 @@ class SettingsRepository(private val context: Context) {
         updateSettingsAndNotifyRestart { it.copy(appGroups = value) }
     }
 
+    suspend fun upsertAppRule(value: AppRule) {
+        updateSettingsAndNotifyRestart { upsertExclusiveAppRule(it, value) }
+    }
+
+    suspend fun upsertAppGroup(value: AppGroup) {
+        updateSettingsAndNotifyRestart { upsertExclusiveAppGroup(it, value) }
+    }
+
     suspend fun setRuleSetAutoUpdateEnabled(value: Boolean) {
         settingsStore.updateSettingsAndWait { it.copy(ruleSetAutoUpdateEnabled = value) }
     }

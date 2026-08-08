@@ -137,7 +137,7 @@ internal fun isRuntimeSelectionConfirmed(
         snapshot.generation > previousGeneration &&
         snapshot.stateOrdinal == ServiceState.RUNNING.ordinal &&
         snapshot.lastError.isBlank() &&
-        expectedLabels.any { expected -> expected.equals(snapshot.activeLabel, ignoreCase = true) }
+        expectedLabels.any { expected -> expected.trim().equals(snapshot.activeLabel.trim(), ignoreCase = true) }
 }
 
 @Suppress("TooManyFunctions", "LargeClass", "ProtectedMemberInFinalClass")
@@ -2434,7 +2434,7 @@ class ConfigRepository(protected val context: Context) {
         return result is ConfigRepository.NodeSwitchResult.Success || result is ConfigRepository.NodeSwitchResult.NotRunning
     }
 
-    /** 配置卡优先选择安全节点；唯一节点受保护时，本次点击视为明确手动选择。 */
+    /** 配置卡优先选择安全节点；无安全候选时按记忆节点或稳定顺序明确选中。 */
     @Suppress("ReturnCount")
     suspend fun setActiveProfileWithResult(profileId: String): ConfigRepository.NodeSwitchResult {
         awaitInitialProfilesLoaded()
@@ -2453,9 +2453,10 @@ class ConfigRepository(protected val context: Context) {
             )
 
         val manualResult = setActiveNodeWithResult(targetNode.id)
-        if (manualResult is ConfigRepository.NodeSwitchResult.Failed ||
-            !autoSelectionEnabled ||
-            targetNode.meteredProtected
+        if (manualResult is ConfigRepository.NodeSwitchResult.Failed) return manualResult
+        if (!autoSelectionEnabled ||
+            targetNode.meteredProtected ||
+            !targetNode.autoSelectionEligible
         ) {
             return manualResult
         }
@@ -2753,6 +2754,14 @@ class ConfigRepository(protected val context: Context) {
             // Check for cross-profile switch
             val targetNode = allNodesSnapshot.find { it.id == nodeId }
                 ?: return@run ConfigRepository.NodeSwitchResult.Failed("Target node not found: $nodeId")
+            val remoteRunning = SingBoxRemote.isRunning.value ||
+                SingBoxRemote.isStarting.value ||
+                VpnStateStore.getActive()
+            if (remoteRunning && targetNode.meteredProtected) {
+                return@run ConfigRepository.NodeSwitchResult.Failed(
+                    context.getString(R.string.node_metered_hot_reload_unsupported)
+                )
+            }
             val targetProfileId = targetNode.sourceProfileId
             val previousTargetNodeId = getProfileLastSelectedNode(targetProfileId)
             val previousAutoSelection = isProfileAutoSelectionEnabled(targetProfileId)
@@ -2789,9 +2798,6 @@ class ConfigRepository(protected val context: Context) {
                     error.message ?: "Failed to stage manual selection"
                 )
             }
-            val remoteRunning = SingBoxRemote.isRunning.value ||
-                SingBoxRemote.isStarting.value ||
-                VpnStateStore.getActive()
             if (!remoteRunning) {
                 return@run runCatching {
                     commitManualSelectionState(
@@ -6459,7 +6465,8 @@ class ConfigRepository(protected val context: Context) {
             }
             return candidates.firstOrNull { it.id == rememberedNodeId }
                 ?: candidates.minByOrNull(NodeUi::id)
-                ?: nodes.singleOrNull()?.takeIf(NodeUi::meteredProtected)
+                ?: nodes.firstOrNull { it.id == rememberedNodeId }
+                ?: nodes.minByOrNull(NodeUi::id)
         }
 
         internal var instance: ConfigRepository? = null
