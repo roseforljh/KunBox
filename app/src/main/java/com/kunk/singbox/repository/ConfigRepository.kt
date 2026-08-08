@@ -3256,7 +3256,7 @@ class ConfigRepository(protected val context: Context) {
                             LogRepository.getInstance().addLog(
                                 "WARN: 计费节点保护已阻止测速：${node.name}"
                             )
-                            return@withContext -1L
+                            return@withContext PingResultCode.METERED_SELECTION_REQUIRED
                         }
 
                         val loadedConfig = loadConfig(node.sourceProfileId)
@@ -4928,6 +4928,7 @@ class ConfigRepository(protected val context: Context) {
         }
         activeNode?.takeIf { it.id !in disallowedProtectedNodeIds }
             ?.let { requiredNodeIds.add(it.id) }
+        val strictlyRequiredNodeIds = requiredNodeIds.toSet()
         requiredProfileIds.forEach { requiredProfileId ->
             allNodes.filter {
                 it.sourceProfileId == requiredProfileId && it.id !in disallowedProtectedNodeIds
@@ -4954,6 +4955,8 @@ class ConfigRepository(protected val context: Context) {
                 }
             }
         }
+        val sourceConfigCache = mutableMapOf<String, SingBoxConfig?>()
+        val crossProfileRoots = linkedMapOf<String, Pair<String, String>>()
         requiredNodeIds.forEach { nodeId ->
             if (nodeTagMap.containsKey(nodeId)) return@forEach
 
@@ -4967,9 +4970,13 @@ class ConfigRepository(protected val context: Context) {
                 Log.w(ConfigRepository.TAG, "Cross-profile node belongs to activeProfile but not in outbounds: ${node.name}")
                 return@forEach
             }
-            val sourceConfig = loadConfig(sourceProfileId)
+            val sourceConfig = sourceConfigCache.getOrPut(sourceProfileId) { loadConfig(sourceProfileId) }
             if (sourceConfig == null) {
-                Log.e(ConfigRepository.TAG, "Failed to load source config for cross-profile node: profileId=$sourceProfileId, nodeName=${node.name}")
+                Log.e(
+                    ConfigRepository.TAG,
+                    "Failed to load source config for cross-profile node: " +
+                        "profileId=$sourceProfileId, nodeName=${node.name}"
+                )
                 return@forEach
             }
             val sourceOutbound = sourceConfig.outbounds?.find { it.tag == node.name }
@@ -4982,7 +4989,11 @@ class ConfigRepository(protected val context: Context) {
                 }
 
             if (sourceOutbound == null) {
-                Log.e(ConfigRepository.TAG, "Cross-profile outbound not found: nodeName=${node.name}, profileId=$sourceProfileId, available tags: ${sourceConfig.outbounds?.map { it.tag }?.take(10)}")
+                Log.e(
+                    ConfigRepository.TAG,
+                    "Cross-profile outbound not found: nodeName=${node.name}, profileId=$sourceProfileId, " +
+                        "available tags: ${sourceConfig.outbounds?.map { it.tag }?.take(10)}"
+                )
                 return@forEach
             }
             MeteredNodeConfigGuard.requireNoViolations(
@@ -4993,36 +5004,58 @@ class ConfigRepository(protected val context: Context) {
                     includeGroupReferences = false
                 ).map { violation -> "跨配置节点「${node.name}」：$violation" }
             )
-            var finalTag = sourceOutbound.tag
-            if (existingTags.contains(finalTag)) {
-                val suffix = sourceProfileId.take(4)
-                finalTag = "${finalTag}_$suffix"
-                if (existingTags.contains(finalTag)) {
-                    finalTag = "${finalTag}_${UUID.randomUUID().toString().take(4)}"
+            crossProfileRoots[nodeId] = sourceProfileId to sourceOutbound.tag
+        }
+        if (crossProfileRoots.isNotEmpty()) {
+            val runtimeOutboundsCache = mutableMapOf<String, List<Outbound>?>()
+            val resolution = ConfigRepository.resolveRuntimeOutboundDependencies(
+                rootReferences = crossProfileRoots.values.toList(),
+                reservedTags = existingTags,
+                isProtectedReference = { sourceProfileId, reference ->
+                    MeteredNodeConfigGuard.isProtectedNodeReference(
+                        sourceProfileId = sourceProfileId,
+                        reference = reference,
+                        protectedNodeIds = protectedNodeIds,
+                        allowedProtectedNodeId = allowedProtectedNodeId
+                    )
+                }
+            ) { sourceProfileId ->
+                runtimeOutboundsCache.getOrPut(sourceProfileId) {
+                    val sourceConfig = sourceConfigCache.getOrPut(sourceProfileId) {
+                        loadConfig(sourceProfileId)
+                    } ?: return@getOrPut null
+                    ConfigRepository.buildLatencyRuntimeOutbounds(sourceConfig) { outbound ->
+                        buildOutboundForRuntime(outbound)
+                    }.filter { outbound ->
+                        outbound.type.equals("wireguard", ignoreCase = true) ||
+                            singBoxCore.validateOutbound(stripInternalMetadata(outbound))
+                    }
                 }
             }
-            if (sourceOutbound.type.equals("wireguard", ignoreCase = true)) {
-                runtimeEndpointTags.add(finalTag)
-                existingTags.add(finalTag)
-                nodeTagMap[nodeId] = finalTag
-                return@forEach
+            val missingStrictNodes = crossProfileRoots.filter { (nodeId, rootReference) ->
+                nodeId in strictlyRequiredNodeIds && rootReference !in resolution.runtimeTags
+            }.keys
+            if (missingStrictNodes.isNotEmpty()) {
+                val names = missingStrictNodes.mapNotNull { nodeId -> allNodes.find { it.id == nodeId }?.name }
+                throw IllegalStateException("跨配置节点依赖不完整：${names.joinToString()}")
             }
-
-            var fixedSourceOutbound = buildOutboundForRuntime(sourceOutbound)
-            if (fixedSourceOutbound == null) {
-                Log.w(ConfigRepository.TAG, "Skipping removed outbound type: ${sourceOutbound.type} (${sourceOutbound.tag})")
-                return@forEach
+            resolution.outbounds.forEach { outbound ->
+                if (outbound.type.equals("wireguard", ignoreCase = true)) {
+                    runtimeEndpointTags.add(outbound.tag)
+                } else {
+                    fixedOutbounds.add(outbound)
+                }
+                existingTags.add(outbound.tag)
             }
-            if (finalTag != fixedSourceOutbound.tag) {
-                fixedSourceOutbound = fixedSourceOutbound.copy(tag = finalTag)
+            resolution.runtimeTags.forEach { (sourceReference, runtimeTag) ->
+                val (sourceProfileId, sourceTag) = sourceReference
+                allNodes.firstOrNull {
+                    it.sourceProfileId == sourceProfileId && it.name == sourceTag
+                }?.let { node -> nodeTagMap[node.id] = runtimeTag }
             }
-            if (!singBoxCore.validateOutbound(stripInternalMetadata(fixedSourceOutbound))) {
-                Log.w(ConfigRepository.TAG, "Skipping invalid cross-profile outbound: ${node.name} (type=${sourceOutbound.type})")
-                return@forEach
+            crossProfileRoots.forEach { (nodeId, rootReference) ->
+                resolution.runtimeTags[rootReference]?.let { runtimeTag -> nodeTagMap[nodeId] = runtimeTag }
             }
-            fixedOutbounds.add(fixedSourceOutbound)
-            existingTags.add(finalTag)
-            nodeTagMap[nodeId] = finalTag
         }
         requiredProfileIds.forEach { requiredProfileId ->
             val availableProfileNodes = allNodes
@@ -5142,7 +5175,7 @@ class ConfigRepository(protected val context: Context) {
         // Final safety check:
         // 1) Normalize detour node refs to runtime tag
         // 2) Filter out non-existent references in Selector/URLTest
-        // 3) Validate detour target exists (or clear detour)
+        // 3) Validate detour target exists
         val detourNormalizedOutbounds = fixedOutbounds.map { outbound ->
             val detourValue = outbound.detour
             if (detourValue.isNullOrBlank()) return@map outbound
@@ -5157,21 +5190,20 @@ class ConfigRepository(protected val context: Context) {
         val selectorSafeOutbounds = applySelectorSafeOutbounds(detourNormalizedOutbounds, runtimeEndpointTags)
 
         val finalTags = selectorSafeOutbounds.map { it.tag }.toSet() + runtimeEndpointTags
-        val safeOutbounds = selectorSafeOutbounds.map { outbound ->
+        selectorSafeOutbounds.forEach { outbound ->
             val detourTag = outbound.detour
-            if (detourTag.isNullOrBlank()) return@map outbound
+            if (detourTag.isNullOrBlank()) return@forEach
 
             val isInvalidDetour = detourTag == outbound.tag || detourTag !in finalTags
             if (isInvalidDetour) {
-                Log.w(ConfigRepository.TAG, "Cleared invalid detour for ${outbound.tag}: detour=$detourTag")
-                outbound.copy(detour = null)
-            } else {
-                outbound
+                throw IllegalStateException(
+                    "运行出站「${outbound.tag}」的前置代理「$detourTag」不存在或形成自引用"
+                )
             }
         }
 
         return ConfigRepositoryRunOutboundsContext(
-            outbounds = safeOutbounds,
+            outbounds = selectorSafeOutbounds,
             selectorTag = selectorTag,
             nodeTagResolver = nodeTagResolver,
             nodeTagMap = nodeTagMap,
@@ -6146,40 +6178,63 @@ class ConfigRepository(protected val context: Context) {
             isProtectedReference: (sourceProfileId: String, reference: String) -> Boolean = { _, _ -> false },
             loadProfileOutbounds: (String) -> List<Outbound>?
         ): List<Outbound> {
-            return LatencyRuntimeDetourResolver(
-                sourceProfileId,
-                sourceOutbounds,
-                isProtectedReference,
-                loadProfileOutbounds
-            ).resolve()
+            val rootReferences = sourceOutbounds.map { sourceProfileId to it.tag }
+            return RuntimeOutboundDependencyResolver(
+                initialOutboundsByProfile = mapOf(sourceProfileId to sourceOutbounds),
+                reservedTags = emptySet(),
+                allowProtectedRoots = false,
+                isProtectedReference = isProtectedReference,
+                loadProfileOutbounds = loadProfileOutbounds
+            ).resolve(rootReferences).outbounds
         }
 
-        private class LatencyRuntimeDetourResolver(
-            private val sourceProfileId: String,
-            private val sourceOutbounds: List<Outbound>,
+        internal fun resolveRuntimeOutboundDependencies(
+            rootReferences: List<Pair<String, String>>,
+            reservedTags: Set<String>,
+            isProtectedReference: (sourceProfileId: String, reference: String) -> Boolean = { _, _ -> false },
+            loadProfileOutbounds: (String) -> List<Outbound>?
+        ): ConfigRepositoryRuntimeOutboundResolution {
+            return RuntimeOutboundDependencyResolver(
+                initialOutboundsByProfile = emptyMap(),
+                reservedTags = reservedTags,
+                allowProtectedRoots = true,
+                isProtectedReference = isProtectedReference,
+                loadProfileOutbounds = loadProfileOutbounds
+            ).resolve(rootReferences)
+        }
+
+        private class RuntimeOutboundDependencyResolver(
+            initialOutboundsByProfile: Map<String, List<Outbound>>,
+            reservedTags: Set<String>,
+            private val allowProtectedRoots: Boolean,
             private val isProtectedReference: (sourceProfileId: String, reference: String) -> Boolean,
             private val loadProfileOutbounds: (String) -> List<Outbound>?
         ) {
-            private val outboundsByProfile = mutableMapOf(sourceProfileId to sourceOutbounds)
-            private val runtimeTags = sourceOutbounds.associate { outbound ->
-                (sourceProfileId to outbound.tag) to outbound.tag
-            }.toMutableMap()
-            private val usedTags = sourceOutbounds.mapTo(mutableSetOf()) { it.tag }
+            private val outboundsByProfile = initialOutboundsByProfile.toMutableMap()
+            private val externalRuntimeTags = reservedTags.toSet()
+            private val runtimeTags = mutableMapOf<Pair<String, String>, String>()
+            private val usedTags = reservedTags.toMutableSet()
             private val resolving = mutableSetOf<Pair<String, String>>()
             private val resolvedOutbounds = linkedMapOf<Pair<String, String>, Outbound>()
             private val blockedOutbounds = mutableSetOf<Pair<String, String>>()
             private val groupTypes = setOf("selector", "urltest", "url-test")
+            private var rootKeys = emptySet<Pair<String, String>>()
 
-            fun resolve(): List<Outbound> {
-                val sourceKeys = sourceOutbounds.map { sourceProfileId to it.tag }
-                sourceKeys.forEach { resolveOutbound(it) }
-                val sourceKeySet = sourceKeys.toSet()
-                return buildList {
-                    sourceKeys.mapNotNullTo(this) { resolvedOutbounds[it] }
+            fun resolve(rootReferences: List<Pair<String, String>>): ConfigRepositoryRuntimeOutboundResolution {
+                val orderedRootKeys = rootReferences.distinct()
+                rootKeys = orderedRootKeys.toSet()
+                orderedRootKeys.forEach(::allocateRuntimeTag)
+                orderedRootKeys.forEach { resolveOutbound(it) }
+                val outbounds = buildList {
+                    orderedRootKeys.mapNotNullTo(this) { resolvedOutbounds[it] }
                     resolvedOutbounds.forEach { (key, outbound) ->
-                        if (key !in sourceKeySet) add(outbound)
+                        if (key !in rootKeys) add(outbound)
                     }
                 }
+                return ConfigRepositoryRuntimeOutboundResolution(
+                    outbounds = outbounds,
+                    runtimeTags = runtimeTags.filterKeys { it in resolvedOutbounds }
+                )
             }
 
             private fun outboundsFor(profileId: String): List<Outbound>? {
@@ -6202,7 +6257,7 @@ class ConfigRepository(protected val context: Context) {
                 var candidate = originalTag
                 if (candidate in usedTags) {
                     val suffix = profileId.take(8).ifBlank { "profile" }
-                    val base = "$originalTag#latency-$suffix"
+                    val base = "$originalTag#$suffix"
                     candidate = base
                     var index = 2
                     while (candidate in usedTags) {
@@ -6215,14 +6270,16 @@ class ConfigRepository(protected val context: Context) {
                 return candidate
             }
 
-            @Suppress("ReturnCount")
+            @Suppress("ReturnCount", "CyclomaticComplexMethod")
             private fun resolveOutbound(key: Pair<String, String>): String? {
                 if (key in blockedOutbounds) return null
-                val knownTag = resolvedOutbounds[key]?.tag ?: runtimeTags[key]?.takeIf { key in resolving }
+                if (key in resolving) return blockOutbound(key)
+                val knownTag = resolvedOutbounds[key]?.tag
                 if (knownTag != null) return knownTag
                 val (profileId, sourceTag) = key
-                val source = outboundsFor(profileId)?.firstOrNull { it.tag == sourceTag } ?: return null
-                if (isProtectedReference(profileId, sourceTag)) {
+                val source = outboundsFor(profileId)?.firstOrNull { it.tag == sourceTag }
+                    ?: return blockOutbound(key)
+                if ((!allowProtectedRoots || key !in rootKeys) && isProtectedReference(profileId, sourceTag)) {
                     return blockOutbound(key)
                 }
                 val runtimeTag = allocateRuntimeTag(key)
@@ -6232,7 +6289,11 @@ class ConfigRepository(protected val context: Context) {
                     return blockOutbound(key)
                 }
                 val detourKey = detour?.let { resolveReference(profileId, it) }
-                val resolvedDetour = detourKey?.let { resolveOutbound(it) } ?: detour
+                if (detour != null && detourKey == null && !isExternalRuntimeReference(detour)) {
+                    return blockOutbound(key)
+                }
+                val resolvedDetour = detourKey?.let { resolveOutbound(it) }
+                    ?: detour?.takeIf(::isExternalRuntimeReference)
                 if (detourKey in blockedOutbounds) {
                     return blockOutbound(key)
                 }
@@ -6247,7 +6308,8 @@ class ConfigRepository(protected val context: Context) {
 
                 fun resolveGroupReference(reference: String): String? {
                     if (isProtectedReference(profileId, reference)) return null
-                    val targetKey = resolveReference(profileId, reference) ?: return reference
+                    val targetKey = resolveReference(profileId, reference)
+                        ?: return reference.takeIf(::isExternalRuntimeReference)
                     val runtimeTag = resolveOutbound(targetKey)
                     return runtimeTag?.takeUnless { targetKey in blockedOutbounds }
                 }
@@ -6259,6 +6321,10 @@ class ConfigRepository(protected val context: Context) {
                     resolveGroupReference(reference) ?: return null
                 }
                 return source.copy(outbounds = candidates, default = default)
+            }
+
+            private fun isExternalRuntimeReference(reference: String): Boolean {
+                return "::" !in reference && reference in externalRuntimeTags
             }
 
             private fun blockOutbound(key: Pair<String, String>): String? {

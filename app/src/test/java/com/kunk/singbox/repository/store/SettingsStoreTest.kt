@@ -244,6 +244,40 @@ class SettingsStoreTest {
     }
 
     @Test
+    fun testMigrateSettingsRepairsDuplicateAppAssignmentsAtCurrentVersion() {
+        val loaded = AppSettings(
+            appRules = listOf(
+                AppRule(id = "rule", packageName = "com.shared", appName = "Shared")
+            ),
+            appGroups = listOf(
+                AppGroup(
+                    id = "group-a",
+                    name = "A",
+                    apps = listOf(AppInfo(packageName = "com.shared", appName = "Shared"))
+                ),
+                AppGroup(
+                    id = "group-b",
+                    name = "B",
+                    apps = listOf(AppInfo(packageName = "com.shared", appName = "Shared"))
+                )
+            )
+        )
+
+        val migrated = SettingsStore.migrateSettings(SettingsEntity.CURRENT_VERSION, loaded)
+
+        assertTrue(migrated.appRules.isEmpty())
+        assertTrue(migrated.appGroups[0].apps.isEmpty())
+        assertEquals(listOf("com.shared"), migrated.appGroups[1].apps.map { it.packageName })
+        assertTrue(
+            SettingsStore.shouldPersistMigratedSettings(
+                version = SettingsEntity.CURRENT_VERSION,
+                loaded = loaded,
+                migrated = migrated
+            )
+        )
+    }
+
+    @Test
     fun testFailedSettingsPersistenceRollsBackInMemorySettings() {
         val previous = AppSettings(localDns = "https://old.example/dns-query")
         val updated = previous.copy(localDns = "https://new.example/dns-query")

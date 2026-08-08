@@ -106,6 +106,23 @@ internal fun upsertExclusiveAppGroup(settings: AppSettings, group: AppGroup): Ap
     )
 }
 
+internal fun normalizeExclusiveAppAssignments(settings: AppSettings): AppSettings {
+    val groupedPackages = mutableSetOf<String>()
+    val normalizedGroups = settings.appGroups.asReversed().map { group ->
+        val apps = group.apps.asReversed()
+            .map { app -> app.copy(packageName = app.packageName.trim()) }
+            .filter { app -> app.packageName.isNotEmpty() && groupedPackages.add(app.packageName) }
+            .asReversed()
+        group.copy(apps = apps)
+    }.asReversed()
+    val normalizedRules = settings.appRules.asReversed()
+        .map { rule -> rule.copy(packageName = rule.packageName.trim()) }
+        .filter { rule -> rule.packageName.isNotEmpty() && rule.packageName !in groupedPackages }
+        .distinctBy { rule -> rule.packageName }
+        .asReversed()
+    return settings.copy(appRules = normalizedRules, appGroups = normalizedGroups)
+}
+
 internal fun sanitizePackageList(
     value: String,
     installedPackages: Set<String>

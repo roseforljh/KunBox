@@ -307,4 +307,41 @@ class PerAppPackageSyncTest {
             result.appGroups.first { it.id == "group-a" }.apps.map { it.packageName }
         )
     }
+
+    @Test
+    fun normalizeExclusiveAssignmentsKeepsLatestConfigurationForEachApp() {
+        val settings = AppSettings(
+            appRules = listOf(
+                AppRule(id = "rule-old", packageName = "com.rule", appName = "Old rule"),
+                AppRule(id = "rule-latest", packageName = " com.rule ", appName = "Latest rule"),
+                AppRule(id = "rule-cross", packageName = "com.cross", appName = "Cross")
+            ),
+            appGroups = listOf(
+                AppGroup(
+                    id = "group-a",
+                    name = "A",
+                    apps = listOf(
+                        AppInfo(packageName = "com.cross", appName = "Cross"),
+                        AppInfo(packageName = "com.moved", appName = "Moved from A")
+                    )
+                ),
+                AppGroup(
+                    id = "group-b",
+                    name = "B",
+                    apps = listOf(
+                        AppInfo(packageName = "com.moved", appName = "Older in B"),
+                        AppInfo(packageName = " com.moved ", appName = "Latest in B")
+                    )
+                )
+            )
+        )
+
+        val result = normalizeExclusiveAppAssignments(settings)
+
+        assertEquals(listOf("com.rule"), result.appRules.map { it.packageName })
+        assertEquals("Latest rule", result.appRules.single().appName)
+        assertEquals(listOf("com.cross"), result.appGroups[0].apps.map { it.packageName })
+        assertEquals(listOf("com.moved"), result.appGroups[1].apps.map { it.packageName })
+        assertEquals("Latest in B", result.appGroups[1].apps.single().appName)
+    }
 }

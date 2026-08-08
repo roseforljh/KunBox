@@ -17,6 +17,11 @@ data class ConfigRepositoryLatencyRuntimeContext(
     val dnsConfig: DnsConfig?
 )
 
+data class ConfigRepositoryRuntimeOutboundResolution(
+    val outbounds: List<Outbound>,
+    val runtimeTags: Map<Pair<String, String>, String>
+)
+
 data class SavedNodeLatency(
     val latencyMs: Long,
     val testedAt: Long

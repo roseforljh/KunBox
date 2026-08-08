@@ -59,6 +59,21 @@ class ManualSelectionTransactionPolicyTest {
     }
 
     @Test
+    fun unauthorizedMeteredLatencyExplainsThatTheNodeMustBeSelected() {
+        val latencyBody = source
+            .substringAfter("suspend fun testNodeLatency(nodeId: String): Long")
+            .substringBefore("suspend fun clearAllNodesLatency()")
+        val nodes = File("src/main/java/com/kunk/singbox/viewmodel/NodesViewModel.kt")
+            .readText(Charsets.UTF_8)
+        val strings = File("src/main/res/values/strings.xml").readText(Charsets.UTF_8)
+
+        assertTrue(latencyBody.contains("PingResultCode.METERED_SELECTION_REQUIRED"))
+        assertTrue(nodes.contains("latency == PingResultCode.METERED_SELECTION_REQUIRED"))
+        assertTrue(nodes.contains("R.string.nodes_metered_select_to_test"))
+        assertTrue(strings.contains(">高价节点需选中后测速</string>"))
+    }
+
+    @Test
     fun profileSelectionUsesGuardedManualTargetResolution() {
         val body = source
             .substringAfter("suspend fun setActiveProfileWithResult(profileId: String)")
@@ -241,11 +256,15 @@ class ManualSelectionTransactionPolicyTest {
         val body = source
             .substringAfter("protected fun buildRunOutbounds(")
             .substringBefore("protected fun applySelectorSafeOutbounds(")
-        val guardIndex = body.indexOf("config = SingBoxConfig(outbounds = listOf(sourceOutbound))")
-        val addIndex = body.indexOf("fixedOutbounds.add(fixedSourceOutbound)")
+        val rootGuardIndex = body.indexOf("config = SingBoxConfig(outbounds = listOf(sourceOutbound))")
+        val resolverIndex = body.indexOf("resolveRuntimeOutboundDependencies(")
+        val dependencyGuardIndex = body.indexOf("isProtectedReference = { sourceProfileId, reference ->")
+        val addIndex = body.indexOf("resolution.outbounds.forEach")
 
-        assertTrue(guardIndex >= 0)
-        assertTrue(addIndex > guardIndex)
+        assertTrue(rootGuardIndex >= 0)
+        assertTrue(resolverIndex > rootGuardIndex)
+        assertTrue(dependencyGuardIndex > resolverIndex)
+        assertTrue(addIndex > dependencyGuardIndex)
     }
 
     private fun node(

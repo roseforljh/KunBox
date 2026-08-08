@@ -285,20 +285,21 @@ private fun Modifier.liquidGlassCrystalSurface(
         start = Offset.Zero,
         end = Offset(size.width, size.height)
     )
+    // 只保留迎光侧高光，底部深度由 hollowShadow 负责，避免连续暗边呈现为分割线。
     val embossedRimBrush = Brush.linearGradient(
         colorStops = if (isDark) {
             arrayOf(
                 0f to Color.White.copy(alpha = 0.24f * opticsScale),
                 0.32f to Color.White.copy(alpha = 0.05f * opticsScale),
-                0.66f to Color.Black.copy(alpha = 0.24f),
-                1f to Color.Black.copy(alpha = 0.72f)
+                0.66f to Color.White.copy(alpha = 0f),
+                1f to Color.White.copy(alpha = 0f)
             )
         } else {
             arrayOf(
                 0f to Color.White.copy(alpha = 0.92f * opticsScale),
                 0.34f to Color.White.copy(alpha = 0.28f * opticsScale),
-                0.66f to Color.Black.copy(alpha = 0.035f),
-                1f to Color.Black.copy(alpha = 0.20f)
+                0.66f to Color.White.copy(alpha = 0f),
+                1f to Color.White.copy(alpha = 0f)
             )
         },
         start = Offset.Zero,

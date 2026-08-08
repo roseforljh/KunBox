@@ -316,6 +316,7 @@
     <string name="nodes_stop_test">停止测试</string>
     <string name="nodes_unknown_node">未知节点</string>
     <string name="nodes_test_failed">%s 测速失败/超时</string>
+    <string name="nodes_metered_select_to_test">高价节点需选中后测速</string>
     <string name="nodes_filter_applied">筛选已应用</string>
     <string name="nodes_filter_cleared">已清除筛选</string>
     <string name="nodes_unsupported_format">不支持的链接格式</string>

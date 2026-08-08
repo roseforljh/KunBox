@@ -159,4 +159,19 @@ class SettingsRepositoryTest {
             it == "repository.upsertAppGroup(group)"
         })
     }
+
+    @Test
+    fun appRoutingWritesApplyRunningVpnConfigImmediately() {
+        val viewModel = File("src/main/java/com/kunk/singbox/viewmodel/SettingsViewModel.kt")
+            .readText(Charsets.UTF_8)
+
+        assertTrue(
+            viewModel.contains(
+                "VpnServiceManager.applyPerAppRuleChangeIfRunning(getApplication())"
+            )
+        )
+        assertEquals(8, viewModel.windowed("applyAppRoutingChange {".length).count {
+            it == "applyAppRoutingChange {"
+        })
+    }
 }

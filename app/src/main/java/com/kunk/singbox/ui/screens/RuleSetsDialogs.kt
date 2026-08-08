@@ -51,7 +51,7 @@ import com.kunk.singbox.ui.theme.liquidGlassPressFeedback
 @Composable
 private fun Modifier.ruleSetMenuPanel(shape: RoundedCornerShape = RoundedCornerShape(12.dp)): Modifier {
     return if (isLiquidGlassTheme()) {
-        liquidGlassPanel(shape = shape, shadowElevation = 8.dp)
+        this
     } else {
         background(MaterialTheme.colorScheme.surfaceVariant, shape)
     }

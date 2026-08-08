@@ -147,6 +147,12 @@ class CommandManager(
         kernelLogObserver = observer
     }
 
+    fun handleOutboundFailureBurst(outboundTag: String, failureCount: Int, nowMs: Long): Boolean {
+        val decision = connectionStormGuard.observeOutboundFailureBurst(outboundTag, failureCount, nowMs)
+        enforceConnectionStormGuard(decision)
+        return decision != null
+    }
+
     @Suppress("UNUSED_PARAMETER")
     fun createServer(platformInterface: PlatformInterface): Result<CommandServer> = runCatching {
         val serverHandler = object : CommandServerHandler {

@@ -1304,10 +1304,7 @@ class SingBoxService : VpnService() {
                 return
             }
             HealthSignalKind.ACTIVE_PROBE_FAILED -> {
-                submitSameNodeRecovery(
-                    layer = SameNodeFailureLayer.PROXY,
-                    trigger = "active_probe_failed:${signal.outboundTag.orEmpty()}"
-                )
+                handleActiveOutboundFailure(signal)
                 return
             }
             HealthSignalKind.REMOTE_DNS_TIMEOUT -> Unit
@@ -1330,6 +1327,33 @@ class SingBoxService : VpnService() {
                 trigger = "dns_remote_timeout"
             )
         }
+    }
+
+    private fun handleActiveOutboundFailure(signal: HealthSignal) {
+        val failureTag = signal.outboundTag?.trim().orEmpty()
+        val runningConfig = loadLastRunningConfig()
+        val currentProxyTag = resolveCurrentProxyOutboundTag()
+        if (failureTag.isBlank() || runningConfig == null ||
+            SingBoxService.shouldRecoverMainOutboundFailure(failureTag, currentProxyTag, runningConfig)
+        ) {
+            submitSameNodeRecovery(
+                layer = SameNodeFailureLayer.PROXY,
+                trigger = "active_probe_failed:$failureTag"
+            )
+            return
+        }
+
+        val guardTriggered = commandManager.handleOutboundFailureBurst(
+            outboundTag = failureTag,
+            failureCount = signal.failureCount,
+            nowMs = SystemClock.elapsedRealtime()
+        )
+        val reset = guardTriggered && BoxWrapperManager.resetNetwork()
+        notifySingleNodeRouteFailureIfNeeded(failureTag)
+        LogRepository.getInstance().addAlwaysLog(
+            "WARN recovery app_route_failure outbound=$failureTag selected=${currentProxyTag.orEmpty()} " +
+                "guard=$guardTriggered reset=$reset"
+        )
     }
 
     protected fun handleResourceExhaustionSignal(reason: String) {
@@ -1358,6 +1382,11 @@ class SingBoxService : VpnService() {
             currentProxyTag = currentProxyTag,
             config = runningConfig
         ) ?: return
+
+        notifySingleNodeRouteFailureIfNeeded(failureTag)
+    }
+
+    private fun notifySingleNodeRouteFailureIfNeeded(failureTag: String) {
 
         val now = SystemClock.elapsedRealtime()
         val lastNotifyAt = singleNodeRouteFailureNotificationTimes[failureTag] ?: 0L
@@ -3814,6 +3843,18 @@ class SingBoxService : VpnService() {
             val normalizedDetour = UrlTestTagMatcher.normalizeTag(detourTag)
             return mainConcreteTags.any { tag ->
                 UrlTestTagMatcher.normalizeTag(tag) == normalizedDetour
+            }
+        }
+
+        internal fun shouldRecoverMainOutboundFailure(
+            failureTag: String,
+            currentProxyTag: String?,
+            config: SingBoxConfig
+        ): Boolean {
+            val normalizedFailure = UrlTestTagMatcher.normalizeTag(failureTag.trim())
+            if (normalizedFailure.isBlank() || currentProxyTag.isNullOrBlank()) return true
+            return resolveMainConcreteOutboundTags(currentProxyTag, config).any { tag ->
+                UrlTestTagMatcher.normalizeTag(tag) == normalizedFailure
             }
         }
 
