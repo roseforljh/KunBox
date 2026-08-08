@@ -1,5 +1,21 @@
 # Changelog
 
+## [2.23.0](https://github.com/roseforljh/KunBox/compare/v2.22.0...v2.23.0) (2026-08-08)
+
+
+### Features
+
+* LiquidGlass 液态玻璃全局重构 + 节点添加/选择页面重构 ([f13fe1f](https://github.com/roseforljh/KunBox/commit/f13fe1fa863c9269c28b796534c5121d9772d152))
+* 计费节点保护 + 连接流量归因 + 同节点恢复 + 手动选择事务 ([047bf4b](https://github.com/roseforljh/KunBox/commit/047bf4b0f094019c0621fe7a6230b2ae76be0c91))
+* 连接风暴防护 + 分层网络健康采样 + 事件历史诊断 ([7cc08aa](https://github.com/roseforljh/KunBox/commit/7cc08aa81cf5e8ec53fda283bbc9c126f062d41f))
+
+
+### Bug Fixes
+
+* stop 命令按当前模式分发 + 停止完成时补设 isStarting ([3f6408f](https://github.com/roseforljh/KunBox/commit/3f6408f21ae7d3a54a1bf5479323ce349a698890))
+* 修复前置代理节点测速失败 ([8f8a500](https://github.com/roseforljh/KunBox/commit/8f8a50078578dde8b69b25c5219db401ba8e9065))
+* 同步 sing-box 内核至 v1.13.16 ([f505376](https://github.com/roseforljh/KunBox/commit/f505376f125820c92a8e2904ce44aa6998b56595))
+
 ## [2.22.0](https://github.com/roseforljh/KunBox/compare/v2.21.0...v2.22.0) (2026-07-31)
 
 
