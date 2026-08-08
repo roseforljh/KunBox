@@ -145,7 +145,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
             val name = profiles.value.find { it.id == profileId }?.name
             if (!name.isNullOrBlank()) {
                 val message = if (result is ConfigRepository.NodeSwitchResult.Failed) {
-                    getApplication<Application>().getString(R.string.node_switch_failed, name) + "：${result.reason}"
+                    result.reason
                 } else {
                     getApplication<Application>().getString(R.string.node_switch_success, name)
                 }
@@ -164,8 +164,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                     is ConfigRepository.NodeSwitchResult.Success,
                     is ConfigRepository.NodeSwitchResult.NotRunning -> getApplication<Application>().getString(R.string.node_switch_success, node.name)
 
-                    is ConfigRepository.NodeSwitchResult.Failed ->
-                        getApplication<Application>().getString(R.string.node_switch_failed, node.name)
+                    is ConfigRepository.NodeSwitchResult.Failed -> result.reason
                 }
                 emitToast(msg)
             }

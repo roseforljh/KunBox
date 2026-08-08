@@ -158,6 +158,7 @@ fun ProfilesScreen(
     val profiles by viewModel.profiles.collectAsStateWithLifecycle()
     val allNodes by viewModel.allNodes.collectAsStateWithLifecycle()
     val activeProfileId by viewModel.activeProfileId.collectAsStateWithLifecycle()
+    val switchingProfileId by viewModel.switchingProfileId.collectAsStateWithLifecycle()
     val importState by viewModel.importState.collectAsStateWithLifecycle()
     val customDraftOutbounds by viewModel.customDraftOutbounds.collectAsStateWithLifecycle()
     val currentBackStackEntry by navController.currentBackStackEntryAsState()
@@ -839,6 +840,7 @@ fun ProfilesScreen(
                                 name = profile.name,
                                 type = profile.type.name,
                                 isSelected = profile.id == activeProfileId,
+                                isSwitching = switchingProfileId == profile.id,
                                 isEnabled = profile.enabled,
                                 isUpdating = profile.updateStatus == UpdateStatus.Updating,
                                 updateStatus = profile.updateStatus,

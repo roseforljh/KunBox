@@ -37,6 +37,9 @@ class ProfilesViewModel(application: Application) : AndroidViewModel(application
     val allNodes: StateFlow<List<NodeUi>> = configRepository.allNodes
     val activeProfileId: StateFlow<String?> = configRepository.activeProfileId
 
+    private val _switchingProfileId = MutableStateFlow<String?>(null)
+    val switchingProfileId: StateFlow<String?> = _switchingProfileId.asStateFlow()
+
     private val _importState = MutableStateFlow<ImportState>(ImportState.Idle)
     val importState: StateFlow<ImportState> = _importState.asStateFlow()
 
@@ -55,17 +58,20 @@ class ProfilesViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun setActiveProfile(profileId: String) {
+        if (_switchingProfileId.value != null) return
+        _switchingProfileId.value = profileId
         val isVpnRunning = SingBoxRemote.isRunning.value || SingBoxRemote.isStarting.value
         viewModelScope.launch {
-            val result = configRepository.setActiveProfileWithResult(profileId)
-            val name = profiles.value.find { it.id == profileId }?.name
-            if (result is ConfigRepository.NodeSwitchResult.Failed) {
-                emitToast(
-                    getApplication<Application>().getString(R.string.node_switch_failed, name ?: profileId) +
-                        "：${result.reason}"
-                )
-            } else if (isVpnRunning && !name.isNullOrBlank()) {
-                emitToast(getApplication<Application>().getString(R.string.profiles_updated) + ": $name")
+            try {
+                val result = configRepository.setActiveProfileWithResult(profileId)
+                val name = profiles.value.find { it.id == profileId }?.name
+                if (result is ConfigRepository.NodeSwitchResult.Failed) {
+                    emitToast(result.reason)
+                } else if (isVpnRunning && !name.isNullOrBlank()) {
+                    emitToast(getApplication<Application>().getString(R.string.profiles_updated) + ": $name")
+                }
+            } finally {
+                _switchingProfileId.value = null
             }
         }
     }

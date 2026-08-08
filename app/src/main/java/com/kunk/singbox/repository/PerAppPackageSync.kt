@@ -1,6 +1,8 @@
 package com.kunk.singbox.repository
 
 import android.content.Intent
+import com.kunk.singbox.model.AppGroup
+import com.kunk.singbox.model.AppRule
 import com.kunk.singbox.model.AppSettings
 import com.kunk.singbox.model.VpnAppMode
 
@@ -55,6 +57,51 @@ internal fun removePackageFromPerAppSettings(settings: AppSettings, packageName:
         appRules = settings.appRules.filterNot { it.packageName == packageName },
         appGroups = settings.appGroups.map { group ->
             group.copy(apps = group.apps.filterNot { it.packageName == packageName })
+        }
+    )
+}
+
+internal fun upsertExclusiveAppRule(settings: AppSettings, rule: AppRule): AppSettings {
+    val packageName = rule.packageName.trim()
+    if (packageName.isEmpty()) return settings
+    val normalizedRule = if (packageName == rule.packageName) rule else rule.copy(packageName = packageName)
+    val rulesWithoutDuplicates = settings.appRules.filterNot {
+        it.id != normalizedRule.id && it.packageName == packageName
+    }
+    val updatedRules = if (rulesWithoutDuplicates.any { it.id == normalizedRule.id }) {
+        rulesWithoutDuplicates.map { if (it.id == normalizedRule.id) normalizedRule else it }
+    } else {
+        rulesWithoutDuplicates + normalizedRule
+    }
+    return settings.copy(
+        appRules = updatedRules,
+        appGroups = settings.appGroups.map { group ->
+            group.copy(apps = group.apps.filterNot { it.packageName == packageName })
+        }
+    )
+}
+
+internal fun upsertExclusiveAppGroup(settings: AppSettings, group: AppGroup): AppSettings {
+    val normalizedApps = group.apps
+        .map { app -> app.copy(packageName = app.packageName.trim()) }
+        .filter { it.packageName.isNotEmpty() }
+        .distinctBy { it.packageName }
+    if (normalizedApps.isEmpty()) return settings
+    val normalizedGroup = group.copy(apps = normalizedApps)
+    val packageNames = normalizedApps.mapTo(mutableSetOf()) { it.packageName }
+    val groupsWithTransfer = settings.appGroups.map { existing ->
+        if (existing.id == normalizedGroup.id) {
+            normalizedGroup
+        } else {
+            existing.copy(apps = existing.apps.filterNot { it.packageName in packageNames })
+        }
+    }
+    return settings.copy(
+        appRules = settings.appRules.filterNot { it.packageName in packageNames },
+        appGroups = if (groupsWithTransfer.any { it.id == normalizedGroup.id }) {
+            groupsWithTransfer
+        } else {
+            groupsWithTransfer + normalizedGroup
         }
     )
 }

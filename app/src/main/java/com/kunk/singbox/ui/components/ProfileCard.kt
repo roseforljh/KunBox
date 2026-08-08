@@ -145,6 +145,7 @@ fun ProfileCard(
     name: String,
     type: String,
     isSelected: Boolean,
+    isSwitching: Boolean = false,
     isEnabled: Boolean,
     isUpdating: Boolean,
     updateStatus: UpdateStatus = UpdateStatus.Idle,
@@ -242,7 +243,8 @@ fun ProfileCard(
         ) {
             SelectedPulseIndicator(
                 selected = isSelected,
-                animationLabel = "profile_selected"
+                animationLabel = "profile_selected",
+                isSwitching = isSwitching
             )
 
             Spacer(modifier = Modifier.width(16.dp))

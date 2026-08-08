@@ -585,22 +585,13 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 
     fun addAppRule(rule: AppRule) {
         viewModelScope.launch {
-            val currentRules = settings.value.appRules.toMutableList()
-
-            currentRules.removeAll { it.packageName == rule.packageName }
-            currentRules.add(rule)
-            repository.setAppRules(currentRules)
+            repository.upsertAppRule(rule)
         }
     }
 
     fun updateAppRule(rule: AppRule) {
         viewModelScope.launch {
-            val currentRules = settings.value.appRules.toMutableList()
-            val index = currentRules.indexOfFirst { it.id == rule.id }
-            if (index != -1) {
-                currentRules[index] = rule
-                repository.setAppRules(currentRules)
-            }
+            repository.upsertAppRule(rule)
         }
     }
 
@@ -626,20 +617,13 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 
     fun addAppGroup(group: AppGroup) {
         viewModelScope.launch {
-            val currentGroups = settings.value.appGroups.toMutableList()
-            currentGroups.add(group)
-            repository.setAppGroups(currentGroups)
+            repository.upsertAppGroup(group)
         }
     }
 
     fun updateAppGroup(group: AppGroup) {
         viewModelScope.launch {
-            val currentGroups = settings.value.appGroups.toMutableList()
-            val index = currentGroups.indexOfFirst { it.id == group.id }
-            if (index != -1) {
-                currentGroups[index] = group
-                repository.setAppGroups(currentGroups)
-            }
+            repository.upsertAppGroup(group)
         }
     }
 

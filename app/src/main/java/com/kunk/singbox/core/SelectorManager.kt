@@ -47,10 +47,9 @@ internal class KernelSelectionTracker {
                     current != null && current.revision > afterRevision
                 }
                 .onEach { current -> latestSelection = current?.selectedTag }
-                .first { current -> current?.selectedTag == expectedTag }
-                ?.selectedTag
+                .first { current -> current?.selectedTag?.trim() == expectedTag.trim() }
         }
-        return confirmed ?: latestSelection
+        return if (confirmed != null) expectedTag else latestSelection
     }
 
     fun clear() {

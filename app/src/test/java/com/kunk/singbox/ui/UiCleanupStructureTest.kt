@@ -632,7 +632,8 @@ class UiCleanupStructureTest {
         val switchBody = viewModel.extractFunctionBody("setActiveNode")
         assertTrue(viewModel.contains("val switchingNodeId: StateFlow<String?>"))
         assertTrue(switchBody.contains("_switchingNodeId.value = nodeId"))
-        assertTrue(switchBody.contains("configRepository.setActiveNode(nodeId)"))
+        assertTrue(switchBody.contains("configRepository.setActiveNodeWithResult(nodeId)"))
+        assertTrue(switchBody.contains("is ConfigRepository.NodeSwitchResult.Failed -> result.reason"))
         assertTrue(switchBody.contains("finally"))
         assertTrue(switchBody.contains("_switchingNodeId.value = null"))
 
@@ -647,6 +648,25 @@ class UiCleanupStructureTest {
         assertTrue(card.contains("isSwitching: Boolean = false"))
         assertTrue(card.contains("if (isSwitching)"))
         assertFalse(switchBody.contains("_activeNodeId"))
+    }
+
+    @Test
+    fun profileSwitchKeepsConfirmedSelectionAndShowsTargetCardProgress() {
+        val viewModel = mainSource("viewmodel/ProfilesViewModel.kt").readNormalizedText()
+        val switchBody = viewModel.extractFunctionBody("setActiveProfile")
+        assertTrue(viewModel.contains("val switchingProfileId: StateFlow<String?>"))
+        assertTrue(switchBody.contains("_switchingProfileId.value = profileId"))
+        assertTrue(switchBody.contains("configRepository.setActiveProfileWithResult(profileId)"))
+        assertTrue(switchBody.contains("finally"))
+        assertTrue(switchBody.contains("_switchingProfileId.value = null"))
+
+        val screen = mainSource("ui/screens/ProfilesScreen.kt").readNormalizedText()
+        assertTrue(screen.contains("viewModel.switchingProfileId.collectAsStateWithLifecycle()"))
+        assertTrue(screen.contains("isSwitching = switchingProfileId == profile.id"))
+
+        val card = mainSource("ui/components/ProfileCard.kt").readNormalizedText()
+        assertTrue(card.contains("isSwitching: Boolean = false"))
+        assertTrue(card.contains("isSwitching = isSwitching"))
     }
 
     private fun mainSource(path: String): File = File("src/main/java/com/kunk/singbox/$path")
