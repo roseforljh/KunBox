@@ -13,11 +13,13 @@ $trustedTagCommits = @{
     'v1.13.14' = '25a600db24f7680ad9806ce5427bd0ab8afe1114'
     'v1.13.15' = '3708fa18766cda1f11b77f6ed9c7bd61688f17df'
     'v1.13.16' = '17ec3c71af8ca946dc50bf0d927c39fc77322aec'
+    'v1.13.18' = '45ca32dcb966f07f97fc888fe8586e359dbe8405'
 }
 $trustedPatchHashes = @{
     'v1.13.14' = '4C89FE3A078F5DC68DA351BF04B1B9536D048925266E15332E5D6F2BFAB2ECE2'
     'v1.13.15' = '7C8318A5C9B77BF0BF623FA4D8610FF4190B188B9BD4D6149E0D9BF51E1B0172'
     'v1.13.16' = '7C8318A5C9B77BF0BF623FA4D8610FF4190B188B9BD4D6149E0D9BF51E1B0172'
+    'v1.13.18' = '7C8318A5C9B77BF0BF623FA4D8610FF4190B188B9BD4D6149E0D9BF51E1B0172'
 }
 $trustedPatchFiles = @{
     'v1.13.14' = @(
@@ -33,6 +35,13 @@ $trustedPatchFiles = @{
         'route/conn_packet_lifecycle_test.go'
     )
     'v1.13.16' = @(
+        'cmd/internal/build_libbox/main.go',
+        'protocol/vless/outbound.go',
+        'protocol/vless/outbound_test.go',
+        'route/conn.go',
+        'route/conn_packet_lifecycle_test.go'
+    )
+    'v1.13.18' = @(
         'cmd/internal/build_libbox/main.go',
         'protocol/vless/outbound.go',
         'protocol/vless/outbound_test.go',
@@ -56,6 +65,20 @@ $trustedDependencyPatches = @{
         )
     }
     'v1.13.16' = [pscustomobject]@{
+        ModulePath = 'github.com/sagernet/sing-tun'
+        Version = 'v0.8.12-0.20260727151122-3a09076491df'
+        FileName = 'sing-tun-v0.8.12-0.20260727151122-3a09076491df.patch'
+        Hash = '19FC1E4FFAA5773BFBADCE1A33D1AF571E11E44BF59A1D18FF136B486DAE9E97'
+        RequiredNativeMarker = 'system TCP connection limit reached: active='
+        Files = @(
+            'stack_mixed.go',
+            'stack_mixed_test.go',
+            'stack_system.go',
+            'stack_system_accept_test.go',
+            'stack_system_nat.go'
+        )
+    }
+    'v1.13.18' = [pscustomobject]@{
         ModulePath = 'github.com/sagernet/sing-tun'
         Version = 'v0.8.12-0.20260727151122-3a09076491df'
         FileName = 'sing-tun-v0.8.12-0.20260727151122-3a09076491df.patch'

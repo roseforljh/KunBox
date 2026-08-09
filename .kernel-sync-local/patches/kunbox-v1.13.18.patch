@@ -1,0 +1,534 @@
+diff --git a/cmd/internal/build_libbox/main.go b/cmd/internal/build_libbox/main.go
+index c128216..42fdbcb 100644
+--- a/cmd/internal/build_libbox/main.go
++++ b/cmd/internal/build_libbox/main.go
+@@ -65,8 +65,6 @@ func init() {
+ 
+ 	sharedTags = append(sharedTags, "with_gvisor", "with_quic", "with_wireguard", "with_utls", "with_naive_outbound", "with_clash_api", "badlinkname", "tfogo_checklinkname0")
+ 	darwinTags = append(darwinTags, "with_dhcp", "grpcnotrace")
+-	// memcTags = append(memcTags, "with_tailscale")
+-	sharedTags = append(sharedTags, "with_tailscale", "ts_omit_logtail", "ts_omit_ssh", "ts_omit_drive", "ts_omit_taildrop", "ts_omit_webclient", "ts_omit_doctor", "ts_omit_capture", "ts_omit_kube", "ts_omit_aws", "ts_omit_synology", "ts_omit_bird")
+ 	notMemcTags = append(notMemcTags, "with_low_memory")
+ 	debugTags = append(debugTags, "debug")
+ }
+diff --git a/protocol/vless/outbound.go b/protocol/vless/outbound.go
+index 007c78f..e0e56bf 100644
+--- a/protocol/vless/outbound.go
++++ b/protocol/vless/outbound.go
+@@ -148,12 +148,11 @@ func (h *Outbound) Close() error {
+ 
+ type vlessDialer Outbound
+ 
+-func (h *vlessDialer) DialContext(ctx context.Context, network string, destination M.Socksaddr) (net.Conn, error) {
++func (h *vlessDialer) DialContext(ctx context.Context, network string, destination M.Socksaddr) (_ net.Conn, err error) {
+ 	ctx, metadata := adapter.ExtendContext(ctx)
+ 	metadata.Outbound = h.Tag()
+ 	metadata.Destination = destination
+ 	var conn net.Conn
+-	var err error
+ 	if h.transport != nil {
+ 		conn, err = h.transport.DialContext(ctx)
+ 	} else if h.tlsDialer != nil {
+@@ -162,8 +161,14 @@ func (h *vlessDialer) DialContext(ctx context.Context, network string, destinati
+ 		conn, err = h.dialer.DialContext(ctx, N.NetworkTCP, h.serverAddr)
+ 	}
+ 	if err != nil {
++		common.Close(conn)
+ 		return nil, err
+ 	}
++	defer func() {
++		if err != nil {
++			common.Close(conn)
++		}
++	}()
+ 	switch N.NetworkName(network) {
+ 	case N.NetworkTCP:
+ 		h.logger.InfoContext(ctx, "outbound connection to ", destination)
+@@ -189,13 +194,12 @@ func (h *vlessDialer) DialContext(ctx context.Context, network string, destinati
+ 	}
+ }
+ 
+-func (h *vlessDialer) ListenPacket(ctx context.Context, destination M.Socksaddr) (net.PacketConn, error) {
++func (h *vlessDialer) ListenPacket(ctx context.Context, destination M.Socksaddr) (_ net.PacketConn, err error) {
+ 	h.logger.InfoContext(ctx, "outbound packet connection to ", destination)
+ 	ctx, metadata := adapter.ExtendContext(ctx)
+ 	metadata.Outbound = h.Tag()
+ 	metadata.Destination = destination
+ 	var conn net.Conn
+-	var err error
+ 	if h.transport != nil {
+ 		conn, err = h.transport.DialContext(ctx)
+ 	} else if h.tlsDialer != nil {
+@@ -207,6 +211,11 @@ func (h *vlessDialer) ListenPacket(ctx context.Context, destination M.Socksaddr)
+ 		common.Close(conn)
+ 		return nil, err
+ 	}
++	defer func() {
++		if err != nil {
++			common.Close(conn)
++		}
++	}()
+ 	if h.xudp {
+ 		return h.client.DialEarlyXUDPPacketConn(conn, destination)
+ 	} else if h.packetAddr {
+diff --git a/protocol/vless/outbound_test.go b/protocol/vless/outbound_test.go
+new file mode 100644
+index 0000000..48c3567
+--- /dev/null
++++ b/protocol/vless/outbound_test.go
+@@ -0,0 +1,94 @@
++package vless
++
++import (
++	"context"
++	"errors"
++	"io"
++	"net"
++	"testing"
++	"time"
++
++	outboundadapter "github.com/sagernet/sing-box/adapter/outbound"
++	C "github.com/sagernet/sing-box/constant"
++	vmessvless "github.com/sagernet/sing-vmess/vless"
++	"github.com/sagernet/sing/common/logger"
++	M "github.com/sagernet/sing/common/metadata"
++	N "github.com/sagernet/sing/common/network"
++)
++
++type staticVLESSDialer struct {
++	conn net.Conn
++}
++
++func (d staticVLESSDialer) DialContext(context.Context, string, M.Socksaddr) (net.Conn, error) {
++	return d.conn, nil
++}
++
++func (staticVLESSDialer) ListenPacket(context.Context, M.Socksaddr) (net.PacketConn, error) {
++	return nil, errors.New("unexpected packet listener")
++}
++
++type failingVLESSConn struct {
++	writeErr error
++	closed   bool
++}
++
++func (c *failingVLESSConn) Read([]byte) (int, error)         { return 0, io.EOF }
++func (c *failingVLESSConn) Write([]byte) (int, error)        { return 0, c.writeErr }
++func (c *failingVLESSConn) Close() error                     { c.closed = true; return nil }
++func (c *failingVLESSConn) LocalAddr() net.Addr              { return nil }
++func (c *failingVLESSConn) RemoteAddr() net.Addr             { return nil }
++func (c *failingVLESSConn) SetDeadline(time.Time) error      { return nil }
++func (c *failingVLESSConn) SetReadDeadline(time.Time) error  { return nil }
++func (c *failingVLESSConn) SetWriteDeadline(time.Time) error { return nil }
++
++func newXUDPTestDialer(t *testing.T, conn net.Conn) *vlessDialer {
++	t.Helper()
++	client, err := vmessvless.NewClient("00000000-0000-0000-0000-000000000001", "", logger.NOP())
++	if err != nil {
++		t.Fatalf("create vless client: %v", err)
++	}
++	return &vlessDialer{
++		Adapter: outboundadapter.NewAdapter(C.TypeVLESS, "test", []string{N.NetworkTCP, N.NetworkUDP}, nil),
++		logger:  logger.NOP(),
++		dialer:  staticVLESSDialer{conn: conn},
++		client:  client,
++		xudp:    true,
++	}
++}
++
++func TestVLESSDialerClosesXUDPConnectionOnSetupError(t *testing.T) {
++	destination := M.Socksaddr{Fqdn: "example.com", Port: 443}
++	tests := []struct {
++		name string
++		run  func(*vlessDialer) error
++	}{
++		{
++			name: "dial context",
++			run: func(dialer *vlessDialer) error {
++				_, err := dialer.DialContext(context.Background(), N.NetworkUDP, destination)
++				return err
++			},
++		},
++		{
++			name: "listen packet",
++			run: func(dialer *vlessDialer) error {
++				_, err := dialer.ListenPacket(context.Background(), destination)
++				return err
++			},
++		},
++	}
++	for _, test := range tests {
++		t.Run(test.name, func(t *testing.T) {
++			sentinel := errors.New("write failed")
++			conn := &failingVLESSConn{writeErr: sentinel}
++			err := test.run(newXUDPTestDialer(t, conn))
++			if !errors.Is(err, sentinel) {
++				t.Fatalf("expected setup error, got %v", err)
++			}
++			if !conn.closed {
++				t.Fatal("setup error left connection open")
++			}
++		})
++	}
++}
+diff --git a/route/conn.go b/route/conn.go
+index 9fdc6cd..c8a8874 100644
+--- a/route/conn.go
++++ b/route/conn.go
+@@ -29,15 +29,20 @@ import (
+ 
+ var _ adapter.ConnectionManager = (*ConnectionManager)(nil)
+ 
++// ponytail: 与旧版 udpnat2 的 1024 条目上限对齐，迁移到带关闭通知的新版 UDPNAT 后删除。
++const maxActivePacketConnections = 1024
++
+ type ConnectionManager struct {
+-	logger      logger.ContextLogger
+-	access      sync.Mutex
+-	connections list.List[io.Closer]
++	logger                logger.ContextLogger
++	access                sync.Mutex
++	connections           list.List[io.Closer]
++	packetConnectionSlots chan struct{}
+ }
+ 
+ func NewConnectionManager(logger logger.ContextLogger) *ConnectionManager {
+ 	return &ConnectionManager{
+-		logger: logger,
++		logger:                logger,
++		packetConnectionSlots: make(chan struct{}, maxActivePacketConnections),
+ 	}
+ }
+ 
+@@ -143,6 +148,21 @@ func (m *ConnectionManager) NewConnection(ctx context.Context, this N.Dialer, co
+ 
+ func (m *ConnectionManager) NewPacketConnection(ctx context.Context, this N.Dialer, conn N.PacketConn, metadata adapter.InboundContext, onClose N.CloseHandlerFunc) {
+ 	ctx = adapter.WithContext(ctx, &metadata)
++	dialContext, cancelDial := newPacketDialContext(ctx, conn)
++	defer cancelDial()
++	if !m.acquirePacketConnection(dialContext) {
++		N.CloseOnHandshakeFailure(conn, onClose, dialContext.Err())
++		return
++	}
++	var releaseOnce sync.Once
++	managedOnClose := func(err error) {
++		releaseOnce.Do(func() {
++			<-m.packetConnectionSlots
++			if onClose != nil {
++				onClose(err)
++			}
++		})
++	}
+ 	var (
+ 		remotePacketConn   net.PacketConn
+ 		remoteConn         net.Conn
+@@ -153,18 +173,18 @@ func (m *ConnectionManager) NewPacketConnection(ctx context.Context, this N.Dial
+ 		parallelDialer, isParallelDialer := this.(dialer.ParallelInterfaceDialer)
+ 		if len(metadata.DestinationAddresses) > 0 {
+ 			if isParallelDialer {
+-				remoteConn, err = dialer.DialSerialNetwork(ctx, parallelDialer, N.NetworkUDP, metadata.Destination, metadata.DestinationAddresses, metadata.NetworkStrategy, metadata.NetworkType, metadata.FallbackNetworkType, metadata.FallbackDelay)
++				remoteConn, err = dialer.DialSerialNetwork(dialContext, parallelDialer, N.NetworkUDP, metadata.Destination, metadata.DestinationAddresses, metadata.NetworkStrategy, metadata.NetworkType, metadata.FallbackNetworkType, metadata.FallbackDelay)
+ 			} else {
+-				remoteConn, err = N.DialSerial(ctx, this, N.NetworkUDP, metadata.Destination, metadata.DestinationAddresses)
++				remoteConn, err = N.DialSerial(dialContext, this, N.NetworkUDP, metadata.Destination, metadata.DestinationAddresses)
+ 			}
+ 		} else if metadata.Destination.IsIP() {
+ 			if isParallelDialer {
+-				remoteConn, err = dialer.DialSerialNetwork(ctx, parallelDialer, N.NetworkUDP, metadata.Destination, metadata.DestinationAddresses, metadata.NetworkStrategy, metadata.NetworkType, metadata.FallbackNetworkType, metadata.FallbackDelay)
++				remoteConn, err = dialer.DialSerialNetwork(dialContext, parallelDialer, N.NetworkUDP, metadata.Destination, metadata.DestinationAddresses, metadata.NetworkStrategy, metadata.NetworkType, metadata.FallbackNetworkType, metadata.FallbackDelay)
+ 			} else {
+-				remoteConn, err = this.DialContext(ctx, N.NetworkUDP, metadata.Destination)
++				remoteConn, err = this.DialContext(dialContext, N.NetworkUDP, metadata.Destination)
+ 			}
+ 		} else {
+-			remoteConn, err = this.DialContext(ctx, N.NetworkUDP, metadata.Destination)
++			remoteConn, err = this.DialContext(dialContext, N.NetworkUDP, metadata.Destination)
+ 		}
+ 		if err != nil {
+ 			var remoteString string
+@@ -178,7 +198,7 @@ func (m *ConnectionManager) NewPacketConnection(ctx context.Context, this N.Dial
+ 				dialerString = " using outbound/" + outbound.Type() + "[" + outbound.Tag() + "]"
+ 			}
+ 			err = E.Cause(err, "open packet connection to ", remoteString, dialerString)
+-			N.CloseOnHandshakeFailure(conn, onClose, err)
++			N.CloseOnHandshakeFailure(conn, managedOnClose, err)
+ 			m.logger.ErrorContext(ctx, err)
+ 			return
+ 		}
+@@ -189,11 +209,11 @@ func (m *ConnectionManager) NewPacketConnection(ctx context.Context, this N.Dial
+ 		}
+ 	} else {
+ 		if len(metadata.DestinationAddresses) > 0 {
+-			remotePacketConn, destinationAddress, err = dialer.ListenSerialNetworkPacket(ctx, this, metadata.Destination, metadata.DestinationAddresses, metadata.NetworkStrategy, metadata.NetworkType, metadata.FallbackNetworkType, metadata.FallbackDelay)
++			remotePacketConn, destinationAddress, err = dialer.ListenSerialNetworkPacket(dialContext, this, metadata.Destination, metadata.DestinationAddresses, metadata.NetworkStrategy, metadata.NetworkType, metadata.FallbackNetworkType, metadata.FallbackDelay)
+ 		} else if packetDialer, withDestination := this.(dialer.PacketDialerWithDestination); withDestination {
+-			remotePacketConn, destinationAddress, err = packetDialer.ListenPacketWithDestination(ctx, metadata.Destination)
++			remotePacketConn, destinationAddress, err = packetDialer.ListenPacketWithDestination(dialContext, metadata.Destination)
+ 		} else {
+-			remotePacketConn, err = this.ListenPacket(ctx, metadata.Destination)
++			remotePacketConn, err = this.ListenPacket(dialContext, metadata.Destination)
+ 		}
+ 		if err != nil {
+ 			var dialerString string
+@@ -201,7 +221,7 @@ func (m *ConnectionManager) NewPacketConnection(ctx context.Context, this N.Dial
+ 				dialerString = " using outbound/" + outbound.Type() + "[" + outbound.Tag() + "]"
+ 			}
+ 			err = E.Cause(err, "listen packet connection using ", dialerString)
+-			N.CloseOnHandshakeFailure(conn, onClose, err)
++			N.CloseOnHandshakeFailure(conn, managedOnClose, err)
+ 			m.logger.ErrorContext(ctx, err)
+ 			return
+ 		}
+@@ -210,6 +230,7 @@ func (m *ConnectionManager) NewPacketConnection(ctx context.Context, this N.Dial
+ 	if err != nil {
+ 		conn.Close()
+ 		remotePacketConn.Close()
++		managedOnClose(err)
+ 		m.logger.ErrorContext(ctx, "report handshake success: ", err)
+ 		return
+ 	}
+@@ -254,8 +275,46 @@ func (m *ConnectionManager) NewPacketConnection(ctx context.Context, this N.Dial
+ 	}
+ 	destination := bufio.NewPacketConn(remotePacketConn)
+ 	var done atomic.Bool
+-	go m.packetConnectionCopy(ctx, conn, destination, false, &done, onClose)
+-	go m.packetConnectionCopy(ctx, destination, conn, true, &done, onClose)
++	go m.packetConnectionCopy(ctx, conn, destination, false, &done, managedOnClose)
++	go m.packetConnectionCopy(ctx, destination, conn, true, &done, managedOnClose)
++}
++
++func (m *ConnectionManager) acquirePacketConnection(ctx context.Context) bool {
++	select {
++	case m.packetConnectionSlots <- struct{}{}:
++		return true
++	case <-ctx.Done():
++		return false
++	}
++}
++
++func newPacketDialContext(parent context.Context, conn N.PacketConn) (context.Context, context.CancelFunc) {
++	timeoutConn, loaded := common.Cast[canceler.PacketConn](conn)
++	if !loaded {
++		return parent, func() {}
++	}
++	dialContext, cancel := context.WithCancel(parent)
++	if timeoutConn.Timeout() <= 0 {
++		cancel()
++		return dialContext, cancel
++	}
++	go func() {
++		// ponytail: 旧版 udpnat2 没有关闭通知，仅在拨号期间轮询；迁移到新版 sing-tun UDPNAT 后删除。
++		ticker := time.NewTicker(10 * time.Millisecond)
++		defer ticker.Stop()
++		for {
++			select {
++			case <-dialContext.Done():
++				return
++			case <-ticker.C:
++				if timeoutConn.Timeout() <= 0 {
++					cancel()
++					return
++				}
++			}
++		}
++	}()
++	return dialContext, cancel
+ }
+ 
+ func (m *ConnectionManager) connectionCopy(ctx context.Context, source net.Conn, destination net.Conn, direction bool, done *atomic.Bool, onClose N.CloseHandlerFunc) {
+diff --git a/route/conn_packet_lifecycle_test.go b/route/conn_packet_lifecycle_test.go
+new file mode 100644
+index 0000000..cbe28db
+--- /dev/null
++++ b/route/conn_packet_lifecycle_test.go
+@@ -0,0 +1,190 @@
++package route
++
++import (
++	"context"
++	"net"
++	"net/netip"
++	"sync/atomic"
++	"testing"
++	"time"
++
++	"github.com/sagernet/sing-box/adapter"
++	"github.com/sagernet/sing-box/log"
++	"github.com/sagernet/sing/common/buf"
++	M "github.com/sagernet/sing/common/metadata"
++	N "github.com/sagernet/sing/common/network"
++	udpnat "github.com/sagernet/sing/common/udpnat2"
++)
++
++func TestPacketDialCanceledWhenInboundNATExpires(t *testing.T) {
++	manager := NewConnectionManager(log.NewNOPFactory().Logger())
++	source := &expiringPacketConn{}
++	dialer := &blockingPacketDialer{
++		started:  make(chan struct{}),
++		canceled: make(chan struct{}),
++	}
++	done := make(chan struct{})
++	go func() {
++		manager.NewPacketConnection(
++			context.Background(),
++			dialer,
++			source,
++			adapter.InboundContext{Destination: M.ParseSocksaddr("1.1.1.1:443")},
++			nil,
++		)
++		close(done)
++	}()
++
++	select {
++	case <-dialer.started:
++	case <-time.After(time.Second):
++		t.Fatal("packet dial did not start")
++	}
++	source.expired.Store(true)
++	select {
++	case <-dialer.canceled:
++	case <-time.After(250 * time.Millisecond):
++		t.Fatal("expired inbound NAT did not cancel the pending packet dial")
++	}
++	select {
++	case <-done:
++	case <-time.After(time.Second):
++		t.Fatal("packet connection did not return after dial cancellation")
++	}
++}
++
++func TestPacketDialFloodStaysBoundedByInboundNATCapacity(t *testing.T) {
++	manager := NewConnectionManager(log.NewNOPFactory().Logger())
++	dialer := &countingBlockingPacketDialer{}
++	handler := &natPacketRouteHandler{manager: manager, dialer: dialer}
++	service := udpnat.New(
++		handler,
++		func(_, _ M.Socksaddr, _ any) (bool, context.Context, N.PacketWriter, N.CloseHandlerFunc) {
++			return true, context.Background(), discardPacketWriter{}, nil
++		},
++		time.Minute,
++		true,
++	)
++	destination := M.Socksaddr{Addr: netip.MustParseAddr("1.1.1.1"), Port: 443}
++	for index := 0; index < 32_768; index++ {
++		source := M.Socksaddr{
++			Addr: netip.AddrFrom4([4]byte{10, byte(index >> 8), byte(index), 1}),
++			Port: uint16(index + 1),
++		}
++		service.NewPacket([][]byte{{1}}, source, destination, nil)
++	}
++	deadline := time.Now().Add(5 * time.Second)
++	for dialer.started.Load() < 1024 && time.Now().Before(deadline) {
++		time.Sleep(time.Millisecond)
++	}
++	service.Purge()
++	for dialer.active.Load() != 0 && time.Now().Before(deadline) {
++		time.Sleep(time.Millisecond)
++	}
++	if active := dialer.active.Load(); active != 0 {
++		t.Fatalf("packet dials still active after NAT purge: %d", active)
++	}
++	if peak := dialer.peak.Load(); peak > 1024 {
++		t.Fatalf("packet dial flood exceeded NAT capacity: peak=%d", peak)
++	}
++}
++
++type natPacketRouteHandler struct {
++	manager *ConnectionManager
++	dialer  *countingBlockingPacketDialer
++}
++
++func (h *natPacketRouteHandler) NewPacketConnectionEx(
++	ctx context.Context,
++	conn N.PacketConn,
++	_ M.Socksaddr,
++	destination M.Socksaddr,
++	onClose N.CloseHandlerFunc,
++) {
++	h.manager.NewPacketConnection(
++		ctx,
++		h.dialer,
++		conn,
++		adapter.InboundContext{Destination: destination},
++		onClose,
++	)
++}
++
++type discardPacketWriter struct{}
++
++func (discardPacketWriter) WritePacket(buffer *buf.Buffer, _ M.Socksaddr) error {
++	buffer.Release()
++	return nil
++}
++
++type countingBlockingPacketDialer struct {
++	started atomic.Int64
++	active  atomic.Int64
++	peak    atomic.Int64
++}
++
++func (d *countingBlockingPacketDialer) DialContext(ctx context.Context, _ string, _ M.Socksaddr) (net.Conn, error) {
++	return nil, d.wait(ctx)
++}
++
++func (d *countingBlockingPacketDialer) ListenPacket(ctx context.Context, _ M.Socksaddr) (net.PacketConn, error) {
++	return nil, d.wait(ctx)
++}
++
++func (d *countingBlockingPacketDialer) wait(ctx context.Context) error {
++	active := d.active.Add(1)
++	d.started.Add(1)
++	for peak := d.peak.Load(); active > peak && !d.peak.CompareAndSwap(peak, active); peak = d.peak.Load() {
++	}
++	<-ctx.Done()
++	d.active.Add(-1)
++	return ctx.Err()
++}
++
++type expiringPacketConn struct {
++	expired atomic.Bool
++}
++
++func (c *expiringPacketConn) ReadPacket(*buf.Buffer) (M.Socksaddr, error) {
++	return M.Socksaddr{}, net.ErrClosed
++}
++
++func (c *expiringPacketConn) WritePacket(buffer *buf.Buffer, _ M.Socksaddr) error {
++	buffer.Release()
++	return nil
++}
++
++func (c *expiringPacketConn) Close() error                     { return nil }
++func (c *expiringPacketConn) LocalAddr() net.Addr              { return M.Socksaddr{} }
++func (c *expiringPacketConn) SetDeadline(time.Time) error      { return nil }
++func (c *expiringPacketConn) SetReadDeadline(time.Time) error  { return nil }
++func (c *expiringPacketConn) SetWriteDeadline(time.Time) error { return nil }
++
++func (c *expiringPacketConn) Timeout() time.Duration {
++	if c.expired.Load() {
++		return 0
++	}
++	return time.Minute
++}
++
++func (c *expiringPacketConn) SetTimeout(time.Duration) bool { return true }
++
++type blockingPacketDialer struct {
++	started  chan struct{}
++	canceled chan struct{}
++}
++
++func (d *blockingPacketDialer) DialContext(ctx context.Context, _ string, _ M.Socksaddr) (net.Conn, error) {
++	return nil, d.wait(ctx)
++}
++
++func (d *blockingPacketDialer) ListenPacket(ctx context.Context, _ M.Socksaddr) (net.PacketConn, error) {
++	return nil, d.wait(ctx)
++}
++
++func (d *blockingPacketDialer) wait(ctx context.Context) error {
++	close(d.started)
++	<-ctx.Done()
++	close(d.canceled)
++	return ctx.Err()
++}
