@@ -38,14 +38,16 @@ class ProxyOnlyServiceStateTest {
     }
 
     @Test
-    fun taskRemovalStopMarksProxyAsManuallyStopped() {
+    fun explicitStopUsesItsInitiatorForProxyManualStopSemantics() {
         val source = File("src/main/java/com/kunk/singbox/service/ProxyOnlyService.kt")
             .readText(Charsets.UTF_8)
         val stopBranch = source
             .substringAfter("ACTION_STOP ->")
             .substringBefore("ACTION_SWITCH_NODE ->")
 
-        assertTrue(stopBranch.contains("VpnStateStore.setManuallyStopped(true)"))
+        assertTrue(stopBranch.contains("VpnStopInitiator.fromWireValue"))
+        assertTrue(stopBranch.contains("VpnStateStore.setManuallyStopped(stopInitiator.isManualStop)"))
+        assertTrue(stopBranch.contains("lastStopInitiator = stopInitiator"))
         assertTrue(stopBranch.contains("notifyRemoteState(state = ServiceState.STOPPING)"))
         assertTrue(stopBranch.contains("stopCore(stopService = true, recoveryIntentLease = recoveryIntentLease)"))
     }

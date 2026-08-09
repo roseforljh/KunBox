@@ -31,6 +31,7 @@ import com.kunk.singbox.repository.ConfigRepository
 import com.kunk.singbox.ui.components.AppNotificationManager
 import com.kunk.singbox.repository.SettingsRepository
 import com.kunk.singbox.service.manager.ServiceStateHolder
+import com.kunk.singbox.service.manager.VpnStopInitiator
 import com.kunk.singbox.service.notification.VpnNotificationManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -364,7 +365,10 @@ class VpnTileService : TileService() {
 
         serviceScope.launch(Dispatchers.IO) {
             try {
-                VpnServiceManager.stopVpn(this@VpnTileService).getOrThrow()
+                VpnServiceManager.stopVpn(
+                    this@VpnTileService,
+                    VpnStopInitiator.QUICK_SETTINGS
+                ).getOrThrow()
 
                 withContext(Dispatchers.Main) {
                     updateTile()

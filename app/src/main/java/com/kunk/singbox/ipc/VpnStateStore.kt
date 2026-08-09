@@ -86,7 +86,7 @@ object VpnStateStore {
     private const val KEY_RESOURCE_CORE_RESTART_COUNT = "resource_core_restart_count"
     private const val KEY_RESOURCE_PROCESS_RECLAIM_COUNT = "resource_process_reclaim_count"
     internal const val RESOURCE_RECOVERY_WINDOW_MS = 60 * 60_000L
-    internal const val RESOURCE_CORE_RESTART_LIMIT = 2
+    internal const val RESOURCE_CORE_RESTART_LIMIT = 1
     internal const val RESOURCE_PROCESS_RECLAIM_LIMIT = 1
     private const val KEY_TRAFFIC_CLEAR_TIMESTAMP = "traffic_clear_timestamp"
     private const val KEY_LOG_CLEAR_GENERATION = "log_clear_generation"
@@ -259,6 +259,9 @@ object VpnStateStore {
         mmkv.encode(KEY_VPN_MANUALLY_STOPPED, snapshot.manuallyStopped)
         if (snapshot.manuallyStopped && !previous.manuallyStopped) {
             mmkv.encode(KEY_LAST_MANUAL_STOP_AT_MS, System.currentTimeMillis())
+        }
+        if (shouldResetResourceRecoveryBudget(previous.manuallyStopped, snapshot.manuallyStopped)) {
+            resetResourceRecoveryBudgetLocked()
         }
         return snapshot
     }
@@ -563,6 +566,21 @@ object VpnStateStore {
             mmkv.encode(KEY_RESOURCE_CORE_RESTART_COUNT, result.state.coreRestartCount) &&
             mmkv.encode(KEY_RESOURCE_PROCESS_RECLAIM_COUNT, result.state.processReclaimCount)
         saved
+    }
+
+    fun resetResourceRecoveryBudget() {
+        runtimeStateFileLock.withLock { resetResourceRecoveryBudgetLocked() }
+    }
+
+    internal fun shouldResetResourceRecoveryBudget(
+        previousManuallyStopped: Boolean,
+        manuallyStopped: Boolean
+    ): Boolean = previousManuallyStopped && !manuallyStopped
+
+    private fun resetResourceRecoveryBudgetLocked() {
+        mmkv.removeValueForKey(KEY_RESOURCE_RECOVERY_WINDOW_START_AT_MS)
+        mmkv.removeValueForKey(KEY_RESOURCE_CORE_RESTART_COUNT)
+        mmkv.removeValueForKey(KEY_RESOURCE_PROCESS_RECLAIM_COUNT)
     }
 
     internal fun consumeResourceRecoveryBudget(

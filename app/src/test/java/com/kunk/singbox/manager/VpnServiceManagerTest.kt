@@ -3,6 +3,7 @@ package com.kunk.singbox.manager
 import com.kunk.singbox.ipc.VpnStateStore
 import com.kunk.singbox.service.ProxyOnlyService
 import com.kunk.singbox.service.SingBoxService
+import com.kunk.singbox.service.manager.VpnStopInitiator
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -105,7 +106,7 @@ class VpnServiceManagerTest {
     @Test
     fun stopVpnUsesPersistedModeBeforeDispatching() {
         val source = File("src/main/java/com/kunk/singbox/manager/VpnServiceManager.kt").readText()
-        val start = source.indexOf("fun stopVpn(context: Context)")
+        val start = source.indexOf("fun stopVpn(context: Context, initiator: VpnStopInitiator)")
         val body = source.substring(
             start,
             source.indexOf("fun restartVpn(context: Context)", start)
@@ -116,5 +117,33 @@ class VpnServiceManagerTest {
         assertTrue(body.contains("val activeMode = VpnStateStore.getMode()"))
         assertTrue(body.contains("shouldDispatchStopToService(activeMode, VpnStateStore.CoreMode.VPN)"))
         assertTrue(body.contains("shouldDispatchStopToService(activeMode, VpnStateStore.CoreMode.PROXY)"))
+        assertTrue(body.contains("putExtra(SingBoxService.EXTRA_STOP_INITIATOR, initiator.wireValue)"))
+    }
+
+    @Test
+    fun onlyExplicitUserActionsHaveManualStopSemantics() {
+        assertTrue(VpnStopInitiator.USER_UI.isManualStop)
+        assertTrue(VpnStopInitiator.QUICK_SETTINGS.isManualStop)
+        assertTrue(VpnStopInitiator.NOTIFICATION.isManualStop)
+        assertFalse(VpnStopInitiator.TRUSTED_WIFI.isManualStop)
+        assertFalse(VpnStopInitiator.METERED_PROTECTION.isManualStop)
+        assertFalse(VpnStopInitiator.MODE_SWITCH.isManualStop)
+        assertFalse(VpnStopInitiator.START_TIMEOUT.isManualStop)
+        assertFalse(VpnStopInitiator.RESTART.isManualStop)
+        assertFalse(VpnStopInitiator.SYSTEM_REVOKE.isManualStop)
+        assertFalse(VpnStopInitiator.UNKNOWN.isManualStop)
+        assertEquals(VpnStopInitiator.UNKNOWN, VpnStopInitiator.fromWireValue("invalid"))
+    }
+
+    @Test
+    fun systemRevokeIsRecordedAsAutomaticStop() {
+        val source = File("src/main/java/com/kunk/singbox/service/SingBoxService.kt")
+            .readText(Charsets.UTF_8)
+        val body = source.substringAfter("override fun onRevoke()")
+            .substringBefore("protected suspend fun ensureNetworkCallbackReady")
+
+        assertTrue(body.contains("lastStopInitiator = VpnStopInitiator.SYSTEM_REVOKE"))
+        assertTrue(body.contains("VpnStateStore.setManuallyStopped(false)"))
+        assertFalse(body.contains("VpnStateStore.setManuallyStopped(true)"))
     }
 }

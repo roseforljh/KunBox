@@ -197,7 +197,9 @@ class DashboardViewModelStateResolutionTest {
 
         assertTrue(source.contains("SingBoxRemote.clearLastErrorForNewStart()"))
         assertTrue(source.contains("VpnTileService.persistVpnPending(\"\")"))
-        assertTrue(source.contains("VpnServiceManager.stopVpn(context)"))
+        assertTrue(
+            source.contains("VpnServiceManager.stopVpn(context, VpnStopInitiator.START_TIMEOUT)")
+        )
     }
 
     @Test

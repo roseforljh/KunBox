@@ -153,6 +153,10 @@ class CommandManager(
         return decision != null
     }
 
+    internal fun connectionAttributionSnapshot(): ConnectionAttributionSnapshot {
+        return connectionStormGuard.snapshot()
+    }
+
     @Suppress("UNUSED_PARAMETER")
     fun createServer(platformInterface: PlatformInterface): Result<CommandServer> = runCatching {
         val serverHandler = object : CommandServerHandler {
@@ -595,7 +599,7 @@ class CommandManager(
     private fun persistConnectionIncident(decision: ConnectionStormDecision, closed: Boolean) {
         val snapshot = decision.toIncidentSnapshot(
             mode = "vpn",
-            closeReason = if (decision.closeAll) "close_all" else "close_quarantined_source",
+            closeReason = decision.incidentCloseReason(),
             closeSucceeded = closed,
             timestampEpochMs = System.currentTimeMillis(),
             elapsedRealtimeMs = SystemClock.elapsedRealtime()

@@ -129,15 +129,13 @@ class VpnStateStoreTest {
     @Test
     fun resourceRecoveryBudgetLimitsActionsAndResetsAfterOneHour() {
         var state = VpnStateStore.ResourceRecoveryBudgetState()
-        repeat(2) {
-            val result = VpnStateStore.consumeResourceRecoveryBudget(
-                state,
-                VpnStateStore.ResourceRecoveryAction.CORE_RESTART,
-                nowMs = 1_000L
-            )
-            assertTrue(result.consumed)
-            state = result.state
-        }
+        val firstRestart = VpnStateStore.consumeResourceRecoveryBudget(
+            state,
+            VpnStateStore.ResourceRecoveryAction.CORE_RESTART,
+            nowMs = 1_000L
+        )
+        assertTrue(firstRestart.consumed)
+        state = firstRestart.state
         assertFalse(
             VpnStateStore.consumeResourceRecoveryBudget(
                 state,
@@ -168,6 +166,14 @@ class VpnStateStoreTest {
         assertTrue(reset.consumed)
         assertEquals(1, reset.state.coreRestartCount)
         assertEquals(0, reset.state.processReclaimCount)
+    }
+
+    @Test
+    fun onlyManualStopToStartTransitionResetsResourceRecoveryBudget() {
+        assertTrue(VpnStateStore.shouldResetResourceRecoveryBudget(true, false))
+        assertFalse(VpnStateStore.shouldResetResourceRecoveryBudget(false, false))
+        assertFalse(VpnStateStore.shouldResetResourceRecoveryBudget(true, true))
+        assertFalse(VpnStateStore.shouldResetResourceRecoveryBudget(false, true))
     }
 
     @Test

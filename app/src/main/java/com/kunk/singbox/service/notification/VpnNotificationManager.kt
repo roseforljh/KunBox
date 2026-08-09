@@ -15,6 +15,7 @@ import com.kunk.singbox.service.SingBoxService
 import com.kunk.singbox.service.SingBoxService.Companion.ACTION_STOP
 import com.kunk.singbox.service.SingBoxService.Companion.ACTION_SWITCH_NODE
 import com.kunk.singbox.service.SingBoxService.Companion.ACTION_RESET_CONNECTIONS
+import com.kunk.singbox.service.manager.VpnStopInitiator
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -194,6 +195,7 @@ class VpnNotificationManager(
 
         val stopIntent = Intent(context, SingBoxService::class.java).apply {
             action = ACTION_STOP
+            putExtra(SingBoxService.EXTRA_STOP_INITIATOR, VpnStopInitiator.NOTIFICATION.wireValue)
         }
         val stopPendingIntent = PendingIntent.getService(
             context, 2, stopIntent,

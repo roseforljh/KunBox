@@ -55,6 +55,7 @@ import com.kunk.singbox.service.manager.ServiceStateHolder
 import com.kunk.singbox.service.manager.ShutdownManager
 import com.kunk.singbox.service.manager.TimedProbeResult
 import com.kunk.singbox.service.manager.UrlTestTagMatcher
+import com.kunk.singbox.service.manager.VpnStopInitiator
 import com.kunk.singbox.service.manager.probePhysicalDns
 import com.kunk.singbox.service.manager.toProbeDiagnosticFields
 import com.kunk.singbox.service.network.TrafficMonitor
@@ -565,6 +566,7 @@ class SingBoxService : VpnService() {
     )
     @Volatile protected var isStopping: Boolean = false
     @Volatile protected var stopSelfRequested: Boolean = false
+    @Volatile private var lastStopInitiator: VpnStopInitiator = VpnStopInitiator.UNKNOWN
     @Volatile private var hardStopRecoveryIntentLease: RecoveryIntentLease? = null
     @Volatile private var preserveRuntimeStateOnDestroy: Boolean = false
     @Volatile protected var cleanupJob: Job? = null
@@ -1085,9 +1087,7 @@ class SingBoxService : VpnService() {
                     isResourceRecoveryLeaseCurrent()
             }
 
-            override fun closeConnections(): Boolean = commandManager.closeConnections()
-
-            override fun resetNetwork(): Boolean = BoxWrapperManager.resetNetwork()
+            override fun connectionAttributionSnapshot() = commandManager.connectionAttributionSnapshot()
 
             override fun restartCore(reason: String, attemptId: Long): Boolean {
                 if (!BackgroundResourceGuard.isRecoveryAttemptActive(resourceGuardOwnerId, attemptId)) return false
@@ -1348,11 +1348,10 @@ class SingBoxService : VpnService() {
             failureCount = signal.failureCount,
             nowMs = SystemClock.elapsedRealtime()
         )
-        val reset = guardTriggered && BoxWrapperManager.resetNetwork()
         notifySingleNodeRouteFailureIfNeeded(failureTag)
         LogRepository.getInstance().addAlwaysLog(
             "WARN recovery app_route_failure outbound=$failureTag selected=${currentProxyTag.orEmpty()} " +
-                "guard=$guardTriggered reset=$reset"
+                "guard=$guardTriggered scope=failed_outbound_only"
         )
     }
 
@@ -1360,14 +1359,15 @@ class SingBoxService : VpnService() {
         autoFailoverJob?.cancel()
         autoFailoverJob = null
         autoFailoverCandidateCache.clear()
-        val registration = resourceGuardRegistration
+        val registration = resourceGuardRegistration ?: run {
+            startResourceGuard()
+            resourceGuardRegistration
+        }
         if (registration != null) {
             BackgroundResourceGuard.signalResourceExhaustion(registration, reason)
         } else {
-            val closed = commandManager.closeConnections()
-            val reset = BoxWrapperManager.resetNetwork()
             LogRepository.getInstance().addAlwaysLog(
-                "WARN recovery resource_exhausted stage=fallback closed=$closed reset=$reset reason=$reason"
+                "ERROR recovery resource_exhausted stage=guard_registration_failed reason=$reason"
             )
         }
     }
@@ -2314,7 +2314,8 @@ class SingBoxService : VpnService() {
                     append("process_started_at_epoch_ms=${readProcessStartedAtEpochMs() ?: -1L} ")
                     append("app_version_code=${VersionInfo.getAppVersionCode(this@SingBoxService)} ")
                     append("mode=${VpnStateStore.getMode().name} ")
-                    append("manually_stopped=${VpnStateStore.isManuallyStopped()} recovery=$recovery")
+                    append("manually_stopped=${VpnStateStore.isManuallyStopped()} recovery=$recovery ")
+                    append("stop_initiator=${lastStopInitiator.wireValue}")
                     action?.takeIf(String::isNotBlank)?.let { append(" action=$it") }
                 }
             )
@@ -2438,6 +2439,7 @@ class SingBoxService : VpnService() {
                 if (!isRecoveryStart) {
                     SingBoxService.isManuallyStopped = false
                     VpnStateStore.setManuallyStopped(false)
+                    lastStopInitiator = VpnStopInitiator.UNKNOWN
                 }
                 val recoveryLease = setNonResourceRecoveryIntent(isRecoveryStart)
                 SingBoxService.setLastError(null)
@@ -2578,9 +2580,21 @@ class SingBoxService : VpnService() {
                 }
             }
             SingBoxService.ACTION_STOP -> {
-                Log.i(SingBoxService.TAG, "Received SingBoxService.ACTION_STOP (manual) -> stopping VPN")
-                SingBoxService.isManuallyStopped = true
-                VpnStateStore.setManuallyStopped(true)
+                val stopInitiator = VpnStopInitiator.fromWireValue(
+                    intent.getStringExtra(SingBoxService.EXTRA_STOP_INITIATOR)
+                )
+                lastStopInitiator = stopInitiator
+                Log.i(
+                    SingBoxService.TAG,
+                    "Received SingBoxService.ACTION_STOP initiator=${stopInitiator.wireValue} -> stopping VPN"
+                )
+                SingBoxService.isManuallyStopped = stopInitiator.isManualStop
+                VpnStateStore.setManuallyStopped(stopInitiator.isManualStop)
+                recordServiceLifecycle(
+                    event = "stop_request",
+                    reason = if (stopInitiator.isManualStop) "manual_stop" else "automatic_stop",
+                    action = SingBoxService.ACTION_STOP.substringAfterLast('.')
+                )
                 val recoveryLease = setNonResourceRecoveryIntent(false)
                 VpnTileService.persistVpnPending("stopping")
                 updateServiceState(ServiceState.STOPPING)
@@ -3449,11 +3463,14 @@ class SingBoxService : VpnService() {
             }
         }.getOrDefault(false)
 
-        val unexpectedDeath = !SingBoxService.isManuallyStopped && shouldStop
+        val manualStop = lastStopInitiator.isManualStop || SingBoxService.isManuallyStopped
+        val requestedStop = lastStopInitiator != VpnStopInitiator.UNKNOWN || manualStop
+        val unexpectedDeath = !requestedStop && shouldStop
         recordServiceLifecycle(
             event = "destroy",
             reason = when {
-                SingBoxService.isManuallyStopped -> "manual_stop"
+                manualStop -> "manual_stop"
+                requestedStop -> "automatic_stop"
                 unexpectedDeath -> "unexpected_destroy"
                 shouldStop -> "active_cleanup"
                 else -> "inactive_destroy"
@@ -3504,8 +3521,14 @@ class SingBoxService : VpnService() {
 
     override fun onRevoke() {
         Log.i(SingBoxService.TAG, "onRevoke called -> stopVpn(stopService=true)")
-        SingBoxService.isManuallyStopped = true
-        VpnStateStore.setManuallyStopped(true)
+        lastStopInitiator = VpnStopInitiator.SYSTEM_REVOKE
+        SingBoxService.isManuallyStopped = false
+        VpnStateStore.setManuallyStopped(false)
+        recordServiceLifecycle(
+            event = "stop_request",
+            reason = "automatic_stop",
+            action = "SYSTEM_REVOKE"
+        )
         val recoveryLease = setNonResourceRecoveryIntent(false)
         VpnTileService.persistVpnPending("stopping")
         SingBoxService.setLastError("VPN revoked by system (another VPN may have started)")
@@ -3653,6 +3676,8 @@ class SingBoxService : VpnService() {
         val EXTRA_SETTING_KEY = ServiceStateHolder.EXTRA_SETTING_KEY
 
         val EXTRA_SETTING_VALUE_BOOL = ServiceStateHolder.EXTRA_SETTING_VALUE_BOOL
+
+        val EXTRA_STOP_INITIATOR = ServiceStateHolder.EXTRA_STOP_INITIATOR
 
         val EXTRA_PREPARE_RESTART_REASON = ServiceStateHolder.EXTRA_PREPARE_RESTART_REASON
 

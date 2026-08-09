@@ -4,6 +4,7 @@ import com.google.gson.JsonParser
 import com.kunk.singbox.utils.perf.DIAGNOSTIC_RESOURCE_CSV_HEADER
 import com.kunk.singbox.utils.perf.DiagnosticResourceSample
 import com.kunk.singbox.utils.perf.DiagnosticResourceHistory
+import com.kunk.singbox.service.manager.ConnectionAttributionSnapshot
 import com.kunk.singbox.utils.perf.FdBreakdown
 import com.kunk.singbox.utils.perf.FdPressureLevel
 import com.kunk.singbox.utils.perf.FdTargetType
@@ -12,6 +13,7 @@ import com.kunk.singbox.utils.perf.ProcessResourcePoint
 import com.kunk.singbox.utils.perf.ProcessStartEpochClock
 import com.kunk.singbox.utils.perf.calculateProcessCpuPercent
 import com.kunk.singbox.utils.perf.calculateProcessStartedAtEpochMs
+import com.kunk.singbox.utils.perf.buildSocketAttributionDiagnosticLines
 import com.kunk.singbox.utils.perf.classifyFdTarget
 import com.kunk.singbox.utils.perf.evaluateFdPressure
 import com.kunk.singbox.utils.perf.formatDiagnosticResourceSamplesCsv
@@ -91,6 +93,25 @@ class DiagnosticSupportTest {
 
         assertTrue(redacted.startsWith("[14:40:27] connected to "))
         assertFalse(redacted.contains("2001:db8::1"))
+    }
+
+    @Test
+    fun redactorKeepsLineBreakAndTimestampAfterEmptyValues() {
+        val source = """
+            source=
+            [2026-08-09 23:45:05.266] INFO first event
+            password=
+            [2026-08-09 23:45:06.001] WARN second event
+            Authorization: Bearer
+            [2026-08-09 23:45:07.418] ERROR third event
+        """.trimIndent()
+
+        val redacted = DiagnosticRedactor("test-salt".toByteArray()).redactText(source)
+
+        assertTrue(redacted.contains("source=\n[2026-08-09 23:45:05.266]"))
+        assertTrue(redacted.contains("password=\n[2026-08-09 23:45:06.001]"))
+        assertTrue(redacted.contains("\n[2026-08-09 23:45:07.418] ERROR third event"))
+        assertEquals(source.lines().size, redacted.lines().size)
     }
 
     @Test
@@ -547,6 +568,69 @@ class DiagnosticSupportTest {
         assertEquals(2, decoded.fdBreakdown?.packetCount)
         assertEquals(5, decoded.fdBreakdown?.socketUnknownCount)
         assertEquals("packet:FileNotFoundException", decoded.fdBreakdown?.socketTableFailures)
+    }
+
+    @Test
+    fun resourceCsvPreservesNativeLibboxGapAndProcReadFailureStage() {
+        val sample = DiagnosticResourceSample(
+            timestampEpochMs = 1L,
+            elapsedRealtimeMs = 2L,
+            processName = "com.kunk.singbox:bg",
+            pid = 42,
+            pssKb = null,
+            cpuTimeMs = null,
+            cpuPercent = null,
+            fdCount = 1_024,
+            libboxActiveConnections = 24,
+            nativeLibboxSocketDelta = 876,
+            nativePreConnectGap = 876,
+            socketAttributionStatus = "native_preconnect_gap",
+            fdReadFailureStage = "fd_readlink;socket_tables"
+        )
+
+        val decoded = parseDiagnosticResourceSamplesCsv(formatDiagnosticResourceSamplesCsv(listOf(sample))).single()
+
+        assertEquals(24, decoded.libboxActiveConnections)
+        assertEquals(876, decoded.nativeLibboxSocketDelta)
+        assertEquals(876, decoded.nativePreConnectGap)
+        assertEquals("native_preconnect_gap", decoded.socketAttributionStatus)
+        assertEquals("fd_readlink;socket_tables", decoded.fdReadFailureStage)
+    }
+
+    @Test
+    fun socketAttributionLogsKeepCountsAndRedactRuntimeIdentities() {
+        val sample = DiagnosticResourceSample(
+            timestampEpochMs = 1L,
+            elapsedRealtimeMs = 2L,
+            processName = "com.kunk.singbox:bg",
+            pid = 42,
+            pssKb = null,
+            cpuTimeMs = null,
+            cpuPercent = null,
+            fdCount = 1_024,
+            fdBreakdown = FdBreakdown(socketCount = 910, socketUniqueCount = 900),
+            libboxActiveConnections = 24,
+            nativeLibboxSocketDelta = 876,
+            nativePreConnectGap = 876,
+            socketAttributionStatus = "native_preconnect_gap",
+            connectionAttribution = ConnectionAttributionSnapshot(
+                activeConnections = 24,
+                outboundCounts = mapOf("paid residential node" to 20),
+                chainCounts = mapOf("front-a>paid residential node" to 20),
+                protocolCounts = mapOf("tcp/tls" to 20),
+                applicationCounts = mapOf("com.private.app" to 20)
+            )
+        )
+
+        val lines = buildSocketAttributionDiagnosticLines(sample)
+        val redacted = DiagnosticRedactor("test-salt".toByteArray()).redactText(lines.joinToString("\n"))
+
+        assertTrue(lines.first().contains("native_preconnect_gap=876"))
+        assertTrue(lines.any { it.contains("dimension=outbound") && it.contains("count=20") })
+        assertTrue(lines.any { it.contains("dimension=application") && it.contains("count=20") })
+        assertFalse(redacted.contains("paid residential node"))
+        assertFalse(redacted.contains("com.private.app"))
+        assertTrue(redacted.contains("count=20"))
     }
 
     @Test

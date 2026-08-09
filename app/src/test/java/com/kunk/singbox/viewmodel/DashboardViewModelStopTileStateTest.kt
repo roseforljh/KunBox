@@ -15,7 +15,7 @@ class DashboardViewModelStopTileStateTest {
         )
 
         val pendingIndex = body.indexOf("VpnTileService.persistVpnPending(\"stopping\")")
-        val stopIndex = body.indexOf("VpnServiceManager.stopVpn(context)")
+        val stopIndex = body.indexOf("VpnServiceManager.stopVpn(context, VpnStopInitiator.USER_UI)")
         val refreshIndex = body.indexOf("action = VpnTileService.ACTION_REFRESH_TILE")
 
         assertTrue(pendingIndex >= 0)

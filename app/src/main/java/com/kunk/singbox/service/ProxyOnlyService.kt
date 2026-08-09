@@ -56,6 +56,8 @@ import com.kunk.singbox.service.manager.ServiceStateHolder
 import com.kunk.singbox.service.manager.CommandManager
 import com.kunk.singbox.service.manager.TimedProbeResult
 import com.kunk.singbox.service.manager.UrlTestTagMatcher
+import com.kunk.singbox.service.manager.VpnStopInitiator
+import com.kunk.singbox.service.manager.incidentCloseReason
 import com.kunk.singbox.service.manager.probePhysicalDns
 import com.kunk.singbox.service.manager.toIncidentSnapshot
 import com.kunk.singbox.service.manager.toProbeDiagnosticFields
@@ -224,6 +226,7 @@ class ProxyOnlyService : Service() {
 
     @Volatile private var isStopping: Boolean = false
     @Volatile private var stopSelfRequested: Boolean = false
+    @Volatile private var lastStopInitiator: VpnStopInitiator = VpnStopInitiator.UNKNOWN
     @Volatile private var startJob: Job? = null
     @Volatile private var cleanupJob: Job? = null
     @Volatile private var currentConfigPath: String? = null
@@ -470,7 +473,8 @@ class ProxyOnlyService : Service() {
                     append("process_started_at_epoch_ms=${readProcessStartedAtEpochMs() ?: -1L} ")
                     append("app_version_code=${VersionInfo.getAppVersionCode(this@ProxyOnlyService)} ")
                     append("mode=${VpnStateStore.getMode().name} ")
-                    append("manually_stopped=${VpnStateStore.isManuallyStopped()} recovery=$recovery")
+                    append("manually_stopped=${VpnStateStore.isManuallyStopped()} recovery=$recovery ")
+                    append("stop_initiator=${lastStopInitiator.wireValue}")
                     action?.takeIf(String::isNotBlank)?.let { append(" action=$it") }
                 }
             )
@@ -539,6 +543,7 @@ class ProxyOnlyService : Service() {
         when (intent?.action) {
             ACTION_START -> {
                 val isRecoveryStart = intent.getBooleanExtra(SingBoxService.EXTRA_RECOVERY, false)
+                if (!isRecoveryStart) lastStopInitiator = VpnStopInitiator.UNKNOWN
                 val requestedConfigPath = intent.getStringExtra(EXTRA_CONFIG_PATH)
                 // 恢复 START 幂等：核心已在跑/正在起时只刷新状态，不重置 pending。
                 if (isRecoveryStart && RecoveryPolicy.shouldIgnoreRecoveryStart(isRunning, isStarting)) {
@@ -624,7 +629,16 @@ class ProxyOnlyService : Service() {
                 }
             }
             ACTION_STOP -> {
-                VpnStateStore.setManuallyStopped(true)
+                val stopInitiator = VpnStopInitiator.fromWireValue(
+                    intent.getStringExtra(SingBoxService.EXTRA_STOP_INITIATOR)
+                )
+                lastStopInitiator = stopInitiator
+                VpnStateStore.setManuallyStopped(stopInitiator.isManualStop)
+                recordServiceLifecycle(
+                    event = "stop_request",
+                    reason = if (stopInitiator.isManualStop) "manual_stop" else "automatic_stop",
+                    action = ACTION_STOP.substringAfterLast('.')
+                )
                 val recoveryIntentLease = setNonResourceRecoveryIntent(false)
                 VpnTileService.persistVpnPending("stopping")
                 notifyRemoteState(state = ServiceState.STOPPING)
@@ -1428,14 +1442,15 @@ class ProxyOnlyService : Service() {
 
         when (signal.kind) {
             HealthSignalKind.RESOURCE_EXHAUSTED -> {
-                val registration = resourceGuardRegistration
+                val registration = resourceGuardRegistration ?: run {
+                    startResourceGuard()
+                    resourceGuardRegistration
+                }
                 if (registration != null) {
                     BackgroundResourceGuard.signalResourceExhaustion(registration, "proxy_kernel_emfile")
                 } else {
-                    val closed = closeRuntimeConnections()
-                    val reset = BoxWrapperManager.resetNetwork()
                     LogRepository.getInstance().addAlwaysLog(
-                        "WARN recovery resource_exhausted mode=proxy closed=$closed reset=$reset"
+                        "ERROR recovery resource_exhausted mode=proxy stage=guard_registration_failed"
                     )
                 }
             }
@@ -1809,7 +1824,7 @@ class ProxyOnlyService : Service() {
     private fun persistConnectionIncident(decision: ConnectionStormDecision, closed: Boolean) {
         val snapshot = decision.toIncidentSnapshot(
             mode = "proxy",
-            closeReason = if (decision.closeAll) "close_all" else "close_quarantined_source",
+            closeReason = decision.incidentCloseReason(),
             closeSucceeded = closed,
             timestampEpochMs = System.currentTimeMillis(),
             elapsedRealtimeMs = SystemClock.elapsedRealtime()
@@ -1873,9 +1888,7 @@ class ProxyOnlyService : Service() {
                     isResourceRecoveryLeaseCurrent()
             }
 
-            override fun closeConnections(): Boolean = closeRuntimeConnections()
-
-            override fun resetNetwork(): Boolean = BoxWrapperManager.resetNetwork()
+            override fun connectionAttributionSnapshot() = connectionStormGuard.snapshot()
 
             override fun restartCore(reason: String, attemptId: Long): Boolean {
                 return restartCoreForResourceRecovery(reason, attemptId)
@@ -2224,7 +2237,9 @@ class ProxyOnlyService : Service() {
         recordServiceLifecycle(
             event = "destroy",
             reason = when {
-                shouldClearRuntimeState -> "manual_or_cleanup"
+                lastStopInitiator.isManualStop || VpnStateStore.isManuallyStopped() -> "manual_stop"
+                lastStopInitiator != VpnStopInitiator.UNKNOWN -> "automatic_stop"
+                shouldClearRuntimeState -> "cleanup"
                 mode == VpnStateStore.CoreMode.PROXY -> "unexpected_destroy"
                 else -> "inactive_destroy"
             }

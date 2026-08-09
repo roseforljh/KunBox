@@ -14,6 +14,28 @@ class RecoveryIntentLease internal constructor(
     internal val allowsResourceClaim: Boolean
 )
 
+enum class VpnStopInitiator(
+    val wireValue: String,
+    val isManualStop: Boolean
+) {
+    USER_UI("user_ui", true),
+    QUICK_SETTINGS("quick_settings", true),
+    NOTIFICATION("notification", true),
+    TRUSTED_WIFI("trusted_wifi", false),
+    METERED_PROTECTION("metered_protection", false),
+    MODE_SWITCH("mode_switch", false),
+    START_TIMEOUT("start_timeout", false),
+    RESTART("restart", false),
+    SYSTEM_REVOKE("system_revoke", false),
+    UNKNOWN("unknown", false);
+
+    companion object {
+        fun fromWireValue(value: String?): VpnStopInitiator {
+            return entries.firstOrNull { it.wireValue == value } ?: UNKNOWN
+        }
+    }
+}
+
 @Suppress("TooManyFunctions")
 object ServiceStateHolder {
 
@@ -38,6 +60,7 @@ object ServiceStateHolder {
     const val EXTRA_PER_APP_RULE_RESTART = "per_app_rule_restart"
     const val EXTRA_SETTING_KEY = "setting_key"
     const val EXTRA_SETTING_VALUE_BOOL = "setting_value_bool"
+    const val EXTRA_STOP_INITIATOR = "stop_initiator"
 
     const val EXTRA_PREPARE_RESTART_REASON = "prepare_restart_reason"
 

@@ -490,19 +490,19 @@ internal class DiagnosticRedactor(private val salt: ByteArray) {
             ).distinct()
         val TEXT_PSEUDONYM_KEYS = ENDPOINT_KEYS + IDENTIFIER_KEYS + PATH_KEYS + setOf("package")
         val TEXT_CREDENTIAL_VALUE_REGEX = Regex(
-            "(?i)([\"']?)\\b(${TEXT_CREDENTIAL_KEY_PATTERNS.joinToString("|")})\\b\\1\\s*([:=])\\s*" +
+            "(?i)([\"']?)\\b(${TEXT_CREDENTIAL_KEY_PATTERNS.joinToString("|")})\\b\\1[ \\t]*([:=])[ \\t]*" +
                 "(\"[^\"\\r\\n]*\"|'[^'\\r\\n]*'|[^\\r\\n]+)"
         )
         val TEXT_PSEUDONYM_VALUE_REGEX = Regex(
-            "(?i)([\"']?)\\b(${TEXT_PSEUDONYM_KEYS.joinToString("|") { keyPattern(it) }})\\b\\1\\s*" +
-                "([:=])\\s*" +
+            "(?i)([\"']?)\\b(${TEXT_PSEUDONYM_KEYS.joinToString("|") { keyPattern(it) }})\\b\\1[ \\t]*" +
+                "([:=])[ \\t]*" +
                 "(\"[^\"\\r\\n]*\"|'[^'\\r\\n]*'|[^\\s,;}\\]]+)"
         )
         val OUTBOUND_TAG_REGEX = Regex("(?i)(\\boutbound/[a-z0-9_-]+\\[)([^\\]\\r\\n]+)(])")
         val PRIVATE_KEY_BLOCK_REGEX = Regex(
             "(?is)-----BEGIN ([A-Z0-9 ]*PRIVATE KEY)-----.*?(?:-----END \\1-----|\\z)"
         )
-        val BEARER_REGEX = Regex("(?i)Bearer\\s+[^\\s,;}\\]]+")
+        val BEARER_REGEX = Regex("(?i)Bearer[ \\t]+[^\\s,;}\\]]+")
         val URI_REGEX = Regex("(?i)\\b[a-z][a-z0-9+.-]{1,20}://[^\\s\"'<>]+")
         val EMAIL_REGEX = Regex("(?i)\\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,63}\\b")
         val PRIVATE_PATH_REGEX = Regex("/(?:data|storage|sdcard)/(?:[^\\s\"'<>]+)")

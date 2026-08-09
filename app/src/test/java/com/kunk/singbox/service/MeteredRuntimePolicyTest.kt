@@ -38,11 +38,15 @@ class MeteredRuntimePolicyTest {
             .substringBefore("private fun initializeRuntimeSelector(")
         val vpnBody = File("src/main/java/com/kunk/singbox/service/SingBoxService.kt")
             .readText(Charsets.UTF_8)
-            .substringAfter("suspend fun hotSwitchNode(nodeTag: String): Boolean")
+            .substringAfter("    suspend fun hotSwitchNode(nodeTag: String): Boolean {")
             .substringBefore("private fun cacheUidToPackage")
+        val proxyCloseIndex = proxyBody.indexOf("closeRuntimeConnections()")
+        val proxyPublishIndex = proxyBody.indexOf("VpnStateStore.setActiveLabel")
+        val vpnCloseIndex = vpnBody.indexOf("commandManager.closeConnections()")
+        val vpnSuccessIndex = vpnBody.indexOf("return true")
 
-        assertTrue(proxyBody.indexOf("closeRuntimeConnections()") < proxyBody.indexOf("VpnStateStore.setActiveLabel"))
-        assertTrue(vpnBody.indexOf("commandManager.closeConnections()") < vpnBody.indexOf("return true"))
+        assertTrue(proxyCloseIndex >= 0 && proxyPublishIndex > proxyCloseIndex)
+        assertTrue(vpnCloseIndex >= 0 && vpnSuccessIndex > vpnCloseIndex)
     }
 
     @Test

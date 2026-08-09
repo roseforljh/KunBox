@@ -30,6 +30,7 @@ import com.kunk.singbox.repository.config.OutboundFixer
 import com.kunk.singbox.service.ProxyOnlyService
 import com.kunk.singbox.service.ServiceState
 import com.kunk.singbox.service.SingBoxService
+import com.kunk.singbox.service.manager.VpnStopInitiator
 import com.kunk.singbox.service.tun.VpnTunManager
 import com.kunk.singbox.utils.NetworkClient
 import com.kunk.singbox.utils.dns.DnsResolveStore
@@ -5919,9 +5920,11 @@ class ConfigRepository(protected val context: Context) {
         val intent = when (VpnStateStore.getMode()) {
             VpnStateStore.CoreMode.PROXY -> Intent(context, ProxyOnlyService::class.java).apply {
                 action = ProxyOnlyService.ACTION_STOP
+                putExtra(SingBoxService.EXTRA_STOP_INITIATOR, VpnStopInitiator.METERED_PROTECTION.wireValue)
             }
             VpnStateStore.CoreMode.VPN -> Intent(context, SingBoxService::class.java).apply {
                 action = SingBoxService.ACTION_STOP
+                putExtra(SingBoxService.EXTRA_STOP_INITIATOR, VpnStopInitiator.METERED_PROTECTION.wireValue)
             }
             VpnStateStore.CoreMode.NONE -> return
         }

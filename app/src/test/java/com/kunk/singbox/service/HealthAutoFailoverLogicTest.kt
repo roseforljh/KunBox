@@ -296,6 +296,17 @@ class HealthAutoFailoverLogicTest {
         )
     }
 
+    @Test
+    fun appRouteTransportFailureNeverResetsTheGlobalVpnNetwork() {
+        val source = File("src/main/java/com/kunk/singbox/service/SingBoxService.kt").readText()
+        val start = source.indexOf("private fun handleActiveOutboundFailure")
+        val end = source.indexOf("protected fun handleResourceExhaustionSignal", start)
+        val body = source.substring(start, end)
+
+        assertTrue(body.contains("commandManager.handleOutboundFailureBurst"))
+        assertFalse(body.contains("BoxWrapperManager.resetNetwork()"))
+    }
+
     private fun routeFailureConfig(): SingBoxConfig {
         return SingBoxConfig(
             dns = DnsConfig(

@@ -12,6 +12,7 @@ import com.kunk.singbox.repository.ConfigRepository
 import com.kunk.singbox.repository.SettingsRepository
 import com.kunk.singbox.service.ProxyOnlyService
 import com.kunk.singbox.service.SingBoxService
+import com.kunk.singbox.service.manager.VpnStopInitiator
 import kotlinx.coroutines.CancellationException
 
 object VpnServiceManager {
@@ -70,7 +71,7 @@ object VpnServiceManager {
 
     fun toggleVpn(context: Context): Result<Unit> {
         return if (isRunning()) {
-            stopVpn(context)
+            stopVpn(context, VpnStopInitiator.USER_UI)
         } else {
             startVpn(context)
         }
@@ -173,8 +174,8 @@ object VpnServiceManager {
             .onFailure { Log.e(TAG, "Failed to start VPN service", it) }
     }
 
-    fun stopVpn(context: Context): Result<Unit> {
-        Log.d(TAG, "stopVpn")
+    fun stopVpn(context: Context, initiator: VpnStopInitiator): Result<Unit> {
+        Log.d(TAG, "stopVpn: initiator=${initiator.wireValue}")
 
         return runCatching {
             val appContext = context.applicationContext
@@ -184,6 +185,7 @@ object VpnServiceManager {
                     add(runCatching {
                         appContext.startService(Intent(appContext, SingBoxService::class.java).apply {
                             action = SingBoxService.ACTION_STOP
+                            putExtra(SingBoxService.EXTRA_STOP_INITIATOR, initiator.wireValue)
                         })
                     })
                 }
@@ -191,6 +193,7 @@ object VpnServiceManager {
                     add(runCatching {
                         appContext.startService(Intent(appContext, ProxyOnlyService::class.java).apply {
                             action = ProxyOnlyService.ACTION_STOP
+                            putExtra(SingBoxService.EXTRA_STOP_INITIATOR, initiator.wireValue)
                         })
                     })
                 }
@@ -213,7 +216,7 @@ object VpnServiceManager {
         pendingRestartVersion = version
 
         pendingRestartTask?.let { restartHandler.removeCallbacks(it) }
-        stopVpn(appContext)
+        stopVpn(appContext, VpnStopInitiator.RESTART)
 
         val restartTask = Runnable {
             if (pendingRestartVersion != version) return@Runnable

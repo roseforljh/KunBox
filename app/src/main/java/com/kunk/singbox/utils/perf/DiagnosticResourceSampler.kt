@@ -11,6 +11,7 @@ import android.system.OsConstants
 import android.util.Log
 import com.kunk.singbox.ipc.VpnStateStore
 import com.kunk.singbox.repository.LogRepository
+import com.kunk.singbox.service.manager.ConnectionAttributionSnapshot
 import com.kunk.singbox.utils.VersionInfo
 import java.io.File
 import java.io.FileOutputStream
@@ -41,8 +42,55 @@ internal data class DiagnosticResourceSample(
     val fdBreakdown: FdBreakdown? = null,
     val appVersion: String? = null,
     val appVersionCode: Long? = null,
-    val processStartedAtEpochMs: Long? = null
+    val processStartedAtEpochMs: Long? = null,
+    val libboxActiveConnections: Int? = null,
+    val nativeLibboxSocketDelta: Int? = null,
+    val nativePreConnectGap: Int? = null,
+    val socketAttributionStatus: String? = null,
+    val fdReadFailureStage: String? = null,
+    val connectionAttribution: ConnectionAttributionSnapshot? = null
 )
+
+internal val classifySocketAttribution: (Int?, Int?) -> String = { nativeSocketCount, libboxActiveConnections ->
+    if (nativeSocketCount == null || libboxActiveConnections == null) {
+        "proc_unavailable"
+    } else {
+        val delta = nativeSocketCount - libboxActiveConnections
+        if (delta >= NATIVE_PRECONNECT_GAP_MINIMUM &&
+            nativeSocketCount >= (libboxActiveConnections * 2).coerceAtLeast(NATIVE_PRECONNECT_SOCKET_MINIMUM)
+        ) {
+            "native_preconnect_gap"
+        } else {
+            "attributed"
+        }
+    }
+}
+
+internal fun buildSocketAttributionDiagnosticLines(sample: DiagnosticResourceSample): List<String> {
+    val snapshot = sample.connectionAttribution ?: return emptyList()
+    val breakdown = sample.fdBreakdown
+    return buildList {
+        val appendGroups = { dimension: String, valueKey: String, counts: Map<String, Int> ->
+            counts.forEach { (value, count) ->
+                val safeValue = value.replace('\r', ' ').replace('\n', ' ').replace('"', '\'')
+                add("METRIC resource_socket_group dimension=$dimension $valueKey=\"$safeValue\" count=$count")
+            }
+        }
+        add(
+            "METRIC resource_socket_attribution native_socket=${breakdown?.socketUniqueCount ?: -1} " +
+                "native_fd_socket=${breakdown?.socketCount ?: -1} " +
+                "libbox_active=${sample.libboxActiveConnections ?: -1} " +
+                "socket_delta=${sample.nativeLibboxSocketDelta ?: -1} " +
+                "native_preconnect_gap=${sample.nativePreConnectGap ?: -1} " +
+                "status=${sample.socketAttributionStatus ?: "unknown"} " +
+                "fd_read_failure_stage=${sample.fdReadFailureStage ?: "none"}"
+        )
+        appendGroups("outbound", "outbound", snapshot.outboundCounts)
+        appendGroups("chain", "chain", snapshot.chainCounts)
+        appendGroups("protocol", "protocol", snapshot.protocolCounts)
+        appendGroups("application", "package", snapshot.applicationCounts)
+    }
+}
 
 internal data class FdBreakdown(
     val socketCount: Int = 0,
@@ -65,6 +113,7 @@ internal data class FdBreakdown(
     val netlinkCount: Int = 0,
     val packetCount: Int = 0,
     val socketUnknownCount: Int = 0,
+    val fdReadlinkFailureCount: Int = 0,
     val socketTableFailures: String = "",
     val socketStates: String = ""
 )
@@ -98,8 +147,10 @@ internal const val DIAGNOSTIC_RESOURCE_CSV_HEADER =
     "timestamp_epoch_ms,elapsed_realtime_ms,process_name,pid,pss_kb,cpu_time_ms,cpu_percent,fd_count," +
         "fd_soft_limit,fd_ratio,fd_socket,socket_unique,fd_anon_inode,fd_eventfd,fd_eventpoll,fd_timerfd,fd_pipe," +
         "fd_file,fd_device,fd_unknown,socket_tcp,socket_tcp6,socket_udp,socket_udp6,socket_raw," +
-        "socket_raw6,socket_unix,socket_netlink,socket_packet,socket_unknown,socket_table_failures," +
-        "socket_states,app_version,app_version_code,process_started_at_epoch_ms"
+        "socket_raw6,socket_unix,socket_netlink,socket_packet,socket_unknown,fd_readlink_failures," +
+        "socket_table_failures," +
+        "socket_states,app_version,app_version_code,process_started_at_epoch_ms,libbox_active_connections," +
+        "native_libbox_socket_delta,native_preconnect_gap,socket_attribution_status,fd_read_failure_stage"
 
 internal fun formatDiagnosticResourceSamplesCsv(samples: List<DiagnosticResourceSample>): String = buildString {
     appendLine(DIAGNOSTIC_RESOURCE_CSV_HEADER)
@@ -137,11 +188,17 @@ internal fun formatDiagnosticResourceSamplesCsv(samples: List<DiagnosticResource
                 breakdown?.netlinkCount?.toString().orEmpty(),
                 breakdown?.packetCount?.toString().orEmpty(),
                 breakdown?.socketUnknownCount?.toString().orEmpty(),
+                breakdown?.fdReadlinkFailureCount?.toString().orEmpty(),
                 breakdown?.socketTableFailures?.toCsvField().orEmpty(),
                 breakdown?.socketStates?.toCsvField().orEmpty(),
                 sample.appVersion?.toCsvField().orEmpty(),
                 sample.appVersionCode?.toString().orEmpty(),
-                sample.processStartedAtEpochMs?.toString().orEmpty()
+                sample.processStartedAtEpochMs?.toString().orEmpty(),
+                sample.libboxActiveConnections?.toString().orEmpty(),
+                sample.nativeLibboxSocketDelta?.toString().orEmpty(),
+                sample.nativePreConnectGap?.toString().orEmpty(),
+                sample.socketAttributionStatus?.toCsvField().orEmpty(),
+                sample.fdReadFailureStage?.toCsvField().orEmpty()
             ).joinToString(",")
         )
     }
@@ -167,7 +224,7 @@ internal fun parseDiagnosticResourceSamplesCsv(csv: String): List<DiagnosticReso
             "fd_socket", "socket_unique", "fd_anon_inode", "fd_eventfd", "fd_eventpoll", "fd_timerfd", "fd_pipe",
             "fd_file", "fd_device", "fd_unknown", "socket_tcp", "socket_tcp6", "socket_udp",
             "socket_udp6", "socket_raw", "socket_raw6", "socket_unix", "socket_netlink",
-            "socket_packet", "socket_unknown"
+            "socket_packet", "socket_unknown", "fd_readlink_failures"
         )
         val hasBreakdown = breakdownValues.any { values.value(it).isNotBlank() } ||
             values.value("socket_table_failures").isNotBlank() || values.value("socket_states").isNotBlank()
@@ -204,6 +261,7 @@ internal fun parseDiagnosticResourceSamplesCsv(csv: String): List<DiagnosticReso
                     netlinkCount = values.int("socket_netlink") ?: 0,
                     packetCount = values.int("socket_packet") ?: 0,
                     socketUnknownCount = values.int("socket_unknown") ?: 0,
+                    fdReadlinkFailureCount = values.int("fd_readlink_failures") ?: 0,
                     socketTableFailures = values.value("socket_table_failures"),
                     socketStates = values.value("socket_states")
                 )
@@ -212,7 +270,12 @@ internal fun parseDiagnosticResourceSamplesCsv(csv: String): List<DiagnosticReso
             },
             appVersion = values.value("app_version").takeIf(String::isNotBlank),
             appVersionCode = values.long("app_version_code"),
-            processStartedAtEpochMs = values.long("process_started_at_epoch_ms")
+            processStartedAtEpochMs = values.long("process_started_at_epoch_ms"),
+            libboxActiveConnections = values.int("libbox_active_connections"),
+            nativeLibboxSocketDelta = values.int("native_libbox_socket_delta"),
+            nativePreConnectGap = values.int("native_preconnect_gap"),
+            socketAttributionStatus = values.value("socket_attribution_status").takeIf(String::isNotBlank),
+            fdReadFailureStage = values.value("fd_read_failure_stage").takeIf(String::isNotBlank)
         )
     }
 }
@@ -450,6 +513,7 @@ internal class DiagnosticResourceSampler(context: Context) {
             } else {
                 null
             },
+            fdReadFailureStage = "fd_count".takeIf { fdCount == null },
             appVersion = appVersion,
             appVersionCode = appVersionCode,
             processStartedAtEpochMs = currentProcessStartedAtEpochMs
@@ -471,6 +535,7 @@ internal class DiagnosticResourceSampler(context: Context) {
         val point = cpuTimeMs?.let { ProcessResourcePoint(process.pid, elapsedRealtimeMs, it) }
         val fdCount = readFdCount(process.pid)
         val fdSoftLimit = readFdSoftLimit(process.pid)
+        val fdBreakdown = if (includeFdBreakdown) readFdBreakdown(process.pid) else null
         return DiagnosticResourceSample(
             timestampEpochMs = timestampEpochMs,
             elapsedRealtimeMs = elapsedRealtimeMs,
@@ -486,12 +551,13 @@ internal class DiagnosticResourceSampler(context: Context) {
             } else {
                 null
             },
-            fdBreakdown = if (includeFdBreakdown) readFdBreakdown(process.pid) else null,
+            fdBreakdown = fdBreakdown,
             appVersion = appVersion,
             appVersionCode = appVersionCode,
             processStartedAtEpochMs = processStartElapsedRealtimeMs?.let {
                 processStartEpochClock.calculate(elapsedRealtimeMs, it)
-            }
+            },
+            fdReadFailureStage = buildFdReadFailureStage(fdCount, includeFdBreakdown, fdBreakdown)
         )
     }
 
@@ -555,14 +621,26 @@ internal class DiagnosticResourceSampler(context: Context) {
     }
 
     private fun readFdBreakdown(pid: Int): FdBreakdown? = runCatching {
+        val fdFiles = File("/proc/$pid/fd").listFiles() ?: return@runCatching null
         val socketDetails = readSocketDetails(pid)
         val counts = MutableFdBreakdown()
-        File("/proc/$pid/fd").listFiles().orEmpty().forEach { fd ->
+        fdFiles.forEach { fd ->
             val target = runCatching { Os.readlink(fd.absolutePath) }.getOrNull()
             counts.observe(target, socketDetails.details)
         }
         counts.build(socketDetails.failures)
     }.getOrNull()
+
+    private fun buildFdReadFailureStage(
+        fdCount: Int?,
+        includeFdBreakdown: Boolean,
+        breakdown: FdBreakdown?
+    ): String? = buildList {
+        if (fdCount == null) add("fd_count")
+        if (includeFdBreakdown && breakdown == null) add("fd_scan")
+        if ((breakdown?.fdReadlinkFailureCount ?: 0) > 0) add("fd_readlink")
+        if (!breakdown?.socketTableFailures.isNullOrBlank()) add("socket_tables")
+    }.joinToString(";").takeIf(String::isNotBlank)
 
     private fun readSocketDetails(pid: Int): SocketDetails {
         val result = mutableMapOf<String, SocketDetail>()
@@ -623,11 +701,13 @@ internal class DiagnosticResourceSampler(context: Context) {
         var deviceCount = 0
         var unknownCount = 0
         var socketUnknownCount = 0
+        var fdReadlinkFailureCount = 0
         val socketInodes = mutableSetOf<String>()
         val protocolCounts = mutableMapOf<String, Int>()
         val stateCounts = mutableMapOf<String, Int>()
 
         fun observe(target: String?, socketDetails: Map<String, SocketDetail>) {
+            if (target == null) fdReadlinkFailureCount++
             when (classifyFdTarget(target)) {
                 FdTargetType.SOCKET -> observeSocket(target.orEmpty(), socketDetails)
                 FdTargetType.ANON_INODE -> {
@@ -680,6 +760,7 @@ internal class DiagnosticResourceSampler(context: Context) {
             netlinkCount = protocolCounts["netlink"] ?: 0,
             packetCount = protocolCounts["packet"] ?: 0,
             socketUnknownCount = socketUnknownCount,
+            fdReadlinkFailureCount = fdReadlinkFailureCount,
             socketTableFailures = socketTableFailures.sorted().joinToString(";"),
             socketStates = stateCounts.toSortedMap().entries.joinToString(";") { (state, count) -> "$state=$count" }
         )
@@ -713,6 +794,8 @@ internal fun evaluateFdPressure(
     } else {
         null
     }
+    val absoluteFallbackExceeded = fdSoftLimit == null &&
+        fdCount != null && fdCount >= FD_ABSOLUTE_RECOVERY_COUNT
     return when {
         ratio != null && ratio >= FD_EMERGENCY_RATIO -> FdPressureDecision(
             FdPressureLevel.EMERGENCY,
@@ -720,7 +803,7 @@ internal fun evaluateFdPressure(
             shouldClassify = true,
             shouldRecover = true
         )
-        rapidGrowth || fdCount != null && fdCount >= FD_ABSOLUTE_RECOVERY_COUNT -> FdPressureDecision(
+        rapidGrowth || absoluteFallbackExceeded -> FdPressureDecision(
             FdPressureLevel.RECOVERY,
             FD_WARNING_SAMPLE_INTERVAL_MS,
             shouldClassify = true,
@@ -771,22 +854,13 @@ internal class ResourceFdTracker {
     private val samples = ArrayDeque<Pair<Long, Int>>()
     private var pid: Int? = null
     private var consecutiveHighSamples = 0
+    private var consecutiveRapidGrowthSamples = 0
+    private var recoverySuppressedUntilMs = 0L
 
     fun observe(sample: DiagnosticResourceSample): FdPressureDecision {
-        if (pid != sample.pid) {
-            samples.clear()
-            consecutiveHighSamples = 0
-            pid = sample.pid
-        }
+        resetForPid(sample.pid)
         val count = sample.fdCount
-        if (count != null) {
-            samples.addLast(sample.elapsedRealtimeMs to count)
-            while (samples.size > 1 &&
-                sample.elapsedRealtimeMs - samples.first().first > FD_GROWTH_WINDOW_MS
-            ) {
-                samples.removeFirst()
-            }
-        }
+        val growth = recordSample(sample.elapsedRealtimeMs, count)
         val ratio = if (count != null && sample.fdSoftLimit != null && sample.fdSoftLimit > 0L) {
             count.toDouble() / sample.fdSoftLimit.toDouble()
         } else {
@@ -797,19 +871,113 @@ internal class ResourceFdTracker {
         } else {
             0
         }
-        val growth = if (samples.size >= 2) samples.last().second - samples.first().second else 0
-        val rapidGrowth = count != null && samples.firstOrNull { point ->
-            sample.elapsedRealtimeMs - point.first <= FD_RAPID_GROWTH_WINDOW_MS
-        }?.let { point ->
-            count >= FD_RAPID_GROWTH_MIN_COUNT && count - point.second >= FD_RAPID_GROWTH_THRESHOLD
-        } == true
-        return evaluateFdPressure(
-            count,
-            sample.fdSoftLimit,
-            growth,
-            consecutiveHighSamples,
-            rapidGrowth
+        val rapidGrowth = isRapidGrowth(sample.elapsedRealtimeMs, count)
+        consecutiveRapidGrowthSamples = if (rapidGrowth) consecutiveRapidGrowthSamples + 1 else 0
+        val sustainedRapidGrowth = rapidGrowth &&
+            consecutiveRapidGrowthSamples >= FD_RAPID_GROWTH_REQUIRED_SAMPLES &&
+            (count ?: 0) >= rapidRecoveryFloor(sample.fdSoftLimit)
+        val decision = evaluateFdPressure(
+            count, sample.fdSoftLimit, growth, consecutiveHighSamples, sustainedRapidGrowth
         )
+        return applyRecoveryGuards(decision, rapidGrowth, sample.elapsedRealtimeMs)
+    }
+
+    fun markRecoveryStarted(elapsedRealtimeMs: Long) {
+        samples.clear()
+        consecutiveHighSamples = 0
+        consecutiveRapidGrowthSamples = 0
+        recoverySuppressedUntilMs = elapsedRealtimeMs + FD_RECOVERY_COOLDOWN_MS
+    }
+
+    private fun resetForPid(currentPid: Int) {
+        if (pid == currentPid) return
+        samples.clear()
+        consecutiveHighSamples = 0
+        consecutiveRapidGrowthSamples = 0
+        recoverySuppressedUntilMs = 0L
+        pid = currentPid
+    }
+
+    private fun recordSample(elapsedRealtimeMs: Long, count: Int?): Int {
+        count ?: return 0
+        samples.addLast(elapsedRealtimeMs to count)
+        while (samples.size > 1 && elapsedRealtimeMs - samples.first().first > FD_GROWTH_WINDOW_MS) {
+            samples.removeFirst()
+        }
+        return if (samples.size >= 2) samples.last().second - samples.first().second else 0
+    }
+
+    private fun isRapidGrowth(elapsedRealtimeMs: Long, count: Int?): Boolean {
+        count ?: return false
+        val baseline = samples.firstOrNull { point ->
+            elapsedRealtimeMs - point.first <= FD_RAPID_GROWTH_WINDOW_MS
+        } ?: return false
+        return count >= FD_RAPID_GROWTH_MIN_COUNT && count - baseline.second >= FD_RAPID_GROWTH_THRESHOLD
+    }
+
+    private fun rapidRecoveryFloor(fdSoftLimit: Long?): Int {
+        val ratioFloor = fdSoftLimit
+            ?.takeIf { it > 0L }
+            ?.let { (it * FD_RAPID_GROWTH_RECOVERY_RATIO).coerceAtMost(FD_ABSOLUTE_RECOVERY_COUNT.toDouble()) }
+            ?.toInt()
+        return ratioFloor?.coerceAtLeast(FD_RAPID_GROWTH_MIN_COUNT) ?: FD_ABSOLUTE_RECOVERY_COUNT
+    }
+
+    private fun applyRecoveryGuards(
+        decision: FdPressureDecision,
+        rapidGrowth: Boolean,
+        elapsedRealtimeMs: Long
+    ): FdPressureDecision {
+        val classified = if (rapidGrowth && decision.level < FdPressureLevel.WARNING) {
+            FdPressureDecision(
+                level = FdPressureLevel.WARNING,
+                sampleIntervalMs = FD_WARNING_SAMPLE_INTERVAL_MS,
+                shouldClassify = true,
+                shouldRecover = false
+            )
+        } else {
+            decision
+        }
+        return if (elapsedRealtimeMs < recoverySuppressedUntilMs &&
+            classified.shouldRecover && classified.level != FdPressureLevel.EMERGENCY
+        ) {
+            classified.copy(
+                level = FdPressureLevel.WARNING,
+                shouldClassify = true,
+                shouldRecover = false
+            )
+        } else {
+            classified
+        }
+    }
+}
+
+internal class ResourceRecoveryBudgetHealthTracker(
+    private val healthyWindowMs: Long = RESOURCE_RECOVERY_BUDGET_HEALTHY_RESET_MS
+) {
+    private var pid: Int? = null
+    private var healthySinceMs: Long? = null
+    private var resetEmitted = false
+
+    init {
+        require(healthyWindowMs > 0L)
+    }
+
+    fun observe(sample: DiagnosticResourceSample, level: FdPressureLevel): Boolean {
+        if (pid != sample.pid) {
+            pid = sample.pid
+            healthySinceMs = null
+            resetEmitted = false
+        }
+        if (level != FdPressureLevel.NORMAL || sample.fdCount == null) {
+            healthySinceMs = null
+            resetEmitted = false
+            return false
+        }
+        val healthySince = healthySinceMs ?: sample.elapsedRealtimeMs.also { healthySinceMs = it }
+        if (resetEmitted || sample.elapsedRealtimeMs - healthySince < healthyWindowMs) return false
+        resetEmitted = true
+        return true
     }
 }
 
@@ -889,8 +1057,7 @@ internal fun mergeDiagnosticResourceSamples(
 
 internal interface ResourceGuardOwner {
     fun isRecoveryAllowed(): Boolean
-    fun closeConnections(): Boolean
-    fun resetNetwork(): Boolean
+    fun connectionAttributionSnapshot(): ConnectionAttributionSnapshot
     fun restartCore(reason: String, attemptId: Long): Boolean
     fun recycleProcess(reason: String)
     fun publishBudgetExhausted(reason: String)
@@ -943,7 +1110,7 @@ internal object BackgroundResourceGuard {
         val activeSampler = DiagnosticResourceSampler(context)
         val activeHistory = DiagnosticResourceHistory(context)
         val newMonitorJob = scope.launch(start = CoroutineStart.LAZY) {
-            monitor(registration, activeSampler, activeHistory)
+            monitor(registration, activeSampler, activeHistory, owner)
         }
         var installMonitor = false
         var oldMonitorJob: Job? = null
@@ -1042,12 +1209,15 @@ internal object BackgroundResourceGuard {
     fun isRecovering(): Boolean = recovering
 
     fun signalResourceExhaustion(registration: ResourceGuardRegistration, reason: String) {
-        val activeSampler = synchronized(lock) {
+        val candidate = synchronized(lock) {
             if (!gate.isCurrent(registration)) return
-            sampler
+            val activeOwner = owner ?: return
+            val activeSampler = sampler ?: return
+            activeOwner to activeSampler
         }
         val sample = runCatching {
-            activeSampler?.captureCurrentFdPressure()
+            candidate.second.captureCurrentFdPressure()
+                .attachConnectionAttribution(candidate.first)
         }.getOrNull()
         requestRecovery(registration, reason, sample)
     }
@@ -1082,9 +1252,11 @@ internal object BackgroundResourceGuard {
     private suspend fun monitor(
         registration: ResourceGuardRegistration,
         activeSampler: DiagnosticResourceSampler,
-        activeHistory: DiagnosticResourceHistory
+        activeHistory: DiagnosticResourceHistory,
+        activeOwner: ResourceGuardOwner
     ) {
         val tracker = ResourceFdTracker()
+        val budgetHealthTracker = ResourceRecoveryBudgetHealthTracker()
         var lastFullSampleAtMs: Long? = null
         var lastBreakdownAtMs: Long? = null
         var previousLevel = FdPressureLevel.NORMAL
@@ -1092,9 +1264,18 @@ internal object BackgroundResourceGuard {
             try {
                 val pressureSample = activeSampler.captureCurrentFdPressure()
                 val decision = tracker.observe(pressureSample)
+                if (budgetHealthTracker.observe(pressureSample, decision.level)) {
+                    VpnStateStore.resetResourceRecoveryBudget()
+                    LogRepository.getInstance().addAlwaysLog(
+                        "INFO recovery resource_exhausted stage=budget_reset result=healthy_fd_window"
+                    )
+                }
                 val levelChanged = decision.level != previousLevel
                 if (decision.shouldRecover) {
-                    startImmediateFdRecovery(registration, activeHistory, pressureSample, decision)
+                    val attributedPressure = pressureSample.attachConnectionAttribution(activeOwner)
+                    if (startImmediateFdRecovery(registration, activeHistory, attributedPressure, decision)) {
+                        tracker.markRecoveryStarted(pressureSample.elapsedRealtimeMs)
+                    }
                     previousLevel = decision.level
                     delay(decision.sampleIntervalMs)
                     continue
@@ -1105,10 +1286,15 @@ internal object BackgroundResourceGuard {
                     )
                 val fullSampleDue = lastFullSampleAtMs == null || breakdownDue ||
                     pressureSample.elapsedRealtimeMs - checkNotNull(lastFullSampleAtMs) >= FD_FULL_SAMPLE_INTERVAL_MS
-                val sample = if (fullSampleDue) {
+                val rawSample = if (fullSampleDue) {
                     activeSampler.captureCurrentProcess(includeFdBreakdown = breakdownDue)
                 } else {
                     pressureSample
+                }
+                val sample = if (fullSampleDue || levelChanged) {
+                    rawSample.attachConnectionAttribution(activeOwner)
+                } else {
+                    rawSample
                 }
                 if (fullSampleDue) {
                     runCatching { activeHistory.append(sample) }
@@ -1133,11 +1319,11 @@ internal object BackgroundResourceGuard {
         activeHistory: DiagnosticResourceHistory,
         pressureSample: DiagnosticResourceSample,
         decision: FdPressureDecision
-    ) {
+    ): Boolean {
         runCatching { activeHistory.append(pressureSample) }
             .onFailure { Log.w(TAG, "Failed to persist recovery pressure sample: ${it.message}") }
         logSample(pressureSample, decision)
-        requestRecovery(
+        return requestRecovery(
             registration,
             "fd_${decision.level.name.lowercase(Locale.US)}",
             pressureSample
@@ -1149,19 +1335,19 @@ internal object BackgroundResourceGuard {
         registration: ResourceGuardRegistration,
         reason: String,
         before: DiagnosticResourceSample?
-    ) {
+    ): Boolean {
         val candidate = synchronized(lock) {
-            val activeOwner = owner ?: return
-            val activeSampler = sampler ?: return
-            val activeHistory = history ?: return
-            if (!gate.isCurrent(registration) || recovery != null) return
+            val activeOwner = owner ?: return false
+            val activeSampler = sampler ?: return false
+            val activeHistory = history ?: return false
+            if (!gate.isCurrent(registration) || recovery != null) return false
             ResourceRecoverySuccessor(registration, activeOwner, activeSampler, activeHistory)
         }
-        if (!candidate.owner.isRecoveryAllowed()) return
+        if (!candidate.owner.isRecoveryAllowed()) return false
 
         val activeRecovery = synchronized(lock) {
-            if (!isRecoveryCandidateCurrentLocked(registration, candidate)) return
-            val attemptId = gate.beginRecovery(registration) ?: return
+            if (!isRecoveryCandidateCurrentLocked(registration, candidate)) return false
+            val attemptId = gate.beginRecovery(registration) ?: return false
             ActiveResourceRecovery(
                 attemptId = attemptId,
                 registration = registration,
@@ -1196,6 +1382,7 @@ internal object BackgroundResourceGuard {
         } else {
             job.cancel()
         }
+        return shouldStart
     }
 
     private fun isRecoveryCandidateCurrentLocked(
@@ -1223,39 +1410,8 @@ internal object BackgroundResourceGuard {
         ) {
             return
         }
+        val diagnosticBefore = captureRecoveryDiagnostic(activeRecovery, before)
 
-        val closed = activeOwner.closeConnections()
-        if (!isAttemptCurrent(activeRecovery, ResourceRecoveryPhase.RESETTING) ||
-            !activeOwner.isRecoveryAllowed() ||
-            !isAttemptCurrent(activeRecovery, ResourceRecoveryPhase.RESETTING)
-        ) {
-            return
-        }
-        val reset = activeOwner.resetNetwork()
-        if (!isAttemptCurrent(activeRecovery, ResourceRecoveryPhase.RESETTING)) return
-        logRecovery("close_connections", before?.fdCount, null, "closed=$closed reset=$reset")
-        delay(RESOURCE_RECOVERY_RESAMPLE_DELAY_MS)
-        if (!activeOwner.isRecoveryAllowed() ||
-            !isAttemptCurrent(activeRecovery, ResourceRecoveryPhase.RESETTING)
-        ) {
-            return
-        }
-
-        val afterReset = runCatching {
-            activeRecovery.sampler.captureCurrentProcess(includeFdBreakdown = true)
-        }.getOrNull()
-        if (!isAttemptCurrent(activeRecovery, ResourceRecoveryPhase.RESETTING)) return
-        afterReset?.let { runCatching { activeRecovery.history.append(it) } }
-        if (!isAttemptCurrent(activeRecovery, ResourceRecoveryPhase.RESETTING)) return
-        if (isFdRecoverySufficient(before?.fdCount, afterReset?.fdCount, afterReset?.fdSoftLimit)) {
-            logRecovery("close_connections", before?.fdCount, afterReset?.fdCount, "success")
-            return
-        }
-        if (!activeOwner.isRecoveryAllowed() ||
-            !isAttemptCurrent(activeRecovery, ResourceRecoveryPhase.RESETTING)
-        ) {
-            return
-        }
         val awaitingSuccessor = synchronized(lock) {
             gate.isAttemptCurrent(
                 sourceRegistration.ownerId,
@@ -1283,7 +1439,7 @@ internal object BackgroundResourceGuard {
             attemptId
         )
         if (!isAttemptCurrent(activeRecovery)) return
-        logRecovery("restart_core", afterReset?.fdCount, null, "issued=$restartIssued")
+        logRecovery("restart_core", diagnosticBefore?.fdCount, null, "issued=$restartIssued global_close=skipped")
         if (!restartIssued) {
             recycleProcessIfAllowed(activeRecovery, activeOwner)
             return
@@ -1327,17 +1483,46 @@ internal object BackgroundResourceGuard {
 
         val afterRestart = runCatching {
             successor.sampler.captureCurrentProcess(includeFdBreakdown = true)
+                .attachConnectionAttribution(successor.owner)
         }.getOrNull()
         if (!isSuccessorCurrent(activeRecovery, successor) || !successor.owner.isRecoveryAllowed()) {
             return
         }
-        afterRestart?.let { runCatching { successor.history.append(it) } }
-        if (!isSuccessorCurrent(activeRecovery, successor)) return
-        if (!isFdRecoverySufficient(afterReset?.fdCount, afterRestart?.fdCount, afterRestart?.fdSoftLimit)) {
-            recycleProcessIfAllowed(activeRecovery, successor.owner)
-        } else {
-            logRecovery("restart_core", afterReset?.fdCount, afterRestart?.fdCount, "success")
+        afterRestart?.let { sample ->
+            runCatching { successor.history.append(sample) }
+            logResourceDetails(sample)
         }
+        if (!isSuccessorCurrent(activeRecovery, successor)) return
+        if (!isFdRecoverySufficient(
+                diagnosticBefore?.fdCount,
+                afterRestart?.fdCount,
+                afterRestart?.fdSoftLimit
+            )
+        ) {
+            logRecovery(
+                "restart_core",
+                diagnosticBefore?.fdCount,
+                afterRestart?.fdCount,
+                "insufficient deferred_to_next_pressure"
+            )
+        } else {
+            logRecovery("restart_core", diagnosticBefore?.fdCount, afterRestart?.fdCount, "success")
+        }
+    }
+
+    private fun captureRecoveryDiagnostic(
+        activeRecovery: ActiveResourceRecovery,
+        fallback: DiagnosticResourceSample?
+    ): DiagnosticResourceSample? {
+        val sample = runCatching {
+            activeRecovery.sampler.captureCurrentProcess(includeFdBreakdown = true)
+                .attachConnectionAttribution(activeRecovery.owner)
+        }.getOrNull() ?: fallback
+        sample?.let { captured ->
+            runCatching { activeRecovery.history.append(captured) }
+            logResourceDetails(captured)
+        }
+        return sample
     }
 
     private fun recycleProcessIfAllowed(
@@ -1422,6 +1607,10 @@ internal object BackgroundResourceGuard {
             "ratio=${sample.fdRatio?.let { String.format(Locale.US, "%.3f", it) } ?: "unknown"} " +
             "level=${decision.level.name.lowercase(Locale.US)}"
         LogRepository.getInstance().addAlwaysLog(metric)
+        logResourceDetails(sample)
+    }
+
+    private fun logResourceDetails(sample: DiagnosticResourceSample) {
         sample.fdBreakdown?.let { breakdown ->
             LogRepository.getInstance().addAlwaysLog(
                 "METRIC resource_fd_breakdown socket=${breakdown.socketCount} " +
@@ -1431,11 +1620,30 @@ internal object BackgroundResourceGuard {
                     "tcp=${breakdown.tcpCount + breakdown.tcp6Count} anon_inode=${breakdown.anonInodeCount} " +
                     "unix=${breakdown.unixCount} netlink=${breakdown.netlinkCount} " +
                     "packet=${breakdown.packetCount} socket_unknown=${breakdown.socketUnknownCount} " +
+                    "fd_readlink_failures=${breakdown.fdReadlinkFailureCount} " +
                     "pipe=${breakdown.pipeCount} file=${breakdown.ordinaryFileCount} " +
                     "device=${breakdown.deviceCount} unknown=${breakdown.unknownCount} " +
                     "table_failures=${breakdown.socketTableFailures.ifBlank { "none" }}"
             )
         }
+        buildSocketAttributionDiagnosticLines(sample).forEach { line ->
+            LogRepository.getInstance().addAlwaysLog(line)
+        }
+    }
+
+    private fun DiagnosticResourceSample.attachConnectionAttribution(
+        activeOwner: ResourceGuardOwner
+    ): DiagnosticResourceSample {
+        val snapshot = runCatching(activeOwner::connectionAttributionSnapshot).getOrNull() ?: return this
+        val nativeSocketCount = fdBreakdown?.socketUniqueCount
+        val socketDelta = nativeSocketCount?.minus(snapshot.activeConnections)
+        return copy(
+            libboxActiveConnections = snapshot.activeConnections,
+            nativeLibboxSocketDelta = socketDelta,
+            nativePreConnectGap = socketDelta?.coerceAtLeast(0),
+            socketAttributionStatus = classifySocketAttribution(nativeSocketCount, snapshot.activeConnections),
+            connectionAttribution = snapshot
+        )
     }
 
     private fun logRecovery(stage: String, before: Int?, after: Int?, result: String) {
@@ -1448,6 +1656,8 @@ internal object BackgroundResourceGuard {
 
 internal const val RESOURCE_HISTORY_RELATIVE_PATH = "diagnostics/resource_history.csv"
 internal const val MAX_BACKGROUND_RESOURCE_SAMPLES = 4_096
+private const val NATIVE_PRECONNECT_GAP_MINIMUM = 64
+private const val NATIVE_PRECONNECT_SOCKET_MINIMUM = 128
 internal const val FD_NORMAL_SAMPLE_INTERVAL_MS = 1_000L
 internal const val FD_OBSERVE_SAMPLE_INTERVAL_MS = 1_000L
 internal const val FD_WARNING_SAMPLE_INTERVAL_MS = 1_000L
@@ -1458,13 +1668,16 @@ internal const val FD_FIVE_MINUTE_GROWTH_WARNING = 1_024
 internal const val FD_RAPID_GROWTH_WINDOW_MS = 5_000L
 internal const val FD_RAPID_GROWTH_THRESHOLD = 512
 internal const val FD_RAPID_GROWTH_MIN_COUNT = 1_024
-internal const val FD_ABSOLUTE_RECOVERY_COUNT = 4_096
+internal const val FD_RAPID_GROWTH_REQUIRED_SAMPLES = 3
+internal const val FD_RAPID_GROWTH_RECOVERY_RATIO = 0.50
+internal const val FD_ABSOLUTE_RECOVERY_COUNT = 16_384
+internal const val FD_RECOVERY_COOLDOWN_MS = 10_000L
 internal const val FD_OBSERVE_RATIO = 0.50
 internal const val FD_WARNING_RATIO = 0.70
 internal const val FD_RECOVERY_RATIO = 0.85
 internal const val FD_EMERGENCY_RATIO = 0.95
-private const val RESOURCE_RECOVERY_RESAMPLE_DELAY_MS = 2_000L
 private const val RESOURCE_CORE_RESTART_OBSERVE_MS = 5_000L
 private const val RESOURCE_CORE_RESTART_SUCCESSOR_TIMEOUT_MS = 30_000L
+internal const val RESOURCE_RECOVERY_BUDGET_HEALTHY_RESET_MS = 5 * 60_000L
 
 private val CSV_SPECIAL_CHARACTERS = setOf(',', '"', '\n', '\r')

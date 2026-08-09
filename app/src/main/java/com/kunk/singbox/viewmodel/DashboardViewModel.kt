@@ -25,6 +25,7 @@ import com.kunk.singbox.service.SingBoxService
 import com.kunk.singbox.service.ServiceState
 import com.kunk.singbox.service.ProxyOnlyService
 import com.kunk.singbox.service.VpnTileService
+import com.kunk.singbox.service.manager.VpnStopInitiator
 import com.kunk.singbox.core.SingBoxCore
 import com.kunk.singbox.utils.perf.PerfTracer
 import com.kunk.singbox.repository.ConfigRepository
@@ -772,6 +773,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                     runCatching {
                         context.startService(Intent(context, ProxyOnlyService::class.java).apply {
                             action = ProxyOnlyService.ACTION_STOP
+                            putExtra(SingBoxService.EXTRA_STOP_INITIATOR, VpnStopInitiator.MODE_SWITCH.wireValue)
                         })
                     }
                     true
@@ -780,6 +782,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                     runCatching {
                         context.startService(Intent(context, SingBoxService::class.java).apply {
                             action = SingBoxService.ACTION_STOP
+                            putExtra(SingBoxService.EXTRA_STOP_INITIATOR, VpnStopInitiator.MODE_SWITCH.wireValue)
                         })
                     }
                     true
@@ -909,7 +912,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                     }
 
                     VpnTileService.persistVpnPending("")
-                    VpnServiceManager.stopVpn(context).onFailure { error ->
+                    VpnServiceManager.stopVpn(context, VpnStopInitiator.START_TIMEOUT).onFailure { error ->
                         Log.e(TAG, "Failed to stop timed-out VPN start", error)
                     }
                     _connectionState.value = ConnectionState.Error
@@ -938,7 +941,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         _statsBase.value = ConnectionStats(0, 0, 0, 0, 0)
         VpnTileService.persistVpnPending("stopping")
 
-        val stopResult = VpnServiceManager.stopVpn(context)
+        val stopResult = VpnServiceManager.stopVpn(context, VpnStopInitiator.USER_UI)
         if (stopResult.isFailure) {
             _connectionState.value = ConnectionState.Error
             return
