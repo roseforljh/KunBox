@@ -107,7 +107,8 @@ data class NodeUi(
     @SerializedName("tags") val tags: List<String> = emptyList(),
     @SerializedName("trafficUsed") val trafficUsed: Long = 0,
     @SerializedName("autoSelectionEligible") val autoSelectionEligible: Boolean = true,
-    @SerializedName("meteredProtected") val meteredProtected: Boolean = false
+    @SerializedName("meteredProtected") val meteredProtected: Boolean = false,
+    @SerializedName("hasDetour") val hasDetour: Boolean = false
 ) {
     val displayName: String
         get() = name

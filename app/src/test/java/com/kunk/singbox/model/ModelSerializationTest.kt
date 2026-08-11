@@ -58,7 +58,8 @@ class ModelSerializationTest {
             protocol = "vmess",
             group = "Default",
             latencyMs = 120,
-            sourceProfileId = "profile-1"
+            sourceProfileId = "profile-1",
+            hasDetour = true
         )
 
         val json = gson.toJson(node)
@@ -67,6 +68,7 @@ class ModelSerializationTest {
         assertEquals(node.id, decoded.id)
         assertEquals(node.name, decoded.name)
         assertEquals(node.latencyMs, decoded.latencyMs)
+        assertEquals(node.hasDetour, decoded.hasDetour)
     }
 
     @Test

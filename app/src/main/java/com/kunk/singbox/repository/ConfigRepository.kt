@@ -2341,6 +2341,7 @@ class ConfigRepository(protected val context: Context) {
             trafficUsed = trafficRepo.getMonthlyTotal(id),
             autoSelectionEligible = isNodeAutoSelectionEligible(id) && !meteredProtected,
             meteredProtected = meteredProtected,
+            hasDetour = !outbound.detour.isNullOrBlank(),
             tags = buildList {
                 outbound.tls?.let {
                     if (it.enabled == true) add("TLS")

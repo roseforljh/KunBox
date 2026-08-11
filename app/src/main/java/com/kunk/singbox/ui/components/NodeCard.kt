@@ -36,6 +36,7 @@ import androidx.compose.ui.unit.dp
 import com.kunk.singbox.ui.theme.*
 
 private val NodeSelectedPulseGreen = Color(0xFF22C55E)
+private val NodeDetourPulsePurple = Color(0xFF8B5CF6)
 
 @Composable
 private fun Modifier.nodeOverflowMenuPanel(): Modifier {
@@ -60,6 +61,7 @@ fun NodeCard(
     type: String,
     latency: Long? = null,
     isSelected: Boolean,
+    hasDetour: Boolean = false,
     isSwitching: Boolean = false,
     isTesting: Boolean = false,
     trafficUsed: Long = 0,
@@ -122,6 +124,7 @@ fun NodeCard(
             ) {
                 SelectedPulseIndicator(
                     selected = isSelected,
+                    hasDetour = hasDetour,
                     animationLabel = "node_list_selected",
                     isSwitching = isSwitching
                 )
@@ -316,7 +319,7 @@ fun NodeCard(
 }
 
 @Composable
-private fun BreathingGreenDot(animationLabel: String) {
+private fun BreathingDot(animationLabel: String, color: Color) {
     val infiniteTransition = rememberInfiniteTransition(label = "${animationLabel}_pulse")
     val pulseProgress by infiniteTransition.animateFloat(
         initialValue = 0f,
@@ -341,12 +344,12 @@ private fun BreathingGreenDot(animationLabel: String) {
                     scaleY = pulseScale
                     alpha = 0.36f - (pulseProgress * 0.18f)
                 }
-                .background(NodeSelectedPulseGreen, CircleShape)
+                .background(color, CircleShape)
         )
         Box(
             modifier = Modifier
                 .size(7.dp)
-                .background(NodeSelectedPulseGreen, CircleShape)
+                .background(color, CircleShape)
         )
     }
 }
@@ -355,9 +358,11 @@ private fun BreathingGreenDot(animationLabel: String) {
 internal fun SelectedPulseIndicator(
     selected: Boolean,
     animationLabel: String,
+    hasDetour: Boolean = false,
     isSwitching: Boolean = false,
     slotSize: Dp = 24.dp
 ) {
+    val indicatorColor = if (hasDetour) NodeDetourPulsePurple else NodeSelectedPulseGreen
     Box(
         modifier = Modifier.size(slotSize),
         contentAlignment = Alignment.Center
@@ -384,7 +389,7 @@ internal fun SelectedPulseIndicator(
                     animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing)
                 )
             ) {
-                BreathingGreenDot(animationLabel = animationLabel)
+                BreathingDot(animationLabel = animationLabel, color = indicatorColor)
             }
         }
     }
@@ -398,6 +403,7 @@ fun NodeGridCard(
     type: String,
     latency: Long? = null,
     isSelected: Boolean,
+    hasDetour: Boolean = false,
     isSwitching: Boolean = false,
     isTesting: Boolean = false,
     onClick: () -> Unit,
@@ -469,6 +475,7 @@ fun NodeGridCard(
                 SelectedPulseIndicator(
                     selected = isSelected,
                     animationLabel = "node_grid_selected",
+                    hasDetour = hasDetour,
                     isSwitching = isSwitching,
                     slotSize = 16.dp
                 )
