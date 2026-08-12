@@ -13,6 +13,7 @@ import com.kunk.singbox.repository.LogRepository
 import com.kunk.singbox.repository.NodeProtectionStore
 import com.kunk.singbox.repository.RuntimeNodeRef
 import com.kunk.singbox.repository.TrafficRepository
+import com.kunk.singbox.service.resolveRuntimeNodeLabel
 import com.kunk.singbox.service.notification.VpnNotificationManager
 import com.kunk.singbox.service.network.TrafficMonitor
 import io.nekohasekai.libbox.*
@@ -633,11 +634,12 @@ class CommandManager(
     }
 
     private fun updateResolvedProxySelection(): Boolean {
-        val selected = resolveConcreteGroupSelection("PROXY", groupSelectedOutbounds) ?: return false
+        val selectedTag = resolveConcreteGroupSelection("PROXY", groupSelectedOutbounds) ?: return false
         if (SelectorManager.isSelectionPending()) {
-            Log.d(TAG, "Deferring runtime node publication until explicit switch cleanup: $selected")
+            Log.d(TAG, "Deferring runtime node publication until explicit switch cleanup: $selectedTag")
             return false
         }
+        val selected = resolveRuntimeNodeLabel(selectedTag, NodeProtectionStore.runtimeMappings()) ?: return false
         if (selected == realTimeNodeName) return false
 
         // 只更新运行态展示，不写回用户手选节点。
@@ -645,7 +647,7 @@ class CommandManager(
         realTimeNodeName = selected
         VpnStateStore.setActiveLabel(selected)
         callbacks?.onRuntimeNodeChanged(selected)
-        Log.i(TAG, "Real-time node update: $selected")
+        Log.i(TAG, "Real-time node update: tag=$selectedTag, display=$selected")
         return true
     }
 

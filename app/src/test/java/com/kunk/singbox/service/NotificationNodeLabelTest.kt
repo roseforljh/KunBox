@@ -2,6 +2,7 @@ package com.kunk.singbox.service
 
 import com.kunk.singbox.model.Outbound
 import com.kunk.singbox.model.SingBoxConfig
+import com.kunk.singbox.repository.RuntimeNodeRef
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -78,6 +79,26 @@ class NotificationNodeLabelTest {
                 preferredTag = "P:配置#AUTO",
                 currentRuntimeTag = null
             )
+        )
+    }
+
+    @Test
+    fun runtimeNodeLabelRestoresDisplayNameFromExactRuntimeMapping() {
+        val internalTag = "🇺🇸 AnyTLS | 美国 24#973db114"
+        val mappings = mapOf(
+            internalTag to RuntimeNodeRef(
+                nodeId = "node-id",
+                nodeName = "🇺🇸 AnyTLS | 美国 24"
+            )
+        )
+
+        assertEquals(
+            "🇺🇸 AnyTLS | 美国 24",
+            resolveRuntimeNodeLabel(internalTag, mappings)
+        )
+        assertEquals(
+            "用户自定义#合法名称",
+            resolveRuntimeNodeLabel("用户自定义#合法名称", mappings)
         )
     }
 

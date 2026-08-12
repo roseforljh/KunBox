@@ -30,6 +30,7 @@ import com.kunk.singbox.model.SingBoxConfig
 import com.kunk.singbox.repository.ConfigRepository
 import com.kunk.singbox.repository.LogRepository
 import com.kunk.singbox.repository.MeteredNodeConfigGuard
+import com.kunk.singbox.repository.NodeProtectionStore
 import com.kunk.singbox.repository.RuleSetRepository
 import com.kunk.singbox.repository.SettingsRepository
 import com.kunk.singbox.repository.buildServiceLifecycleDiagnostic
@@ -886,9 +887,13 @@ class SingBoxService : VpnService() {
                     currentRuntimeTag = commandManager.realTimeNodeName ?: realTimeNodeName
                 )
                 if (concreteTag != null) {
-                    realTimeNodeName = concreteTag
-                    commandManager.realTimeNodeName = concreteTag
-                    VpnStateStore.setActiveLabel(concreteTag)
+                    val displayName = resolveRuntimeNodeLabel(
+                        concreteTag,
+                        NodeProtectionStore.runtimeMappings()
+                    ) ?: concreteTag
+                    realTimeNodeName = displayName
+                    commandManager.realTimeNodeName = displayName
+                    VpnStateStore.setActiveLabel(displayName)
                 } else {
                     Log.w(
                         SingBoxService.TAG,
@@ -2218,7 +2223,10 @@ class SingBoxService : VpnService() {
         }
 
         val configRepository = ConfigRepository.getInstance(this@SingBoxService)
-        val displayName = configRepository.getNodeByName(targetTag)?.name ?: targetTag
+        val displayName = resolveRuntimeNodeLabel(
+            targetTag,
+            NodeProtectionStore.runtimeMappings()
+        ) ?: configRepository.getNodeByName(targetTag)?.name ?: targetTag
         // 自动切换只更新运行态标签，不改用户手选偏好
         VpnStateStore.setActiveLabel(displayName)
         realTimeNodeName = displayName

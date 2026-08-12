@@ -2,6 +2,7 @@ package com.kunk.singbox.service
 
 import com.google.gson.Gson
 import com.kunk.singbox.model.SingBoxConfig
+import com.kunk.singbox.repository.RuntimeNodeRef
 import java.io.File
 
 /**
@@ -16,6 +17,14 @@ internal fun resolveNotificationNodeLabel(
     return runtimeNodeName?.takeIf { it.isNotBlank() }
         ?: selectedNodeStoreLabel?.takeIf { it.isNotBlank() }
         ?: selectedNodeName?.takeIf { it.isNotBlank() }
+}
+
+internal fun resolveRuntimeNodeLabel(
+    runtimeTag: String?,
+    runtimeMappings: Map<String, RuntimeNodeRef>
+): String? {
+    val tag = runtimeTag?.takeIf(String::isNotBlank) ?: return null
+    return runtimeMappings[tag]?.nodeName?.takeIf(String::isNotBlank) ?: tag
 }
 
 internal fun resolveConfirmedProxyRuntimeLabel(

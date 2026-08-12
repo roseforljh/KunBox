@@ -1038,8 +1038,10 @@ class ProxyOnlyService : Service() {
                     }
                     val concreteTag = CommandManager.resolveConcreteGroupSelection("PROXY", groupSelectedOutbounds)
                     val activeLabel = targetNodeName?.takeIf(String::isNotBlank)
-                        ?: concreteTag
-                        ?: outboundTag
+                        ?: resolveRuntimeNodeLabel(
+                            concreteTag ?: outboundTag,
+                            NodeProtectionStore.runtimeMappings()
+                        )
                     VpnStateStore.setActiveLabel(activeLabel)
                     setLastError(null)
                     notifyRemoteState(state = ServiceState.RUNNING)
@@ -1738,7 +1740,9 @@ class ProxyOnlyService : Service() {
         }
         val concreteTag = CommandManager.resolveConcreteGroupSelection("PROXY", groupSelectedOutbounds) ?: return
         if (SelectorManager.isSelectionPending()) return
-        VpnStateStore.setActiveLabel(concreteTag)
+        VpnStateStore.setActiveLabel(
+            resolveRuntimeNodeLabel(concreteTag, NodeProtectionStore.runtimeMappings())
+        )
         notifyRemoteState(state = ServiceState.RUNNING)
         requestNotificationUpdate(force = false)
     }
