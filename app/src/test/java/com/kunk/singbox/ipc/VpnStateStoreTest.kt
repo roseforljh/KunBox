@@ -14,6 +14,35 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class VpnStateStoreTest {
+    @Test
+    fun `applied per-app policy rejects stale revision and old service`() {
+        val current = VpnStateStore.AppliedPerAppPolicySnapshot(
+            revision = 8L,
+            serviceInstanceId = "new"
+        )
+
+        assertFalse(
+            VpnStateStore.canCommitAppliedPerAppPolicy(
+                current,
+                current.copy(revision = 7L),
+                "new"
+            )
+        )
+        assertFalse(
+            VpnStateStore.canCommitAppliedPerAppPolicy(
+                current,
+                current.copy(serviceInstanceId = "old", revision = 9L),
+                "new"
+            )
+        )
+        assertTrue(
+            VpnStateStore.canCommitAppliedPerAppPolicy(
+                current,
+                current.copy(revision = 9L),
+                "new"
+            )
+        )
+    }
 
     @Test
     fun testCoreModeEnumValues() {

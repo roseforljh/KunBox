@@ -10,6 +10,7 @@ import com.kunk.singbox.model.CustomRule
 import com.kunk.singbox.model.DefaultRule
 import com.kunk.singbox.model.Inbound
 import com.kunk.singbox.model.OutboundTag
+import com.kunk.singbox.model.PerAppVpnPolicy
 import com.kunk.singbox.model.RoutingMode
 import com.kunk.singbox.model.RuleSetOutboundMode
 import com.kunk.singbox.model.RuleType
@@ -50,9 +51,21 @@ object LocalNetworkPermission {
         if (settings.routingMode == RoutingMode.RULE && settings.defaultRule == DefaultRule.DIRECT) return true
         if (settings.customRules.any { it.enabled && customRuleRequiresLocalNetworkAccess(it) }) return true
         if (settings.ruleSets.any { it.enabled && it.outboundMode == RuleSetOutboundMode.DIRECT }) return true
-        if (settings.appRules.any { it.enabled && it.outboundMode == RuleSetOutboundMode.DIRECT }) return true
+        return appRoutingRequiresLocalNetworkAccess(settings)
+    }
+
+    private fun appRoutingRequiresLocalNetworkAccess(settings: AppSettings): Boolean {
+        val perAppPolicy = PerAppVpnPolicy.from(settings)
+        if (settings.appRules.any {
+                it.enabled && it.outboundMode == RuleSetOutboundMode.DIRECT &&
+                    perAppPolicy.captures(it.packageName, "")
+            }
+        ) {
+            return true
+        }
         return settings.appGroups.any {
-            it.enabled && (it.outboundMode == null || it.outboundMode == RuleSetOutboundMode.DIRECT)
+            it.enabled && (it.outboundMode == null || it.outboundMode == RuleSetOutboundMode.DIRECT) &&
+                it.apps.any { app -> perAppPolicy.captures(app.packageName, "") }
         }
     }
 

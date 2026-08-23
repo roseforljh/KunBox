@@ -2,6 +2,7 @@ package com.kunk.singbox.utils
 
 import com.kunk.singbox.model.AppSettings
 import com.kunk.singbox.model.AppGroup
+import com.kunk.singbox.model.AppInfo
 import com.kunk.singbox.model.AppRule
 import com.kunk.singbox.model.CustomRule
 import com.kunk.singbox.model.DefaultRule
@@ -190,7 +191,13 @@ class LocalNetworkPermissionTest {
             LocalNetworkPermission.requiresLocalNetworkAccess(
                 AppSettings(
                     bypassLan = false,
-                    appGroups = listOf(AppGroup(name = "Local Apps", outboundMode = null))
+                    appGroups = listOf(
+                        AppGroup(
+                            name = "Local Apps",
+                            apps = listOf(AppInfo("com.example.local", "Local")),
+                            outboundMode = null
+                        )
+                    )
                 )
             )
         )
@@ -244,7 +251,12 @@ class LocalNetworkPermissionTest {
             LocalNetworkPermission.requiresLocalNetworkAccess(
                 AppSettings(
                     bypassLan = false,
-                    appGroups = listOf(AppGroup(name = "Default Direct"))
+                    appGroups = listOf(
+                        AppGroup(
+                            name = "Default Direct",
+                            apps = listOf(AppInfo("com.example.direct", "Direct"))
+                        )
+                    )
                 )
             )
         )

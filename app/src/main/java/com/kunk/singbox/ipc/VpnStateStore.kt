@@ -8,6 +8,7 @@ import com.google.gson.Gson
 import com.google.gson.JsonParser
 import com.google.gson.annotations.SerializedName
 import com.kunk.singbox.service.ServiceState
+import com.kunk.singbox.model.VpnAppMode
 import com.tencent.mmkv.MMKV
 import java.io.File
 import java.io.RandomAccessFile
@@ -73,6 +74,7 @@ object VpnStateStore {
     private const val KEY_LAST_APP_MODE = "last_app_mode"
     private const val KEY_LAST_ALLOWLIST_HASH = "last_allowlist_hash"
     private const val KEY_LAST_BLOCKLIST_HASH = "last_blocklist_hash"
+    private const val KEY_APPLIED_PER_APP_POLICY = "applied_per_app_policy"
     private const val KEY_LAST_TUN_SETTINGS_HASH = "last_tun_settings_hash"
     private const val KEY_LAST_ROUTING_MODE = "last_routing_mode"
 
@@ -117,6 +119,17 @@ object VpnStateStore {
     internal data class ResourceRecoveryBudgetResult(
         val state: ResourceRecoveryBudgetState,
         val consumed: Boolean
+    )
+
+    data class AppliedPerAppPolicySnapshot(
+        val revision: Long = 0L,
+        val mode: String = "",
+        val digest: String = "",
+        val capturedCount: Int = 0,
+        val excludedCount: Int = 0,
+        val appliedAtElapsedMs: Long = 0L,
+        val serviceInstanceId: String = "",
+        val runtimeGeneration: Long = 0L
     )
 
     internal data class RuntimeStateSnapshot(
@@ -434,7 +447,11 @@ object VpnStateStore {
         val currentAllowHash = allowlist?.hashCode() ?: 0
         val currentBlockHash = blocklist?.hashCode() ?: 0
 
-        val changed = lastMode != appMode || lastAllowHash != currentAllowHash || lastBlockHash != currentBlockHash
+        val changed = lastMode != appMode || when (appMode) {
+            VpnAppMode.ALLOWLIST.name -> lastAllowHash != currentAllowHash
+            VpnAppMode.BLOCKLIST.name -> lastBlockHash != currentBlockHash
+            else -> false
+        }
         Log.d(
             "VpnStateStore",
             "hasPerAppVpnSettingsChanged: lastMode=$lastMode, appMode=$appMode, " +
@@ -588,6 +605,47 @@ object VpnStateStore {
         runtimeStateFileLock.withLock { mmkv.clearAll() }
     }
 
+    fun getAppliedPerAppPolicy(): AppliedPerAppPolicySnapshot = runCatching {
+        mmkv.decodeString(KEY_APPLIED_PER_APP_POLICY, "")
+            ?.takeIf(String::isNotBlank)
+            ?.let { gson.fromJson(it, AppliedPerAppPolicySnapshot::class.java) }
+    }.getOrNull() ?: AppliedPerAppPolicySnapshot()
+
+    fun commitAppliedPerAppPolicy(snapshot: AppliedPerAppPolicySnapshot): Boolean {
+        if (snapshot.revision < 0L || snapshot.serviceInstanceId.isBlank() || snapshot.digest.isBlank()) {
+            return false
+        }
+        return runCatching {
+            runtimeStateFileLock.withLock {
+                val runtime = readRuntimeStateSnapshot() ?: readLegacyRuntimeStateSnapshot()
+                val current = getAppliedPerAppPolicy()
+                if (!canCommitAppliedPerAppPolicy(
+                        current,
+                        snapshot,
+                        runtime.readiness.serviceInstanceId
+                    )
+                ) {
+                    return@withLock false
+                }
+                mmkv.encode(KEY_APPLIED_PER_APP_POLICY, gson.toJson(snapshot))
+            }
+        }.getOrDefault(false)
+    }
+
+    internal fun canCommitAppliedPerAppPolicy(
+        current: AppliedPerAppPolicySnapshot,
+        incoming: AppliedPerAppPolicySnapshot,
+        activeServiceInstanceId: String
+    ): Boolean {
+        if (activeServiceInstanceId.isNotBlank() && incoming.serviceInstanceId != activeServiceInstanceId) return false
+        if (activeServiceInstanceId.isBlank() && current.serviceInstanceId.isNotBlank() &&
+            current.serviceInstanceId != incoming.serviceInstanceId
+        ) {
+            return false
+        }
+        return current.serviceInstanceId != incoming.serviceInstanceId || current.revision <= incoming.revision
+    }
+
     fun tryConsumeResourceRecovery(
         action: ResourceRecoveryAction,
         nowMs: Long = System.currentTimeMillis()
@@ -667,6 +725,7 @@ object VpnStateStore {
             mmkv.removeValueForKey(KEY_LAST_APP_MODE)
             mmkv.removeValueForKey(KEY_LAST_ALLOWLIST_HASH)
             mmkv.removeValueForKey(KEY_LAST_BLOCKLIST_HASH)
+            mmkv.removeValueForKey(KEY_APPLIED_PER_APP_POLICY)
             mmkv.removeValueForKey(KEY_LAST_TUN_SETTINGS_HASH)
             mmkv.removeValueForKey(KEY_LAST_ROUTING_MODE)
             mmkv.removeValueForKey(KEY_LAST_MANUAL_STOP_AT_MS)
@@ -683,6 +742,7 @@ object VpnStateStore {
         Log.i(TAG, "Clearing transient runtime state")
         runtimeStateFileLock.withLock {
             mmkv.removeValueForKey(KEY_VPN_PENDING)
+            mmkv.removeValueForKey(KEY_APPLIED_PER_APP_POLICY)
             transformRuntimeStateSnapshotLocked { current ->
                 current.copy(
                     stateOrdinal = ServiceState.STOPPED.ordinal,

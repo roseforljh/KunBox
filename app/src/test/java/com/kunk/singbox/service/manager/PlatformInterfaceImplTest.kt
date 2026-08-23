@@ -1,6 +1,7 @@
 package com.kunk.singbox.service.manager
 
 import com.kunk.singbox.model.AppGroup
+import com.kunk.singbox.model.AppInfo
 import com.kunk.singbox.model.AppRule
 import com.kunk.singbox.model.AppSettings
 import com.kunk.singbox.model.RoutingMode
@@ -302,7 +303,9 @@ class PlatformInterfaceImplTest {
     fun testShouldExposeProcFsToLibboxDisabledWhenRuleModeHasAppGroups() {
         val settings = AppSettings(
             routingMode = RoutingMode.RULE,
-            appGroups = listOf(AppGroup(name = "social"))
+            appGroups = listOf(
+                AppGroup(name = "social", apps = listOf(AppInfo("com.social", "Social")))
+            )
         )
 
         val result = PlatformInterfaceImpl.shouldExposeProcFsToLibbox(

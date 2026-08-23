@@ -12,6 +12,7 @@ import android.util.Log
 import com.kunk.singbox.core.LibboxCompat
 import com.kunk.singbox.core.StringIteratorImpl
 import com.kunk.singbox.model.AppSettings
+import com.kunk.singbox.model.PerAppVpnPolicy
 import com.kunk.singbox.model.RoutingMode
 import com.kunk.singbox.utils.DefaultNetworkListener
 import io.nekohasekai.libbox.ConnectionOwner
@@ -75,7 +76,11 @@ class PlatformInterfaceImpl(
 
         internal fun shouldForceConnectionOwnerRouting(settings: AppSettings?): Boolean {
             if (settings?.routingMode != RoutingMode.RULE) return false
-            return settings.appRules.any { it.enabled } || settings.appGroups.any { it.enabled }
+            val policy = PerAppVpnPolicy.from(settings)
+            return settings.appRules.any { it.enabled && policy.captures(it.packageName, "") } ||
+                settings.appGroups.any { group ->
+                    group.enabled && group.apps.any { policy.captures(it.packageName, "") }
+                }
         }
 
         internal fun shouldExposeProcFsToLibbox(procFsReadable: Boolean, settings: AppSettings?): Boolean {

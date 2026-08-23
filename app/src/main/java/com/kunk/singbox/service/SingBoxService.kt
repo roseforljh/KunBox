@@ -178,9 +178,17 @@ class SingBoxService : VpnService() {
             isConnectingTun.set(true)
             return try {
                 val network = getCurrentPhysicalNetwork()
-                val result = coreManager.openTun(options, network, reuseExisting = true)
+                val result = coreManager.openTun(
+                    options = options,
+                    underlyingNetwork = network,
+                    reuseExisting = true,
+                    serviceInstanceId = SingBoxIpcHub.serviceInstanceId(),
+                    runtimeGeneration = VpnStateStore.getRuntimeStateSnapshot().generation,
+                    expectedPerAppPolicyRevision = pendingPerAppPolicyRevision
+                )
                 result.onSuccess { _ ->
                     vpnInterface = coreManager.vpnInterface
+                    pendingPerAppPolicyRevision = 0L
                     publishEstablishedTunReadiness()
                     if (network != null) {
                         lastKnownNetwork = network
@@ -613,6 +621,7 @@ class SingBoxService : VpnService() {
     @Volatile protected var autoFailoverJob: Job? = null
     @Volatile protected var pendingStartConfigPath: String? = null
     @Volatile private var pendingStartRecoveryIntentLease: RecoveryIntentLease? = null
+    @Volatile private var pendingPerAppPolicyRevision: Long = 0L
 
     @Volatile protected var pendingHotSwitchFallbackConfigPath: String? = null
     @Volatile protected var pendingNodeName: String? = null
@@ -2849,6 +2858,7 @@ class SingBoxService : VpnService() {
                 synchronized(this) {
                     pendingStartConfigPath = null
                     pendingStartRecoveryIntentLease = null
+                    pendingPerAppPolicyRevision = 0L
                 }
                 stopVpn(stopService = true, recoveryIntentLease = recoveryLease)
             }
@@ -2922,6 +2932,10 @@ class SingBoxService : VpnService() {
                     SingBoxService.EXTRA_PER_APP_RULE_RESTART,
                     false
                 )
+                val expectedPerAppRevision = intent.getLongExtra(
+                    SingBoxService.EXTRA_PER_APP_POLICY_REVISION,
+                    0L
+                ).coerceAtLeast(0L)
                 val manuallyStopped = isPerAppRuleRestart && VpnStateStore.isManuallyStopped()
                 val mode = if (isPerAppRuleRestart) {
                     VpnStateStore.getMode()
@@ -2960,6 +2974,7 @@ class SingBoxService : VpnService() {
                     PerfTracer.recordEvent(PerfTracer.Phases.FULL_RESTART, "requested")
                     val recoveryLease = setNonResourceRecoveryIntent(false)
                     synchronized(this) {
+                        pendingPerAppPolicyRevision = if (isPerAppRuleRestart) expectedPerAppRevision else 0L
                         pendingStartConfigPath = configPath
                         pendingStartRecoveryIntentLease = recoveryLease
                         stopSelfRequested = false
@@ -3984,6 +3999,7 @@ class SingBoxService : VpnService() {
         val EXTRA_CLEAN_CACHE = ServiceStateHolder.EXTRA_CLEAN_CACHE
 
         val EXTRA_PER_APP_RULE_RESTART = ServiceStateHolder.EXTRA_PER_APP_RULE_RESTART
+        val EXTRA_PER_APP_POLICY_REVISION = ServiceStateHolder.EXTRA_PER_APP_POLICY_REVISION
 
         val EXTRA_SETTING_KEY = ServiceStateHolder.EXTRA_SETTING_KEY
 

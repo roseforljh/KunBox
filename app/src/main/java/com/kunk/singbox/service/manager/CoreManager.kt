@@ -464,7 +464,10 @@ class CoreManager(
     fun openTun(
         options: TunOptions?,
         underlyingNetwork: Network? = null,
-        reuseExisting: Boolean = true
+        reuseExisting: Boolean = true,
+        serviceInstanceId: String = "",
+        runtimeGeneration: Long = 0L,
+        expectedPerAppPolicyRevision: Long = 0L
     ): Result<Int> {
         if (options == null) {
             return Result.failure(IllegalArgumentException("TunOptions cannot be null"))
@@ -505,6 +508,17 @@ class CoreManager(
                 vpnInterface = pfd
                 val fd = pfd.fd
 
+                if (!tunManager.commitConfiguredPerAppVpnPlan(
+                        serviceInstanceId,
+                        runtimeGeneration,
+                        expectedPerAppPolicyRevision
+                    )
+                ) {
+                    vpnInterface = previousInterface
+                    runCatching { pfd.close() }
+                    throw IllegalStateException("Failed to commit applied per-app VPN policy")
+                }
+
                 if (previousInterface != null && previousInterface !== pfd) {
                     runCatching { previousInterface.close() }
                         .onFailure { Log.w(TAG, "Failed to close replaced TUN interface", it) }
@@ -518,6 +532,7 @@ class CoreManager(
 
                 fd
             }.onFailure {
+                tunManager.discardConfiguredPerAppVpnPlan()
                 if (tunTraceStarted) {
                     PerfTracer.end(PerfTracer.Phases.TUN_CREATE, "error")
                 }
@@ -546,6 +561,9 @@ class CoreManager(
 
     internal fun appliedPerAppVpnPlan(): VpnTunManager.Companion.AppliedPerAppVpnPlan =
         tunManager.appliedPerAppVpnPlan
+
+    fun commitConfiguredPerAppVpnPlan(serviceInstanceId: String, runtimeGeneration: Long): Boolean =
+        tunManager.commitConfiguredPerAppVpnPlan(serviceInstanceId, runtimeGeneration)
 
     fun alwaysOnVpnStatus(): Pair<String?, Boolean> = tunManager.checkAlwaysOnVpn()
 

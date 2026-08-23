@@ -15,6 +15,7 @@ import android.os.SystemClock
 import android.util.Log
 import com.kunk.singbox.ipc.VpnStateStore
 import com.kunk.singbox.model.AppSettings
+import com.kunk.singbox.model.PerAppVpnPolicy
 import com.kunk.singbox.model.IpVersionMode
 import com.kunk.singbox.model.TunStack
 import com.kunk.singbox.model.VpnAppMode
@@ -236,10 +237,10 @@ class VpnTunManager(
         )
 
         internal fun resolvePerAppVpnPlan(settings: AppSettings?, selfPackage: String): PerAppVpnPlan {
-            val appMode = settings?.vpnAppMode ?: VpnAppMode.ALL
-            val allowPkgs = parsePackageList(settings?.vpnAllowlist.orEmpty()).filterNot { it == selfPackage }
-            val blockPkgs = parsePackageList(settings?.vpnBlocklist.orEmpty()).filterNot { it == selfPackage }
-            return when (appMode) {
+            val policy = PerAppVpnPolicy.from(settings)
+            val allowPkgs = policy.allowlist.filterNot { it == selfPackage }
+            val blockPkgs = policy.blocklist.filterNot { it == selfPackage }
+            return when (policy.mode) {
                 VpnAppMode.ALL -> PerAppVpnPlan(
                     allowedPackages = emptyList(),
                     disallowedPackages = listOf(selfPackage)
@@ -255,14 +256,6 @@ class VpnTunManager(
             }
         }
 
-        private fun parsePackageList(raw: String): List<String> {
-            return raw
-                .split("\n", "\r", ",", ";", " ", "\t")
-                .map { it.trim() }
-                .filter { it.isNotEmpty() }
-                .distinct()
-        }
-
         internal fun shouldAppendHttpProxy(settings: AppSettings?): Boolean {
             return settings?.appendHttpProxy == true && settings.proxyPort > 0 && !settings.tunEnabled
         }
@@ -273,6 +266,10 @@ class VpnTunManager(
 
         internal data class AppliedPerAppVpnPlan(
             val mode: String,
+            val revision: Long = 0L,
+            val policyDigest: String = "",
+            val rawAllowlist: List<String> = emptyList(),
+            val rawBlocklist: List<String> = emptyList(),
             val requestedAllowedPackages: List<String>,
             val requestedDisallowedPackages: List<String>,
             val appliedAllowedPackages: List<String>,
@@ -326,6 +323,9 @@ class VpnTunManager(
     )
         private set
 
+    @Volatile
+    private var configuredPerAppVpnPlan: AppliedPerAppVpnPlan? = null
+
     fun preallocateBuilder() {
         if (preallocatedBuilder != null) return
         try {
@@ -356,6 +356,7 @@ class VpnTunManager(
         options: TunOptions?,
         settings: AppSettings?
     ) {
+        configuredPerAppVpnPlan = null
         val effectiveMtu = resolveEffectiveMtu(options, settings)
         logEffectiveMtuIfNeeded(options, settings, effectiveMtu)
         val tunPlan = VpnTunAddressPlanner.build(settings?.ipVersionMode ?: IpVersionMode.DUAL_STACK)
@@ -376,20 +377,6 @@ class VpnTunManager(
 
         configurePerAppVpn(builder, settings)
 
-        val appModeName = (settings?.vpnAppMode ?: VpnAppMode.ALL).name
-        val allowlist = settings?.vpnAllowlist
-        val blocklist = settings?.vpnBlocklist
-        Log.d(
-            TAG,
-            "Saving per-app settings: mode=$appModeName, " +
-                "allowHash=${allowlist?.hashCode() ?: 0}, blockHash=${blocklist?.hashCode() ?: 0}"
-        )
-        VpnStateStore.savePerAppVpnSettings(
-            appMode = appModeName,
-            allowlist = allowlist,
-            blocklist = blocklist
-        )
-
         VpnStateStore.saveRoutingMode(
             mode = (settings?.routingMode ?: com.kunk.singbox.model.RoutingMode.RULE).name
         )
@@ -409,15 +396,15 @@ class VpnTunManager(
         }
         val dnsAddress = runCatching { options?.getDNSServerAddress()?.getValue() }.getOrNull()
         val browserPackage = resolveDefaultBrowserPackage()
-        appliedPerAppVpnPlan = appliedPerAppVpnPlan.copy(
+        configuredPerAppVpnPlan = configuredPerAppVpnPlan?.copy(
             tunAddresses = tunAddresses.map { (address, prefix) -> "$address/$prefix" },
             routes = resolveVpnRoutes(settings, tunPlan).map { (address, prefix) -> "$address/$prefix" },
             dnsServers = resolveVpnDnsServers(settings, dnsAddress, tunPlan),
             mtu = effectiveMtu,
             defaultBrowserPackage = browserPackage,
-            browserCoverage = resolveBrowserCoverage(browserPackage, appliedPerAppVpnPlan)
+            browserCoverage = configuredPerAppVpnPlan?.let { resolveBrowserCoverage(browserPackage, it) }
+                ?: "unknown"
         )
-        persistAppliedVpnPlan()
     }
 
     private fun logEffectiveMtuIfNeeded(options: TunOptions?, settings: AppSettings?, effectiveMtu: Int) {
@@ -557,14 +544,64 @@ class VpnTunManager(
             }
         }
         skipped += plan.allowedPackages.filterNot(appliedAllowed::contains)
-        appliedPerAppVpnPlan = AppliedPerAppVpnPlan(
-            mode = (settings?.vpnAppMode ?: VpnAppMode.ALL).name,
+        val policy = PerAppVpnPolicy.from(settings)
+        configuredPerAppVpnPlan = AppliedPerAppVpnPlan(
+            mode = policy.mode.name,
+            revision = policy.revision,
+            policyDigest = policy.digest(),
+            rawAllowlist = policy.allowlist.toList(),
+            rawBlocklist = policy.blocklist.toList(),
             requestedAllowedPackages = plan.allowedPackages,
             requestedDisallowedPackages = plan.disallowedPackages,
             appliedAllowedPackages = appliedAllowed,
             appliedDisallowedPackages = appliedDisallowed,
             skippedPackages = skipped.distinct()
         )
+    }
+
+    fun commitConfiguredPerAppVpnPlan(
+        serviceInstanceId: String,
+        runtimeGeneration: Long,
+        expectedRevision: Long = 0L
+    ): Boolean {
+        val configured = configuredPerAppVpnPlan ?: return false
+        if (expectedRevision > 0L && configured.revision != expectedRevision) return false
+        val capturedCount = if (configured.mode == VpnAppMode.ALLOWLIST.name) {
+            configured.appliedAllowedPackages.size
+        } else {
+            0
+        }
+        val excludedCount = if (configured.mode == VpnAppMode.BLOCKLIST.name) {
+            configured.appliedDisallowedPackages.size
+        } else {
+            0
+        }
+        val committed = VpnStateStore.commitAppliedPerAppPolicy(
+            VpnStateStore.AppliedPerAppPolicySnapshot(
+                revision = configured.revision,
+                mode = configured.mode,
+                digest = configured.policyDigest,
+                capturedCount = capturedCount,
+                excludedCount = excludedCount,
+                appliedAtElapsedMs = SystemClock.elapsedRealtime(),
+                serviceInstanceId = serviceInstanceId,
+                runtimeGeneration = runtimeGeneration
+            )
+        )
+        if (!committed) return false
+        appliedPerAppVpnPlan = configured
+        configuredPerAppVpnPlan = null
+        VpnStateStore.savePerAppVpnSettings(
+            appMode = configured.mode,
+            allowlist = configured.rawAllowlist.joinToString("\n"),
+            blocklist = configured.rawBlocklist.joinToString("\n")
+        )
+        persistAppliedVpnPlan()
+        return true
+    }
+
+    fun discardConfiguredPerAppVpnPlan() {
+        configuredPerAppVpnPlan = null
     }
 
     private fun resolveDefaultBrowserPackage(): String? {
