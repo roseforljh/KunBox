@@ -981,6 +981,22 @@ internal class ResourceRecoveryBudgetHealthTracker(
     }
 }
 
+internal class ResourceRecoveryNoticeGate {
+    private var active = false
+
+    fun claim(): Boolean {
+        if (active) return false
+        active = true
+        return true
+    }
+
+    fun clear(): Boolean = active.also { active = false }
+}
+
+internal val isResourceRecoveryBudgetError: (String?) -> Boolean = { message ->
+    message?.startsWith(RESOURCE_RECOVERY_BUDGET_ERROR_PREFIX) == true
+}
+
 internal class DiagnosticResourceHistory(
     private val historyFile: File,
     private val maxSamples: Int = MAX_BACKGROUND_RESOURCE_SAMPLES
@@ -1061,6 +1077,7 @@ internal interface ResourceGuardOwner {
     fun restartCore(reason: String, attemptId: Long): Boolean
     fun recycleProcess(reason: String)
     fun publishBudgetExhausted(reason: String)
+    fun clearBudgetExhaustedError()
 }
 
 private data class ResourceRecoverySuccessor(
@@ -1088,12 +1105,14 @@ internal object BackgroundResourceGuard {
     private val lock = Any()
     private val recoveryScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val gate = ResourceRecoveryGate()
+    private val noticeGate = ResourceRecoveryNoticeGate()
     private var registration: ResourceGuardRegistration? = null
     private var monitorJob: Job? = null
     private var recovery: ActiveResourceRecovery? = null
     private var owner: ResourceGuardOwner? = null
     private var sampler: DiagnosticResourceSampler? = null
     private var history: DiagnosticResourceHistory? = null
+    private var noticeOwnerId: Any? = null
 
     @Volatile
     private var recovering = false
@@ -1200,6 +1219,10 @@ internal object BackgroundResourceGuard {
                 sampler = null
                 history = null
             }
+            if (noticeOwnerId === ownerId) {
+                noticeGate.clear()
+                noticeOwnerId = null
+            }
             recoveryToCancel = removeRecoveryLocked(result.cancelledAttemptId)
         }
         oldMonitorJob?.cancel()
@@ -1248,7 +1271,7 @@ internal object BackgroundResourceGuard {
         gate.isAttemptCurrent(ownerId, attemptId)
     }
 
-    @Suppress("CyclomaticComplexMethod", "CognitiveComplexMethod", "NestedBlockDepth")
+    @Suppress("CyclomaticComplexMethod", "CognitiveComplexMethod", "NestedBlockDepth", "LongMethod")
     private suspend fun monitor(
         registration: ResourceGuardRegistration,
         activeSampler: DiagnosticResourceSampler,
@@ -1257,6 +1280,9 @@ internal object BackgroundResourceGuard {
     ) {
         val tracker = ResourceFdTracker()
         val budgetHealthTracker = ResourceRecoveryBudgetHealthTracker()
+        val errorHealthTracker = ResourceRecoveryBudgetHealthTracker(
+            healthyWindowMs = RESOURCE_RECOVERY_ERROR_HEALTHY_CLEAR_MS
+        )
         var lastFullSampleAtMs: Long? = null
         var lastBreakdownAtMs: Long? = null
         var previousLevel = FdPressureLevel.NORMAL
@@ -1264,6 +1290,16 @@ internal object BackgroundResourceGuard {
             try {
                 val pressureSample = activeSampler.captureCurrentFdPressure()
                 val decision = tracker.observe(pressureSample)
+                if (errorHealthTracker.observe(pressureSample, decision.level)) {
+                    val shouldClearError = synchronized(lock) {
+                        if (noticeOwnerId !== registration.ownerId) {
+                            false
+                        } else {
+                            noticeGate.clear()
+                        }
+                    }
+                    if (shouldClearError) activeOwner.clearBudgetExhaustedError()
+                }
                 if (budgetHealthTracker.observe(pressureSample, decision.level)) {
                     VpnStateStore.resetResourceRecoveryBudget()
                     LogRepository.getInstance().addAlwaysLog(
@@ -1546,9 +1582,25 @@ internal object BackgroundResourceGuard {
         val reason = activeRecovery.reason
         if (reclaimAllowed) {
             activeOwner.recycleProcess("resource_exhausted:$reason")
-        } else {
+        } else if (claimBudgetExhaustedNotice(activeRecovery)) {
             activeOwner.publishBudgetExhausted("process_reclaim:$reason")
         }
+    }
+
+    private fun claimBudgetExhaustedNotice(activeRecovery: ActiveResourceRecovery): Boolean = synchronized(lock) {
+        if (!gate.isAttemptCurrent(
+                activeRecovery.registration.ownerId,
+                activeRecovery.attemptId,
+                ResourceRecoveryPhase.RECLAIM_CLAIMED
+            )
+        ) {
+            return@synchronized false
+        }
+        if (noticeOwnerId !== activeRecovery.registration.ownerId) {
+            noticeGate.clear()
+            noticeOwnerId = activeRecovery.registration.ownerId
+        }
+        noticeGate.claim()
     }
 
     private fun finishRecovery(attemptId: Long) {
@@ -1679,5 +1731,7 @@ internal const val FD_EMERGENCY_RATIO = 0.95
 private const val RESOURCE_CORE_RESTART_OBSERVE_MS = 5_000L
 private const val RESOURCE_CORE_RESTART_SUCCESSOR_TIMEOUT_MS = 30_000L
 internal const val RESOURCE_RECOVERY_BUDGET_HEALTHY_RESET_MS = 5 * 60_000L
+internal const val RESOURCE_RECOVERY_ERROR_HEALTHY_CLEAR_MS = 10_000L
+internal const val RESOURCE_RECOVERY_BUDGET_ERROR_PREFIX = "Resource recovery budget exhausted:"
 
 private val CSV_SPECIAL_CHARACTERS = setOf(',', '"', '\n', '\r')

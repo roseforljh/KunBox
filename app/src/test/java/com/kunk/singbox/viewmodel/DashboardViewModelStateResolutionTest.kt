@@ -1,6 +1,9 @@
 package com.kunk.singbox.viewmodel
 
 import com.kunk.singbox.ipc.VpnStateStore
+import com.kunk.singbox.ipc.DataPlaneReadinessSnapshot
+import com.kunk.singbox.ipc.DataPlaneStatus
+import com.kunk.singbox.ipc.VpnOwnerStatus
 import com.kunk.singbox.model.ConnectionState
 import com.kunk.singbox.service.ServiceState
 import org.junit.Assert.assertEquals
@@ -49,7 +52,19 @@ class DashboardViewModelStateResolutionTest {
             ConnectionState.Connected,
             resolveTrustedDashboardConnectionState(
                 serviceState = ServiceState.RUNNING,
-                ipcBound = true
+                ipcBound = true,
+                readiness = DataPlaneReadinessSnapshot(
+                    status = DataPlaneStatus.READY,
+                    tunEstablished = true,
+                    systemVpnTransport = true,
+                    systemVpnOwnerStatus = VpnOwnerStatus.MATCH,
+                    coreReady = true,
+                    selectorReady = true,
+                    updatedAtElapsedMs = 1_000L
+                ),
+                mode = VpnStateStore.CoreMode.VPN,
+                apiLevel = 30,
+                nowElapsedMs = 1_000L
             )
         )
     }
@@ -199,6 +214,13 @@ class DashboardViewModelStateResolutionTest {
         assertTrue(source.contains("VpnTileService.persistVpnPending(\"\")"))
         assertTrue(
             source.contains("VpnServiceManager.stopVpn(context, VpnStopInitiator.START_TIMEOUT)")
+        )
+        assertEquals(
+            ConnectionState.Connecting,
+            resolveTrustedDashboardConnectionState(
+                serviceState = ServiceState.RUNNING,
+                ipcBound = true
+            )
         )
     }
 

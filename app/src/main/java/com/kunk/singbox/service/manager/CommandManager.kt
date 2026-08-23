@@ -8,6 +8,7 @@ import com.kunk.singbox.R
 import com.kunk.singbox.core.BoxWrapperManager
 import com.kunk.singbox.core.SelectorManager
 import com.kunk.singbox.ipc.VpnStateStore
+import com.kunk.singbox.ipc.SingBoxIpcHub
 import com.kunk.singbox.repository.ConfigRepository
 import com.kunk.singbox.repository.LogRepository
 import com.kunk.singbox.repository.NodeProtectionStore
@@ -98,6 +99,18 @@ class CommandManager(
     private var commandClientGroup: CommandClient? = null
     private var commandClientLogs: CommandClient? = null
     private var commandClientConnections: CommandClient? = null
+    private val runtimeAccess = Any()
+    private val runtimeGeneration = java.util.concurrent.atomic.AtomicLong(0L)
+    @Volatile private var runtimeHandle: CommandRuntimeHandle? = null
+
+    private data class CommandRuntimeHandle(
+        val generation: Long,
+        val server: CommandServer?,
+        val statusClient: CommandClient?,
+        val groupClient: CommandClient?,
+        val logClient: CommandClient?,
+        val connectionsClient: CommandClient?
+    )
 
     @Volatile
     private var clientHandler: CommandClientHandler? = null
@@ -107,6 +120,9 @@ class CommandManager(
 
     @Volatile
     private var isNonEssentialSuspended: Boolean = false
+
+    @Volatile
+    private var consecutiveDisconnects: Int = 0
 
     private val trafficStatusGate = TrafficStatusGate()
     private var connectionsSnapshot: Connections? = null
@@ -126,6 +142,10 @@ class CommandManager(
     private val connectionTrafficAttributor = ConnectionTrafficAttributor()
     private val connectionStormGuard = ConnectionStormGuard()
     private val connectionIncidentHistory = ConnectionIncidentHistory(context)
+    private val directConnectionIncidentHistory = DirectConnectionIncidentHistory(
+        context,
+        SingBoxIpcHub.serviceInstanceId()
+    )
     private var lastConnectionsLabelLogged: String? = null
 
     interface Callbacks {
@@ -134,6 +154,7 @@ class CommandManager(
         fun onGroupSelectionChanged(groupTag: String, selectedTag: String) {}
         fun onRuntimeNodeChanged(nodeName: String) {}
         fun onTrafficUpdate(snapshot: TrafficMonitor.TrafficSnapshot) {}
+        fun onControlChannelHealth(ready: Boolean) {}
         fun onServiceStop(): Unit
         fun onServiceReload(): Unit
     }
@@ -249,6 +270,16 @@ class CommandManager(
         commandClientConnections = Libbox.newCommandClient(handler, optionsConn)
         commandClientConnections?.connect()
         Log.i(TAG, "CommandClient connected (Connections, interval=1s)")
+        synchronized(runtimeAccess) {
+            runtimeHandle = CommandRuntimeHandle(
+                generation = runtimeGeneration.incrementAndGet(),
+                server = commandServer,
+                statusClient = commandClient,
+                groupClient = commandClientGroup,
+                logClient = commandClientLogs,
+                connectionsClient = commandClientConnections
+            )
+        }
 
         serviceScope.launch {
             delay(3500)
@@ -262,48 +293,79 @@ class CommandManager(
         }
     }
 
-    @Suppress("CognitiveComplexMethod")
+    @Suppress("CognitiveComplexMethod", "CyclomaticComplexMethod", "LongMethod")
     suspend fun stopAndWaitPortRelease(
         proxyPort: Int,
         waitTimeoutMs: Long = PORT_RELEASE_TIMEOUT_MS,
         forceKillOnTimeout: Boolean = true,
-        enforceReleaseOnTimeout: Boolean = false
+        enforceReleaseOnTimeout: Boolean = false,
+        preserveNotifications: Boolean = false,
+        expectedRuntimeGeneration: Long = currentRuntimeGeneration()
     ): Result<Unit> = runCatching {
         Log.i(TAG, "stopAndWaitPortRelease: port=$proxyPort, timeout=${waitTimeoutMs}ms, forceKill=$forceKillOnTimeout")
+        val capturedHandle = synchronized(runtimeAccess) {
+            val current = runtimeHandle
+            if (expectedRuntimeGeneration > 0L && current?.generation != expectedRuntimeGeneration) {
+                Log.w(
+                    TAG,
+                    "Skip stale command cleanup expected=$expectedRuntimeGeneration current=${current?.generation}"
+                )
+                return@runCatching
+            }
+            current ?: CommandRuntimeHandle(
+                generation = runtimeGeneration.get(),
+                server = commandServer,
+                statusClient = commandClient,
+                groupClient = commandClientGroup,
+                logClient = commandClientLogs,
+                connectionsClient = commandClientConnections
+            )
+        }
         stopTrafficUpdatesAndWait()
 
-        commandClient?.disconnect()
-        commandClient = null
-        commandClientGroup?.disconnect()
-        commandClientGroup = null
-        commandClientLogs?.disconnect()
-        commandClientLogs = null
-        commandClientConnections?.disconnect()
-        commandClientConnections = null
+        capturedHandle.statusClient?.disconnect()
+        capturedHandle.groupClient?.disconnect()
+        capturedHandle.logClient?.disconnect()
+        capturedHandle.connectionsClient?.disconnect()
+        val ownsCurrentRuntime = synchronized(runtimeAccess) {
+            if (runtimeHandle == null || runtimeHandle === capturedHandle) {
+                runtimeHandle = null
+                if (commandClient === capturedHandle.statusClient) commandClient = null
+                if (commandClientGroup === capturedHandle.groupClient) commandClientGroup = null
+                if (commandClientLogs === capturedHandle.logClient) commandClientLogs = null
+                if (commandClientConnections === capturedHandle.connectionsClient) commandClientConnections = null
+                if (commandServer === capturedHandle.server) commandServer = null
+                clientHandler = null
+                true
+            } else {
+                false
+            }
+        }
 
-        clientHandler = null
-
-        BoxWrapperManager.release()
-        connectionsSnapshot = null
-        connectionTrafficAttributor.clear()
-        connectionStormGuard.clear()
+        if (ownsCurrentRuntime) {
+            BoxWrapperManager.release()
+            connectionsSnapshot = null
+            connectionTrafficAttributor.clear()
+            connectionStormGuard.clear()
+        }
 
         val closeStart = SystemClock.elapsedRealtime()
         runCatching {
-            commandServer?.closeService()
+            capturedHandle.server?.closeService()
         }.onFailure { e ->
             // closeService 在服务已关闭时返回 invalid argument，属于正常情况
             Log.d(TAG, "CommandServer.closeService: ${e.message} (expected if already closed)")
         }
         Log.i(TAG, "CommandServer service closed in ${SystemClock.elapsedRealtime() - closeStart}ms")
 
-        commandServer?.close()
-        commandServer = null
+        capturedHandle.server?.close()
 
-        runCatching {
-            val nm = context.getSystemService(NotificationManager::class.java)
-            nm?.cancel(VpnNotificationManager.NOTIFICATION_ID)
-            nm?.cancel(11) // ProxyOnlyService NOTIFICATION_ID
+        if (!preserveNotifications) {
+            runCatching {
+                val nm = context.getSystemService(NotificationManager::class.java)
+                nm?.cancel(VpnNotificationManager.NOTIFICATION_ID)
+                nm?.cancel(11) // ProxyOnlyService NOTIFICATION_ID
+            }
         }
 
         if (proxyPort > 0) {
@@ -399,6 +461,10 @@ class CommandManager(
 
     fun getGroupsCount(): Int = groupSelectedOutbounds.size
 
+    internal fun currentRuntimeGeneration(): Long = synchronized(runtimeAccess) {
+        runtimeHandle?.generation ?: 0L
+    }
+
     fun closeConnections(): Boolean {
         val clients = listOfNotNull(commandClientConnections, commandClient)
         for (client in clients) {
@@ -424,10 +490,15 @@ class CommandManager(
     }
 
     private fun createClientHandler(): CommandClientHandler = object : CommandClientHandler {
-        override fun connected() {}
+        override fun connected() {
+            consecutiveDisconnects = 0
+            callbacks?.onControlChannelHealth(true)
+        }
 
         override fun disconnected(message: String?) {
             Log.w(TAG, "CommandClient disconnected: $message")
+            consecutiveDisconnects++
+            if (consecutiveDisconnects >= 2) callbacks?.onControlChannelHealth(false)
         }
 
         override fun clearLogs() {
@@ -493,6 +564,7 @@ class CommandManager(
             try {
                 val runtimeMappings = NodeProtectionStore.runtimeMappings()
                 val eventData = ConnectionTrafficEventReader.read(events)
+                recordDirectIncidents(eventData)
                 if (events.reset) connectionTrafficAttributor.clear()
                 enforceConnectionStormGuard(
                     connectionStormGuard.observe(
@@ -608,6 +680,22 @@ class CommandManager(
         serviceScope.launch(Dispatchers.IO) {
             runCatching { connectionIncidentHistory.append(snapshot) }
                 .onFailure { error -> Log.e(TAG, "Failed to persist connection incident", error) }
+        }
+    }
+
+    private fun recordDirectIncidents(events: List<ConnectionTrafficEventData>) {
+        serviceScope.launch(Dispatchers.IO) {
+            runCatching { directConnectionIncidentHistory.recordNew(events) }
+                .onSuccess { incidents ->
+                    incidents.filter { it.routeRuleSemantic == "unknown" }.forEach { incident ->
+                        LogRepository.getInstance().addAlwaysLog(
+                            "WARN [DIRECT_INCIDENT] connection=${incident.connectionId} " +
+                                "uid=${incident.uid ?: -1} outbound=${incident.outbound.orEmpty()} " +
+                                "chain=${incident.chain.joinToString(">")} semantic=unknown"
+                        )
+                    }
+                }
+                .onFailure { error -> Log.e(TAG, "Failed to persist direct incidents", error) }
         }
     }
 

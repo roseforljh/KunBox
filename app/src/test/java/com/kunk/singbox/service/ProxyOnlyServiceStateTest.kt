@@ -53,6 +53,20 @@ class ProxyOnlyServiceStateTest {
     }
 
     @Test
+    fun duplicateStopActionIsIgnoredBeforeReplacingRecoveryLease() {
+        val source = File("src/main/java/com/kunk/singbox/service/ProxyOnlyService.kt")
+            .readText(Charsets.UTF_8)
+        val stopBranch = source
+            .substringAfter("ACTION_STOP ->")
+            .substringBefore("ACTION_FORCE_STOP ->")
+
+        val guardIndex = stopBranch.indexOf("shouldIgnoreDuplicateHardStop")
+        val leaseIndex = stopBranch.indexOf("setNonResourceRecoveryIntent(false)")
+        assertTrue(guardIndex >= 0)
+        assertTrue(leaseIndex > guardIndex)
+    }
+
+    @Test
     fun successfulProxyStartClearsManualStopMarker() {
         val source = File("src/main/java/com/kunk/singbox/service/ProxyOnlyService.kt")
             .readText(Charsets.UTF_8)
@@ -176,8 +190,12 @@ class ProxyOnlyServiceStateTest {
     @Test
     fun `proxy only service does not kill process when port remains unavailable`() {
         val source = File("src/main/java/com/kunk/singbox/service/ProxyOnlyService.kt").readText()
+        val stopCore = source
+            .substringAfter("private fun stopCore(")
+            .substringBefore("private fun startRuntimeCommandClient")
 
-        assertFalse(source.contains("killProcess("))
+        assertFalse(stopCore.contains("killProcess("))
+        assertTrue(source.contains("private fun forceStopProcess(reason: String)"))
     }
 
     @Test

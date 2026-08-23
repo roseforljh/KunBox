@@ -16,6 +16,7 @@ import com.kunk.singbox.service.SingBoxService.Companion.ACTION_STOP
 import com.kunk.singbox.service.SingBoxService.Companion.ACTION_SWITCH_NODE
 import com.kunk.singbox.service.SingBoxService.Companion.ACTION_RESET_CONNECTIONS
 import com.kunk.singbox.service.manager.VpnStopInitiator
+import com.kunk.singbox.ipc.DataPlaneStatus
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -60,7 +61,8 @@ class VpnNotificationManager(
         val activeNodeName: String? = null,
         val showSpeed: Boolean = true,
         val uploadSpeed: Long = 0L,
-        val downloadSpeed: Long = 0L
+        val downloadSpeed: Long = 0L,
+        val dataPlaneStatus: DataPlaneStatus = DataPlaneStatus.STOPPED
     )
 
     private data class PendingUpdate(
@@ -210,9 +212,20 @@ class VpnNotificationManager(
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
 
-        val nodeName = state.activeNodeName ?: context.getString(R.string.connection_connected)
+        val nodeName = state.activeNodeName ?: context.getString(
+            if (state.dataPlaneStatus == DataPlaneStatus.READY) R.string.connection_connected else R.string.app_name
+        )
 
-        val contentText = if (state.showSpeed) {
+        val safetyText = when (state.dataPlaneStatus) {
+            DataPlaneStatus.STOPPED,
+            DataPlaneStatus.STARTING -> context.getString(R.string.connection_connecting)
+            DataPlaneStatus.BLOCKING -> context.getString(R.string.vpn_status_blocking)
+            DataPlaneStatus.RECOVERING -> context.getString(R.string.vpn_status_recovering)
+            DataPlaneStatus.FAILED_BLOCKED -> context.getString(R.string.vpn_status_failed_blocked)
+            DataPlaneStatus.FAILED_UNPROTECTED -> context.getString(R.string.vpn_status_failed_unprotected)
+            else -> null
+        }
+        val contentText = safetyText ?: if (state.showSpeed) {
             val uploadStr = formatSpeed(state.uploadSpeed)
             val downloadStr = formatSpeed(state.downloadSpeed)
             context.getString(R.string.notification_speed_format, uploadStr, downloadStr)
@@ -226,13 +239,17 @@ class VpnNotificationManager(
             .setSmallIcon(R.drawable.ic_notification)
             .setContentIntent(mainPendingIntent)
             .setOngoing(true)
-            .addAction(
-                Notification.Action.Builder(
-                    android.R.drawable.ic_menu_revert,
-                    context.getString(R.string.notification_switch_node),
-                    switchPendingIntent
-                ).build()
-            )
+            .apply {
+                if (state.dataPlaneStatus == DataPlaneStatus.READY) {
+                    addAction(
+                        Notification.Action.Builder(
+                            android.R.drawable.ic_menu_revert,
+                            context.getString(R.string.notification_switch_node),
+                            switchPendingIntent
+                        ).build()
+                    )
+                }
+            }
             .addAction(
                 Notification.Action.Builder(
                     android.R.drawable.ic_menu_rotate,

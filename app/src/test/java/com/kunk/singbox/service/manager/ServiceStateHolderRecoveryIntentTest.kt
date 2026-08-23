@@ -36,6 +36,13 @@ class ServiceStateHolderRecoveryIntentTest {
     }
 
     @Test
+    fun `duplicate hard stop is ignored only while hard stop is active`() {
+        assertTrue(ServiceStateHolder.shouldIgnoreDuplicateHardStop(isStopping = true, stopSelfRequested = true))
+        assertFalse(ServiceStateHolder.shouldIgnoreDuplicateHardStop(isStopping = true, stopSelfRequested = false))
+        assertFalse(ServiceStateHolder.shouldIgnoreDuplicateHardStop(isStopping = false, stopSelfRequested = true))
+    }
+
+    @Test
     fun `resource recovery owner can clear its preserve marker`() {
         val owner = Any()
         createBaseline()

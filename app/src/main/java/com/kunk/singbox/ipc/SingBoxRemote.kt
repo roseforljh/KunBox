@@ -9,6 +9,7 @@ import android.net.NetworkCapabilities
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.os.Build
 import android.os.SystemClock
 import android.util.Log
 import com.kunk.singbox.aidl.ISingBoxService
@@ -78,6 +79,10 @@ internal class StateGenerationGate {
             true
         }
     }
+
+    fun reset() = synchronized(lock) {
+        acceptedGeneration = 0L
+    }
 }
 
 @Suppress("LargeClass", "TooManyFunctions")
@@ -90,6 +95,7 @@ object SingBoxRemote {
 
     private const val CALLBACK_TIMEOUT_MS = 8_000L
     private const val RECOVERY_EXPECTED_DURATION_MS = 5_000L
+    private const val READINESS_WATCHDOG_INTERVAL_MS = 1_000L
 
     private val _state = MutableStateFlow(ServiceState.STOPPED)
     val state: StateFlow<ServiceState> = _state.asStateFlow()
@@ -108,6 +114,9 @@ object SingBoxRemote {
 
     private val _manuallyStopped = MutableStateFlow(false)
     val manuallyStopped: StateFlow<Boolean> = _manuallyStopped.asStateFlow()
+
+    private val _readiness = MutableStateFlow(DataPlaneReadinessSnapshot.stopped())
+    val readiness: StateFlow<DataPlaneReadinessSnapshot> = _readiness.asStateFlow()
 
     @Volatile
     private var service: ISingBoxService? = null
@@ -160,11 +169,17 @@ object SingBoxRemote {
     @Volatile
     private var pendingReconnect: Runnable? = null
 
+    @Volatile
+    private var readinessFreshnessWatchdog: Runnable? = null
+
     private val pendingRecoveryCallbacks = ConcurrentLinkedQueue<(RecoveryResult) -> Unit>()
 
     private val urlTestRequestId = AtomicLong(0L)
     private val pendingUrlTestRequests = ConcurrentHashMap<Long, CompletableDeferred<Int?>>()
     private val stateGenerationGate = StateGenerationGate()
+
+    @Volatile
+    private var acceptedServiceInstanceId: String = ""
 
     private val mainHandler = Handler(Looper.getMainLooper())
 
@@ -195,40 +210,17 @@ object SingBoxRemote {
 
     private val callback = object : ISingBoxServiceCallback.Stub() {
         override fun onStateChanged(
-            state: Int,
-            activeLabel: String?,
-            lastError: String?,
-            manuallyStopped: Boolean,
-            generation: Long
+            @Suppress("UNUSED_PARAMETER") state: Int,
+            @Suppress("UNUSED_PARAMETER") activeLabel: String?,
+            @Suppress("UNUSED_PARAMETER") lastError: String?,
+            @Suppress("UNUSED_PARAMETER") manuallyStopped: Boolean,
+            @Suppress("UNUSED_PARAMETER") generation: Long
         ) {
             lastCallbackReceivedAtMs = SystemClock.elapsedRealtime()
-            val st = ServiceState.values().getOrNull(state)
-                ?: ServiceState.STOPPED
-            val oldState = _state.value
-            val accepted = applyStateSnapshot(
-                VpnStateStore.RuntimeStateSnapshot(
-                    generation = generation,
-                    stateOrdinal = st.ordinal,
-                    activeLabel = activeLabel.orEmpty(),
-                    lastError = lastError.orEmpty(),
-                    manuallyStopped = manuallyStopped
-                )
-            )
-            if (!accepted) {
-                Log.w(TAG, "[UI] Ignored stale callback generation=$generation")
-                return
-            }
-            Log.i(TAG, "[UI] Callback received: $oldState -> $st, activeLabel=$activeLabel")
-
-            when (st) {
-                ServiceState.RUNNING -> completePendingRecovery(RecoveryResult.AlreadyConnected)
-                ServiceState.STOPPED -> {
-                    if (connectionActive) {
-                        failPendingRecovery("Recovery stopped before reaching RUNNING")
-                    }
+            mainHandler.post {
+                if (!syncStateFromService(service)) {
+                    markReadinessUnavailable("callback_snapshot_failed")
                 }
-
-                else -> Unit
             }
         }
 
@@ -280,7 +272,17 @@ object SingBoxRemote {
         lastSyncTimeMs = System.currentTimeMillis()
     }
 
-    private fun applyStateSnapshot(snapshot: VpnStateStore.RuntimeStateSnapshot): Boolean {
+    private fun applyStateSnapshot(
+        snapshot: VpnStateStore.RuntimeStateSnapshot,
+        fromBoundService: Boolean = false
+    ): Boolean {
+        val incomingInstanceId = snapshot.readiness.serviceInstanceId
+        if (fromBoundService && incomingInstanceId.isNotBlank() && incomingInstanceId != acceptedServiceInstanceId) {
+            acceptedServiceInstanceId = incomingInstanceId
+            stateGenerationGate.reset()
+        } else if (acceptedServiceInstanceId.isNotBlank() && incomingInstanceId != acceptedServiceInstanceId) {
+            return false
+        }
         return stateGenerationGate.tryCommit(snapshot.generation) {
             val state = ServiceState.values().getOrNull(snapshot.stateOrdinal)
                 ?: ServiceState.STOPPED
@@ -290,7 +292,42 @@ object SingBoxRemote {
                 snapshot.lastError,
                 snapshot.manuallyStopped
             )
+            _readiness.value = snapshot.readiness
         }
+    }
+
+    private fun markReadinessUnavailable(reason: String) {
+        _readiness.value = _readiness.value.copy(
+            status = DataPlaneStatus.FAILED_UNPROTECTED,
+            coreReady = false,
+            selectorReady = false,
+            recoveryActive = false,
+            lastReadinessReason = reason,
+            updatedAtElapsedMs = SystemClock.elapsedRealtime()
+        )
+    }
+
+    private fun startReadinessFreshnessWatchdog() {
+        stopReadinessFreshnessWatchdog()
+        val task = object : Runnable {
+            override fun run() {
+                if (!bound || service == null) return
+                val snapshot = _readiness.value
+                if (snapshot.status != DataPlaneStatus.STOPPED &&
+                    !snapshot.isFresh(SystemClock.elapsedRealtime())
+                ) {
+                    markReadinessUnavailable("readiness_heartbeat_stale")
+                }
+                mainHandler.postDelayed(this, READINESS_WATCHDOG_INTERVAL_MS)
+            }
+        }
+        readinessFreshnessWatchdog = task
+        mainHandler.postDelayed(task, READINESS_WATCHDOG_INTERVAL_MS)
+    }
+
+    private fun stopReadinessFreshnessWatchdog() {
+        readinessFreshnessWatchdog?.let(mainHandler::removeCallbacks)
+        readinessFreshnessWatchdog = null
     }
 
     internal fun shouldAcceptStateGeneration(incoming: Long, accepted: Long): Boolean {
@@ -298,9 +335,8 @@ object SingBoxRemote {
     }
 
     fun clearLastErrorForNewStart() {
-        applyStateSnapshot(
-            VpnStateStore.updateRuntimeStateSnapshot(activeLabel = "", lastError = "")
-        )
+        _activeLabel.value = ""
+        _lastError.value = ""
     }
 
     private fun syncStateFromStore() {
@@ -318,15 +354,13 @@ object SingBoxRemote {
             storedLastError = VpnStateStore.getLastError(),
             storedManuallyStopped = VpnStateStore.isManuallyStopped()
         )
-        VpnStateStore.clearRuntimeState(preserveLastError = stopState.preserveLastError)
-        applyStateSnapshot(
-            VpnStateStore.getRuntimeStateSnapshot().copy(
-                stateOrdinal = ServiceState.STOPPED.ordinal,
-                activeLabel = "",
-                lastError = stopState.lastError,
-                manuallyStopped = stopState.manuallyStopped
-            )
+        updateState(
+            st = ServiceState.STOPPED,
+            activeLabel = "",
+            lastError = stopState.lastError,
+            manuallyStopped = stopState.manuallyStopped
         )
+        markReadinessUnavailable("service_disconnected_stopped")
     }
 
     internal fun resolveLocalStateSnapshot(
@@ -348,6 +382,8 @@ object SingBoxRemote {
             service = null
             callbackRegistered = false
             bound = false
+            stopReadinessFreshnessWatchdog()
+            markReadinessUnavailable("binder_died")
 
             mainHandler.post {
                 val ctx = contextRef?.get()
@@ -540,6 +576,7 @@ object SingBoxRemote {
                 return
             }
 
+            startReadinessFreshnessWatchdog()
             flushPendingAppLifecycle()
         }
 
@@ -549,6 +586,8 @@ object SingBoxRemote {
             service = null
             bound = false
             bindingInProgress = false
+            stopReadinessFreshnessWatchdog()
+            markReadinessUnavailable("service_disconnected")
             clearPendingUrlTestRequests()
 
             val ctx = contextRef?.get()
@@ -581,7 +620,7 @@ object SingBoxRemote {
             val snapshot = s.stateSnapshot.toRuntimeStateSnapshot()
             val st = ServiceState.values().getOrNull(snapshot.stateOrdinal)
                 ?: ServiceState.STOPPED
-            if (!applyStateSnapshot(snapshot)) {
+            if (!applyStateSnapshot(snapshot, fromBoundService = true)) {
                 Log.w(TAG, "Ignored stale service snapshot generation=${snapshot.generation}")
                 return@runCatching
             }
@@ -590,15 +629,19 @@ object SingBoxRemote {
                 "State synced: $st, generation=${snapshot.generation}, running=${_isRunning.value}"
             )
 
-            when (st) {
-                ServiceState.RUNNING -> completePendingRecovery(RecoveryResult.AlreadyConnected)
-                ServiceState.STOPPED -> {
+            when {
+                snapshot.readiness.isReady(
+                    serviceState = st,
+                    mode = VpnStateStore.getMode(),
+                    ipcBound = bound,
+                    apiLevel = Build.VERSION.SDK_INT,
+                    nowElapsedMs = SystemClock.elapsedRealtime()
+                ) -> completePendingRecovery(RecoveryResult.AlreadyConnected)
+                st == ServiceState.STOPPED -> {
                     if (connectionActive) {
                         failPendingRecovery("Recovery synced STOPPED state from service")
                     }
                 }
-
-                else -> Unit
             }
         }.onFailure {
             Log.e(TAG, "Failed to sync state from service", it)

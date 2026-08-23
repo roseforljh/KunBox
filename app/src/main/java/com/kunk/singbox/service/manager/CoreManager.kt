@@ -82,7 +82,18 @@ class CoreManager(
 
     private var platformInterface: PlatformInterface? = null
     private val lifecycleMutex = Mutex()
+    private val tunLifecycleLock = Any()
     private val stopGeneration = AtomicLong(0L)
+    private val tunRebuildGeneration = AtomicLong(0L)
+    private val tunRebuildRequested = AtomicBoolean(false)
+    private val runtimeAccess = Any()
+    private val runtimeGeneration = AtomicLong(0L)
+    @Volatile private var runtimeHandle: CoreRuntimeHandle? = null
+
+    internal data class CoreRuntimeHandle(
+        val generation: Long,
+        val commandServer: CommandServer
+    )
 
     fun captureStartToken(): Long? {
         val generation = stopGeneration.get()
@@ -112,6 +123,23 @@ class CoreManager(
 
     fun completeStop() {
         stopping.set(false)
+    }
+
+    fun requestTunRebuild(): Long = synchronized(tunLifecycleLock) {
+        tunRebuildRequested.set(true)
+        tunRebuildGeneration.incrementAndGet()
+    }
+
+    fun clearTunRebuildRequest() = synchronized(tunLifecycleLock) {
+        tunRebuildRequested.set(false)
+    }
+
+    fun currentTunRebuildGeneration(): Long = tunRebuildGeneration.get()
+
+    fun isTunRebuildRequested(): Boolean = tunRebuildRequested.get()
+
+    internal fun currentRuntimeGeneration(): Long = synchronized(runtimeAccess) {
+        runtimeHandle?.generation ?: 0L
     }
 
     sealed class StartResult {
@@ -305,6 +333,9 @@ class CoreManager(
                     )
 
                     currentConfigContent = configContent
+                    synchronized(runtimeAccess) {
+                        runtimeHandle = CoreRuntimeHandle(runtimeGeneration.incrementAndGet(), server)
+                    }
 
                     val durationMs = PerfTracer.end(PerfTracer.Phases.LIBBOX_START)
                     Log.i(TAG, "Libbox started in ${durationMs}ms")
@@ -326,42 +357,76 @@ class CoreManager(
         }
     }
 
-    suspend fun stopService(): Result<Unit> {
+    suspend fun stopCorePreservingTun(expectedRuntimeGeneration: Long? = null): Result<Unit> {
         beginStop()
         return try {
             runCatching {
-                lifecycleMutex.withLock { stopServiceLocked() }
+                lifecycleMutex.withLock { stopServiceLocked(expectedRuntimeGeneration) }
             }
         } finally {
             completeStop()
         }
     }
 
-    private suspend fun stopServiceLocked() {
+    suspend fun stopService(): Result<Unit> = stopCorePreservingTun()
+
+    suspend fun prepareTunReplacement(expectedRuntimeGeneration: Long? = null): Result<Unit> {
+        requestTunRebuild()
+        return stopCorePreservingTun(expectedRuntimeGeneration)
+    }
+
+    @Suppress("CognitiveComplexMethod")
+    private suspend fun stopServiceLocked(expectedRuntimeGeneration: Long? = null) {
         withContext(Dispatchers.IO) {
-            BoxWrapperManager.release()
-
-            SelectorManager.clear()
-
-            commandServer?.closeService()
-
-            currentConfigContent = null
+            val capturedHandle = synchronized(runtimeAccess) { runtimeHandle }
+            if (expectedRuntimeGeneration != null && expectedRuntimeGeneration > 0L &&
+                capturedHandle?.generation != expectedRuntimeGeneration
+            ) {
+                Log.w(
+                    TAG,
+                    "Skip stale core cleanup expected=$expectedRuntimeGeneration current=${capturedHandle?.generation}"
+                )
+                return@withContext
+            }
+            val capturedServer = capturedHandle?.commandServer ?: commandServer
+            capturedServer?.closeService()
+            val ownsCurrentRuntime = synchronized(runtimeAccess) {
+                if (capturedHandle == null || runtimeHandle === capturedHandle) {
+                    runtimeHandle = null
+                    if (commandServer === capturedServer) commandServer = null
+                    true
+                } else {
+                    false
+                }
+            }
+            if (ownsCurrentRuntime) {
+                BoxWrapperManager.release()
+                SelectorManager.clear()
+                currentConfigContent = null
+            }
             Log.i(TAG, "Service stopped")
         }
     }
 
-    suspend fun stopFully(completeLifecycle: Boolean = true): Result<Unit> {
+    suspend fun stopFully(
+        completeLifecycle: Boolean = true,
+        expectedRuntimeGeneration: Long? = null
+    ): Result<Unit> {
         beginStop()
 
         return try {
             runCatching {
                 lifecycleMutex.withLock {
-                    val stopResult = runCatching { stopServiceLocked() }
+                    val stopResult = runCatching { stopServiceLocked(expectedRuntimeGeneration) }
 
                     withContext(Dispatchers.IO) {
-                        vpnInterface?.let { pfd ->
-                            runCatching { pfd.close() }
-                            vpnInterface = null
+                        synchronized(tunLifecycleLock) {
+                            tunRebuildRequested.set(false)
+                            tunRebuildGeneration.incrementAndGet()
+                            vpnInterface?.let { pfd ->
+                                runCatching { pfd.close() }
+                                vpnInterface = null
+                            }
                         }
 
                         tunManager.cleanup()
@@ -395,6 +460,7 @@ class CoreManager(
         }
     }
 
+    @Suppress("CognitiveComplexMethod")
     fun openTun(
         options: TunOptions?,
         underlyingNetwork: Network? = null,
@@ -404,57 +470,72 @@ class CoreManager(
             return Result.failure(IllegalArgumentException("TunOptions cannot be null"))
         }
 
-        var tunTraceStarted = false
-        return runCatching {
-            if (reuseExisting) {
-                vpnInterface?.let { existing ->
-                    val existingFd = existing.fd
-                    if (existingFd >= 0) {
+        return synchronized(tunLifecycleLock) {
+            var tunTraceStarted = false
+            val replaceExisting = tunRebuildRequested.get() || !reuseExisting
+            val previousInterface = vpnInterface
+            runCatching {
+                if (!replaceExisting) {
+                    vpnInterface?.let { existing ->
+                        val existingFd = existing.fd
+                        if (existingFd >= 0) {
 
-                        applyUnderlyingNetworkIfPossible(underlyingNetwork, reason = "reuse_tun")
+                            applyUnderlyingNetworkIfPossible(underlyingNetwork, reason = "reuse_tun")
 
-                        Log.i(TAG, "Reusing existing TUN interface (fd=$existingFd)")
-                        return@runCatching existingFd
+                            Log.i(TAG, "Reusing existing TUN interface (fd=$existingFd)")
+                            return@runCatching existingFd
+                        }
+                        Log.w(TAG, "Existing TUN interface has invalid fd, recreating")
+                        runCatching { existing.close() }
+                        vpnInterface = null
                     }
-                    Log.w(TAG, "Existing TUN interface has invalid fd, recreating")
-                    runCatching { existing.close() }
-                    vpnInterface = null
                 }
-            }
 
-            PerfTracer.begin(PerfTracer.Phases.TUN_CREATE)
-            tunTraceStarted = true
+                PerfTracer.begin(PerfTracer.Phases.TUN_CREATE)
+                tunTraceStarted = true
 
-            val builder = tunManager.consumePreallocatedBuilder()
-                ?: vpnService.Builder()
+                val builder = tunManager.consumePreallocatedBuilder()
+                    ?: vpnService.Builder()
 
-            tunManager.configureBuilder(builder, options, currentSettings)
+                tunManager.configureBuilder(builder, options, currentSettings)
 
-            val pfd = tunManager.establishWithRetry(builder) { isStopping }
-                ?: throw IllegalStateException("Failed to establish TUN interface")
+                val pfd = tunManager.establishWithRetry(builder) { isStopping }
+                    ?: throw IllegalStateException("Failed to establish TUN interface")
 
-            vpnInterface = pfd
-            val fd = pfd.fd
+                vpnInterface = pfd
+                val fd = pfd.fd
 
-            applyUnderlyingNetworkIfPossible(underlyingNetwork, reason = "new_tun")
+                if (previousInterface != null && previousInterface !== pfd) {
+                    runCatching { previousInterface.close() }
+                        .onFailure { Log.w(TAG, "Failed to close replaced TUN interface", it) }
+                }
+                tunRebuildRequested.set(false)
 
-            PerfTracer.end(PerfTracer.Phases.TUN_CREATE)
-            Log.i(TAG, "TUN interface opened, fd=$fd")
+                applyUnderlyingNetworkIfPossible(underlyingNetwork, reason = "new_tun")
 
-            fd
-        }.onFailure {
-            if (tunTraceStarted) {
-                PerfTracer.end(PerfTracer.Phases.TUN_CREATE, "error")
+                PerfTracer.end(PerfTracer.Phases.TUN_CREATE)
+                Log.i(TAG, "TUN interface opened, fd=$fd")
+
+                fd
+            }.onFailure {
+                if (tunTraceStarted) {
+                    PerfTracer.end(PerfTracer.Phases.TUN_CREATE, "error")
+                }
             }
         }
     }
 
     fun closeTunInterface(): Result<Unit> {
-        return runCatching {
-            vpnInterface?.let { pfd ->
-                runCatching { pfd.close() }
-                vpnInterface = null
-                Log.i(TAG, "TUN interface closed")
+        return synchronized(tunLifecycleLock) {
+            runCatching {
+                tunRebuildRequested.set(false)
+                tunRebuildGeneration.incrementAndGet()
+                vpnInterface?.let { pfd ->
+                    runCatching { pfd.close() }
+                    vpnInterface = null
+                    Log.i(TAG, "TUN interface closed")
+                }
+                Unit
             }
         }
     }
@@ -462,6 +543,11 @@ class CoreManager(
     fun isServiceRunning(): Boolean = currentConfigContent != null
 
     fun isVpnInterfaceValid(): Boolean = vpnInterface?.fileDescriptor?.valid() == true
+
+    internal fun appliedPerAppVpnPlan(): VpnTunManager.Companion.AppliedPerAppVpnPlan =
+        tunManager.appliedPerAppVpnPlan
+
+    fun alwaysOnVpnStatus(): Pair<String?, Boolean> = tunManager.checkAlwaysOnVpn()
 
     suspend fun wakeService(): Result<Unit> {
         return runCatching {

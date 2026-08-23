@@ -1,7 +1,9 @@
 ﻿package com.kunk.singbox.service.tun
 
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
@@ -10,7 +12,6 @@ import android.net.VpnService
 import android.os.Build
 import android.os.ParcelFileDescriptor
 import android.os.SystemClock
-import android.provider.Settings
 import android.util.Log
 import com.kunk.singbox.ipc.VpnStateStore
 import com.kunk.singbox.model.AppSettings
@@ -270,6 +271,21 @@ class VpnTunManager(
             return settings?.vpnAppMode != VpnAppMode.ALLOWLIST || addedAllowedCount > 0
         }
 
+        internal data class AppliedPerAppVpnPlan(
+            val mode: String,
+            val requestedAllowedPackages: List<String>,
+            val requestedDisallowedPackages: List<String>,
+            val appliedAllowedPackages: List<String>,
+            val appliedDisallowedPackages: List<String>,
+            val skippedPackages: List<String>,
+            val tunAddresses: List<String> = emptyList(),
+            val routes: List<String> = emptyList(),
+            val dnsServers: List<String> = emptyList(),
+            val mtu: Int = 0,
+            val defaultBrowserPackage: String? = null,
+            val browserCoverage: String = "unknown"
+        )
+
         internal fun addAllowedApplicationsFailClosed(
             packages: List<String>,
             addAllowedApplication: (String) -> Unit
@@ -298,6 +314,17 @@ class VpnTunManager(
     private val lastMtuLogAtMs = AtomicLong(0L)
     @Volatile private var lastLoggedMtu: Int = -1
     private val mtuLogDebounceMs: Long = 10_000L
+
+    @Volatile
+    internal var appliedPerAppVpnPlan = AppliedPerAppVpnPlan(
+        mode = VpnAppMode.ALL.name,
+        requestedAllowedPackages = emptyList(),
+        requestedDisallowedPackages = emptyList(),
+        appliedAllowedPackages = emptyList(),
+        appliedDisallowedPackages = emptyList(),
+        skippedPackages = emptyList()
+    )
+        private set
 
     fun preallocateBuilder() {
         if (preallocatedBuilder != null) return
@@ -380,6 +407,17 @@ class VpnTunManager(
             builder.setMetered(false)
             configureHttpProxy(builder, settings)
         }
+        val dnsAddress = runCatching { options?.getDNSServerAddress()?.getValue() }.getOrNull()
+        val browserPackage = resolveDefaultBrowserPackage()
+        appliedPerAppVpnPlan = appliedPerAppVpnPlan.copy(
+            tunAddresses = tunAddresses.map { (address, prefix) -> "$address/$prefix" },
+            routes = resolveVpnRoutes(settings, tunPlan).map { (address, prefix) -> "$address/$prefix" },
+            dnsServers = resolveVpnDnsServers(settings, dnsAddress, tunPlan),
+            mtu = effectiveMtu,
+            defaultBrowserPackage = browserPackage,
+            browserCoverage = resolveBrowserCoverage(browserPackage, appliedPerAppVpnPlan)
+        )
+        persistAppliedVpnPlan()
     }
 
     private fun logEffectiveMtuIfNeeded(options: TunOptions?, settings: AppSettings?, effectiveMtu: Int) {
@@ -489,10 +527,14 @@ class VpnTunManager(
 
     private fun configurePerAppVpn(builder: VpnService.Builder, settings: AppSettings?) {
         val plan = resolvePerAppVpnPlan(settings, context.packageName)
+        val appliedAllowed = mutableListOf<String>()
+        val appliedDisallowed = mutableListOf<String>()
+        val skipped = mutableListOf<String>()
 
         val addedAllowedCount = try {
             addAllowedApplicationsFailClosed(plan.allowedPackages) { packageName ->
                 builder.addAllowedApplication(packageName)
+                appliedAllowed += packageName
             }
         } catch (e: IllegalStateException) {
             Log.w(TAG, "Failed to apply VPN allowlist", e)
@@ -505,11 +547,52 @@ class VpnTunManager(
         plan.disallowedPackages.forEach { pkg ->
             try {
                 builder.addDisallowedApplication(pkg)
+                appliedDisallowed += pkg
             } catch (e: PackageManager.NameNotFoundException) {
                 Log.w(TAG, "Disallowed app not found: $pkg")
+                skipped += pkg
             } catch (e: Exception) {
                 Log.w(TAG, "Failed to disallow app: $pkg", e)
+                skipped += pkg
             }
+        }
+        skipped += plan.allowedPackages.filterNot(appliedAllowed::contains)
+        appliedPerAppVpnPlan = AppliedPerAppVpnPlan(
+            mode = (settings?.vpnAppMode ?: VpnAppMode.ALL).name,
+            requestedAllowedPackages = plan.allowedPackages,
+            requestedDisallowedPackages = plan.disallowedPackages,
+            appliedAllowedPackages = appliedAllowed,
+            appliedDisallowedPackages = appliedDisallowed,
+            skippedPackages = skipped.distinct()
+        )
+    }
+
+    private fun resolveDefaultBrowserPackage(): String? {
+        val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://example.com"))
+        return context.packageManager.resolveActivity(intent, PackageManager.MATCH_DEFAULT_ONLY)
+            ?.activityInfo
+            ?.packageName
+            ?.takeUnless { it == "android" }
+    }
+
+    private fun resolveBrowserCoverage(browserPackage: String?, plan: AppliedPerAppVpnPlan): String {
+        browserPackage ?: return "unknown"
+        val covered = when (plan.mode) {
+            VpnAppMode.ALL.name -> browserPackage !in plan.appliedDisallowedPackages
+            VpnAppMode.ALLOWLIST.name -> browserPackage in plan.appliedAllowedPackages
+            VpnAppMode.BLOCKLIST.name -> browserPackage !in plan.appliedDisallowedPackages
+            else -> return "unknown"
+        }
+        return if (covered) "covered" else "excluded"
+    }
+
+    private fun persistAppliedVpnPlan() {
+        runCatching {
+            val file = java.io.File(context.filesDir, "diagnostics/per_app_vpn_plan.json")
+            check(file.parentFile?.let { it.exists() || it.mkdirs() } == true)
+            file.writeText(com.google.gson.Gson().toJson(appliedPerAppVpnPlan), Charsets.UTF_8)
+        }.onFailure { error ->
+            Log.w(TAG, "Failed to persist applied per-app VPN plan", error)
         }
     }
 
@@ -544,25 +627,10 @@ class VpnTunManager(
     }
 
     fun checkAlwaysOnVpn(): Pair<String?, Boolean> {
-        val alwaysOnPkg = runCatching {
-            Settings.Secure.getString(context.contentResolver, "always_on_vpn_app")
-        }.getOrNull() ?: runCatching {
-            Settings.Global.getString(context.contentResolver, "always_on_vpn_app")
-        }.getOrNull()
-
-        val lockdownValueSecure = runCatching {
-            Settings.Secure.getInt(context.contentResolver, "always_on_vpn_lockdown", 0)
-        }.getOrDefault(0)
-        val lockdownValueGlobal = runCatching {
-            Settings.Global.getInt(context.contentResolver, "always_on_vpn_lockdown", 0)
-        }.getOrDefault(0)
-        val lockdown = lockdownValueSecure != 0 || lockdownValueGlobal != 0
-
-        if (!alwaysOnPkg.isNullOrBlank() || lockdown) {
-            Log.i(TAG, "Always-on VPN status: pkg=$alwaysOnPkg lockdown=$lockdown")
-        }
-
-        return Pair(alwaysOnPkg, lockdown)
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return null to false
+        val alwaysOn = runCatching { vpnService.isAlwaysOn }.getOrNull() ?: return null to false
+        val lockdown = runCatching { vpnService.isLockdownEnabled }.getOrDefault(false)
+        return (context.packageName.takeIf { alwaysOn }) to lockdown
     }
 
     fun isOtherVpnActive(connectivityManager: ConnectivityManager?): Boolean {

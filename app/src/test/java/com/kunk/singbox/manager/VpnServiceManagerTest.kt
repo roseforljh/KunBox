@@ -121,6 +121,17 @@ class VpnServiceManagerTest {
     }
 
     @Test
+    fun forceStopUsesEmergencyActionForBothServiceModes() {
+        val source = File("src/main/java/com/kunk/singbox/manager/VpnServiceManager.kt")
+            .readText(Charsets.UTF_8)
+        val body = source.substringAfter("fun forceStop(context: Context)")
+            .substringBefore("fun restartVpn(context: Context)")
+
+        assertTrue(body.contains("SingBoxService.ACTION_FORCE_STOP"))
+        assertTrue(body.contains("ProxyOnlyService.ACTION_FORCE_STOP"))
+    }
+
+    @Test
     fun onlyExplicitUserActionsHaveManualStopSemantics() {
         assertTrue(VpnStopInitiator.USER_UI.isManualStop)
         assertTrue(VpnStopInitiator.QUICK_SETTINGS.isManualStop)

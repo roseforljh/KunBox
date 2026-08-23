@@ -207,6 +207,35 @@ object VpnServiceManager {
             .onFailure { Log.e(TAG, "Failed to stop VPN service", it) }
     }
 
+    fun forceStop(context: Context): Result<Unit> {
+        Log.e(TAG, "forceStop: dispatching emergency stop")
+        return runCatching {
+            val appContext = context.applicationContext
+            val activeMode = VpnStateStore.getMode()
+            val stopResults = buildList {
+                if (shouldDispatchStopToService(activeMode, VpnStateStore.CoreMode.VPN)) {
+                    add(runCatching {
+                        appContext.startService(Intent(appContext, SingBoxService::class.java).apply {
+                            action = SingBoxService.ACTION_FORCE_STOP
+                        })
+                    })
+                }
+                if (shouldDispatchStopToService(activeMode, VpnStateStore.CoreMode.PROXY)) {
+                    add(runCatching {
+                        appContext.startService(Intent(appContext, ProxyOnlyService::class.java).apply {
+                            action = ProxyOnlyService.ACTION_FORCE_STOP
+                        })
+                    })
+                }
+            }
+            if (stopResults.none { it.isSuccess }) {
+                throw stopResults.firstNotNullOfOrNull { it.exceptionOrNull() }
+                    ?: IllegalStateException("Failed to send force stop commands")
+            }
+            Unit
+        }.onFailure { Log.e(TAG, "Failed to force stop VPN service", it) }
+    }
+
     fun restartVpn(context: Context) {
         Log.d(TAG, "restartVpn")
 

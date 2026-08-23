@@ -68,6 +68,7 @@ object VpnStateStore {
     private const val SNAPSHOT_JSON_ACTIVE_LABEL = "activeLabel"
     private const val SNAPSHOT_JSON_LAST_ERROR = "lastError"
     private const val SNAPSHOT_JSON_MANUALLY_STOPPED = "manuallyStopped"
+    private const val SNAPSHOT_JSON_READINESS = "readiness"
     private const val KEY_CORE_MODE = "core_mode"
     private const val KEY_LAST_APP_MODE = "last_app_mode"
     private const val KEY_LAST_ALLOWLIST_HASH = "last_allowlist_hash"
@@ -128,7 +129,9 @@ object VpnStateStore {
         @field:SerializedName(SNAPSHOT_JSON_LAST_ERROR)
         val lastError: String = "",
         @field:SerializedName(SNAPSHOT_JSON_MANUALLY_STOPPED)
-        val manuallyStopped: Boolean = false
+        val manuallyStopped: Boolean = false,
+        @field:SerializedName(SNAPSHOT_JSON_READINESS)
+        val readiness: DataPlaneReadinessSnapshot = DataPlaneReadinessSnapshot.stopped()
     )
 
     private val mmkv: MMKV by lazy {
@@ -211,14 +214,16 @@ object VpnStateStore {
         state: ServiceState? = null,
         activeLabel: String? = null,
         lastError: String? = null,
-        manuallyStopped: Boolean? = null
+        manuallyStopped: Boolean? = null,
+        readiness: DataPlaneReadinessSnapshot? = null
     ): RuntimeStateSnapshot {
         return transformRuntimeStateSnapshot { current ->
             current.copy(
                 stateOrdinal = state?.ordinal ?: current.stateOrdinal,
                 activeLabel = activeLabel ?: current.activeLabel,
                 lastError = lastError ?: current.lastError,
-                manuallyStopped = manuallyStopped ?: current.manuallyStopped
+                manuallyStopped = manuallyStopped ?: current.manuallyStopped,
+                readiness = readiness ?: current.readiness
             )
         }
     }
@@ -233,8 +238,8 @@ object VpnStateStore {
         } catch (error: Exception) {
             if (!isFileDescriptorExhaustion(error)) throw error
             val current = readRuntimeStateSnapshot() ?: readLegacyRuntimeStateSnapshot()
-            Log.e(TAG, "FD exhausted while locking runtime state; preserving current snapshot", error)
-            current
+            Log.e(TAG, "FD exhausted while locking runtime state; returning in-memory update", error)
+            buildNextRuntimeStateSnapshot(current, transform = transform)
         }
     }
 
@@ -242,10 +247,34 @@ object VpnStateStore {
         transform: (RuntimeStateSnapshot) -> RuntimeStateSnapshot
     ): RuntimeStateSnapshot {
         val current = readRuntimeStateSnapshot() ?: readLegacyRuntimeStateSnapshot()
-        val updated = transform(current).copy(
-            generation = nextRuntimeGeneration(current.generation, SystemClock.elapsedRealtimeNanos())
-        )
+        val updated = buildNextRuntimeStateSnapshot(current, transform = transform)
         return persistRuntimeStateSnapshot(updated, previous = current)
+    }
+
+    internal fun buildNextRuntimeStateSnapshot(
+        current: RuntimeStateSnapshot,
+        monotonicCandidate: Long = SystemClock.elapsedRealtimeNanos(),
+        transform: (RuntimeStateSnapshot) -> RuntimeStateSnapshot
+    ): RuntimeStateSnapshot {
+        val generation = nextRuntimeGeneration(current.generation, monotonicCandidate)
+        return normalizeRuntimeStateSnapshot(
+            transform(current).copy(generation = generation)
+        ).let { updated ->
+            updated.copy(readiness = updated.readiness.copy(generation = generation))
+        }
+    }
+
+    internal fun persistRuntimeStateSnapshotBestEffort(snapshot: RuntimeStateSnapshot): Boolean {
+        return runCatching {
+            runtimeStateFileLock.withLock {
+                val current = readRuntimeStateSnapshot() ?: readLegacyRuntimeStateSnapshot()
+                if (current.generation > snapshot.generation) return@withLock false
+                persistRuntimeStateSnapshot(snapshot, previous = current)
+                true
+            }
+        }.onFailure { error ->
+            Log.e(TAG, "Failed to persist runtime state snapshot generation=${snapshot.generation}", error)
+        }.getOrDefault(false)
     }
 
     private fun persistRuntimeStateSnapshot(
@@ -291,6 +320,7 @@ object VpnStateStore {
         return gson.toJson(snapshot)
     }
 
+    @Suppress("CyclomaticComplexMethod")
     internal fun decodeRuntimeStateSnapshot(raw: String): RuntimeStateSnapshot? {
         if (raw.isBlank()) return null
         return runCatching {
@@ -319,13 +349,18 @@ object VpnStateStore {
                 ?.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isBoolean }
                 ?.asBoolean
                 ?: return@runCatching null
+            val readinessValue = snapshot.get(SNAPSHOT_JSON_READINESS)
+                ?.takeIf { it.isJsonObject }
+                ?.let { gson.fromJson(it, DataPlaneReadinessSnapshot::class.java) }
+                ?: DataPlaneReadinessSnapshot.stopped()
             normalizeRuntimeStateSnapshot(
                 RuntimeStateSnapshot(
                     generation = generationValue,
                     stateOrdinal = stateOrdinalValue,
                     activeLabel = activeLabelValue,
                     lastError = lastErrorValue,
-                    manuallyStopped = manuallyStoppedValue
+                    manuallyStopped = manuallyStoppedValue,
+                    readiness = readinessValue
                 )
             )
         }.onFailure { error ->
@@ -334,12 +369,14 @@ object VpnStateStore {
     }
 
     internal fun normalizeRuntimeStateSnapshot(snapshot: RuntimeStateSnapshot): RuntimeStateSnapshot {
+        val generation = snapshot.generation.coerceAtLeast(0L)
         return snapshot.copy(
-            generation = snapshot.generation.coerceAtLeast(0L),
+            generation = generation,
             stateOrdinal = ServiceState.values().getOrNull(snapshot.stateOrdinal)?.ordinal
                 ?: ServiceState.STOPPED.ordinal,
             activeLabel = snapshot.activeLabel.orEmpty(),
-            lastError = snapshot.lastError.orEmpty()
+            lastError = snapshot.lastError.orEmpty(),
+            readiness = snapshot.readiness.normalized().copy(generation = generation)
         )
     }
 
@@ -650,7 +687,8 @@ object VpnStateStore {
                 current.copy(
                     stateOrdinal = ServiceState.STOPPED.ordinal,
                     activeLabel = "",
-                    lastError = if (preserveLastError) current.lastError else ""
+                    lastError = if (preserveLastError) current.lastError else "",
+                    readiness = DataPlaneReadinessSnapshot.stopped(current.readiness.serviceInstanceId)
                 )
             }
         }

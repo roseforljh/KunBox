@@ -5,6 +5,7 @@ import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.NetworkRequest
+import android.os.Build
 import android.util.Log
 
 class ForeignVpnMonitor(
@@ -18,12 +19,34 @@ class ForeignVpnMonitor(
         val isStarting: Boolean
         val isRunning: Boolean
         val isConnectingTun: Boolean
+        fun onVpnNetworkObserved(network: Network, foreign: Boolean) {}
+        fun onVpnNetworkLost(network: Network, owned: Boolean) {}
     }
 
     private var callbacks: Callbacks? = null
     private var connectivityManager: ConnectivityManager? = null
     private var callback: ConnectivityManager.NetworkCallback? = null
     private var preExistingVpnNetworks: Set<Network> = emptySet()
+    @Volatile private var ownedVpnNetwork: Network? = null
+
+    fun setOwnedVpnNetwork(network: Network?) {
+        ownedVpnNetwork = network
+    }
+
+    fun findOwnedVpnNetwork(ownerUid: Int): Network? {
+        val cm = connectivityManager ?: context.getSystemService(ConnectivityManager::class.java)
+        connectivityManager = cm
+        cm ?: return null
+        return runCatching {
+            @Suppress("DEPRECATION")
+            cm.allNetworks.firstOrNull { network ->
+                val caps = cm.getNetworkCapabilities(network) ?: return@firstOrNull false
+                if (!caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN)) return@firstOrNull false
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) caps.ownerUid == ownerUid
+                else network !in preExistingVpnNetworks
+            }
+        }.getOrNull()
+    }
 
     fun init(callbacks: Callbacks) {
         this.callbacks = callbacks
@@ -52,6 +75,7 @@ class ForeignVpnMonitor(
         return false
     }
 
+    @Suppress("CognitiveComplexMethod")
     fun start() {
         if (callback != null) return
 
@@ -71,7 +95,17 @@ class ForeignVpnMonitor(
             override fun onAvailable(network: Network) {
                 val caps = cm.getNetworkCapabilities(network) ?: return
                 if (!caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN)) return
-                if (preExistingVpnNetworks.contains(network)) return
+                if (ownedVpnNetwork == null && (callbacks?.isConnectingTun == true || callbacks?.isStarting == true)) {
+                    val belongsToThisService = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                        caps.ownerUid == context.applicationInfo.uid
+                    } else {
+                        network !in preExistingVpnNetworks
+                    }
+                    if (belongsToThisService) ownedVpnNetwork = network
+                }
+                val owned = network == ownedVpnNetwork
+                callbacks?.onVpnNetworkObserved(network, foreign = !owned)
+                if (owned || preExistingVpnNetworks.contains(network)) return
                 if (callbacks?.isConnectingTun == true) return
 
                 // Do not abort startup if foreign VPN is detected.
@@ -79,6 +113,10 @@ class ForeignVpnMonitor(
                 if (callbacks?.isStarting == true && callbacks?.isRunning != true) {
                     Log.w(TAG, "Foreign VPN detected during startup, ignoring: $network")
                 }
+            }
+
+            override fun onLost(network: Network) {
+                callbacks?.onVpnNetworkLost(network, owned = network == ownedVpnNetwork)
             }
         }
 
@@ -98,6 +136,7 @@ class ForeignVpnMonitor(
         }
         callback = null
         preExistingVpnNetworks = emptySet()
+        ownedVpnNetwork = null
     }
 
     fun cleanup() {

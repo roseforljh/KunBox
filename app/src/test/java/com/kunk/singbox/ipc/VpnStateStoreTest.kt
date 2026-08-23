@@ -61,7 +61,8 @@ class VpnStateStoreTest {
             stateOrdinal = ServiceState.RUNNING.ordinal,
             activeLabel = "节点 A",
             lastError = "",
-            manuallyStopped = false
+            manuallyStopped = false,
+            readiness = DataPlaneReadinessSnapshot.stopped().copy(generation = 42L)
         )
 
         assertEquals(
@@ -87,7 +88,7 @@ class VpnStateStoreTest {
         val keys = JsonParser.parseString(encoded).asJsonObject.keySet()
 
         assertEquals(
-            setOf("generation", "stateOrdinal", "activeLabel", "lastError", "manuallyStopped"),
+            setOf("generation", "stateOrdinal", "activeLabel", "lastError", "manuallyStopped", "readiness"),
             keys
         )
         assertNull(VpnStateStore.decodeRuntimeStateSnapshot("{}"))

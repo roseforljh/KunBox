@@ -72,6 +72,31 @@ class CoreManagerLockPolicyTest {
     }
 
     @Test
+    fun hardStopHasAProcessWatchdogWhenCleanupHangs() {
+        val shutdownSource = File(
+            "src/main/java/com/kunk/singbox/service/manager/ShutdownManager.kt"
+        ).readText(Charsets.UTF_8)
+
+        assertTrue(shutdownSource.contains("STOP_WATCHDOG_TIMEOUT_MS"))
+        assertTrue(shutdownSource.contains("withTimeout(STOP_WATCHDOG_TIMEOUT_MS)"))
+        assertTrue(shutdownSource.contains("callbacks.forceStopProcess(\"shutdown_timeout\")"))
+    }
+
+    @Test
+    fun duplicateVpnStopIsIgnoredBeforeReplacingRecoveryLease() {
+        val source = File("src/main/java/com/kunk/singbox/service/SingBoxService.kt")
+            .readText(Charsets.UTF_8)
+        val stopBranch = source
+            .substringAfter("SingBoxService.ACTION_STOP ->")
+            .substringBefore("SingBoxService.ACTION_FORCE_STOP ->")
+
+        val guardIndex = stopBranch.indexOf("shouldIgnoreDuplicateHardStop")
+        val leaseIndex = stopBranch.indexOf("setNonResourceRecoveryIntent(false)")
+        assertTrue(guardIndex >= 0)
+        assertTrue(leaseIndex > guardIndex)
+    }
+
+    @Test
     fun lifecycleTokenRejectsStoppingAndStaleStarts() {
         assertTrue(
             CoreManager.isStartTokenCurrent(

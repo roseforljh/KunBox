@@ -48,6 +48,7 @@ class VpnTileService : TileService() {
     private var bindTimeoutJob: Job? = null
     @Volatile private var lastServiceState: ServiceState = ServiceState.STOPPED
     @Volatile private var lastServiceLabel: String = ""
+    @Volatile private var lastReadiness = com.kunk.singbox.ipc.DataPlaneReadinessSnapshot.stopped()
     private var serviceBound = false
     private var bindRequested = false
     private var tapPending = false
@@ -69,22 +70,18 @@ class VpnTileService : TileService() {
 
     private val remoteCallback = object : ISingBoxServiceCallback.Stub() {
         override fun onStateChanged(
-            state: Int,
-            activeLabel: String?,
-            lastError: String?,
-            manuallyStopped: Boolean,
-            generation: Long
+            @Suppress("UNUSED_PARAMETER") state: Int,
+            @Suppress("UNUSED_PARAMETER") activeLabel: String?,
+            @Suppress("UNUSED_PARAMETER") lastError: String?,
+            @Suppress("UNUSED_PARAMETER") manuallyStopped: Boolean,
+            @Suppress("UNUSED_PARAMETER") generation: Long
         ) {
             serviceScope.launch(Dispatchers.Main) {
-                val snapshot = VpnStateStore.RuntimeStateSnapshot(
-                    generation = generation,
-                    stateOrdinal = state,
-                    activeLabel = activeLabel.orEmpty(),
-                    lastError = lastError.orEmpty(),
-                    manuallyStopped = manuallyStopped
-                )
+                val snapshot = runCatching {
+                    remoteService?.stateSnapshot?.toRuntimeStateSnapshot()
+                }.getOrNull() ?: return@launch
                 if (!applyRemoteStateSnapshot(snapshot)) {
-                    Log.w(TAG, "Ignored stale tile snapshot generation=$generation")
+                    Log.w(TAG, "Ignored stale tile snapshot generation=${snapshot.generation}")
                     return@launch
                 }
                 updateTile()
@@ -100,6 +97,7 @@ class VpnTileService : TileService() {
         return stateGenerationGate.tryCommit(snapshot.generation) {
             lastServiceState = mappedState
             lastServiceLabel = snapshot.activeLabel
+            lastReadiness = snapshot.readiness
             if (shouldCompleteStartingSequence(mappedState)) {
                 isStartingSequence = false
                 startSequenceId = 0L
@@ -208,6 +206,13 @@ class VpnTileService : TileService() {
     private fun handleClick() {
         val tile = qsTile ?: return
 
+        if (VpnStateStore.getPending() == "stopping" ||
+            (lastServiceState == ServiceState.STOPPING && isCoreServiceAvailable())
+        ) {
+            Log.i(TAG, "Ignoring tile tap while VPN stop is in progress")
+            return
+        }
+
         val isActive = tile.state == Tile.STATE_ACTIVE
 
         if (isActive) {
@@ -226,7 +231,7 @@ class VpnTileService : TileService() {
             executeStopVpn()
         } else {
 
-            tile.state = Tile.STATE_ACTIVE
+            tile.state = Tile.STATE_UNAVAILABLE
             tile.label = getString(R.string.connection_connecting)
             tile.updateTile()
 
@@ -300,13 +305,26 @@ class VpnTileService : TileService() {
 
         val tile = qsTile ?: return
 
-        if (isStartingSequence) {
-            tile.state = Tile.STATE_ACTIVE
+        val dataPlaneReady = lastReadiness.isReady(
+            serviceState = effectiveState,
+            mode = VpnStateStore.getMode(),
+            ipcBound = serviceBound,
+            apiLevel = android.os.Build.VERSION.SDK_INT,
+            nowElapsedMs = SystemClock.elapsedRealtime()
+        )
+        if (lastReadiness.status == com.kunk.singbox.ipc.DataPlaneStatus.FAILED_BLOCKED) {
+            tile.state = Tile.STATE_UNAVAILABLE
+        } else if (lastReadiness.status == com.kunk.singbox.ipc.DataPlaneStatus.FAILED_UNPROTECTED) {
+            tile.state = Tile.STATE_INACTIVE
+        } else if (isStartingSequence) {
+            tile.state = Tile.STATE_UNAVAILABLE
         } else {
             when (effectiveState) {
-                ServiceState.STARTING,
-                ServiceState.RUNNING -> {
-                    tile.state = Tile.STATE_ACTIVE
+                ServiceState.STARTING -> tile.state = Tile.STATE_UNAVAILABLE
+                ServiceState.RUNNING -> tile.state = if (dataPlaneReady) {
+                    Tile.STATE_ACTIVE
+                } else {
+                    Tile.STATE_UNAVAILABLE
                 }
                 ServiceState.STOPPING -> {
                     tile.state = Tile.STATE_UNAVAILABLE
@@ -467,6 +485,7 @@ class VpnTileService : TileService() {
         persistVpnPending("")
         persistVpnState(false)
         lastServiceState = ServiceState.STOPPED
+        lastReadiness = com.kunk.singbox.ipc.DataPlaneReadinessSnapshot.stopped()
 
         withContext(Dispatchers.Main) {
             revertToInactive()
@@ -518,6 +537,7 @@ class VpnTileService : TileService() {
             persistVpnState(false)
             persistVpnPending("")
             lastServiceState = ServiceState.STOPPED
+            lastReadiness = com.kunk.singbox.ipc.DataPlaneReadinessSnapshot.stopped()
             updateTile()
         }
     }
@@ -538,6 +558,7 @@ class VpnTileService : TileService() {
                 persistVpnState(false)
                 persistVpnPending("")
                 lastServiceState = ServiceState.STOPPED
+                lastReadiness = com.kunk.singbox.ipc.DataPlaneReadinessSnapshot.stopped()
                 updateTile()
             }
         }

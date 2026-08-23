@@ -25,6 +25,14 @@ class DashboardViewModelStopTileStateTest {
         assertTrue(body.contains("ConnectionState.Disconnecting"))
         assertTrue(body.contains("ServiceState.STOPPED"))
         assertTrue(body.contains("performDisconnect()"))
+        assertTrue(body.contains("VpnServiceManager.forceStop(context)"))
         assertTrue(!body.contains("VpnTileService.persistVpnState(false)"))
+    }
+
+    @Test
+    fun disconnectingToggleDoesNotSendDuplicateStopCommands() {
+        val source = File("src/main/java/com/kunk/singbox/viewmodel/DashboardViewModel.kt").readText()
+
+        assertTrue(source.contains("ConnectionState.Disconnecting -> Unit"))
     }
 }

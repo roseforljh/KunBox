@@ -69,6 +69,7 @@ import com.kunk.singbox.utils.VersionInfo
 import com.kunk.singbox.utils.perf.BackgroundResourceGuard
 import com.kunk.singbox.utils.perf.ResourceGuardRegistration
 import com.kunk.singbox.utils.perf.ResourceGuardOwner
+import com.kunk.singbox.utils.perf.isResourceRecoveryBudgetError
 import com.kunk.singbox.utils.perf.readProcessStartedAtEpochMs
 import io.nekohasekai.libbox.CommandServer
 import io.nekohasekai.libbox.CommandServerHandler
@@ -96,6 +97,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collect
@@ -104,6 +106,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 import java.io.File
 import java.net.InetAddress
 import java.net.InetSocketAddress
@@ -129,6 +132,7 @@ class ProxyOnlyService : Service() {
 
         const val ACTION_START = "com.kunk.singbox.START"
         const val ACTION_STOP = "com.kunk.singbox.STOP"
+        val ACTION_FORCE_STOP = SingBoxService.ACTION_FORCE_STOP
         const val ACTION_SWITCH_NODE = "com.kunk.singbox.SWITCH_NODE"
         const val ACTION_PREPARE_RESTART = "com.kunk.singbox.PREPARE_RESTART"
         const val ACTION_RESET_CONNECTIONS = "com.kunk.singbox.RESET_CONNECTIONS"
@@ -629,6 +633,10 @@ class ProxyOnlyService : Service() {
                 }
             }
             ACTION_STOP -> {
+                if (ServiceStateHolder.shouldIgnoreDuplicateHardStop(isStopping, stopSelfRequested)) {
+                    Log.i(TAG, "Ignoring duplicate ACTION_STOP while cleanup is already running")
+                    return START_NOT_STICKY
+                }
                 val stopInitiator = VpnStopInitiator.fromWireValue(
                     intent.getStringExtra(SingBoxService.EXTRA_STOP_INITIATOR)
                 )
@@ -643,6 +651,9 @@ class ProxyOnlyService : Service() {
                 VpnTileService.persistVpnPending("stopping")
                 notifyRemoteState(state = ServiceState.STOPPING)
                 stopCore(stopService = true, recoveryIntentLease = recoveryIntentLease)
+            }
+            ACTION_FORCE_STOP -> {
+                forceStopProcess("explicit_force_stop")
             }
             ACTION_SWITCH_NODE -> {
                 val recoveryIntentLease = setNonResourceRecoveryIntent(false)
@@ -1182,6 +1193,10 @@ class ProxyOnlyService : Service() {
         recoveryIntentLease: RecoveryIntentLease,
         resourceRecoveryAttemptId: Long? = recoveryIntentLease.attemptId
     ): Job? {
+        if (ServiceStateHolder.shouldIgnoreDuplicateHardStop(isStopping, stopSelfRequested)) {
+            Log.i(TAG, "Ignoring duplicate hard stop while cleanup is already running")
+            return cleanupJob
+        }
         var jobToJoin: Job? = null
         var serverToClose: CommandServer? = null
         var runtimeClientToDisconnect: CommandClient? = null
@@ -1365,6 +1380,16 @@ class ProxyOnlyService : Service() {
         }
         synchronized(this) {
             cleanupJob = job
+        }
+        if (stopService) {
+            cleanupScope.launch {
+                try {
+                    withTimeout(6_000L) { job.join() }
+                } catch (_: TimeoutCancellationException) {
+                    Log.e(TAG, "Stop watchdog fired after 6000ms")
+                    forceStopProcess("shutdown_timeout")
+                }
+            }
         }
         job.invokeOnCompletion {
             synchronized(this) {
@@ -1940,7 +1965,21 @@ class ProxyOnlyService : Service() {
                     notifyRemoteState()
                 }
             }
+
+            override fun clearBudgetExhaustedError() {
+                clearResourceRecoveryError()
+            }
         })
+    }
+
+    private fun clearResourceRecoveryError() = synchronized(this) {
+        if (!isResourceRecoveryBudgetError(lastErrorFlow.value)) return@synchronized
+        setLastError(null)
+        if (isResourceRecoveryBudgetError(VpnStateStore.getLastError())) {
+            VpnStateStore.setLastError(null)
+        }
+        requestNotificationUpdate(force = true)
+        notifyRemoteState()
     }
 
     private fun restartCoreForResourceRecovery(reason: String, attemptId: Long): Boolean {
@@ -2094,8 +2133,48 @@ class ProxyOnlyService : Service() {
             state = st,
             activeLabel = activeLabel,
             lastError = lastErrorFlow.value.orEmpty(),
-            manuallyStopped = VpnStateStore.isManuallyStopped()
+            manuallyStopped = VpnStateStore.isManuallyStopped(),
+            readiness = SingBoxIpcHub.currentReadiness().copy(
+                status = when (st) {
+                    ServiceState.RUNNING -> com.kunk.singbox.ipc.DataPlaneStatus.READY
+                    ServiceState.STARTING -> com.kunk.singbox.ipc.DataPlaneStatus.STARTING
+                    ServiceState.STOPPING -> com.kunk.singbox.ipc.DataPlaneStatus.RECOVERING
+                    ServiceState.STOPPED -> com.kunk.singbox.ipc.DataPlaneStatus.STOPPED
+                },
+                tunEstablished = false,
+                systemVpnTransport = false,
+                coreReady = st == ServiceState.RUNNING,
+                selectorReady = st == ServiceState.RUNNING,
+                recoveryActive = st == ServiceState.STOPPING,
+                routingScope = "proxy",
+                lastReadinessReason = "proxy_${st.name.lowercase()}"
+            )
         )
+    }
+
+    private fun forceStopProcess(reason: String) {
+        val manuallyStopped = VpnStateStore.isManuallyStopped()
+        Log.e(TAG, "Force stopping proxy process reason=$reason manuallyStopped=$manuallyStopped")
+        runCatching {
+            cancelResourceGuard()
+            isRunning = false
+            isStarting = false
+            NetworkClient.onVpnStateChanged(false)
+            VpnTileService.persistVpnState(false)
+            VpnStateStore.clearRuntimeState(preserveLastError = manuallyStopped)
+            if (manuallyStopped) {
+                VpnStateStore.setMode(VpnStateStore.CoreMode.NONE)
+                VpnStateStore.clearRecoveryClaim()
+            }
+            VpnTileService.persistVpnPending("")
+            notifyRemoteState(state = ServiceState.STOPPED)
+            updateTileState()
+            runCatching { stopForeground(STOP_FOREGROUND_REMOVE) }
+        }.onFailure { error ->
+            Log.e(TAG, "Failed to persist proxy force-stop state", error)
+        }
+        stopSelf()
+        Process.killProcess(Process.myPid())
     }
 
     private fun updateTileState() {

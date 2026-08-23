@@ -9,6 +9,26 @@ import java.io.File
 
 class ResourceRecoveryGateTest {
     @Test
+    fun `budget exhaustion notice is emitted once until resources recover`() {
+        val gate = ResourceRecoveryNoticeGate()
+
+        assertTrue(gate.claim())
+        assertFalse(gate.claim())
+        assertTrue(gate.clear())
+        assertFalse(gate.clear())
+        assertTrue(gate.claim())
+    }
+
+    @Test
+    fun `only resource budget errors qualify for healthy clearing`() {
+        assertTrue(
+            isResourceRecoveryBudgetError("Resource recovery budget exhausted: process_reclaim:fd_emergency")
+        )
+        assertFalse(isResourceRecoveryBudgetError("Failed to start VPN"))
+        assertFalse(isResourceRecoveryBudgetError(null))
+    }
+
+    @Test
     fun `large native socket surplus is marked as pre connect gap`() {
         assertEquals("proc_unavailable", classifySocketAttribution(null, 10))
         assertEquals("attributed", classifySocketAttribution(80, 60))

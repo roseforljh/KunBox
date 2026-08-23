@@ -16,6 +16,7 @@ import com.kunk.singbox.service.manager.ServiceStateHolder
 import com.kunk.singbox.service.manager.UrlTestTagMatcher
 import com.kunk.singbox.utils.perf.PerfTracer
 import java.lang.ref.WeakReference
+import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.locks.ReentrantLock
 import java.util.concurrent.ScheduledThreadPoolExecutor
@@ -29,15 +30,52 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 
 internal fun Bundle.toRuntimeStateSnapshot(): VpnStateStore.RuntimeStateSnapshot {
+    val readinessBundle = getBundle(SingBoxIpcHub.SNAPSHOT_READINESS)
+    val generation = getLong(SingBoxIpcHub.SNAPSHOT_GENERATION, 0L)
     return VpnStateStore.normalizeRuntimeStateSnapshot(
         VpnStateStore.RuntimeStateSnapshot(
-            generation = getLong(SingBoxIpcHub.SNAPSHOT_GENERATION, 0L),
+            generation = generation,
             stateOrdinal = getInt(SingBoxIpcHub.SNAPSHOT_STATE, ServiceState.STOPPED.ordinal),
             activeLabel = getString(SingBoxIpcHub.SNAPSHOT_ACTIVE_LABEL).orEmpty(),
             lastError = getString(SingBoxIpcHub.SNAPSHOT_LAST_ERROR).orEmpty(),
-            manuallyStopped = getBoolean(SingBoxIpcHub.SNAPSHOT_MANUALLY_STOPPED, false)
+            manuallyStopped = getBoolean(SingBoxIpcHub.SNAPSHOT_MANUALLY_STOPPED, false),
+            readiness = readinessBundle?.toReadinessSnapshot(generation)
+                ?: DataPlaneReadinessSnapshot.stopped()
         )
     )
+}
+
+private fun Bundle.toReadinessSnapshot(generation: Long): DataPlaneReadinessSnapshot {
+    return DataPlaneReadinessSnapshot(
+        schemaVersion = getInt(SingBoxIpcHub.READINESS_SCHEMA_VERSION, 0),
+        status = enumValueOrDefault(getString(SingBoxIpcHub.READINESS_STATUS), DataPlaneStatus.STOPPED),
+        tunEstablished = getBoolean(SingBoxIpcHub.READINESS_TUN_ESTABLISHED, false),
+        systemVpnTransport = getBoolean(SingBoxIpcHub.READINESS_SYSTEM_VPN, false),
+        systemVpnOwnerStatus = enumValueOrDefault(
+            getString(SingBoxIpcHub.READINESS_OWNER_STATUS),
+            VpnOwnerStatus.UNKNOWN
+        ),
+        coreReady = getBoolean(SingBoxIpcHub.READINESS_CORE_READY, false),
+        selectorReady = getBoolean(SingBoxIpcHub.READINESS_SELECTOR_READY, false),
+        recoveryActive = getBoolean(SingBoxIpcHub.READINESS_RECOVERY_ACTIVE, false),
+        routingScope = getString(SingBoxIpcHub.READINESS_ROUTING_SCOPE).orEmpty(),
+        lockdownStatus = enumValueOrDefault(
+            getString(SingBoxIpcHub.READINESS_LOCKDOWN_STATUS),
+            VpnLockdownStatus.UNKNOWN
+        ),
+        foreignVpnDetected = getBoolean(SingBoxIpcHub.READINESS_FOREIGN_VPN, false),
+        ownedVpnNetworkLost = getBoolean(SingBoxIpcHub.READINESS_OWNED_VPN_LOST, false),
+        ownedVpnNetworkHandle = getLong(SingBoxIpcHub.READINESS_OWNED_NETWORK, 0L),
+        observedVpnNetworkHandle = getLong(SingBoxIpcHub.READINESS_OBSERVED_NETWORK, 0L),
+        lastReadinessReason = getString(SingBoxIpcHub.READINESS_REASON).orEmpty(),
+        updatedAtElapsedMs = getLong(SingBoxIpcHub.READINESS_UPDATED_AT, 0L),
+        serviceInstanceId = getString(SingBoxIpcHub.READINESS_SERVICE_INSTANCE).orEmpty(),
+        generation = generation
+    ).normalized()
+}
+
+private inline fun <reified T : Enum<T>> enumValueOrDefault(value: String?, fallback: T): T {
+    return value?.let { enumValue -> enumValues<T>().firstOrNull { it.name == enumValue } } ?: fallback
 }
 
 @Suppress("TooManyFunctions")
@@ -49,6 +87,24 @@ object SingBoxIpcHub {
     internal const val SNAPSHOT_ACTIVE_LABEL = "active_label"
     internal const val SNAPSHOT_LAST_ERROR = "last_error"
     internal const val SNAPSHOT_MANUALLY_STOPPED = "manually_stopped"
+    internal const val SNAPSHOT_READINESS = "readiness"
+    internal const val READINESS_SCHEMA_VERSION = "schema_version"
+    internal const val READINESS_STATUS = "status"
+    internal const val READINESS_TUN_ESTABLISHED = "tun_established"
+    internal const val READINESS_SYSTEM_VPN = "system_vpn_transport"
+    internal const val READINESS_OWNER_STATUS = "owner_status"
+    internal const val READINESS_CORE_READY = "core_ready"
+    internal const val READINESS_SELECTOR_READY = "selector_ready"
+    internal const val READINESS_RECOVERY_ACTIVE = "recovery_active"
+    internal const val READINESS_ROUTING_SCOPE = "routing_scope"
+    internal const val READINESS_LOCKDOWN_STATUS = "lockdown_status"
+    internal const val READINESS_FOREIGN_VPN = "foreign_vpn_detected"
+    internal const val READINESS_OWNED_VPN_LOST = "owned_vpn_lost"
+    internal const val READINESS_OWNED_NETWORK = "owned_vpn_network"
+    internal const val READINESS_OBSERVED_NETWORK = "observed_vpn_network"
+    internal const val READINESS_REASON = "reason"
+    internal const val READINESS_UPDATED_AT = "updated_at_elapsed_ms"
+    internal const val READINESS_SERVICE_INSTANCE = "service_instance_id"
 
     private const val MIN_BROADCAST_INTERVAL_MS = 50L
 
@@ -69,8 +125,12 @@ object SingBoxIpcHub {
 
     private val stateLock = Any()
 
+    private val serviceInstanceId = UUID.randomUUID().toString()
+
     @Volatile
-    private var stateSnapshot = VpnStateStore.RuntimeStateSnapshot()
+    private var stateSnapshot = VpnStateStore.RuntimeStateSnapshot(
+        readiness = DataPlaneReadinessSnapshot.stopped(serviceInstanceId)
+    )
 
     private val callbacks = RemoteCallbackList<ISingBoxServiceCallback>()
 
@@ -79,6 +139,9 @@ object SingBoxIpcHub {
     private val lastBroadcastAtMs = AtomicLong(0L)
     private val broadcastPending = AtomicBoolean(false)
     private val broadcasting = AtomicBoolean(false)
+    private val heartbeatStarted = AtomicBoolean(false)
+    private val lastPersistedAtMs = AtomicLong(0L)
+    @Volatile private var lastPersistedSafetyKey: String = ""
     private val broadcastLock = ReentrantLock()
     private val callbackBroadcastLock = ReentrantLock()
 
@@ -104,10 +167,30 @@ object SingBoxIpcHub {
         synchronized(stateLock) {
             val persisted = VpnStateStore.getRuntimeStateSnapshot()
             if (persisted.generation >= stateSnapshot.generation) {
-                stateSnapshot = persisted
+                stateSnapshot = persisted.copy(
+                    readiness = DataPlaneReadinessSnapshot.stopped(serviceInstanceId)
+                        .copy(generation = persisted.generation)
+                )
             }
         }
         log("SingBoxIpcService registered")
+        startReadinessHeartbeat()
+    }
+
+    fun serviceInstanceId(): String = serviceInstanceId
+
+    private fun startReadinessHeartbeat() {
+        if (!heartbeatStarted.compareAndSet(false, true)) return
+        broadcastScheduler.scheduleWithFixedDelay(
+            {
+                if (currentLiveCoreState() != null) {
+                    updateReadiness { it }
+                }
+            },
+            DataPlaneReadinessSnapshot.HEARTBEAT_INTERVAL_MS,
+            DataPlaneReadinessSnapshot.HEARTBEAT_INTERVAL_MS,
+            TimeUnit.MILLISECONDS
+        )
     }
 
     fun unregisterService() {
@@ -125,14 +208,22 @@ object SingBoxIpcHub {
         }
         synchronized(stateLock) {
             val current = stateSnapshot
-            VpnStateStore.clearRuntimeState(
-                preserveLastError = shouldPreserveLastErrorOnBinderDied(
-                    lastError = current.lastError,
-                    manuallyStopped = current.manuallyStopped
+            stateSnapshot = VpnStateStore.buildNextRuntimeStateSnapshot(current) { snapshot ->
+                snapshot.copy(
+                    stateOrdinal = ServiceState.STOPPED.ordinal,
+                    activeLabel = "",
+                    lastError = snapshot.lastError.takeIf {
+                        shouldPreserveLastErrorOnBinderDied(it, snapshot.manuallyStopped)
+                    }.orEmpty(),
+                    readiness = DataPlaneReadinessSnapshot.stopped(serviceInstanceId).copy(
+                        status = DataPlaneStatus.FAILED_UNPROTECTED,
+                        lastReadinessReason = "ipc_service_died",
+                        updatedAtElapsedMs = SystemClock.elapsedRealtime()
+                    )
                 )
-            )
-            stateSnapshot = VpnStateStore.getRuntimeStateSnapshot()
+            }
         }
+        persistAndBroadcast(stateSnapshot)
         Log.w(TAG, "SingBoxIpcService binder died")
         runCatching {
             logRepo.addLog("WARN [IPC] SingBoxIpcService binder died")
@@ -211,6 +302,10 @@ object SingBoxIpcHub {
         return currentStateSnapshot().toBundle()
     }
 
+    fun currentReadiness(): DataPlaneReadinessSnapshot = synchronized(stateLock) {
+        stateSnapshot.readiness
+    }
+
     fun getLastStateUpdateTime(): Long = lastStateUpdateAtMs.get()
 
     private fun currentStateSnapshot(): VpnStateStore.RuntimeStateSnapshot {
@@ -223,9 +318,15 @@ object SingBoxIpcHub {
             if (visibleStateOrdinal == snapshot.stateOrdinal) {
                 snapshot
             } else {
-                VpnStateStore.updateRuntimeStateSnapshot(
-                    state = ServiceState.values().getOrNull(visibleStateOrdinal) ?: ServiceState.STOPPED
-                ).also { stateSnapshot = it }
+                snapshot.copy(
+                    stateOrdinal = visibleStateOrdinal,
+                    readiness = snapshot.readiness.copy(
+                        status = DataPlaneStatus.FAILED_UNPROTECTED,
+                        coreReady = false,
+                        selectorReady = false,
+                        lastReadinessReason = "live_core_missing"
+                    )
+                )
             }
         }
     }
@@ -237,14 +338,36 @@ object SingBoxIpcHub {
             putString(SNAPSHOT_ACTIVE_LABEL, activeLabel)
             putString(SNAPSHOT_LAST_ERROR, lastError)
             putBoolean(SNAPSHOT_MANUALLY_STOPPED, manuallyStopped)
+            putBundle(SNAPSHOT_READINESS, readiness.toBundle())
         }
+    }
+
+    private fun DataPlaneReadinessSnapshot.toBundle(): Bundle = Bundle().apply {
+        putInt(READINESS_SCHEMA_VERSION, schemaVersion)
+        putString(READINESS_STATUS, status.name)
+        putBoolean(READINESS_TUN_ESTABLISHED, tunEstablished)
+        putBoolean(READINESS_SYSTEM_VPN, systemVpnTransport)
+        putString(READINESS_OWNER_STATUS, systemVpnOwnerStatus.name)
+        putBoolean(READINESS_CORE_READY, coreReady)
+        putBoolean(READINESS_SELECTOR_READY, selectorReady)
+        putBoolean(READINESS_RECOVERY_ACTIVE, recoveryActive)
+        putString(READINESS_ROUTING_SCOPE, routingScope)
+        putString(READINESS_LOCKDOWN_STATUS, lockdownStatus.name)
+        putBoolean(READINESS_FOREIGN_VPN, foreignVpnDetected)
+        putBoolean(READINESS_OWNED_VPN_LOST, ownedVpnNetworkLost)
+        putLong(READINESS_OWNED_NETWORK, ownedVpnNetworkHandle)
+        putLong(READINESS_OBSERVED_NETWORK, observedVpnNetworkHandle)
+        putString(READINESS_REASON, lastReadinessReason)
+        putLong(READINESS_UPDATED_AT, updatedAtElapsedMs)
+        putString(READINESS_SERVICE_INSTANCE, serviceInstanceId)
     }
 
     fun update(
         state: ServiceState? = null,
         activeLabel: String? = null,
         lastError: String? = null,
-        manuallyStopped: Boolean? = null
+        manuallyStopped: Boolean? = null,
+        readiness: DataPlaneReadinessSnapshot? = null
     ) {
         val updateStart = SystemClock.elapsedRealtime()
         val updatedSnapshot = synchronized(stateLock) {
@@ -253,25 +376,62 @@ object SingBoxIpcHub {
                 val oldState = stateNames.getOrNull(current.stateOrdinal) ?: "UNKNOWN"
                 log("state update: $oldState -> ${it.name}")
             }
-            VpnStateStore.updateRuntimeStateSnapshot(
-                state = state,
-                activeLabel = activeLabel,
-                lastError = lastError,
-                manuallyStopped = manuallyStopped
-            ).also { stateSnapshot = it }
+            VpnStateStore.buildNextRuntimeStateSnapshot(current) { snapshot ->
+                snapshot.copy(
+                    stateOrdinal = state?.ordinal ?: snapshot.stateOrdinal,
+                    activeLabel = activeLabel ?: snapshot.activeLabel,
+                    lastError = lastError ?: snapshot.lastError,
+                    manuallyStopped = manuallyStopped ?: snapshot.manuallyStopped,
+                    readiness = readiness?.copy(
+                        serviceInstanceId = serviceInstanceId,
+                        updatedAtElapsedMs = readiness.updatedAtElapsedMs.takeIf { it > 0L }
+                            ?: SystemClock.elapsedRealtime()
+                    ) ?: snapshot.readiness
+                )
+            }.also { stateSnapshot = it }
         }
-
-        lastStateUpdateAtMs.set(SystemClock.elapsedRealtime())
-        broadcastLock.withLock {
-            broadcastPending.set(true)
-            scheduleBroadcastIfNeededLocked()
-        }
+        persistAndBroadcast(updatedSnapshot)
 
         Log.d(
             TAG,
             "[IPC] update generation=${updatedSnapshot.generation} " +
                 "completed in ${SystemClock.elapsedRealtime() - updateStart}ms"
         )
+    }
+
+    fun updateReadiness(transform: (DataPlaneReadinessSnapshot) -> DataPlaneReadinessSnapshot) {
+        val updatedSnapshot = synchronized(stateLock) {
+            val current = stateSnapshot
+            VpnStateStore.buildNextRuntimeStateSnapshot(current) { snapshot ->
+                snapshot.copy(
+                    readiness = transform(snapshot.readiness).copy(
+                        serviceInstanceId = serviceInstanceId,
+                        updatedAtElapsedMs = SystemClock.elapsedRealtime()
+                    )
+                )
+            }.also { stateSnapshot = it }
+        }
+        persistAndBroadcast(updatedSnapshot)
+    }
+
+    private fun persistAndBroadcast(snapshot: VpnStateStore.RuntimeStateSnapshot) {
+        lastStateUpdateAtMs.set(SystemClock.elapsedRealtime())
+        broadcastLock.withLock {
+            broadcastPending.set(true)
+            scheduleBroadcastIfNeededLocked()
+        }
+        val now = SystemClock.elapsedRealtime()
+        val safetyKey = "${snapshot.stateOrdinal}:${snapshot.readiness.status}:${snapshot.lastError}:" +
+            snapshot.manuallyStopped
+        if (safetyKey != lastPersistedSafetyKey ||
+            now - lastPersistedAtMs.get() >= DataPlaneReadinessSnapshot.PERSIST_HEARTBEAT_INTERVAL_MS
+        ) {
+            lastPersistedSafetyKey = safetyKey
+            lastPersistedAtMs.set(now)
+            ipcScope.launch {
+                VpnStateStore.persistRuntimeStateSnapshotBestEffort(snapshot)
+            }
+        }
     }
 
     fun registerCallback(callback: ISingBoxServiceCallback) {

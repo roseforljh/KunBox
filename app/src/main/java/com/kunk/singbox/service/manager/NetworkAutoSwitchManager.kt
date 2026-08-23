@@ -132,7 +132,6 @@ object NetworkAutoSwitchManager {
         if (!claimActionSlot()) return
 
         Log.i(TAG, "Starting VPN after switching to cellular")
-        VpnStateStore.setManuallyStopped(false)
         VpnServiceManager.startVpn(context)
             .onSuccess {
                 setStoppedByTrustedWifi(context, false)

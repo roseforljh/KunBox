@@ -41,10 +41,16 @@ object ServiceStateHolder {
 
     const val ACTION_START = "com.kunk.singbox.START"
     const val ACTION_STOP = "com.kunk.singbox.STOP"
+    const val ACTION_FORCE_STOP = "com.kunk.singbox.FORCE_STOP"
     const val ACTION_SWITCH_NODE = "com.kunk.singbox.SWITCH_NODE"
     const val ACTION_SERVICE = "com.kunk.singbox.SERVICE"
     const val ACTION_UPDATE_SETTING = "com.kunk.singbox.UPDATE_SETTING"
     const val ACTION_RESET_CONNECTIONS = "com.kunk.singbox.RESET_CONNECTIONS"
+
+    internal fun shouldIgnoreDuplicateHardStop(
+        isStopping: Boolean,
+        stopSelfRequested: Boolean
+    ): Boolean = isStopping && stopSelfRequested
 
     // Pre-cleanup: close connections before VPN restart to avoid app timeout on old connections
     const val ACTION_PREPARE_RESTART = "com.kunk.singbox.PREPARE_RESTART"

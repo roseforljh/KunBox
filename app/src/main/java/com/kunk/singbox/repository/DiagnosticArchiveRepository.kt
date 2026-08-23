@@ -19,6 +19,7 @@ import com.kunk.singbox.utils.perf.formatDiagnosticResourceSamplesCsv
 import com.kunk.singbox.utils.perf.mergeDiagnosticResourceSamples
 import com.kunk.singbox.service.manager.ConnectionIncidentHistory
 import com.kunk.singbox.service.manager.formatConnectionIncidentSnapshotsJsonl
+import com.kunk.singbox.ipc.SingBoxRemote
 import java.io.BufferedOutputStream
 import java.io.File
 import java.io.FileOutputStream
@@ -75,6 +76,10 @@ internal fun buildDiagnosticArchiveEntries(
     runningConfig: String?,
     resourcesCsv: String,
     connectionIncidentsJsonl: String,
+    readinessJson: String = "{}",
+    perAppVpnPlanJson: String = "{}",
+    dialBudgetJson: String = "{}",
+    directIncidentsJsonl: String = "",
     redactor: DiagnosticRedactor
 ): Map<String, String> = linkedMapOf<String, String>().apply {
     put("manifest.json", manifest)
@@ -83,6 +88,10 @@ internal fun buildDiagnosticArchiveEntries(
     if (runningConfig != null) put("running_config.json", redactor.redactJson(runningConfig))
     put("resources.csv", resourcesCsv)
     put("connection_incidents.jsonl", redactor.redactJsonLines(connectionIncidentsJsonl))
+    put("readiness.json", redactor.redactJson(readinessJson))
+    put("per_app_vpn_plan.json", redactor.redactJson(perAppVpnPlanJson))
+    put("dial_budget.json", redactor.redactJson(dialBudgetJson))
+    put("direct_incidents.jsonl", redactor.redactJsonLines(directIncidentsJsonl))
 }
 
 private const val PROCESS_START_JITTER_TOLERANCE_MS = 2L
@@ -165,13 +174,30 @@ internal class DiagnosticArchiveRepository(
             .takeIf(File::isFile)
             ?.readText(Charsets.UTF_8)
         val connectionIncidents = ConnectionIncidentHistory(appContext).read()
+        val directIncidentsFile = File(appContext.filesDir, "diagnostics/direct_incidents.jsonl")
+        val perAppPlanFile = File(appContext.filesDir, "diagnostics/per_app_vpn_plan.json")
+        val logs = logRepository.getLogsAsTextForExport()
         return buildDiagnosticArchiveEntries(
             manifest = buildManifest(mergedSamples, runningConfig != null, connectionIncidents.size),
-            logs = logRepository.getLogsAsTextForExport(),
+            logs = logs,
             runningConfig = runningConfig,
             resourcesCsv = formatDiagnosticResourceSamplesCsv(mergedSamples),
             connectionIncidentsJsonl = formatConnectionIncidentSnapshotsJsonl(connectionIncidents),
+            readinessJson = gson.toJson(SingBoxRemote.readiness.value),
+            perAppVpnPlanJson = perAppPlanFile.takeIf(File::isFile)?.readText().orEmpty().ifBlank { "{}" },
+            dialBudgetJson = buildDialBudgetJson(logs),
+            directIncidentsJsonl = directIncidentsFile.takeIf(File::isFile)?.readText().orEmpty(),
             redactor = redactor
+        )
+    }
+
+    private fun buildDialBudgetJson(logs: String): String {
+        val latest = logs.lineSequence().lastOrNull { "kunbox_physical_budget_v1" in it }
+        return gson.toJson(
+            mapOf(
+                "native_snapshot_status" to if (latest == null) "unavailable" else "available",
+                "latest_native_snapshot" to latest.orEmpty()
+            )
         )
     }
 
