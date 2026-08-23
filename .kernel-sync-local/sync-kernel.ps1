@@ -14,15 +14,22 @@ $trustedTagCommits = @{
     'v1.13.15' = '3708fa18766cda1f11b77f6ed9c7bd61688f17df'
     'v1.13.16' = '17ec3c71af8ca946dc50bf0d927c39fc77322aec'
     'v1.13.18' = '45ca32dcb966f07f97fc888fe8586e359dbe8405'
+    'v1.13.19' = 'b5ebaa1fc0f2b94256180b95468e73ef53caa27d'
 }
 $trustedPatchHashes = @{
     'v1.13.14' = '4C89FE3A078F5DC68DA351BF04B1B9536D048925266E15332E5D6F2BFAB2ECE2'
     'v1.13.15' = '7C8318A5C9B77BF0BF623FA4D8610FF4190B188B9BD4D6149E0D9BF51E1B0172'
     'v1.13.16' = '7C8318A5C9B77BF0BF623FA4D8610FF4190B188B9BD4D6149E0D9BF51E1B0172'
     'v1.13.18' = '660D190181ED104119A812B7ADC64E5E5C845E08AF8EAEB98860B9714A0EC10F'
+    'v1.13.19' = '660D190181ED104119A812B7ADC64E5E5C845E08AF8EAEB98860B9714A0EC10F'
 }
 $requiredKunBoxNativeMarkers = @{
     'v1.13.18' = @(
+        'pre-handshake connection rejected: reason=',
+        'kunbox_physical_dial_gate_v1',
+        'kunbox_wireguard_physical_gate_v1'
+    )
+    'v1.13.19' = @(
         'pre-handshake connection rejected: reason=',
         'kunbox_physical_dial_gate_v1',
         'kunbox_wireguard_physical_gate_v1'
@@ -49,6 +56,23 @@ $trustedPatchFiles = @{
         'route/conn_packet_lifecycle_test.go'
     )
     'v1.13.18' = @(
+        'cmd/internal/build_libbox/main.go',
+        'common/dialer/default.go',
+        'common/dialer/default_parallel_interface.go',
+        'common/dialer/physical_budget.go',
+        'common/dialer/physical_budget_android.go',
+        'common/dialer/physical_budget_other.go',
+        'common/dialer/physical_budget_test.go',
+        'protocol/direct/outbound.go',
+        'protocol/direct/outbound_physical_budget_test.go',
+        'protocol/vless/outbound.go',
+        'protocol/vless/outbound_test.go',
+        'route/conn.go',
+        'route/conn_packet_lifecycle_test.go',
+        'transport/wireguard/endpoint.go',
+        'transport/wireguard/endpoint_physical_budget_test.go'
+    )
+    'v1.13.19' = @(
         'cmd/internal/build_libbox/main.go',
         'common/dialer/default.go',
         'common/dialer/default_parallel_interface.go',
@@ -99,6 +123,20 @@ $trustedDependencyPatches = @{
         ModulePath = 'github.com/sagernet/sing-tun'
         Version = 'v0.8.12-0.20260727151122-3a09076491df'
         FileName = 'sing-tun-v0.8.12-0.20260727151122-3a09076491df.patch'
+        Hash = '19FC1E4FFAA5773BFBADCE1A33D1AF571E11E44BF59A1D18FF136B486DAE9E97'
+        RequiredNativeMarker = 'system TCP connection limit reached: active='
+        Files = @(
+            'stack_mixed.go',
+            'stack_mixed_test.go',
+            'stack_system.go',
+            'stack_system_accept_test.go',
+            'stack_system_nat.go'
+        )
+    }
+    'v1.13.19' = [pscustomobject]@{
+        ModulePath = 'github.com/sagernet/sing-tun'
+        Version = 'v0.8.12-0.20260810140523-7c73233bd0fb'
+        FileName = 'sing-tun-v0.8.12-0.20260810140523-7c73233bd0fb.patch'
         Hash = '19FC1E4FFAA5773BFBADCE1A33D1AF571E11E44BF59A1D18FF136B486DAE9E97'
         RequiredNativeMarker = 'system TCP connection limit reached: active='
         Files = @(
@@ -908,7 +946,7 @@ function Assert-LiteralOccurrence(
 }
 
 function Assert-NoUnbudgetedPhysicalDialSites {
-    if ($resolvedTag -cne 'v1.13.18') {
+    if (-not $requiredKunBoxNativeMarkers.ContainsKey($resolvedTag)) {
         return
     }
     Assert-LiteralOccurrence 'common/dialer/default.go' 'dialPhysicalConn(ctx' 1
