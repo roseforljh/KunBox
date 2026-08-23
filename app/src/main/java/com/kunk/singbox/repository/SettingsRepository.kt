@@ -7,7 +7,6 @@ import com.kunk.singbox.model.CustomRule
 import com.kunk.singbox.model.DefaultRule
 import com.kunk.singbox.model.DnsStrategy
 import com.kunk.singbox.model.RoutingMode
-import com.kunk.singbox.model.AppRule
 import com.kunk.singbox.model.AppGroup
 import com.kunk.singbox.model.RuleSet
 import com.kunk.singbox.model.RuleSetOutboundMode
@@ -314,14 +313,8 @@ class SettingsRepository(private val context: Context) {
         return settings.value.ruleSets
     }
 
-    suspend fun setAppRules(value: List<AppRule>): Boolean =
-        updateSettingsAndNotifyRestart { it.copy(appRules = value) }
-
     suspend fun setAppGroups(value: List<AppGroup>): Boolean =
         updateSettingsAndNotifyRestart { it.copy(appGroups = value) }
-
-    suspend fun upsertAppRule(value: AppRule): Boolean =
-        updateSettingsAndNotifyRestart { upsertExclusiveAppRule(it, value) }
 
     suspend fun upsertAppGroup(value: AppGroup): Boolean =
         updateSettingsAndNotifyRestart { upsertExclusiveAppGroup(it, value) }

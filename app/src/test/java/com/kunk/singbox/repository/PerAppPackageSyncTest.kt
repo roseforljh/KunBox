@@ -274,41 +274,6 @@ class PerAppPackageSyncTest {
     }
 
     @Test
-    fun latestRuleAssignmentMovesAppOutOfEveryGroupAndOlderRule() {
-        val settings = AppSettings(
-            appRules = listOf(
-                AppRule(id = "rule-old", packageName = "com.shared", appName = "Old"),
-                AppRule(id = "rule-keep", packageName = "com.keep.rule", appName = "Keep Rule")
-            ),
-            appGroups = listOf(
-                AppGroup(
-                    id = "group-a",
-                    name = "A",
-                    apps = listOf(
-                        AppInfo(packageName = "com.shared", appName = "Shared"),
-                        AppInfo(packageName = "com.keep.group", appName = "Keep Group")
-                    )
-                ),
-                AppGroup(
-                    id = "group-b",
-                    name = "B",
-                    apps = listOf(AppInfo(packageName = "com.shared", appName = "Shared"))
-                )
-            )
-        )
-        val latest = AppRule(id = "rule-new", packageName = "com.shared", appName = "Latest")
-
-        val result = upsertExclusiveAppRule(settings, latest)
-
-        assertEquals(latest, result.appRules.single { it.packageName == "com.shared" })
-        assertTrue(result.appGroups.all { group -> group.apps.none { it.packageName == "com.shared" } })
-        assertEquals(
-            listOf("com.keep.group"),
-            result.appGroups.first { it.id == "group-a" }.apps.map { it.packageName }
-        )
-    }
-
-    @Test
     fun normalizeExclusiveAssignmentsKeepsLatestConfigurationForEachApp() {
         val settings = AppSettings(
             appRules = listOf(

@@ -79,8 +79,49 @@ class SettingsStoreTest {
             )
         )
 
-        assertEquals(RuleSetOutboundMode.PROXY, migrated.appRules.single().outboundMode)
-        assertEquals(RuleSetOutboundMode.PROXY, migrated.appGroups.single().outboundMode)
+        assertTrue(migrated.appRules.isEmpty())
+        assertEquals(2, migrated.appGroups.size)
+        assertTrue(migrated.appGroups.all { it.outboundMode == RuleSetOutboundMode.PROXY })
+    }
+
+    @Test
+    fun testMigrateSettingsConvertsLegacyAppRulesToGroups() {
+        val migrated = SettingsStore.migrateSettings(
+            version = 10,
+            settings = AppSettings(
+                appRules = listOf(
+                    AppRule(
+                        id = "old",
+                        packageName = "com.example.duplicate",
+                        appName = "Old",
+                        outboundMode = RuleSetOutboundMode.DIRECT
+                    ),
+                    AppRule(
+                        id = "latest",
+                        packageName = " com.example.duplicate ",
+                        appName = "Latest",
+                        outboundMode = RuleSetOutboundMode.PROXY
+                    ),
+                    AppRule(
+                        id = "grouped",
+                        packageName = "com.example.grouped",
+                        appName = "Hidden"
+                    )
+                ),
+                appGroups = listOf(
+                    AppGroup(
+                        id = "existing",
+                        name = "Existing",
+                        apps = listOf(AppInfo("com.example.grouped", "Grouped"))
+                    )
+                )
+            )
+        )
+
+        assertTrue(migrated.appRules.isEmpty())
+        assertEquals(listOf("legacy-rule-latest", "existing"), migrated.appGroups.map { it.id })
+        assertEquals("Latest", migrated.appGroups.first().name)
+        assertEquals("com.example.duplicate", migrated.appGroups.first().apps.single().packageName)
     }
 
     @Test

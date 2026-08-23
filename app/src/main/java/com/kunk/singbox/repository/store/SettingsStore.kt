@@ -6,6 +6,8 @@ import com.google.gson.Gson
 import com.google.gson.GsonBuilder
 import com.kunk.singbox.database.AppDatabase
 import com.kunk.singbox.database.entity.SettingsEntity
+import com.kunk.singbox.model.AppGroup
+import com.kunk.singbox.model.AppInfo
 import com.kunk.singbox.model.AppSettings
 import com.kunk.singbox.model.AppThemeStyle
 import com.kunk.singbox.model.RuleSetOutboundMode
@@ -49,7 +51,7 @@ class SettingsStore private constructor(context: Context) {
             result = migrateNetworkAutoSwitch(version, result)
             result = migrateAppThemeStyle(version, result)
             result = migrateLocalDnsIpDoh(version, result)
-            return normalizeExclusiveAppAssignments(recoverLatencyTestUrl(result))
+            return normalizeExclusiveAppAssignments(migrateLegacyAppRules(recoverLatencyTestUrl(result)))
         }
 
         private fun migrateEarlySettings(version: Int, settings: AppSettings): AppSettings {
@@ -125,6 +127,32 @@ class SettingsStore private constructor(context: Context) {
                 return settings.copy(localDns = AppSettings.DEFAULT_LOCAL_DNS)
             }
             return settings
+        }
+
+        private fun migrateLegacyAppRules(settings: AppSettings): AppSettings {
+            if (settings.appRules.isEmpty()) return settings
+
+            val assignedPackages = settings.appGroups
+                .flatMapTo(mutableSetOf()) { group -> group.apps.map { it.packageName.trim() } }
+            val migratedGroups = settings.appRules
+                .asReversed()
+                .mapNotNull { rule ->
+                    val packageName = rule.packageName.trim()
+                    if (packageName.isEmpty() || !assignedPackages.add(packageName)) return@mapNotNull null
+                    val appName = rule.appName.ifBlank { packageName }
+                    AppGroup(
+                        id = "legacy-rule-${rule.id}",
+                        name = appName,
+                        apps = listOf(AppInfo(packageName = packageName, appName = appName)),
+                        outboundMode = rule.outboundMode ?: RuleSetOutboundMode.PROXY,
+                        outboundValue = rule.outboundValue,
+                        enabled = rule.enabled
+                    )
+                }
+                .asReversed()
+
+            Log.i(TAG, "Migrated ${settings.appRules.size} legacy app rules into app groups")
+            return settings.copy(appRules = emptyList(), appGroups = migratedGroups + settings.appGroups)
         }
 
         private fun recoverLatencyTestUrl(settings: AppSettings): AppSettings {
@@ -245,7 +273,7 @@ class SettingsStore private constructor(context: Context) {
     private suspend fun updateSettingsLocked(update: (AppSettings) -> AppSettings): Boolean {
         return writeMutex.withLock {
             val previousSettings = _settings.value
-            val newSettings = normalizeExclusiveAppAssignments(update(previousSettings))
+            val newSettings = normalizeExclusiveAppAssignments(migrateLegacyAppRules(update(previousSettings)))
             _settings.value = newSettings
             val persisted = saveSettingsLocked(newSettings)
             _settings.value = resolveSettingsAfterPersistence(previousSettings, newSettings, persisted)

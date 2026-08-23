@@ -2,7 +2,6 @@ package com.kunk.singbox.repository
 
 import android.content.Intent
 import com.kunk.singbox.model.AppGroup
-import com.kunk.singbox.model.AppRule
 import com.kunk.singbox.model.AppSettings
 import com.kunk.singbox.model.VpnAppMode
 
@@ -55,26 +54,6 @@ internal fun removePackageFromPerAppSettings(settings: AppSettings, packageName:
         vpnAllowlist = removePackageFromList(settings.vpnAllowlist, packageName),
         vpnBlocklist = removePackageFromList(settings.vpnBlocklist, packageName),
         appRules = settings.appRules.filterNot { it.packageName == packageName },
-        appGroups = settings.appGroups.map { group ->
-            group.copy(apps = group.apps.filterNot { it.packageName == packageName })
-        }
-    )
-}
-
-internal fun upsertExclusiveAppRule(settings: AppSettings, rule: AppRule): AppSettings {
-    val packageName = rule.packageName.trim()
-    if (packageName.isEmpty()) return settings
-    val normalizedRule = if (packageName == rule.packageName) rule else rule.copy(packageName = packageName)
-    val rulesWithoutDuplicates = settings.appRules.filterNot {
-        it.id != normalizedRule.id && it.packageName == packageName
-    }
-    val updatedRules = if (rulesWithoutDuplicates.any { it.id == normalizedRule.id }) {
-        rulesWithoutDuplicates.map { if (it.id == normalizedRule.id) normalizedRule else it }
-    } else {
-        rulesWithoutDuplicates + normalizedRule
-    }
-    return settings.copy(
-        appRules = updatedRules,
         appGroups = settings.appGroups.map { group ->
             group.copy(apps = group.apps.filterNot { it.packageName == packageName })
         }
