@@ -39,6 +39,7 @@ import com.kunk.singbox.ui.components.SingleSelectDialog
 import com.kunk.singbox.ui.components.StandardCard
 import com.kunk.singbox.repository.InstalledAppsRepository
 import com.kunk.singbox.viewmodel.SettingsViewModel
+import com.kunk.singbox.viewmodel.PerAppPolicyApplyState
 import com.kunk.singbox.ui.theme.liquidGlassTopAppBarContainerColor
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -50,6 +51,8 @@ fun TunSettingsScreen(
 ) {
     val scrollState = rememberScrollState()
     val settings by settingsViewModel.settings.collectAsStateWithLifecycle()
+    val perAppApplyState by settingsViewModel.perAppPolicyApplyState.collectAsStateWithLifecycle()
+    val perAppApplying = perAppApplyState is PerAppPolicyApplyState.Applying
 
     val context = LocalContext.current
     val installedAppsRepo = remember { InstalledAppsRepository.getInstance(context) }
@@ -309,32 +312,57 @@ fun TunSettingsScreen(
                     SettingItem(
                         title = stringResource(R.string.tun_settings_app_mode),
                         value = stringResource(settings.vpnAppMode.displayNameRes),
+                        enabled = !perAppApplying,
                         onClick = { showAppModeDialog = true }
                     )
-                    SettingSwitchItem(
-                        title = stringResource(R.string.tun_settings_follow_new_apps),
-                        subtitle = stringResource(R.string.tun_settings_follow_new_apps_subtitle),
-                        checked = settings.autoIncludeNewAppsInPerAppRules,
-                        onCheckedChange = settingsViewModel::setAutoIncludeNewAppsInPerAppRules
-                    )
-                    SettingItem(
-                        title = stringResource(R.string.tun_settings_allowlist),
-                        value = if (settings.vpnAppMode == VpnAppMode.ALLOWLIST) {
-                            stringResource(R.string.tun_settings_allowlist_configured, allowCount)
-                        } else {
-                            "-"
-                        },
-                        onClick = { if (settings.vpnAppMode == VpnAppMode.ALLOWLIST) showAllowlistDialog = true }
-                    )
-                    SettingItem(
-                        title = stringResource(R.string.tun_settings_blocklist),
-                        value = if (settings.vpnAppMode == VpnAppMode.BLOCKLIST) {
-                            stringResource(R.string.tun_settings_blocklist_configured, blockCount)
-                        } else {
-                            "-"
-                        },
-                        onClick = { if (settings.vpnAppMode == VpnAppMode.BLOCKLIST) showBlocklistDialog = true }
-                    )
+                    when (settings.vpnAppMode) {
+                        VpnAppMode.ALL -> SettingItem(
+                            title = stringResource(R.string.tun_settings_effective_scope),
+                            value = stringResource(R.string.tun_settings_all_apps_captured)
+                        )
+                        VpnAppMode.ALLOWLIST -> {
+                            SettingSwitchItem(
+                                title = stringResource(R.string.tun_settings_follow_new_apps),
+                                subtitle = stringResource(R.string.tun_settings_follow_allowlist_subtitle),
+                                checked = settings.autoIncludeNewAppsInPerAppRules,
+                                enabled = !perAppApplying,
+                                onCheckedChange = settingsViewModel::setAutoIncludeNewAppsInPerAppRules
+                            )
+                            SettingItem(
+                                title = stringResource(R.string.tun_settings_allowlist),
+                                value = stringResource(R.string.tun_settings_allowlist_configured, allowCount),
+                                enabled = !perAppApplying,
+                                onClick = { showAllowlistDialog = true }
+                            )
+                        }
+                        VpnAppMode.BLOCKLIST -> {
+                            SettingSwitchItem(
+                                title = stringResource(R.string.tun_settings_follow_new_apps),
+                                subtitle = stringResource(R.string.tun_settings_follow_blocklist_subtitle),
+                                checked = settings.autoIncludeNewAppsInPerAppRules,
+                                enabled = !perAppApplying,
+                                onCheckedChange = settingsViewModel::setAutoIncludeNewAppsInPerAppRules
+                            )
+                            SettingItem(
+                                title = stringResource(R.string.tun_settings_blocklist),
+                                value = stringResource(R.string.tun_settings_blocklist_configured, blockCount),
+                                enabled = !perAppApplying,
+                                onClick = { showBlocklistDialog = true }
+                            )
+                        }
+                    }
+                    when (perAppApplyState) {
+                        is PerAppPolicyApplyState.Applying -> SettingItem(
+                            title = stringResource(R.string.tun_settings_effective_scope),
+                            value = stringResource(R.string.tun_settings_policy_applying)
+                        )
+                        is PerAppPolicyApplyState.Failed -> SettingItem(
+                            title = stringResource(R.string.tun_settings_effective_scope),
+                            value = stringResource(R.string.tun_settings_policy_apply_failed),
+                            onClick = settingsViewModel::retryPerAppPolicyApply
+                        )
+                        PerAppPolicyApplyState.Idle -> Unit
+                    }
                 }
             }
         }

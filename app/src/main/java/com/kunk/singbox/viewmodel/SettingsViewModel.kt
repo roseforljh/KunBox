@@ -7,6 +7,7 @@ import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.kunk.singbox.manager.VpnServiceManager
+import com.kunk.singbox.ipc.VpnStateStore
 import com.kunk.singbox.model.AppSettings
 import com.kunk.singbox.model.CustomRule
 import com.kunk.singbox.model.DefaultRule
@@ -19,6 +20,7 @@ import com.kunk.singbox.model.ExportDataSummary
 import com.kunk.singbox.model.ImportOptions
 import com.kunk.singbox.model.ImportResult
 import com.kunk.singbox.model.IpVersionMode
+import com.kunk.singbox.model.PerAppVpnPolicy
 import com.kunk.singbox.model.RoutingMode
 import com.kunk.singbox.model.AppGroup
 import com.kunk.singbox.model.RuleSet
@@ -32,6 +34,7 @@ import com.kunk.singbox.model.BackgroundPowerSavingDelay
 import com.kunk.singbox.repository.DataExportRepository
 import com.kunk.singbox.repository.RuleSetRepository
 import com.kunk.singbox.repository.SettingsRepository
+import com.kunk.singbox.repository.PerAppPolicyUpdateResult
 import com.kunk.singbox.service.RuleSetAutoUpdateWorker
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -42,6 +45,9 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.util.concurrent.atomic.AtomicLong
+
+private val lastPerAppReconcileRevision = AtomicLong(-1L)
 
 data class DefaultRuleSetDownloadState(
     val isActive: Boolean = false,
@@ -50,6 +56,12 @@ data class DefaultRuleSetDownloadState(
     val currentTag: String? = null,
     val cancelled: Boolean = false
 )
+
+sealed interface PerAppPolicyApplyState {
+    data object Idle : PerAppPolicyApplyState
+    data class Applying(val revision: Long) : PerAppPolicyApplyState
+    data class Failed(val revision: Long, val message: String) : PerAppPolicyApplyState
+}
 
 class SettingsViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -73,6 +85,12 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     val importState: StateFlow<ImportState> = _importState.asStateFlow()
 
     val settings: StateFlow<AppSettings> = repository.settings
+    private val _perAppPolicyApplyState = MutableStateFlow<PerAppPolicyApplyState>(PerAppPolicyApplyState.Idle)
+    val perAppPolicyApplyState: StateFlow<PerAppPolicyApplyState> = _perAppPolicyApplyState.asStateFlow()
+
+    init {
+        viewModelScope.launch { reconcilePerAppPolicyOnce() }
+    }
 
     fun ensureDefaultRuleSetsReady() {
         viewModelScope.launch {
@@ -277,19 +295,75 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun setVpnAppMode(value: VpnAppMode) {
-        viewModelScope.launch { repository.setVpnAppMode(value) }
+        viewModelScope.launch { applyPerAppPolicyUpdate(repository.setVpnAppMode(value)) }
     }
 
     fun setVpnAllowlist(value: String) {
-        viewModelScope.launch { repository.setVpnAllowlist(value) }
+        viewModelScope.launch { applyPerAppPolicyUpdate(repository.setVpnAllowlist(value)) }
     }
 
     fun setVpnBlocklist(value: String) {
-        viewModelScope.launch { repository.setVpnBlocklist(value) }
+        viewModelScope.launch { applyPerAppPolicyUpdate(repository.setVpnBlocklist(value)) }
     }
 
     fun setAutoIncludeNewAppsInPerAppRules(value: Boolean) {
         viewModelScope.launch { repository.setAutoIncludeNewAppsInPerAppRules(value) }
+    }
+
+    fun retryPerAppPolicyApply() {
+        viewModelScope.launch {
+            val revision = settings.value.perAppPolicyRevision
+            _perAppPolicyApplyState.value = PerAppPolicyApplyState.Applying(revision)
+            VpnServiceManager.applyPerAppRuleChangeIfRunning(getApplication(), revision)
+                .onSuccess { _perAppPolicyApplyState.value = PerAppPolicyApplyState.Idle }
+                .onFailure { error ->
+                    _perAppPolicyApplyState.value = PerAppPolicyApplyState.Failed(
+                        revision,
+                        error.message ?: "Per-app VPN policy apply failed"
+                    )
+                }
+        }
+    }
+
+    private suspend fun applyPerAppPolicyUpdate(result: Result<PerAppPolicyUpdateResult>) {
+        val update = result.getOrElse { error ->
+            _perAppPolicyApplyState.value = PerAppPolicyApplyState.Failed(
+                settings.value.perAppPolicyRevision,
+                error.message ?: "Per-app VPN policy persistence failed"
+            )
+            return
+        }
+        if (!update.runtimeChanged) {
+            _perAppPolicyApplyState.value = PerAppPolicyApplyState.Idle
+            return
+        }
+        _perAppPolicyApplyState.value = PerAppPolicyApplyState.Applying(update.revision)
+        VpnServiceManager.applyPerAppRuleChangeIfRunning(getApplication(), update.revision)
+            .onSuccess { _perAppPolicyApplyState.value = PerAppPolicyApplyState.Idle }
+            .onFailure { error ->
+                _perAppPolicyApplyState.value = PerAppPolicyApplyState.Failed(
+                    update.revision,
+                    error.message ?: "Per-app VPN policy apply failed"
+                )
+            }
+    }
+
+    private suspend fun reconcilePerAppPolicyOnce() {
+        val desired = settings.first()
+        if (!VpnServiceManager.isRunning() || VpnStateStore.getMode() != VpnStateStore.CoreMode.VPN) return
+        val desiredPolicy = PerAppVpnPolicy.from(desired)
+        val applied = VpnStateStore.getAppliedPerAppPolicy()
+        if (applied.revision == desiredPolicy.revision && applied.digest == desiredPolicy.digest()) return
+        if (lastPerAppReconcileRevision.getAndSet(desiredPolicy.revision) == desiredPolicy.revision) return
+        _perAppPolicyApplyState.value = PerAppPolicyApplyState.Applying(desiredPolicy.revision)
+        VpnServiceManager.applyPerAppRuleChangeIfRunning(getApplication(), desiredPolicy.revision)
+            .onSuccess { _perAppPolicyApplyState.value = PerAppPolicyApplyState.Idle }
+            .onFailure { error ->
+                _perAppPolicyApplyState.value = PerAppPolicyApplyState.Failed(
+                    desiredPolicy.revision,
+                    error.message ?: "Per-app VPN policy reconciliation failed"
+                )
+            }
     }
 
     fun setLocalDns(value: String) {

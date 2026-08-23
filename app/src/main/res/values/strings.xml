@@ -198,6 +198,12 @@
     <string name="tun_settings_blocklist_configured">已设置 %d 个</string>
     <string name="tun_settings_follow_new_apps">新安装应用跟随当前规则</string>
     <string name="tun_settings_follow_new_apps_subtitle">仅允许模式自动加入仅允许列表；排除模式自动加入排除列表</string>
+    <string name="tun_settings_follow_allowlist_subtitle">新安装应用自动加入仅允许列表并由 VPN 接管</string>
+    <string name="tun_settings_follow_blocklist_subtitle">新安装应用自动加入排除列表并绕过 VPN</string>
+    <string name="tun_settings_effective_scope">实际应用范围</string>
+    <string name="tun_settings_all_apps_captured">全部应用由 VPN 接管</string>
+    <string name="tun_settings_policy_applying">正在应用应用范围</string>
+    <string name="tun_settings_policy_apply_failed">应用失败，点此重试</string>
     <string name="tun_settings_select_allowlist_apps">仅这些应用走 VPN</string>
     <string name="tun_settings_select_blocklist_apps">这些应用不走 VPN</string>
 

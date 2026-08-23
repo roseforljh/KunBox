@@ -198,6 +198,12 @@
     <string name="tun_settings_blocklist_configured">%d configured</string>
     <string name="tun_settings_follow_new_apps">Apply current rule to new apps</string>
     <string name="tun_settings_follow_new_apps_subtitle">Adds newly installed apps to the allowlist or blocklist based on the current mode</string>
+    <string name="tun_settings_follow_allowlist_subtitle">New apps join the allowlist and enter VPN</string>
+    <string name="tun_settings_follow_blocklist_subtitle">New apps join the exclusion list and bypass VPN</string>
+    <string name="tun_settings_effective_scope">Applied app scope</string>
+    <string name="tun_settings_all_apps_captured">All apps enter VPN</string>
+    <string name="tun_settings_policy_applying">Applying app scope</string>
+    <string name="tun_settings_policy_apply_failed">Apply failed, tap to retry</string>
     <string name="tun_settings_select_allowlist_apps">Only these apps use VPN</string>
     <string name="tun_settings_select_blocklist_apps">These apps bypass VPN</string>
 
