@@ -167,7 +167,7 @@ fun TunSettingsScreen(
             .toSet()
 
         AppMultiSelectDialog(
-            title = stringResource(R.string.tun_settings_select_vpn_apps),
+            title = stringResource(R.string.tun_settings_select_allowlist_apps),
             selectedPackages = selected,
             enableQuickSelectCommonApps = true,
             onConfirm = { packages ->
@@ -186,7 +186,7 @@ fun TunSettingsScreen(
             .toSet()
 
         AppMultiSelectDialog(
-            title = stringResource(R.string.tun_settings_select_vpn_apps),
+            title = stringResource(R.string.tun_settings_select_blocklist_apps),
             selectedPackages = selected,
             enableQuickSelectCommonApps = true,
             quickSelectExcludeCommonApps = true,

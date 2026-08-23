@@ -159,7 +159,7 @@ class UiCleanupStructureTest {
     }
 
     @Test
-    fun topSearchControlsOnlyAppearAtTheAbsoluteListTop() {
+    fun topSearchControlsStayVisibleWhileSearching() {
         val nodes = mainSource("ui/screens/NodesScreen.kt").readNormalizedText()
         val nodeSearch = nodes.extractFunctionBody("NodeSearchBar")
         val appSelector = mainSource("ui/components/AppMultiSelectDialog.kt").readNormalizedText()
@@ -176,7 +176,8 @@ class UiCleanupStructureTest {
         assertTrue(nodes.contains("TopOnlySupportingContent(visible = showTopControls)"))
         assertTrue(nodeSearch.contains("ExpandableSearchBar("))
 
-        assertTrue(appSelector.contains("derivedStateOf { !listState.canScrollBackward }"))
+        assertTrue(appSelector.contains("derivedStateOf { isSearchExpanded || !listState.canScrollBackward }"))
+        assertTrue(appSelector.contains("LaunchedEffect(query) { listState.scrollToItem(0) }"))
         assertTrue(appSelector.contains("TopOnlySupportingContent(visible = showTopControls)"))
         assertTrue(appSelector.contains("supportingContentHeight = 92.dp"))
         assertTrue(appControls.contains("ExpandableSearchBar("))
@@ -186,7 +187,10 @@ class UiCleanupStructureTest {
         assertFalse(appSelector.contains("OutlinedTextField("))
         assertFalse(appSelector.contains("appSelectFilterPanel("))
 
-        assertTrue(routingAppSelector.contains("derivedStateOf { !listState.canScrollBackward }"))
+        assertTrue(
+            routingAppSelector.contains("derivedStateOf { isSearchExpanded || !listState.canScrollBackward }")
+        )
+        assertTrue(routingAppSelector.contains("LaunchedEffect(searchQuery) { listState.scrollToItem(0) }"))
         assertTrue(routingAppSelector.contains("TopOnlySupportingContent(visible = showTopControls)"))
         assertTrue(routingAppSelector.contains("supportingContentHeight = 64.dp"))
         assertTrue(routingAppSelector.contains("ExpandableSearchBar("))
@@ -400,7 +404,6 @@ class UiCleanupStructureTest {
 
         val appRouting = mainSource("ui/screens/AppRoutingScreen.kt").readNormalizedText()
         assertTrue(appRouting.contains("showDeleteGroupConfirm"))
-        assertTrue(appRouting.contains("showDeleteRuleConfirm"))
     }
 
     @Test

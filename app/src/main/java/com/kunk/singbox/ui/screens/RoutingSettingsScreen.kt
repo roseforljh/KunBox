@@ -286,7 +286,7 @@ fun RoutingSettingsScreen(
                 StandardCard {
                     SettingItem(
                         title = stringResource(R.string.routing_settings_app_routing),
-                        value = stringResource(R.string.routing_settings_app_routing_rules, settings.appRules.size + settings.appGroups.size),
+                        value = stringResource(R.string.routing_settings_app_routing_rules, settings.appGroups.size),
                         onClick = { navController.navigate(Screen.AppRouting.route) }
                     )
                     val domainRuleCount = settings.customRules.count {

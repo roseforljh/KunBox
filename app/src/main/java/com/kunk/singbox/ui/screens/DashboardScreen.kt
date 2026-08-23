@@ -433,10 +433,15 @@ fun DashboardScreen(
                     ) { showModeDialog = true }
                 }
 
+                val browserExcluded = dataPlaneReadiness.routingScope.contains("browser=excluded")
+                val failedUnprotected =
+                    dataPlaneReadiness.status == com.kunk.singbox.ipc.DataPlaneStatus.FAILED_UNPROTECTED
                 val protectionWarning = when {
-                    dataPlaneReadiness.routingScope.contains("browser=excluded") ->
+                    browserExcluded ->
                         stringResource(R.string.vpn_browser_not_covered)
+                    failedUnprotected -> stringResource(R.string.vpn_lockdown_incomplete)
                     settings.tunEnabled &&
+                        dataPlaneReadiness.status == com.kunk.singbox.ipc.DataPlaneStatus.READY &&
                         dataPlaneReadiness.lockdownStatus != com.kunk.singbox.ipc.VpnLockdownStatus.ENABLED ->
                         stringResource(R.string.vpn_lockdown_incomplete)
                     else -> null
@@ -445,7 +450,11 @@ fun DashboardScreen(
                     Text(
                         text = protectionWarning,
                         style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.error,
+                        color = if (browserExcluded || failedUnprotected) {
+                            MaterialTheme.colorScheme.error
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        },
                         modifier = Modifier
                             .fillMaxWidth()
                             .clickable {

@@ -20,7 +20,6 @@ import com.kunk.singbox.model.ImportOptions
 import com.kunk.singbox.model.ImportResult
 import com.kunk.singbox.model.IpVersionMode
 import com.kunk.singbox.model.RoutingMode
-import com.kunk.singbox.model.AppRule
 import com.kunk.singbox.model.AppGroup
 import com.kunk.singbox.model.RuleSet
 import com.kunk.singbox.model.RuleSetType
@@ -582,38 +581,6 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     fun reorderRuleSets(newOrder: List<RuleSet>) {
         viewModelScope.launch {
             repository.setRuleSets(newOrder)
-        }
-    }
-
-    fun addAppRule(rule: AppRule) {
-        viewModelScope.launch {
-            applyAppRoutingChange { repository.upsertAppRule(rule) }
-        }
-    }
-
-    fun updateAppRule(rule: AppRule) {
-        viewModelScope.launch {
-            applyAppRoutingChange { repository.upsertAppRule(rule) }
-        }
-    }
-
-    fun deleteAppRule(ruleId: String) {
-        viewModelScope.launch {
-            val currentRules = settings.value.appRules.toMutableList()
-            currentRules.removeAll { it.id == ruleId }
-            applyAppRoutingChange { repository.setAppRules(currentRules) }
-        }
-    }
-
-    fun toggleAppRuleEnabled(ruleId: String) {
-        viewModelScope.launch {
-            val currentRules = settings.value.appRules.toMutableList()
-            val index = currentRules.indexOfFirst { it.id == ruleId }
-            if (index != -1) {
-                val rule = currentRules[index]
-                currentRules[index] = rule.copy(enabled = !rule.enabled)
-                applyAppRoutingChange { repository.setAppRules(currentRules) }
-            }
         }
     }
 

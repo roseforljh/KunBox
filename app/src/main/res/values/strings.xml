@@ -198,7 +198,8 @@
     <string name="tun_settings_blocklist_configured">已设置 %d 个</string>
     <string name="tun_settings_follow_new_apps">新安装应用跟随当前规则</string>
     <string name="tun_settings_follow_new_apps_subtitle">仅允许模式自动加入仅允许列表；排除模式自动加入排除列表</string>
-    <string name="tun_settings_select_vpn_apps">选择仅允许走 VPN 的应用</string>
+    <string name="tun_settings_select_allowlist_apps">仅这些应用走 VPN</string>
+    <string name="tun_settings_select_blocklist_apps">这些应用不走 VPN</string>
 
     <!-- DNS Settings -->
     <string name="dns_settings_title">DNS 设置</string>
@@ -474,19 +475,10 @@
 
     <!-- App Rules -->
     <string name="app_rules_title">应用分流</string>
-    <string name="app_rules_add">添加应用规则</string>
-    <string name="app_rules_edit">编辑应用规则</string>
-    <string name="app_rules_delete_title">删除规则</string>
-    <string name="app_rules_delete_confirm">确定要删除 \"%s\" 的分流规则吗？</string>
     <string name="app_rules_not_selected">未选择</string>
     <string name="app_rules_unknown_profile">未知配置</string>
-    <string name="app_rules_tabs_groups">应用分组</string>
-    <string name="app_rules_tabs_individual">独立规则</string>
     <string name="app_rules_empty_groups">暂无应用分组</string>
     <string name="app_rules_empty_groups_hint">点击右上角 + 创建分组</string>
-    <string name="app_rules_empty_individual">暂无独立应用规则</string>
-    <string name="app_rules_empty_individual_hint">点击右上角 + 添加规则</string>
-    <string name="app_rules_select_app">选择应用</string>
     <string name="app_rules_click_to_select">点击选择...</string>
     <string name="app_rules_select_target">选择目标</string>
 
@@ -497,6 +489,7 @@
     <string name="app_groups_delete_confirm">确定要删除 \"%1$s\" 分组吗？包含 %2$d 个应用。</string>
     <string name="app_groups_name">分组名称</string>
     <string name="app_groups_select_apps">选择应用</string>
+    <string name="app_groups_selected_count">已选应用 (%d)</string>
     <string name="app_groups_click_to_add">点击上方按钮选择应用</string>
     <string name="app_groups_remove">移除</string>
 
@@ -835,6 +828,6 @@
     <string name="vpn_status_recovering">恢复中，流量已阻断</string>
     <string name="vpn_status_failed_blocked">恢复失败，流量仍被阻断</string>
     <string name="vpn_status_failed_unprotected">VPN 已断开，可能直接联网</string>
-    <string name="vpn_lockdown_incomplete">系统级防直连未完成，点此打开 VPN 设置</string>
+    <string name="vpn_lockdown_incomplete">系统防直连未开启，点此设置</string>
     <string name="vpn_browser_not_covered">默认浏览器未被 VPN 接管，网页可能直接联网</string>
 </resources>

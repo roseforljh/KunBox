@@ -198,7 +198,8 @@
     <string name="tun_settings_blocklist_configured">%d configured</string>
     <string name="tun_settings_follow_new_apps">Apply current rule to new apps</string>
     <string name="tun_settings_follow_new_apps_subtitle">Adds newly installed apps to the allowlist or blocklist based on the current mode</string>
-    <string name="tun_settings_select_vpn_apps">Select apps that can use VPN</string>
+    <string name="tun_settings_select_allowlist_apps">Only these apps use VPN</string>
+    <string name="tun_settings_select_blocklist_apps">These apps bypass VPN</string>
 
     <!-- DNS Settings -->
     <string name="dns_settings_title">DNS Settings</string>
@@ -474,19 +475,10 @@
 
     <!-- App Rules -->
     <string name="app_rules_title">App Routing</string>
-    <string name="app_rules_add">Add App Rule</string>
-    <string name="app_rules_edit">Edit App Rule</string>
-    <string name="app_rules_delete_title">Delete Rule</string>
-    <string name="app_rules_delete_confirm">Are you sure you want to delete the routing rule for \"%s\"?</string>
     <string name="app_rules_not_selected">Not Selected</string>
     <string name="app_rules_unknown_profile">Unknown Profile</string>
-    <string name="app_rules_tabs_groups">App Groups</string>
-    <string name="app_rules_tabs_individual">Individual Rules</string>
     <string name="app_rules_empty_groups">No app groups</string>
     <string name="app_rules_empty_groups_hint">Tap + in top right to create a group</string>
-    <string name="app_rules_empty_individual">No individual app rules</string>
-    <string name="app_rules_empty_individual_hint">Tap + in top right to add a rule</string>
-    <string name="app_rules_select_app">Select App</string>
     <string name="app_rules_click_to_select">Click to select...</string>
     <string name="app_rules_select_target">Select Target</string>
 
@@ -497,6 +489,7 @@
     <string name="app_groups_delete_confirm">Are you sure you want to delete \"%1$s\" group? Contains %2$d apps.</string>
     <string name="app_groups_name">Group Name</string>
     <string name="app_groups_select_apps">Select Apps</string>
+    <string name="app_groups_selected_count">Selected apps (%d)</string>
     <string name="app_groups_click_to_add">Click above to select apps</string>
     <string name="app_groups_remove">Remove</string>
 
@@ -835,6 +828,6 @@
     <string name="vpn_status_recovering">Recovering, traffic blocked</string>
     <string name="vpn_status_failed_blocked">Recovery failed, traffic remains blocked</string>
     <string name="vpn_status_failed_unprotected">VPN disconnected, direct access possible</string>
-    <string name="vpn_lockdown_incomplete">System leak protection incomplete. Open VPN settings</string>
+    <string name="vpn_lockdown_incomplete">System leak protection is off. Tap to configure</string>
     <string name="vpn_browser_not_covered">Default browser is outside VPN coverage</string>
 </resources>

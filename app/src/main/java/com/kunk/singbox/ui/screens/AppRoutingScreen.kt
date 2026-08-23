@@ -1,30 +1,17 @@
 package com.kunk.singbox.ui.screens
 
 import com.kunk.singbox.R
-import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideOutHorizontally
-import androidx.compose.animation.togetherWith
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
-import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.ui.res.stringResource
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -38,112 +25,11 @@ import com.kunk.singbox.viewmodel.InstalledAppsViewModel
 import com.kunk.singbox.viewmodel.NodesViewModel
 import com.kunk.singbox.viewmodel.ProfilesViewModel
 import com.kunk.singbox.viewmodel.SettingsViewModel
-import com.kunk.singbox.ui.theme.isLiquidGlassTheme
 import com.kunk.singbox.ui.theme.liquidGlassEmptyStatePanel
 import com.kunk.singbox.ui.theme.liquidGlassMutedContentColor
-import com.kunk.singbox.ui.theme.liquidGlassPanel
 import com.kunk.singbox.ui.theme.liquidGlassTopAppBarContainerColor
-import com.kunk.singbox.ui.theme.liquidGlassTabIndicatorColor
 import com.kunk.singbox.utils.LocalNetworkPermission
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-
-@Composable
-private fun CapsuleSlidingIndicator(
-    indicatorOffset: androidx.compose.ui.unit.Dp,
-    slotWidth: androidx.compose.ui.unit.Dp
-) {
-    val indicatorShape = RoundedCornerShape(percent = 50)
-    Box(
-        modifier = Modifier
-            .offset(x = indicatorOffset)
-            .width(slotWidth)
-            .fillMaxHeight()
-            .padding(4.dp)
-            .liquidGlassPanel(
-                shape = indicatorShape,
-                selected = true,
-                shadowElevation = 4.dp
-            )
-    )
-}
-
-@Composable
-private fun CapsuleTabLabels(
-    tabs: List<String>,
-    selectedIndex: Int,
-    onTabSelected: (Int) -> Unit
-) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        tabs.forEachIndexed { index, title ->
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxHeight()
-                    .clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null,
-                        onClick = { onTabSelected(index) }
-                    ),
-                contentAlignment = Alignment.Center
-            ) {
-                AppRoutingTabLabel(
-                    selected = selectedIndex == index,
-                    title = title
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun LiquidGlassTabCapsule(
-    selectedIndex: Int,
-    tabs: List<String>,
-    onTabSelected: (Int) -> Unit
-) {
-    val capsuleShape = RoundedCornerShape(percent = 50)
-    val itemCount = tabs.size
-
-    BoxWithConstraints(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp)
-            .height(48.dp)
-            .liquidGlassPanel(shape = capsuleShape, shadowElevation = 10.dp),
-        contentAlignment = Alignment.CenterStart
-    ) {
-        val slotWidth = maxWidth / itemCount.toFloat()
-        val clampedIndex = selectedIndex.coerceIn(0, itemCount - 1)
-        val targetOffset = slotWidth * clampedIndex.toFloat()
-        val indicatorOffset = targetOffset
-
-        CapsuleSlidingIndicator(
-            indicatorOffset = indicatorOffset,
-            slotWidth = slotWidth
-        )
-
-        CapsuleTabLabels(
-            tabs = tabs,
-            selectedIndex = selectedIndex,
-            onTabSelected = onTabSelected
-        )
-    }
-}
-
-@Composable
-private fun AppRoutingTabLabel(
-    selected: Boolean,
-    title: String
-) {
-    Text(
-        title,
-        color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-        fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal
-    )
-}
 
 @Suppress("LongMethod", "CyclomaticComplexMethod", "CognitiveComplexMethod")
 @OptIn(ExperimentalMaterial3Api::class)
@@ -156,19 +42,11 @@ fun AppRoutingScreen(
     installedAppsViewModel: InstalledAppsViewModel = viewModel()
 ) {
     val settings by settingsViewModel.settings.collectAsStateWithLifecycle()
-    var selectedTab by remember { mutableIntStateOf(0) }
-    val useLiquidGlass = isLiquidGlassTheme()
     val requestLocalNetworkPermission = rememberLocalNetworkPermissionRequest()
-    val tabs =
-        listOf(stringResource(R.string.app_rules_tabs_groups), stringResource(R.string.app_rules_tabs_individual))
 
     var showAddGroupDialog by remember { mutableStateOf(false) }
     var editingGroup by remember { mutableStateOf<AppGroup?>(null) }
     var showDeleteGroupConfirm by remember { mutableStateOf<AppGroup?>(null) }
-
-    var showAddRuleDialog by remember { mutableStateOf(false) }
-    var editingRule by remember { mutableStateOf<AppRule?>(null) }
-    var showDeleteRuleConfirm by remember { mutableStateOf<AppRule?>(null) }
 
     val allNodes by nodesViewModel.allNodes.collectAsStateWithLifecycle()
     val nodesForSelection by nodesViewModel.filteredAllNodes.collectAsStateWithLifecycle()
@@ -201,37 +79,12 @@ fun AppRoutingScreen(
         }
     }
 
-    fun saveRuleWithPermissionCheck(rule: AppRule, save: () -> Unit) {
-        if (LocalNetworkPermission.requiresLocalNetworkAccess(
-                AppSettings(bypassLan = false, appRules = listOf(rule))
-            )
-        ) {
-            requestLocalNetworkPermission(save)
-        } else {
-            save()
-        }
-    }
-
     fun toggleGroupWithPermissionCheck(group: AppGroup) {
         val toggle = { settingsViewModel.toggleAppGroupEnabled(group.id) }
         if (
             !group.enabled &&
             LocalNetworkPermission.requiresLocalNetworkAccess(
                 AppSettings(bypassLan = false, appGroups = listOf(group.copy(enabled = true)))
-            )
-        ) {
-            requestLocalNetworkPermission(toggle)
-        } else {
-            toggle()
-        }
-    }
-
-    fun toggleRuleWithPermissionCheck(rule: AppRule) {
-        val toggle = { settingsViewModel.toggleAppRuleEnabled(rule.id) }
-        if (
-            !rule.enabled &&
-            LocalNetworkPermission.requiresLocalNetworkAccess(
-                AppSettings(bypassLan = false, appRules = listOf(rule.copy(enabled = true)))
             )
         ) {
             requestLocalNetworkPermission(toggle)
@@ -293,67 +146,11 @@ fun AppRoutingScreen(
         )
     }
 
-    if (showAddRuleDialog) {
-        AppRuleEditorDialog(
-            installedApps = installedApps,
-            existingPackages = settings.appRules.map { it.packageName }.toSet(),
-            nodes = allNodes,
-            nodesForSelection = nodesForSelection,
-            profiles = profiles,
-            loadIcon = loadAppIcon,
-            onDismiss = { showAddRuleDialog = false },
-            onConfirm = { rule ->
-                saveRuleWithPermissionCheck(rule) {
-                    settingsViewModel.addAppRule(rule)
-                    showAddRuleDialog = false
-                }
-            }
-        )
-    }
-
-    if (editingRule != null) {
-        AppRuleEditorDialog(
-            initialRule = editingRule,
-            installedApps = installedApps,
-            existingPackages = settings.appRules.filter { it.id != editingRule?.id }.map { it.packageName }.toSet(),
-            nodes = allNodes,
-            nodesForSelection = nodesForSelection,
-            profiles = profiles,
-            loadIcon = loadAppIcon,
-            onDismiss = { editingRule = null },
-            onConfirm = { rule ->
-                saveRuleWithPermissionCheck(rule) {
-                    settingsViewModel.updateAppRule(rule)
-                    editingRule = null
-                }
-            }
-        )
-    }
-
-    val ruleToDelete = showDeleteRuleConfirm
-    if (ruleToDelete != null) {
-        ConfirmDialog(
-            title = stringResource(R.string.app_rules_delete_title),
-            message = stringResource(R.string.app_rules_delete_confirm, ruleToDelete.appName),
-            confirmText = stringResource(R.string.common_delete),
-            onConfirm = {
-                settingsViewModel.deleteAppRule(ruleToDelete.id)
-                showDeleteRuleConfirm = null
-            },
-            onDismiss = { showDeleteRuleConfirm = null }
-        )
-    }
-
     FloatingPageLayout(
         title = stringResource(R.string.app_rules_title),
         onBack = { navController.popBackStack() },
         actions = {
-            IconButton(
-                onClick = {
-                    if (selectedTab == 0) showAddGroupDialog = true
-                    else showAddRuleDialog = true
-                }
-            ) {
+            IconButton(onClick = { showAddGroupDialog = true }) {
                 Icon(Icons.Rounded.Add, contentDescription = stringResource(R.string.common_add), tint = MaterialTheme.colorScheme.onBackground)
             }
         }
@@ -362,117 +159,38 @@ fun AppRoutingScreen(
             contentWindowInsets = WindowInsets(0, 0, 0, 0),
             containerColor = liquidGlassTopAppBarContainerColor(MaterialTheme.colorScheme.background)
         ) { padding ->
-            AnimatedContent(
-                targetState = selectedTab,
-                transitionSpec = {
-                    val animDuration = 350
-                    if (targetState > initialState) {
-                        (slideInHorizontally(
-                            initialOffsetX = { it / 4 },
-                            animationSpec = tween(animDuration)
-                        ) + fadeIn(animationSpec = tween(animDuration))) togetherWith
-                            (slideOutHorizontally(
-                                targetOffsetX = { -it / 4 },
-                                animationSpec = tween(animDuration)
-                            ) + fadeOut(animationSpec = tween(animDuration)))
-                    } else {
-                        (slideInHorizontally(
-                            initialOffsetX = { -it / 4 },
-                            animationSpec = tween(animDuration)
-                        ) + fadeIn(animationSpec = tween(animDuration))) togetherWith
-                            (slideOutHorizontally(
-                                targetOffsetX = { it / 4 },
-                                animationSpec = tween(animDuration)
-                            ) + fadeOut(animationSpec = tween(animDuration)))
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding),
+                contentPadding = PaddingValues(
+                    start = 16.dp,
+                    top = contentTopPadding + 16.dp,
+                    end = 16.dp,
+                    bottom = 16.dp + WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+                ),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                if (settings.appGroups.isEmpty()) {
+                    item {
+                        EmptyState(
+                            Icons.Rounded.Folder,
+                            stringResource(R.string.app_rules_empty_groups),
+                            stringResource(R.string.app_rules_empty_groups_hint)
+                        )
                     }
-                },
-                label = "app_routing_tab_content"
-            ) { tab ->
-                LazyColumn(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(padding),
-                    contentPadding = PaddingValues(
-                        start = 16.dp,
-                        top = contentTopPadding + 16.dp,
-                        end = 16.dp,
-                        bottom = 16.dp + WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
-                    ),
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    item(key = "app_routing_tabs") {
-                        if (useLiquidGlass) {
-                            LiquidGlassTabCapsule(
-                                selectedIndex = selectedTab,
-                                tabs = tabs,
-                                onTabSelected = { selectedTab = it }
-                            )
-                        } else {
-                            TabRow(
-                                selectedTabIndex = selectedTab,
-                                containerColor = MaterialTheme.colorScheme.background,
-                                contentColor = MaterialTheme.colorScheme.onBackground,
-                                indicator = { tabPositions ->
-                                    TabRowDefaults.Indicator(
-                                        Modifier.tabIndicatorOffset(tabPositions[selectedTab]),
-                                        color = liquidGlassTabIndicatorColor(MaterialTheme.colorScheme.primary)
-                                    )
-                                },
-                                divider = {}
-                            ) {
-                                tabs.forEachIndexed { index, title ->
-                                    Tab(
-                                        selected = selectedTab == index,
-                                        onClick = { selectedTab = index },
-                                        text = {
-                                            AppRoutingTabLabel(
-                                                selected = selectedTab == index,
-                                                title = title
-                                            )
-                                        }
-                                    )
-                                }
-                            }
-                        }
-                    }
-                    if (tab == 0) {
-                        if (settings.appGroups.isEmpty()) {
-                            item {
-                                EmptyState(Icons.Rounded.Folder, stringResource(R.string.app_rules_empty_groups), stringResource(R.string.app_rules_empty_groups_hint))
-                            }
-                        } else {
-                            items(settings.appGroups) { group ->
-                                val mode = group.outboundMode ?: RuleSetOutboundMode.PROXY
-                                val outboundText = resolveOutboundText(mode, group.outboundValue, allNodes, profiles)
-                                AppGroupCard(
-                                    group = group,
-                                    outboundText = "${stringResource(mode.displayNameRes)} -> $outboundText",
-                                    loadIcon = loadAppIcon,
-                                    onClick = { editingGroup = group },
-                                    onToggle = { toggleGroupWithPermissionCheck(group) },
-                                    onDelete = { showDeleteGroupConfirm = group }
-                                )
-                            }
-                        }
-                    } else {
-                        if (settings.appRules.isEmpty()) {
-                            item {
-                                EmptyState(Icons.Rounded.Apps, stringResource(R.string.app_rules_empty_individual), stringResource(R.string.app_rules_empty_individual_hint))
-                            }
-                        } else {
-                            items(settings.appRules) { rule ->
-                                val mode = rule.outboundMode ?: RuleSetOutboundMode.PROXY
-                                val outboundText = resolveOutboundText(mode, rule.outboundValue, allNodes, profiles)
-                                AppRuleItem(
-                                    rule = rule,
-                                    outboundText = "${stringResource(mode.displayNameRes)} -> $outboundText",
-                                    loadIcon = loadAppIcon,
-                                    onClick = { editingRule = rule },
-                                    onToggle = { toggleRuleWithPermissionCheck(rule) },
-                                    onDelete = { showDeleteRuleConfirm = rule }
-                                )
-                            }
-                        }
+                } else {
+                    items(settings.appGroups) { group ->
+                        val mode = group.outboundMode ?: RuleSetOutboundMode.PROXY
+                        val outboundText = resolveOutboundText(mode, group.outboundValue, allNodes, profiles)
+                        AppGroupCard(
+                            group = group,
+                            outboundText = "${stringResource(mode.displayNameRes)} -> $outboundText",
+                            loadIcon = loadAppIcon,
+                            onClick = { editingGroup = group },
+                            onToggle = { toggleGroupWithPermissionCheck(group) },
+                            onDelete = { showDeleteGroupConfirm = group }
+                        )
                     }
                 }
             }
