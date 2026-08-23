@@ -1,6 +1,8 @@
 package com.kunk.singbox.viewmodel
 
 import com.kunk.singbox.ipc.VpnStateStore
+import com.kunk.singbox.ipc.DataPlaneReadinessSnapshot
+import com.kunk.singbox.ipc.DataPlaneStatus
 import com.kunk.singbox.model.ConnectionState
 import com.kunk.singbox.model.FilterMode
 import com.kunk.singbox.model.NodeFilter
@@ -10,12 +12,24 @@ import com.kunk.singbox.service.ServiceState
 
 internal fun resolveTrustedDashboardConnectionState(
     serviceState: ServiceState,
-    ipcBound: Boolean
+    ipcBound: Boolean,
+    readiness: DataPlaneReadinessSnapshot = DataPlaneReadinessSnapshot.stopped(),
+    mode: VpnStateStore.CoreMode = VpnStateStore.CoreMode.NONE,
+    apiLevel: Int = 0,
+    nowElapsedMs: Long = 0L
 ): ConnectionState {
     if (!ipcBound) return ConnectionState.Idle
+    if (readiness.status == DataPlaneStatus.FAILED_BLOCKED ||
+        readiness.status == DataPlaneStatus.FAILED_UNPROTECTED
+    ) {
+        return ConnectionState.Error
+    }
 
     return when (serviceState) {
-        ServiceState.RUNNING -> ConnectionState.Connected
+        ServiceState.RUNNING -> when {
+            readiness.isReady(serviceState, mode, ipcBound, apiLevel, nowElapsedMs) -> ConnectionState.Connected
+            else -> ConnectionState.Connecting
+        }
         ServiceState.STARTING -> ConnectionState.Connecting
         ServiceState.STOPPING -> ConnectionState.Disconnecting
         ServiceState.STOPPED -> ConnectionState.Idle

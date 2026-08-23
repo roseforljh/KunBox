@@ -831,4 +831,10 @@
     <string name="nodes_auto_selection_current">Current: %1$s</string>
     <string name="nodes_auto_selection_unavailable">No available node</string>
     <string name="nodes_auto_selection_label">Automatic · %1$s</string>
+    <string name="vpn_status_blocking">Protecting network</string>
+    <string name="vpn_status_recovering">Recovering, traffic blocked</string>
+    <string name="vpn_status_failed_blocked">Recovery failed, traffic remains blocked</string>
+    <string name="vpn_status_failed_unprotected">VPN disconnected, direct access possible</string>
+    <string name="vpn_lockdown_incomplete">System leak protection incomplete. Open VPN settings</string>
+    <string name="vpn_browser_not_covered">Default browser is outside VPN coverage</string>
 </resources>

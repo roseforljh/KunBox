@@ -58,6 +58,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class DashboardViewModel(application: Application) : AndroidViewModel(application) {
@@ -67,6 +68,8 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         internal const val START_STOPPED_CONFIRM_MS = 5_000L
         internal const val START_MONITOR_TIMEOUT_MS = 60_000L
         private const val START_REBIND_INTERVAL_MS = 2_000L
+        private const val STOP_CONFIRM_TIMEOUT_MS = 8_000L
+        private const val FORCE_STOP_CONFIRM_TIMEOUT_MS = 2_000L
 
         internal fun shouldReportStartError(currentError: String?): Boolean {
             return !currentError.isNullOrBlank()
@@ -110,6 +113,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
     // Connection state
     private val _connectionState = MutableStateFlow(ConnectionState.Idle)
     val connectionState: StateFlow<ConnectionState> = _connectionState.asStateFlow()
+    val dataPlaneReadiness: StateFlow<com.kunk.singbox.ipc.DataPlaneReadinessSnapshot> = SingBoxRemote.readiness
 
     // Stats
     private val _statsBase = MutableStateFlow(ConnectionStats(0, 0, 0, 0, 0))
@@ -311,7 +315,11 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
 
                 val trustedInitialState = resolveTrustedDashboardConnectionState(
                     serviceState = SingBoxRemote.state.value,
-                    ipcBound = SingBoxRemote.isBound()
+                    ipcBound = SingBoxRemote.isBound(),
+                    readiness = SingBoxRemote.readiness.value,
+                    mode = VpnStateStore.getMode(),
+                    apiLevel = Build.VERSION.SDK_INT,
+                    nowElapsedMs = SystemClock.elapsedRealtime()
                 )
                 if (trustedInitialState == ConnectionState.Connected) {
                     _connectionState.value = ConnectionState.Connected
@@ -378,7 +386,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         val stateFlow = SingBoxRemote.state
         viewModelScope.launch {
             stateFlow.collect { state ->
-                when (resolveTrustedDashboardConnectionState(state, SingBoxRemote.isBound())) {
+                when (resolveDashboardConnectionState(state)) {
                     ConnectionState.Connected -> {
                         systemVpnDetectedOnBoot = false
                         setConnectionState(ConnectionState.Connected)
@@ -398,10 +406,26 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                 }
             }
         }
+        viewModelScope.launch {
+            SingBoxRemote.readiness.collect {
+                setConnectionState(resolveDashboardConnectionState(SingBoxRemote.state.value))
+            }
+        }
 
         // 运行态 activeLabel 只用于展示，不写回用户手选节点（auto-failover 不得持久化选择）
 
         Log.i(TAG, "startStateCollector: collectors launched")
+    }
+
+    private fun resolveDashboardConnectionState(state: ServiceState): ConnectionState {
+        return resolveTrustedDashboardConnectionState(
+            serviceState = state,
+            ipcBound = SingBoxRemote.isBound(),
+            readiness = SingBoxRemote.readiness.value,
+            mode = VpnStateStore.getMode(),
+            apiLevel = Build.VERSION.SDK_INT,
+            nowElapsedMs = SystemClock.elapsedRealtime()
+        )
     }
 
     private fun setConnectionState(newState: ConnectionState) {
@@ -516,10 +540,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
             // 避免产生重复的前台通知导致网络恢复抖动
 
             // 只信任已绑定 IPC 的实时状态，避免清后台后的过期 MMKV active/pending 造成假启动态
-            val phase1State = resolveTrustedDashboardConnectionState(
-                serviceState = SingBoxRemote.state.value,
-                ipcBound = SingBoxRemote.isBound()
-            )
+            val phase1State = resolveDashboardConnectionState(SingBoxRemote.state.value)
             setConnectionState(phase1State)
 
             startStateCollector()
@@ -534,7 +555,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
             if (SingBoxRemote.isBound()) {
                 val state = SingBoxRemote.state.value
                 Log.i(TAG, "refreshState Phase 2: state=$state, bound=true, retries=$retries")
-                setConnectionState(resolveTrustedDashboardConnectionState(state, ipcBound = true))
+                setConnectionState(resolveDashboardConnectionState(state))
             } else {
                 Log.w(TAG, "refreshState Phase 2: IPC not bound, showing idle until real service state arrives")
                 setConnectionState(ConnectionState.Idle)
@@ -557,12 +578,13 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                     _connectionState.value = ConnectionState.Disconnecting
                     stopVpn()
                 }
-                ConnectionState.Connected, ConnectionState.Disconnecting -> {
+                ConnectionState.Connected -> {
                     // P0 Optimization: Optimistic UI
                     startGraceUntilElapsedMs = null
                     _connectionState.value = ConnectionState.Disconnecting
                     stopVpn()
                 }
+                ConnectionState.Disconnecting -> Unit
             }
         }
     }
@@ -868,7 +890,14 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                             observedActiveState = true
                         }
 
-                        if (SingBoxRemote.isRunning.value || serviceState == ServiceState.RUNNING) {
+                        if (SingBoxRemote.readiness.value.isReady(
+                                serviceState = serviceState,
+                                mode = VpnStateStore.getMode(),
+                                ipcBound = ipcBound,
+                                apiLevel = Build.VERSION.SDK_INT,
+                                nowElapsedMs = SystemClock.elapsedRealtime()
+                            )
+                        ) {
                             _connectionState.value = ConnectionState.Connected
                             startTrafficMonitor()
                             return@launch
@@ -958,21 +987,31 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         stopConfirmJob = viewModelScope.launch {
             try {
                 if (SingBoxRemote.state.value != ServiceState.STOPPED) {
-                    withTimeout(8000L) {
+                    withTimeout(STOP_CONFIRM_TIMEOUT_MS) {
                         SingBoxRemote.state.first { it == ServiceState.STOPPED }
                     }
                 }
             } catch (e: TimeoutCancellationException) {
-                Log.w(TAG, "Timeout waiting for service stop confirmation", e)
+                Log.e(TAG, "Stop confirmation timed out, forcing service process stop", e)
+                VpnServiceManager.forceStop(context).onFailure { error ->
+                    Log.e(TAG, "Failed to dispatch force stop", error)
+                }
                 SingBoxRemote.ensureBound(context)
-                delay(300)
+                withTimeoutOrNull(FORCE_STOP_CONFIRM_TIMEOUT_MS) {
+                    SingBoxRemote.state.first { it == ServiceState.STOPPED }
+                }
+                SingBoxRemote.queryAndSyncState(context)
             }
 
-            if (SingBoxRemote.state.value == ServiceState.STOPPED) {
+            val persistedStopped = !VpnStateStore.getActive() &&
+                VpnStateStore.getPending().isBlank() &&
+                VpnStateStore.getMode() == VpnStateStore.CoreMode.NONE
+            if (SingBoxRemote.state.value == ServiceState.STOPPED || persistedStopped) {
                 VpnTileService.persistVpnPending("")
                 performDisconnect()
             } else {
-                setConnectionState(ConnectionState.Disconnecting)
+                Log.e(TAG, "Service did not confirm stop after force stop")
+                setConnectionState(ConnectionState.Error)
             }
             stopConfirmJob = null
         }

@@ -1,6 +1,9 @@
 package com.kunk.singbox.ui.screens
 
 import android.text.format.Formatter
+import android.content.Intent
+import android.provider.Settings
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -100,6 +103,7 @@ fun DashboardScreen(
     val scope = rememberCoroutineScope()
 
     val connectionState by viewModel.connectionState.collectAsStateWithLifecycle()
+    val dataPlaneReadiness by viewModel.dataPlaneReadiness.collectAsStateWithLifecycle()
     val stats by viewModel.stats.collectAsStateWithLifecycle()
     val profiles by viewModel.profiles.collectAsStateWithLifecycle()
     val activeProfileId by viewModel.activeProfileId.collectAsStateWithLifecycle()
@@ -402,8 +406,18 @@ fun DashboardScreen(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
+                    val safetyStatusLabel = when (dataPlaneReadiness.status) {
+                        com.kunk.singbox.ipc.DataPlaneStatus.BLOCKING -> stringResource(R.string.vpn_status_blocking)
+                        com.kunk.singbox.ipc.DataPlaneStatus.RECOVERING ->
+                            stringResource(R.string.vpn_status_recovering)
+                        com.kunk.singbox.ipc.DataPlaneStatus.FAILED_BLOCKED ->
+                            stringResource(R.string.vpn_status_failed_blocked)
+                        com.kunk.singbox.ipc.DataPlaneStatus.FAILED_UNPROTECTED ->
+                            stringResource(R.string.vpn_status_failed_unprotected)
+                        else -> stringResource(connectionState.displayNameRes)
+                    }
                     StatusChip(
-                        label = stringResource(connectionState.displayNameRes),
+                        label = safetyStatusLabel,
                         isActive = connectionState == ConnectionState.Connected
                     )
 
@@ -417,6 +431,27 @@ fun DashboardScreen(
                         mode = currentMode,
                         indicatorColor = indicatorColor
                     ) { showModeDialog = true }
+                }
+
+                val protectionWarning = when {
+                    dataPlaneReadiness.routingScope.contains("browser=excluded") ->
+                        stringResource(R.string.vpn_browser_not_covered)
+                    settings.tunEnabled &&
+                        dataPlaneReadiness.lockdownStatus != com.kunk.singbox.ipc.VpnLockdownStatus.ENABLED ->
+                        stringResource(R.string.vpn_lockdown_incomplete)
+                    else -> null
+                }
+                if (protectionWarning != null) {
+                    Text(
+                        text = protectionWarning,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                runCatching { context.startActivity(Intent(Settings.ACTION_VPN_SETTINGS)) }
+                            }
+                    )
                 }
 
                 val noProfileMsg = stringResource(R.string.dashboard_no_profiles_available)
