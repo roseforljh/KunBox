@@ -433,8 +433,9 @@ fun MultiAppSelectorDialog(
     }
     val listState = rememberLazyListState()
     val showTopControls by remember {
-        derivedStateOf { !listState.canScrollBackward }
+        derivedStateOf { isSearchExpanded || !listState.canScrollBackward }
     }
+    LaunchedEffect(searchQuery) { listState.scrollToItem(0) }
     LaunchedEffect(showTopControls) {
         if (!showTopControls) {
             isSearchExpanded = false

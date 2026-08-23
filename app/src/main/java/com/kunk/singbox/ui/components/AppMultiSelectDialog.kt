@@ -301,8 +301,9 @@ fun AppMultiSelectDialog(
     val isLoading = loadingState is InstalledAppsRepository.LoadingState.Loading
     val listState = rememberLazyListState()
     val showTopControls by remember {
-        derivedStateOf { !listState.canScrollBackward }
+        derivedStateOf { isSearchExpanded || !listState.canScrollBackward }
     }
+    LaunchedEffect(query) { listState.scrollToItem(0) }
     LaunchedEffect(showTopControls) {
         if (!showTopControls) {
             isSearchExpanded = false
