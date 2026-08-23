@@ -51,7 +51,10 @@ class SettingsStore private constructor(context: Context) {
             result = migrateNetworkAutoSwitch(version, result)
             result = migrateAppThemeStyle(version, result)
             result = migrateLocalDnsIpDoh(version, result)
-            return normalizeExclusiveAppAssignments(migrateLegacyAppRules(recoverLatencyTestUrl(result)))
+            result = recoverLatencyTestUrl(result)
+            val perAppPolicyRevision: Long? = runCatching { result.perAppPolicyRevision }.getOrNull()
+            result = result.copy(perAppPolicyRevision = perAppPolicyRevision?.coerceAtLeast(0L) ?: 0L)
+            return normalizeExclusiveAppAssignments(migrateLegacyAppRules(result))
         }
 
         private fun migrateEarlySettings(version: Int, settings: AppSettings): AppSettings {

@@ -28,6 +28,7 @@ class PackageRemovedReceiver : BroadcastReceiver() {
         )
     }
 
+    @Suppress("CognitiveComplexMethod")
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action != Intent.ACTION_PACKAGE_ADDED && intent.action != Intent.ACTION_PACKAGE_REMOVED) return
         val packageName = intent.data?.packageName() ?: return
@@ -47,13 +48,18 @@ class PackageRemovedReceiver : BroadcastReceiver() {
                 )
                 when (syncAction) {
                     PerAppPackageSyncAction.ADD -> {
-                        val changed = settingsRepository.addPackageToCurrentPerAppRule(packageName)
-                        if (changed) {
-                            VpnServiceManager.applyPerAppRuleChangeIfRunning(appContext)
+                        val update = settingsRepository.addPackageToCurrentPerAppRule(packageName).getOrThrow()
+                        if (update.runtimeChanged) {
+                            VpnServiceManager.applyPerAppRuleChangeIfRunning(appContext, update.revision)
+                                .getOrThrow()
                         }
                     }
                     PerAppPackageSyncAction.REMOVE -> {
-                        settingsRepository.removePackageFromPerAppSettings(packageName)
+                        val update = settingsRepository.removePackageFromPerAppSettings(packageName).getOrThrow()
+                        if (update.runtimeChanged) {
+                            VpnServiceManager.applyPerAppRuleChangeIfRunning(appContext, update.revision)
+                                .getOrThrow()
+                        }
                     }
                     PerAppPackageSyncAction.NONE -> Unit
                 }

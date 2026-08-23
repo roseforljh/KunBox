@@ -4229,11 +4229,12 @@ class ConfigRepository(protected val context: Context) {
                 )
                 val baseRule = ConfigRepository.toRouteRule(semantic, defaultProxyTag)
 
-                rules.add(
-                    baseRule.copy(
-                        packageName = resolvePackagesSharingUid(listOf(rule.packageName))
-                    )
+                val packageNames = resolvePackagesSharingUid(
+                    filterVpnCapturedPackages(settings, listOf(rule.packageName))
                 )
+                if (packageNames.isNotEmpty()) {
+                    rules.add(baseRule.copy(packageName = packageNames))
+                }
             }
         settings.appGroups
             .filter { ConfigRepository.shouldApplyCustomAndAppRules(settings.routingMode) && it.enabled }
@@ -4249,7 +4250,9 @@ class ConfigRepository(protected val context: Context) {
                     )
                 )
                 val baseRule = ConfigRepository.toRouteRule(semantic, defaultProxyTag)
-                val packageNames = resolvePackagesSharingUid(group.apps.map { it.packageName })
+                val packageNames = resolvePackagesSharingUid(
+                    filterVpnCapturedPackages(settings, group.apps.map { it.packageName })
+                )
                 if (packageNames.isNotEmpty()) {
                     rules.add(
                         baseRule.copy(
@@ -4556,7 +4559,9 @@ class ConfigRepository(protected val context: Context) {
                         nodeTagResolver = outboundsContext.nodeTagResolver
                     )
                 )
-                val packageNames = resolvePackagesSharingUid(listOf(rule.packageName))
+                val packageNames = resolvePackagesSharingUid(
+                    filterVpnCapturedPackages(settings, listOf(rule.packageName))
+                )
                 if (packageNames.isNotEmpty()) {
                     addPackageDnsRule(DnsRule(packageName = packageNames), semantic)
                 }
@@ -4574,7 +4579,9 @@ class ConfigRepository(protected val context: Context) {
                         nodeTagResolver = outboundsContext.nodeTagResolver
                     )
                 )
-                val packageNames = resolvePackagesSharingUid(group.apps.map { it.packageName })
+                val packageNames = resolvePackagesSharingUid(
+                    filterVpnCapturedPackages(settings, group.apps.map { it.packageName })
+                )
                 if (packageNames.isNotEmpty()) {
                     addPackageDnsRule(DnsRule(packageName = packageNames), semantic)
                 }
@@ -4765,10 +4772,16 @@ class ConfigRepository(protected val context: Context) {
         val explicitNodeReferences = buildList {
             if (ConfigRepository.shouldApplyCustomAndAppRules(settings.routingMode)) {
                 settings.appRules
-                    .filter { it.enabled && it.outboundMode == RuleSetOutboundMode.NODE }
+                    .filter {
+                        it.enabled && it.outboundMode == RuleSetOutboundMode.NODE &&
+                            filterVpnCapturedPackages(settings, listOf(it.packageName)).isNotEmpty()
+                    }
                     .mapNotNullTo(this) { it.outboundValue }
                 settings.appGroups
-                    .filter { it.enabled && it.outboundMode == RuleSetOutboundMode.NODE }
+                    .filter {
+                        it.enabled && it.outboundMode == RuleSetOutboundMode.NODE &&
+                            filterVpnCapturedPackages(settings, it.apps.map(AppInfo::packageName)).isNotEmpty()
+                    }
                     .mapNotNullTo(this) { it.outboundValue }
                 settings.customRules
                     .filter { it.enabled && it.outboundMode == RuleSetOutboundMode.NODE }
@@ -4796,7 +4809,10 @@ class ConfigRepository(protected val context: Context) {
             MeteredNodeConfigGuard.findSettingsViolations(
                 settings = settings,
                 nodes = allNodes,
-                allowedProtectedNodeId = allowedProtectedNodeId
+                allowedProtectedNodeId = allowedProtectedNodeId,
+                isPackageCaptured = { packageName ->
+                    filterVpnCapturedPackages(settings, listOf(packageName)).isNotEmpty()
+                }
             )
         )
         MeteredNodeConfigGuard.requireNoViolations(
@@ -4886,7 +4902,10 @@ class ConfigRepository(protected val context: Context) {
         val requiredNodeIds = explicitlyRoutedProtectedNodeIds.toMutableSet()
         val requiredProfileIds = mutableSetOf<String>()
         settings.appRules
-            .filter { ConfigRepository.shouldApplyCustomAndAppRules(settings.routingMode) && it.enabled }
+            .filter {
+                ConfigRepository.shouldApplyCustomAndAppRules(settings.routingMode) && it.enabled &&
+                    filterVpnCapturedPackages(settings, listOf(it.packageName)).isNotEmpty()
+            }
             .forEach { rule ->
                 when (rule.outboundMode) {
                     RuleSetOutboundMode.NODE -> resolveNodeRefToId(rule.outboundValue)?.let { requiredNodeIds.add(it) }
@@ -4895,7 +4914,10 @@ class ConfigRepository(protected val context: Context) {
                 }
             }
         settings.appGroups
-            .filter { ConfigRepository.shouldApplyCustomAndAppRules(settings.routingMode) && it.enabled }
+            .filter {
+                ConfigRepository.shouldApplyCustomAndAppRules(settings.routingMode) && it.enabled &&
+                    filterVpnCapturedPackages(settings, it.apps.map(AppInfo::packageName)).isNotEmpty()
+            }
             .forEach { group ->
                 when (group.outboundMode) {
                     RuleSetOutboundMode.NODE -> resolveNodeRefToId(group.outboundValue)?.let { requiredNodeIds.add(it) }
@@ -5933,6 +5955,35 @@ class ConfigRepository(protected val context: Context) {
         LogRepository.getInstance().addAlwaysLog(
             "WARN [METERED_GUARD] stopped runtime because protected-node paths could not be purged safely"
         )
+    }
+
+    protected fun filterVpnCapturedPackages(settings: AppSettings, packageNames: List<String>): List<String> {
+        if (!settings.tunEnabled) return packageNames.map(String::trim).filter(String::isNotBlank).distinct()
+        val policy = PerAppVpnPolicy.from(settings)
+        val selectedPackages = when (policy.mode) {
+            VpnAppMode.ALL -> emptySet()
+            VpnAppMode.ALLOWLIST -> policy.allowlist
+            VpnAppMode.BLOCKLIST -> policy.blocklist
+        }
+        val selectedUids = selectedPackages.mapNotNullTo(mutableSetOf()) { packageName ->
+            runCatching { context.packageManager.getApplicationInfo(packageName, 0).uid }.getOrNull()
+        }
+        return packageNames.asSequence()
+            .map(String::trim)
+            .filter(String::isNotBlank)
+            .filterNot { it == context.packageName }
+            .filter { packageName ->
+                val uid = runCatching {
+                    context.packageManager.getApplicationInfo(packageName, 0).uid
+                }.getOrNull()
+                when (policy.mode) {
+                    VpnAppMode.ALL -> true
+                    VpnAppMode.ALLOWLIST -> packageName in policy.allowlist || uid in selectedUids
+                    VpnAppMode.BLOCKLIST -> packageName !in policy.blocklist && uid !in selectedUids
+                }
+            }
+            .distinct()
+            .toList()
     }
 
     private fun shouldReloadNodeSettingsChange(): Boolean {

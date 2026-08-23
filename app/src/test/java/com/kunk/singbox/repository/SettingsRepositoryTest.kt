@@ -139,7 +139,7 @@ class SettingsRepositoryTest {
             source.indexOf("suspend fun removePackageFromPerAppSettings", start)
         )
 
-        assertTrue(body.contains("return persisted && changed"))
+        assertTrue(body.contains("updatePerAppPolicy"))
         assertFalse(body.contains("notifyRestartRequired()"))
     }
 

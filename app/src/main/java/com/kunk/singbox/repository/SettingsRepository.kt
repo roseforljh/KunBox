@@ -23,6 +23,7 @@ import com.kunk.singbox.model.AppLanguage
 import com.kunk.singbox.model.NodeSortType
 import com.kunk.singbox.model.NodeFilter
 import com.kunk.singbox.model.BackgroundPowerSavingDelay
+import com.kunk.singbox.model.PerAppVpnPolicy
 import com.kunk.singbox.repository.store.SettingsStore
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -30,6 +31,12 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.StateFlow
+
+data class PerAppPolicyUpdateResult(
+    val changed: Boolean,
+    val runtimeChanged: Boolean,
+    val revision: Long
+)
 
 class SettingsRepository(private val context: Context) {
 
@@ -167,37 +174,51 @@ class SettingsRepository(private val context: Context) {
         updateSettingsAndNotifyRestart { it.copy(vpnRouteIncludeCidrs = value) }
     }
 
-    suspend fun setVpnAppMode(value: VpnAppMode) {
-        updateSettingsAndNotifyRestart { it.copy(vpnAppMode = value) }
+    suspend fun setVpnAppMode(value: VpnAppMode): Result<PerAppPolicyUpdateResult> =
+        updatePerAppPolicy { current ->
+            current.copy(vpnAppMode = value) to (current.vpnAppMode != value)
+        }
+
+    suspend fun setVpnAllowlist(value: String): Result<PerAppPolicyUpdateResult> {
+        val normalized = PerAppVpnPolicy.parsePackageNames(value).joinToString("\n")
+        return updatePerAppPolicy { current ->
+            val changed = PerAppVpnPolicy.parsePackageNames(current.vpnAllowlist) !=
+                PerAppVpnPolicy.parsePackageNames(normalized)
+            current.copy(vpnAllowlist = normalized) to
+                (changed && current.vpnAppMode == VpnAppMode.ALLOWLIST)
+        }
     }
 
-    suspend fun setVpnAllowlist(value: String) {
-        updateSettingsAndNotifyRestart { it.copy(vpnAllowlist = value) }
-    }
-
-    suspend fun setVpnBlocklist(value: String) {
-        updateSettingsAndNotifyRestart { it.copy(vpnBlocklist = value) }
+    suspend fun setVpnBlocklist(value: String): Result<PerAppPolicyUpdateResult> {
+        val normalized = PerAppVpnPolicy.parsePackageNames(value).joinToString("\n")
+        return updatePerAppPolicy { current ->
+            val changed = PerAppVpnPolicy.parsePackageNames(current.vpnBlocklist) !=
+                PerAppVpnPolicy.parsePackageNames(normalized)
+            current.copy(vpnBlocklist = normalized) to
+                (changed && current.vpnAppMode == VpnAppMode.BLOCKLIST)
+        }
     }
 
     suspend fun setAutoIncludeNewAppsInPerAppRules(value: Boolean) {
         settingsStore.updateSettingsAndWait { it.copy(autoIncludeNewAppsInPerAppRules = value) }
     }
 
-    suspend fun addPackageToCurrentPerAppRule(packageName: String): Boolean {
-        var changed = false
-        val persisted = settingsStore.updateSettingsAndWait { settings ->
-            addPackageToCurrentPerAppRule(settings, packageName).also { updated ->
-                changed = updated != settings
-            }
+    suspend fun addPackageToCurrentPerAppRule(packageName: String): Result<PerAppPolicyUpdateResult> =
+        updatePerAppPolicy { current ->
+            val updated = addPackageToCurrentPerAppRule(current, packageName)
+            updated to (updated != current)
         }
-        return persisted && changed
-    }
 
-    suspend fun removePackageFromPerAppSettings(packageName: String) {
-        updateSettingsAndNotifyRestart { settings ->
-            removePackageFromPerAppSettings(settings, packageName)
+    suspend fun removePackageFromPerAppSettings(packageName: String): Result<PerAppPolicyUpdateResult> =
+        updatePerAppPolicy { current ->
+            val updated = removePackageFromPerAppSettings(current, packageName)
+            val activeListChanged = when (current.vpnAppMode) {
+                VpnAppMode.ALL -> false
+                VpnAppMode.ALLOWLIST -> current.vpnAllowlist != updated.vpnAllowlist
+                VpnAppMode.BLOCKLIST -> current.vpnBlocklist != updated.vpnBlocklist
+            }
+            updated to activeListChanged
         }
-    }
 
     suspend fun setLocalDns(value: String) {
         updateSettingsAndNotifyRestart { it.copy(localDns = value) }
@@ -503,6 +524,32 @@ class SettingsRepository(private val context: Context) {
         _restartRequiredEvents.tryEmit(Unit)
     }
 
+    private suspend fun updatePerAppPolicy(
+        update: (AppSettings) -> Pair<AppSettings, Boolean>
+    ): Result<PerAppPolicyUpdateResult> {
+        var outcome = PerAppPolicyUpdateResult(
+            changed = false,
+            runtimeChanged = false,
+            revision = settings.value.perAppPolicyRevision
+        )
+        val persisted = settingsStore.updateSettingsAndWait { current ->
+            val (candidate, runtimeChanged) = update(current)
+            val changed = candidate != current
+            val revision = if (runtimeChanged) {
+                PerAppVpnPolicy.nextRevision(current.perAppPolicyRevision)
+            } else {
+                current.perAppPolicyRevision
+            }
+            outcome = PerAppPolicyUpdateResult(changed, runtimeChanged, revision)
+            if (changed) candidate.copy(perAppPolicyRevision = revision) else current
+        }
+        if (!persisted) {
+            return Result.failure(IllegalStateException("Failed to persist per-app VPN policy"))
+        }
+        if (outcome.runtimeChanged) notifyRestartRequired()
+        return Result.success(outcome)
+    }
+
     companion object {
         private const val MIN_PROXY_PORT = 1
         private const val MAX_PROXY_PORT = 65535
@@ -537,7 +584,18 @@ class SettingsRepository(private val context: Context) {
                 latencyTestUrl = AppSettings.validateLatencyTestUrl(imported.latencyTestUrl)
                     ?: current.latencyTestUrl,
                 latencyTestConcurrency = sanitizeLatencyTestConcurrency(imported.latencyTestConcurrency),
-                ruleSetAutoUpdateInterval = normalizedRuleSetAutoUpdateInterval
+                ruleSetAutoUpdateInterval = normalizedRuleSetAutoUpdateInterval,
+                perAppPolicyRevision = if (
+                    imported.vpnAppMode != current.vpnAppMode ||
+                    PerAppVpnPolicy.parsePackageNames(imported.vpnAllowlist) !=
+                    PerAppVpnPolicy.parsePackageNames(current.vpnAllowlist) ||
+                    PerAppVpnPolicy.parsePackageNames(imported.vpnBlocklist) !=
+                    PerAppVpnPolicy.parsePackageNames(current.vpnBlocklist)
+                ) {
+                    PerAppVpnPolicy.nextRevision(current.perAppPolicyRevision)
+                } else {
+                    current.perAppPolicyRevision
+                }
             )
 
             return if (importRules) {
@@ -548,6 +606,7 @@ class SettingsRepository(private val context: Context) {
                     ruleSets = current.ruleSets,
                     appRules = current.appRules,
                     appGroups = current.appGroups,
+                    perAppPolicyRevision = current.perAppPolicyRevision,
                     ruleSetAutoUpdateEnabled = current.ruleSetAutoUpdateEnabled,
                     ruleSetAutoUpdateInterval = current.ruleSetAutoUpdateInterval
                 )

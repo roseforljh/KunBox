@@ -1,6 +1,7 @@
 package com.kunk.singbox.repository
 
 import com.kunk.singbox.model.AppGroup
+import com.kunk.singbox.model.AppInfo
 import com.kunk.singbox.model.AppRule
 import com.kunk.singbox.model.AppSettings
 import com.kunk.singbox.model.DnsConfig
@@ -183,6 +184,42 @@ class MeteredNodeConfigGuardTest {
         )
 
         assertTrue(violations.isEmpty())
+    }
+
+    @Test
+    fun dormantAppGroupDoesNotAuthorizeProtectedProfile() {
+        val protectedNode = NodeUi(
+            id = "metered-id",
+            name = "New-HTTP",
+            protocol = "http",
+            group = "Default",
+            sourceProfileId = "profile-a",
+            meteredProtected = true
+        )
+        val settings = AppSettings(
+            appGroups = listOf(
+                AppGroup(
+                    name = "Dormant",
+                    apps = listOf(AppInfo("com.dormant", "Dormant")),
+                    outboundMode = RuleSetOutboundMode.PROFILE,
+                    outboundValue = "profile-a"
+                )
+            )
+        )
+
+        val dormant = MeteredNodeConfigGuard.findSettingsViolations(
+            settings,
+            listOf(protectedNode),
+            isPackageCaptured = { false }
+        )
+        val active = MeteredNodeConfigGuard.findSettingsViolations(
+            settings,
+            listOf(protectedNode),
+            isPackageCaptured = { true }
+        )
+
+        assertTrue(dormant.isEmpty())
+        assertEquals(1, active.size)
     }
 
     @Test

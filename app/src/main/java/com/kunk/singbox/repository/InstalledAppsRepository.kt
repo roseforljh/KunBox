@@ -85,7 +85,8 @@ class InstalledAppsRepository private constructor(private val context: Context) 
                             packageName = app.packageName,
                             appName = appName,
                             isSystemApp = (app.flags and ApplicationInfo.FLAG_SYSTEM) != 0,
-                            hasLauncher = app.packageName in launcherPackages
+                            hasLauncher = app.packageName in launcherPackages,
+                            uid = app.uid
                         )
                     )
 

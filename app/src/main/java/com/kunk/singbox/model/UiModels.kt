@@ -143,7 +143,8 @@ data class InstalledAppUi(
     val packageName: String,
     val appName: String,
     val isSystemApp: Boolean,
-    val hasLauncher: Boolean
+    val hasLauncher: Boolean,
+    val uid: Int = -1
 )
 
 enum class ConnectionState(@StringRes val displayNameRes: Int) {

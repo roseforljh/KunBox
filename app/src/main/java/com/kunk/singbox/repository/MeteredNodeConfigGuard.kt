@@ -22,7 +22,8 @@ internal object MeteredNodeConfigGuard {
     fun findSettingsViolations(
         settings: AppSettings,
         nodes: List<NodeUi>,
-        allowedProtectedNodeId: String? = null
+        allowedProtectedNodeId: String? = null,
+        isPackageCaptured: (String) -> Boolean = { true }
     ): List<String> {
         val protectedNodes = nodes.filter(NodeUi::meteredProtected)
         if (protectedNodes.isEmpty()) return emptyList()
@@ -48,10 +49,12 @@ internal object MeteredNodeConfigGuard {
         }
 
         return buildList {
-            settings.appRules.filter { it.enabled }.forEach { rule ->
+            settings.appRules.filter { it.enabled && isPackageCaptured(it.packageName) }.forEach { rule ->
                 violation("应用规则「${rule.appName}」", rule.outboundMode, rule.outboundValue)?.let(::add)
             }
-            settings.appGroups.filter { it.enabled }.forEach { group ->
+            settings.appGroups.filter {
+                it.enabled && it.apps.any { app -> isPackageCaptured(app.packageName) }
+            }.forEach { group ->
                 violation("应用组「${group.name}」", group.outboundMode, group.outboundValue)?.let(::add)
             }
             settings.customRules.filter { it.enabled }.forEach { rule ->
