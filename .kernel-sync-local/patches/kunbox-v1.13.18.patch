@@ -1,5 +1,5 @@
 diff --git a/cmd/internal/build_libbox/main.go b/cmd/internal/build_libbox/main.go
-index c128216..42fdbcb 100644
+index c1282169..42fdbcb9 100644
 --- a/cmd/internal/build_libbox/main.go
 +++ b/cmd/internal/build_libbox/main.go
 @@ -65,8 +65,6 @@ func init() {
@@ -11,8 +11,1026 @@ index c128216..42fdbcb 100644
  	notMemcTags = append(notMemcTags, "with_low_memory")
  	debugTags = append(debugTags, "debug")
  }
+diff --git a/common/dialer/default.go b/common/dialer/default.go
+index ccdfbafb..4ba60f49 100644
+--- a/common/dialer/default.go
++++ b/common/dialer/default.go
+@@ -251,19 +251,21 @@ func (d *DefaultDialer) DialContext(ctx context.Context, network string, address
+ 	}
+ 	if d.networkStrategy == nil {
+ 		return d.trackConn(listener.ListenNetworkNamespace[net.Conn](d.netns, func() (net.Conn, error) {
+-			switch N.NetworkName(network) {
+-			case N.NetworkUDP:
++			return dialPhysicalConn(ctx, func(dialContext context.Context) (net.Conn, error) {
++				switch N.NetworkName(network) {
++				case N.NetworkUDP:
++					if !address.IsIPv6() {
++						return d.udpDialer4.DialContext(dialContext, network, address.String())
++					} else {
++						return d.udpDialer6.DialContext(dialContext, network, address.String())
++					}
++				}
+ 				if !address.IsIPv6() {
+-					return d.udpDialer4.DialContext(ctx, network, address.String())
++					return DialSlowContext(&d.dialer4, dialContext, network, address)
+ 				} else {
+-					return d.udpDialer6.DialContext(ctx, network, address.String())
++					return DialSlowContext(&d.dialer6, dialContext, network, address)
+ 				}
+-			}
+-			if !address.IsIPv6() {
+-				return DialSlowContext(&d.dialer4, ctx, network, address)
+-			} else {
+-				return DialSlowContext(&d.dialer6, ctx, network, address)
+-			}
++			})
+ 		}))
+ 	} else {
+ 		return d.DialParallelInterface(ctx, network, address, d.networkStrategy, d.networkType, d.fallbackNetworkType, d.networkFallbackDelay)
+@@ -327,13 +329,15 @@ func (d *DefaultDialer) ListenPacket(ctx context.Context, destination M.Socksadd
+ 					return d.autoDetectBindFunc(network, destination.String(), conn)
+ 				})
+ 			}
+-			if destination.IsIPv6() {
+-				return listenConfig.ListenPacket(ctx, N.NetworkUDP, d.udpAddr6)
+-			} else if destination.IsIPv4() && !destination.Addr.IsUnspecified() {
+-				return listenConfig.ListenPacket(ctx, N.NetworkUDP+"4", d.udpAddr4)
+-			} else {
+-				return listenConfig.ListenPacket(ctx, N.NetworkUDP, d.udpAddr4)
+-			}
++			return listenPhysicalPacket(ctx, func(listenContext context.Context) (net.PacketConn, error) {
++				if destination.IsIPv6() {
++					return listenConfig.ListenPacket(listenContext, N.NetworkUDP, d.udpAddr6)
++				} else if destination.IsIPv4() && !destination.Addr.IsUnspecified() {
++					return listenConfig.ListenPacket(listenContext, N.NetworkUDP+"4", d.udpAddr4)
++				} else {
++					return listenConfig.ListenPacket(listenContext, N.NetworkUDP, d.udpAddr4)
++				}
++			})
+ 		}))
+ 	} else {
+ 		return d.ListenSerialInterfacePacket(ctx, destination, d.networkStrategy, d.networkType, d.fallbackNetworkType, d.networkFallbackDelay)
+diff --git a/common/dialer/default_parallel_interface.go b/common/dialer/default_parallel_interface.go
+index 8417f6a0..6f6ddf4d 100644
+--- a/common/dialer/default_parallel_interface.go
++++ b/common/dialer/default_parallel_interface.go
+@@ -35,7 +35,9 @@ func (d *DefaultDialer) dialParallelInterface(ctx context.Context, dialer net.Di
+ 		if defaultInterface == nil || iif.Index != defaultInterface.Index {
+ 			perNetDialer.Control = control.Append(perNetDialer.Control, control.BindToInterface(nil, iif.Name, iif.Index))
+ 		}
+-		conn, err := perNetDialer.DialContext(ctx, network, addr)
++		conn, err := dialPhysicalConn(ctx, func(dialContext context.Context) (net.Conn, error) {
++			return perNetDialer.DialContext(dialContext, network, addr)
++		})
+ 		if err != nil {
+ 			select {
+ 			case results <- dialResult{error: E.Cause(err, "dial ", iif.Name, " (", iif.Index, ")"), primary: primary}:
+@@ -110,7 +112,9 @@ func (d *DefaultDialer) dialParallelInterfaceFastFallback(ctx context.Context, d
+ 		if defaultInterface == nil || iif.Index != defaultInterface.Index {
+ 			perNetDialer.Control = control.Append(perNetDialer.Control, control.BindToInterface(nil, iif.Name, iif.Index))
+ 		}
+-		conn, err := perNetDialer.DialContext(ctx, network, addr)
++		conn, err := dialPhysicalConn(ctx, func(dialContext context.Context) (net.Conn, error) {
++			return perNetDialer.DialContext(dialContext, network, addr)
++		})
+ 		if err != nil {
+ 			select {
+ 			case results <- dialResult{error: E.Cause(err, "dial ", iif.Name, " (", iif.Index, ")"), primary: primary}:
+@@ -160,7 +164,9 @@ func (d *DefaultDialer) listenSerialInterfacePacket(ctx context.Context, listene
+ 		if defaultInterface == nil || primaryInterface.Index != defaultInterface.Index {
+ 			perNetListener.Control = control.Append(perNetListener.Control, control.BindToInterface(nil, primaryInterface.Name, primaryInterface.Index))
+ 		}
+-		conn, err := perNetListener.ListenPacket(ctx, network, addr)
++		conn, err := listenPhysicalPacket(ctx, func(listenContext context.Context) (net.PacketConn, error) {
++			return perNetListener.ListenPacket(listenContext, network, addr)
++		})
+ 		if err == nil {
+ 			return conn, nil
+ 		}
+@@ -171,7 +177,9 @@ func (d *DefaultDialer) listenSerialInterfacePacket(ctx context.Context, listene
+ 		if defaultInterface == nil || fallbackInterface.Index != defaultInterface.Index {
+ 			perNetListener.Control = control.Append(perNetListener.Control, control.BindToInterface(nil, fallbackInterface.Name, fallbackInterface.Index))
+ 		}
+-		conn, err := perNetListener.ListenPacket(ctx, network, addr)
++		conn, err := listenPhysicalPacket(ctx, func(listenContext context.Context) (net.PacketConn, error) {
++			return perNetListener.ListenPacket(listenContext, network, addr)
++		})
+ 		if err == nil {
+ 			return conn, nil
+ 		}
+diff --git a/common/dialer/physical_budget.go b/common/dialer/physical_budget.go
+new file mode 100644
+index 00000000..2ad2a603
+--- /dev/null
++++ b/common/dialer/physical_budget.go
+@@ -0,0 +1,505 @@
++package dialer
++
++import (
++	"context"
++	"errors"
++	"fmt"
++	"math"
++	"net"
++	"sort"
++	"strings"
++	"sync"
++	"sync/atomic"
++	"time"
++
++	"github.com/sagernet/sing-box/adapter"
++)
++
++const (
++	physicalDialGateMarker       = "kunbox_physical_dial_gate_v1"
++	maxPendingPhysicalDials      = 512
++	maxActivePhysicalSockets     = 4096
++	maxPhysicalFDStopCount       = 8192
++	maxPhysicalFDResumeCount     = 4096
++	physicalFDCheckEveryAttempts = 32
++	physicalFDCheckMinInterval   = 250 * time.Millisecond
++	physicalDialMaximumDuration  = 15 * time.Second
++	minimumActivePhysicalSockets = 32
++	minimumPendingPhysicalDials  = 16
++	minimumPhysicalFDReserve     = 64
++)
++
++var errPhysicalLeaseReleased = errors.New("physical dial lease already released")
++
++type physicalFDLimit struct {
++	softLimit uint64
++	infinite  bool
++}
++
++type physicalBudgetLimits struct {
++	pendingLimit  int
++	activeLimit   int
++	fdStopLine    int
++	fdResumeLine  int
++	blockedReason string
++}
++
++func resolvePhysicalBudgetLimits(limit physicalFDLimit, readErr error) physicalBudgetLimits {
++	if readErr != nil {
++		return physicalBudgetLimits{blockedReason: "rlimit_unavailable"}
++	}
++	if limit.infinite || limit.softLimit == math.MaxUint64 {
++		return physicalBudgetLimits{
++			pendingLimit: maxPendingPhysicalDials,
++			activeLimit:  maxActivePhysicalSockets,
++			fdStopLine:   maxPhysicalFDStopCount,
++			fdResumeLine: maxPhysicalFDResumeCount,
++		}
++	}
++	reserve := limit.softLimit / 4
++	if reserve < minimumPhysicalFDReserve {
++		reserve = minimumPhysicalFDReserve
++	}
++	if limit.softLimit <= reserve+minimumActivePhysicalSockets {
++		return physicalBudgetLimits{blockedReason: "rlimit_too_low"}
++	}
++	stopLine := minUint64(maxPhysicalFDStopCount, limit.softLimit-reserve)
++	resumeLine := minUint64(maxPhysicalFDResumeCount, stopLine/2)
++	activeLimit := minUint64(maxActivePhysicalSockets, stopLine/2)
++	pendingLimit := activeLimit / 8
++	if pendingLimit < minimumPendingPhysicalDials {
++		pendingLimit = minimumPendingPhysicalDials
++	}
++	pendingLimit = minUint64(maxPendingPhysicalDials, pendingLimit)
++	if stopLine <= resumeLine || activeLimit < minimumActivePhysicalSockets ||
++		pendingLimit < minimumPendingPhysicalDials {
++		return physicalBudgetLimits{blockedReason: "rlimit_budget_invalid"}
++	}
++	return physicalBudgetLimits{
++		pendingLimit: int(pendingLimit),
++		activeLimit:  int(activeLimit),
++		fdStopLine:   int(stopLine),
++		fdResumeLine: int(resumeLine),
++	}
++}
++
++func minUint64(limit int, value uint64) uint64 {
++	if value > uint64(limit) {
++		return uint64(limit)
++	}
++	return value
++}
++
++type physicalAttempt struct {
++	cancel context.CancelFunc
++	source string
++}
++
++type physicalSocketBudget struct {
++	limits  physicalBudgetLimits
++	pending chan struct{}
++	active  chan struct{}
++
++	attempts         atomic.Uint64
++	rejected         atomic.Uint64
++	nextID           atomic.Uint64
++	fdCount          atomic.Int64
++	fdBlocked        atomic.Bool
++	lastFDCheckNanos atomic.Int64
++
++	attemptAccess   sync.Mutex
++	pendingAttempts map[uint64]physicalAttempt
++	fdCountReader   func() (int, bool, error)
++}
++
++func newPhysicalSocketBudget(limits physicalBudgetLimits) *physicalSocketBudget {
++	pendingLimit := max(1, limits.pendingLimit)
++	activeLimit := max(1, limits.activeLimit)
++	budget := &physicalSocketBudget{
++		limits:          limits,
++		pending:         make(chan struct{}, pendingLimit),
++		active:          make(chan struct{}, activeLimit),
++		pendingAttempts: make(map[uint64]physicalAttempt),
++		fdCountReader:   readPhysicalProcessFDCount,
++	}
++	budget.fdCount.Store(-1)
++	if limits.blockedReason != "" {
++		budget.fdBlocked.Store(true)
++	}
++	return budget
++}
++
++func newGlobalPhysicalSocketBudget() *physicalSocketBudget {
++	limit, err := readPhysicalFDSoftLimit()
++	return newPhysicalSocketBudget(resolvePhysicalBudgetLimits(limit, err))
++}
++
++var globalPhysicalSocketBudget = newGlobalPhysicalSocketBudget()
++
++type PhysicalBudgetSnapshot struct {
++	Pending         int
++	Active          int
++	Attempts        uint64
++	Rejected        uint64
++	FDCount         int64
++	Blocked         bool
++	BlockedReason   string
++	PendingLimit    int
++	ActiveLimit     int
++	FDStopLine      int
++	FDResumeLine    int
++	PendingBySource map[string]int
++}
++
++func CurrentPhysicalBudgetSnapshot() PhysicalBudgetSnapshot {
++	return globalPhysicalSocketBudget.snapshot()
++}
++
++func (b *physicalSocketBudget) snapshot() PhysicalBudgetSnapshot {
++	b.attemptAccess.Lock()
++	pendingBySource := make(map[string]int)
++	for _, attempt := range b.pendingAttempts {
++		pendingBySource[attempt.source]++
++	}
++	b.attemptAccess.Unlock()
++	return PhysicalBudgetSnapshot{
++		Pending:         len(b.pending),
++		Active:          len(b.active),
++		Attempts:        b.attempts.Load(),
++		Rejected:        b.rejected.Load(),
++		FDCount:         b.fdCount.Load(),
++		Blocked:         b.fdBlocked.Load(),
++		BlockedReason:   b.limits.blockedReason,
++		PendingLimit:    b.limits.pendingLimit,
++		ActiveLimit:     b.limits.activeLimit,
++		FDStopLine:      b.limits.fdStopLine,
++		FDResumeLine:    b.limits.fdResumeLine,
++		PendingBySource: pendingBySource,
++	}
++}
++
++func (s PhysicalBudgetSnapshot) String() string {
++	return fmt.Sprintf(
++		"pending=%d active=%d attempts=%d rejected=%d fd=%d blocked=%t "+
++			"pending_limit=%d active_limit=%d fd_stop_line=%d fd_resume_line=%d",
++		s.Pending,
++		s.Active,
++		s.Attempts,
++		s.Rejected,
++		s.FDCount,
++		s.Blocked,
++		s.PendingLimit,
++		s.ActiveLimit,
++		s.FDStopLine,
++		s.FDResumeLine,
++	)
++}
++
++func (s PhysicalBudgetSnapshot) PendingSources() string {
++	if len(s.PendingBySource) == 0 {
++		return ""
++	}
++	type sourceCount struct {
++		source string
++		count  int
++	}
++	counts := make([]sourceCount, 0, len(s.PendingBySource))
++	for source, count := range s.PendingBySource {
++		counts = append(counts, sourceCount{source: source, count: count})
++	}
++	sort.Slice(counts, func(i, j int) bool {
++		if counts[i].count == counts[j].count {
++			return counts[i].source < counts[j].source
++		}
++		return counts[i].count > counts[j].count
++	})
++	if len(counts) > 8 {
++		counts = counts[:8]
++	}
++	parts := make([]string, 0, len(counts))
++	for _, count := range counts {
++		parts = append(parts, fmt.Sprintf("%s:%d", count.source, count.count))
++	}
++	return strings.Join(parts, ",")
++}
++
++func (b *physicalSocketBudget) reject(reason string) error {
++	b.rejected.Add(1)
++	return fmt.Errorf("%s: %s %s", physicalDialGateMarker, reason, b.snapshot().String())
++}
++
++func (b *physicalSocketBudget) checkCapacity() error {
++	b.attempts.Add(1)
++	if b.limits.blockedReason != "" {
++		return b.reject(b.limits.blockedReason)
++	}
++	blocked := b.fdBlocked.Load()
++	attempt := b.attempts.Load()
++	if !blocked && attempt%physicalFDCheckEveryAttempts != 0 {
++		return nil
++	}
++	now := time.Now().UnixNano()
++	lastCheck := b.lastFDCheckNanos.Load()
++	if now-lastCheck < physicalFDCheckMinInterval.Nanoseconds() ||
++		!b.lastFDCheckNanos.CompareAndSwap(lastCheck, now) {
++		if blocked {
++			return b.reject("fd_budget_blocked")
++		}
++		return nil
++	}
++	fdCount, supported, err := b.fdCountReader()
++	if err != nil {
++		b.fdBlocked.Store(true)
++		b.cancelPendingAttempts()
++		return b.reject("fd_count_unavailable")
++	}
++	if !supported {
++		return nil
++	}
++	b.fdCount.Store(int64(fdCount))
++	nextBlocked := fdCount >= b.limits.fdStopLine || blocked && fdCount >= b.limits.fdResumeLine
++	b.fdBlocked.Store(nextBlocked)
++	if nextBlocked {
++		b.cancelPendingAttempts()
++		return b.reject("fd_budget_blocked")
++	}
++	return nil
++}
++
++func (b *physicalSocketBudget) cancelPendingAttempts() {
++	b.attemptAccess.Lock()
++	cancelFunctions := make([]context.CancelFunc, 0, len(b.pendingAttempts))
++	for _, attempt := range b.pendingAttempts {
++		cancelFunctions = append(cancelFunctions, attempt.cancel)
++	}
++	b.attemptAccess.Unlock()
++	for _, cancel := range cancelFunctions {
++		cancel()
++	}
++}
++
++func physicalAttemptSource(ctx context.Context) string {
++	metadata := adapter.ContextFrom(ctx)
++	if metadata == nil {
++		return "unknown"
++	}
++	parts := make([]string, 0, 4)
++	if metadata.ProcessInfo != nil {
++		parts = append(parts, fmt.Sprintf("uid=%d", metadata.ProcessInfo.UserId))
++		if len(metadata.ProcessInfo.AndroidPackageNames) > 0 {
++			packages := append([]string(nil), metadata.ProcessInfo.AndroidPackageNames...)
++			sort.Strings(packages)
++			parts = append(parts, "pkg="+strings.Join(packages, "|"))
++		}
++	}
++	if metadata.Inbound != "" {
++		parts = append(parts, "in="+metadata.Inbound)
++	}
++	if metadata.Outbound != "" {
++		parts = append(parts, "out="+metadata.Outbound)
++	}
++	if len(parts) == 0 {
++		return "unknown"
++	}
++	return strings.Join(parts, ";")
++}
++
++type PhysicalDialLease struct {
++	budget  *physicalSocketBudget
++	id      uint64
++	cancel  context.CancelFunc
++	access  sync.Mutex
++	pending bool
++}
++
++func AcquirePhysicalDial(ctx context.Context) (context.Context, *PhysicalDialLease, error) {
++	return globalPhysicalSocketBudget.acquirePending(ctx)
++}
++
++func (b *physicalSocketBudget) acquirePending(ctx context.Context) (context.Context, *PhysicalDialLease, error) {
++	if err := ctx.Err(); err != nil {
++		return nil, nil, err
++	}
++	if err := b.checkCapacity(); err != nil {
++		return nil, nil, err
++	}
++	select {
++	case b.pending <- struct{}{}:
++	default:
++		return nil, nil, b.reject("pending_capacity_reached")
++	}
++	dialContext, cancel := context.WithTimeout(ctx, physicalDialMaximumDuration)
++	id := b.nextID.Add(1)
++	lease := &PhysicalDialLease{
++		budget:  b,
++		id:      id,
++		cancel:  cancel,
++		pending: true,
++	}
++	b.attemptAccess.Lock()
++	b.pendingAttempts[id] = physicalAttempt{cancel: cancel, source: physicalAttemptSource(ctx)}
++	b.attemptAccess.Unlock()
++	return dialContext, lease, nil
++}
++
++func (l *PhysicalDialLease) Promote() (*PhysicalSocketLease, error) {
++	l.access.Lock()
++	defer l.access.Unlock()
++	if !l.pending {
++		return nil, errPhysicalLeaseReleased
++	}
++	select {
++	case l.budget.active <- struct{}{}:
++		l.releasePendingLocked()
++		return &PhysicalSocketLease{budget: l.budget}, nil
++	default:
++		l.releasePendingLocked()
++		return nil, l.budget.reject("active_capacity_reached")
++	}
++}
++
++func (l *PhysicalDialLease) Release() {
++	l.access.Lock()
++	defer l.access.Unlock()
++	if l.pending {
++		l.releasePendingLocked()
++	}
++}
++
++func (l *PhysicalDialLease) releasePendingLocked() {
++	l.budget.attemptAccess.Lock()
++	delete(l.budget.pendingAttempts, l.id)
++	l.budget.attemptAccess.Unlock()
++	l.cancel()
++	<-l.budget.pending
++	l.pending = false
++}
++
++type PhysicalSocketLease struct {
++	budget *physicalSocketBudget
++	once   sync.Once
++}
++
++func (l *PhysicalSocketLease) Release() {
++	if l == nil || l.budget == nil {
++		return
++	}
++	l.once.Do(func() { <-l.budget.active })
++}
++
++func ReservePhysicalSockets(count int) ([]*PhysicalSocketLease, error) {
++	return globalPhysicalSocketBudget.reserveActive(count)
++}
++
++func (b *physicalSocketBudget) reserveActive(count int) ([]*PhysicalSocketLease, error) {
++	if count <= 0 {
++		return nil, nil
++	}
++	if err := b.checkCapacity(); err != nil {
++		return nil, err
++	}
++	leases := make([]*PhysicalSocketLease, 0, count)
++	for range count {
++		select {
++		case b.active <- struct{}{}:
++			leases = append(leases, &PhysicalSocketLease{budget: b})
++		default:
++			for _, lease := range leases {
++				lease.Release()
++			}
++			return nil, b.reject("active_capacity_reached")
++		}
++	}
++	return leases, nil
++}
++
++func dialPhysicalConn(ctx context.Context, dial func(context.Context) (net.Conn, error)) (net.Conn, error) {
++	return dialPhysicalConnWithBudget(globalPhysicalSocketBudget, ctx, dial)
++}
++
++func dialPhysicalConnWithBudget(
++	budget *physicalSocketBudget,
++	ctx context.Context,
++	dial func(context.Context) (net.Conn, error),
++) (net.Conn, error) {
++	dialContext, pendingLease, err := budget.acquirePending(ctx)
++	if err != nil {
++		return nil, err
++	}
++	conn, dialErr := dial(dialContext)
++	if dialErr != nil {
++		if conn != nil {
++			conn.Close()
++		}
++		pendingLease.Release()
++		return nil, dialErr
++	}
++	activeLease, err := pendingLease.Promote()
++	if err != nil {
++		conn.Close()
++		return nil, err
++	}
++	return &budgetedConn{Conn: conn, lease: activeLease}, nil
++}
++
++func listenPhysicalPacket(
++	ctx context.Context,
++	listen func(context.Context) (net.PacketConn, error),
++) (net.PacketConn, error) {
++	return listenPhysicalPacketWithBudget(globalPhysicalSocketBudget, ctx, listen)
++}
++
++func listenPhysicalPacketWithBudget(
++	budget *physicalSocketBudget,
++	ctx context.Context,
++	listen func(context.Context) (net.PacketConn, error),
++) (net.PacketConn, error) {
++	dialContext, pendingLease, err := budget.acquirePending(ctx)
++	if err != nil {
++		return nil, err
++	}
++	conn, listenErr := listen(dialContext)
++	if listenErr != nil {
++		if conn != nil {
++			conn.Close()
++		}
++		pendingLease.Release()
++		return nil, listenErr
++	}
++	activeLease, err := pendingLease.Promote()
++	if err != nil {
++		conn.Close()
++		return nil, err
++	}
++	return &budgetedPacketConn{PacketConn: conn, lease: activeLease}, nil
++}
++
++type budgetedConn struct {
++	net.Conn
++	lease *PhysicalSocketLease
++}
++
++func (c *budgetedConn) Close() error {
++	err := c.Conn.Close()
++	c.lease.Release()
++	return err
++}
++
++func (c *budgetedConn) Upstream() any {
++	return c.Conn
++}
++
++type budgetedPacketConn struct {
++	net.PacketConn
++	lease *PhysicalSocketLease
++}
++
++func (c *budgetedPacketConn) Close() error {
++	err := c.PacketConn.Close()
++	c.lease.Release()
++	return err
++}
++
++func (c *budgetedPacketConn) Upstream() any {
++	return c.PacketConn
++}
+diff --git a/common/dialer/physical_budget_android.go b/common/dialer/physical_budget_android.go
+new file mode 100644
+index 00000000..52e4d29c
+--- /dev/null
++++ b/common/dialer/physical_budget_android.go
+@@ -0,0 +1,28 @@
++//go:build android
++
++package dialer
++
++import (
++	"os"
++
++	"golang.org/x/sys/unix"
++)
++
++func readPhysicalFDSoftLimit() (physicalFDLimit, error) {
++	var limit unix.Rlimit
++	if err := unix.Getrlimit(unix.RLIMIT_NOFILE, &limit); err != nil {
++		return physicalFDLimit{}, err
++	}
++	return physicalFDLimit{
++		softLimit: limit.Cur,
++		infinite:  limit.Cur == unix.RLIM_INFINITY,
++	}, nil
++}
++
++func readPhysicalProcessFDCount() (int, bool, error) {
++	entries, err := os.ReadDir("/proc/self/fd")
++	if err != nil {
++		return 0, true, err
++	}
++	return len(entries), true, nil
++}
+diff --git a/common/dialer/physical_budget_other.go b/common/dialer/physical_budget_other.go
+new file mode 100644
+index 00000000..6cab48b4
+--- /dev/null
++++ b/common/dialer/physical_budget_other.go
+@@ -0,0 +1,11 @@
++//go:build !android
++
++package dialer
++
++func readPhysicalFDSoftLimit() (physicalFDLimit, error) {
++	return physicalFDLimit{infinite: true}, nil
++}
++
++func readPhysicalProcessFDCount() (int, bool, error) {
++	return 0, false, nil
++}
+diff --git a/common/dialer/physical_budget_test.go b/common/dialer/physical_budget_test.go
+new file mode 100644
+index 00000000..44117394
+--- /dev/null
++++ b/common/dialer/physical_budget_test.go
+@@ -0,0 +1,212 @@
++package dialer
++
++import (
++	"context"
++	"errors"
++	"net"
++	"sync"
++	"sync/atomic"
++	"testing"
++	"time"
++)
++
++func TestResolvePhysicalBudgetLimits(t *testing.T) {
++	tests := []struct {
++		name     string
++		limit    physicalFDLimit
++		readErr  error
++		blocked  bool
++		stopLine int
++		active   int
++		pending  int
++	}{
++		{name: "read failure", readErr: errors.New("failed"), blocked: true},
++		{name: "64", limit: physicalFDLimit{softLimit: 64}, blocked: true},
++		{name: "96", limit: physicalFDLimit{softLimit: 96}, blocked: true},
++		{name: "128", limit: physicalFDLimit{softLimit: 128}, stopLine: 64, active: 32, pending: 16},
++		{name: "256", limit: physicalFDLimit{softLimit: 256}, stopLine: 192, active: 96, pending: 16},
++		{name: "1024", limit: physicalFDLimit{softLimit: 1024}, stopLine: 768, active: 384, pending: 48},
++		{name: "32768", limit: physicalFDLimit{softLimit: 32768}, stopLine: 8192, active: 4096, pending: 512},
++		{name: "infinity", limit: physicalFDLimit{infinite: true}, stopLine: 8192, active: 4096, pending: 512},
++	}
++	for _, test := range tests {
++		t.Run(test.name, func(t *testing.T) {
++			limits := resolvePhysicalBudgetLimits(test.limit, test.readErr)
++			if (limits.blockedReason != "") != test.blocked {
++				t.Fatalf("blocked=%t reason=%q", limits.blockedReason != "", limits.blockedReason)
++			}
++			if test.blocked {
++				return
++			}
++			if limits.fdStopLine != test.stopLine || limits.activeLimit != test.active ||
++				limits.pendingLimit != test.pending {
++				t.Fatalf("unexpected limits: %+v", limits)
++			}
++			if uint64(limits.fdStopLine) > test.limit.softLimit && !test.limit.infinite {
++				t.Fatalf("stop line exceeds soft limit: %+v", limits)
++			}
++		})
++	}
++}
++
++func TestPhysicalPendingAndActiveLifecycle(t *testing.T) {
++	budget := newTestPhysicalBudget(2, 2)
++	ctx1, pending1, err := budget.acquirePending(context.Background())
++	if err != nil || ctx1 == nil {
++		t.Fatal(err)
++	}
++	_, pending2, err := budget.acquirePending(context.Background())
++	if err != nil {
++		t.Fatal(err)
++	}
++	if _, _, err = budget.acquirePending(context.Background()); err == nil {
++		t.Fatal("expected pending capacity rejection")
++	}
++	active1, err := pending1.Promote()
++	if err != nil {
++		t.Fatal(err)
++	}
++	pending2.Release()
++	if snapshot := budget.snapshot(); snapshot.Pending != 0 || snapshot.Active != 1 {
++		t.Fatalf("unexpected promoted snapshot: %+v", snapshot)
++	}
++	active1.Release()
++	active1.Release()
++	if snapshot := budget.snapshot(); snapshot.Pending != 0 || snapshot.Active != 0 {
++		t.Fatalf("leases did not return to zero: %+v", snapshot)
++	}
++}
++
++func TestPhysicalFDBreakerCancelsPendingAndRecovers(t *testing.T) {
++	budget := newTestPhysicalBudget(4, 4)
++	var fdCount atomic.Int64
++	fdCount.Store(1)
++	budget.fdCountReader = func() (int, bool, error) {
++		return int(fdCount.Load()), true, nil
++	}
++	dialContext, lease, err := budget.acquirePending(context.Background())
++	if err != nil {
++		t.Fatal(err)
++	}
++	fdCount.Store(int64(budget.limits.fdStopLine))
++	budget.attempts.Store(physicalFDCheckEveryAttempts - 1)
++	if err = budget.checkCapacity(); err == nil {
++		t.Fatal("expected fd breaker rejection")
++	}
++	select {
++	case <-dialContext.Done():
++	case <-time.After(time.Second):
++		t.Fatal("pending dial was not cancelled")
++	}
++	lease.Release()
++	fdCount.Store(int64(budget.limits.fdResumeLine - 1))
++	budget.lastFDCheckNanos.Store(time.Now().Add(-physicalFDCheckMinInterval - time.Millisecond).UnixNano())
++	if err = budget.checkCapacity(); err != nil {
++		t.Fatalf("fd breaker did not recover: %v", err)
++	}
++}
++
++func TestDialPhysicalConnClosesPartialError(t *testing.T) {
++	budget := newTestPhysicalBudget(2, 2)
++	conn := &testPhysicalConn{}
++	result, err := dialPhysicalConnWithBudget(
++		budget,
++		context.Background(),
++		func(context.Context) (net.Conn, error) {
++			return conn, errors.New("partial dial")
++		},
++	)
++	if err == nil || result != nil {
++		t.Fatal("expected dial error")
++	}
++	if !conn.closed.Load() {
++		t.Fatal("partial connection was not closed")
++	}
++	if snapshot := budget.snapshot(); snapshot.Pending != 0 || snapshot.Active != 0 {
++		t.Fatalf("partial error leaked lease: %+v", snapshot)
++	}
++}
++
++func TestRealLoopbackPhysicalConnectionsStayBounded(t *testing.T) {
++	listener, err := net.Listen("tcp", "127.0.0.1:0")
++	if err != nil {
++		t.Fatal(err)
++	}
++	accepted := make(chan net.Conn, 64)
++	var acceptWaitGroup sync.WaitGroup
++	acceptWaitGroup.Add(1)
++	go func() {
++		defer acceptWaitGroup.Done()
++		for {
++			conn, acceptErr := listener.Accept()
++			if acceptErr != nil {
++				return
++			}
++			accepted <- conn
++		}
++	}()
++
++	budget := newTestPhysicalBudget(16, 8)
++	var (
++		waitGroup sync.WaitGroup
++		access    sync.Mutex
++		clients   []net.Conn
++	)
++	for range 64 {
++		waitGroup.Add(1)
++		go func() {
++			defer waitGroup.Done()
++			conn, dialErr := dialPhysicalConnWithBudget(
++				budget,
++				context.Background(),
++				func(ctx context.Context) (net.Conn, error) {
++					var netDialer net.Dialer
++					return netDialer.DialContext(ctx, "tcp", listener.Addr().String())
++				},
++			)
++			if dialErr == nil {
++				access.Lock()
++				clients = append(clients, conn)
++				access.Unlock()
++			}
++		}()
++	}
++	waitGroup.Wait()
++	if snapshot := budget.snapshot(); snapshot.Active > 8 {
++		t.Fatalf("active sockets exceeded budget: %+v", snapshot)
++	}
++	for _, conn := range clients {
++		conn.Close()
++	}
++	listener.Close()
++	acceptWaitGroup.Wait()
++	close(accepted)
++	for conn := range accepted {
++		conn.Close()
++	}
++	if snapshot := budget.snapshot(); snapshot.Pending != 0 || snapshot.Active != 0 {
++		t.Fatalf("real sockets did not return to zero: %+v", snapshot)
++	}
++}
++
++func newTestPhysicalBudget(pendingLimit, activeLimit int) *physicalSocketBudget {
++	return newPhysicalSocketBudget(physicalBudgetLimits{
++		pendingLimit: pendingLimit,
++		activeLimit:  activeLimit,
++		fdStopLine:   8192,
++		fdResumeLine: 4096,
++	})
++}
++
++type testPhysicalConn struct {
++	closed atomic.Bool
++}
++
++func (*testPhysicalConn) Read([]byte) (int, error)         { return 0, net.ErrClosed }
++func (*testPhysicalConn) Write(buffer []byte) (int, error) { return len(buffer), nil }
++func (c *testPhysicalConn) Close() error                   { c.closed.Store(true); return nil }
++func (*testPhysicalConn) LocalAddr() net.Addr              { return &net.TCPAddr{} }
++func (*testPhysicalConn) RemoteAddr() net.Addr             { return &net.TCPAddr{} }
++func (*testPhysicalConn) SetDeadline(time.Time) error      { return nil }
++func (*testPhysicalConn) SetReadDeadline(time.Time) error  { return nil }
++func (*testPhysicalConn) SetWriteDeadline(time.Time) error { return nil }
+diff --git a/protocol/direct/outbound.go b/protocol/direct/outbound.go
+index e483339a..e0c015b2 100644
+--- a/protocol/direct/outbound.go
++++ b/protocol/direct/outbound.go
+@@ -152,8 +152,10 @@ func (h *Outbound) ListenPacket(ctx context.Context, destination M.Socksaddr) (n
+ }
+ 
+ func (h *Outbound) NewDirectRouteConnection(metadata adapter.InboundContext, routeContext tun.DirectRouteContext, timeout time.Duration) (tun.DirectRouteDestination, error) {
+-	ctx := log.ContextWithNewID(h.ctx)
+-	destination, err := ping.ConnectDestination(ctx, h.logger, common.MustCast[*dialer.DefaultDialer](h.dialer).DialerForICMPDestination(metadata.Destination.Addr).Control, metadata.Destination.Addr, routeContext, timeout)
++	ctx := adapter.WithContext(log.ContextWithNewID(h.ctx), &metadata)
++	destination, err := acquireBudgetedDirectRouteDestination(ctx, func(dialContext context.Context) (tun.DirectRouteDestination, error) {
++		return ping.ConnectDestination(dialContext, h.logger, common.MustCast[*dialer.DefaultDialer](h.dialer).DialerForICMPDestination(metadata.Destination.Addr).Control, metadata.Destination.Addr, routeContext, timeout)
++	})
+ 	if err != nil {
+ 		return nil, err
+ 	}
+@@ -161,6 +163,41 @@ func (h *Outbound) NewDirectRouteConnection(metadata adapter.InboundContext, rou
+ 	return destination, nil
+ }
+ 
++func acquireBudgetedDirectRouteDestination(
++	ctx context.Context,
++	connect func(context.Context) (tun.DirectRouteDestination, error),
++) (tun.DirectRouteDestination, error) {
++	dialContext, pendingLease, err := dialer.AcquirePhysicalDial(ctx)
++	if err != nil {
++		return nil, err
++	}
++	destination, err := connect(dialContext)
++	if err != nil {
++		pendingLease.Release()
++		return nil, err
++	}
++	activeLease, err := pendingLease.Promote()
++	if err != nil {
++		destination.Close()
++		return nil, err
++	}
++	return &budgetedDirectRouteDestination{
++		DirectRouteDestination: destination,
++		lease:                  activeLease,
++	}, nil
++}
++
++type budgetedDirectRouteDestination struct {
++	tun.DirectRouteDestination
++	lease *dialer.PhysicalSocketLease
++}
++
++func (d *budgetedDirectRouteDestination) Close() error {
++	err := d.DirectRouteDestination.Close()
++	d.lease.Release()
++	return err
++}
++
+ func (h *Outbound) DialParallel(ctx context.Context, network string, destination M.Socksaddr, destinationAddresses []netip.Addr) (net.Conn, error) {
+ 	if h.isMyLoopbackAddress(destinationAddresses...) {
+ 		return nil, E.New("loopback connection to TUN range")
+diff --git a/protocol/direct/outbound_physical_budget_test.go b/protocol/direct/outbound_physical_budget_test.go
+new file mode 100644
+index 00000000..a60d4e9a
+--- /dev/null
++++ b/protocol/direct/outbound_physical_budget_test.go
+@@ -0,0 +1,66 @@
++package direct
++
++import (
++	"context"
++	"errors"
++	"sync/atomic"
++	"testing"
++
++	"github.com/sagernet/sing-box/common/dialer"
++	"github.com/sagernet/sing-tun"
++	"github.com/sagernet/sing/common/buf"
++)
++
++func TestAcquireBudgetedDirectRouteDestinationLifecycle(t *testing.T) {
++	before := dialer.CurrentPhysicalBudgetSnapshot()
++	destination := &testDirectRouteDestination{}
++	wrapped, err := acquireBudgetedDirectRouteDestination(
++		context.Background(),
++		func(context.Context) (tun.DirectRouteDestination, error) {
++			if snapshot := dialer.CurrentPhysicalBudgetSnapshot(); snapshot.Pending <= before.Pending {
++				t.Fatal("ICMP socket creation was not preceded by a pending lease")
++			}
++			return destination, nil
++		},
++	)
++	if err != nil {
++		t.Fatal(err)
++	}
++	if snapshot := dialer.CurrentPhysicalBudgetSnapshot(); snapshot.Active <= before.Active {
++		t.Fatal("successful ICMP destination did not hold an active lease")
++	}
++	wrapped.Close()
++	wrapped.Close()
++	after := dialer.CurrentPhysicalBudgetSnapshot()
++	if after.Pending != before.Pending || after.Active != before.Active {
++		t.Fatalf("ICMP lease leaked: before=%+v after=%+v", before, after)
++	}
++}
++
++func TestAcquireBudgetedDirectRouteDestinationFailureReleasesPending(t *testing.T) {
++	before := dialer.CurrentPhysicalBudgetSnapshot()
++	_, err := acquireBudgetedDirectRouteDestination(
++		context.Background(),
++		func(context.Context) (tun.DirectRouteDestination, error) {
++			return nil, errors.New("connect failed")
++		},
++	)
++	if err == nil {
++		t.Fatal("expected connect failure")
++	}
++	after := dialer.CurrentPhysicalBudgetSnapshot()
++	if after.Pending != before.Pending || after.Active != before.Active {
++		t.Fatalf("failed ICMP connect leaked lease: before=%+v after=%+v", before, after)
++	}
++}
++
++type testDirectRouteDestination struct {
++	closed atomic.Bool
++}
++
++func (*testDirectRouteDestination) WritePacket(*buf.Buffer) error { return nil }
++func (d *testDirectRouteDestination) Close() error {
++	d.closed.Store(true)
++	return nil
++}
++func (d *testDirectRouteDestination) IsClosed() bool { return d.closed.Load() }
 diff --git a/protocol/vless/outbound.go b/protocol/vless/outbound.go
-index 007c78f..e0e56bf 100644
+index 007c78f3..e0e56bf7 100644
 --- a/protocol/vless/outbound.go
 +++ b/protocol/vless/outbound.go
 @@ -148,12 +148,11 @@ func (h *Outbound) Close() error {
@@ -73,7 +1091,7 @@ index 007c78f..e0e56bf 100644
  	} else if h.packetAddr {
 diff --git a/protocol/vless/outbound_test.go b/protocol/vless/outbound_test.go
 new file mode 100644
-index 0000000..48c3567
+index 00000000..48c35674
 --- /dev/null
 +++ b/protocol/vless/outbound_test.go
 @@ -0,0 +1,94 @@
@@ -172,57 +1190,117 @@ index 0000000..48c3567
 +	}
 +}
 diff --git a/route/conn.go b/route/conn.go
-index 9fdc6cd..c8a8874 100644
+index 9fdc6cda..35646347 100644
 --- a/route/conn.go
 +++ b/route/conn.go
-@@ -29,15 +29,20 @@ import (
+@@ -29,15 +29,36 @@ import (
  
  var _ adapter.ConnectionManager = (*ConnectionManager)(nil)
  
-+// ponytail: 与旧版 udpnat2 的 1024 条目上限对齐，迁移到带关闭通知的新版 UDPNAT 后删除。
-+const maxActivePacketConnections = 1024
++const (
++	maxActivePreHandshakeConnections = 1024
++	processConnectionFDStopCount     = 8192
++	processConnectionFDResumeCount   = 4096
++	processFDCheckEveryAttempts      = 32
++	processFDCheckMinInterval        = 250 * time.Millisecond
++)
++
++var (
++	errConnectionCapacity = E.New("pre-handshake connection capacity reached")
++	errProcessFDBudget    = E.New("process file descriptor safety budget reached")
++)
 +
  type ConnectionManager struct {
 -	logger      logger.ContextLogger
 -	access      sync.Mutex
 -	connections list.List[io.Closer]
-+	logger                logger.ContextLogger
-+	access                sync.Mutex
-+	connections           list.List[io.Closer]
-+	packetConnectionSlots chan struct{}
++	logger                     logger.ContextLogger
++	access                     sync.Mutex
++	connections                list.List[io.Closer]
++	connectionSlots            chan struct{}
++	connectionAttempts         atomic.Uint64
++	connectionRejected         atomic.Uint64
++	lastProcessFDCount         atomic.Int64
++	lastProcessFDCheckAtNanos  atomic.Int64
++	processFDBlocked           atomic.Bool
++	lastPhysicalBudgetLogNanos atomic.Int64
  }
  
  func NewConnectionManager(logger logger.ContextLogger) *ConnectionManager {
  	return &ConnectionManager{
 -		logger: logger,
-+		logger:                logger,
-+		packetConnectionSlots: make(chan struct{}, maxActivePacketConnections),
++		logger:          logger,
++		connectionSlots: make(chan struct{}, maxActivePreHandshakeConnections),
  	}
  }
  
-@@ -143,6 +148,21 @@ func (m *ConnectionManager) NewConnection(ctx context.Context, this N.Dialer, co
+@@ -93,6 +114,14 @@ func (m *ConnectionManager) TrackPacketConn(conn net.PacketConn) net.PacketConn
+ 
+ func (m *ConnectionManager) NewConnection(ctx context.Context, this N.Dialer, conn net.Conn, metadata adapter.InboundContext, onClose N.CloseHandlerFunc) {
+ 	ctx = adapter.WithContext(ctx, &metadata)
++	defer m.logPhysicalBudgetSnapshot(ctx)
++	guardErr := m.tryAcquireConnection()
++	if guardErr != nil {
++		N.CloseOnHandshakeFailure(conn, onClose, guardErr)
++		m.logConnectionRejection(ctx, this, N.NetworkTCP, metadata, guardErr)
++		return
++	}
++	managedOnClose := m.manageConnectionClose(onClose)
+ 	var (
+ 		remoteConn net.Conn
+ 		err        error
+@@ -114,7 +143,7 @@ func (m *ConnectionManager) NewConnection(ctx context.Context, this N.Dialer, co
+ 			dialerString = " using outbound/" + outbound.Type() + "[" + outbound.Tag() + "]"
+ 		}
+ 		err = E.Cause(err, "open connection to ", remoteString, dialerString)
+-		N.CloseOnHandshakeFailure(conn, onClose, err)
++		N.CloseOnHandshakeFailure(conn, managedOnClose, err)
+ 		m.logger.ErrorContext(ctx, err)
+ 		return
+ 	}
+@@ -122,7 +151,7 @@ func (m *ConnectionManager) NewConnection(ctx context.Context, this N.Dialer, co
+ 	if err != nil {
+ 		err = E.Cause(err, "report handshake success")
+ 		remoteConn.Close()
+-		N.CloseOnHandshakeFailure(conn, onClose, err)
++		N.CloseOnHandshakeFailure(conn, managedOnClose, err)
+ 		m.logger.ErrorContext(ctx, err)
+ 		return
+ 	}
+@@ -131,18 +160,28 @@ func (m *ConnectionManager) NewConnection(ctx context.Context, this N.Dialer, co
+ 	}
+ 	serverFirst := sniff.Skip(&metadata)
+ 	var done atomic.Bool
+-	if m.kickWriteHandshake(ctx, conn, remoteConn, serverFirst, false, &done, onClose) {
++	if m.kickWriteHandshake(ctx, conn, remoteConn, serverFirst, false, &done, managedOnClose) {
+ 		return
+ 	}
+-	if m.kickWriteHandshake(ctx, remoteConn, conn, serverFirst, true, &done, onClose) {
++	if m.kickWriteHandshake(ctx, remoteConn, conn, serverFirst, true, &done, managedOnClose) {
+ 		return
+ 	}
+-	go m.connectionCopy(ctx, conn, remoteConn, false, &done, onClose)
+-	go m.connectionCopy(ctx, remoteConn, conn, true, &done, onClose)
++	go m.connectionCopy(ctx, conn, remoteConn, false, &done, managedOnClose)
++	go m.connectionCopy(ctx, remoteConn, conn, true, &done, managedOnClose)
+ }
  
  func (m *ConnectionManager) NewPacketConnection(ctx context.Context, this N.Dialer, conn N.PacketConn, metadata adapter.InboundContext, onClose N.CloseHandlerFunc) {
  	ctx = adapter.WithContext(ctx, &metadata)
++	defer m.logPhysicalBudgetSnapshot(ctx)
 +	dialContext, cancelDial := newPacketDialContext(ctx, conn)
 +	defer cancelDial()
-+	if !m.acquirePacketConnection(dialContext) {
-+		N.CloseOnHandshakeFailure(conn, onClose, dialContext.Err())
++	guardErr := m.tryAcquireConnection()
++	if guardErr != nil {
++		N.CloseOnHandshakeFailure(conn, onClose, guardErr)
++		m.logConnectionRejection(ctx, this, N.NetworkUDP, metadata, guardErr)
 +		return
 +	}
-+	var releaseOnce sync.Once
-+	managedOnClose := func(err error) {
-+		releaseOnce.Do(func() {
-+			<-m.packetConnectionSlots
-+			if onClose != nil {
-+				onClose(err)
-+			}
-+		})
-+	}
++	managedOnClose := m.manageConnectionClose(onClose)
  	var (
  		remotePacketConn   net.PacketConn
  		remoteConn         net.Conn
-@@ -153,18 +173,18 @@ func (m *ConnectionManager) NewPacketConnection(ctx context.Context, this N.Dial
+@@ -153,18 +192,18 @@ func (m *ConnectionManager) NewPacketConnection(ctx context.Context, this N.Dial
  		parallelDialer, isParallelDialer := this.(dialer.ParallelInterfaceDialer)
  		if len(metadata.DestinationAddresses) > 0 {
  			if isParallelDialer {
@@ -246,7 +1324,7 @@ index 9fdc6cd..c8a8874 100644
  		}
  		if err != nil {
  			var remoteString string
-@@ -178,7 +198,7 @@ func (m *ConnectionManager) NewPacketConnection(ctx context.Context, this N.Dial
+@@ -178,7 +217,7 @@ func (m *ConnectionManager) NewPacketConnection(ctx context.Context, this N.Dial
  				dialerString = " using outbound/" + outbound.Type() + "[" + outbound.Tag() + "]"
  			}
  			err = E.Cause(err, "open packet connection to ", remoteString, dialerString)
@@ -255,7 +1333,7 @@ index 9fdc6cd..c8a8874 100644
  			m.logger.ErrorContext(ctx, err)
  			return
  		}
-@@ -189,11 +209,11 @@ func (m *ConnectionManager) NewPacketConnection(ctx context.Context, this N.Dial
+@@ -189,11 +228,11 @@ func (m *ConnectionManager) NewPacketConnection(ctx context.Context, this N.Dial
  		}
  	} else {
  		if len(metadata.DestinationAddresses) > 0 {
@@ -270,7 +1348,7 @@ index 9fdc6cd..c8a8874 100644
  		}
  		if err != nil {
  			var dialerString string
-@@ -201,7 +221,7 @@ func (m *ConnectionManager) NewPacketConnection(ctx context.Context, this N.Dial
+@@ -201,7 +240,7 @@ func (m *ConnectionManager) NewPacketConnection(ctx context.Context, this N.Dial
  				dialerString = " using outbound/" + outbound.Type() + "[" + outbound.Tag() + "]"
  			}
  			err = E.Cause(err, "listen packet connection using ", dialerString)
@@ -279,7 +1357,7 @@ index 9fdc6cd..c8a8874 100644
  			m.logger.ErrorContext(ctx, err)
  			return
  		}
-@@ -210,6 +230,7 @@ func (m *ConnectionManager) NewPacketConnection(ctx context.Context, this N.Dial
+@@ -210,6 +249,7 @@ func (m *ConnectionManager) NewPacketConnection(ctx context.Context, this N.Dial
  	if err != nil {
  		conn.Close()
  		remotePacketConn.Close()
@@ -287,7 +1365,7 @@ index 9fdc6cd..c8a8874 100644
  		m.logger.ErrorContext(ctx, "report handshake success: ", err)
  		return
  	}
-@@ -254,8 +275,46 @@ func (m *ConnectionManager) NewPacketConnection(ctx context.Context, this N.Dial
+@@ -254,8 +294,141 @@ func (m *ConnectionManager) NewPacketConnection(ctx context.Context, this N.Dial
  	}
  	destination := bufio.NewPacketConn(remotePacketConn)
  	var done atomic.Bool
@@ -297,13 +1375,108 @@ index 9fdc6cd..c8a8874 100644
 +	go m.packetConnectionCopy(ctx, destination, conn, true, &done, managedOnClose)
 +}
 +
-+func (m *ConnectionManager) acquirePacketConnection(ctx context.Context) bool {
-+	select {
-+	case m.packetConnectionSlots <- struct{}{}:
-+		return true
-+	case <-ctx.Done():
-+		return false
++func (m *ConnectionManager) tryAcquireConnection() error {
++	if !m.processFDBudgetAvailable() {
++		return errProcessFDBudget
 +	}
++	select {
++	case m.connectionSlots <- struct{}{}:
++		return nil
++	default:
++		return errConnectionCapacity
++	}
++}
++
++func (m *ConnectionManager) manageConnectionClose(onClose N.CloseHandlerFunc) N.CloseHandlerFunc {
++	var releaseOnce sync.Once
++	return func(err error) {
++		releaseOnce.Do(func() {
++			<-m.connectionSlots
++			if onClose != nil {
++				onClose(err)
++			}
++		})
++	}
++}
++
++func (m *ConnectionManager) processFDBudgetAvailable() bool {
++	blocked := m.processFDBlocked.Load()
++	attempt := m.connectionAttempts.Add(1)
++	if !blocked && attempt%processFDCheckEveryAttempts != 0 {
++		return true
++	}
++	now := time.Now().UnixNano()
++	lastCheckAt := m.lastProcessFDCheckAtNanos.Load()
++	if now-lastCheckAt < processFDCheckMinInterval.Nanoseconds() ||
++		!m.lastProcessFDCheckAtNanos.CompareAndSwap(lastCheckAt, now) {
++		return !blocked
++	}
++	entries, err := os.ReadDir("/proc/self/fd")
++	if err != nil {
++		return !blocked
++	}
++	fdCount := len(entries)
++	m.lastProcessFDCount.Store(int64(fdCount))
++	blocked = fdCount >= processConnectionFDStopCount ||
++		(blocked && fdCount >= processConnectionFDResumeCount)
++	m.processFDBlocked.Store(blocked)
++	return !blocked
++}
++
++func (m *ConnectionManager) logConnectionRejection(
++	ctx context.Context,
++	this N.Dialer,
++	network string,
++	metadata adapter.InboundContext,
++	reason error,
++) {
++	rejected := m.connectionRejected.Add(1)
++	if rejected&(rejected-1) != 0 {
++		return
++	}
++	var outboundTag string
++	if outbound, isOutbound := this.(adapter.Outbound); isOutbound {
++		outboundTag = outbound.Tag()
++	}
++	var (
++		processUID int32
++		packages   string
++	)
++	if metadata.ProcessInfo != nil {
++		processUID = metadata.ProcessInfo.UserId
++		packages = strings.Join(metadata.ProcessInfo.AndroidPackageNames, ",")
++	}
++	m.logger.WarnContext(
++		ctx,
++		"pre-handshake connection rejected: reason=", reason,
++		" network=", network,
++		" source=", metadata.Source,
++		" destination=", metadata.Destination,
++		" protocol=", metadata.Protocol,
++		" uid=", processUID,
++		" packages=", packages,
++		" route_outbound=", metadata.Outbound,
++		" outbound=", outboundTag,
++		" active=", len(m.connectionSlots),
++		" limit=", cap(m.connectionSlots),
++		" process_fd=", m.lastProcessFDCount.Load(),
++		" rejected=", rejected,
++	)
++}
++
++func (m *ConnectionManager) logPhysicalBudgetSnapshot(ctx context.Context) {
++	now := time.Now().UnixNano()
++	lastLogAt := m.lastPhysicalBudgetLogNanos.Load()
++	if now-lastLogAt < time.Second.Nanoseconds() ||
++		!m.lastPhysicalBudgetLogNanos.CompareAndSwap(lastLogAt, now) {
++		return
++	}
++	snapshot := dialer.CurrentPhysicalBudgetSnapshot()
++	m.logger.InfoContext(
++		ctx,
++		"kunbox_physical_budget_v1 ", snapshot.String(),
++		" pending_sources=", snapshot.PendingSources(),
++	)
 +}
 +
 +func newPacketDialContext(parent context.Context, conn N.PacketConn) (context.Context, context.CancelFunc) {
@@ -338,16 +1511,17 @@ index 9fdc6cd..c8a8874 100644
  func (m *ConnectionManager) connectionCopy(ctx context.Context, source net.Conn, destination net.Conn, direction bool, done *atomic.Bool, onClose N.CloseHandlerFunc) {
 diff --git a/route/conn_packet_lifecycle_test.go b/route/conn_packet_lifecycle_test.go
 new file mode 100644
-index 0000000..cbe28db
+index 00000000..27ac5f45
 --- /dev/null
 +++ b/route/conn_packet_lifecycle_test.go
-@@ -0,0 +1,190 @@
+@@ -0,0 +1,234 @@
 +package route
 +
 +import (
 +	"context"
 +	"net"
 +	"net/netip"
++	"sync"
 +	"sync/atomic"
 +	"testing"
 +	"time"
@@ -359,6 +1533,38 @@ index 0000000..cbe28db
 +	N "github.com/sagernet/sing/common/network"
 +	udpnat "github.com/sagernet/sing/common/udpnat2"
 +)
++
++func TestStreamDialFloodStaysBoundedBeforeHandshake(t *testing.T) {
++	manager := NewConnectionManager(log.NewNOPFactory().Logger())
++	dialer := &countingBlockingPacketDialer{}
++	ctx, cancel := context.WithCancel(context.Background())
++	const attempts = 4096
++	var waitGroup sync.WaitGroup
++	for range attempts {
++		waitGroup.Add(1)
++		go func() {
++			defer waitGroup.Done()
++			manager.NewConnection(
++				ctx,
++				dialer,
++				&discardStreamConn{},
++				adapter.InboundContext{Destination: M.ParseSocksaddr("1.1.1.1:443")},
++				nil,
++			)
++		}()
++	}
++	deadline := time.Now().Add(5 * time.Second)
++	for manager.connectionRejected.Load() < attempts-maxActivePreHandshakeConnections &&
++		time.Now().Before(deadline) {
++		time.Sleep(time.Millisecond)
++	}
++	peak := dialer.peak.Load()
++	cancel()
++	waitGroup.Wait()
++	if peak > maxActivePreHandshakeConnections {
++		t.Fatalf("stream dial flood exceeded pre-handshake capacity: peak=%d", peak)
++	}
++}
 +
 +func TestPacketDialCanceledWhenInboundNATExpires(t *testing.T) {
 +	manager := NewConnectionManager(log.NewNOPFactory().Logger())
@@ -461,6 +1667,17 @@ index 0000000..cbe28db
 +	return nil
 +}
 +
++type discardStreamConn struct{}
++
++func (*discardStreamConn) Read([]byte) (int, error)         { return 0, net.ErrClosed }
++func (*discardStreamConn) Write(buffer []byte) (int, error) { return len(buffer), nil }
++func (*discardStreamConn) Close() error                     { return nil }
++func (*discardStreamConn) LocalAddr() net.Addr              { return M.Socksaddr{} }
++func (*discardStreamConn) RemoteAddr() net.Addr             { return M.Socksaddr{} }
++func (*discardStreamConn) SetDeadline(time.Time) error      { return nil }
++func (*discardStreamConn) SetReadDeadline(time.Time) error  { return nil }
++func (*discardStreamConn) SetWriteDeadline(time.Time) error { return nil }
++
 +type countingBlockingPacketDialer struct {
 +	started atomic.Int64
 +	active  atomic.Int64
@@ -532,3 +1749,336 @@ index 0000000..cbe28db
 +	close(d.canceled)
 +	return ctx.Err()
 +}
+diff --git a/transport/wireguard/endpoint.go b/transport/wireguard/endpoint.go
+index c8682588..cb4a995d 100644
+--- a/transport/wireguard/endpoint.go
++++ b/transport/wireguard/endpoint.go
+@@ -10,6 +10,7 @@ import (
+ 	"os"
+ 	"reflect"
+ 	"strings"
++	"sync"
+ 	"time"
+ 	"unsafe"
+ 
+@@ -42,6 +43,143 @@ type Endpoint struct {
+ 	pauseCallback  *list.Element[pause.Callback]
+ }
+ 
++const wireGuardPhysicalGateMarker = "kunbox_wireguard_physical_gate_v1"
++
++type budgetedWireGuardBind struct {
++	bind conn.Bind
++
++	access sync.Mutex
++	leases []*dialer.PhysicalSocketLease
++}
++
++func (b *budgetedWireGuardBind) Open(port uint16) ([]conn.ReceiveFunc, uint16, error) {
++	b.access.Lock()
++	defer b.access.Unlock()
++	leases, err := dialer.ReservePhysicalSockets(2)
++	if err != nil {
++		return nil, 0, fmt.Errorf("%s: %w", wireGuardPhysicalGateMarker, err)
++	}
++	receiveFunctions, actualPort, err := b.bind.Open(port)
++	if err != nil {
++		releasePhysicalSocketLeases(leases)
++		return nil, 0, err
++	}
++	if len(receiveFunctions) == 0 || len(receiveFunctions) > len(leases) {
++		b.bind.Close()
++		releasePhysicalSocketLeases(leases)
++		return nil, 0, E.New(wireGuardPhysicalGateMarker, ": invalid receive function count: ", len(receiveFunctions))
++	}
++	releasePhysicalSocketLeases(leases[len(receiveFunctions):])
++	b.leases = leases[:len(receiveFunctions)]
++	return receiveFunctions, actualPort, nil
++}
++
++func (b *budgetedWireGuardBind) Close() error {
++	b.access.Lock()
++	defer b.access.Unlock()
++	err := b.bind.Close()
++	releasePhysicalSocketLeases(b.leases)
++	b.leases = nil
++	return err
++}
++
++func (b *budgetedWireGuardBind) SetMark(mark uint32) error {
++	return b.bind.SetMark(mark)
++}
++
++func (b *budgetedWireGuardBind) Send(buffers [][]byte, endpoint conn.Endpoint, offset int) error {
++	return b.bind.Send(buffers, endpoint, offset)
++}
++
++func (b *budgetedWireGuardBind) ParseEndpoint(endpoint string) (conn.Endpoint, error) {
++	return b.bind.ParseEndpoint(endpoint)
++}
++
++func (b *budgetedWireGuardBind) BatchSize() int {
++	return b.bind.BatchSize()
++}
++
++func (b *budgetedWireGuardBind) SetReservedForEndpoint(destination netip.AddrPort, reserved [3]byte) {
++	b.bind.SetReservedForEndpoint(destination, reserved)
++}
++
++func releasePhysicalSocketLeases(leases []*dialer.PhysicalSocketLease) {
++	for _, lease := range leases {
++		lease.Release()
++	}
++}
++
++type budgetedWireGuardPeekBind struct {
++	*budgetedWireGuardBind
++	peek conn.PeekLookAtSocketFd
++}
++
++func (b *budgetedWireGuardPeekBind) PeekLookAtSocketFd4() (int, error) {
++	return b.peek.PeekLookAtSocketFd4()
++}
++
++func (b *budgetedWireGuardPeekBind) PeekLookAtSocketFd6() (int, error) {
++	return b.peek.PeekLookAtSocketFd6()
++}
++
++type budgetedWireGuardInterfaceBind struct {
++	*budgetedWireGuardBind
++	interfaceBind conn.BindSocketToInterface
++}
++
++func (b *budgetedWireGuardInterfaceBind) BindSocketToInterface4(interfaceIndex uint32, blackhole bool) error {
++	return b.interfaceBind.BindSocketToInterface4(interfaceIndex, blackhole)
++}
++
++func (b *budgetedWireGuardInterfaceBind) BindSocketToInterface6(interfaceIndex uint32, blackhole bool) error {
++	return b.interfaceBind.BindSocketToInterface6(interfaceIndex, blackhole)
++}
++
++type budgetedWireGuardCombinedBind struct {
++	*budgetedWireGuardBind
++	peek          conn.PeekLookAtSocketFd
++	interfaceBind conn.BindSocketToInterface
++}
++
++func (b *budgetedWireGuardCombinedBind) PeekLookAtSocketFd4() (int, error) {
++	return b.peek.PeekLookAtSocketFd4()
++}
++
++func (b *budgetedWireGuardCombinedBind) PeekLookAtSocketFd6() (int, error) {
++	return b.peek.PeekLookAtSocketFd6()
++}
++
++func (b *budgetedWireGuardCombinedBind) BindSocketToInterface4(interfaceIndex uint32, blackhole bool) error {
++	return b.interfaceBind.BindSocketToInterface4(interfaceIndex, blackhole)
++}
++
++func (b *budgetedWireGuardCombinedBind) BindSocketToInterface6(interfaceIndex uint32, blackhole bool) error {
++	return b.interfaceBind.BindSocketToInterface6(interfaceIndex, blackhole)
++}
++
++func newBudgetedWireGuardBind(bind conn.Bind) conn.Bind {
++	base := &budgetedWireGuardBind{bind: bind}
++	peek, hasPeek := bind.(conn.PeekLookAtSocketFd)
++	interfaceBind, hasInterfaceBind := bind.(conn.BindSocketToInterface)
++	switch {
++	case hasPeek && hasInterfaceBind:
++		return &budgetedWireGuardCombinedBind{
++			budgetedWireGuardBind: base,
++			peek:                  peek,
++			interfaceBind:         interfaceBind,
++		}
++	case hasPeek:
++		return &budgetedWireGuardPeekBind{budgetedWireGuardBind: base, peek: peek}
++	case hasInterfaceBind:
++		return &budgetedWireGuardInterfaceBind{
++			budgetedWireGuardBind: base,
++			interfaceBind:         interfaceBind,
++		}
++	default:
++		return base
++	}
++}
++
+ func NewEndpoint(options EndpointOptions) (*Endpoint, error) {
+ 	if options.PrivateKey == "" {
+ 		return nil, E.New("missing private key")
+@@ -157,7 +295,7 @@ func (e *Endpoint) Start(resolve bool) error {
+ 	var bind conn.Bind
+ 	wgListener, isWgListener := common.Cast[dialer.WireGuardListener](e.options.Dialer)
+ 	if isWgListener {
+-		bind = conn.NewStdNetBind(wgListener.WireGuardControl())
++		bind = newBudgetedWireGuardBind(conn.NewStdNetBind(wgListener.WireGuardControl()))
+ 	} else {
+ 		var (
+ 			isConnect   bool
+diff --git a/transport/wireguard/endpoint_physical_budget_test.go b/transport/wireguard/endpoint_physical_budget_test.go
+new file mode 100644
+index 00000000..e3d4651f
+--- /dev/null
++++ b/transport/wireguard/endpoint_physical_budget_test.go
+@@ -0,0 +1,162 @@
++package wireguard
++
++import (
++	"errors"
++	"net/netip"
++	"testing"
++
++	"github.com/sagernet/sing-box/common/dialer"
++	"github.com/sagernet/wireguard-go/conn"
++)
++
++func TestBudgetedWireGuardBindOpenCloseLifecycle(t *testing.T) {
++	before := dialer.CurrentPhysicalBudgetSnapshot()
++	base := &testWireGuardBind{receiveCount: 2}
++	bind := newBudgetedWireGuardBind(base)
++	receiveFunctions, port, err := bind.Open(0)
++	if err != nil {
++		t.Fatal(err)
++	}
++	if len(receiveFunctions) != 2 || port != testWireGuardPort {
++		t.Fatalf("unexpected open result: count=%d port=%d", len(receiveFunctions), port)
++	}
++	opened := dialer.CurrentPhysicalBudgetSnapshot()
++	if opened.Active != before.Active+2 {
++		t.Fatalf("WireGuard sockets were not budgeted: before=%+v opened=%+v", before, opened)
++	}
++	if err = bind.Close(); err != nil {
++		t.Fatal(err)
++	}
++	_ = bind.Close()
++	after := dialer.CurrentPhysicalBudgetSnapshot()
++	if after.Active != before.Active {
++		t.Fatalf("WireGuard close leaked active leases: before=%+v after=%+v", before, after)
++	}
++}
++
++func TestBudgetedWireGuardBindOpenFailureReleasesReservations(t *testing.T) {
++	before := dialer.CurrentPhysicalBudgetSnapshot()
++	base := &testWireGuardBind{openErr: errors.New("open failed")}
++	bind := newBudgetedWireGuardBind(base)
++	if _, _, err := bind.Open(0); err == nil {
++		t.Fatal("expected open failure")
++	}
++	after := dialer.CurrentPhysicalBudgetSnapshot()
++	if after.Active != before.Active {
++		t.Fatalf("failed WireGuard open leaked active leases: before=%+v after=%+v", before, after)
++	}
++}
++
++func TestBudgetedWireGuardBindOptionalInterfaces(t *testing.T) {
++	baseOnly := newBudgetedWireGuardBind(&testWireGuardBind{receiveCount: 1})
++	if _, loaded := baseOnly.(conn.PeekLookAtSocketFd); loaded {
++		t.Fatal("base wrapper falsely exposes PeekLookAtSocketFd")
++	}
++	if _, loaded := baseOnly.(conn.BindSocketToInterface); loaded {
++		t.Fatal("base wrapper falsely exposes BindSocketToInterface")
++	}
++
++	peekSource := &testWireGuardPeekBind{testWireGuardBind: &testWireGuardBind{receiveCount: 1}}
++	peekWrapped := newBudgetedWireGuardBind(peekSource)
++	peek, loaded := peekWrapped.(conn.PeekLookAtSocketFd)
++	if !loaded {
++		t.Fatal("peek wrapper lost PeekLookAtSocketFd")
++	}
++	if _, loaded = peekWrapped.(conn.BindSocketToInterface); loaded {
++		t.Fatal("peek wrapper falsely exposes BindSocketToInterface")
++	}
++	if fd, err := peek.PeekLookAtSocketFd4(); err != nil || fd != 41 {
++		t.Fatalf("peek4 was not forwarded: fd=%d err=%v", fd, err)
++	}
++
++	interfaceSource := &testWireGuardInterfaceBind{testWireGuardBind: &testWireGuardBind{receiveCount: 1}}
++	interfaceWrapped := newBudgetedWireGuardBind(interfaceSource)
++	interfaceBind, loaded := interfaceWrapped.(conn.BindSocketToInterface)
++	if !loaded {
++		t.Fatal("interface wrapper lost BindSocketToInterface")
++	}
++	if _, loaded = interfaceWrapped.(conn.PeekLookAtSocketFd); loaded {
++		t.Fatal("interface wrapper falsely exposes PeekLookAtSocketFd")
++	}
++	if err := interfaceBind.BindSocketToInterface4(7, true); err != nil {
++		t.Fatal(err)
++	}
++	if interfaceSource.lastInterface != 7 || !interfaceSource.lastBlackhole {
++		t.Fatal("BindSocketToInterface4 parameters were not forwarded")
++	}
++
++	combinedSource := &testWireGuardCombinedBind{
++		testWireGuardBind: &testWireGuardBind{receiveCount: 1},
++	}
++	combinedWrapped := newBudgetedWireGuardBind(combinedSource)
++	if _, loaded = combinedWrapped.(conn.PeekLookAtSocketFd); !loaded {
++		t.Fatal("combined wrapper lost PeekLookAtSocketFd")
++	}
++	if _, loaded = combinedWrapped.(conn.BindSocketToInterface); !loaded {
++		t.Fatal("combined wrapper lost BindSocketToInterface")
++	}
++}
++
++const testWireGuardPort = 51820
++
++type testWireGuardBind struct {
++	receiveCount int
++	openErr      error
++	closed       bool
++}
++
++func (b *testWireGuardBind) Open(uint16) ([]conn.ReceiveFunc, uint16, error) {
++	if b.openErr != nil {
++		return nil, 0, b.openErr
++	}
++	receiveFunctions := make([]conn.ReceiveFunc, b.receiveCount)
++	for index := range receiveFunctions {
++		receiveFunctions[index] = func([][]byte, []int, []conn.Endpoint) (int, error) { return 0, nil }
++	}
++	return receiveFunctions, testWireGuardPort, nil
++}
++
++func (b *testWireGuardBind) Close() error {
++	b.closed = true
++	return nil
++}
++
++func (*testWireGuardBind) SetMark(uint32) error                           { return nil }
++func (*testWireGuardBind) Send([][]byte, conn.Endpoint, int) error        { return nil }
++func (*testWireGuardBind) ParseEndpoint(string) (conn.Endpoint, error)    { return nil, nil }
++func (*testWireGuardBind) BatchSize() int                                 { return 1 }
++func (*testWireGuardBind) SetReservedForEndpoint(netip.AddrPort, [3]byte) {}
++
++type testWireGuardPeekBind struct {
++	*testWireGuardBind
++}
++
++func (*testWireGuardPeekBind) PeekLookAtSocketFd4() (int, error) { return 41, nil }
++func (*testWireGuardPeekBind) PeekLookAtSocketFd6() (int, error) { return 61, nil }
++
++type testWireGuardInterfaceBind struct {
++	*testWireGuardBind
++	lastInterface uint32
++	lastBlackhole bool
++}
++
++func (b *testWireGuardInterfaceBind) BindSocketToInterface4(index uint32, blackhole bool) error {
++	b.lastInterface = index
++	b.lastBlackhole = blackhole
++	return nil
++}
++
++func (b *testWireGuardInterfaceBind) BindSocketToInterface6(index uint32, blackhole bool) error {
++	b.lastInterface = index
++	b.lastBlackhole = blackhole
++	return nil
++}
++
++type testWireGuardCombinedBind struct {
++	*testWireGuardBind
++}
++
++func (*testWireGuardCombinedBind) PeekLookAtSocketFd4() (int, error)         { return 42, nil }
++func (*testWireGuardCombinedBind) PeekLookAtSocketFd6() (int, error)         { return 62, nil }
++func (*testWireGuardCombinedBind) BindSocketToInterface4(uint32, bool) error { return nil }
++func (*testWireGuardCombinedBind) BindSocketToInterface6(uint32, bool) error { return nil }

@@ -19,7 +19,14 @@ $trustedPatchHashes = @{
     'v1.13.14' = '4C89FE3A078F5DC68DA351BF04B1B9536D048925266E15332E5D6F2BFAB2ECE2'
     'v1.13.15' = '7C8318A5C9B77BF0BF623FA4D8610FF4190B188B9BD4D6149E0D9BF51E1B0172'
     'v1.13.16' = '7C8318A5C9B77BF0BF623FA4D8610FF4190B188B9BD4D6149E0D9BF51E1B0172'
-    'v1.13.18' = '7C8318A5C9B77BF0BF623FA4D8610FF4190B188B9BD4D6149E0D9BF51E1B0172'
+    'v1.13.18' = '660D190181ED104119A812B7ADC64E5E5C845E08AF8EAEB98860B9714A0EC10F'
+}
+$requiredKunBoxNativeMarkers = @{
+    'v1.13.18' = @(
+        'pre-handshake connection rejected: reason=',
+        'kunbox_physical_dial_gate_v1',
+        'kunbox_wireguard_physical_gate_v1'
+    )
 }
 $trustedPatchFiles = @{
     'v1.13.14' = @(
@@ -43,10 +50,20 @@ $trustedPatchFiles = @{
     )
     'v1.13.18' = @(
         'cmd/internal/build_libbox/main.go',
+        'common/dialer/default.go',
+        'common/dialer/default_parallel_interface.go',
+        'common/dialer/physical_budget.go',
+        'common/dialer/physical_budget_android.go',
+        'common/dialer/physical_budget_other.go',
+        'common/dialer/physical_budget_test.go',
+        'protocol/direct/outbound.go',
+        'protocol/direct/outbound_physical_budget_test.go',
         'protocol/vless/outbound.go',
         'protocol/vless/outbound_test.go',
         'route/conn.go',
-        'route/conn_packet_lifecycle_test.go'
+        'route/conn_packet_lifecycle_test.go',
+        'transport/wireguard/endpoint.go',
+        'transport/wireguard/endpoint_physical_budget_test.go'
     )
 }
 $trustedDependencyPatches = @{
@@ -526,6 +543,23 @@ function Resolve-CommandPath([string] $commandName, [string] $hint) {
     return $command.Source
 }
 
+function Resolve-GoPath {
+    $command = Get-Command 'go' -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($null -ne $command) {
+        return $command.Source
+    }
+    $bundledGo = Get-ChildItem -LiteralPath (Join-Path $scriptDir 'tools') -Directory -Filter 'go*' `
+        -ErrorAction SilentlyContinue |
+        Sort-Object Name -Descending |
+        ForEach-Object { Join-Path $_.FullName 'go\bin\go.exe' } |
+        Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } |
+        Select-Object -First 1
+    if ($null -eq $bundledGo) {
+        Fail 'go not found. Install Go 1.24+ or provide a bundled toolchain under .kernel-sync-local/tools.'
+    }
+    return $bundledGo
+}
+
 function Invoke-External {
     param(
         [Parameter(Mandatory = $true)] [string] $FilePath,
@@ -841,6 +875,69 @@ function Apply-KunBoxPatch([string] $gitBinary) {
     Invoke-External -FilePath $gitBinary -Arguments @('apply', '--whitespace=nowarn', $patchFile) -WorkingDirectory $upstreamDir -FailureMessage 'Failed to apply KunBox patch'
 }
 
+function Get-LiteralOccurrenceCount([string] $Text, [string] $Needle) {
+    if ([string]::IsNullOrEmpty($Needle)) {
+        return 0
+    }
+    $count = 0
+    $offset = 0
+    while ($true) {
+        $index = $Text.IndexOf($Needle, $offset, [System.StringComparison]::Ordinal)
+        if ($index -lt 0) {
+            return $count
+        }
+        $count++
+        $offset = $index + $Needle.Length
+    }
+}
+
+function Assert-LiteralOccurrence(
+    [string] $RelativePath,
+    [string] $Needle,
+    [int] $ExpectedCount
+) {
+    $path = Join-Path $upstreamDir $RelativePath
+    if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+        Fail "Physical dial audit file is missing: $RelativePath"
+    }
+    $text = [System.IO.File]::ReadAllText($path)
+    $actualCount = Get-LiteralOccurrenceCount -Text $text -Needle $Needle
+    if ($actualCount -ne $ExpectedCount) {
+        Fail "Physical dial audit mismatch in ${RelativePath}: '$Needle' expected=$ExpectedCount actual=$actualCount"
+    }
+}
+
+function Assert-NoUnbudgetedPhysicalDialSites {
+    if ($resolvedTag -cne 'v1.13.18') {
+        return
+    }
+    Assert-LiteralOccurrence 'common/dialer/default.go' 'dialPhysicalConn(ctx' 1
+    Assert-LiteralOccurrence 'common/dialer/default.go' 'listenPhysicalPacket(ctx' 1
+    Assert-LiteralOccurrence 'common/dialer/default_parallel_interface.go' 'dialPhysicalConn(ctx' 2
+    Assert-LiteralOccurrence 'common/dialer/default_parallel_interface.go' 'listenPhysicalPacket(ctx' 2
+    Assert-LiteralOccurrence 'protocol/direct/outbound.go' 'dialer.AcquirePhysicalDial(ctx)' 1
+    Assert-LiteralOccurrence 'protocol/direct/outbound.go' 'ping.ConnectDestination(' 1
+    Assert-LiteralOccurrence 'transport/wireguard/endpoint.go' `
+        'newBudgetedWireGuardBind(conn.NewStdNetBind(wgListener.WireGuardControl()))' 1
+    Assert-LiteralOccurrence 'common/dialer/physical_budget.go' 'kunbox_physical_dial_gate_v1' 1
+    Assert-LiteralOccurrence 'transport/wireguard/endpoint.go' 'kunbox_wireguard_physical_gate_v1' 1
+    Assert-LiteralOccurrence 'route/conn.go' 'kunbox_physical_budget_v1 ' 1
+    Assert-LiteralOccurrence 'common/dialer/physical_budget_android.go' '//go:build android' 1
+    Assert-LiteralOccurrence 'common/dialer/physical_budget_other.go' '//go:build !android' 1
+
+    $directPath = Join-Path $upstreamDir 'protocol/direct/outbound.go'
+    $directText = [System.IO.File]::ReadAllText($directPath)
+    $helperText = $directText.Substring(
+        $directText.IndexOf('func acquireBudgetedDirectRouteDestination(', [System.StringComparison]::Ordinal)
+    )
+    $acquireIndex = $helperText.IndexOf('dialer.AcquirePhysicalDial(ctx)', [System.StringComparison]::Ordinal)
+    $connectIndex = $helperText.IndexOf('connect(dialContext)', [System.StringComparison]::Ordinal)
+    if ($acquireIndex -lt 0 -or $connectIndex -lt 0 -or $acquireIndex -gt $connectIndex) {
+        Fail 'ICMP physical lease must be acquired before ping.ConnectDestination creates its socket.'
+    }
+    Write-Host 'Physical dial audit: exact call sites, counts, ordering, build tags and markers verified.'
+}
+
 function Apply-DependencyPatch([string] $goBinary, [string] $gitBinary) {
     if ($null -eq $dependencyPatch) {
         return
@@ -941,7 +1038,7 @@ function Run-GoValidation([string] $goBinary) {
     Write-Stage 'Stage 4/8: Validate patched Go packages'
 
     $env:GOTOOLCHAIN = 'local'
-    $packages = @('./protocol/vless', './route')
+    $packages = @('./common/dialer', './protocol/direct', './transport/wireguard', './protocol/vless', './route')
     Invoke-External -FilePath $goBinary -Arguments (@('test') + $packages) -WorkingDirectory $upstreamDir -FailureMessage 'Patched Go package tests failed'
     Invoke-External -FilePath $goBinary -Arguments (@('test', '-race') + $packages) -WorkingDirectory $upstreamDir -FailureMessage 'Patched Go race tests failed'
     Invoke-External -FilePath $goBinary -Arguments (@('vet') + $packages) -WorkingDirectory $upstreamDir -FailureMessage 'Patched Go vet failed'
@@ -1045,6 +1142,7 @@ function Invoke-BinaryPatternScannerSelfTest {
     $policyPatterns = [string[]] (@(
             $forbiddenNativeMarkers | ForEach-Object { $_.Pattern }
             $trustedDependencyPatches.Values | ForEach-Object { $_.RequiredNativeMarker }
+            $requiredKunBoxNativeMarkers.Values | ForEach-Object { @($_) }
         ) | Sort-Object -Unique)
     $benignPolicyText = (@(
             'xhttp',
@@ -1121,6 +1219,7 @@ function Assert-AarNativeBinaryPolicy {
     } else {
         $null
     }
+    $requiredKunBoxNativeMarkersForTag = [string[]] @($requiredKunBoxNativeMarkers[$resolvedTag])
     if ($null -ne $dependencyPatch -and [string]::IsNullOrWhiteSpace($requiredNativeMarker)) {
         Fail 'Dependency patch policy is missing its required native marker.'
     }
@@ -1128,6 +1227,7 @@ function Assert-AarNativeBinaryPolicy {
     if ($null -ne $requiredNativeMarker) {
         $patterns += $requiredNativeMarker
     }
+    $patterns += @($requiredKunBoxNativeMarkersForTag | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
     $violations = New-Object System.Collections.Generic.List[string]
     $zip = [System.IO.Compression.ZipFile]::OpenRead($AarPath)
     try {
@@ -1157,6 +1257,14 @@ function Assert-AarNativeBinaryPolicy {
                 [void] $violations.Add(
                     "$entryName is missing required dependency marker '$requiredNativeMarker'"
                 )
+            }
+            foreach ($requiredKunBoxNativeMarker in $requiredKunBoxNativeMarkersForTag) {
+                if (-not [string]::IsNullOrWhiteSpace($requiredKunBoxNativeMarker) -and
+                    -not $hits.ContainsKey($requiredKunBoxNativeMarker)) {
+                    [void] $violations.Add(
+                        "$entryName is missing required KunBox marker '$requiredKunBoxNativeMarker'"
+                    )
+                }
             }
         }
     }
@@ -1352,6 +1460,52 @@ function Run-GradleValidation {
     Invoke-External -FilePath $gradleWrapper -Arguments @('assembleDebug') -WorkingDirectory $repoRoot -FailureMessage 'assembleDebug failed. Fix the Kotlin compat layer or kernel export coupling.'
     Invoke-External -FilePath $gradleWrapper -Arguments @('testDebugUnitTest') -WorkingDirectory $repoRoot -FailureMessage 'testDebugUnitTest failed. Fix the Kotlin compat layer or kernel export coupling.'
     Invoke-External -FilePath $gradleWrapper -Arguments @('detekt') -WorkingDirectory $repoRoot -FailureMessage 'detekt failed. Fix the Kotlin compat layer or kernel export coupling.'
+    Invoke-External -FilePath $gradleWrapper -Arguments @('assembleDebugAndroidTest') -WorkingDirectory $repoRoot -FailureMessage 'assembleDebugAndroidTest failed.'
+    Assert-PhysicalDialInstrumentationDiscovered
+}
+
+function Assert-PhysicalDialInstrumentationDiscovered {
+    $testApk = Join-Path $repoRoot 'app\build\outputs\apk\androidTest\debug\app-debug-androidTest.apk'
+    if (-not (Test-Path -LiteralPath $testApk -PathType Leaf)) {
+        Fail "Android instrumentation APK not found: $testApk"
+    }
+    $buildTools = Get-ChildItem -LiteralPath (Join-Path $androidSdk 'build-tools') -Directory |
+        Sort-Object Name -Descending |
+        Select-Object -First 1
+    if ($null -eq $buildTools) {
+        Fail 'Android build-tools not found for instrumentation discovery.'
+    }
+    $dexdump = Join-Path $buildTools.FullName 'dexdump.exe'
+    if (-not (Test-Path -LiteralPath $dexdump -PathType Leaf)) {
+        Fail "dexdump not found: $dexdump"
+    }
+    $discoveryDir = Join-Path $tempDir 'instrumentation-discovery'
+    Remove-PathIfExists -Path $discoveryDir
+    [System.IO.Directory]::CreateDirectory($discoveryDir) | Out-Null
+    $foundClass = $false
+    $foundTest = $false
+    $zip = [System.IO.Compression.ZipFile]::OpenRead($testApk)
+    try {
+        foreach ($entry in @($zip.Entries | Where-Object { $_.Name -like 'classes*.dex' })) {
+            $dexPath = Join-Path $discoveryDir $entry.Name
+            [System.IO.Compression.ZipFileExtensions]::ExtractToFile($entry, $dexPath, $true)
+            $dump = Get-ExternalOutput -FilePath $dexdump -Arguments @('-d', $dexPath) `
+                -WorkingDirectory $discoveryDir -FailureMessage "dexdump failed for $($entry.Name)"
+            if ($dump -match 'Lcom/kunk/singbox/reliability/PhysicalDialGateInstrumentationTest;') {
+                $foundClass = $true
+            }
+            if ($dump -match 'failedPhysicalDialsStayWithinBudget') {
+                $foundTest = $true
+            }
+        }
+    }
+    finally {
+        $zip.Dispose()
+    }
+    if (-not $foundClass -or -not $foundTest) {
+        Fail "PhysicalDialGateInstrumentationTest discovery failed: class=$foundClass test=$foundTest"
+    }
+    Write-Host 'Android instrumentation discovery: PhysicalDialGateInstrumentationTest found.'
 }
 
 if ($SelfTestBinaryScan) {
@@ -1379,7 +1533,7 @@ try {
     Write-Stage 'Environment check'
 
     $gitPath = Resolve-CommandPath -commandName 'git' -hint 'Install Git and make sure it is on PATH.'
-    $goPath = Resolve-CommandPath -commandName 'go' -hint 'Install Go 1.24+ and make sure it is on PATH.'
+    $goPath = Resolve-GoPath
     $javaPath = Resolve-CommandPath -commandName 'java' -hint 'Install JDK 17 and make sure it is on PATH.'
     $javapPath = Resolve-CommandPath -commandName 'javap' -hint 'Use a JDK that includes javap.'
 
@@ -1421,6 +1575,7 @@ try {
     $officialAar = Build-LibboxSnapshot -goBinary $goPath -OutputPath (Join-Path $tempDir 'official-libbox.aar') -StageName 'Stage 2/8: Build official AAR baseline'
     Assert-UpstreamTreeIsClean -gitBinary $gitPath
     Apply-KunBoxPatch -gitBinary $gitPath
+    Assert-NoUnbudgetedPhysicalDialSites
     Apply-DependencyPatch -goBinary $goPath -gitBinary $gitPath
     Run-GoValidation -goBinary $goPath
     $builtAar = Build-LibboxSnapshot -goBinary $goPath -OutputPath (Join-Path $tempDir 'patched-libbox.aar') -StageName 'Stage 5/8: Build patched libbox.aar'
