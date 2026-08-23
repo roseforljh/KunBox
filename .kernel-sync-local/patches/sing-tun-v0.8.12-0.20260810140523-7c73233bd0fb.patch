@@ -1,0 +1,1094 @@
+diff --git a/stack_mixed.go b/stack_mixed.go
+index 4c0a203..1894fb0 100644
+--- a/stack_mixed.go
++++ b/stack_mixed.go
+@@ -45,7 +45,10 @@ func (m *Mixed) Start() error {
+ 	endpoint := channel.New(1024, uint32(m.mtu), "")
+ 	ipStack, err := NewGVisorStack(endpoint)
+ 	if err != nil {
+-		return err
++		endpoint.Attach(nil)
++		return E.Append(err, m.System.Close(), func(closeErr error) error {
++			return E.Cause(closeErr, "close system stack")
++		})
+ 	}
+ 	ipStack.SetTransportProtocolHandler(udp.ProtocolNumber, NewUDPForwarder(m.ctx, ipStack, m.handler, m.udpTimeout).HandlePacket)
+ 	m.stack = ipStack
+@@ -56,13 +59,12 @@ func (m *Mixed) Start() error {
+ }
+ 
+ func (m *Mixed) Close() error {
+-	if m.stack == nil {
+-		return nil
+-	}
+-	m.endpoint.Attach(nil)
+-	m.stack.Close()
+-	for _, endpoint := range m.stack.CleanupEndpoints() {
+-		endpoint.Abort()
++	if m.stack != nil {
++		m.endpoint.Attach(nil)
++		m.stack.Close()
++		for _, endpoint := range m.stack.CleanupEndpoints() {
++			endpoint.Abort()
++		}
+ 	}
+ 	return m.System.Close()
+ }
+diff --git a/stack_mixed_test.go b/stack_mixed_test.go
+new file mode 100644
+index 0000000..5a39a34
+--- /dev/null
++++ b/stack_mixed_test.go
+@@ -0,0 +1,47 @@
++//go:build with_gvisor
++
++package tun
++
++import (
++	"context"
++	"net"
++	"testing"
++	"time"
++
++	"github.com/sagernet/sing/common/logger"
++)
++
++func TestMixedCloseWithoutGVisorStackClosesSystem(t *testing.T) {
++	ctx, cancel := context.WithCancel(context.Background())
++	defer cancel()
++	listener := newSystemAcceptTestListener(net.IPv4(127, 0, 0, 1))
++	system := &System{
++		ctx:                ctx,
++		logger:             logger.NOP(),
++		tcpListener:        listener,
++		tcpNat:             NewNat(ctx, time.Minute),
++		tcpConnections:     make(map[*systemTCPConnection]struct{}),
++		tcpConnectionLimit: 1,
++		closeSignal:        make(chan struct{}),
++	}
++	system.startAcceptLoop(listener)
++	mixed := &Mixed{System: system}
++
++	if err := mixed.Close(); err != nil {
++		t.Fatal(err)
++	}
++	if err := mixed.Close(); err != nil {
++		t.Fatal("second close returned a different result: ", err)
++	}
++	system.tcpConnectionAccess.Lock()
++	closed := system.closed
++	system.tcpConnectionAccess.Unlock()
++	if !closed {
++		t.Fatal("mixed close did not close the system stack")
++	}
++	select {
++	case <-listener.closed:
++	default:
++		t.Fatal("mixed close left the system listener open")
++	}
++}
+diff --git a/stack_system.go b/stack_system.go
+index d834548..2d508ed 100644
+--- a/stack_system.go
++++ b/stack_system.go
+@@ -5,6 +5,7 @@ import (
+ 	"errors"
+ 	"net"
+ 	"net/netip"
++	"sync"
+ 	"syscall"
+ 	"time"
+ 
+@@ -22,6 +23,10 @@ import (
+ 
+ var ErrIncludeAllNetworks = E.New("`system` and `mixed` stack are not available when `includeAllNetworks` is enabled. See https://github.com/SagerNet/sing-tun/issues/25")
+ 
++const systemTCPConnectionLimit = 4096
++
++const systemTCPRejectionLogInterval = time.Minute
++
+ type System struct {
+ 	ctx                  context.Context
+ 	tun                  Tun
+@@ -45,6 +50,17 @@ type System struct {
+ 	tcpPort              uint16
+ 	tcpPort6             uint16
+ 	tcpNat               *TCPNat
++	tcpConnectionAccess  sync.Mutex
++	tcpConnections       map[*systemTCPConnection]struct{}
++	tcpConnectionLimit   int
++	tcpAcceptWait        sync.WaitGroup
++	tcpHandlerWait       sync.WaitGroup
++	tcpRejected          uint64
++	tcpLastRejectLog     time.Time
++	closeOnce            sync.Once
++	closeSignal          chan struct{}
++	closeErr             error
++	closed               bool
+ 	udpNat               *udpnat.Service
+ 	directNat            *DirectRouteMapping
+ 	bindInterface        bool
+@@ -61,6 +77,49 @@ type Session struct {
+ 	DestinationPort    uint16
+ }
+ 
++type systemTCPConnection struct {
++	net.Conn
++	owner     *System
++	closeOnce sync.Once
++	closeErr  error
++}
++
++func (c *systemTCPConnection) Close() error {
++	c.closeOnce.Do(func() {
++		c.closeErr = c.Conn.Close()
++		c.owner.tcpConnectionAccess.Lock()
++		delete(c.owner.tcpConnections, c)
++		c.owner.tcpConnectionAccess.Unlock()
++	})
++	return c.closeErr
++}
++
++func (c *systemTCPConnection) Upstream() any {
++	return c.Conn
++}
++
++func (c *systemTCPConnection) ReaderReplaceable() bool {
++	return true
++}
++
++func (c *systemTCPConnection) WriterReplaceable() bool {
++	return true
++}
++
++func (c *systemTCPConnection) CloseRead() error {
++	if closer, loaded := common.Cast[N.ReadCloser](c.Conn); loaded {
++		return closer.CloseRead()
++	}
++	return c.Close()
++}
++
++func (c *systemTCPConnection) CloseWrite() error {
++	if closer, loaded := common.Cast[N.WriteCloser](c.Conn); loaded {
++		return closer.CloseWrite()
++	}
++	return c.Close()
++}
++
+ func NewSystem(options StackOptions) (Stack, error) {
+ 	stack := &System{
+ 		ctx:                  options.Context,
+@@ -79,6 +138,9 @@ func NewSystem(options StackOptions) (Stack, error) {
+ 		bindInterface:        options.ForwarderBindInterface,
+ 		interfaceFinder:      options.InterfaceFinder,
+ 		multiPendingPackets:  options.TunOptions.EXP_MultiPendingPackets,
++		tcpConnections:       make(map[*systemTCPConnection]struct{}),
++		tcpConnectionLimit:   systemTCPConnectionLimit,
++		closeSignal:          make(chan struct{}),
+ 	}
+ 	if len(options.TunOptions.Inet4Address) > 0 {
+ 		if !HasNextAddress(options.TunOptions.Inet4Address[0], 1) {
+@@ -101,10 +163,28 @@ func NewSystem(options StackOptions) (Stack, error) {
+ }
+ 
+ func (s *System) Close() error {
+-	return common.Close(
+-		s.tcpListener,
+-		s.tcpListener6,
+-	)
++	s.closeOnce.Do(func() {
++		s.tcpConnectionAccess.Lock()
++		s.closed = true
++		if s.closeSignal != nil {
++			close(s.closeSignal)
++		}
++		listener4 := s.tcpListener
++		listener6 := s.tcpListener6
++		connections := make([]*systemTCPConnection, 0, len(s.tcpConnections))
++		for connection := range s.tcpConnections {
++			connections = append(connections, connection)
++		}
++		s.tcpConnectionAccess.Unlock()
++
++		s.closeErr = common.Close(listener4, listener6)
++		s.tcpAcceptWait.Wait()
++		for _, connection := range connections {
++			_ = connection.Close()
++		}
++		s.tcpHandlerWait.Wait()
++	})
++	return s.closeErr
+ }
+ 
+ func (s *System) Start() error {
+@@ -128,11 +208,16 @@ func (s *System) start() error {
+ 			return nil
+ 		})
+ 	}
+-	var tcpListener net.Listener
+-	var err error
++	var (
++		tcpListener4 net.Listener
++		tcpListener6 net.Listener
++		tcpPort4     uint16
++		tcpPort6     uint16
++		err          error
++	)
+ 	if s.inet4NextAddress.IsValid() {
+ 		for range 3 {
+-			tcpListener, err = listener.Listen(s.ctx, "tcp4", net.JoinHostPort(s.inet4Address.String(), "0"))
++			tcpListener4, err = listener.Listen(s.ctx, "tcp4", net.JoinHostPort(s.inet4Address.String(), "0"))
+ 			if !retryableListenError(err) {
+ 				break
+ 			}
+@@ -141,31 +226,55 @@ func (s *System) start() error {
+ 		if err != nil {
+ 			return err
+ 		}
+-		s.tcpListener = tcpListener
+-		s.tcpPort = M.SocksaddrFromNet(tcpListener.Addr()).Port
+-		go s.acceptLoop(tcpListener)
++		tcpPort4 = M.SocksaddrFromNet(tcpListener4.Addr()).Port
+ 	}
+ 	if s.inet6NextAddress.IsValid() {
+ 		for range 3 {
+-			tcpListener, err = listener.Listen(s.ctx, "tcp6", net.JoinHostPort(s.inet6Address.String(), "0"))
++			tcpListener6, err = listener.Listen(s.ctx, "tcp6", net.JoinHostPort(s.inet6Address.String(), "0"))
+ 			if !retryableListenError(err) {
+ 				break
+ 			}
+ 			time.Sleep(time.Second)
+ 		}
+ 		if err != nil {
++			_ = common.Close(tcpListener4)
+ 			return err
+ 		}
+-		s.tcpListener6 = tcpListener
+-		s.tcpPort6 = M.SocksaddrFromNet(tcpListener.Addr()).Port
+-		go s.acceptLoop(tcpListener)
++		tcpPort6 = M.SocksaddrFromNet(tcpListener6.Addr()).Port
++	}
++
++	s.tcpConnectionAccess.Lock()
++	if s.closed {
++		s.tcpConnectionAccess.Unlock()
++		_ = common.Close(tcpListener4, tcpListener6)
++		return net.ErrClosed
+ 	}
++	s.tcpListener = tcpListener4
++	s.tcpListener6 = tcpListener6
++	s.tcpPort = tcpPort4
++	s.tcpPort6 = tcpPort6
+ 	s.tcpNat = NewNat(s.ctx, s.udpTimeout)
+ 	s.udpNat = udpnat.New(s.handler, s.preparePacketConnection, s.udpTimeout, false)
+ 	s.directNat = NewDirectRouteMapping(s.icmpTimeout)
++	if tcpListener4 != nil {
++		s.startAcceptLoop(tcpListener4)
++	}
++	if tcpListener6 != nil {
++		s.startAcceptLoop(tcpListener6)
++	}
++	s.tcpConnectionAccess.Unlock()
+ 	return nil
+ }
+ 
++// startAcceptLoop 必须在启动阶段或持有 tcpConnectionAccess 时调用，确保 Add 发生在 Close.Wait 前。
++func (s *System) startAcceptLoop(listener net.Listener) {
++	s.tcpAcceptWait.Add(1)
++	go func() {
++		defer s.tcpAcceptWait.Done()
++		s.acceptLoop(listener)
++	}()
++}
++
+ func (s *System) tunLoop() {
+ 	if winTun, isWinTun := s.tun.(WinTun); isWinTun {
+ 		s.wintunLoop(winTun)
+@@ -323,19 +432,114 @@ func (s *System) processPacket(packet []byte) bool {
+ }
+ 
+ func (s *System) acceptLoop(listener net.Listener) {
++	var retryDelay time.Duration
+ 	for {
+ 		conn, err := listener.Accept()
+ 		if err != nil {
+-			return
++			if E.IsClosed(err) || errors.Is(err, net.ErrClosed) || errors.Is(err, syscall.EBADF) {
++				return
++			}
++			if !isRetryableTCPAcceptError(err) {
++				s.logger.Error(E.Cause(err, "accept system TCP connection"))
++				return
++			}
++			nextDelay := 5 * time.Millisecond
++			if retryDelay > 0 {
++				nextDelay = min(retryDelay*2, time.Second)
++			}
++			if nextDelay != retryDelay {
++				s.logger.Warn("accept system TCP connection: ", err, ", retrying in ", nextDelay)
++			}
++			retryDelay = nextDelay
++			select {
++			case <-time.After(retryDelay):
++				continue
++			case <-s.ctx.Done():
++				return
++			case <-s.closeSignal:
++				return
++			}
+ 		}
++		retryDelay = 0
+ 		connPort := M.SocksaddrFromNet(conn.RemoteAddr()).Port
+ 		session := s.tcpNat.LookupBack(connPort)
+ 		if session == nil {
+ 			s.logger.Trace(E.New("unknown session with port ", connPort))
++			_ = conn.Close()
+ 			continue
+ 		}
+-		go s.handler.NewConnectionEx(s.ctx, conn, M.SocksaddrFromNetIP(session.Source), M.SocksaddrFromNetIP(session.Destination), nil)
++		trackedConnection := s.trackTCPConnection(conn)
++		if trackedConnection == nil {
++			_ = conn.Close()
++			continue
++		}
++		s.tcpHandlerWait.Add(1)
++		go func(connection *systemTCPConnection, connectionSession *TCPSession) {
++			defer s.tcpHandlerWait.Done()
++			defer func() {
++				if panicValue := recover(); panicValue != nil {
++					_ = connection.Close()
++					panic(panicValue)
++				}
++			}()
++			s.handler.NewConnectionEx(
++				s.ctx,
++				connection,
++				M.SocksaddrFromNetIP(connectionSession.Source),
++				M.SocksaddrFromNetIP(connectionSession.Destination),
++				N.OnceClose(func(error) { _ = connection.Close() }),
++			)
++		}(trackedConnection, session)
++	}
++}
++
++func isRetryableTCPAcceptError(err error) bool {
++	if errors.Is(err, syscall.EMFILE) || errors.Is(err, syscall.ENFILE) {
++		return true
++	}
++	var networkError net.Error
++	return errors.As(err, &networkError) && networkError.Temporary()
++}
++
++func (s *System) trackTCPConnection(conn net.Conn) *systemTCPConnection {
++	trackedConnection := &systemTCPConnection{Conn: conn, owner: s}
++	s.tcpConnectionAccess.Lock()
++	if s.closed {
++		s.tcpConnectionAccess.Unlock()
++		return nil
++	}
++	if s.tcpConnections == nil {
++		s.tcpConnections = make(map[*systemTCPConnection]struct{})
++	}
++	limit := s.tcpConnectionLimit
++	if limit <= 0 {
++		limit = systemTCPConnectionLimit
++	}
++	if len(s.tcpConnections) >= limit {
++		s.tcpRejected++
++		rejected := s.tcpRejected
++		shouldLog := s.tcpLastRejectLog.IsZero() || time.Since(s.tcpLastRejectLog) >= systemTCPRejectionLogInterval
++		if shouldLog {
++			s.tcpLastRejectLog = time.Now()
++		}
++		active := len(s.tcpConnections)
++		s.tcpConnectionAccess.Unlock()
++		if shouldLog {
++			s.logTCPConnectionRejection(conn, active, limit, rejected)
++		}
++		return nil
++	}
++	s.tcpConnections[trackedConnection] = struct{}{}
++	s.tcpConnectionAccess.Unlock()
++	return trackedConnection
++}
++
++func (s *System) logTCPConnectionRejection(conn net.Conn, active int, limit int, rejected uint64) {
++	family := "IPv4"
++	if localAddress, isTCPAddress := conn.LocalAddr().(*net.TCPAddr); isTCPAddress && localAddress.IP.To4() == nil {
++		family = "IPv6"
+ 	}
++	s.logger.Warn("system TCP connection limit reached: active=", active, " limit=", limit, " rejected=", rejected, " family=", family)
+ }
+ 
+ func (s *System) processIPv4(ipHdr header.IPv4) (writeBack bool, err error) {
+diff --git a/stack_system_accept_test.go b/stack_system_accept_test.go
+new file mode 100644
+index 0000000..7e4e6bc
+--- /dev/null
++++ b/stack_system_accept_test.go
+@@ -0,0 +1,534 @@
++package tun
++
++import (
++	"context"
++	"errors"
++	"io"
++	"net"
++	"net/netip"
++	"runtime/debug"
++	"sync"
++	"sync/atomic"
++	"syscall"
++	"testing"
++	"time"
++
++	"github.com/sagernet/sing/common/logger"
++	M "github.com/sagernet/sing/common/metadata"
++	N "github.com/sagernet/sing/common/network"
++)
++
++type systemAcceptTestHandler struct {
++	Handler
++	connections chan systemAcceptTestConnection
++}
++
++type systemAcceptTestConnection struct {
++	conn    net.Conn
++	onClose N.CloseHandlerFunc
++}
++
++func (h *systemAcceptTestHandler) PrepareConnection(
++	_ string,
++	_ M.Socksaddr,
++	_ M.Socksaddr,
++	_ DirectRouteContext,
++	_ time.Duration,
++) (DirectRouteDestination, error) {
++	return nil, nil
++}
++
++func (h *systemAcceptTestHandler) NewConnectionEx(
++	_ context.Context,
++	conn net.Conn,
++	_ M.Socksaddr,
++	_ M.Socksaddr,
++	onClose N.CloseHandlerFunc,
++) {
++	h.connections <- systemAcceptTestConnection{conn: conn, onClose: onClose}
++}
++
++type systemAcceptTestListener struct {
++	connections  chan net.Conn
++	acceptErrors chan error
++	closed       chan struct{}
++	closeOnce    sync.Once
++	address      *net.TCPAddr
++}
++
++func newSystemAcceptTestListener(ip net.IP) *systemAcceptTestListener {
++	return &systemAcceptTestListener{
++		connections:  make(chan net.Conn, 4),
++		acceptErrors: make(chan error),
++		closed:       make(chan struct{}),
++		address:      &net.TCPAddr{IP: ip},
++	}
++}
++
++func (l *systemAcceptTestListener) Accept() (net.Conn, error) {
++	select {
++	case err := <-l.acceptErrors:
++		return nil, err
++	case conn := <-l.connections:
++		return conn, nil
++	case <-l.closed:
++		return nil, net.ErrClosed
++	}
++}
++
++func (l *systemAcceptTestListener) Close() error {
++	l.closeOnce.Do(func() { close(l.closed) })
++	return nil
++}
++
++func (l *systemAcceptTestListener) Addr() net.Addr {
++	return l.address
++}
++
++type systemAcceptTestConn struct {
++	net.Conn
++	localAddr  net.Addr
++	remoteAddr net.Addr
++}
++
++func (c *systemAcceptTestConn) LocalAddr() net.Addr {
++	return c.localAddr
++}
++
++func (c *systemAcceptTestConn) RemoteAddr() net.Addr {
++	return c.remoteAddr
++}
++
++type systemCapabilityTestConn struct {
++	net.Conn
++	closeCount      atomic.Int32
++	closeReadCount  atomic.Int32
++	closeWriteCount atomic.Int32
++}
++
++func (c *systemCapabilityTestConn) Close() error {
++	c.closeCount.Add(1)
++	return c.Conn.Close()
++}
++
++func (c *systemCapabilityTestConn) CloseRead() error {
++	c.closeReadCount.Add(1)
++	return nil
++}
++
++func (c *systemCapabilityTestConn) CloseWrite() error {
++	c.closeWriteCount.Add(1)
++	return nil
++}
++
++type systemLateAcceptListener struct {
++	conn      net.Conn
++	started   chan struct{}
++	release   chan struct{}
++	closed    chan struct{}
++	accepts   atomic.Int32
++	closeOnce sync.Once
++	localAddr net.Addr
++}
++
++func (l *systemLateAcceptListener) Accept() (net.Conn, error) {
++	if l.accepts.Add(1) == 1 {
++		close(l.started)
++		<-l.release
++		return l.conn, nil
++	}
++	<-l.closed
++	return nil, net.ErrClosed
++}
++
++func (l *systemLateAcceptListener) Close() error {
++	l.closeOnce.Do(func() { close(l.closed) })
++	return nil
++}
++
++func (l *systemLateAcceptListener) Addr() net.Addr {
++	return l.localAddr
++}
++
++func TestSystemTCPConnectionCloseOnceAndPreservesCapabilities(t *testing.T) {
++	accepted, peer := net.Pipe()
++	defer peer.Close()
++	upstream := &systemCapabilityTestConn{Conn: accepted}
++	system := &System{
++		tcpConnections:     make(map[*systemTCPConnection]struct{}),
++		tcpConnectionLimit: 1,
++		closeSignal:        make(chan struct{}),
++	}
++	tracked := system.trackTCPConnection(upstream)
++	if tracked == nil {
++		t.Fatal("connection was not admitted")
++	}
++	if tracked.Upstream() != upstream || !tracked.ReaderReplaceable() || !tracked.WriterReplaceable() {
++		t.Fatal("tracked connection did not preserve its upstream fast path")
++	}
++	if err := tracked.CloseRead(); err != nil {
++		t.Fatal(err)
++	}
++	if err := tracked.CloseWrite(); err != nil {
++		t.Fatal(err)
++	}
++	if upstream.closeReadCount.Load() != 1 || upstream.closeWriteCount.Load() != 1 {
++		t.Fatal("tracked connection did not forward half-close capabilities")
++	}
++	system.tcpConnectionAccess.Lock()
++	activeBeforeClose := len(system.tcpConnections)
++	system.tcpConnectionAccess.Unlock()
++	if activeBeforeClose != 1 {
++		t.Fatal("half-close released the active connection slot")
++	}
++
++	var closeWait sync.WaitGroup
++	for range 100 {
++		closeWait.Add(1)
++		go func() {
++			defer closeWait.Done()
++			_ = tracked.Close()
++		}()
++	}
++	closeWait.Wait()
++	if upstream.closeCount.Load() != 1 {
++		t.Fatalf("underlying connection closed %d times", upstream.closeCount.Load())
++	}
++	system.tcpConnectionAccess.Lock()
++	activeAfterClose := len(system.tcpConnections)
++	system.tcpConnectionAccess.Unlock()
++	if activeAfterClose != 0 {
++		t.Fatalf("active connection slot was not released: %d", activeAfterClose)
++	}
++}
++
++func TestSystemCloseRejectsLateAcceptBeforeReturning(t *testing.T) {
++	ctx, cancel := context.WithCancel(context.Background())
++	defer cancel()
++	accepted, peer := net.Pipe()
++	defer peer.Close()
++	localAddr := &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1)}
++	listener := &systemLateAcceptListener{
++		conn: &systemAcceptTestConn{
++			Conn:       accepted,
++			localAddr:  localAddr,
++			remoteAddr: &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 10001},
++		},
++		started:   make(chan struct{}),
++		release:   make(chan struct{}),
++		closed:    make(chan struct{}),
++		localAddr: localAddr,
++	}
++	handler := &systemAcceptTestHandler{connections: make(chan systemAcceptTestConnection, 1)}
++	system := &System{
++		ctx:                ctx,
++		handler:            handler,
++		logger:             logger.NOP(),
++		tcpListener:        listener,
++		tcpNat:             NewNat(ctx, time.Minute),
++		tcpConnections:     make(map[*systemTCPConnection]struct{}),
++		tcpConnectionLimit: 1,
++		closeSignal:        make(chan struct{}),
++	}
++	system.tcpNat.access.Lock()
++	system.tcpNat.portMap[10001] = &TCPSession{
++		Source:      netip.MustParseAddrPort("10.0.0.1:1234"),
++		Destination: netip.MustParseAddrPort("1.1.1.1:443"),
++		LastActive:  time.Now(),
++	}
++	system.tcpNat.access.Unlock()
++	system.startAcceptLoop(listener)
++	<-listener.started
++
++	closeDone := make(chan error, 1)
++	go func() { closeDone <- system.Close() }()
++	<-system.closeSignal
++	close(listener.release)
++	select {
++	case err := <-closeDone:
++		if err != nil {
++			t.Fatal(err)
++		}
++	case <-time.After(time.Second):
++		t.Fatal("system close did not wait for the accept loop")
++	}
++	select {
++	case <-handler.connections:
++		t.Fatal("handler received a connection after system close started")
++	default:
++	}
++	deadlineErr := peer.SetReadDeadline(time.Now().Add(time.Second))
++	if deadlineErr != nil && !errors.Is(deadlineErr, io.ErrClosedPipe) {
++		t.Fatal(deadlineErr)
++	}
++	if deadlineErr == nil {
++		if _, err := peer.Read(make([]byte, 1)); err == nil {
++			t.Fatal("late accepted connection remained open")
++		}
++	}
++	if system.tcpNat.LookupBack(10001) == nil {
++		t.Fatal("late rejected connection lost its NAT teardown mapping")
++	}
++}
++
++func TestSystemAcceptLoopClosesUnknownSession(t *testing.T) {
++	previousGCPercent := debug.SetGCPercent(-1)
++	defer debug.SetGCPercent(previousGCPercent)
++
++	ctx, cancel := context.WithCancel(context.Background())
++	listener, err := net.Listen("tcp4", "127.0.0.1:0")
++	if err != nil {
++		t.Fatal(err)
++	}
++	system := &System{
++		ctx:            ctx,
++		logger:         logger.NOP(),
++		tcpListener:    listener,
++		tcpNat:         NewNat(ctx, time.Minute),
++		tcpConnections: make(map[*systemTCPConnection]struct{}),
++		closeSignal:    make(chan struct{}),
++	}
++	system.startAcceptLoop(listener)
++	t.Cleanup(func() {
++		_ = system.Close()
++		cancel()
++	})
++
++	conn, err := net.DialTimeout("tcp4", listener.Addr().String(), time.Second)
++	if err != nil {
++		t.Fatal(err)
++	}
++	defer conn.Close()
++	if err = conn.SetReadDeadline(time.Now().Add(time.Second)); err != nil {
++		t.Fatal(err)
++	}
++	_, err = conn.Read(make([]byte, 1))
++	if err == nil {
++		t.Fatal("unknown NAT session remained connected")
++	}
++	if netErr, isNetworkError := err.(net.Error); isNetworkError && netErr.Timeout() {
++		t.Fatal("accepted TCP socket was not closed for an unknown NAT session")
++	}
++}
++
++func TestSystemAcceptLoopLimitsActiveConnections(t *testing.T) {
++	if systemTCPConnectionLimit != 4096 {
++		t.Fatalf("unexpected production connection limit: %d", systemTCPConnectionLimit)
++	}
++	ctx, cancel := context.WithCancel(context.Background())
++	defer cancel()
++	listener4 := newSystemAcceptTestListener(net.IPv4(127, 0, 0, 1))
++	listener6 := newSystemAcceptTestListener(net.IPv6loopback)
++	handler := &systemAcceptTestHandler{connections: make(chan systemAcceptTestConnection, 3)}
++	system := &System{
++		ctx:                ctx,
++		handler:            handler,
++		logger:             logger.NOP(),
++		tcpListener:        listener4,
++		tcpListener6:       listener6,
++		tcpNat:             NewNat(ctx, time.Minute),
++		tcpConnections:     make(map[*systemTCPConnection]struct{}),
++		tcpConnectionLimit: 2,
++		closeSignal:        make(chan struct{}),
++	}
++	system.startAcceptLoop(listener4)
++	system.startAcceptLoop(listener6)
++
++	peers := make([]net.Conn, 0, 4)
++	queueConnection := func(listener *systemAcceptTestListener, port uint16) net.Conn {
++		system.tcpNat.access.Lock()
++		system.tcpNat.portMap[port] = &TCPSession{
++			Source:      netip.MustParseAddrPort("10.0.0.1:1234"),
++			Destination: netip.MustParseAddrPort("1.1.1.1:443"),
++			LastActive:  time.Now(),
++		}
++		system.tcpNat.access.Unlock()
++		accepted, peer := net.Pipe()
++		if err := peer.SetReadDeadline(time.Now().Add(time.Second)); err != nil {
++			t.Fatal(err)
++		}
++		peers = append(peers, peer)
++		listener.connections <- &systemAcceptTestConn{
++			Conn:       accepted,
++			localAddr:  listener.address,
++			remoteAddr: &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: int(port)},
++		}
++		return peer
++	}
++	nextAccepted := func() systemAcceptTestConnection {
++		select {
++		case connection := <-handler.connections:
++			return connection
++		case <-time.After(time.Second):
++			t.Fatal("accepted connection was not forwarded")
++			return systemAcceptTestConnection{}
++		}
++	}
++	assertPeerClosed := func(peer net.Conn) {
++		t.Helper()
++		_, err := peer.Read(make([]byte, 1))
++		if err == nil {
++			t.Fatal("connection remained open")
++		}
++		if netErr, isNetworkError := err.(net.Error); isNetworkError && netErr.Timeout() {
++			t.Fatal("connection was not closed before the deadline")
++		}
++	}
++
++	queueConnection(listener4, 10001)
++	first := nextAccepted()
++	queueConnection(listener6, 10002)
++	second := nextAccepted()
++	rejectedPeer := queueConnection(listener6, 10003)
++	assertPeerClosed(rejectedPeer)
++	if session := system.tcpNat.LookupBack(10003); session == nil {
++		t.Fatal("rejected connection lost its NAT session before RST translation")
++	}
++	system.tcpConnectionAccess.Lock()
++	rejected := system.tcpRejected
++	system.tcpConnectionAccess.Unlock()
++	if rejected != 1 {
++		t.Fatalf("unexpected rejection count: %d", rejected)
++	}
++
++	trackedFirst, isTrackedConnection := first.conn.(*systemTCPConnection)
++	if !isTrackedConnection {
++		t.Fatal("accepted connection was not tracked before reaching the handler")
++	}
++	if _, isOriginalConn := trackedFirst.Upstream().(*systemAcceptTestConn); !isOriginalConn {
++		t.Fatal("tracked connection did not preserve the original upstream")
++	}
++	if err := first.conn.Close(); err != nil {
++		t.Fatal(err)
++	}
++	first.onClose(nil)
++	first.onClose(nil)
++	if session := system.tcpNat.LookupBack(10001); session == nil {
++		t.Fatal("closed connection lost its NAT session before FIN translation")
++	}
++	queueConnection(listener4, 10004)
++	fourth := nextAccepted()
++
++	concurrentCloseDone := make(chan struct{})
++	go func() {
++		_ = fourth.conn.Close()
++		fourth.onClose(nil)
++		close(concurrentCloseDone)
++	}()
++	if err := system.Close(); err != nil {
++		t.Fatal(err)
++	}
++	if err := system.Close(); err != nil {
++		t.Fatal("second close returned a different result: ", err)
++	}
++	select {
++	case <-concurrentCloseDone:
++	case <-time.After(time.Second):
++		t.Fatal("connection shutdown did not finish")
++	}
++	second.onClose(nil)
++	second.onClose(nil)
++	system.tcpConnectionAccess.Lock()
++	active := len(system.tcpConnections)
++	system.tcpConnectionAccess.Unlock()
++	if active != 0 {
++		t.Fatalf("active connection slots were not released: %d", active)
++	}
++	assertPeerClosed(peers[1])
++	assertPeerClosed(peers[3])
++	for _, port := range []uint16{10001, 10002, 10003, 10004} {
++		if system.tcpNat.LookupBack(port) == nil {
++			t.Fatalf("system close removed NAT session %d before teardown translation", port)
++		}
++	}
++}
++
++func TestSystemAcceptLoopRetriesFileDescriptorExhaustion(t *testing.T) {
++	ctx, cancel := context.WithCancel(context.Background())
++	defer cancel()
++	listener := newSystemAcceptTestListener(net.IPv4(127, 0, 0, 1))
++	handler := &systemAcceptTestHandler{connections: make(chan systemAcceptTestConnection, 1)}
++	system := &System{
++		ctx:                ctx,
++		handler:            handler,
++		logger:             logger.NOP(),
++		tcpListener:        listener,
++		tcpNat:             NewNat(ctx, time.Minute),
++		tcpConnections:     make(map[*systemTCPConnection]struct{}),
++		tcpConnectionLimit: 1,
++		closeSignal:        make(chan struct{}),
++	}
++	system.startAcceptLoop(listener)
++
++	listener.acceptErrors <- syscall.EMFILE
++	system.tcpNat.access.Lock()
++	system.tcpNat.portMap[10001] = &TCPSession{
++		Source:      netip.MustParseAddrPort("10.0.0.1:1234"),
++		Destination: netip.MustParseAddrPort("1.1.1.1:443"),
++		LastActive:  time.Now(),
++	}
++	system.tcpNat.access.Unlock()
++	accepted, peer := net.Pipe()
++	defer peer.Close()
++	listener.connections <- &systemAcceptTestConn{
++		Conn:       accepted,
++		localAddr:  listener.address,
++		remoteAddr: &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 10001},
++	}
++	var connection systemAcceptTestConnection
++	select {
++	case connection = <-handler.connections:
++	case <-time.After(time.Second):
++		t.Fatal("accept loop did not recover after EMFILE")
++	}
++	if err := connection.conn.Close(); err != nil {
++		t.Fatal(err)
++	}
++	connection.onClose(nil)
++	if err := system.Close(); err != nil {
++		t.Fatal(err)
++	}
++}
++
++func TestTCPNatDoesNotOverwriteActivePortsAfterWrap(t *testing.T) {
++	ctx, cancel := context.WithCancel(context.Background())
++	defer cancel()
++	nat := NewNat(ctx, time.Minute)
++	handler := &systemAcceptTestHandler{}
++	source := netip.MustParseAddrPort("192.0.2.1:1234")
++	activePorts := make(map[uint16]struct{}, systemTCPConnectionLimit)
++	for index := range systemTCPConnectionLimit {
++		destination := netip.AddrPortFrom(
++			netip.AddrFrom4([4]byte{10, byte(index >> 16), byte(index >> 8), byte(index)}),
++			443,
++		)
++		port, err := nat.Lookup(source, destination, handler)
++		if err != nil {
++			t.Fatal(err)
++		}
++		activePorts[port] = struct{}{}
++	}
++	for index := range 70_000 {
++		destination := netip.AddrPortFrom(
++			netip.AddrFrom4([4]byte{11, byte(index >> 16), byte(index >> 8), byte(index)}),
++			443,
++		)
++		port, err := nat.Lookup(source, destination, handler)
++		if err != nil {
++			t.Fatal(err)
++		}
++		if _, overwroteActivePort := activePorts[port]; overwroteActivePort {
++			t.Fatalf("active NAT port was overwritten after wrap: %d", port)
++		}
++		nat.Delete(port)
++	}
++	if len(nat.portMap) != systemTCPConnectionLimit || len(nat.addrMap) != systemTCPConnectionLimit {
++		t.Fatalf("unexpected NAT size after churn: ports=%d addresses=%d", len(nat.portMap), len(nat.addrMap))
++	}
++	for port := range activePorts {
++		nat.Delete(port)
++	}
++	if len(nat.portMap) != 0 || len(nat.addrMap) != 0 {
++		t.Fatal("released NAT sessions were retained")
++	}
++}
+diff --git a/stack_system_nat.go b/stack_system_nat.go
+index cc46017..e22f08d 100644
+--- a/stack_system_nat.go
++++ b/stack_system_nat.go
+@@ -6,17 +6,19 @@ import (
+ 	"sync"
+ 	"time"
+ 
++	E "github.com/sagernet/sing/common/exceptions"
+ 	M "github.com/sagernet/sing/common/metadata"
+ 	N "github.com/sagernet/sing/common/network"
+ )
+ 
++const tcpNatFirstPort = 10000
++
+ type TCPNat struct {
+-	timeout    time.Duration
+-	portIndex  uint16
+-	portAccess sync.RWMutex
+-	addrAccess sync.RWMutex
+-	addrMap    map[tcpNatKey]uint16
+-	portMap    map[uint16]*TCPSession
++	timeout   time.Duration
++	portIndex uint16
++	access    sync.RWMutex
++	addrMap   map[tcpNatKey]uint16
++	portMap   map[uint16]*TCPSession
+ }
+ 
+ type tcpNatKey struct {
+@@ -34,7 +36,7 @@ type TCPSession struct {
+ func NewNat(ctx context.Context, timeout time.Duration) *TCPNat {
+ 	natMap := &TCPNat{
+ 		timeout:   timeout,
+-		portIndex: 10000,
++		portIndex: tcpNatFirstPort,
+ 		addrMap:   make(map[tcpNatKey]uint16),
+ 		portMap:   make(map[uint16]*TCPSession),
+ 	}
+@@ -57,10 +59,8 @@ func (n *TCPNat) loopCheckTimeout(ctx context.Context) {
+ 
+ func (n *TCPNat) checkTimeout() {
+ 	now := time.Now()
+-	n.portAccess.Lock()
+-	defer n.portAccess.Unlock()
+-	n.addrAccess.Lock()
+-	defer n.addrAccess.Unlock()
++	n.access.Lock()
++	defer n.access.Unlock()
+ 	for natPort, session := range n.portMap {
+ 		session.Lock()
+ 		if now.Sub(session.LastActive) > n.timeout {
+@@ -72,9 +72,9 @@ func (n *TCPNat) checkTimeout() {
+ }
+ 
+ func (n *TCPNat) LookupBack(port uint16) *TCPSession {
+-	n.portAccess.RLock()
++	n.access.RLock()
+ 	session := n.portMap[port]
+-	n.portAccess.RUnlock()
++	n.access.RUnlock()
+ 	if session != nil {
+ 		session.Lock()
+ 		if time.Since(session.LastActive) > time.Second {
+@@ -87,9 +87,9 @@ func (n *TCPNat) LookupBack(port uint16) *TCPSession {
+ 
+ func (n *TCPNat) Lookup(source netip.AddrPort, destination netip.AddrPort, handler Handler) (uint16, error) {
+ 	key := tcpNatKey{Source: source, Destination: destination}
+-	n.addrAccess.RLock()
++	n.access.RLock()
+ 	port, loaded := n.addrMap[key]
+-	n.addrAccess.RUnlock()
++	n.access.RUnlock()
+ 	if loaded {
+ 		return port, nil
+ 	}
+@@ -97,22 +97,45 @@ func (n *TCPNat) Lookup(source netip.AddrPort, destination netip.AddrPort, handl
+ 	if pErr != nil {
+ 		return 0, pErr
+ 	}
+-	n.addrAccess.Lock()
+-	nextPort := n.portIndex
++	n.access.Lock()
++	defer n.access.Unlock()
++	if port, loaded = n.addrMap[key]; loaded {
++		return port, nil
++	}
++	var nextPort uint16
++	for range 1 << 16 {
++		nextPort = n.portIndex
++		if nextPort < tcpNatFirstPort {
++			nextPort = tcpNatFirstPort
++		}
++		n.portIndex = nextPort + 1
++		if _, exists := n.portMap[nextPort]; !exists {
++			break
++		}
++		nextPort = 0
++	}
+ 	if nextPort == 0 {
+-		nextPort = 10000
+-		n.portIndex = 10001
+-	} else {
+-		n.portIndex++
++		return 0, E.New("tcp nat: no available ports")
+ 	}
+ 	n.addrMap[key] = nextPort
+-	n.addrAccess.Unlock()
+-	n.portAccess.Lock()
+ 	n.portMap[nextPort] = &TCPSession{
+ 		Source:      source,
+ 		Destination: destination,
+ 		LastActive:  time.Now(),
+ 	}
+-	n.portAccess.Unlock()
+ 	return nextPort, nil
+ }
++
++func (n *TCPNat) Delete(port uint16) {
++	n.access.Lock()
++	defer n.access.Unlock()
++	session := n.portMap[port]
++	if session == nil {
++		return
++	}
++	delete(n.portMap, port)
++	key := tcpNatKey{Source: session.Source, Destination: session.Destination}
++	if n.addrMap[key] == port {
++		delete(n.addrMap, key)
++	}
++}
