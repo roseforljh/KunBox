@@ -8,6 +8,7 @@ import com.kunk.singbox.model.AppGroup
 import com.kunk.singbox.model.AppInfo
 import com.kunk.singbox.model.AppRule
 import com.kunk.singbox.model.RuleSetOutboundMode
+import com.kunk.singbox.model.TrafficCaptureMode
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -15,6 +16,37 @@ import org.junit.Test
 import java.io.File
 
 class SettingsStoreTest {
+
+    @Test
+    fun testMigrateSettingsMapsLegacyTunModesToTrafficCaptureMode() {
+        val vpn = SettingsStore.migrateSettings(
+            version = 12,
+            settings = AppSettings(tunEnabled = true, trafficCaptureMode = null)
+        )
+        val proxy = SettingsStore.migrateSettings(
+            version = 12,
+            settings = AppSettings(tunEnabled = false, trafficCaptureMode = null)
+        )
+
+        assertEquals(TrafficCaptureMode.VPN, vpn.trafficCaptureMode)
+        assertEquals(TrafficCaptureMode.PROXY_ONLY, proxy.trafficCaptureMode)
+        assertTrue(vpn.tunEnabled)
+        assertFalse(proxy.tunEnabled)
+    }
+
+    @Test
+    fun testMigrateSettingsKeepsExplicitRootTrafficCaptureMode() {
+        val migrated = SettingsStore.migrateSettings(
+            version = SettingsEntity.CURRENT_VERSION,
+            settings = AppSettings(
+                tunEnabled = true,
+                trafficCaptureMode = TrafficCaptureMode.ROOT_TRANSPARENT
+            )
+        )
+
+        assertEquals(TrafficCaptureMode.ROOT_TRANSPARENT, migrated.trafficCaptureMode)
+        assertFalse(migrated.tunEnabled)
+    }
 
     @Test
     fun testMigrateSettingsReplacesLegacyLocalDnsAtVersionFour() {

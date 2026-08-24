@@ -18,6 +18,7 @@ data class AppSettings(
     @SerializedName("showNotificationSpeed") val showNotificationSpeed: Boolean = true,
 
     @SerializedName("tunEnabled") val tunEnabled: Boolean = true,
+    @SerializedName("trafficCaptureMode") val trafficCaptureMode: TrafficCaptureMode? = TrafficCaptureMode.VPN,
     @SerializedName("tunStack") val tunStack: TunStack = TunStack.MIXED,
     @SerializedName("ipVersionMode") val ipVersionMode: IpVersionMode = IpVersionMode.DUAL_STACK,
     // Throughput defaults:
@@ -95,6 +96,13 @@ data class AppSettings(
 
     @SerializedName("nodeColumnCount") val nodeColumnCount: Int = 1
 ) {
+    fun resolvedTrafficCaptureMode(): TrafficCaptureMode = when {
+        trafficCaptureMode == TrafficCaptureMode.ROOT_TRANSPARENT -> TrafficCaptureMode.ROOT_TRANSPARENT
+        trafficCaptureMode == TrafficCaptureMode.PROXY_ONLY -> TrafficCaptureMode.PROXY_ONLY
+        tunEnabled -> TrafficCaptureMode.VPN
+        else -> TrafficCaptureMode.PROXY_ONLY
+    }
+
     companion object {
         const val DEFAULT_LOCAL_DNS = "https://223.5.5.5/dns-query"
         const val DEFAULT_REMOTE_DNS = "https://1.1.1.1/dns-query"
@@ -164,6 +172,12 @@ data class AppSettings(
                 address.isLinkLocalAddress || address.isSiteLocalAddress || address.isMulticastAddress
         }
     }
+}
+
+enum class TrafficCaptureMode(@StringRes val displayNameRes: Int) {
+    @SerializedName("VPN") VPN(R.string.traffic_capture_mode_vpn),
+    @SerializedName("ROOT_TRANSPARENT") ROOT_TRANSPARENT(R.string.traffic_capture_mode_root),
+    @SerializedName("PROXY_ONLY") PROXY_ONLY(R.string.traffic_capture_mode_proxy_only)
 }
 
 enum class LatencyTestMethod(@StringRes val displayNameRes: Int) {

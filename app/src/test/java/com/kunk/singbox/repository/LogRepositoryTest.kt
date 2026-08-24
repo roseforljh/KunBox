@@ -71,6 +71,7 @@ class LogRepositoryTest {
         assertTrue(LogRepository.isPreservedDiagnosticLine("ERROR [METERED_GUARD] closed=true"))
         assertTrue(LogRepository.isPreservedDiagnosticLine("ERROR [CONNECTION_STORM] closed=true"))
         assertTrue(LogRepository.isPreservedDiagnosticLine("INFO [HOT_SWITCH] outcome=success"))
+        assertTrue(LogRepository.isPreservedDiagnosticLine("WARN [COMMAND_LOG] disconnected"))
         assertTrue(LogRepository.isPreservedDiagnosticLine("WARN diagnosis=remote_dns_timeout"))
         assertFalse(LogRepository.isPreservedDiagnosticLine("INFO [IPC] state update"))
     }
@@ -78,6 +79,27 @@ class LogRepositoryTest {
     @Test
     fun persistedLogTimestampContainsDateAndMilliseconds() {
         assertEquals("yyyy-MM-dd HH:mm:ss.SSS", LOG_TIMESTAMP_PATTERN)
+    }
+
+    @Test
+    fun staleCrossProcessBatchRebasesOnlyRecoveryDiagnostics() {
+        val stale = LogPersistenceBatch(
+            lines = listOf("INFO ordinary", "WARN [COMMAND_LOG] disconnected"),
+            rewriteAll = true,
+            generation = 4L,
+            queueGeneration = 9L
+        )
+
+        val rebased = rebaseStaleDiagnosticBatch(stale, currentGeneration = 5L)
+
+        assertEquals(listOf("WARN [COMMAND_LOG] disconnected"), rebased?.lines)
+        assertEquals(false, rebased?.rewriteAll)
+        assertEquals(5L, rebased?.generation)
+        assertEquals(9L, rebased?.queueGeneration)
+        assertEquals(
+            null,
+            rebaseStaleDiagnosticBatch(stale.copy(lines = listOf("INFO ordinary")), currentGeneration = 5L)
+        )
     }
 
     @Test

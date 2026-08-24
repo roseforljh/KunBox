@@ -4,6 +4,7 @@ import com.google.gson.Gson
 import com.kunk.singbox.model.AppSettings
 import com.kunk.singbox.model.IpVersionMode
 import com.kunk.singbox.model.TunStack
+import com.kunk.singbox.model.TrafficCaptureMode
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -131,5 +132,28 @@ class InboundBuilderTest {
 
         assertEquals(true, inbound.autoRoute)
         assertEquals(true, inbound.strictRoute)
+    }
+
+    @Test
+    fun buildRootTransparentInboundUsesRedirectForTcpAndTproxyForUdp() {
+        val inbounds = InboundBuilder.build(
+            settings = AppSettings(
+                trafficCaptureMode = TrafficCaptureMode.ROOT_TRANSPARENT,
+                proxyPort = 7890,
+                ipVersionMode = IpVersionMode.DUAL_STACK
+            ),
+            effectiveTunStack = TunStack.SYSTEM
+        )
+
+        assertEquals(
+            listOf("mixed-in", "redirect-in-v4", "tproxy-in-v4", "redirect-in-v6", "tproxy-in-v6"),
+            inbounds.mapNotNull { it.tag }
+        )
+        val rootInbounds = inbounds.drop(1)
+        assertEquals(listOf("redirect", "tproxy", "redirect", "tproxy"), rootInbounds.map { it.type })
+        assertEquals(listOf(null, "udp", null, "udp"), rootInbounds.map { it.network })
+        assertEquals(listOf(null, "5m", null, "5m"), rootInbounds.map { it.udpTimeout })
+        assertEquals(listOf("0.0.0.0", "0.0.0.0", "::", "::"), rootInbounds.map { it.listen })
+        assertTrue(rootInbounds.all { it.address == null })
     }
 }

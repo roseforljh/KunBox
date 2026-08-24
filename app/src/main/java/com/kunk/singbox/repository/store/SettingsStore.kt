@@ -11,6 +11,7 @@ import com.kunk.singbox.model.AppInfo
 import com.kunk.singbox.model.AppSettings
 import com.kunk.singbox.model.AppThemeStyle
 import com.kunk.singbox.model.RuleSetOutboundMode
+import com.kunk.singbox.model.TrafficCaptureMode
 import com.kunk.singbox.repository.normalizeExclusiveAppAssignments
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -32,6 +33,7 @@ class SettingsStore private constructor(context: Context) {
         private const val NETWORK_AUTO_SWITCH_MIGRATION_VERSION = 8
         private const val APP_THEME_STYLE_MIGRATION_VERSION = 9
         private const val LOCAL_DNS_IP_DOH_MIGRATION_VERSION = 10
+        private const val TRAFFIC_CAPTURE_MODE_MIGRATION_VERSION = 13
         private const val LEGACY_DEFAULT_FAKE_IP_RANGE = "198.18.0.0/15"
 
         @Volatile
@@ -52,6 +54,7 @@ class SettingsStore private constructor(context: Context) {
             result = migrateAppThemeStyle(version, result)
             result = migrateLocalDnsIpDoh(version, result)
             result = recoverLatencyTestUrl(result)
+            result = migrateTrafficCaptureMode(version, result)
             val perAppPolicyRevision: Long? = runCatching { result.perAppPolicyRevision }.getOrNull()
             result = result.copy(perAppPolicyRevision = perAppPolicyRevision?.coerceAtLeast(0L) ?: 0L)
             return normalizeExclusiveAppAssignments(migrateLegacyAppRules(result))
@@ -130,6 +133,29 @@ class SettingsStore private constructor(context: Context) {
                 return settings.copy(localDns = AppSettings.DEFAULT_LOCAL_DNS)
             }
             return settings
+        }
+
+        private fun migrateTrafficCaptureMode(version: Int, settings: AppSettings): AppSettings {
+            val storedMode = runCatching { settings.trafficCaptureMode }.getOrNull()
+            val resolvedMode = when {
+                storedMode == TrafficCaptureMode.ROOT_TRANSPARENT -> TrafficCaptureMode.ROOT_TRANSPARENT
+                storedMode == TrafficCaptureMode.PROXY_ONLY -> TrafficCaptureMode.PROXY_ONLY
+                settings.tunEnabled -> TrafficCaptureMode.VPN
+                else -> TrafficCaptureMode.PROXY_ONLY
+            }
+            val legacyTunEnabled = resolvedMode == TrafficCaptureMode.VPN
+            if (
+                version >= TRAFFIC_CAPTURE_MODE_MIGRATION_VERSION &&
+                storedMode == resolvedMode &&
+                settings.tunEnabled == legacyTunEnabled
+            ) {
+                return settings
+            }
+            Log.i(TAG, "Migrating traffic capture mode to $resolvedMode")
+            return settings.copy(
+                trafficCaptureMode = resolvedMode,
+                tunEnabled = legacyTunEnabled
+            )
         }
 
         private fun migrateLegacyAppRules(settings: AppSettings): AppSettings {

@@ -30,6 +30,7 @@ import com.kunk.singbox.repository.config.OutboundFixer
 import com.kunk.singbox.service.ProxyOnlyService
 import com.kunk.singbox.service.ServiceState
 import com.kunk.singbox.service.SingBoxService
+import com.kunk.singbox.service.root.RootTransparentForegroundService
 import com.kunk.singbox.service.manager.VpnStopInitiator
 import com.kunk.singbox.service.tun.VpnTunManager
 import com.kunk.singbox.utils.NetworkClient
@@ -2592,6 +2593,11 @@ class ConfigRepository(protected val context: Context) {
                 putExtra(SingBoxService.EXTRA_PENDING_NODE_NAME, "")
                 putExtra(ProxyOnlyService.EXTRA_CONFIG_PATH, configPath)
             }
+        } else if (coreMode == VpnStateStore.CoreMode.ROOT) {
+            Intent(context, RootTransparentForegroundService::class.java).apply {
+                action = RootTransparentForegroundService.ACTION_RESTART
+                putExtra(RootTransparentForegroundService.EXTRA_CONFIG_PATH, configPath)
+            }
         } else {
             Intent(context, SingBoxService::class.java).apply {
                 action = SingBoxService.ACTION_START
@@ -2876,9 +2882,8 @@ class ConfigRepository(protected val context: Context) {
                         return@withContext ConfigRepository.NodeSwitchResult.Failed(msg)
                     }
 
-                    // ... [Skipping comments for brevity in replacement]
                     runCatching {
-                        val oldCacheDb = File(context.filesDir, "cache.db")
+                        val oldCacheDb = File(File(context.filesDir, "singbox_data"), "cache.db")
                         if (oldCacheDb.exists()) oldCacheDb.delete()
                     }
                     val currentTags = generationResult.outboundTags
@@ -2922,6 +2927,8 @@ class ConfigRepository(protected val context: Context) {
                                         "ConfigRepository:switchNode"
                                     )
                                 }
+                            } else if (coreMode == VpnStateStore.CoreMode.ROOT) {
+                                null
                             } else {
                                 Intent(context, SingBoxService::class.java).apply {
                                     action = SingBoxService.ACTION_PREPARE_RESTART
@@ -2931,7 +2938,7 @@ class ConfigRepository(protected val context: Context) {
                                     )
                                 }
                             }
-                            context.startService(prepareIntent)
+                            prepareIntent?.let(context::startService)
                         }
                         delay(200)
                     }
@@ -2949,6 +2956,20 @@ class ConfigRepository(protected val context: Context) {
                             putExtra("outbound_tag", generationResult.activeNodeTag)
                             putExtra(SingBoxService.EXTRA_PENDING_NODE_NAME, node.name)
                             putExtra(ProxyOnlyService.EXTRA_CONFIG_PATH, generationResult.path)
+                        }
+                    } else if (coreMode == VpnStateStore.CoreMode.ROOT) {
+                        Intent(context, RootTransparentForegroundService::class.java).apply {
+                            action = if (tagsChanged) {
+                                RootTransparentForegroundService.ACTION_RESTART
+                            } else {
+                                RootTransparentForegroundService.ACTION_SWITCH_NODE
+                            }
+                            putExtra(RootTransparentForegroundService.EXTRA_CONFIG_PATH, generationResult.path)
+                            putExtra(
+                                RootTransparentForegroundService.EXTRA_OUTBOUND_TAG,
+                                generationResult.activeNodeTag
+                            )
+                            putExtra(RootTransparentForegroundService.EXTRA_NODE_NAME, node.name)
                         }
                     } else {
                         Intent(context, SingBoxService::class.java).apply {
@@ -3640,7 +3661,7 @@ class ConfigRepository(protected val context: Context) {
                     listOf("受保护节点「${activeNode.name}」尚未经过本次手动选择授权")
                 )
             }
-            val log = buildRunLogConfig()
+            val log = buildRunLogConfig(sanitizedSettings)
             val experimental = buildRunExperimentalConfig(sanitizedSettings)
             val inbounds = buildRunInbounds(sanitizedSettings)
             val customRuleSets = buildCustomRuleSets(sanitizedSettings)
@@ -3696,7 +3717,7 @@ class ConfigRepository(protected val context: Context) {
                 sanitizedSettings,
                 outboundsContext.selectorTag,
                 outboundsContext.outbounds,
-                outboundsContext.nodeTagResolver,
+                outboundsContext.ruleNodeTagResolver,
                 customRuleSets
             )
             val runtimeOutbounds = ConfigRepository.pruneUnreachableGroupOutbounds(
@@ -4181,7 +4202,7 @@ class ConfigRepository(protected val context: Context) {
                 )
             )
             val baseRule = ConfigRepository.toRouteRule(semantic, defaultProxyTag)
-            val inboundTags = ConfigRepository.normalizeRuleSetInboundTags(ruleSet.inbounds)
+            val inboundTags = ConfigRepository.normalizeRuleSetInboundTags(ruleSet.inbounds, settings)
 
             rules.add(baseRule.copy(
                 ruleSet = listOf(ruleSet.tag),
@@ -4265,9 +4286,9 @@ class ConfigRepository(protected val context: Context) {
         return rules
     }
 
-    protected fun buildRunLogConfig(): LogConfig {
+    protected fun buildRunLogConfig(settings: AppSettings): LogConfig {
         return LogConfig(
-            level = "info",
+            level = ConfigRepository.resolveRunLogLevel(settings.resolvedTrafficCaptureMode()),
             timestamp = true
         )
     }
@@ -4465,7 +4486,7 @@ class ConfigRepository(protected val context: Context) {
                         selectorTag = outboundsContext.selectorTag,
                         outbounds = outboundsContext.outbounds,
                         profiles = profiles,
-                        nodeTagResolver = outboundsContext.nodeTagResolver
+                        nodeTagResolver = outboundsContext.ruleNodeTagResolver
                     )
                 )
 
@@ -4518,13 +4539,13 @@ class ConfigRepository(protected val context: Context) {
                     selectorTag = outboundsContext.selectorTag,
                     outbounds = outboundsContext.outbounds,
                     profiles = profiles,
-                    nodeTagResolver = outboundsContext.nodeTagResolver
+                    nodeTagResolver = outboundsContext.ruleNodeTagResolver
                 )
             )
             addRuleSetDnsRule(
                 DnsRule(
                     ruleSet = listOf(tag),
-                    inbound = ConfigRepository.normalizeRuleSetInboundTags(ruleSet.inbounds)
+                    inbound = ConfigRepository.normalizeRuleSetInboundTags(ruleSet.inbounds, settings)
                 ),
                 semantic
             )
@@ -4556,7 +4577,7 @@ class ConfigRepository(protected val context: Context) {
                         selectorTag = outboundsContext.selectorTag,
                         outbounds = outboundsContext.outbounds,
                         profiles = profiles,
-                        nodeTagResolver = outboundsContext.nodeTagResolver
+                        nodeTagResolver = outboundsContext.ruleNodeTagResolver
                     )
                 )
                 val packageNames = resolvePackagesSharingUid(
@@ -4576,7 +4597,7 @@ class ConfigRepository(protected val context: Context) {
                         selectorTag = outboundsContext.selectorTag,
                         outbounds = outboundsContext.outbounds,
                         profiles = profiles,
-                        nodeTagResolver = outboundsContext.nodeTagResolver
+                        nodeTagResolver = outboundsContext.ruleNodeTagResolver
                     )
                 )
                 val packageNames = resolvePackagesSharingUid(
@@ -4669,7 +4690,9 @@ class ConfigRepository(protected val context: Context) {
                 }
             }
             originalDns.rules?.forEach { rule ->
-                dnsRules.add(rule)
+                dnsRules.add(
+                    rule.copy(inbound = ConfigRepository.normalizeRuleSetInboundTags(rule.inbound, settings))
+                )
             }
         }
 
@@ -4679,7 +4702,7 @@ class ConfigRepository(protected val context: Context) {
                 defaultRule = settings.defaultRule
             )
         )
-        dnsRules.addAll(ConfigRepository.buildTunFakeIpDnsRulesStatic(settings.fakeDnsEnabled))
+        dnsRules.addAll(ConfigRepository.buildTunFakeIpDnsRulesStatic(settings.fakeDnsEnabled, settings))
 
         val baseDnsConfig = DnsConfig(
             servers = dnsServers,
@@ -4692,7 +4715,15 @@ class ConfigRepository(protected val context: Context) {
         )
 
         return if (dnsOverride != null) {
-            ConfigRepository.applyDnsOverride(baseDnsConfig, dnsOverride, ::sanitizeDnsServer)
+            ConfigRepository.applyDnsOverride(
+                baseDnsConfig,
+                dnsOverride.copy(
+                    rules = dnsOverride.rules?.map { rule ->
+                        rule.copy(inbound = ConfigRepository.normalizeRuleSetInboundTags(rule.inbound, settings))
+                    }
+                ),
+                ::sanitizeDnsServer
+            )
         } else {
             baseDnsConfig
         }
@@ -4793,8 +4824,8 @@ class ConfigRepository(protected val context: Context) {
                     .mapNotNullTo(this) { it.outboundValue }
             }
         }
-        val explicitlyRoutedProtectedNodeIds = explicitNodeReferences
-            .mapNotNull(::resolveNodeRefToId)
+        val explicitNodeIds = explicitNodeReferences.mapNotNull(::resolveNodeRefToId).toSet()
+        val explicitlyRoutedProtectedNodeIds = explicitNodeIds
             .filterTo(mutableSetOf(), protectedNodeIds::contains)
         val allowedProtectedNodeId = activeNode
             ?.takeIf { node ->
@@ -4946,6 +4977,11 @@ class ConfigRepository(protected val context: Context) {
             }
         fixedOutbounds.mapNotNull { it.detour }.forEach { detourValue ->
             resolveNodeRefToId(detourValue)?.let { requiredNodeIds.add(it) }
+        }
+        if (settings.resolvedTrafficCaptureMode() == TrafficCaptureMode.ROOT_TRANSPARENT) {
+            explicitNodeIds.mapNotNullTo(requiredProfileIds) { nodeId ->
+                allNodes.firstOrNull { it.id == nodeId }?.sourceProfileId
+            }
         }
         if (activeProfileAutoSelectionEnabled) {
             requiredProfileIds.add(activeProfileId)
@@ -5130,6 +5166,39 @@ class ConfigRepository(protected val context: Context) {
                 }
             }
         }
+        val explicitFallbackGroupTags = mutableMapOf<String, String>()
+        if (settings.resolvedTrafficCaptureMode() == TrafficCaptureMode.ROOT_TRANSPARENT) {
+            explicitNodeIds.sorted().forEach { nodeId ->
+                val selectedNode = allNodes.firstOrNull { it.id == nodeId } ?: return@forEach
+                val selectedTag = nodeTagMap[nodeId] ?: return@forEach
+                if (!ConfigRepository.canBuildRootFallbackSelector(selectedTag, runtimeEndpointTags)) return@forEach
+                val candidateTags = buildList {
+                    add(selectedTag)
+                    allNodes.asSequence()
+                        .filter { candidate ->
+                            candidate.sourceProfileId == selectedNode.sourceProfileId &&
+                                candidate.id != nodeId &&
+                                candidate.id !in disallowedProtectedNodeIds &&
+                                isNodeAutoSelectionEligible(candidate.id) &&
+                                !candidate.meteredProtected
+                        }
+                        .sortedBy(NodeUi::id)
+                        .mapNotNull { candidate ->
+                            nodeTagMap[candidate.id]?.takeUnless(runtimeEndpointTags::contains)
+                        }
+                        .forEach(::add)
+                }
+                val groupTag = ConfigRepository.buildRootExplicitFallbackGroupTag(nodeId)
+                val selector = ConfigRepository.buildRootExplicitFallbackSelector(
+                    groupTag = groupTag,
+                    selectedTag = selectedTag,
+                    candidateTags = candidateTags
+                ) ?: return@forEach
+                fixedOutbounds.removeAll { it.tag == groupTag }
+                fixedOutbounds.add(0, selector)
+                explicitFallbackGroupTags[nodeId] = groupTag
+            }
+        }
         val routeOnlyRuntimeTags = routeOnlyProtectedNodeIds.mapNotNullTo(mutableSetOf()) { nodeTagMap[it] }
         val proxyTags = fixedOutbounds.filter {
             it.tag !in routeOnlyRuntimeTags && it.type in listOf(
@@ -5195,6 +5264,10 @@ class ConfigRepository(protected val context: Context) {
                     ?: if (fixedOutbounds.any { it.tag == value } || value in runtimeEndpointTags) value else null
             }
         }
+        val ruleNodeTagResolver: (String?) -> String? = { value ->
+            val nodeId = resolveNodeRefToId(value)
+            nodeId?.let(explicitFallbackGroupTags::get) ?: nodeTagResolver(value)
+        }
 
         // Final safety check:
         // 1) Normalize detour node refs to runtime tag
@@ -5230,6 +5303,7 @@ class ConfigRepository(protected val context: Context) {
             outbounds = selectorSafeOutbounds,
             selectorTag = selectorTag,
             nodeTagResolver = nodeTagResolver,
+            ruleNodeTagResolver = ruleNodeTagResolver,
             nodeTagMap = nodeTagMap,
             disallowedProtectedTags = disallowedProtectedTags,
             explicitlyRoutedProtectedNodeIds = explicitlyRoutedProtectedNodeIds,
@@ -5354,7 +5428,7 @@ class ConfigRepository(protected val context: Context) {
             emptyList()
         }
         val defaultRuleCatchAll = buildDefaultRules(settings, selectorTag)
-        val hijackDnsRule = ConfigRepository.buildHijackDnsRulesStatic()
+        val hijackDnsRule = ConfigRepository.buildHijackDnsRulesStatic(settings)
         val baseRules = hijackDnsRule + quicRule + multicastRejectRules + icmpEchoRules
         val allRules = ConfigRepository.selectRunRouteRulesStatic(
             settings = settings,
@@ -5934,6 +6008,9 @@ class ConfigRepository(protected val context: Context) {
             VpnStateStore.CoreMode.VPN -> Intent(context, SingBoxService::class.java).apply {
                 action = SingBoxService.ACTION_RESET_CONNECTIONS
             }
+            VpnStateStore.CoreMode.ROOT -> Intent(context, RootTransparentForegroundService::class.java).apply {
+                action = RootTransparentForegroundService.ACTION_RESET_CONNECTIONS
+            }
             VpnStateStore.CoreMode.NONE -> return
         }
         context.startService(intent)
@@ -5948,6 +6025,9 @@ class ConfigRepository(protected val context: Context) {
             VpnStateStore.CoreMode.VPN -> Intent(context, SingBoxService::class.java).apply {
                 action = SingBoxService.ACTION_STOP
                 putExtra(SingBoxService.EXTRA_STOP_INITIATOR, VpnStopInitiator.METERED_PROTECTION.wireValue)
+            }
+            VpnStateStore.CoreMode.ROOT -> Intent(context, RootTransparentForegroundService::class.java).apply {
+                action = RootTransparentForegroundService.ACTION_STOP
             }
             VpnStateStore.CoreMode.NONE -> return
         }
@@ -6611,6 +6691,33 @@ class ConfigRepository(protected val context: Context) {
             return "P:$readableName#$profileId"
         }
 
+        internal fun buildRootExplicitFallbackGroupTag(nodeId: String): String = "F:$nodeId"
+
+        internal fun canBuildRootFallbackSelector(selectedTag: String, endpointTags: Set<String>): Boolean =
+            selectedTag.isNotBlank() && selectedTag !in endpointTags
+
+        internal fun resolveRunLogLevel(captureMode: TrafficCaptureMode): String =
+            if (captureMode == TrafficCaptureMode.ROOT_TRANSPARENT) "debug" else "info"
+
+        internal fun buildRootExplicitFallbackSelector(
+            groupTag: String,
+            selectedTag: String,
+            candidateTags: List<String>
+        ): Outbound? {
+            val members = (listOf(selectedTag) + candidateTags)
+                .map(String::trim)
+                .filter(String::isNotBlank)
+                .distinct()
+            if (groupTag.isBlank() || selectedTag.isBlank() || members.size < 2) return null
+            return Outbound(
+                type = "selector",
+                tag = groupTag,
+                outbounds = members,
+                default = selectedTag,
+                interruptExistConnections = false
+            )
+        }
+
         internal fun buildConfigWithOutboundsPreservingProfileSettings(
             existingConfig: SingBoxConfig?,
             outbounds: List<Outbound>
@@ -6954,15 +7061,20 @@ class ConfigRepository(protected val context: Context) {
             return byTag.values.toList()
         }
 
-        internal fun normalizeRuleSetInboundTags(inbounds: List<String>?): List<String>? {
+        internal fun normalizeRuleSetInboundTags(
+            inbounds: List<String>?,
+            settings: AppSettings? = null
+        ): List<String>? {
             return inbounds.orEmpty()
                 .map(String::trim)
                 .filter(String::isNotBlank)
-                .map {
+                .flatMap {
                     when (it) {
-                        "tun" -> "tun-in"
-                        "mixed" -> "mixed-in"
-                        else -> it
+                        "tun", "tun-in" -> settings?.let(::captureInboundTags).orEmpty().ifEmpty {
+                            listOf("tun-in")
+                        }
+                        "mixed" -> listOf("mixed-in")
+                        else -> listOf(it)
                     }
                 }
                 .distinct()
@@ -7580,11 +7692,30 @@ class ConfigRepository(protected val context: Context) {
             )
         }
 
-        internal fun buildHijackDnsRulesStatic(): List<RouteRule> {
+        internal fun captureInboundTags(settings: AppSettings): List<String> = when (settings.resolvedTrafficCaptureMode()) {
+            TrafficCaptureMode.VPN -> listOf("tun-in")
+            TrafficCaptureMode.ROOT_TRANSPARENT -> buildList {
+                if (settings.ipVersionMode != IpVersionMode.IPV6_ONLY) {
+                    add(InboundBuilder.ROOT_REDIRECT_TAG_IPV4)
+                    add(InboundBuilder.ROOT_TPROXY_TAG_IPV4)
+                }
+                if (settings.ipVersionMode != IpVersionMode.IPV4_ONLY) {
+                    add(InboundBuilder.ROOT_REDIRECT_TAG_IPV6)
+                    add(InboundBuilder.ROOT_TPROXY_TAG_IPV6)
+                }
+            }
+            TrafficCaptureMode.PROXY_ONLY -> emptyList()
+        }
+
+        internal fun buildHijackDnsRulesStatic(settings: AppSettings = AppSettings()): List<RouteRule> {
             // sing-box 1.13 的 sniff 是非终止动作，协议规则必须位于其后；TUN 53 端口保留前置劫持。
-            return listOf(
-                RouteRule(inbound = listOf("tun-in"), port = listOf(53), action = "hijack-dns"),
-                RouteRule(inbound = listOf("tun-in", "mixed-in"), action = "sniff"),
+            val captureTags = captureInboundTags(settings)
+            val sniffInboundTags = (captureTags + "mixed-in").distinct()
+            return listOfNotNull(
+                captureTags.takeIf(List<String>::isNotEmpty)?.let {
+                    RouteRule(inbound = it, port = listOf(53), action = "hijack-dns")
+                },
+                RouteRule(inbound = sniffInboundTags, action = "sniff"),
                 RouteRule(protocolRaw = listOf("dns"), action = "hijack-dns"),
                 RouteRule(port = listOf(853), action = "reject")
             )
@@ -7612,7 +7743,7 @@ class ConfigRepository(protected val context: Context) {
             val bypassLanRules = buildBypassLanRulesStatic(settings)
             val icmpEchoRules = buildIcmpEchoRulesStatic(settings)
             val defaultRuleCatchAll = buildDefaultRulesStatic(settings, selectorTag)
-            val hijackDnsRule = buildHijackDnsRulesStatic()
+            val hijackDnsRule = buildHijackDnsRulesStatic(settings)
             return selectRunRouteRulesStatic(
                 settings = settings,
                 baseRules = hijackDnsRule + quicRule + multicastRejectRules + icmpEchoRules,
@@ -7698,7 +7829,7 @@ class ConfigRepository(protected val context: Context) {
                     )
                 )
                 val baseRule = toRouteRule(semantic, defaultProxyTag)
-                val inboundTags = normalizeRuleSetInboundTags(ruleSet.inbounds)
+                val inboundTags = normalizeRuleSetInboundTags(ruleSet.inbounds, settings)
 
                 rules.add(
                     baseRule.copy(
@@ -7932,12 +8063,16 @@ class ConfigRepository(protected val context: Context) {
             }
         }
 
-        internal fun buildTunFakeIpDnsRulesStatic(fakeDnsEnabled: Boolean): List<DnsRule> {
+        internal fun buildTunFakeIpDnsRulesStatic(
+            fakeDnsEnabled: Boolean,
+            settings: AppSettings = AppSettings()
+        ): List<DnsRule> {
             if (!fakeDnsEnabled) return emptyList()
+            val captureTags = captureInboundTags(settings).takeIf(List<String>::isNotEmpty) ?: return emptyList()
             return listOf(
                 DnsRule(
                     queryType = listOf("A", "AAAA"),
-                    inbound = listOf("tun-in"),
+                    inbound = captureTags,
                     action = "route",
                     server = "fakeip-dns"
                 )

@@ -247,6 +247,8 @@ data class Inbound(
     @SerializedName("tag") val tag: String? = null,
     @SerializedName("listen") val listen: String? = null,
     @SerializedName("listen_port") val listenPort: Int? = null,
+    @SerializedName("network") val network: String? = null,
+    @SerializedName("udp_timeout") val udpTimeout: String? = null,
     @SerializedName("reuse_addr") val reuseAddr: Boolean? = null,
     @SerializedName("interface_name") val interfaceName: String? = null,
     @SerializedName("address") val addressRaw: Any? = null,

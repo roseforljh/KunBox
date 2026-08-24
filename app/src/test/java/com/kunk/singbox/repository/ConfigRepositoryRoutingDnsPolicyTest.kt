@@ -12,6 +12,7 @@ import com.kunk.singbox.model.RouteRule
 import com.kunk.singbox.model.RoutingMode
 import com.kunk.singbox.model.RuleType
 import com.kunk.singbox.model.SingBoxConfig
+import com.kunk.singbox.model.TrafficCaptureMode
 import com.kunk.singbox.model.WireGuardPeer
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -110,6 +111,56 @@ class ConfigRepositoryRoutingDnsPolicyTest {
             listOf(domain, app, ruleSet),
             ConfigRepository.mergeUserDnsRules(listOf(domain), listOf(app), listOf(ruleSet))
         )
+    }
+
+    @Test
+    fun rootRuleSetTunAliasExpandsToTransparentCaptureInbounds() {
+        assertEquals(
+            listOf("redirect-in-v4", "tproxy-in-v4", "redirect-in-v6", "tproxy-in-v6"),
+            ConfigRepository.normalizeRuleSetInboundTags(
+                listOf("tun-in"),
+                AppSettings(trafficCaptureMode = com.kunk.singbox.model.TrafficCaptureMode.ROOT_TRANSPARENT)
+            )
+        )
+    }
+
+    @Test
+    fun rootExplicitNodeFallbackSelectorKeepsRequestedNodeFirst() {
+        val selector = ConfigRepository.buildRootExplicitFallbackSelector(
+            groupTag = "F:node-id",
+            selectedTag = "bad-node",
+            candidateTags = listOf("bad-node", "backup-a", "backup-b", "backup-a")
+        )
+
+        assertEquals("selector", selector?.type)
+        assertEquals("F:node-id", selector?.tag)
+        assertEquals("bad-node", selector?.default)
+        assertEquals(listOf("bad-node", "backup-a", "backup-b"), selector?.outbounds)
+    }
+
+    @Test
+    fun rootExplicitNodeFallbackSelectorRequiresAlternative() {
+        assertEquals(
+            null,
+            ConfigRepository.buildRootExplicitFallbackSelector(
+                groupTag = "F:node-id",
+                selectedTag = "only-node",
+                candidateTags = listOf("only-node")
+            )
+        )
+    }
+
+    @Test
+    fun rootFallbackSelectorExcludesWireGuardEndpoints() {
+        assertFalse(ConfigRepository.canBuildRootFallbackSelector("wg-endpoint", setOf("wg-endpoint")))
+        assertTrue(ConfigRepository.canBuildRootFallbackSelector("vless-node", setOf("wg-endpoint")))
+    }
+
+    @Test
+    fun rootRuntimeKeepsDebugRoutingSignalsWhileOtherModesStayInfo() {
+        assertEquals("debug", ConfigRepository.resolveRunLogLevel(TrafficCaptureMode.ROOT_TRANSPARENT))
+        assertEquals("info", ConfigRepository.resolveRunLogLevel(TrafficCaptureMode.VPN))
+        assertEquals("info", ConfigRepository.resolveRunLogLevel(TrafficCaptureMode.PROXY_ONLY))
     }
 
     @Test

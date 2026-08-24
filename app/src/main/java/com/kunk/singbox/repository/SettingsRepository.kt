@@ -12,6 +12,7 @@ import com.kunk.singbox.model.RuleSet
 import com.kunk.singbox.model.RuleSetOutboundMode
 import com.kunk.singbox.model.RuleSetType
 import com.kunk.singbox.model.TunStack
+import com.kunk.singbox.model.TrafficCaptureMode
 import com.kunk.singbox.model.LatencyTestMethod
 import com.kunk.singbox.model.VpnAppMode
 import com.kunk.singbox.model.VpnRouteMode
@@ -139,7 +140,16 @@ class SettingsRepository(private val context: Context) {
     }
 
     suspend fun setTunEnabled(value: Boolean) {
-        updateSettingsAndNotifyRestart { it.copy(tunEnabled = value) }
+        setTrafficCaptureMode(if (value) TrafficCaptureMode.VPN else TrafficCaptureMode.PROXY_ONLY)
+    }
+
+    suspend fun setTrafficCaptureMode(value: TrafficCaptureMode) {
+        updateSettingsAndNotifyRestart {
+            it.copy(
+                trafficCaptureMode = value,
+                tunEnabled = value == TrafficCaptureMode.VPN
+            )
+        }
     }
 
     suspend fun setTunStack(value: TunStack) {
@@ -578,6 +588,8 @@ class SettingsRepository(private val context: Context) {
                     imported.ruleSetAutoUpdateInterval
                 )
             val normalized = imported.copy(
+                trafficCaptureMode = imported.resolvedTrafficCaptureMode(),
+                tunEnabled = imported.resolvedTrafficCaptureMode() == TrafficCaptureMode.VPN,
                 appThemeStyle = normalizeAppThemeStyle(imported),
                 fakeIpRange = normalizeFakeIpRange(imported),
                 proxyPort = sanitizeProxyPort(imported.proxyPort),

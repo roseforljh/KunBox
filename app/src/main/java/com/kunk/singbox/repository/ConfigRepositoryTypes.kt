@@ -49,6 +49,7 @@ data class ConfigRepositoryRunOutboundsContext(
     val outbounds: List<Outbound>,
     val selectorTag: String,
     val nodeTagResolver: (String?) -> String?,
+    val ruleNodeTagResolver: (String?) -> String?,
     val nodeTagMap: Map<String, String>,
     val disallowedProtectedTags: Set<String> = emptySet(),
     val explicitlyRoutedProtectedNodeIds: Set<String> = emptySet(),
