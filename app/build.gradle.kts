@@ -431,6 +431,8 @@ dependencies {
     implementation("com.tencent:mmkv:2.4.0")
     implementation("com.journeyapps:zxing-android-embedded:4.3.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0")
+    implementation("com.github.topjohnwu.libsu:core:6.0.0")
+    implementation("com.github.topjohnwu.libsu:service:6.0.0")
     implementation("androidx.work:work-runtime-ktx:2.11.2")
 
     val roomVersion = "2.8.4"
