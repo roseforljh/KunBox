@@ -1234,9 +1234,18 @@ index 9fdc6cda..35646347 100644
  	}
  }
  
-@@ -93,6 +114,14 @@ func (m *ConnectionManager) TrackPacketConn(conn net.PacketConn) net.PacketConn
+@@ -93,6 +114,23 @@ func (m *ConnectionManager) TrackPacketConn(conn net.PacketConn) net.PacketConn
  
  func (m *ConnectionManager) NewConnection(ctx context.Context, this N.Dialer, conn net.Conn, metadata adapter.InboundContext, onClose N.CloseHandlerFunc) {
++	if applyKunBoxRootProxyDestinationOverride(&metadata, this) {
++		m.logger.DebugContext(
++			ctx,
++			"kunbox root override destination: ",
++			metadata.RouteOriginalDestination,
++			" => ",
++			metadata.Destination,
++		)
++	}
  	ctx = adapter.WithContext(ctx, &metadata)
 +	defer m.logPhysicalBudgetSnapshot(ctx)
 +	guardErr := m.tryAcquireConnection()
@@ -1249,7 +1258,7 @@ index 9fdc6cda..35646347 100644
  	var (
  		remoteConn net.Conn
  		err        error
-@@ -114,7 +143,7 @@ func (m *ConnectionManager) NewConnection(ctx context.Context, this N.Dialer, co
+@@ -114,7 +152,7 @@ func (m *ConnectionManager) NewConnection(ctx context.Context, this N.Dialer, co
  			dialerString = " using outbound/" + outbound.Type() + "[" + outbound.Tag() + "]"
  		}
  		err = E.Cause(err, "open connection to ", remoteString, dialerString)
@@ -1258,7 +1267,7 @@ index 9fdc6cda..35646347 100644
  		m.logger.ErrorContext(ctx, err)
  		return
  	}
-@@ -122,7 +151,7 @@ func (m *ConnectionManager) NewConnection(ctx context.Context, this N.Dialer, co
+@@ -122,7 +160,7 @@ func (m *ConnectionManager) NewConnection(ctx context.Context, this N.Dialer, co
  	if err != nil {
  		err = E.Cause(err, "report handshake success")
  		remoteConn.Close()
@@ -1267,7 +1276,7 @@ index 9fdc6cda..35646347 100644
  		m.logger.ErrorContext(ctx, err)
  		return
  	}
-@@ -131,18 +160,28 @@ func (m *ConnectionManager) NewConnection(ctx context.Context, this N.Dialer, co
+@@ -131,18 +169,61 @@ func (m *ConnectionManager) NewConnection(ctx context.Context, this N.Dialer, co
  	}
  	serverFirst := sniff.Skip(&metadata)
  	var done atomic.Bool
@@ -1284,6 +1293,39 @@ index 9fdc6cda..35646347 100644
 +	go m.connectionCopy(ctx, conn, remoteConn, false, &done, managedOnClose)
 +	go m.connectionCopy(ctx, remoteConn, conn, true, &done, managedOnClose)
  }
++
++func applyKunBoxRootProxyDestinationOverride(metadata *adapter.InboundContext, dialer N.Dialer) bool {
++	outbound, isOutbound := dialer.(adapter.Outbound)
++	if !isOutbound || !isKunBoxRemoteProxyOutbound(outbound) || metadata.RouteOriginalDestination.IsValid() {
++		return false
++	}
++	if metadata.Network != N.NetworkTCP || !metadata.Destination.IsIP() || !M.IsDomainName(metadata.Domain) {
++		return false
++	}
++	switch metadata.Inbound {
++	case "redirect-in-v4", "redirect-in-v6":
++	default:
++		return false
++	}
++	if metadata.Destination.Port != 80 && metadata.Destination.Port != 443 {
++		return false
++	}
++	metadata.RouteOriginalDestination = metadata.Destination
++	metadata.Destination = M.Socksaddr{
++		Fqdn: metadata.Domain,
++		Port: metadata.Destination.Port,
++	}
++	metadata.DestinationAddresses = nil
++	return true
++}
++
++func isKunBoxRemoteProxyOutbound(outbound adapter.Outbound) bool {
++	if C.IsRemoteProxyType(outbound.Type()) {
++		return true
++	}
++	group, isRemoteOnlyGroup := outbound.(interface{ KunBoxRemoteOnly() bool })
++	return isRemoteOnlyGroup && group.KunBoxRemoteOnly()
++}
  
  func (m *ConnectionManager) NewPacketConnection(ctx context.Context, this N.Dialer, conn N.PacketConn, metadata adapter.InboundContext, onClose N.CloseHandlerFunc) {
  	ctx = adapter.WithContext(ctx, &metadata)
@@ -1300,7 +1342,7 @@ index 9fdc6cda..35646347 100644
  	var (
  		remotePacketConn   net.PacketConn
  		remoteConn         net.Conn
-@@ -153,18 +192,18 @@ func (m *ConnectionManager) NewPacketConnection(ctx context.Context, this N.Dial
+@@ -153,18 +234,18 @@ func (m *ConnectionManager) NewPacketConnection(ctx context.Context, this N.Dial
  		parallelDialer, isParallelDialer := this.(dialer.ParallelInterfaceDialer)
  		if len(metadata.DestinationAddresses) > 0 {
  			if isParallelDialer {
@@ -1324,7 +1366,7 @@ index 9fdc6cda..35646347 100644
  		}
  		if err != nil {
  			var remoteString string
-@@ -178,7 +217,7 @@ func (m *ConnectionManager) NewPacketConnection(ctx context.Context, this N.Dial
+@@ -178,7 +259,7 @@ func (m *ConnectionManager) NewPacketConnection(ctx context.Context, this N.Dial
  				dialerString = " using outbound/" + outbound.Type() + "[" + outbound.Tag() + "]"
  			}
  			err = E.Cause(err, "open packet connection to ", remoteString, dialerString)
@@ -1333,7 +1375,7 @@ index 9fdc6cda..35646347 100644
  			m.logger.ErrorContext(ctx, err)
  			return
  		}
-@@ -189,11 +228,11 @@ func (m *ConnectionManager) NewPacketConnection(ctx context.Context, this N.Dial
+@@ -189,11 +270,11 @@ func (m *ConnectionManager) NewPacketConnection(ctx context.Context, this N.Dial
  		}
  	} else {
  		if len(metadata.DestinationAddresses) > 0 {
@@ -1348,7 +1390,7 @@ index 9fdc6cda..35646347 100644
  		}
  		if err != nil {
  			var dialerString string
-@@ -201,7 +240,7 @@ func (m *ConnectionManager) NewPacketConnection(ctx context.Context, this N.Dial
+@@ -201,7 +282,7 @@ func (m *ConnectionManager) NewPacketConnection(ctx context.Context, this N.Dial
  				dialerString = " using outbound/" + outbound.Type() + "[" + outbound.Tag() + "]"
  			}
  			err = E.Cause(err, "listen packet connection using ", dialerString)
@@ -1357,7 +1399,7 @@ index 9fdc6cda..35646347 100644
  			m.logger.ErrorContext(ctx, err)
  			return
  		}
-@@ -210,6 +249,7 @@ func (m *ConnectionManager) NewPacketConnection(ctx context.Context, this N.Dial
+@@ -210,6 +291,7 @@ func (m *ConnectionManager) NewPacketConnection(ctx context.Context, this N.Dial
  	if err != nil {
  		conn.Close()
  		remotePacketConn.Close()
@@ -1365,7 +1407,7 @@ index 9fdc6cda..35646347 100644
  		m.logger.ErrorContext(ctx, "report handshake success: ", err)
  		return
  	}
-@@ -254,8 +294,141 @@ func (m *ConnectionManager) NewPacketConnection(ctx context.Context, this N.Dial
+@@ -254,8 +336,141 @@ func (m *ConnectionManager) NewPacketConnection(ctx context.Context, this N.Dial
  	}
  	destination := bufio.NewPacketConn(remotePacketConn)
  	var done atomic.Bool
@@ -2082,3 +2124,443 @@ index 00000000..e3d4651f
 +func (*testWireGuardCombinedBind) PeekLookAtSocketFd6() (int, error)         { return 62, nil }
 +func (*testWireGuardCombinedBind) BindSocketToInterface4(uint32, bool) error { return nil }
 +func (*testWireGuardCombinedBind) BindSocketToInterface6(uint32, bool) error { return nil }
+diff --git a/constant/proxy.go b/constant/proxy.go
+index 278a46c..b04af52 100644
+--- a/constant/proxy.go
++++ b/constant/proxy.go
+@@ -38,6 +38,17 @@ const (
+ 	TypeURLTest  = "urltest"
+ )
+ 
++func IsRemoteProxyType(proxyType string) bool {
++	switch proxyType {
++	case TypeSOCKS, TypeHTTP, TypeShadowsocks, TypeVMess, TypeTrojan, TypeNaive,
++		TypeHysteria, TypeTor, TypeSSH, TypeShadowTLS, TypeAnyTLS, TypeShadowsocksR,
++		TypeVLESS, TypeTUIC, TypeHysteria2:
++		return true
++	default:
++		return false
++	}
++}
++
+ func ProxyDisplayName(proxyType string) string {
+ 	switch proxyType {
+ 	case TypeTun:
+diff --git a/daemon/started_service.go b/daemon/started_service.go
+index 3af0ea5..81c1cb6 100644
+--- a/daemon/started_service.go
++++ b/daemon/started_service.go
+@@ -29,6 +29,8 @@ import (
+ 
+ var _ StartedServiceServer = (*StartedService)(nil)
+ 
++const kunBoxCommandHeartbeatInterval = 5 * time.Second
++
+ type StartedService struct {
+ 	ctx context.Context
+ 	// platform adapter.PlatformInterface
+@@ -315,12 +317,18 @@ func (s *StartedService) SubscribeLog(empty *emptypb.Empty, server grpc.ServerSt
+ 	if err != nil {
+ 		return err
+ 	}
++	heartbeat := time.NewTicker(kunBoxCommandHeartbeatInterval)
++	defer heartbeat.Stop()
+ 	for {
+ 		select {
+ 		case <-s.ctx.Done():
+ 			return s.ctx.Err()
+ 		case <-server.Context().Done():
+ 			return server.Context().Err()
++		case <-heartbeat.C:
++			if err = server.Send(&Log{}); err != nil {
++				return err
++			}
+ 		case message := <-subscription:
+ 			var rawMessage Log
+ 			if message == nil {
+@@ -439,20 +447,21 @@ func (s *StartedService) SubscribeGroups(empty *emptypb.Empty, server grpc.Serve
+ 		return err
+ 	}
+ 	defer s.urlTestObserver.UnSubscribe(subscription)
++	heartbeat := time.NewTicker(kunBoxCommandHeartbeatInterval)
++	defer heartbeat.Stop()
++	if err = s.sendGroups(server); err != nil {
++		return err
++	}
+ 	for {
+-		s.serviceAccess.RLock()
+-		if s.serviceStatus.Status != ServiceStatus_STARTED {
+-			s.serviceAccess.RUnlock()
+-			return os.ErrInvalid
+-		}
+-		groups := s.readGroups()
+-		s.serviceAccess.RUnlock()
+-		err = server.Send(groups)
+-		if err != nil {
+-			return err
+-		}
+ 		select {
+ 		case <-subscription:
++			if err = s.sendGroups(server); err != nil {
++				return err
++			}
++		case <-heartbeat.C:
++			if err = server.Send(&Groups{}); err != nil {
++				return err
++			}
+ 		case <-s.ctx.Done():
+ 			return s.ctx.Err()
+ 		case <-server.Context().Done():
+@@ -463,6 +472,17 @@ func (s *StartedService) SubscribeGroups(empty *emptypb.Empty, server grpc.Serve
+ 	}
+ }
+ 
++func (s *StartedService) sendGroups(server grpc.ServerStreamingServer[Groups]) error {
++	s.serviceAccess.RLock()
++	if s.serviceStatus.Status != ServiceStatus_STARTED {
++		s.serviceAccess.RUnlock()
++		return os.ErrInvalid
++	}
++	groups := s.readGroups()
++	s.serviceAccess.RUnlock()
++	return server.Send(groups)
++}
++
+ func (s *StartedService) readGroups() *Groups {
+ 	historyStorage := s.instance.urlTestHistoryStorage
+ 	boxService := s.instance
+@@ -754,9 +774,6 @@ func (s *StartedService) SubscribeConnections(request *SubscribeConnectionsReque
+ 
+ 		case <-ticker.C:
+ 			protoEvents := s.buildTrafficUpdates(trafficManager, connectionSnapshots)
+-			if len(protoEvents) == 0 {
+-				continue
+-			}
+ 			err = server.Send(&ConnectionEvents{Events: protoEvents})
+ 			if err != nil {
+ 				return err
+diff --git a/protocol/group/selector.go b/protocol/group/selector.go
+index f3f7377..d1ed904 100644
+--- a/protocol/group/selector.go
++++ b/protocol/group/selector.go
+@@ -3,8 +3,10 @@ package group
+ import (
+ 	"context"
+ 	"net"
++	"strings"
+ 	"time"
+ 
++	"github.com/gofrs/uuid/v5"
+ 	"github.com/sagernet/sing-box/adapter"
+ 	"github.com/sagernet/sing-box/adapter/outbound"
+ 	"github.com/sagernet/sing-box/common/interrupt"
+@@ -24,6 +26,51 @@ func RegisterSelector(registry *outbound.Registry) {
+ 	outbound.Register[option.SelectorOutboundOptions](registry, C.TypeSelector, NewSelector)
+ }
+ 
++func isKunBoxEphemeralSelector(tag string) bool {
++	const prefix = "F:"
++	if !strings.HasPrefix(tag, prefix) {
++		return false
++	}
++	nodeID := strings.TrimPrefix(tag, prefix)
++	parsedID, err := uuid.FromString(nodeID)
++	return err == nil && parsedID.String() == nodeID
++}
++
++func isKunBoxRemoteOnlyOutbound(
++	outbound adapter.Outbound,
++	lookup func(string) (adapter.Outbound, bool),
++) bool {
++	return isKunBoxRemoteOnlyOutbound0(outbound, lookup, make(map[string]bool))
++}
++
++func isKunBoxRemoteOnlyOutbound0(
++	outbound adapter.Outbound,
++	lookup func(string) (adapter.Outbound, bool),
++	visiting map[string]bool,
++) bool {
++	group, isGroup := outbound.(adapter.OutboundGroup)
++	if !isGroup {
++		return C.IsRemoteProxyType(outbound.Type())
++	}
++	tag := outbound.Tag()
++	if tag == "" || visiting[tag] {
++		return false
++	}
++	children := group.All()
++	if len(children) == 0 {
++		return false
++	}
++	visiting[tag] = true
++	defer delete(visiting, tag)
++	for _, childTag := range children {
++		child, loaded := lookup(childTag)
++		if !loaded || !isKunBoxRemoteOnlyOutbound0(child, lookup, visiting) {
++			return false
++		}
++	}
++	return true
++}
++
+ var (
+ 	_ adapter.OutboundGroup             = (*Selector)(nil)
+ 	_ adapter.ConnectionHandlerEx       = (*Selector)(nil)
+@@ -42,6 +89,7 @@ type Selector struct {
+ 	selected                     common.TypedValue[adapter.Outbound]
+ 	interruptGroup               *interrupt.Group
+ 	interruptExternalConnections bool
++	kunBoxRemoteOnly             bool
+ }
+ 
+ func NewSelector(ctx context.Context, router adapter.Router, logger log.ContextLogger, tag string, options option.SelectorOutboundOptions) (adapter.Outbound, error) {
+@@ -79,8 +127,9 @@ func (s *Selector) Start() error {
+ 		}
+ 		s.outbounds[tag] = detour
+ 	}
++	s.kunBoxRemoteOnly = isKunBoxRemoteOnlyOutbound(s, s.outbound.Outbound)
+ 
+-	if s.Tag() != "" {
++	if s.Tag() != "" && !isKunBoxEphemeralSelector(s.Tag()) {
+ 		cacheFile := service.FromContext[adapter.CacheFile](s.ctx)
+ 		if cacheFile != nil {
+ 			selected := cacheFile.LoadSelected(s.Tag())
+@@ -107,6 +156,8 @@ func (s *Selector) Start() error {
+ 	return nil
+ }
+ 
++func (s *Selector) KunBoxRemoteOnly() bool { return s.kunBoxRemoteOnly }
++
+ func (s *Selector) Now() string {
+ 	selected := s.selected.Load()
+ 	if selected == nil {
+@@ -127,7 +178,7 @@ func (s *Selector) SelectOutbound(tag string) bool {
+ 	if s.selected.Swap(detour) == detour {
+ 		return true
+ 	}
+-	if s.Tag() != "" {
++	if s.Tag() != "" && !isKunBoxEphemeralSelector(s.Tag()) {
+ 		cacheFile := service.FromContext[adapter.CacheFile](s.ctx)
+ 		if cacheFile != nil {
+ 			err := cacheFile.StoreSelected(s.Tag(), tag)
+diff --git a/protocol/group/urltest.go b/protocol/group/urltest.go
+index 730040f..71cda72 100644
+--- a/protocol/group/urltest.go
++++ b/protocol/group/urltest.go
+@@ -43,6 +43,7 @@ type URLTest struct {
+ 	tolerance                    uint16
+ 	idleTimeout                  time.Duration
+ 	group                        *URLTestGroup
++	kunBoxRemoteOnly             bool
+ 	interruptExternalConnections bool
+ }
+ 
+@@ -80,6 +81,7 @@ func (s *URLTest) Start() error {
+ 		return err
+ 	}
+ 	s.group = group
++	s.kunBoxRemoteOnly = isKunBoxRemoteOnlyOutbound(s, s.outbound.Outbound)
+ 	return nil
+ }
+ 
+@@ -164,6 +166,8 @@ func (s *URLTest) NewConnectionEx(ctx context.Context, conn net.Conn, metadata a
+ 	s.connection.NewConnection(ctx, s, conn, metadata, onClose)
+ }
+ 
++func (s *URLTest) KunBoxRemoteOnly() bool { return s.kunBoxRemoteOnly }
++
+ func (s *URLTest) NewPacketConnectionEx(ctx context.Context, conn N.PacketConn, metadata adapter.InboundContext, onClose N.CloseHandlerFunc) {
+ 	ctx = interrupt.ContextWithIsExternalConnection(ctx)
+ 	s.connection.NewPacketConnection(ctx, s, conn, metadata, onClose)
+diff --git a/protocol/group/kunbox_selector_test.go b/protocol/group/kunbox_selector_test.go
+new file mode 100644
+index 0000000..3ca9231
+--- /dev/null
++++ b/protocol/group/kunbox_selector_test.go
+@@ -0,0 +1,72 @@
++package group
++
++import (
++	"context"
++	"net"
++	"testing"
++
++	"github.com/sagernet/sing-box/adapter"
++	M "github.com/sagernet/sing/common/metadata"
++	"github.com/stretchr/testify/require"
++)
++
++type testKunBoxGroupOutbound struct {
++	tag          string
++	outboundType string
++	now          string
++	children     []string
++}
++
++func (o *testKunBoxGroupOutbound) Type() string         { return o.outboundType }
++func (o *testKunBoxGroupOutbound) Tag() string          { return o.tag }
++func (*testKunBoxGroupOutbound) Network() []string      { return []string{"tcp"} }
++func (*testKunBoxGroupOutbound) Dependencies() []string { return nil }
++func (*testKunBoxGroupOutbound) DialContext(context.Context, string, M.Socksaddr) (net.Conn, error) {
++	return nil, nil
++}
++func (*testKunBoxGroupOutbound) ListenPacket(context.Context, M.Socksaddr) (net.PacketConn, error) {
++	return nil, nil
++}
++func (o *testKunBoxGroupOutbound) Now() string { return o.now }
++func (o *testKunBoxGroupOutbound) All() []string { return o.children }
++
++var _ adapter.OutboundGroup = (*testKunBoxGroupOutbound)(nil)
++
++type testKunBoxLeafOutbound struct {
++	tag          string
++	outboundType string
++}
++
++func (o *testKunBoxLeafOutbound) Type() string         { return o.outboundType }
++func (o *testKunBoxLeafOutbound) Tag() string          { return o.tag }
++func (*testKunBoxLeafOutbound) Network() []string      { return []string{"tcp"} }
++func (*testKunBoxLeafOutbound) Dependencies() []string { return nil }
++func (*testKunBoxLeafOutbound) DialContext(context.Context, string, M.Socksaddr) (net.Conn, error) {
++	return nil, nil
++}
++func (*testKunBoxLeafOutbound) ListenPacket(context.Context, M.Socksaddr) (net.PacketConn, error) {
++	return nil, nil
++}
++
++func TestKunBoxFallbackSelectorIsEphemeral(t *testing.T) {
++	require.True(t, isKunBoxEphemeralSelector("F:bd61a3c4-5786-3f85-a174-a5fbe5be01b6"))
++	require.False(t, isKunBoxEphemeralSelector("F:node-id"))
++	require.False(t, isKunBoxEphemeralSelector("PROXY"))
++	require.False(t, isKunBoxEphemeralSelector("P:profile"))
++}
++
++func TestKunBoxRemoteOnlyGroupChecksEveryReachableLeaf(t *testing.T) {
++	root := &testKunBoxGroupOutbound{tag: "root", outboundType: "urltest", children: []string{"nested"}}
++	nested := &testKunBoxGroupOutbound{tag: "nested", outboundType: "selector", children: []string{"proxy"}}
++	proxy := &testKunBoxLeafOutbound{tag: "proxy", outboundType: "vless"}
++	direct := &testKunBoxLeafOutbound{tag: "direct", outboundType: "direct"}
++	outbounds := map[string]adapter.Outbound{"nested": nested, "proxy": proxy, "direct": direct}
++	lookup := func(tag string) (adapter.Outbound, bool) { outbound, loaded := outbounds[tag]; return outbound, loaded }
++
++	require.True(t, isKunBoxRemoteOnlyOutbound(root, lookup))
++	nested.children = []string{"direct"}
++	require.False(t, isKunBoxRemoteOnlyOutbound(root, lookup))
++	nested.children = []string{"root"}
++	outbounds["root"] = root
++	require.False(t, isKunBoxRemoteOnlyOutbound(root, lookup))
++}
+diff --git a/route/kunbox_root_destination_test.go b/route/kunbox_root_destination_test.go
+new file mode 100644
+index 0000000..ebf0301
+--- /dev/null
++++ b/route/kunbox_root_destination_test.go
+@@ -0,0 +1,108 @@
++package route
++
++import (
++	"context"
++	"net"
++	"net/netip"
++	"testing"
++
++	"github.com/sagernet/sing-box/adapter"
++	C "github.com/sagernet/sing-box/constant"
++	M "github.com/sagernet/sing/common/metadata"
++	N "github.com/sagernet/sing/common/network"
++	"github.com/stretchr/testify/require"
++)
++
++type testKunBoxOutbound struct {
++	outboundType string
++}
++
++func (o *testKunBoxOutbound) Type() string         { return o.outboundType }
++func (*testKunBoxOutbound) Tag() string            { return "test" }
++func (*testKunBoxOutbound) Network() []string      { return []string{N.NetworkTCP} }
++func (*testKunBoxOutbound) Dependencies() []string { return nil }
++func (*testKunBoxOutbound) DialContext(context.Context, string, M.Socksaddr) (net.Conn, error) {
++	return nil, nil
++}
++func (*testKunBoxOutbound) ListenPacket(context.Context, M.Socksaddr) (net.PacketConn, error) {
++	return nil, nil
++}
++
++type testKunBoxRemoteOnlyOutbound struct {
++	*testKunBoxOutbound
++	remoteOnly bool
++}
++
++func (o *testKunBoxRemoteOnlyOutbound) KunBoxRemoteOnly() bool { return o.remoteOnly }
++
++func TestApplyKunBoxRootProxyDestinationOverride(t *testing.T) {
++	original := M.Socksaddr{Addr: netip.MustParseAddr("108.160.162.109"), Port: 443}
++	metadata := adapter.InboundContext{
++		Inbound: "redirect-in-v4", Network: N.NetworkTCP, Destination: original, Domain: "graph.instagram.com",
++	}
++	metadata.DestinationAddresses = []netip.Addr{original.Addr}
++
++	require.True(t, applyKunBoxRootProxyDestinationOverride(&metadata, &testKunBoxOutbound{C.TypeVLESS}))
++	require.Equal(t, original, metadata.RouteOriginalDestination)
++	require.Equal(t, "graph.instagram.com", metadata.Destination.Fqdn)
++	require.Empty(t, metadata.DestinationAddresses)
++}
++
++func TestApplyKunBoxRootProxyDestinationOverrideRejectsUnsafePaths(t *testing.T) {
++	base := adapter.InboundContext{
++		Inbound: "redirect-in-v4", Network: N.NetworkTCP,
++		Destination: M.Socksaddr{Addr: netip.MustParseAddr("108.160.162.109"), Port: 443},
++		Domain:      "graph.instagram.com",
++	}
++	for _, outboundType := range []string{"", C.TypeDirect, C.TypeBlock, C.TypeDNS, C.TypeSelector, C.TypeURLTest} {
++		metadata := base
++		require.False(t, applyKunBoxRootProxyDestinationOverride(&metadata, &testKunBoxOutbound{outboundType}))
++		require.True(t, metadata.Destination.IsIP())
++	}
++	for name, mutate := range map[string]func(*adapter.InboundContext){
++		"non root inbound": func(metadata *adapter.InboundContext) { metadata.Inbound = "tun-in" },
++		"udp":              func(metadata *adapter.InboundContext) { metadata.Network = N.NetworkUDP },
++		"non web port":     func(metadata *adapter.InboundContext) { metadata.Destination.Port = 22 },
++		"missing domain":   func(metadata *adapter.InboundContext) { metadata.Domain = "" },
++		"explicit override": func(metadata *adapter.InboundContext) {
++			metadata.RouteOriginalDestination = metadata.Destination
++		},
++	} {
++		t.Run(name, func(t *testing.T) {
++			metadata := base
++			mutate(&metadata)
++			require.False(t, applyKunBoxRootProxyDestinationOverride(&metadata, &testKunBoxOutbound{C.TypeVLESS}))
++			require.True(t, metadata.Destination.IsIP())
++		})
++	}
++}
++
++func TestApplyKunBoxRootProxyDestinationOverrideSupportsIPv6HTTP(t *testing.T) {
++	metadata := adapter.InboundContext{
++		Inbound: "redirect-in-v6", Network: N.NetworkTCP,
++		Destination: M.Socksaddr{Addr: netip.MustParseAddr("2001:db8::1"), Port: 80}, Domain: "example.com",
++	}
++	require.True(t, applyKunBoxRootProxyDestinationOverride(&metadata, &testKunBoxOutbound{C.TypeTrojan}))
++	require.Equal(t, "example.com:80", metadata.Destination.String())
++}
++
++func TestApplyKunBoxRootProxyDestinationOverrideSupportsRemoteOnlyURLTest(t *testing.T) {
++	base := adapter.InboundContext{
++		Inbound: "redirect-in-v4", Network: N.NetworkTCP,
++		Destination: M.Socksaddr{Addr: netip.MustParseAddr("108.160.162.109"), Port: 443},
++		Domain:      "graph.instagram.com",
++	}
++	remoteOnly := &testKunBoxRemoteOnlyOutbound{
++		testKunBoxOutbound: &testKunBoxOutbound{C.TypeURLTest},
++		remoteOnly:         true,
++	}
++	mixed := &testKunBoxRemoteOnlyOutbound{
++		testKunBoxOutbound: &testKunBoxOutbound{C.TypeURLTest},
++		remoteOnly:         false,
++	}
++
++	metadata := base
++	require.True(t, applyKunBoxRootProxyDestinationOverride(&metadata, remoteOnly))
++	metadata = base
++	require.False(t, applyKunBoxRootProxyDestinationOverride(&metadata, mixed))
++}

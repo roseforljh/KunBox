@@ -21,7 +21,7 @@ $trustedPatchHashes = @{
     'v1.13.15' = '7C8318A5C9B77BF0BF623FA4D8610FF4190B188B9BD4D6149E0D9BF51E1B0172'
     'v1.13.16' = '7C8318A5C9B77BF0BF623FA4D8610FF4190B188B9BD4D6149E0D9BF51E1B0172'
     'v1.13.18' = '660D190181ED104119A812B7ADC64E5E5C845E08AF8EAEB98860B9714A0EC10F'
-    'v1.13.19' = '660D190181ED104119A812B7ADC64E5E5C845E08AF8EAEB98860B9714A0EC10F'
+    'v1.13.19' = '417EA7700B74CD3F953275E9A23A0B2CEA3F837910AF8EBC7DB3DDF419EDA1E5'
 }
 $requiredKunBoxNativeMarkers = @{
     'v1.13.18' = @(
@@ -32,7 +32,8 @@ $requiredKunBoxNativeMarkers = @{
     'v1.13.19' = @(
         'pre-handshake connection rejected: reason=',
         'kunbox_physical_dial_gate_v1',
-        'kunbox_wireguard_physical_gate_v1'
+        'kunbox_wireguard_physical_gate_v1',
+        'kunbox root override destination:'
     )
 }
 $trustedPatchFiles = @{
@@ -80,12 +81,18 @@ $trustedPatchFiles = @{
         'common/dialer/physical_budget_android.go',
         'common/dialer/physical_budget_other.go',
         'common/dialer/physical_budget_test.go',
+        'constant/proxy.go',
+        'daemon/started_service.go',
         'protocol/direct/outbound.go',
         'protocol/direct/outbound_physical_budget_test.go',
+        'protocol/group/kunbox_selector_test.go',
+        'protocol/group/selector.go',
+        'protocol/group/urltest.go',
         'protocol/vless/outbound.go',
         'protocol/vless/outbound_test.go',
         'route/conn.go',
         'route/conn_packet_lifecycle_test.go',
+        'route/kunbox_root_destination_test.go',
         'transport/wireguard/endpoint.go',
         'transport/wireguard/endpoint_physical_budget_test.go'
     )
@@ -1076,7 +1083,16 @@ function Run-GoValidation([string] $goBinary) {
     Write-Stage 'Stage 4/8: Validate patched Go packages'
 
     $env:GOTOOLCHAIN = 'local'
-    $packages = @('./common/dialer', './protocol/direct', './transport/wireguard', './protocol/vless', './route')
+    $packages = @(
+        './common/dialer',
+        './constant',
+        './daemon',
+        './protocol/direct',
+        './protocol/group',
+        './transport/wireguard',
+        './protocol/vless',
+        './route'
+    )
     Invoke-External -FilePath $goBinary -Arguments (@('test') + $packages) -WorkingDirectory $upstreamDir -FailureMessage 'Patched Go package tests failed'
     Invoke-External -FilePath $goBinary -Arguments (@('test', '-race') + $packages) -WorkingDirectory $upstreamDir -FailureMessage 'Patched Go race tests failed'
     Invoke-External -FilePath $goBinary -Arguments (@('vet') + $packages) -WorkingDirectory $upstreamDir -FailureMessage 'Patched Go vet failed'

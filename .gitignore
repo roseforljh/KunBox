@@ -60,6 +60,11 @@ app/libs/*.zip
 app/libs/classes_check/
 app/libs/libbox_check/
 docs/
+!docs/
+docs/*
+!docs/plans/
+docs/plans/*
+!docs/plans/ROOT_TRANSPARENT_PROXY_IMPLEMENTATION_PLAN.md
 temp/
 META-INF/
 .vscode/
