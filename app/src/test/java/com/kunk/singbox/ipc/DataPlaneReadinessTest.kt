@@ -62,6 +62,28 @@ class DataPlaneReadinessTest {
         assertTrue(snapshot.isReady(ServiceState.RUNNING, VpnStateStore.CoreMode.PROXY, true, 36, NOW_MS))
     }
 
+    @Test
+    fun `root readiness requires watchdog and installed rules`() {
+        val snapshot = readyVpnSnapshot().copy(
+            tunEstablished = false,
+            systemVpnTransport = false,
+            rootPid = 321,
+            rootRuntimeSessionId = "root-session",
+            rootWatchdogReady = true,
+            rootRulesInstalled = true
+        )
+
+        assertTrue(snapshot.isReady(ServiceState.RUNNING, VpnStateStore.CoreMode.ROOT, true, 36, NOW_MS))
+        assertFalse(
+            snapshot.copy(rootWatchdogReady = false)
+                .isReady(ServiceState.RUNNING, VpnStateStore.CoreMode.ROOT, true, 36, NOW_MS)
+        )
+        assertFalse(
+            snapshot.copy(rootRulesInstalled = false)
+                .isReady(ServiceState.RUNNING, VpnStateStore.CoreMode.ROOT, true, 36, NOW_MS)
+        )
+    }
+
     private fun readyVpnSnapshot() = DataPlaneReadinessSnapshot(
         status = DataPlaneStatus.READY,
         tunEstablished = true,

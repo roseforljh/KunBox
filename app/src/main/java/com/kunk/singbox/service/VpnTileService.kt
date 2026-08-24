@@ -30,6 +30,8 @@ import com.kunk.singbox.manager.VpnServiceManager
 import com.kunk.singbox.repository.ConfigRepository
 import com.kunk.singbox.ui.components.AppNotificationManager
 import com.kunk.singbox.repository.SettingsRepository
+import com.kunk.singbox.model.TrafficCaptureMode
+import com.kunk.singbox.service.root.RootTransparentForegroundService
 import com.kunk.singbox.service.manager.ServiceStateHolder
 import com.kunk.singbox.service.manager.VpnStopInitiator
 import com.kunk.singbox.service.notification.VpnNotificationManager
@@ -265,11 +267,11 @@ class VpnTileService : TileService() {
         val hasVpnTransport = hasSystemVpnTransport()
         val serviceActuallyRunning = isCoreServiceAvailable()
 
-        if (coreMode == VpnStateStore.CoreMode.VPN && shouldClearUnavailablePersistedActive(
+        if (coreMode != VpnStateStore.CoreMode.NONE && shouldClearUnavailablePersistedActive(
                 pending = pending,
                 persistedActive = persistedActive,
                 serviceActuallyRunning = serviceActuallyRunning,
-                hasVpnTransport = hasVpnTransport
+                hasVpnTransport = coreMode == VpnStateStore.CoreMode.VPN && hasVpnTransport
             )
         ) {
             persistVpnState(false)
@@ -369,6 +371,8 @@ class VpnTileService : TileService() {
         return (serviceBound && remoteService != null) ||
             ProxyOnlyService.isRunning ||
             ProxyOnlyService.isStarting ||
+            RootTransparentForegroundService.isRunning ||
+            RootTransparentForegroundService.isStarting ||
             ServiceStateHolder.instance != null ||
             ServiceStateHolder.isRunning ||
             ServiceStateHolder.isStarting
@@ -400,6 +404,7 @@ class VpnTileService : TileService() {
                         nm?.cancel(VpnNotificationManager.NOTIFICATION_ID)
 
                         nm?.cancel(11)
+                        nm?.cancel(12)
                     }
                     Log.d(TAG, "executeStopVpn ui settle in ${SystemClock.elapsedRealtime() - stopRequestedAt}ms")
                 }
@@ -422,7 +427,8 @@ class VpnTileService : TileService() {
             try {
                 val settings = SettingsRepository.getInstance(applicationContext).settings.first()
 
-                if (settings.tunEnabled) {
+                val captureMode = settings.resolvedTrafficCaptureMode()
+                if (captureMode == TrafficCaptureMode.VPN) {
                     val prepareIntent = VpnService.prepare(this@VpnTileService)
                     if (shouldRequestVpnPermissionBeforeStart(
                             isActive = false,
@@ -450,7 +456,7 @@ class VpnTileService : TileService() {
 
                 if (configResult != null) {
                     val command = VpnServiceManager.buildStartCommand(
-                        tunMode = settings.tunEnabled,
+                        mode = captureMode,
                         configPath = configResult.path,
                         cleanCache = true
                     )

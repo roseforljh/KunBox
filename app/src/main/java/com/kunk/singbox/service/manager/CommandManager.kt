@@ -3,6 +3,7 @@
 import android.app.NotificationManager
 import android.content.Context
 import android.os.SystemClock
+import android.os.ParcelFileDescriptor
 import android.util.Log
 import com.kunk.singbox.R
 import com.kunk.singbox.core.BoxWrapperManager
@@ -19,9 +20,13 @@ import com.kunk.singbox.service.notification.VpnNotificationManager
 import com.kunk.singbox.service.network.TrafficMonitor
 import io.nekohasekai.libbox.*
 import kotlinx.coroutines.*
+import kotlinx.coroutines.channels.Channel
 import java.net.InetSocketAddress
 import java.net.ServerSocket
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
+import kotlinx.coroutines.selects.select
 
 internal class TrafficStatusGate {
     private val lock = Any()
@@ -40,7 +45,7 @@ internal class TrafficStatusGate {
     }
 }
 
-@Suppress("TooManyFunctions")
+@Suppress("LargeClass", "TooManyFunctions")
 class CommandManager(
     private val context: Context,
     private val serviceScope: CoroutineScope
@@ -51,7 +56,42 @@ class CommandManager(
         private const val PORT_RELEASE_TIMEOUT_MS = 10000L
         private const val PORT_CHECK_INTERVAL_MS = 50L
         private const val MAX_GROUP_SELECTION_DEPTH = 4
+        private const val BASE_COMMAND_CLIENT_COUNT = 3
         internal const val GROUP_STATUS_INTERVAL_MS = 500L
+        internal const val COMMAND_LOG_READY_TIMEOUT_MS = 5_000L
+        internal const val COMMAND_LOG_HEARTBEAT_TIMEOUT_MS = 15_000L
+        internal const val COMMAND_LOG_STABLE_WINDOW_MS = 30_000L
+        internal const val BASE_COMMAND_HEARTBEAT_TIMEOUT_MS = 15_000L
+        internal val COMMAND_LOG_RECONNECT_DELAYS_MS = longArrayOf(500L, 1_000L, 2_000L, 4_000L, 8_000L)
+
+        internal fun commandLogReconnectDelay(failureCount: Int): Long {
+            require(failureCount > 0)
+            return COMMAND_LOG_RECONNECT_DELAYS_MS[
+                (failureCount - 1).coerceAtMost(COMMAND_LOG_RECONNECT_DELAYS_MS.lastIndex)
+            ]
+        }
+
+        internal fun acceptsCommandLogCallback(
+            sessionGeneration: Long,
+            activeSessionGeneration: Long,
+            clientToken: Long,
+            activeClientToken: Long,
+            pendingClientToken: Long
+        ): Boolean = sessionGeneration > 0L &&
+            sessionGeneration == activeSessionGeneration &&
+            clientToken > 0L &&
+            (clientToken == activeClientToken || clientToken == pendingClientToken)
+
+        internal fun shouldNotifyCommandLogObserver(replayed: Boolean): Boolean = !replayed
+
+        internal fun nextCommandLogFailureCount(previous: Int, stable: Boolean): Int =
+            if (stable) 1 else previous + 1
+
+        internal fun isCommandHeartbeatStale(
+            lastHeartbeatMs: Long?,
+            nowMs: Long,
+            timeoutMs: Long = BASE_COMMAND_HEARTBEAT_TIMEOUT_MS
+        ): Boolean = lastHeartbeatMs == null || nowMs < lastHeartbeatMs || nowMs - lastHeartbeatMs > timeoutMs
 
         internal fun dispatchKernelLog(
             message: String,
@@ -112,17 +152,43 @@ class CommandManager(
         val connectionsClient: CommandClient?
     )
 
-    @Volatile
-    private var clientHandler: CommandClientHandler? = null
+    private data class DetachedCommandRuntime(
+        val handle: CommandRuntimeHandle?,
+        val logSupervisor: Job?,
+        val logReady: CompletableDeferred<Unit>?
+    )
+
+    private data class CommandLogAttemptSignals(
+        val ready: CompletableDeferred<Unit> = CompletableDeferred(),
+        val disconnected: CompletableDeferred<String?> = CompletableDeferred(),
+        val heartbeat: Channel<Unit> = Channel(Channel.CONFLATED)
+    )
+
+    private enum class BaseCommandChannel {
+        STATUS,
+        GROUP,
+        CONNECTIONS
+    }
 
     @Volatile
     private var kernelLogObserver: KernelLogObserver? = null
 
-    @Volatile
-    private var isNonEssentialSuspended: Boolean = false
+    private var commandFdProvider: (() -> ParcelFileDescriptor?)? = null
 
-    @Volatile
-    private var consecutiveDisconnects: Int = 0
+    private var commandLogReconnectEnabled = false
+
+    private var commandLogReconnectJob: Job? = null
+
+    private var activeCommandSessionGeneration = 0L
+    private var activeCommandLogClientToken = 0L
+    private var pendingCommandLogClientToken = 0L
+    private val commandLogClientTokenSequence = AtomicLong(0L)
+    private var commandLogSessionReady: CompletableDeferred<Unit>? = null
+    private val readyBaseCommandChannels = mutableSetOf<BaseCommandChannel>()
+    private val baseCommandHeartbeatAtMs = mutableMapOf<BaseCommandChannel, Long>()
+    private var commandBaseHealthy = false
+    private var commandLogHealthy = false
+    private var lastPublishedControlHealth: Boolean? = null
 
     private val trafficStatusGate = TrafficStatusGate()
     private var connectionsSnapshot: Connections? = null
@@ -155,6 +221,7 @@ class CommandManager(
         fun onRuntimeNodeChanged(nodeName: String) {}
         fun onTrafficUpdate(snapshot: TrafficMonitor.TrafficSnapshot) {}
         fun onControlChannelHealth(ready: Boolean) {}
+        fun onControlChannelRecoveryRequired(reason: String) {}
         fun onServiceStop(): Unit
         fun onServiceReload(): Unit
     }
@@ -216,9 +283,35 @@ class CommandManager(
         // 避免 Libbox.hasSelector() 在 box 未运行时超时阻塞 ~1.5s
     }
 
+    fun clearStaleServerForStartup(): Result<Boolean> = runCatching {
+        val staleServer = synchronized(runtimeAccess) {
+            if (runtimeHandle != null) return@runCatching false
+            commandServer.also { commandServer = null }
+        } ?: return@runCatching false
+
+        runCatching { staleServer.closeService() }
+            .onFailure { Log.d(TAG, "Stale CommandServer service was already closed: ${it.message}") }
+        staleServer.close()
+        Log.w(TAG, "Cleared stale CommandServer before startup")
+        true
+    }
+
+    fun hasActiveRuntime(): Boolean = synchronized(runtimeAccess) { runtimeHandle != null }
+
     fun adoptServer(server: CommandServer) {
-        check(commandServer == null || commandServer === server) { "CommandServer already adopted" }
-        commandServer = server
+        val staleServer = synchronized(runtimeAccess) {
+            if (commandServer == null || commandServer === server) {
+                commandServer = server
+                return@synchronized null
+            }
+            check(runtimeHandle == null) { "Active CommandServer cannot be replaced" }
+            commandServer.also { commandServer = server }
+        }
+        if (staleServer != null) {
+            runCatching { staleServer.closeService() }
+            runCatching { staleServer.close() }
+            Log.w(TAG, "Replaced stale CommandServer during adoption")
+        }
     }
 
     fun startService(configContent: String, platformInterface: PlatformInterface): Result<Unit> = runCatching {
@@ -236,53 +329,80 @@ class CommandManager(
         Log.i(TAG, "CommandServer service closed")
     }
 
-    fun startClients(): Result<Unit> = runCatching {
+    fun startClients(): Result<Unit> = startClients(null)
+
+    suspend fun startClientsWithFd(fdProvider: () -> ParcelFileDescriptor?): Result<Unit> {
+        val started = startClients(fdProvider)
+        if (started.isFailure) return started
+        val generation = currentRuntimeGeneration()
+        return runCatching { awaitCommandLogReady(generation) }.onFailure {
+            if (isCommandSessionActive(generation)) stop()
+        }
+    }
+
+    private fun startClients(fdProvider: (() -> ParcelFileDescriptor?)?): Result<Unit> =
+        runCatching { beginCommandRuntime(fdProvider) }.fold(
+            onSuccess = { generation -> startCommandClients(generation, fdProvider) },
+            onFailure = Result.Companion::failure
+        )
+
+    @Suppress("LongMethod")
+    private fun startCommandClients(
+        generation: Long,
+        fdProvider: (() -> ParcelFileDescriptor?)?
+    ): Result<Unit> = runCatching {
         trafficMonitor.reset()
         connectionStormGuard.clear()
         trafficStatusGate.start()
-        val handler = createClientHandler()
-        clientHandler = handler
+        val statusHandler = createClientHandler(generation, BaseCommandChannel.STATUS)
+        val groupHandler = createClientHandler(generation, BaseCommandChannel.GROUP)
+        val connectionsHandler = createClientHandler(generation, BaseCommandChannel.CONNECTIONS)
+        val logHandler = createClientHandler(generation, channel = null)
+        val createdClients = mutableListOf<CommandClient>()
+        try {
+            val statusClient = createConnectedCommandClient(statusHandler, fdProvider) {
+                addCommand(Libbox.CommandStatus)
+                statusInterval = 3000L * 1000L * 1000L
+            }
+            createdClients += statusClient
+            Log.i(TAG, "CommandClient connected (Status, interval=3s)")
 
-        val optionsStatus = CommandClientOptions()
-        optionsStatus.addCommand(Libbox.CommandStatus)
-        optionsStatus.statusInterval = 3000L * 1000L * 1000L // 3s
-        commandClient = Libbox.newCommandClient(handler, optionsStatus)
-        commandClient?.connect()
-        Log.i(TAG, "CommandClient connected (Status, interval=3s)")
+            val groupClient = createConnectedCommandClient(groupHandler, fdProvider) {
+                addCommand(Libbox.CommandGroup)
+                statusInterval = GROUP_STATUS_INTERVAL_MS * 1000L * 1000L
+            }
+            createdClients += groupClient
+            Log.i(TAG, "CommandClient connected (Group, interval=${GROUP_STATUS_INTERVAL_MS}ms)")
 
-        val optionsGroup = CommandClientOptions()
-        optionsGroup.addCommand(Libbox.CommandGroup)
-        optionsGroup.statusInterval = GROUP_STATUS_INTERVAL_MS * 1000L * 1000L
-        commandClientGroup = Libbox.newCommandClient(handler, optionsGroup)
-        commandClientGroup?.connect()
-        Log.i(TAG, "CommandClient connected (Group, interval=${GROUP_STATUS_INTERVAL_MS}ms)")
-
-        val optionsLog = CommandClientOptions()
-        optionsLog.addCommand(Libbox.CommandLog)
-        optionsLog.statusInterval = 1500L * 1000L * 1000L
-        commandClientLogs = Libbox.newCommandClient(handler, optionsLog)
-        commandClientLogs?.connect()
-        Log.i(TAG, "CommandClient connected (Logs, interval=1.5s)")
-
-        val optionsConn = CommandClientOptions()
-        optionsConn.addCommand(Libbox.CommandConnections)
-        optionsConn.statusInterval = 1000L * 1000L * 1000L
-        commandClientConnections = Libbox.newCommandClient(handler, optionsConn)
-        commandClientConnections?.connect()
-        Log.i(TAG, "CommandClient connected (Connections, interval=1s)")
-        synchronized(runtimeAccess) {
-            runtimeHandle = CommandRuntimeHandle(
-                generation = runtimeGeneration.incrementAndGet(),
-                server = commandServer,
-                statusClient = commandClient,
-                groupClient = commandClientGroup,
-                logClient = commandClientLogs,
-                connectionsClient = commandClientConnections
-            )
+            val connectionsClient = createConnectedCommandClient(connectionsHandler, fdProvider) {
+                addCommand(Libbox.CommandConnections)
+                statusInterval = 1000L * 1000L * 1000L
+            }
+            createdClients += connectionsClient
+            Log.i(TAG, "CommandClient connected (Connections, interval=1s)")
+            synchronized(runtimeAccess) {
+                check(generation == activeCommandSessionGeneration) { "Command runtime changed during startup" }
+                commandClient = statusClient
+                commandClientGroup = groupClient
+                commandClientConnections = connectionsClient
+                runtimeHandle = CommandRuntimeHandle(
+                    generation = generation,
+                    server = commandServer,
+                    statusClient = statusClient,
+                    groupClient = groupClient,
+                    logClient = null,
+                    connectionsClient = connectionsClient
+                )
+            }
+        } catch (error: Exception) {
+            createdClients.forEach { client -> runCatching { client.disconnect() } }
+            throw error
         }
+        startCommandLogSupervisor(generation, logHandler, fdProvider)
 
         serviceScope.launch {
             delay(3500)
+            if (!isCommandSessionActive(generation)) return@launch
             val groupsSize = groupSelectedOutbounds.size
             val label = activeConnectionLabel
             if (groupsSize == 0 && label.isNullOrBlank()) {
@@ -291,6 +411,12 @@ class CommandManager(
                 Log.i(TAG, "Command callbacks OK (groups=$groupsSize)")
             }
         }
+        Unit
+    }.onFailure {
+        val stillOwnsStartup = synchronized(runtimeAccess) {
+            generation == activeCommandSessionGeneration
+        }
+        if (stillOwnsStartup) stop()
     }
 
     @Suppress("CognitiveComplexMethod", "CyclomaticComplexMethod", "LongMethod")
@@ -303,62 +429,31 @@ class CommandManager(
         expectedRuntimeGeneration: Long = currentRuntimeGeneration()
     ): Result<Unit> = runCatching {
         Log.i(TAG, "stopAndWaitPortRelease: port=$proxyPort, timeout=${waitTimeoutMs}ms, forceKill=$forceKillOnTimeout")
-        val capturedHandle = synchronized(runtimeAccess) {
-            val current = runtimeHandle
-            if (expectedRuntimeGeneration > 0L && current?.generation != expectedRuntimeGeneration) {
-                Log.w(
-                    TAG,
-                    "Skip stale command cleanup expected=$expectedRuntimeGeneration current=${current?.generation}"
-                )
-                return@runCatching
-            }
-            current ?: CommandRuntimeHandle(
-                generation = runtimeGeneration.get(),
-                server = commandServer,
-                statusClient = commandClient,
-                groupClient = commandClientGroup,
-                logClient = commandClientLogs,
-                connectionsClient = commandClientConnections
-            )
-        }
+        val detached = detachCommandRuntime(expectedRuntimeGeneration) ?: return@runCatching
+        val capturedHandle = detached.handle
+        detached.logSupervisor?.cancel()
+        detached.logReady?.cancel()
         stopTrafficUpdatesAndWait()
 
-        capturedHandle.statusClient?.disconnect()
-        capturedHandle.groupClient?.disconnect()
-        capturedHandle.logClient?.disconnect()
-        capturedHandle.connectionsClient?.disconnect()
-        val ownsCurrentRuntime = synchronized(runtimeAccess) {
-            if (runtimeHandle == null || runtimeHandle === capturedHandle) {
-                runtimeHandle = null
-                if (commandClient === capturedHandle.statusClient) commandClient = null
-                if (commandClientGroup === capturedHandle.groupClient) commandClientGroup = null
-                if (commandClientLogs === capturedHandle.logClient) commandClientLogs = null
-                if (commandClientConnections === capturedHandle.connectionsClient) commandClientConnections = null
-                if (commandServer === capturedHandle.server) commandServer = null
-                clientHandler = null
-                true
-            } else {
-                false
-            }
-        }
-
-        if (ownsCurrentRuntime) {
-            BoxWrapperManager.release()
-            connectionsSnapshot = null
-            connectionTrafficAttributor.clear()
-            connectionStormGuard.clear()
-        }
+        capturedHandle?.statusClient?.disconnect()
+        capturedHandle?.groupClient?.disconnect()
+        capturedHandle?.logClient?.disconnect()
+        capturedHandle?.connectionsClient?.disconnect()
+        BoxWrapperManager.release()
+        connectionsSnapshot = null
+        connectionTrafficAttributor.clear()
+        connectionStormGuard.clear()
 
         val closeStart = SystemClock.elapsedRealtime()
         runCatching {
-            capturedHandle.server?.closeService()
+            capturedHandle?.server?.closeService()
         }.onFailure { e ->
             // closeService 在服务已关闭时返回 invalid argument，属于正常情况
             Log.d(TAG, "CommandServer.closeService: ${e.message} (expected if already closed)")
         }
         Log.i(TAG, "CommandServer service closed in ${SystemClock.elapsedRealtime() - closeStart}ms")
 
-        capturedHandle.server?.close()
+        capturedHandle?.server?.close()
 
         if (!preserveNotifications) {
             runCatching {
@@ -395,28 +490,25 @@ class CommandManager(
     }
 
     fun stop(): Result<Unit> = runCatching {
+        val detached = requireNotNull(detachCommandRuntime())
+        val capturedHandle = detached.handle
+        detached.logSupervisor?.cancel()
+        detached.logReady?.cancel()
         stopTrafficUpdatesAndWait()
-        commandClient?.disconnect()
-        commandClient = null
-        commandClientGroup?.disconnect()
-        commandClientGroup = null
-        commandClientLogs?.disconnect()
-        commandClientLogs = null
-        commandClientConnections?.disconnect()
-        commandClientConnections = null
-
-        clientHandler = null
+        capturedHandle?.statusClient?.disconnect()
+        capturedHandle?.groupClient?.disconnect()
+        capturedHandle?.logClient?.disconnect()
+        capturedHandle?.connectionsClient?.disconnect()
 
         BoxWrapperManager.release()
         connectionsSnapshot = null
         connectionTrafficAttributor.clear()
         connectionStormGuard.clear()
 
-        runCatching { commandServer?.closeService() }
+        runCatching { capturedHandle?.server?.closeService() }
             .onFailure { Log.w(TAG, "CommandServer.closeService failed: ${it.message}") }
 
-        commandServer?.close()
-        commandServer = null
+        capturedHandle?.server?.close()
         Log.i(TAG, "Command Server/Client stopped")
     }
 
@@ -448,10 +540,10 @@ class CommandManager(
         }
     }
 
-    fun getCommandServer(): CommandServer? = commandServer
+    fun getCommandServer(): CommandServer? = synchronized(runtimeAccess) { commandServer }
 
-    fun getCommandClient(): CommandClient? = commandClient
-    fun getConnectionsClient(): CommandClient? = commandClientConnections
+    fun getCommandClient(): CommandClient? = synchronized(runtimeAccess) { commandClient }
+    fun getConnectionsClient(): CommandClient? = synchronized(runtimeAccess) { commandClientConnections }
 
     fun getSelectedOutbound(groupTag: String): String? = groupSelectedOutbounds[groupTag]
 
@@ -462,11 +554,13 @@ class CommandManager(
     fun getGroupsCount(): Int = groupSelectedOutbounds.size
 
     internal fun currentRuntimeGeneration(): Long = synchronized(runtimeAccess) {
-        runtimeHandle?.generation ?: 0L
+        runtimeHandle?.generation ?: activeCommandSessionGeneration
     }
 
     fun closeConnections(): Boolean {
-        val clients = listOfNotNull(commandClientConnections, commandClient)
+        val clients = synchronized(runtimeAccess) {
+            listOfNotNull(commandClientConnections, commandClient)
+        }
         for (client in clients) {
             try {
                 client.closeConnections()
@@ -480,7 +574,9 @@ class CommandManager(
     }
 
     fun closeConnection(connId: String): Boolean {
-        val client = commandClientConnections ?: commandClient ?: return false
+        val client = synchronized(runtimeAccess) {
+            commandClientConnections ?: commandClient
+        } ?: return false
         return try {
             client.closeConnection(connId)
             true
@@ -489,19 +585,419 @@ class CommandManager(
         }
     }
 
-    private fun createClientHandler(): CommandClientHandler = object : CommandClientHandler {
-        override fun connected() {
-            consecutiveDisconnects = 0
-            callbacks?.onControlChannelHealth(true)
+    private fun beginCommandRuntime(fdProvider: (() -> ParcelFileDescriptor?)?): Long =
+        synchronized(runtimeAccess) {
+            check(runtimeHandle == null && activeCommandSessionGeneration == 0L) {
+                "Command runtime is already active"
+            }
+            commandLogReconnectJob?.cancel()
+            val generation = runtimeGeneration.incrementAndGet()
+            activeCommandSessionGeneration = generation
+            commandFdProvider = fdProvider
+            commandLogReconnectEnabled = true
+            commandLogReconnectJob = null
+            activeCommandLogClientToken = 0L
+            pendingCommandLogClientToken = 0L
+            commandLogSessionReady = CompletableDeferred()
+            readyBaseCommandChannels.clear()
+            baseCommandHeartbeatAtMs.clear()
+            commandBaseHealthy = false
+            commandLogHealthy = false
+            lastPublishedControlHealth = null
+            commandClientLogs = null
+            groupSelectedOutbounds.clear()
+            generation
         }
 
+    @Suppress("ComplexCondition")
+    private fun detachCommandRuntime(expectedGeneration: Long = 0L): DetachedCommandRuntime? =
+        synchronized(runtimeAccess) {
+            val observedGeneration = runtimeHandle?.generation ?: activeCommandSessionGeneration
+            if (expectedGeneration > 0L && observedGeneration != expectedGeneration) {
+                Log.w(TAG, "Skip stale command cleanup expected=$expectedGeneration current=$observedGeneration")
+                return@synchronized null
+            }
+            val handle = runtimeHandle ?: if (
+                commandServer != null || commandClient != null || commandClientGroup != null ||
+                commandClientLogs != null || commandClientConnections != null
+            ) {
+                CommandRuntimeHandle(
+                    generation = observedGeneration,
+                    server = commandServer,
+                    statusClient = commandClient,
+                    groupClient = commandClientGroup,
+                    logClient = commandClientLogs,
+                    connectionsClient = commandClientConnections
+                )
+            } else {
+                null
+            }
+            val supervisor = commandLogReconnectJob
+            val logReady = commandLogSessionReady
+            activeCommandSessionGeneration = 0L
+            commandLogReconnectEnabled = false
+            commandLogReconnectJob = null
+            activeCommandLogClientToken = 0L
+            pendingCommandLogClientToken = 0L
+            commandLogSessionReady = null
+            readyBaseCommandChannels.clear()
+            baseCommandHeartbeatAtMs.clear()
+            commandBaseHealthy = false
+            commandLogHealthy = false
+            lastPublishedControlHealth = null
+            commandFdProvider = null
+            runtimeHandle = null
+            commandServer = null
+            commandClient = null
+            commandClientGroup = null
+            commandClientLogs = null
+            commandClientConnections = null
+            groupSelectedOutbounds.clear()
+            DetachedCommandRuntime(handle, supervisor, logReady)
+        }
+
+    private suspend fun awaitCommandLogReady(generation: Long) {
+        val ready = synchronized(runtimeAccess) {
+            check(generation > 0L && generation == activeCommandSessionGeneration) {
+                "Command runtime changed before log readiness"
+            }
+            commandLogSessionReady ?: error("Command log readiness is unavailable")
+        }
+        withTimeout(COMMAND_LOG_READY_TIMEOUT_MS) { ready.await() }
+        check(synchronized(runtimeAccess) {
+            generation == activeCommandSessionGeneration && commandBaseHealthy && commandLogHealthy
+        }) { "Command control channels are not ready" }
+    }
+
+    fun isControlChannelReady(): Boolean = synchronized(runtimeAccess) {
+        activeCommandSessionGeneration > 0L && commandBaseHealthy && commandLogHealthy
+    }
+
+    private fun startCommandLogSupervisor(
+        generation: Long,
+        handler: CommandClientHandler,
+        fdProvider: (() -> ParcelFileDescriptor?)?
+    ) {
+        val supervisor = serviceScope.launch(Dispatchers.IO, start = CoroutineStart.LAZY) {
+            superviseCommandLog(generation, handler, fdProvider)
+        }
+        val accepted = synchronized(runtimeAccess) {
+            if (isCommandLogSessionActiveLocked(generation) && commandLogReconnectJob == null) {
+                commandLogReconnectJob = supervisor
+                true
+            } else {
+                false
+            }
+        }
+        if (accepted) {
+            supervisor.invokeOnCompletion {
+                synchronized(runtimeAccess) {
+                    if (commandLogReconnectJob === supervisor) commandLogReconnectJob = null
+                }
+            }
+            supervisor.start()
+        } else {
+            supervisor.cancel()
+        }
+    }
+
+    private suspend fun superviseCommandLog(
+        generation: Long,
+        handler: CommandClientHandler,
+        fdProvider: (() -> ParcelFileDescriptor?)?
+    ) {
+        var failureCount = 0
+        while (isCommandLogSessionActive(generation)) {
+            if (failureCount > 0) delay(commandLogReconnectDelay(failureCount))
+            val retryCount = failureCount
+            var readyAtMs = 0L
+            try {
+                val reason = runCommandLogAttempt(generation, handler, fdProvider) {
+                    readyAtMs = SystemClock.uptimeMillis()
+                    markCommandLogHealth(generation, ready = true)
+                    if (retryCount > 0) {
+                        LogRepository.getInstance().addAlwaysLog(
+                            "INFO [COMMAND_LOG] reconnected attempt=$retryCount"
+                        )
+                    }
+                }
+                markCommandLogHealth(generation, ready = false)
+                LogRepository.getInstance().addAlwaysLog(
+                    "WARN [COMMAND_LOG] disconnected reconnect=true reason=${reason.orEmpty()}"
+                )
+                val stable = readyAtMs > 0L &&
+                    SystemClock.uptimeMillis() - readyAtMs >= COMMAND_LOG_STABLE_WINDOW_MS
+                failureCount = nextCommandLogFailureCount(failureCount, stable)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                val stable = readyAtMs > 0L &&
+                    SystemClock.uptimeMillis() - readyAtMs >= COMMAND_LOG_STABLE_WINDOW_MS
+                failureCount = nextCommandLogFailureCount(failureCount, stable)
+                markCommandLogHealth(generation, ready = false)
+                LogRepository.getInstance().addAlwaysLog(
+                    "WARN [COMMAND_LOG] reconnect_failed attempt=$failureCount " +
+                        "reason=${error.message.orEmpty()}"
+                )
+            }
+        }
+    }
+
+    @Suppress("CognitiveComplexMethod", "LongMethod")
+    private suspend fun runCommandLogAttempt(
+        generation: Long,
+        delegate: CommandClientHandler,
+        fdProvider: (() -> ParcelFileDescriptor?)?,
+        onReady: () -> Unit
+    ): String? {
+        val token = commandLogClientTokenSequence.incrementAndGet()
+        val signals = CommandLogAttemptSignals()
+        val options = CommandClientOptions().apply {
+            addCommand(Libbox.CommandLog)
+            statusInterval = 1500L * 1000L * 1000L
+        }
+        val client = requireNotNull(
+            Libbox.newCommandClient(
+                createLogClientHandler(delegate, generation, token, signals),
+                options
+            )
+        ) { "Command log client creation failed" }
+        val registered = synchronized(runtimeAccess) {
+            if (isCommandLogSessionActiveLocked(generation) && pendingCommandLogClientToken == 0L) {
+                pendingCommandLogClientToken = token
+                true
+            } else {
+                false
+            }
+        }
+        if (!registered) {
+            runCatching { client.disconnect() }
+            throw CancellationException("Command log session is inactive")
+        }
+        try {
+            connectClient(client, fdProvider)
+            currentCoroutineContext().ensureActive()
+            withTimeout(COMMAND_LOG_READY_TIMEOUT_MS) {
+                select {
+                    signals.ready.onAwait { }
+                    signals.disconnected.onAwait { reason ->
+                        error("Command log disconnected before ready: ${reason.orEmpty()}")
+                    }
+                }
+            }
+            currentCoroutineContext().ensureActive()
+            synchronized(runtimeAccess) {
+                check(isCommandLogSessionActiveLocked(generation) && pendingCommandLogClientToken == token) {
+                    "Command log session changed before ready"
+                }
+                pendingCommandLogClientToken = 0L
+                activeCommandLogClientToken = token
+                commandClientLogs = client
+                runtimeHandle?.takeIf { it.generation == generation }?.let { handle ->
+                    runtimeHandle = handle.copy(logClient = client)
+                }
+            }
+            onReady()
+            return awaitCommandLogStream(generation, signals.heartbeat, signals.disconnected)
+        } finally {
+            synchronized(runtimeAccess) {
+                if (pendingCommandLogClientToken == token) pendingCommandLogClientToken = 0L
+                if (activeCommandLogClientToken == token) activeCommandLogClientToken = 0L
+                if (commandClientLogs === client) commandClientLogs = null
+                runtimeHandle?.takeIf { it.generation == generation }?.let { handle ->
+                    if (handle.logClient === client) runtimeHandle = handle.copy(logClient = null)
+                }
+            }
+            runCatching { client.disconnect() }
+        }
+    }
+
+    private fun createLogClientHandler(
+        delegate: CommandClientHandler,
+        generation: Long,
+        token: Long,
+        signals: CommandLogAttemptSignals
+    ): CommandClientHandler = object : CommandClientHandler by delegate {
+        private val replayPending = AtomicBoolean(false)
+
+        override fun connected() = Unit
+
         override fun disconnected(message: String?) {
-            Log.w(TAG, "CommandClient disconnected: $message")
-            consecutiveDisconnects++
-            if (consecutiveDisconnects >= 2) callbacks?.onControlChannelHealth(false)
+            if (acceptsCommandLogCallback(generation, token)) signals.disconnected.complete(message)
         }
 
         override fun clearLogs() {
+            if (!acceptsCommandLogCallback(generation, token)) return
+            replayPending.set(true)
+            delegate.clearLogs()
+        }
+
+        override fun setDefaultLogLevel(level: Int) {
+            if (!acceptsCommandLogCallback(generation, token)) return
+            delegate.setDefaultLogLevel(level)
+            signals.ready.complete(Unit)
+        }
+
+        override fun writeLogs(messageList: LogIterator?) {
+            if (!acceptsCommandLogCallback(generation, token)) return
+            signals.heartbeat.trySend(Unit)
+            consumeCommandLogMessages(
+                messageList,
+                notifyObserver = shouldNotifyCommandLogObserver(replayPending.getAndSet(false)),
+                acceptsCallbackLocked = {
+                    acceptsCommandLogCallback(
+                        generation,
+                        activeCommandSessionGeneration,
+                        token,
+                        activeCommandLogClientToken,
+                        pendingCommandLogClientToken
+                    )
+                }
+            )
+        }
+    }
+
+    private fun acceptsCommandLogCallback(generation: Long, token: Long): Boolean =
+        synchronized(runtimeAccess) {
+            acceptsCommandLogCallback(
+                sessionGeneration = generation,
+                activeSessionGeneration = activeCommandSessionGeneration,
+                clientToken = token,
+                activeClientToken = activeCommandLogClientToken,
+                pendingClientToken = pendingCommandLogClientToken
+            )
+        }
+
+    private fun isCommandLogSessionActive(generation: Long): Boolean = synchronized(runtimeAccess) {
+        isCommandLogSessionActiveLocked(generation)
+    }
+
+    private fun isCommandLogSessionActiveLocked(generation: Long): Boolean =
+        generation > 0L && generation == activeCommandSessionGeneration &&
+            commandLogReconnectEnabled
+
+    private fun isCommandSessionActive(generation: Long): Boolean = synchronized(runtimeAccess) {
+        generation > 0L && generation == activeCommandSessionGeneration
+    }
+
+    private suspend fun awaitCommandLogStream(
+        generation: Long,
+        heartbeat: Channel<Unit>,
+        disconnected: CompletableDeferred<String?>
+    ): String? {
+        while (true) {
+            val result = withTimeoutOrNull(COMMAND_LOG_HEARTBEAT_TIMEOUT_MS) {
+                select<Pair<Boolean, String?>> {
+                    heartbeat.onReceive { false to null }
+                    disconnected.onAwait { true to it }
+                }
+            } ?: error("Command log heartbeat timeout")
+            if (result.first) return result.second
+            requireBaseCommandHeartbeats(generation)
+        }
+    }
+
+    private fun requireBaseCommandHeartbeats(generation: Long) {
+        val staleChannels = synchronized(runtimeAccess) {
+            if (generation != activeCommandSessionGeneration) {
+                throw CancellationException("Command runtime changed")
+            }
+            val now = SystemClock.uptimeMillis()
+            BaseCommandChannel.entries.filter { channel ->
+                isCommandHeartbeatStale(baseCommandHeartbeatAtMs[channel], now)
+            }.also { stale ->
+                if (stale.isNotEmpty()) {
+                    readyBaseCommandChannels.removeAll(stale.toSet())
+                    stale.forEach(baseCommandHeartbeatAtMs::remove)
+                    commandBaseHealthy = false
+                    notifyCombinedCommandHealthLocked()
+                    callbacks?.onControlChannelRecoveryRequired(
+                        "heartbeat_timeout_${stale.joinToString("_") { it.name.lowercase() }}"
+                    )
+                }
+            }
+        }
+        check(staleChannels.isEmpty()) {
+            "Base command heartbeat timeout: ${staleChannels.joinToString()}"
+        }
+    }
+
+    private fun markCommandLogHealth(generation: Long, ready: Boolean) {
+        synchronized(runtimeAccess) {
+            if (!isCommandLogSessionActiveLocked(generation)) return
+            commandLogHealthy = ready
+            completeCommandControlReadyLocked()
+            notifyCombinedCommandHealthLocked()
+        }
+    }
+
+    private fun completeCommandControlReadyLocked() {
+        if (commandBaseHealthy && commandLogHealthy) commandLogSessionReady?.complete(Unit)
+    }
+
+    private fun notifyCombinedCommandHealthLocked() {
+        val ready = commandBaseHealthy && commandLogHealthy
+        if (lastPublishedControlHealth == ready) return
+        lastPublishedControlHealth = ready
+        callbacks?.onControlChannelHealth(ready)
+    }
+
+    private fun markBaseCommandHealth(generation: Long, channel: BaseCommandChannel, ready: Boolean) {
+        synchronized(runtimeAccess) {
+            if (generation != activeCommandSessionGeneration) return
+            if (ready) readyBaseCommandChannels += channel else readyBaseCommandChannels -= channel
+            if (ready) baseCommandHeartbeatAtMs[channel] = SystemClock.uptimeMillis()
+            else baseCommandHeartbeatAtMs.remove(channel)
+            commandBaseHealthy = readyBaseCommandChannels.size == BASE_COMMAND_CLIENT_COUNT
+            completeCommandControlReadyLocked()
+            notifyCombinedCommandHealthLocked()
+            if (!ready) callbacks?.onControlChannelRecoveryRequired("${channel.name.lowercase()}_disconnected")
+        }
+    }
+
+    @Suppress("CognitiveComplexMethod")
+    private fun consumeCommandLogMessages(
+        messageList: LogIterator?,
+        notifyObserver: Boolean,
+        acceptsCallbackLocked: () -> Boolean
+    ) {
+        if (messageList == null) return
+        val repo = LogRepository.getInstance()
+        runCatching {
+            while (messageList.hasNext()) {
+                val message = messageList.next()?.message
+                if (!message.isNullOrBlank()) {
+                    synchronized(runtimeAccess) {
+                        if (!acceptsCallbackLocked()) return@runCatching
+                        val observer = if (notifyObserver) kernelLogObserver else null
+                        dispatchKernelLog(
+                            message = message,
+                            uiLogsEnabled = repo.isEnabled(),
+                            observer = observer?.let { logObserver ->
+                                { line -> logObserver.onKernelLog(line) }
+                            },
+                            addToRepository = repo::addLog
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    @Suppress("CognitiveComplexMethod")
+    private fun createClientHandler(
+        generation: Long,
+        channel: BaseCommandChannel?
+    ): CommandClientHandler = object : CommandClientHandler {
+        override fun connected() = Unit
+
+        override fun disconnected(message: String?) {
+            channel?.let { markBaseCommandHealth(generation, it, ready = false) }
+            Log.w(TAG, "CommandClient disconnected: $message")
+        }
+
+        override fun clearLogs() {
+            if (!isCommandSessionActive(generation)) return
             runCatching {
                 LogRepository.getInstance().clearLogs(preserveRecoveryDiagnostics = true)
             }
@@ -510,29 +1006,19 @@ class CommandManager(
         override fun setDefaultLogLevel(level: Int) {}
 
         override fun writeLogs(messageList: LogIterator?) {
-            if (messageList == null) return
-            val repo = LogRepository.getInstance()
-            runCatching {
-                while (messageList.hasNext()) {
-                    val msg = messageList.next()?.message
-                    if (!msg.isNullOrBlank()) {
-                        val observer = kernelLogObserver
-                        dispatchKernelLog(
-                            message = msg,
-                            uiLogsEnabled = repo.isEnabled(),
-                            observer = observer?.let { logObserver ->
-                                { line -> logObserver.onKernelLog(line) }
-                            },
-                            addToRepository = { repo.addLog(it) }
-                        )
-                    }
-                }
-            }
+            if (!isCommandSessionActive(generation)) return
+            consumeCommandLogMessages(
+                messageList,
+                notifyObserver = true,
+                acceptsCallbackLocked = { generation == activeCommandSessionGeneration }
+            )
         }
 
         @Suppress("LongMethod")
         override fun writeStatus(message: StatusMessage?) {
+            if (!isCommandSessionActive(generation)) return
             if (message == null) return
+            channel?.let { markBaseCommandHealth(generation, it, ready = true) }
             trafficStatusGate.runIfActive {
                 try {
                     val snapshot = trafficMonitor.updateTotals(
@@ -548,7 +1034,9 @@ class CommandManager(
         }
 
         override fun writeGroups(groups: OutboundGroupIterator?) {
+            if (!isCommandSessionActive(generation)) return
             if (groups == null) return
+            channel?.let { markBaseCommandHealth(generation, it, ready = true) }
             try {
                 processGroups(groups)
             } catch (e: Exception) {
@@ -560,10 +1048,13 @@ class CommandManager(
         override fun updateClashMode(newMode: String?) {}
 
         override fun writeConnectionEvents(events: ConnectionEvents?) {
+            if (!isCommandSessionActive(generation)) return
             events ?: return
+            channel?.let { markBaseCommandHealth(generation, it, ready = true) }
             try {
-                val runtimeMappings = NodeProtectionStore.runtimeMappings()
                 val eventData = ConnectionTrafficEventReader.read(events)
+                if (!events.reset && eventData.isEmpty()) return
+                val runtimeMappings = NodeProtectionStore.runtimeMappings()
                 recordDirectIncidents(eventData)
                 if (events.reset) connectionTrafficAttributor.clear()
                 enforceConnectionStormGuard(
@@ -680,6 +1171,38 @@ class CommandManager(
         serviceScope.launch(Dispatchers.IO) {
             runCatching { connectionIncidentHistory.append(snapshot) }
                 .onFailure { error -> Log.e(TAG, "Failed to persist connection incident", error) }
+        }
+    }
+
+    private fun connectClient(
+        client: CommandClient?,
+        fdProvider: (() -> ParcelFileDescriptor?)?
+    ) {
+        requireNotNull(client) { "CommandClient creation failed" }
+        if (fdProvider == null) {
+            client.connect()
+            return
+        }
+        val descriptor = requireNotNull(fdProvider()) { "Root command connection is unavailable" }
+        descriptor.use {
+            val fd = it.detachFd()
+            // libbox 会在成功和失败路径消费并关闭该 FD，Kotlin 侧禁止再次 adopt/close。
+            client.connectWithFD(fd)
+        }
+    }
+
+    private fun createConnectedCommandClient(
+        handler: CommandClientHandler,
+        fdProvider: (() -> ParcelFileDescriptor?)?,
+        configure: CommandClientOptions.() -> Unit
+    ): CommandClient {
+        val client = requireNotNull(Libbox.newCommandClient(handler, CommandClientOptions().apply(configure)))
+        return try {
+            connectClient(client, fdProvider)
+            client
+        } catch (error: Exception) {
+            runCatching { client.disconnect() }
+            throw error
         }
     }
 
@@ -832,56 +1355,5 @@ class CommandManager(
         connectionTrafficAttributor.clear()
         connectionStormGuard.clear()
         callbacks = null
-        isNonEssentialSuspended = false
     }
-
-    fun suspendNonEssential() {
-        if (isNonEssentialSuspended) return
-        isNonEssentialSuspended = true
-
-        commandClientLogs?.disconnect()
-        commandClientLogs = null
-
-        commandClientConnections?.disconnect()
-        commandClientConnections = null
-
-        Log.i(TAG, "Non-essential clients suspended (Logs, Connections)")
-    }
-
-    fun resumeNonEssential() {
-        if (!isNonEssentialSuspended) return
-        isNonEssentialSuspended = false
-
-        if (commandServer == null) {
-            Log.w(TAG, "Cannot resume: no CommandServer")
-            return
-        }
-
-        val handler = clientHandler ?: createClientHandler().also { clientHandler = it }
-
-        try {
-            val optionsLog = CommandClientOptions()
-            optionsLog.addCommand(Libbox.CommandLog)
-            optionsLog.statusInterval = 1500L * 1000L * 1000L
-            commandClientLogs = Libbox.newCommandClient(handler, optionsLog)
-            commandClientLogs?.connect()
-            Log.i(TAG, "CommandClient (Logs) resumed")
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to resume Logs client", e)
-        }
-
-        try {
-            val optionsConn = CommandClientOptions()
-            optionsConn.addCommand(Libbox.CommandConnections)
-            optionsConn.statusInterval = 1000L * 1000L * 1000L
-            commandClientConnections = Libbox.newCommandClient(handler, optionsConn)
-            commandClientConnections?.connect()
-            Log.i(TAG, "CommandClient (Connections) resumed")
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to resume Connections client", e)
-        }
-    }
-
-    val isNonEssentialActive: Boolean
-        get() = !isNonEssentialSuspended && (commandClientLogs != null || commandClientConnections != null)
 }

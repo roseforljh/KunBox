@@ -39,6 +39,12 @@ data class DataPlaneReadinessSnapshot(
     val ownedVpnNetworkLost: Boolean = false,
     val ownedVpnNetworkHandle: Long = 0L,
     val observedVpnNetworkHandle: Long = 0L,
+    val rootPid: Int = 0,
+    val rootFdCount: Int = 0,
+    val rootRuntimeSessionId: String = "",
+    val rootRuleRevision: Long = 0L,
+    val rootWatchdogReady: Boolean = false,
+    val rootRulesInstalled: Boolean = false,
     val lastReadinessReason: String = "",
     val updatedAtElapsedMs: Long = 0L,
     val serviceInstanceId: String = "",
@@ -49,6 +55,9 @@ data class DataPlaneReadinessSnapshot(
         routingScope = routingScope.ifBlank { "unknown" },
         ownedVpnNetworkHandle = ownedVpnNetworkHandle.coerceAtLeast(0L),
         observedVpnNetworkHandle = observedVpnNetworkHandle.coerceAtLeast(0L),
+        rootPid = rootPid.coerceAtLeast(0),
+        rootFdCount = rootFdCount.coerceAtLeast(0),
+        rootRuleRevision = rootRuleRevision.coerceAtLeast(0L),
         updatedAtElapsedMs = updatedAtElapsedMs.coerceAtLeast(0L),
         generation = generation.coerceAtLeast(0L)
     )
@@ -68,6 +77,12 @@ data class DataPlaneReadinessSnapshot(
     ): Boolean {
         if (!hasReadyControlPlane(serviceState, ipcBound, nowElapsedMs)) return false
         if (mode == VpnStateStore.CoreMode.PROXY) return true
+        if (mode == VpnStateStore.CoreMode.ROOT) {
+            return rootPid > 0 &&
+                rootRuntimeSessionId.isNotBlank() &&
+                rootWatchdogReady &&
+                rootRulesInstalled
+        }
         if (mode != VpnStateStore.CoreMode.VPN) return false
         return hasReadyVpnDataPlane(apiLevel)
     }
@@ -94,7 +109,7 @@ data class DataPlaneReadinessSnapshot(
     }
 
     companion object {
-        const val CURRENT_SCHEMA_VERSION = 1
+        const val CURRENT_SCHEMA_VERSION = 2
         const val MAX_READINESS_AGE_MS = 10_000L
         const val HEARTBEAT_INTERVAL_MS = 5_000L
         const val PERSIST_HEARTBEAT_INTERVAL_MS = 30_000L

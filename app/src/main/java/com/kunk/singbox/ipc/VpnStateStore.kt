@@ -102,7 +102,8 @@ object VpnStateStore {
     enum class CoreMode {
         NONE,
         VPN,
-        PROXY
+        PROXY,
+        ROOT
     }
 
     enum class ResourceRecoveryAction {

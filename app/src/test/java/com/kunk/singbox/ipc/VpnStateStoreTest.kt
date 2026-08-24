@@ -46,10 +46,11 @@ class VpnStateStoreTest {
 
     @Test
     fun testCoreModeEnumValues() {
-        assertEquals(3, VpnStateStore.CoreMode.values().size)
+        assertEquals(4, VpnStateStore.CoreMode.values().size)
         assertEquals("NONE", VpnStateStore.CoreMode.NONE.name)
         assertEquals("VPN", VpnStateStore.CoreMode.VPN.name)
         assertEquals("PROXY", VpnStateStore.CoreMode.PROXY.name)
+        assertEquals("ROOT", VpnStateStore.CoreMode.ROOT.name)
     }
 
     @Test
@@ -57,6 +58,7 @@ class VpnStateStoreTest {
         assertEquals(VpnStateStore.CoreMode.NONE, VpnStateStore.CoreMode.valueOf("NONE"))
         assertEquals(VpnStateStore.CoreMode.VPN, VpnStateStore.CoreMode.valueOf("VPN"))
         assertEquals(VpnStateStore.CoreMode.PROXY, VpnStateStore.CoreMode.valueOf("PROXY"))
+        assertEquals(VpnStateStore.CoreMode.ROOT, VpnStateStore.CoreMode.valueOf("ROOT"))
     }
 
     @Test
@@ -64,6 +66,7 @@ class VpnStateStoreTest {
         assertEquals(0, VpnStateStore.CoreMode.NONE.ordinal)
         assertEquals(1, VpnStateStore.CoreMode.VPN.ordinal)
         assertEquals(2, VpnStateStore.CoreMode.PROXY.ordinal)
+        assertEquals(3, VpnStateStore.CoreMode.ROOT.ordinal)
     }
 
     @Test

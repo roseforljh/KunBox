@@ -205,7 +205,11 @@ object SingBoxRemote {
         storedManuallyStopped: Boolean,
         storedMode: VpnStateStore.CoreMode
     ): Boolean {
-        return !storedManuallyStopped && (systemVpn || storedMode == VpnStateStore.CoreMode.PROXY)
+        return !storedManuallyStopped && (
+            systemVpn ||
+                storedMode == VpnStateStore.CoreMode.PROXY ||
+                storedMode == VpnStateStore.CoreMode.ROOT
+            )
     }
 
     private val callback = object : ISingBoxServiceCallback.Stub() {
@@ -442,6 +446,7 @@ object SingBoxRemote {
             pending == "stopping" -> ServiceState.STOPPING
             isActive && hasVpnTransport -> ServiceState.RUNNING
             mode == VpnStateStore.CoreMode.PROXY -> ServiceState.RUNNING
+            mode == VpnStateStore.CoreMode.ROOT && isActive -> ServiceState.RUNNING
             else -> ServiceState.STOPPED
         }
     }

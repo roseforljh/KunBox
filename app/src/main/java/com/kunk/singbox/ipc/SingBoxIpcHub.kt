@@ -10,6 +10,7 @@ import com.kunk.singbox.aidl.ISingBoxServiceCallback
 import com.kunk.singbox.repository.ConfigRepository
 import com.kunk.singbox.repository.LogRepository
 import com.kunk.singbox.service.ProxyOnlyService
+import com.kunk.singbox.service.root.RootTransparentForegroundService
 import com.kunk.singbox.service.ServiceState
 import com.kunk.singbox.service.manager.BackgroundPowerManager
 import com.kunk.singbox.service.manager.ServiceStateHolder
@@ -67,6 +68,12 @@ private fun Bundle.toReadinessSnapshot(generation: Long): DataPlaneReadinessSnap
         ownedVpnNetworkLost = getBoolean(SingBoxIpcHub.READINESS_OWNED_VPN_LOST, false),
         ownedVpnNetworkHandle = getLong(SingBoxIpcHub.READINESS_OWNED_NETWORK, 0L),
         observedVpnNetworkHandle = getLong(SingBoxIpcHub.READINESS_OBSERVED_NETWORK, 0L),
+        rootPid = getInt(SingBoxIpcHub.READINESS_ROOT_PID, 0),
+        rootFdCount = getInt(SingBoxIpcHub.READINESS_ROOT_FD_COUNT, 0),
+        rootRuntimeSessionId = getString(SingBoxIpcHub.READINESS_ROOT_SESSION).orEmpty(),
+        rootRuleRevision = getLong(SingBoxIpcHub.READINESS_ROOT_RULE_REVISION, 0L),
+        rootWatchdogReady = getBoolean(SingBoxIpcHub.READINESS_ROOT_WATCHDOG, false),
+        rootRulesInstalled = getBoolean(SingBoxIpcHub.READINESS_ROOT_RULES, false),
         lastReadinessReason = getString(SingBoxIpcHub.READINESS_REASON).orEmpty(),
         updatedAtElapsedMs = getLong(SingBoxIpcHub.READINESS_UPDATED_AT, 0L),
         serviceInstanceId = getString(SingBoxIpcHub.READINESS_SERVICE_INSTANCE).orEmpty(),
@@ -102,6 +109,12 @@ object SingBoxIpcHub {
     internal const val READINESS_OWNED_VPN_LOST = "owned_vpn_lost"
     internal const val READINESS_OWNED_NETWORK = "owned_vpn_network"
     internal const val READINESS_OBSERVED_NETWORK = "observed_vpn_network"
+    internal const val READINESS_ROOT_PID = "root_pid"
+    internal const val READINESS_ROOT_FD_COUNT = "root_fd_count"
+    internal const val READINESS_ROOT_SESSION = "root_runtime_session"
+    internal const val READINESS_ROOT_RULE_REVISION = "root_rule_revision"
+    internal const val READINESS_ROOT_WATCHDOG = "root_watchdog_ready"
+    internal const val READINESS_ROOT_RULES = "root_rules_installed"
     internal const val READINESS_REASON = "reason"
     internal const val READINESS_UPDATED_AT = "updated_at_elapsed_ms"
     internal const val READINESS_SERVICE_INSTANCE = "service_instance_id"
@@ -256,8 +269,10 @@ object SingBoxIpcHub {
         return when {
             ServiceStateHolder.instance != null && ServiceStateHolder.isRunning -> ServiceState.RUNNING
             ProxyOnlyService.isRunning -> ServiceState.RUNNING
+            RootTransparentForegroundService.isRunning -> ServiceState.RUNNING
             ServiceStateHolder.instance != null && ServiceStateHolder.isStarting -> ServiceState.STARTING
             ProxyOnlyService.isStarting -> ServiceState.STARTING
+            RootTransparentForegroundService.isStarting -> ServiceState.STARTING
             ServiceStateHolder.instance != null -> ServiceState.STOPPING
             else -> null
         }
@@ -357,6 +372,12 @@ object SingBoxIpcHub {
         putBoolean(READINESS_OWNED_VPN_LOST, ownedVpnNetworkLost)
         putLong(READINESS_OWNED_NETWORK, ownedVpnNetworkHandle)
         putLong(READINESS_OBSERVED_NETWORK, observedVpnNetworkHandle)
+        putInt(READINESS_ROOT_PID, rootPid)
+        putInt(READINESS_ROOT_FD_COUNT, rootFdCount)
+        putString(READINESS_ROOT_SESSION, rootRuntimeSessionId)
+        putLong(READINESS_ROOT_RULE_REVISION, rootRuleRevision)
+        putBoolean(READINESS_ROOT_WATCHDOG, rootWatchdogReady)
+        putBoolean(READINESS_ROOT_RULES, rootRulesInstalled)
         putString(READINESS_REASON, lastReadinessReason)
         putLong(READINESS_UPDATED_AT, updatedAtElapsedMs)
         putString(READINESS_SERVICE_INSTANCE, serviceInstanceId)

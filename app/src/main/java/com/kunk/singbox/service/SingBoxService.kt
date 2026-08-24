@@ -320,24 +320,14 @@ class SingBoxService : VpnService() {
                 var server: CommandServer? = null
                 var adopted = false
                 try {
-                    if (!isCommandServerStartupCurrent(startToken, recoveryIntentLease)) {
-                        return@runCatching false
-                    }
+                    if (!prepareCommandServerStartup(startToken, recoveryIntentLease)) return@runCatching false
                     val createdServer = commandManager.createServer(platformInterfaceImpl).getOrThrow()
                     server = createdServer
                     if (!isCommandServerStartupCurrent(startToken, recoveryIntentLease)) {
                         return@runCatching false
                     }
                     commandManager.startServer(createdServer).getOrThrow()
-                    adopted = synchronized(this@SingBoxService) {
-                        if (!isCommandServerStartupCurrentLocked(startToken, recoveryIntentLease)) {
-                            false
-                        } else {
-                            commandManager.adoptServer(createdServer)
-                            coreManager.setCommandServer(createdServer)
-                            true
-                        }
-                    }
+                    adopted = adoptCommandServerIfCurrent(createdServer, startToken, recoveryIntentLease)
                     if (adopted) {
                         Log.i(SingBoxService.TAG, "CommandServer created and started")
                     }
@@ -580,6 +570,28 @@ class SingBoxService : VpnService() {
         recoveryIntentLease: RecoveryIntentLease
     ): Boolean = synchronized(this) {
         isCommandServerStartupCurrentLocked(startToken, recoveryIntentLease)
+    }
+
+    private fun prepareCommandServerStartup(
+        startToken: Long,
+        recoveryIntentLease: RecoveryIntentLease
+    ): Boolean {
+        if (!isCommandServerStartupCurrent(startToken, recoveryIntentLease)) return false
+        if (commandManager.hasActiveRuntime()) return false
+        val staleCleared = commandManager.clearStaleServerForStartup().getOrThrow()
+        if (staleCleared) coreManager.setCommandServer(null)
+        return isCommandServerStartupCurrent(startToken, recoveryIntentLease)
+    }
+
+    private fun adoptCommandServerIfCurrent(
+        server: CommandServer,
+        startToken: Long,
+        recoveryIntentLease: RecoveryIntentLease
+    ): Boolean = synchronized(this) {
+        if (!isCommandServerStartupCurrentLocked(startToken, recoveryIntentLease)) return@synchronized false
+        commandManager.adoptServer(server)
+        coreManager.setCommandServer(server)
+        true
     }
 
     private fun isCommandServerStartupCurrentLocked(

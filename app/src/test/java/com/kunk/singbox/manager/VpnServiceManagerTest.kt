@@ -3,6 +3,8 @@ package com.kunk.singbox.manager
 import com.kunk.singbox.ipc.VpnStateStore
 import com.kunk.singbox.service.ProxyOnlyService
 import com.kunk.singbox.service.SingBoxService
+import com.kunk.singbox.service.root.RootTransparentForegroundService
+import com.kunk.singbox.model.TrafficCaptureMode
 import com.kunk.singbox.service.manager.VpnStopInitiator
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -50,6 +52,20 @@ class VpnServiceManagerTest {
     }
 
     @Test
+    fun buildStartCommandForRootUsesRootForegroundService() {
+        val command = VpnServiceManager.buildStartCommand(
+            mode = TrafficCaptureMode.ROOT_TRANSPARENT,
+            configPath = "/data/user/0/com.kunk.singbox/files/root.json",
+            cleanCache = true
+        )
+
+        assertEquals(RootTransparentForegroundService::class.java, command.serviceClass)
+        assertEquals(RootTransparentForegroundService.ACTION_START, command.action)
+        assertEquals("/data/user/0/com.kunk.singbox/files/root.json", command.configPath)
+        assertFalse(command.cleanCache)
+    }
+
+    @Test
     fun runtimeStateDoesNotReadLegacyVpnPreferences() {
         val source = File("src/main/java/com/kunk/singbox/manager/VpnServiceManager.kt").readText()
 
@@ -71,6 +87,12 @@ class VpnServiceManagerTest {
             VpnServiceManager.shouldDispatchStopToService(
                 activeMode = VpnStateStore.CoreMode.VPN,
                 serviceMode = VpnStateStore.CoreMode.PROXY
+            )
+        )
+        assertTrue(
+            VpnServiceManager.shouldDispatchStopToService(
+                activeMode = VpnStateStore.CoreMode.ROOT,
+                serviceMode = VpnStateStore.CoreMode.ROOT
             )
         )
         assertTrue(

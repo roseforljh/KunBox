@@ -541,7 +541,10 @@ class StartupManager(
                 msg.contains("fd=-1", ignoreCase = true) -> {
                 "Start failed: could not establish VPN interface"
             }
-            else -> "Failed to start VPN: ${e.javaClass.simpleName}: ${e.message}"
+            msg.contains("CommandServer", ignoreCase = true) -> {
+                "启动组件状态异常，已完成清理，请重试"
+            }
+            else -> "VPN 启动失败：${msg.ifBlank { e.javaClass.simpleName }}"
         }
     }
 }

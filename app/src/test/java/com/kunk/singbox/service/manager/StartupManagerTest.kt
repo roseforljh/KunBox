@@ -219,9 +219,10 @@ class StartupManagerTest {
             .substringBefore("override fun launchPostStartTasks")
         val createIndex = callbackBody.indexOf("commandManager.createServer")
         val startIndex = callbackBody.indexOf("commandManager.startServer")
-        val publishGateIndex = callbackBody.indexOf("isCommandServerStartupCurrentLocked")
-        val adoptIndex = callbackBody.indexOf("commandManager.adoptServer")
-        val corePublishIndex = callbackBody.indexOf("coreManager.setCommandServer")
+        val adoptCallIndex = callbackBody.indexOf("adoptCommandServerIfCurrent")
+        val adoptionBody = serviceSource
+            .substringAfter("private fun adoptCommandServerIfCurrent(")
+            .substringBefore("private fun isCommandServerStartupCurrentLocked(")
 
         assertTrue(
             managerSource.contains(
@@ -229,12 +230,14 @@ class StartupManagerTest {
             )
         )
         assertTrue(managerSource.contains("return@withContext StartResult.Superseded"))
-        val initialLifecycleGate = callbackBody.indexOf(
-            "isCommandServerStartupCurrent(startToken, recoveryIntentLease)"
-        )
-        assertTrue(initialLifecycleGate in 0 until createIndex)
+        val startupPreparationIndex = callbackBody.indexOf("prepareCommandServerStartup")
+        assertTrue(startupPreparationIndex in 0 until createIndex)
         assertTrue(createIndex in 0 until startIndex)
-        assertTrue(publishGateIndex in (startIndex + 1) until adoptIndex)
+        assertTrue(adoptCallIndex > startIndex)
+        val publishGateIndex = adoptionBody.indexOf("isCommandServerStartupCurrentLocked")
+        val adoptIndex = adoptionBody.indexOf("commandManager.adoptServer")
+        val corePublishIndex = adoptionBody.indexOf("coreManager.setCommandServer")
+        assertTrue(publishGateIndex in 0 until adoptIndex)
         assertTrue(adoptIndex in 0 until corePublishIndex)
         assertTrue(callbackBody.contains("if (!adopted)"))
         assertTrue(callbackBody.contains("server?.close()"))
@@ -251,6 +254,9 @@ class StartupManagerTest {
         assertFalse(createBody.contains("commandServer = server"))
         assertTrue(startBody.contains("server.start()"))
         assertTrue(adoptBody.contains("commandServer = server"))
+        assertTrue(commandSource.contains("check(runtimeHandle == null)"))
+        assertTrue(commandSource.contains("Cleared stale CommandServer before startup"))
+        assertTrue(serviceSource.contains("clearStaleServerForStartup().getOrThrow()"))
     }
 
     @Test

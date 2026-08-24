@@ -118,6 +118,43 @@ class PlatformInterfaceImplTest {
     }
 
     @Test
+    fun rootRedirectProcFsLookupUsesUniqueSourceOwnerAfterNatRewrite() {
+        val source = "0200000A:3039"
+        val result = PlatformInterfaceImpl.resolveProcFsUidFromLines(
+            lines = sequenceOf(PROC_FS_HEADER, procFsRow(source, "7F000001:0600", uid = 10_123)),
+            sourceEndpoint = source,
+            destinationEndpoint = "01010101:01BB",
+            allowSourceEndpointFallback = true
+        )
+
+        assertEquals(PlatformInterfaceImpl.ProcFsUidLookupStatus.RESOLVED, result.status)
+        assertEquals(10_123, result.uid)
+    }
+
+    @Test
+    fun rootRedirectSourceFallbackRejectsCompetingOwners() {
+        val source = "0200000A:3039"
+        val result = PlatformInterfaceImpl.resolveProcFsUidFromLines(
+            lines = sequenceOf(
+                PROC_FS_HEADER,
+                procFsRow(source, "7F000001:0600", uid = 10_123),
+                procFsRow(source, "08080808:01BB", uid = 10_124)
+            ),
+            sourceEndpoint = source,
+            destinationEndpoint = "01010101:01BB",
+            allowSourceEndpointFallback = true
+        )
+
+        assertEquals(PlatformInterfaceImpl.ProcFsUidLookupStatus.AMBIGUOUS, result.status)
+        assertEquals(0, result.uid)
+    }
+
+    @Test
+    fun unknownConnectionOwnerUsesNativeUnknownUid() {
+        assertEquals(-1, PlatformInterfaceImpl.UNKNOWN_CONNECTION_OWNER_UID)
+    }
+
+    @Test
     fun udpProcFsLookupPrefersCompleteTupleOverWildcard() {
         val source = "0200000A:3039"
         val destination = "01010101:01BB"
@@ -324,6 +361,17 @@ class PlatformInterfaceImplTest {
         )
 
         assertTrue(result)
+    }
+
+    @Test
+    fun testForcedConnectionOwnerRoutingPrefersOriginalProcFsTuple() {
+        val source = File("src/main/java/com/kunk/singbox/service/manager/PlatformInterfaceImpl.kt").readText()
+        val method = source.substringAfter("override fun findConnectionOwner(")
+            .substringBefore("override fun startDefaultInterfaceMonitor")
+
+        assertTrue(method.contains("if (forceConnectionOwnerRouting)"))
+        assertTrue(method.contains("return resolveFromProcFs(\"forced\") ?: unknownConnectionOwner()"))
+        assertTrue(method.contains("allowSourceEndpointFallback = forceConnectionOwnerRouting"))
     }
 
     @Test

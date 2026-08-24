@@ -6,6 +6,7 @@ import android.os.Bundle
 import android.os.IBinder
 import com.kunk.singbox.aidl.ISingBoxService
 import com.kunk.singbox.aidl.ISingBoxServiceCallback
+import com.kunk.singbox.service.root.RootTransparentForegroundService
 
 class SingBoxIpcService : Service() {
 
@@ -44,6 +45,15 @@ class SingBoxIpcService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        if (
+            VpnStateStore.getMode() == VpnStateStore.CoreMode.ROOT &&
+            !RootTransparentForegroundService.isRunning &&
+            !RootTransparentForegroundService.isStarting
+        ) {
+            VpnStateStore.setActive(false)
+            VpnStateStore.setPending("")
+            VpnStateStore.setMode(VpnStateStore.CoreMode.NONE)
+        }
         SingBoxIpcHub.registerService(this)
     }
 
