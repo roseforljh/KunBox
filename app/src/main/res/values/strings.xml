@@ -176,9 +176,19 @@
     <string name="routing_settings_manage_rulesets">管理规则集</string>
 
     <!-- TUN Settings -->
-    <string name="tun_settings_title">TUN / VPN 设置</string>
+    <string name="tun_settings_title">流量接管设置</string>
     <string name="tun_settings_enable">启用 TUN</string>
     <string name="tun_settings_enable_subtitle">开启后接管系统流量和经典 DNS；关闭后仅提供本地代理，系统 DNS 不受保护</string>
+    <string name="tun_settings_capture_mode">流量接管模式</string>
+    <string name="traffic_capture_mode_vpn">Android VPN</string>
+    <string name="traffic_capture_mode_root">Root 透明代理</string>
+    <string name="traffic_capture_mode_proxy_only">仅代理</string>
+    <string name="root_mode_channel">Root 透明代理</string>
+    <string name="root_mode_starting">正在启动 Root 透明代理</string>
+    <string name="root_mode_running">Root 透明代理运行中</string>
+    <string name="root_mode_dns_title">系统 DNS</string>
+    <string name="root_mode_dns_subtitle">Root 模式会统一接管系统 DNS；绕过应用的业务流量仍直连</string>
+    <string name="root_mode_capability_failed">Root 能力不可用</string>
     <string name="tun_settings_stack">堆栈</string>
     <string name="tun_settings_ip_version_mode">IP 版本模式</string>
     <string name="tun_settings_mtu">MTU</string>
@@ -198,14 +208,14 @@
     <string name="tun_settings_blocklist_configured">已设置 %d 个</string>
     <string name="tun_settings_follow_new_apps">新安装应用跟随当前规则</string>
     <string name="tun_settings_follow_new_apps_subtitle">仅允许模式自动加入仅允许列表；排除模式自动加入排除列表</string>
-    <string name="tun_settings_follow_allowlist_subtitle">新安装应用自动加入仅允许列表并由 VPN 接管</string>
-    <string name="tun_settings_follow_blocklist_subtitle">新安装应用自动加入排除列表并绕过 VPN</string>
+    <string name="tun_settings_follow_allowlist_subtitle">新安装应用自动加入仅允许列表并由当前模式接管</string>
+    <string name="tun_settings_follow_blocklist_subtitle">新安装应用自动加入排除列表并绕过当前模式</string>
     <string name="tun_settings_effective_scope">实际应用范围</string>
-    <string name="tun_settings_all_apps_captured">全部应用由 VPN 接管</string>
+    <string name="tun_settings_all_apps_captured">全部应用由当前模式接管</string>
     <string name="tun_settings_policy_applying">正在应用应用范围</string>
     <string name="tun_settings_policy_apply_failed">应用失败，点此重试</string>
-    <string name="tun_settings_select_allowlist_apps">仅这些应用走 VPN</string>
-    <string name="tun_settings_select_blocklist_apps">这些应用不走 VPN</string>
+    <string name="tun_settings_select_allowlist_apps">仅接管这些应用</string>
+    <string name="tun_settings_select_blocklist_apps">这些应用绕过接管</string>
 
     <!-- DNS Settings -->
     <string name="dns_settings_title">DNS 设置</string>
@@ -834,6 +844,9 @@
     <string name="vpn_status_recovering">恢复中，流量已阻断</string>
     <string name="vpn_status_failed_blocked">恢复失败，流量仍被阻断</string>
     <string name="vpn_status_failed_unprotected">VPN 已断开，可能直接联网</string>
+    <string name="dashboard_status_protecting">保护中</string>
+    <string name="dashboard_status_recovering">恢复中</string>
+    <string name="dashboard_status_blocked">已阻断</string>
     <string name="vpn_lockdown_incomplete">系统防直连未开启，点此设置</string>
     <string name="vpn_browser_not_covered">默认浏览器未被 VPN 接管，网页可能直接联网</string>
 </resources>

@@ -36,7 +36,6 @@ import com.kunk.singbox.ui.components.FullScreenDialogPage
 import com.kunk.singbox.ui.components.SingleSelectDialog
 import com.kunk.singbox.ui.components.StandardCard
 import com.kunk.singbox.ui.components.StyledTextField
-import com.kunk.singbox.ui.components.TopOnlySupportingContent
 import com.kunk.singbox.ui.theme.LiquidGlassFilterChip
 import com.kunk.singbox.ui.theme.Neutral500
 import com.kunk.singbox.ui.theme.Neutral700
@@ -432,15 +431,7 @@ fun MultiAppSelectorDialog(
         filtered.sortedByDescending { it.packageName in tempSelectedPackages }
     }
     val listState = rememberLazyListState()
-    val showTopControls by remember {
-        derivedStateOf { isSearchExpanded || !listState.canScrollBackward }
-    }
     LaunchedEffect(searchQuery) { listState.scrollToItem(0) }
-    LaunchedEffect(showTopControls) {
-        if (!showTopControls) {
-            isSearchExpanded = false
-        }
-    }
 
     FullScreenDialogPage(
         title = stringResource(R.string.app_groups_select_apps),
@@ -460,43 +451,41 @@ fun MultiAppSelectorDialog(
         },
         supportingContentHeight = 64.dp,
         supportingContent = {
-            TopOnlySupportingContent(visible = showTopControls) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(horizontal = 16.dp, vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically
+            Row(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                ExpandableSearchBar(
+                    query = searchQuery,
+                    onQueryChange = { searchQuery = it },
+                    isExpanded = isSearchExpanded,
+                    onToggle = { isSearchExpanded = !isSearchExpanded },
+                    placeholder = stringResource(R.string.app_list_search_hint),
+                    modifier = Modifier.weight(1f)
                 ) {
-                    ExpandableSearchBar(
-                        query = searchQuery,
-                        onQueryChange = { searchQuery = it },
-                        isExpanded = isSearchExpanded,
-                        onToggle = { isSearchExpanded = !isSearchExpanded },
-                        placeholder = stringResource(R.string.app_list_search_hint),
-                        modifier = Modifier.weight(1f)
-                    ) {
+                    Text(
+                        text = stringResource(R.string.import_count_items, tempSelected.size),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1
+                    )
+                }
+
+                Spacer(modifier = Modifier.width(8.dp))
+                LiquidGlassFilterChip(
+                    selected = showSystemApps,
+                    onClick = { showSystemApps = !showSystemApps },
+                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 10.dp),
+                    label = {
                         Text(
-                            text = stringResource(R.string.import_count_items, tempSelected.size),
+                            text = stringResource(R.string.common_system),
                             style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                             maxLines = 1
                         )
                     }
-
-                    Spacer(modifier = Modifier.width(8.dp))
-                    LiquidGlassFilterChip(
-                        selected = showSystemApps,
-                        onClick = { showSystemApps = !showSystemApps },
-                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 10.dp),
-                        label = {
-                            Text(
-                                text = stringResource(R.string.common_system),
-                                style = MaterialTheme.typography.bodyMedium,
-                                maxLines = 1
-                            )
-                        }
-                    )
-                }
+                )
             }
         }
     ) { contentTopPadding ->

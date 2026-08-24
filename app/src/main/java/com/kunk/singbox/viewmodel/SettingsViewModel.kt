@@ -26,6 +26,7 @@ import com.kunk.singbox.model.AppGroup
 import com.kunk.singbox.model.RuleSet
 import com.kunk.singbox.model.RuleSetType
 import com.kunk.singbox.model.TunStack
+import com.kunk.singbox.model.TrafficCaptureMode
 import com.kunk.singbox.model.LatencyTestMethod
 import com.kunk.singbox.model.VpnAppMode
 import com.kunk.singbox.model.VpnRouteMode
@@ -36,6 +37,8 @@ import com.kunk.singbox.repository.RuleSetRepository
 import com.kunk.singbox.repository.SettingsRepository
 import com.kunk.singbox.repository.PerAppPolicyUpdateResult
 import com.kunk.singbox.service.RuleSetAutoUpdateWorker
+import com.kunk.singbox.service.root.RootCapabilityReport
+import com.kunk.singbox.service.root.RootServiceConnection
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.ensureActive
@@ -63,6 +66,7 @@ sealed interface PerAppPolicyApplyState {
     data class Failed(val revision: Long, val message: String) : PerAppPolicyApplyState
 }
 
+@Suppress("LargeClass")
 class SettingsViewModel(application: Application) : AndroidViewModel(application) {
 
     private val repository = SettingsRepository.getInstance(application)
@@ -87,6 +91,8 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     val settings: StateFlow<AppSettings> = repository.settings
     private val _perAppPolicyApplyState = MutableStateFlow<PerAppPolicyApplyState>(PerAppPolicyApplyState.Idle)
     val perAppPolicyApplyState: StateFlow<PerAppPolicyApplyState> = _perAppPolicyApplyState.asStateFlow()
+    private val _rootCapabilityError = MutableStateFlow("")
+    val rootCapabilityError: StateFlow<String> = _rootCapabilityError.asStateFlow()
 
     init {
         viewModelScope.launch { reconcilePerAppPolicyOnce() }
@@ -262,6 +268,39 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         viewModelScope.launch { repository.setTunEnabled(value) }
     }
 
+    fun setTrafficCaptureMode(value: TrafficCaptureMode) {
+        viewModelScope.launch {
+            if (value == TrafficCaptureMode.ROOT_TRANSPARENT) {
+                val error = checkRootCapability()
+                if (error != null) {
+                    _rootCapabilityError.value = error
+                    return@launch
+                }
+            }
+            _rootCapabilityError.value = ""
+            repository.setTrafficCaptureMode(value)
+            VpnServiceManager.refreshTunSetting(getApplication())
+        }
+    }
+
+    private suspend fun checkRootCapability(): String? {
+        val connection = RootServiceConnection(getApplication()) { }
+        return try {
+            val report = RootCapabilityReport.fromBundle(connection.bind().capabilityReport)
+            when {
+                !report.supported -> report.error.ifBlank { "Root TPROXY is unavailable" }
+                settings.value.ipVersionMode == IpVersionMode.IPV6_ONLY &&
+                    (!report.tproxyIpv6 || !report.redirectIpv6) ->
+                    "Complete IPv6 transparent proxy support is unavailable on this device"
+                else -> null
+            }
+        } catch (error: Exception) {
+            error.message ?: "Root capability check failed"
+        } finally {
+            connection.unbind()
+        }
+    }
+
     fun setTunStack(value: TunStack) {
         viewModelScope.launch { repository.setTunStack(value) }
     }
@@ -350,7 +389,10 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 
     private suspend fun reconcilePerAppPolicyOnce() {
         val desired = settings.first()
-        if (!VpnServiceManager.isRunning() || VpnStateStore.getMode() != VpnStateStore.CoreMode.VPN) return
+        if (
+            !VpnServiceManager.isRunning() ||
+            VpnStateStore.getMode() !in setOf(VpnStateStore.CoreMode.VPN, VpnStateStore.CoreMode.ROOT)
+        ) return
         val desiredPolicy = PerAppVpnPolicy.from(desired)
         val applied = VpnStateStore.getAppliedPerAppPolicy()
         if (applied.revision == desiredPolicy.revision && applied.digest == desiredPolicy.digest()) return

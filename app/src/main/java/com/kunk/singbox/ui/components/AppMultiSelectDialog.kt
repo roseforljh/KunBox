@@ -34,7 +34,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -300,15 +299,7 @@ fun AppMultiSelectDialog(
 
     val isLoading = loadingState is InstalledAppsRepository.LoadingState.Loading
     val listState = rememberLazyListState()
-    val showTopControls by remember {
-        derivedStateOf { isSearchExpanded || !listState.canScrollBackward }
-    }
     LaunchedEffect(query) { listState.scrollToItem(0) }
-    LaunchedEffect(showTopControls) {
-        if (!showTopControls) {
-            isSearchExpanded = false
-        }
-    }
     val quickSelectApps = {
         val (selection, previousSelection) = toggleQuickSelectionPreset(
             currentSelection = tempSelected,
@@ -352,24 +343,22 @@ fun AppMultiSelectDialog(
         },
         supportingContentHeight = 92.dp,
         supportingContent = {
-            TopOnlySupportingContent(visible = showTopControls) {
-                AppSelectorTopControls(
-                    query = query,
-                    onQueryChange = { query = it },
-                    isSearchExpanded = isSearchExpanded,
-                    onSearchToggle = { isSearchExpanded = !isSearchExpanded },
-                    selectedCount = tempSelected.size,
-                    showSystemApps = showSystemApps,
-                    onSystemAppsToggle = { showSystemApps = !showSystemApps },
-                    showNoLauncherApps = showNoLauncherApps,
-                    onNoLauncherAppsToggle = { showNoLauncherApps = !showNoLauncherApps },
-                    enableQuickSelectCommonApps = enableQuickSelectCommonApps,
-                    quickSelectSelected = quickSelectSelected,
-                    onQuickSelect = quickSelectApps,
-                    isLoading = isLoading,
-                    onRefresh = installedAppsViewModel::reloadApps
-                )
-            }
+            AppSelectorTopControls(
+                query = query,
+                onQueryChange = { query = it },
+                isSearchExpanded = isSearchExpanded,
+                onSearchToggle = { isSearchExpanded = !isSearchExpanded },
+                selectedCount = tempSelected.size,
+                showSystemApps = showSystemApps,
+                onSystemAppsToggle = { showSystemApps = !showSystemApps },
+                showNoLauncherApps = showNoLauncherApps,
+                onNoLauncherAppsToggle = { showNoLauncherApps = !showNoLauncherApps },
+                enableQuickSelectCommonApps = enableQuickSelectCommonApps,
+                quickSelectSelected = quickSelectSelected,
+                onQuickSelect = quickSelectApps,
+                isLoading = isLoading,
+                onRefresh = installedAppsViewModel::reloadApps
+            )
         }
     ) { headerPadding ->
         LazyColumn(

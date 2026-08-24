@@ -57,6 +57,7 @@ import com.kunk.singbox.ipc.SingBoxRemote
 import com.kunk.singbox.model.ConnectionState
 import com.kunk.singbox.model.PingDisplayText
 import com.kunk.singbox.model.RoutingMode
+import com.kunk.singbox.model.TrafficCaptureMode
 import com.kunk.singbox.ui.navigation.Screen
 import com.kunk.singbox.viewmodel.DashboardViewModel
 import com.kunk.singbox.viewmodel.SettingsViewModel
@@ -407,13 +408,14 @@ fun DashboardScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     val safetyStatusLabel = when (dataPlaneReadiness.status) {
-                        com.kunk.singbox.ipc.DataPlaneStatus.BLOCKING -> stringResource(R.string.vpn_status_blocking)
+                        com.kunk.singbox.ipc.DataPlaneStatus.BLOCKING ->
+                            stringResource(R.string.dashboard_status_protecting)
                         com.kunk.singbox.ipc.DataPlaneStatus.RECOVERING ->
-                            stringResource(R.string.vpn_status_recovering)
+                            stringResource(R.string.dashboard_status_recovering)
                         com.kunk.singbox.ipc.DataPlaneStatus.FAILED_BLOCKED ->
-                            stringResource(R.string.vpn_status_failed_blocked)
+                            stringResource(R.string.dashboard_status_blocked)
                         com.kunk.singbox.ipc.DataPlaneStatus.FAILED_UNPROTECTED ->
-                            stringResource(R.string.vpn_status_failed_unprotected)
+                            stringResource(R.string.connection_idle)
                         else -> stringResource(connectionState.displayNameRes)
                     }
                     StatusChip(
@@ -440,7 +442,7 @@ fun DashboardScreen(
                     browserExcluded ->
                         stringResource(R.string.vpn_browser_not_covered)
                     failedUnprotected -> stringResource(R.string.vpn_lockdown_incomplete)
-                    settings.tunEnabled &&
+                    settings.resolvedTrafficCaptureMode() == TrafficCaptureMode.VPN &&
                         dataPlaneReadiness.status == com.kunk.singbox.ipc.DataPlaneStatus.READY &&
                         dataPlaneReadiness.lockdownStatus != com.kunk.singbox.ipc.VpnLockdownStatus.ENABLED ->
                         stringResource(R.string.vpn_lockdown_incomplete)

@@ -15,6 +15,7 @@ import androidx.lifecycle.viewModelScope
 import com.kunk.singbox.model.ConnectionState
 import com.kunk.singbox.model.ConnectionStats
 import com.kunk.singbox.model.AppSettings
+import com.kunk.singbox.model.TrafficCaptureMode
 import com.kunk.singbox.model.NodeUi
 import com.kunk.singbox.model.ProfileUi
 import com.kunk.singbox.manager.VpnServiceManager
@@ -101,6 +102,11 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         ): Boolean {
             return perAppSettingsChanged || tunSettingsChanged || routingModeChanged
         }
+
+        internal fun shouldStopOppositeService(
+            desiredMode: VpnStateStore.CoreMode,
+            activeMode: VpnStateStore.CoreMode
+        ): Boolean = activeMode != VpnStateStore.CoreMode.NONE && activeMode != desiredMode
     }
 
     private val configRepository = ConfigRepository.getInstance(application)
@@ -500,7 +506,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                 // 其他状态（Connecting/Disconnecting/Error）直接更新
                 pendingIdleJob?.cancel()
                 if (newState == ConnectionState.Connecting) {
-                    startGraceUntilElapsedMs = SystemClock.elapsedRealtime() + 800L
+                    startGraceUntilElapsedMs = SystemClock.elapsedRealtime() + START_MONITOR_TIMEOUT_MS
                 } else {
                     startGraceUntilElapsedMs = null
                 }
@@ -568,7 +574,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
             when (_connectionState.value) {
                 ConnectionState.Idle, ConnectionState.Error -> {
                     // P0 Optimization: Optimistic UI
-                    startGraceUntilElapsedMs = SystemClock.elapsedRealtime() + 800L
+                    startGraceUntilElapsedMs = SystemClock.elapsedRealtime() + START_MONITOR_TIMEOUT_MS
                     _connectionState.value = ConnectionState.Connecting
                     startCore()
                 }
@@ -595,7 +601,8 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
             val context = getApplication<Application>()
 
             val settings = SettingsRepository.getInstance(context).settings.first()
-            if (settings.tunEnabled) {
+            val captureMode = settings.resolvedTrafficCaptureMode()
+            if (captureMode == TrafficCaptureMode.VPN) {
                 val prepareIntent = VpnService.prepare(context)
                 if (prepareIntent != null) {
                     _vpnPermissionNeeded.value = true
@@ -617,7 +624,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                 return@launch
             }
 
-            val useTun = settings.tunEnabled
+            val useTun = captureMode == TrafficCaptureMode.VPN
             val perAppSettingsChanged = VpnStateStore.hasPerAppVpnSettingsChanged(
                 appMode = settings.vpnAppMode.name,
                 allowlist = settings.vpnAllowlist,
@@ -658,14 +665,14 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                 }
             }
 
-            performRestart(context, configResult.path, useTun, requiresFullRestart)
+            performRestart(context, configResult.path, captureMode, requiresFullRestart)
         }
     }
 
     private fun logRestartDebugInfo(settings: AppSettings) {
         Log.d(
             TAG,
-            "restartVpn: useTun=${settings.tunEnabled}, isRunning=${SingBoxRemote.isRunning.value}"
+            "restartVpn: mode=${settings.resolvedTrafficCaptureMode()}, isRunning=${SingBoxRemote.isRunning.value}"
         )
         Log.d(
             TAG,
@@ -705,9 +712,23 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
     private suspend fun performRestart(
         context: Context,
         configPath: String,
-        useTun: Boolean,
+        captureMode: TrafficCaptureMode,
         requiresFullRestart: Boolean
     ) {
+        val useTun = captureMode == TrafficCaptureMode.VPN
+        if (captureMode == TrafficCaptureMode.ROOT_TRANSPARENT) {
+            startServiceCompat(
+                context,
+                Intent(context, com.kunk.singbox.service.root.RootTransparentForegroundService::class.java).apply {
+                    action = com.kunk.singbox.service.root.RootTransparentForegroundService.ACTION_RESTART
+                    putExtra(
+                        com.kunk.singbox.service.root.RootTransparentForegroundService.EXTRA_CONFIG_PATH,
+                        configPath
+                    )
+                }
+            )
+            return
+        }
         if (requiresFullRestart && useTun && SingBoxRemote.isRunning.value) {
             Log.i(TAG, "Runtime settings changed, using full restart to rebuild core")
             val intent = Intent(context, SingBoxService::class.java).apply {
@@ -771,13 +792,14 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                 SettingsRepository.getInstance(context).settings.first()
             }.getOrNull()
 
-            val desiredMode = if (settings?.tunEnabled == true) {
-                VpnStateStore.CoreMode.VPN
-            } else {
-                VpnStateStore.CoreMode.PROXY
+            val captureMode = settings?.resolvedTrafficCaptureMode() ?: TrafficCaptureMode.VPN
+            val desiredMode = when (captureMode) {
+                TrafficCaptureMode.VPN -> VpnStateStore.CoreMode.VPN
+                TrafficCaptureMode.ROOT_TRANSPARENT -> VpnStateStore.CoreMode.ROOT
+                TrafficCaptureMode.PROXY_ONLY -> VpnStateStore.CoreMode.PROXY
             }
 
-            if (settings?.tunEnabled == true) {
+            if (captureMode == TrafficCaptureMode.VPN) {
                 val prepareIntent = VpnService.prepare(context)
                 if (prepareIntent != null) {
                     _vpnPermissionNeeded.value = true
@@ -788,28 +810,12 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
             SingBoxRemote.clearLastErrorForNewStart()
             _connectionState.value = ConnectionState.Connecting
 
-            // Ensure only one core instance is running at a time to avoid local port conflicts.
-            // Do not rely on VpnStateStore here (multi-process timing); just stop the opposite service.
-            val needToStopOpposite = when (desiredMode) {
-                VpnStateStore.CoreMode.VPN -> {
-                    runCatching {
-                        context.startService(Intent(context, ProxyOnlyService::class.java).apply {
-                            action = ProxyOnlyService.ACTION_STOP
-                            putExtra(SingBoxService.EXTRA_STOP_INITIATOR, VpnStopInitiator.MODE_SWITCH.wireValue)
-                        })
-                    }
-                    true
-                }
-                VpnStateStore.CoreMode.PROXY -> {
-                    runCatching {
-                        context.startService(Intent(context, SingBoxService::class.java).apply {
-                            action = SingBoxService.ACTION_STOP
-                            putExtra(SingBoxService.EXTRA_STOP_INITIATOR, VpnStopInitiator.MODE_SWITCH.wireValue)
-                        })
-                    }
-                    true
-                }
-                else -> false
+            // Only stop an actually active opposite core. Starting an idle service just to stop it
+            // creates unnecessary service lifecycle churn and can race the requested startup.
+            val activeMode = VpnStateStore.getMode()
+            val needToStopOpposite = DashboardViewModel.shouldStopOppositeService(desiredMode, activeMode)
+            if (needToStopOpposite) {
+                VpnServiceManager.stopVpn(context, VpnStopInitiator.MODE_SWITCH)
             }
 
             // 如果需要停止对立服务，等待其完全停止
@@ -850,22 +856,15 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                     return@launch
                 }
 
-                val useTun = desiredMode == VpnStateStore.CoreMode.VPN
-                val intent = if (useTun) {
-                    Intent(context, SingBoxService::class.java).apply {
-                        action = SingBoxService.ACTION_START
-                        putExtra(SingBoxService.EXTRA_CONFIG_PATH, configResult.path)
-                        // 从停止状态启动时，强制清理缓存，确保使用配置文件中选中的节点
-                        // 修 bug: App 更新后 cache.db 保留了旧的选中节点，导致 UI 上选中的新节点无效
-                        putExtra(SingBoxService.EXTRA_CLEAN_CACHE, true)
-                    }
-                } else {
-                    Intent(context, ProxyOnlyService::class.java).apply {
-                        action = ProxyOnlyService.ACTION_START
-                        putExtra(ProxyOnlyService.EXTRA_CONFIG_PATH, configResult.path)
-                        // 同理，Proxy 模式也需要清理缓存
-                        putExtra(SingBoxService.EXTRA_CLEAN_CACHE, true)
-                    }
+                val command = VpnServiceManager.buildStartCommand(
+                    mode = captureMode,
+                    configPath = configResult.path,
+                    cleanCache = true
+                )
+                val intent = Intent(context, command.serviceClass).apply {
+                    action = command.action
+                    command.configPath?.let { putExtra(SingBoxService.EXTRA_CONFIG_PATH, it) }
+                    if (command.cleanCache) putExtra(SingBoxService.EXTRA_CLEAN_CACHE, true)
                 }
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                     context.startForegroundService(intent)

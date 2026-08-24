@@ -176,9 +176,19 @@
     <string name="routing_settings_manage_rulesets">Manage Rule Sets</string>
 
     <!-- TUN Settings -->
-    <string name="tun_settings_title">TUN / VPN Settings</string>
+    <string name="tun_settings_title">Traffic Capture Settings</string>
     <string name="tun_settings_enable">Enable TUN</string>
     <string name="tun_settings_enable_subtitle">Captures system traffic and classic DNS; when disabled, local proxy mode does not protect system DNS</string>
+    <string name="tun_settings_capture_mode">Traffic Capture Mode</string>
+    <string name="traffic_capture_mode_vpn">Android VPN</string>
+    <string name="traffic_capture_mode_root">Root Transparent Proxy</string>
+    <string name="traffic_capture_mode_proxy_only">Proxy Only</string>
+    <string name="root_mode_channel">Root Transparent Proxy</string>
+    <string name="root_mode_starting">Starting Root transparent proxy</string>
+    <string name="root_mode_running">Root transparent proxy is running</string>
+    <string name="root_mode_dns_title">System DNS</string>
+    <string name="root_mode_dns_subtitle">Root mode captures system DNS globally; bypassed app traffic still connects directly</string>
+    <string name="root_mode_capability_failed">Root capability unavailable</string>
     <string name="tun_settings_stack">Stack</string>
     <string name="tun_settings_ip_version_mode">IP Version Mode</string>
     <string name="tun_settings_mtu">MTU</string>
@@ -198,14 +208,14 @@
     <string name="tun_settings_blocklist_configured">%d configured</string>
     <string name="tun_settings_follow_new_apps">Apply current rule to new apps</string>
     <string name="tun_settings_follow_new_apps_subtitle">Adds newly installed apps to the allowlist or blocklist based on the current mode</string>
-    <string name="tun_settings_follow_allowlist_subtitle">New apps join the allowlist and enter VPN</string>
-    <string name="tun_settings_follow_blocklist_subtitle">New apps join the exclusion list and bypass VPN</string>
+    <string name="tun_settings_follow_allowlist_subtitle">New apps join the allowlist and enter the active capture mode</string>
+    <string name="tun_settings_follow_blocklist_subtitle">New apps join the exclusion list and bypass the active capture mode</string>
     <string name="tun_settings_effective_scope">Applied app scope</string>
-    <string name="tun_settings_all_apps_captured">All apps enter VPN</string>
+    <string name="tun_settings_all_apps_captured">All apps enter the active capture mode</string>
     <string name="tun_settings_policy_applying">Applying app scope</string>
     <string name="tun_settings_policy_apply_failed">Apply failed, tap to retry</string>
-    <string name="tun_settings_select_allowlist_apps">Only these apps use VPN</string>
-    <string name="tun_settings_select_blocklist_apps">These apps bypass VPN</string>
+    <string name="tun_settings_select_allowlist_apps">Capture only these apps</string>
+    <string name="tun_settings_select_blocklist_apps">These apps bypass capture</string>
 
     <!-- DNS Settings -->
     <string name="dns_settings_title">DNS Settings</string>
@@ -834,6 +844,9 @@
     <string name="vpn_status_recovering">Recovering, traffic blocked</string>
     <string name="vpn_status_failed_blocked">Recovery failed, traffic remains blocked</string>
     <string name="vpn_status_failed_unprotected">VPN disconnected, direct access possible</string>
+    <string name="dashboard_status_protecting">Protecting</string>
+    <string name="dashboard_status_recovering">Recovering</string>
+    <string name="dashboard_status_blocked">Blocked</string>
     <string name="vpn_lockdown_incomplete">System leak protection is off. Tap to configure</string>
     <string name="vpn_browser_not_covered">Default browser is outside VPN coverage</string>
 </resources>

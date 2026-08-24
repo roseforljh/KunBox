@@ -225,6 +225,28 @@ class DashboardViewModelStateResolutionTest {
     }
 
     @Test
+    fun onlyAnActuallyActiveOppositeCoreIsStoppedBeforeStartup() {
+        assertFalse(
+            DashboardViewModel.shouldStopOppositeService(
+                VpnStateStore.CoreMode.VPN,
+                VpnStateStore.CoreMode.NONE
+            )
+        )
+        assertFalse(
+            DashboardViewModel.shouldStopOppositeService(
+                VpnStateStore.CoreMode.VPN,
+                VpnStateStore.CoreMode.VPN
+            )
+        )
+        assertTrue(
+            DashboardViewModel.shouldStopOppositeService(
+                VpnStateStore.CoreMode.VPN,
+                VpnStateStore.CoreMode.PROXY
+            )
+        )
+    }
+
+    @Test
     fun currentNodePingUsesTheManualSingleNodeLatencyPath() {
         val source = File("src/main/java/com/kunk/singbox/viewmodel/DashboardViewModel.kt")
             .readText(Charsets.UTF_8)

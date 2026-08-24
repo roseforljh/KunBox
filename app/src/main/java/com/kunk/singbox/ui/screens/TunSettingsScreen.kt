@@ -28,6 +28,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import com.kunk.singbox.model.IpVersionMode
 import com.kunk.singbox.model.TunStack
+import com.kunk.singbox.model.TrafficCaptureMode
 import com.kunk.singbox.model.VpnAppMode
 import com.kunk.singbox.model.VpnRouteMode
 import com.kunk.singbox.ui.components.AppMultiSelectDialog
@@ -52,6 +53,7 @@ fun TunSettingsScreen(
     val scrollState = rememberScrollState()
     val settings by settingsViewModel.settings.collectAsStateWithLifecycle()
     val perAppApplyState by settingsViewModel.perAppPolicyApplyState.collectAsStateWithLifecycle()
+    val rootCapabilityError by settingsViewModel.rootCapabilityError.collectAsStateWithLifecycle()
     val perAppApplying = perAppApplyState is PerAppPolicyApplyState.Applying
 
     val context = LocalContext.current
@@ -70,6 +72,7 @@ fun TunSettingsScreen(
 
     // Dialog States
     var showStackDialog by remember { mutableStateOf(false) }
+    var showCaptureModeDialog by remember { mutableStateOf(false) }
     var showIpVersionDialog by remember { mutableStateOf(false) }
     var showMtuDialog by remember { mutableStateOf(false) }
     var showRouteModeDialog by remember { mutableStateOf(false) }
@@ -77,6 +80,22 @@ fun TunSettingsScreen(
     var showAppModeDialog by remember { mutableStateOf(false) }
     var showAllowlistDialog by remember { mutableStateOf(false) }
     var showBlocklistDialog by remember { mutableStateOf(false) }
+
+    if (showCaptureModeDialog) {
+        val options = TrafficCaptureMode.entries.map { stringResource(it.displayNameRes) }
+        SingleSelectDialog(
+            title = stringResource(R.string.tun_settings_capture_mode),
+            options = options,
+            selectedIndex = TrafficCaptureMode.entries
+                .indexOf(settings.resolvedTrafficCaptureMode())
+                .coerceAtLeast(0),
+            onSelect = { index ->
+                settingsViewModel.setTrafficCaptureMode(TrafficCaptureMode.entries[index])
+                showCaptureModeDialog = false
+            },
+            onDismiss = { showCaptureModeDialog = false }
+        )
+    }
 
     if (showStackDialog) {
         val options = TunStack.entries.map { stringResource(it.displayNameRes) }
@@ -223,12 +242,23 @@ fun TunSettingsScreen(
                     .navigationBarsPadding()
             ) {
                 StandardCard {
-                    SettingSwitchItem(
-                        title = stringResource(R.string.tun_settings_enable),
-                        subtitle = stringResource(R.string.tun_settings_enable_subtitle),
-                        checked = settings.tunEnabled,
-                        onCheckedChange = { settingsViewModel.setTunEnabled(it) }
+                    SettingItem(
+                        title = stringResource(R.string.tun_settings_capture_mode),
+                        value = stringResource(settings.resolvedTrafficCaptureMode().displayNameRes),
+                        onClick = { showCaptureModeDialog = true }
                     )
+                    if (settings.resolvedTrafficCaptureMode() == TrafficCaptureMode.ROOT_TRANSPARENT) {
+                        SettingItem(
+                            title = stringResource(R.string.root_mode_dns_title),
+                            value = stringResource(R.string.root_mode_dns_subtitle)
+                        )
+                    }
+                    if (rootCapabilityError.isNotBlank()) {
+                        SettingItem(
+                            title = stringResource(R.string.root_mode_capability_failed),
+                            value = rootCapabilityError
+                        )
+                    }
                 }
 
                 Spacer(modifier = Modifier.height(16.dp))
