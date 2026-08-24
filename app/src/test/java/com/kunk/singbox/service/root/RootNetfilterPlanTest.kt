@@ -8,6 +8,118 @@ import org.junit.Test
 
 class RootNetfilterPlanTest {
     @Test
+    fun fastSetupUsesRestoreAndActivatesHooksAfterStaging() {
+        val plan = RootNetfilterPlanner.build(
+            RootNetfilterConfig(
+                capturedUids = listOf(10123),
+                capturedUidRanges = emptyList(),
+                excludedUids = listOf(10124),
+                appUid = 10234,
+                proxyIpv4 = true,
+                proxyIpv6 = true,
+                blockIpv4 = false,
+                blockIpv6 = false,
+                blockQuic = true,
+                redirectPortIpv4 = 1536,
+                redirectPortIpv6 = 1537,
+                tproxyPortIpv4 = 1538,
+                tproxyPortIpv6 = 1539
+            )
+        )
+
+        val script = requireNotNull(buildRootNetfilterRestoreScript(plan.setupCommands))
+
+        assertTrue(script.contains("iptables-restore --noflush"))
+        assertTrue(script.contains("ip6tables-restore --noflush"))
+        assertTrue(script.contains(":KBX_OUT4 - [0:0]"))
+        assertTrue(script.contains("-A KBX_OUT4 -m owner --uid-owner 10123 -p udp"))
+        assertTrue(
+            script.indexOf("'ip' 'rule' 'add'") <
+                script.indexOf("'iptables' '-t' 'mangle' '-I' 'PREROUTING'")
+        )
+        assertEquals(1, script.split("iptables-restore --noflush").size - 1)
+        assertEquals(1, script.split("ip6tables-restore --noflush").size - 1)
+    }
+
+    @Test
+    fun successfulFastSetupSkipsLegacyVerificationProcesses() {
+        var legacyCalls = 0
+        var fastCalls = 0
+        val executor = object : RootCommandExecutor {
+            override fun execute(arguments: List<String>): RootCommandResult {
+                legacyCalls++
+                return RootCommandResult(0, "")
+            }
+
+            override fun executeFastNetfilterPlan(commands: List<List<String>>): RootCommandResult {
+                fastCalls++
+                return RootCommandResult(0, "")
+            }
+        }
+        val result = RootNetfilterManager(executor).apply(
+            RootNetfilterConfig(
+                capturedUids = listOf(10123),
+                capturedUidRanges = emptyList(),
+                excludedUids = emptyList(),
+                appUid = 10234,
+                proxyIpv4 = true,
+                proxyIpv6 = false,
+                blockIpv4 = false,
+                blockIpv6 = false,
+                redirectPortIpv4 = 1536,
+                redirectPortIpv6 = 1537,
+                tproxyPortIpv4 = 1538,
+                tproxyPortIpv6 = 1539
+            )
+        )
+
+        assertTrue(result.isSuccess)
+        assertEquals(1, fastCalls)
+        assertEquals(0, legacyCalls)
+    }
+
+    @Test
+    fun defaultBatchExecutorKeepsProbeOutput() {
+        val executor = RootCommandExecutor { command -> RootCommandResult(0, command.last()) }
+
+        val result = executor.executeBatch(listOf(listOf("probe", "first"), listOf("probe", "second")))
+
+        assertEquals("first\nsecond", result.output)
+    }
+
+    @Test
+    fun batchScriptQuotesArgumentsAndReportsTheFailedCommand() {
+        val script = buildRootCommandBatchScript(
+            listOf(
+                listOf("iptables", "-A", "name with space", "value'quoted"),
+                listOf("ip", "rule", "show")
+            )
+        )
+
+        assertTrue(script.contains("'name with space'"))
+        assertTrue(script.contains("'value'\"'\"'quoted'"))
+        assertTrue(script.contains("Batch command 0 failed"))
+        assertTrue(script.contains("Batch command 1 failed"))
+        assertTrue(script.contains("exit \"\$kb_status\""))
+    }
+
+    @Test
+    fun cleanupBatchRepeatsOnlyCommandsThatCanHaveDuplicates() {
+        val script = buildRootCommandBatchScript(
+            commands = listOf(
+                listOf("iptables", "-D", "OUTPUT", "-j", "KBX_OUT4"),
+                listOf("iptables", "-F", "KBX_OUT4")
+            ),
+            repeatUntilFailure = setOf(0),
+            maxAttempts = 32
+        )
+
+        assertEquals(1, script.split("while [").size - 1)
+        assertTrue(script.contains("-lt 32"))
+        assertTrue(script.contains("'iptables' '-F' 'KBX_OUT4' >/dev/null 2>&1 || :"))
+    }
+
+    @Test
     fun cleanupFailsClosedWhenResidualStateCannotBeQueried() {
         val executor = RootCommandExecutor { command ->
             if (command.takeLast(2) == listOf("table", "all") || command.lastOrNull() == "-S") {

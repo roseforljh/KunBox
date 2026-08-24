@@ -83,6 +83,10 @@ class KunBoxRootService : RootService() {
     private var watchdog: RootWatchdogInstaller? = null
     private var resourceGuard: RootResourceGuard? = null
     private var netfilterOwned = false
+    private val startupTimings = linkedMapOf<String, Long>()
+
+    @Volatile
+    private var startInProgress = false
 
     private val binder = object : IRootSingBoxService.Stub() {
         override fun getSnapshot(): Bundle {
@@ -123,23 +127,28 @@ class KunBoxRootService : RootService() {
         ): Bundle {
             enforceCaller()
             require(appUid == applicationInfo.uid) { "Unexpected KunBox UID" }
-            return synchronized(runtimeLock) {
-                startLocked(RootStartRequest(
-                    configPath = configPath.orEmpty(),
-                    runtimeSessionId = runtimeSessionId.orEmpty(),
-                    appMode = appMode.orEmpty(),
-                    allowlist = allowlist?.toSet().orEmpty(),
-                    blocklist = blocklist?.toSet().orEmpty(),
-                    selfPackage = selfPackage.orEmpty(),
-                    forceConnectionOwnerRouting = forceConnectionOwnerRouting,
-                    appUid = appUid,
-                    proxyIpv4 = proxyIpv4,
-                    proxyIpv6 = proxyIpv6,
-                    blockIpv4 = blockIpv4,
-                    blockIpv6 = blockIpv6,
-                    blockQuic = blockQuic,
-                    apkPath = apkPath.orEmpty()
-                )).toBundle()
+            startInProgress = true
+            return try {
+                synchronized(runtimeLock) {
+                    startLocked(RootStartRequest(
+                        configPath = configPath.orEmpty(),
+                        runtimeSessionId = runtimeSessionId.orEmpty(),
+                        appMode = appMode.orEmpty(),
+                        allowlist = allowlist?.toSet().orEmpty(),
+                        blocklist = blocklist?.toSet().orEmpty(),
+                        selfPackage = selfPackage.orEmpty(),
+                        forceConnectionOwnerRouting = forceConnectionOwnerRouting,
+                        appUid = appUid,
+                        proxyIpv4 = proxyIpv4,
+                        proxyIpv6 = proxyIpv6,
+                        blockIpv4 = blockIpv4,
+                        blockIpv6 = blockIpv6,
+                        blockQuic = blockQuic,
+                        apkPath = apkPath.orEmpty()
+                    )).toBundle()
+                }
+            } finally {
+                startInProgress = false
             }
         }
 
@@ -167,10 +176,12 @@ class KunBoxRootService : RootService() {
     }
 
     override fun onCreate() {
+        val startedAt = android.os.SystemClock.elapsedRealtime()
         super.onCreate()
         check(Process.myUid() == 0) { "KunBoxRootService is not running as root" }
         SingBoxCore.ensureLibboxSetup(this)
         capabilityReport = RootCapabilityProbe().probe()
+        logStartPhase("capability", startedAt)
         updateSnapshot(
             phase = RootRuntimePhase.STOPPED,
             error = capabilityReport.error,
@@ -182,6 +193,11 @@ class KunBoxRootService : RootService() {
     override fun onBind(intent: Intent): IBinder = binder
 
     override fun onDestroy() {
+        if (startInProgress) {
+            serviceScope.cancel()
+            super.onDestroy()
+            return
+        }
         synchronized(runtimeLock) { stopLocked(snapshot.runtimeSessionId) }
         watchdog?.close()
         watchdog = null
@@ -193,6 +209,9 @@ class KunBoxRootService : RootService() {
 
     @Suppress("ReturnCount")
     private fun startLocked(request: RootStartRequest): RootRuntimeSnapshot {
+        val startedAt = android.os.SystemClock.elapsedRealtime()
+        var phaseStartedAt = startedAt
+        startupTimings.clear()
         validateStartRequest(request)?.let { return failUnprotected(it) }
         if (snapshot.phase != RootRuntimePhase.STOPPED) {
             val stopped = stopLocked(snapshot.runtimeSessionId)
@@ -203,6 +222,8 @@ class KunBoxRootService : RootService() {
         if (prepareError != null) {
             return failRulesPresent(prepareError.message ?: "Cannot clear stale Root rules")
         }
+        logStartPhase("cleanup", phaseStartedAt)
+        phaseStartedAt = android.os.SystemClock.elapsedRealtime()
         updateSnapshot(
             phase = RootRuntimePhase.CORE_STARTING,
             runtimeSessionId = request.runtimeSessionId,
@@ -213,12 +234,17 @@ class KunBoxRootService : RootService() {
 
         return try {
             startCommandServer(request.configPath, request.forceConnectionOwnerRouting)
+            logStartPhase("core", phaseStartedAt)
+            phaseStartedAt = android.os.SystemClock.elapsedRealtime()
             startProtection(request)
+            logStartPhase("protection", phaseStartedAt)
+            logStartPhase("root_total", startedAt)
             updateSnapshot(
                 phase = RootRuntimePhase.RUNNING,
                 ruleRevision = snapshot.ruleRevision + 1,
                 rulesInstalled = true,
-                watchdogReady = true
+                watchdogReady = true,
+                startupTimings = encodeStartupTimings()
             ).also { startResourceGuard(request.runtimeSessionId) }
         } catch (error: Exception) {
             Log.e(TAG, "Root runtime start failed", error)
@@ -257,12 +283,15 @@ class KunBoxRootService : RootService() {
     }
 
     private fun startProtection(request: RootStartRequest) {
+        var phaseStartedAt = android.os.SystemClock.elapsedRealtime()
         val rootWatchdog = RootWatchdogInstaller(this)
         watchdog = rootWatchdog
         rootWatchdog.start(request.runtimeSessionId, request.apkPath) {
             handleWatchdogLost(request.runtimeSessionId)
         }.getOrThrow()
         check(rootWatchdog.awaitReady()) { "Root watchdog did not acknowledge the lease" }
+        logStartPhase("watchdog", phaseStartedAt)
+        phaseStartedAt = android.os.SystemClock.elapsedRealtime()
         updateSnapshot(phase = RootRuntimePhase.RULES_STAGING, watchdogReady = true)
 
         val mode = VpnAppMode.valueOf(request.appMode)
@@ -273,6 +302,8 @@ class KunBoxRootService : RootService() {
             selfPackage = request.selfPackage,
             selfUid = request.appUid
         )
+        logStartPhase("uid_scope", phaseStartedAt)
+        phaseStartedAt = android.os.SystemClock.elapsedRealtime()
         if (mode == VpnAppMode.ALLOWLIST) {
             check(uidSelection.capturedUids.isNotEmpty()) { "Root allowlist contains no installed applications" }
         }
@@ -294,8 +325,17 @@ class KunBoxRootService : RootService() {
                 tproxyPortIpv6 = InboundBuilder.ROOT_TPROXY_PORT_IPV6
             )
         ).getOrThrow()
+        logStartPhase("netfilter", phaseStartedAt)
         netfilterOwned = true
     }
+
+    private fun logStartPhase(phase: String, startedAt: Long) {
+        val durationMs = android.os.SystemClock.elapsedRealtime() - startedAt
+        startupTimings[phase] = durationMs
+        Log.i(TAG, "[ROOT_START] phase=$phase duration_ms=$durationMs")
+    }
+
+    private fun encodeStartupTimings(): String = formatRootStartupTimings(startupTimings)
 
     private fun hotReloadLocked(configPath: String, runtimeSessionId: String): RootRuntimeSnapshot {
         if (!matchesRunningSession(runtimeSessionId)) return snapshot
@@ -330,14 +370,7 @@ class KunBoxRootService : RootService() {
         commandServer = null
         resourceGuard?.stop()
         return if (cleanupError == null) {
-            snapshot = RootRuntimeSnapshot(
-                phase = RootRuntimePhase.STOPPED,
-                generation = snapshot.generation + 1,
-                rootPid = Process.myPid(),
-                tproxyIpv4 = capabilityReport.tproxyIpv4,
-                tproxyIpv6 = capabilityReport.tproxyIpv6
-            )
-            snapshot
+            markStopped()
         } else {
             updateSnapshot(
                 phase = RootRuntimePhase.FAILED_RULES_PRESENT,
@@ -354,6 +387,17 @@ class KunBoxRootService : RootService() {
         commandServer = null
         resourceGuard?.stop()
         return cleanupError
+    }
+
+    private fun markStopped(): RootRuntimeSnapshot {
+        snapshot = RootRuntimeSnapshot(
+            phase = RootRuntimePhase.STOPPED,
+            generation = snapshot.generation + 1,
+            rootPid = Process.myPid(),
+            tproxyIpv4 = capabilityReport.tproxyIpv4,
+            tproxyIpv6 = capabilityReport.tproxyIpv6
+        )
+        return snapshot
     }
 
     private fun handleWatchdogLost(runtimeSessionId: String) {
@@ -466,7 +510,8 @@ class KunBoxRootService : RootService() {
         tproxyIpv6: Boolean = snapshot.tproxyIpv6,
         watchdogReady: Boolean = snapshot.watchdogReady,
         rulesInstalled: Boolean = snapshot.rulesInstalled,
-        error: String = snapshot.error
+        error: String = snapshot.error,
+        startupTimings: String = snapshot.startupTimings
     ): RootRuntimeSnapshot {
         snapshot = snapshot.copy(
             phase = phase,
@@ -478,7 +523,8 @@ class KunBoxRootService : RootService() {
             tproxyIpv6 = tproxyIpv6,
             watchdogReady = watchdogReady,
             rulesInstalled = rulesInstalled,
-            error = error
+            error = error,
+            startupTimings = startupTimings
         )
         return snapshot
     }

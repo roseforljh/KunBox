@@ -47,6 +47,11 @@ class RootServiceConnection(
         if (!pending.isCompleted) pending.cancel()
     }
 
+    fun stopRootService() {
+        runCatching { RootService.stop(Intent(context, KunBoxRootService::class.java)) }
+        unbind()
+    }
+
     override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
         val rootService = IRootSingBoxService.Stub.asInterface(binder)
         service = rootService

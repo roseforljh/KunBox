@@ -66,8 +66,19 @@ class RootWatchdogInstaller(
 
     fun isReady(): Boolean = ackHealthy
 
-    fun awaitReady(timeoutSeconds: Long = 3): Boolean =
-        readyLatch.await(timeoutSeconds, TimeUnit.SECONDS) && ackHealthy
+    fun awaitReady(timeoutSeconds: Long = 3): Boolean {
+        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(timeoutSeconds)
+        while (true) {
+            checkAck(activeSessionId) {}
+            if (ackHealthy) return true
+            val remaining = deadline - System.nanoTime()
+            if (remaining <= 0L) return false
+            readyLatch.await(
+                minOf(remaining, TimeUnit.MILLISECONDS.toNanos(25)),
+                TimeUnit.NANOSECONDS
+            )
+        }
+    }
 
     fun stop(cleanupRules: Boolean): Result<Unit> = runCatching {
         leaseTask?.cancel(true)

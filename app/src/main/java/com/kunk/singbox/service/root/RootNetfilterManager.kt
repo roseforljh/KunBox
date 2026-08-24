@@ -13,6 +13,38 @@ data class RootCommandResult(
 
 fun interface RootCommandExecutor {
     fun execute(arguments: List<String>): RootCommandResult
+
+    fun executeFastNetfilterPlan(commands: List<List<String>>): RootCommandResult? = null
+
+    fun executeBatch(commands: List<List<String>>): RootCommandResult {
+        val output = mutableListOf<String>()
+        commands.forEachIndexed { index, command ->
+            val result = execute(command)
+            if (!result.success) {
+                val failure = "Batch command $index failed: ${command.joinToString(" ")}\n${result.output}".trim()
+                return result.copy(
+                    output = (output + failure).joinToString("\n")
+                )
+            }
+            result.output.takeIf(String::isNotBlank)?.let(output::add)
+        }
+        return RootCommandResult(0, output.joinToString("\n"))
+    }
+
+    fun executeBestEffortBatch(
+        commands: List<List<String>>,
+        repeatUntilFailure: Set<Int>,
+        maxAttempts: Int
+    ): RootCommandResult {
+        commands.forEachIndexed { index, command ->
+            var attempts = 0
+            do {
+                val result = runCatching { execute(command) }.getOrElse { break }
+                attempts++
+            } while (index in repeatUntilFailure && result.success && attempts < maxAttempts)
+        }
+        return RootCommandResult(0, "")
+    }
 }
 
 class ProcessRootCommandExecutor : RootCommandExecutor {
@@ -24,6 +56,130 @@ class ProcessRootCommandExecutor : RootCommandExecutor {
         val output = BufferedReader(InputStreamReader(process.inputStream)).use { it.readText() }
         return RootCommandResult(process.waitFor(), output.trim())
     }
+
+    override fun executeBatch(commands: List<List<String>>): RootCommandResult =
+        executeScript(buildRootCommandBatchScript(commands))
+
+    override fun executeBestEffortBatch(
+        commands: List<List<String>>,
+        repeatUntilFailure: Set<Int>,
+        maxAttempts: Int
+    ): RootCommandResult = executeScript(
+        buildRootCommandBatchScript(commands, repeatUntilFailure, maxAttempts)
+    )
+
+    override fun executeFastNetfilterPlan(commands: List<List<String>>): RootCommandResult? =
+        buildRootNetfilterRestoreScript(commands)?.let(::executeScript)
+
+    private fun executeScript(script: String): RootCommandResult {
+        if (script.isBlank()) return RootCommandResult(0, "")
+        val process = ProcessBuilder("/system/bin/sh")
+            .redirectErrorStream(true)
+            .start()
+        process.outputStream.bufferedWriter().use { it.write(script) }
+        val output = BufferedReader(InputStreamReader(process.inputStream)).use { it.readText() }
+        return RootCommandResult(process.waitFor(), output.trim())
+    }
+}
+
+@Suppress("CyclomaticComplexMethod", "CognitiveComplexMethod", "ReturnCount")
+internal fun buildRootNetfilterRestoreScript(commands: List<List<String>>): String? {
+    data class TableRestore(
+        val chains: MutableList<String> = mutableListOf(),
+        val rules: MutableList<String> = mutableListOf()
+    )
+
+    val restores = linkedMapOf<String, LinkedHashMap<String, TableRestore>>()
+    val policyCommands = mutableListOf<List<String>>()
+    val activationCommands = mutableListOf<List<String>>()
+
+    commands.forEach { command ->
+        val binary = command.firstOrNull() ?: return null
+        if (binary !in setOf("iptables", "ip6tables")) {
+            policyCommands += command
+            return@forEach
+        }
+        if ("-I" in command) {
+            activationCommands += command
+            return@forEach
+        }
+        val tableIndex = command.indexOf("-t")
+        val table = command.getOrNull(tableIndex + 1) ?: return null
+        val operation = command.getOrNull(tableIndex + 2) ?: return null
+        val restore = restores.getOrPut(binary) { linkedMapOf() }.getOrPut(table) { TableRestore() }
+        when (operation) {
+            "-N" -> {
+                val chain = command.getOrNull(tableIndex + 3)?.takeIf(::isSafeRestoreToken) ?: return null
+                restore.chains += ":$chain - [0:0]"
+            }
+            "-A" -> {
+                val arguments = command.drop(tableIndex + 2)
+                if (arguments.any { !isSafeRestoreToken(it) }) return null
+                restore.rules += arguments.joinToString(" ")
+            }
+            else -> return null
+        }
+    }
+    if (restores.isEmpty()) return null
+
+    return buildString {
+        restores.forEach { (binary, tables) ->
+            val restoreBinary = if (binary == "iptables") "iptables-restore" else "ip6tables-restore"
+            append("command -v ").append(restoreBinary).append(" >/dev/null 2>&1 || exit 127\n")
+            append(restoreBinary).append(" --noflush <<'KBX_RESTORE_")
+                .append(if (binary == "iptables") "4" else "6").append("'\n")
+            tables.forEach { (table, restore) ->
+                append('*').append(table).append('\n')
+                restore.chains.forEach { append(it).append('\n') }
+                restore.rules.forEach { append(it).append('\n') }
+                append("COMMIT\n")
+            }
+            append("KBX_RESTORE_").append(if (binary == "iptables") "4" else "6").append('\n')
+            append("kb_status=${'$'}?\nif [ \"${'$'}kb_status\" -ne 0 ]; then ")
+                .append("exit \"${'$'}kb_status\"; fi\n")
+        }
+        append(buildRootCommandBatchScript(policyCommands + activationCommands))
+    }
+}
+
+private fun isSafeRestoreToken(value: String): Boolean = value.isNotBlank() && value.all { char ->
+    char.isLetterOrDigit() || char in "_-.:/,"
+}
+
+internal fun buildRootCommandBatchScript(
+    commands: List<List<String>>,
+    repeatUntilFailure: Set<Int> = emptySet(),
+    maxAttempts: Int = 1
+): String {
+    require(maxAttempts > 0)
+    require(repeatUntilFailure.all(commands.indices::contains))
+    return buildString {
+        commands.forEachIndexed { index, arguments ->
+            require(arguments.isNotEmpty()) { "Root command is empty" }
+            val command = arguments.joinToString(" ", transform = ::shellQuote)
+            if (index in repeatUntilFailure) {
+                append("kb_attempt=0\nwhile [ \"${'$'}kb_attempt\" -lt ")
+                append(maxAttempts)
+                append(" ]; do\n  ")
+                append(command)
+                append(" >/dev/null 2>&1 || break\n  kb_attempt=${'$'}((kb_attempt + 1))\ndone\n")
+            } else if (repeatUntilFailure.isNotEmpty()) {
+                append(command)
+                append(" >/dev/null 2>&1 || :\n")
+            } else {
+                append(command)
+                append("\nkb_status=${'$'}?\nif [ \"${'$'}kb_status\" -ne 0 ]; then\n")
+                append("  printf '%s\\n' ")
+                append(shellQuote("Batch command $index failed: $command"))
+                append(" >&2\n  exit \"${'$'}kb_status\"\nfi\n")
+            }
+        }
+    }
+}
+
+internal fun shellQuote(value: String): String {
+    require('\u0000' !in value) { "Root command argument contains NUL" }
+    return "'${value.replace("'", "'\"'\"'")}'"
 }
 
 data class RootNetfilterConfig(
@@ -473,11 +629,24 @@ class RootNetfilterManager(
 
     fun apply(config: RootNetfilterConfig): Result<Unit> = runCatching {
         val plan = RootNetfilterPlanner.build(config)
-        checkNoResidualState()
         try {
-            plan.setupCommands.forEach(::executeRequired)
-            plan.verifyCommands.forEach(::executeRequired)
-            verifyPolicyRouting(config)
+            val fastResult = executor.executeFastNetfilterPlan(plan.setupCommands)
+            if (fastResult?.success == true) {
+                Log.i(TAG, "Fast netfilter restore applied")
+            } else {
+                if (fastResult != null) {
+                    Log.w(
+                        TAG,
+                        "Fast netfilter restore unavailable or failed (${fastResult.exitCode}); " +
+                            "using compatible setup"
+                    )
+                    cleanup(plan.cleanupCommands)
+                    checkNoResidualState()
+                }
+                executeRequired(plan.setupCommands)
+                executeRequired(plan.verifyCommands)
+                verifyPolicyRouting(config)
+            }
         } catch (error: Exception) {
             cleanup(plan.cleanupCommands)
             val cleanupError = runCatching { checkNoResidualState() }.exceptionOrNull()
@@ -494,45 +663,35 @@ class RootNetfilterManager(
     }
 
     private fun cleanup(commands: List<List<String>>) {
-        commands.forEach(::cleanupCommand)
-    }
-
-    private fun cleanupCommand(command: List<String>) {
-        if (!isRepeatableCleanup(command)) {
-            runCatching { executor.execute(command) }
-                .onFailure { Log.d(TAG, "Cleanup command skipped: ${command.firstOrNull()}") }
-            return
-        }
-        var attempts = 0
-        while (attempts++ < MAX_CLEANUP_REPEATS) {
-            val result = runCatching { executor.execute(command) }.getOrElse {
-                Log.d(TAG, "Cleanup command skipped: ${command.firstOrNull()}")
-                return
-            }
-            if (!result.success) break
-        }
+        val repeatable = commands.indices.filterTo(mutableSetOf()) { isRepeatableCleanup(commands[it]) }
+        executor.executeBestEffortBatch(commands, repeatable, MAX_CLEANUP_REPEATS)
     }
 
     private fun isRepeatableCleanup(command: List<String>): Boolean =
         "-D" in command || ("rule" in command && "del" in command)
 
-    private fun executeRequired(command: List<String>) {
-        val result = executor.execute(command)
+    private fun executeRequired(commands: List<List<String>>) {
+        if (commands.isEmpty()) return
+        val result = executor.executeBatch(commands)
         check(result.success) {
-            "Root command failed (${result.exitCode}): ${command.joinToString(" ")} ${result.output}"
+            "Root command batch failed (${result.exitCode}): ${result.output}"
         }
     }
 
     private fun checkNoResidualState() {
         val tableRules = buildString {
-            append(tableProbeCommands().map(::executeRequiredResult).joinToString("\n") { it.output })
+            append(executeRequiredBatchResult(tableProbeCommands()).output)
             append('\n')
             append(optionalIpv6NatRules())
         }
-        val ipv4Rules = executeRequiredResult(listOf("ip", "rule", "show")).output
-        val ipv6Rules = executeRequiredResult(listOf("ip", "-6", "rule", "show")).output
-        val ipv4Routes = executeRequiredResult(listOf("ip", "route", "show", "table", "all")).output
-        val ipv6Routes = executeRequiredResult(listOf("ip", "-6", "route", "show", "table", "all")).output
+        val policyState = executeRequiredBatchResult(
+            listOf(
+                listOf("ip", "rule", "show"),
+                listOf("ip", "-6", "rule", "show"),
+                listOf("ip", "route", "show", "table", "all"),
+                listOf("ip", "-6", "route", "show", "table", "all")
+            )
+        ).output
         val chainNames = listOf(
             RootNetfilterPlanner.CHAIN_OUT4,
             RootNetfilterPlanner.CHAIN_PRE4,
@@ -548,11 +707,7 @@ class RootNetfilterManager(
             RootNetfilterPlanner.CHAIN_QUIC6
         )
         check(
-            chainNames.none(tableRules::contains) &&
-                RootNetfilterPlanner.ROUTE_TABLE !in ipv4Rules &&
-                RootNetfilterPlanner.ROUTE_TABLE !in ipv6Rules &&
-                "table ${RootNetfilterPlanner.ROUTE_TABLE}" !in ipv4Routes &&
-                "table ${RootNetfilterPlanner.ROUTE_TABLE}" !in ipv6Routes
+            chainNames.none(tableRules::contains) && RootNetfilterPlanner.ROUTE_TABLE !in policyState
         ) { "KunBox netfilter state remains after cleanup" }
     }
 
@@ -580,6 +735,11 @@ class RootNetfilterManager(
             check(result.success) {
                 "Root probe failed (${result.exitCode}): ${command.joinToString(" ")} ${result.output}"
             }
+        }
+
+    private fun executeRequiredBatchResult(commands: List<List<String>>): RootCommandResult =
+        executor.executeBatch(commands).also { result ->
+            check(result.success) { "Root probe batch failed (${result.exitCode}): ${result.output}" }
         }
 
     private fun optionalIpv6NatRules(): String {

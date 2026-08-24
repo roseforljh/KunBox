@@ -2,6 +2,7 @@ package com.kunk.singbox.service.root
 
 import android.os.Bundle
 import android.os.Process
+import java.io.File
 
 data class RootCapabilityReport(
     val rootUid: Boolean,
@@ -87,28 +88,31 @@ class RootCapabilityProbe(
     private val probeChain4 = "KBX_P4_${Process.myPid()}"
     private val probeChain6 = "KBX_P6_${Process.myPid()}"
 
-    @Suppress("CognitiveComplexMethod", "CyclomaticComplexMethod")
+    @Suppress("CognitiveComplexMethod")
     fun probe(): RootCapabilityReport {
         val rootUid = Process.myUid() == 0
-        val status = runCatching { executor.execute(listOf("cat", "/proc/self/status")) }
-            .getOrDefault(RootCommandResult(-1, ""))
-        val effectiveCapabilities = status.output.lineSequence()
+        val effectiveCapabilities = readProcFile("/proc/self/status").lineSequence()
             .firstOrNull { it.startsWith("CapEff:") }
             ?.substringAfter(':')
             ?.trim()
             ?.toULongOrNull(16)
             ?: 0uL
-        val selinux = runCatching { executor.execute(listOf("cat", "/proc/self/attr/current")) }
-            .getOrDefault(RootCommandResult(-1, "unknown"))
-            .output
-        val iptables = succeeds("iptables", "-V")
-        val ip6tables = succeeds("ip6tables", "-V")
-        val ipCommand = succeeds("ip", "rule", "show")
-        val ownerMatch = iptables && probeOwnerMatch()
-        val tproxyIpv4 = iptables && probeTproxy("iptables", probeChain4, RootNetfilterPlanner.IPV4_MARK)
-        val tproxyIpv6 = ip6tables && probeTproxy("ip6tables", probeChain6, RootNetfilterPlanner.IPV6_MARK)
-        val redirectIpv4 = iptables && probeRedirect("iptables", probeChain4)
-        val redirectIpv6 = ip6tables && probeRedirect("ip6tables", probeChain6)
+        val selinux = readProcFile("/proc/self/attr/current").ifBlank { "unknown" }
+        val checks = runCatching {
+            executor.execute(listOf("/system/bin/sh", "-c", buildProbeScript())).output
+        }.getOrDefault("").lineSequence().mapNotNull { line ->
+            val key = line.substringBefore('=', missingDelimiterValue = "")
+            val value = line.substringAfter('=', missingDelimiterValue = "")
+            if (key.isBlank() || value != "0" && value != "1") null else key to (value == "1")
+        }.toMap()
+        val iptables = checks["iptables"] == true
+        val ip6tables = checks["ip6tables"] == true
+        val ipCommand = checks["ip_command"] == true
+        val ownerMatch = checks["owner_match"] == true
+        val tproxyIpv4 = checks["tproxy_ipv4"] == true
+        val tproxyIpv6 = checks["tproxy_ipv6"] == true
+        val redirectIpv4 = checks["redirect_ipv4"] == true
+        val redirectIpv6 = checks["redirect_ipv6"] == true
         val capNetAdmin = hasCapability(effectiveCapabilities, CAP_NET_ADMIN)
         val capNetRaw = hasCapability(effectiveCapabilities, CAP_NET_RAW)
         val error = buildList {
@@ -138,51 +142,71 @@ class RootCapabilityProbe(
         )
     }
 
-    private fun probeOwnerMatch(): Boolean = withProbeChain("iptables", probeChain4) {
-        succeeds(
-            "iptables", "-t", "mangle", "-A", probeChain4,
-            "-m", "owner", "--uid-owner", Process.myUid().toString(), "-j", "RETURN"
-        )
-    }
-
-    private fun probeTproxy(binary: String, chain: String, mark: String): Boolean = withProbeChain(binary, chain) {
-        listOf("tcp", "udp").all { protocol ->
-            succeeds(
-                binary, "-t", "mangle", "-A", chain,
-                "-p", protocol, "-j", "TPROXY", "--on-port", "1536", "--tproxy-mark", mark
-            )
+    @Suppress("LongMethod")
+    private fun buildProbeScript(): String = """
+        cleanup_chain() {
+            "${'$'}1" -t "${'$'}2" -F "${'$'}3" >/dev/null 2>&1 || :
+            "${'$'}1" -t "${'$'}2" -X "${'$'}3" >/dev/null 2>&1 || :
         }
-    }
-
-    private fun probeRedirect(binary: String, chain: String): Boolean = withProbeChain(binary, chain, "nat") {
-        succeeds(
-            binary, "-t", "nat", "-A", chain,
-            "-p", "tcp", "-j", "REDIRECT", "--to-ports", "1536"
-        )
-    }
-
-    private fun withProbeChain(
-        binary: String,
-        chain: String,
-        table: String = "mangle",
-        check: () -> Boolean
-    ): Boolean {
-        cleanupProbeChain(binary, chain, table)
-        if (!succeeds(binary, "-t", table, "-N", chain)) return false
-        return try {
-            check()
-        } finally {
-            cleanupProbeChain(binary, chain, table)
+        probe_owner() {
+            cleanup_chain "${'$'}1" mangle "${'$'}2"
+            "${'$'}1" -t mangle -N "${'$'}2" >/dev/null 2>&1 || return 1
+            "${'$'}1" -t mangle -A "${'$'}2" -m owner --uid-owner ${Process.myUid()} -j RETURN \
+                >/dev/null 2>&1
+            result=${'$'}?
+            cleanup_chain "${'$'}1" mangle "${'$'}2"
+            return "${'$'}result"
         }
-    }
+        probe_tproxy() {
+            cleanup_chain "${'$'}1" mangle "${'$'}2"
+            "${'$'}1" -t mangle -N "${'$'}2" >/dev/null 2>&1 || return 1
+            result=0
+            "${'$'}1" -t mangle -A "${'$'}2" -p tcp -j TPROXY --on-port 1536 --tproxy-mark "${'$'}3" \
+                >/dev/null 2>&1 || result=1
+            "${'$'}1" -t mangle -A "${'$'}2" -p udp -j TPROXY --on-port 1536 --tproxy-mark "${'$'}3" \
+                >/dev/null 2>&1 || result=1
+            cleanup_chain "${'$'}1" mangle "${'$'}2"
+            return "${'$'}result"
+        }
+        probe_redirect() {
+            cleanup_chain "${'$'}1" nat "${'$'}2"
+            "${'$'}1" -t nat -N "${'$'}2" >/dev/null 2>&1 || return 1
+            "${'$'}1" -t nat -A "${'$'}2" -p tcp -j REDIRECT --to-ports 1536 >/dev/null 2>&1
+            result=${'$'}?
+            cleanup_chain "${'$'}1" nat "${'$'}2"
+            return "${'$'}result"
+        }
 
-    private fun cleanupProbeChain(binary: String, chain: String, table: String = "mangle") {
-        runCatching { executor.execute(listOf(binary, "-t", table, "-F", chain)) }
-        runCatching { executor.execute(listOf(binary, "-t", table, "-X", chain)) }
-    }
+        IPTABLES=0
+        IP6TABLES=0
+        IP_COMMAND=0
+        OWNER_MATCH=0
+        TPROXY_IPV4=0
+        TPROXY_IPV6=0
+        REDIRECT_IPV4=0
+        REDIRECT_IPV6=0
+        iptables -V >/dev/null 2>&1 && IPTABLES=1
+        ip6tables -V >/dev/null 2>&1 && IP6TABLES=1
+        ip rule show >/dev/null 2>&1 && IP_COMMAND=1
+        [ "${'$'}IPTABLES" -eq 1 ] && probe_owner iptables ${shellQuote(probeChain4)} && OWNER_MATCH=1
+        [ "${'$'}IPTABLES" -eq 1 ] && \
+            probe_tproxy iptables ${shellQuote(probeChain4)} ${RootNetfilterPlanner.IPV4_MARK} && TPROXY_IPV4=1
+        [ "${'$'}IP6TABLES" -eq 1 ] && \
+            probe_tproxy ip6tables ${shellQuote(probeChain6)} ${RootNetfilterPlanner.IPV6_MARK} && TPROXY_IPV6=1
+        [ "${'$'}IPTABLES" -eq 1 ] && probe_redirect iptables ${shellQuote(probeChain4)} && REDIRECT_IPV4=1
+        [ "${'$'}IP6TABLES" -eq 1 ] && \
+            probe_redirect ip6tables ${shellQuote(probeChain6)} && REDIRECT_IPV6=1
+        printf 'iptables=%s\n' "${'$'}IPTABLES"
+        printf 'ip6tables=%s\n' "${'$'}IP6TABLES"
+        printf 'ip_command=%s\n' "${'$'}IP_COMMAND"
+        printf 'owner_match=%s\n' "${'$'}OWNER_MATCH"
+        printf 'tproxy_ipv4=%s\n' "${'$'}TPROXY_IPV4"
+        printf 'tproxy_ipv6=%s\n' "${'$'}TPROXY_IPV6"
+        printf 'redirect_ipv4=%s\n' "${'$'}REDIRECT_IPV4"
+        printf 'redirect_ipv6=%s\n' "${'$'}REDIRECT_IPV6"
+    """.trimIndent()
 
-    private fun succeeds(vararg arguments: String): Boolean =
-        runCatching { executor.execute(arguments.toList()).success }.getOrDefault(false)
+    private fun readProcFile(path: String): String = runCatching { File(path).readText().trim() }.getOrDefault("")
 
     private fun hasCapability(value: ULong, bit: Int): Boolean = value and (1uL shl bit) != 0uL
 }

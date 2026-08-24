@@ -24,7 +24,8 @@ data class RootRuntimeSnapshot(
     val tproxyIpv6: Boolean = false,
     val watchdogReady: Boolean = false,
     val rulesInstalled: Boolean = false,
-    val error: String = ""
+    val error: String = "",
+    val startupTimings: String = ""
 ) {
     fun toBundle(): Bundle = Bundle().apply {
         putString(KEY_PHASE, phase.name)
@@ -38,6 +39,7 @@ data class RootRuntimeSnapshot(
         putBoolean(KEY_WATCHDOG_READY, watchdogReady)
         putBoolean(KEY_RULES_INSTALLED, rulesInstalled)
         putString(KEY_ERROR, error)
+        putString(KEY_STARTUP_TIMINGS, startupTimings)
     }
 
     companion object {
@@ -52,6 +54,7 @@ data class RootRuntimeSnapshot(
         private const val KEY_WATCHDOG_READY = "watchdog_ready"
         private const val KEY_RULES_INSTALLED = "rules_installed"
         private const val KEY_ERROR = "error"
+        private const val KEY_STARTUP_TIMINGS = "startup_timings"
 
         fun fromBundle(bundle: Bundle?): RootRuntimeSnapshot {
             if (bundle == null) return RootRuntimeSnapshot()
@@ -68,7 +71,8 @@ data class RootRuntimeSnapshot(
                 tproxyIpv6 = bundle.getBoolean(KEY_TPROXY_IPV6),
                 watchdogReady = bundle.getBoolean(KEY_WATCHDOG_READY),
                 rulesInstalled = bundle.getBoolean(KEY_RULES_INSTALLED),
-                error = bundle.getString(KEY_ERROR).orEmpty()
+                error = bundle.getString(KEY_ERROR).orEmpty(),
+                startupTimings = bundle.getString(KEY_STARTUP_TIMINGS).orEmpty()
             )
         }
     }
@@ -83,3 +87,6 @@ internal fun shouldAcceptRootSnapshot(
     if (current.runtimeSessionId != incoming.runtimeSessionId) return false
     return incoming.generation >= current.generation
 }
+
+internal fun formatRootStartupTimings(timings: Map<String, Long>): String =
+    timings.entries.joinToString(",") { (phase, durationMs) -> "$phase=$durationMs" }

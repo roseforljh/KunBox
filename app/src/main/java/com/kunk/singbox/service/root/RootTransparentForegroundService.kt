@@ -18,11 +18,9 @@ import com.kunk.singbox.ipc.SingBoxIpcHub
 import com.kunk.singbox.ipc.VpnStateStore
 import com.kunk.singbox.model.IpVersionMode
 import com.kunk.singbox.model.PerAppVpnPolicy
-import com.kunk.singbox.model.PerAppVpnScopeResolver
 import com.kunk.singbox.model.SingBoxConfig
 import com.kunk.singbox.model.TrafficCaptureMode
 import com.kunk.singbox.repository.ConfigRepository
-import com.kunk.singbox.repository.InstalledAppsRepository
 import com.kunk.singbox.repository.SettingsRepository
 import com.kunk.singbox.service.ServiceState
 import com.kunk.singbox.service.VpnTileService
@@ -71,13 +69,8 @@ class RootTransparentForegroundService : Service() {
     private var monitorJob: Job? = null
     private val controlRecoveryScheduled = AtomicBoolean(false)
     private var runtimeSessionId: String = ""
+    @Volatile private var startAbortRequested = false
     @Volatile private var lastRootSnapshot = RootRuntimeSnapshot()
-
-    private data class RootUidScope(
-        val capturedUids: List<Int>,
-        val capturedPackages: Int,
-        val excludedPackages: Int
-    )
 
     override fun onCreate() {
         super.onCreate()
@@ -138,7 +131,13 @@ class RootTransparentForegroundService : Service() {
                 commandManager.closeConnections()
                 rootConnection.service?.resetNetwork()
             }
-            ACTION_STOP -> serviceScope.launch { stopRuntime(stopSelfAfter = true) }
+            ACTION_STOP -> {
+                if (isStarting) {
+                    startAbortRequested = true
+                    rootConnection.stopRootService()
+                }
+                serviceScope.launch { stopRuntime(stopSelfAfter = true) }
+            }
             ACTION_RESTART -> serviceScope.launch { restartRuntime(intent.getStringExtra(EXTRA_CONFIG_PATH)) }
             else -> serviceScope.launch { startRuntime(intent?.getStringExtra(EXTRA_CONFIG_PATH)) }
         }
@@ -165,8 +164,11 @@ class RootTransparentForegroundService : Service() {
 
     @Suppress("CognitiveComplexMethod", "LongMethod")
     private suspend fun startRuntimeLocked(configPathOverride: String?) {
+        val startedAt = android.os.SystemClock.elapsedRealtime()
+        var phaseStartedAt = startedAt
         try {
             if (isRunning || isStarting) return
+            startAbortRequested = false
             isStarting = true
             startForegroundCompat(getString(R.string.root_mode_starting))
             VpnStateStore.setPending("starting")
@@ -177,7 +179,6 @@ class RootTransparentForegroundService : Service() {
                 manuallyStopped = false,
                 readiness = rootReadiness(DataPlaneStatus.STARTING, "root_binding")
             )
-
             val settingsRepository = SettingsRepository.getInstance(this)
             settingsRepository.reloadFromStorage()
             val settings = settingsRepository.settings.value
@@ -187,8 +188,12 @@ class RootTransparentForegroundService : Service() {
             val configPath = configPathOverride?.takeIf(String::isNotBlank)
                 ?: ConfigRepository.getInstance(this).generateConfigFile()?.path
                 ?: error("Failed to generate Root transparent config")
-            val uidScope = resolveCapturedUids(settings)
+            val policy = PerAppVpnPolicy.from(settings)
+            logStartPhase("config", phaseStartedAt)
+            phaseStartedAt = android.os.SystemClock.elapsedRealtime()
             val rootService = rootConnection.bind()
+            logStartPhase("bind", phaseStartedAt)
+            phaseStartedAt = android.os.SystemClock.elapsedRealtime()
             runtimeSessionId = UUID.randomUUID().toString()
             val ipMode = settings.ipVersionMode
             val rootSnapshot = RootRuntimeSnapshot.fromBundle(
@@ -211,15 +216,40 @@ class RootTransparentForegroundService : Service() {
                 )
             )
             lastRootSnapshot = rootSnapshot
+            logStartPhase("root_runtime", phaseStartedAt)
+            Log.i(TAG, "[ROOT_START] inner=${rootSnapshot.startupTimings}")
+            phaseStartedAt = android.os.SystemClock.elapsedRealtime()
             check(rootSnapshot.phase == RootRuntimePhase.RUNNING) {
                 rootSnapshot.error.ifBlank { "Root runtime failed to enter RUNNING" }
             }
 
             SingBoxCore.ensureLibboxSetup(this)
             commandManager.startClientsWithFd { rootService.openCommandConnection() }.getOrThrow()
+            logStartPhase("command_ready", phaseStartedAt)
+            logStartPhase("total", startedAt)
             SelectorManager.updateCommandClient(commandManager.getCommandClient())
             recordSelector(configPath)
             VpnStateStore.clearAutoFailoverRuntimeState()
+            VpnStateStore.commitAppliedPerAppPolicy(
+                VpnStateStore.AppliedPerAppPolicySnapshot(
+                    revision = policy.revision,
+                    mode = policy.mode.name,
+                    digest = policy.digest(),
+                    capturedCount = if (policy.mode == com.kunk.singbox.model.VpnAppMode.ALLOWLIST) {
+                        policy.allowlist.size
+                    } else {
+                        0
+                    },
+                    excludedCount = if (policy.mode == com.kunk.singbox.model.VpnAppMode.BLOCKLIST) {
+                        policy.blocklist.size
+                    } else {
+                        0
+                    },
+                    appliedAtElapsedMs = android.os.SystemClock.elapsedRealtime(),
+                    serviceInstanceId = SingBoxIpcHub.serviceInstanceId(),
+                    runtimeGeneration = rootSnapshot.generation
+                )
+            )
             isRunning = true
             isStarting = false
             VpnStateStore.setMode(VpnStateStore.CoreMode.ROOT)
@@ -227,19 +257,6 @@ class RootTransparentForegroundService : Service() {
             VpnStateStore.setPending("")
             VpnTileService.persistVpnState(true)
             NetworkClient.onVpnStateChanged(true)
-            val policy = PerAppVpnPolicy.from(settings)
-            VpnStateStore.commitAppliedPerAppPolicy(
-                VpnStateStore.AppliedPerAppPolicySnapshot(
-                    revision = policy.revision,
-                    mode = policy.mode.name,
-                    digest = policy.digest(),
-                    capturedCount = uidScope.capturedPackages,
-                    excludedCount = uidScope.excludedPackages,
-                    appliedAtElapsedMs = android.os.SystemClock.elapsedRealtime(),
-                    serviceInstanceId = SingBoxIpcHub.serviceInstanceId(),
-                    runtimeGeneration = rootSnapshot.generation
-                )
-            )
             SingBoxIpcHub.update(
                 state = ServiceState.RUNNING,
                 activeLabel = VpnStateStore.getActiveLabel(),
@@ -250,6 +267,11 @@ class RootTransparentForegroundService : Service() {
             updateNotification()
             startMonitor()
         } catch (error: Exception) {
+            if (startAbortRequested) {
+                Log.i(TAG, "Root transparent startup aborted by stop request")
+                isStarting = false
+                return
+            }
             Log.e(TAG, "Root transparent startup failed", error)
             val stopped = runCatching {
                 rootConnection.service?.stop(runtimeSessionId)?.let(RootRuntimeSnapshot::fromBundle)
@@ -284,6 +306,10 @@ class RootTransparentForegroundService : Service() {
         }
     }
 
+    private fun logStartPhase(phase: String, startedAt: Long) {
+        Log.i(TAG, "[ROOT_START] phase=$phase duration_ms=${android.os.SystemClock.elapsedRealtime() - startedAt}")
+    }
+
     @Suppress("LongMethod")
     private suspend fun stopRuntime(stopSelfAfter: Boolean) = lifecycleMutex.withLock {
         stopRuntimeLocked(stopSelfAfter)
@@ -301,7 +327,9 @@ class RootTransparentForegroundService : Service() {
             )
             commandManager.stop()
             SelectorManager.clear()
-            val stopped = runCatching {
+            val stopped = if (runtimeSessionId.isBlank() || startAbortRequested) {
+                RootRuntimeSnapshot(phase = RootRuntimePhase.STOPPED)
+            } else runCatching {
                 val rootService = rootConnection.service
                     ?: error("RootService disconnected before cleanup confirmation")
                 RootRuntimeSnapshot.fromBundle(rootService.stop(runtimeSessionId))
@@ -318,6 +346,7 @@ class RootTransparentForegroundService : Service() {
             val cleanupFailed = stopped.phase == RootRuntimePhase.FAILED_RULES_PRESENT
             isRunning = false
             isStarting = false
+            startAbortRequested = false
             runtimeSessionId = ""
             VpnStateStore.setActive(false)
             VpnStateStore.setPending("")
@@ -375,23 +404,6 @@ class RootTransparentForegroundService : Service() {
                 controlRecoveryScheduled.set(false)
             }
         }
-    }
-
-    private suspend fun resolveCapturedUids(settings: com.kunk.singbox.model.AppSettings): RootUidScope {
-        val repository = InstalledAppsRepository.getInstance(this)
-        repository.loadApps()
-        val apps = repository.appItems.value
-        val scope = PerAppVpnScopeResolver.resolve(PerAppVpnPolicy.from(settings), apps, packageName)
-        val uidByPackage = apps.associate { it.packageName to it.uid }
-        val uids = scope.capturedPackages.mapNotNull(uidByPackage::get).filter { it > 0 }.distinct().sorted()
-        if (settings.vpnAppMode == com.kunk.singbox.model.VpnAppMode.ALLOWLIST && uids.isEmpty()) {
-            error("Root allowlist contains no installed applications")
-        }
-        return RootUidScope(
-            capturedUids = uids,
-            capturedPackages = scope.capturedPackages.size,
-            excludedPackages = scope.excludedPackages.size
-        )
     }
 
     private fun recordSelector(configPath: String) {
