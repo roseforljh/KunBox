@@ -223,7 +223,8 @@ object SingBoxRemote {
             lastCallbackReceivedAtMs = SystemClock.elapsedRealtime()
             mainHandler.post {
                 if (!syncStateFromService(service)) {
-                    markReadinessUnavailable("callback_snapshot_failed")
+                    markReadinessRecovering("callback_snapshot_failed")
+                    contextRef?.get()?.let(::rebind)
                 }
             }
         }
@@ -311,6 +312,15 @@ object SingBoxRemote {
         )
     }
 
+    private fun markReadinessRecovering(reason: String) {
+        _readiness.value = _readiness.value.copy(
+            status = DataPlaneStatus.RECOVERING,
+            recoveryActive = true,
+            lastReadinessReason = reason,
+            updatedAtElapsedMs = SystemClock.elapsedRealtime()
+        )
+    }
+
     private fun startReadinessFreshnessWatchdog() {
         stopReadinessFreshnessWatchdog()
         val task = object : Runnable {
@@ -320,7 +330,10 @@ object SingBoxRemote {
                 if (snapshot.status != DataPlaneStatus.STOPPED &&
                     !snapshot.isFresh(SystemClock.elapsedRealtime())
                 ) {
-                    markReadinessUnavailable("readiness_heartbeat_stale")
+                    if (!syncStateFromService(service)) {
+                        markReadinessRecovering("readiness_heartbeat_stale")
+                        contextRef?.get()?.let(::rebind)
+                    }
                 }
                 mainHandler.postDelayed(this, READINESS_WATCHDOG_INTERVAL_MS)
             }
@@ -387,7 +400,6 @@ object SingBoxRemote {
             callbackRegistered = false
             bound = false
             stopReadinessFreshnessWatchdog()
-            markReadinessUnavailable("binder_died")
 
             mainHandler.post {
                 val ctx = contextRef?.get()
@@ -398,9 +410,12 @@ object SingBoxRemote {
                     if (!shouldReconnectAfterServiceLoss(systemVpn, storedManuallyStopped, storedMode)) {
                         syncStoppedStateAfterDisconnect()
                     } else {
+                        markReadinessRecovering("binder_died_reconnecting")
                         // 统一走指数退避重连逻辑，避免极端情况下的重连风暴
                         scheduleReconnect()
                     }
+                } else {
+                    markReadinessUnavailable("binder_died")
                 }
             }
         }
@@ -592,7 +607,6 @@ object SingBoxRemote {
             bound = false
             bindingInProgress = false
             stopReadinessFreshnessWatchdog()
-            markReadinessUnavailable("service_disconnected")
             clearPendingUrlTestRequests()
 
             val ctx = contextRef?.get()
@@ -600,6 +614,7 @@ object SingBoxRemote {
             val storedManuallyStopped = VpnStateStore.isManuallyStopped()
             val storedMode = VpnStateStore.getMode()
             if (shouldReconnectAfterServiceLoss(systemVpn, storedManuallyStopped, storedMode)) {
+                markReadinessRecovering("service_disconnected_reconnecting")
                 Log.i(
                     TAG,
                     "Service disconnected but runtime marker is active, keeping state and reconnecting"

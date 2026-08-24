@@ -160,13 +160,6 @@ class CoreManager(
         }
     }
 
-    fun preallocateTunBuilder(): Result<Unit> {
-        return runCatching {
-            tunManager.preallocateBuilder()
-            Log.d(TAG, "TUN builder preallocated")
-        }
-    }
-
     suspend fun loadSettings(): Result<AppSettings> {
         return runCatching {
             PerfTracer.begin(PerfTracer.Phases.SETTINGS_LOAD)
@@ -460,7 +453,7 @@ class CoreManager(
         }
     }
 
-    @Suppress("CognitiveComplexMethod")
+    @Suppress("CognitiveComplexMethod", "LongMethod")
     fun openTun(
         options: TunOptions?,
         underlyingNetwork: Network? = null,
@@ -497,12 +490,14 @@ class CoreManager(
                 PerfTracer.begin(PerfTracer.Phases.TUN_CREATE)
                 tunTraceStarted = true
 
-                val builder = tunManager.consumePreallocatedBuilder()
-                    ?: vpnService.Builder()
-
-                tunManager.configureBuilder(builder, options, currentSettings)
-
-                val pfd = tunManager.establishWithRetry(builder) { isStopping }
+                val pfd = tunManager.establishWithRetry(
+                    builderFactory = {
+                        vpnService.Builder().also { builder ->
+                            tunManager.configureBuilder(builder, options, currentSettings)
+                        }
+                    },
+                    isStopping = { isStopping }
+                )
                     ?: throw IllegalStateException("Failed to establish TUN interface")
 
                 vpnInterface = pfd

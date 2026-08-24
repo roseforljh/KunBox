@@ -234,6 +234,11 @@ class StartupManager(
                     )
                 }
                 is CoreManager.StartResult.Failed -> {
+                    if (!coreManager.isStartTokenCurrent(startToken)) {
+                        callbacks.onCancelled(recoveryIntentLease)
+                        PerfTracer.end(PerfTracer.Phases.VPN_STARTUP, "cancelled")
+                        return@withContext StartResult.Cancelled
+                    }
                     throw Exception("Libbox start failed: ${result.error}", result.exception)
                 }
                 is CoreManager.StartResult.Cancelled -> {
@@ -529,6 +534,9 @@ class StartupManager(
     private fun parseStartError(e: Exception): String {
         val msg = e.message.orEmpty()
         return when {
+            msg.contains("Failed to commit applied per-app VPN policy", ignoreCase = true) -> {
+                "VPN 启动失败：分应用 VPN 策略状态提交失败"
+            }
             msg.contains("VPN lockdown enabled by", ignoreCase = true) -> {
                 val lockedBy = msg.substringAfter("VPN lockdown enabled by ").trim().ifBlank { "unknown" }
                 "Start failed: system lockdown VPN enabled ($lockedBy)"

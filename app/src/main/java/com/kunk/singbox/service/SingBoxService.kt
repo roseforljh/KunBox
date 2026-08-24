@@ -1256,6 +1256,10 @@ class SingBoxService : VpnService() {
     }
 
     protected fun updateServiceState(state: ServiceState) {
+        if (state == ServiceState.STARTING) {
+            SingBoxService.setLastError(null)
+            VpnStateStore.setLastError(null)
+        }
         if (serviceState == state) return
         serviceState = state
         when (state) {
@@ -2705,12 +2709,7 @@ class SingBoxService : VpnService() {
                     lastStopInitiator = VpnStopInitiator.UNKNOWN
                 }
                 val recoveryLease = setNonResourceRecoveryIntent(isRecoveryStart)
-                SingBoxService.setLastError(null)
-                VpnStateStore.setLastError(null)
                 VpnTileService.persistVpnPending("starting")
-
-                // 性能优化: 预创建 TUN Builder (非阻塞)
-                coreManager.preallocateTunBuilder()
 
                 val configPath = intent.getStringExtra(SingBoxService.EXTRA_CONFIG_PATH)
                 val pendingNode = intent.getStringExtra(SingBoxService.EXTRA_PENDING_NODE_NAME)

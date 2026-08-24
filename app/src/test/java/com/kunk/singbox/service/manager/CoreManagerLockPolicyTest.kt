@@ -122,6 +122,25 @@ class CoreManagerLockPolicyTest {
     }
 
     @Test
+    fun tunRetryUsesFreshBuildersAndTreatsStopAsCancellation() {
+        val coreSource = File(
+            "src/main/java/com/kunk/singbox/service/manager/CoreManager.kt"
+        ).readText(Charsets.UTF_8)
+        val tunSource = File(
+            "src/main/java/com/kunk/singbox/service/tun/VpnTunManager.kt"
+        ).readText(Charsets.UTF_8)
+        val serviceSource = File(
+            "src/main/java/com/kunk/singbox/service/SingBoxService.kt"
+        ).readText(Charsets.UTF_8)
+
+        assertFalse(coreSource.contains("preallocateTunBuilder"))
+        assertFalse(coreSource.contains("consumePreallocatedBuilder"))
+        assertFalse(serviceSource.contains("preallocateTunBuilder"))
+        assertTrue(coreSource.contains("builderFactory ="))
+        assertTrue(tunSource.contains("throw CancellationException"))
+    }
+
+    @Test
     fun hardStopSuppressesQueuedRestart() {
         val hardStopLease = ServiceStateHolder.setRecoveryIntentOnFailure(false)
         val completion = ShutdownManager.resolveStopCompletion(

@@ -614,6 +614,12 @@ object VpnStateStore {
 
     fun commitAppliedPerAppPolicy(snapshot: AppliedPerAppPolicySnapshot): Boolean {
         if (snapshot.revision < 0L || snapshot.serviceInstanceId.isBlank() || snapshot.digest.isBlank()) {
+            Log.e(
+                TAG,
+                "Applied per-app policy commit rejected: invalid snapshot " +
+                    "revision=${snapshot.revision}, serviceInstanceId=${snapshot.serviceInstanceId}, " +
+                    "digestBlank=${snapshot.digest.isBlank()}"
+            )
             return false
         }
         return runCatching {
@@ -623,26 +629,46 @@ object VpnStateStore {
                 if (!canCommitAppliedPerAppPolicy(
                         current,
                         snapshot,
-                        runtime.readiness.serviceInstanceId
+                        runtime.readiness.serviceInstanceId,
+                        runtime.stateOrdinal == ServiceState.RUNNING.ordinal
                     )
                 ) {
+                    Log.e(
+                        TAG,
+                        "Applied per-app policy commit rejected: runtimeState=${runtime.stateOrdinal}, " +
+                            "activeServiceInstanceId=${runtime.readiness.serviceInstanceId}, " +
+                            "currentServiceInstanceId=${current.serviceInstanceId}, " +
+                            "currentRevision=${current.revision}, " +
+                            "incomingServiceInstanceId=${snapshot.serviceInstanceId}, " +
+                            "incomingRevision=${snapshot.revision}, runtimeGeneration=${runtime.generation}, " +
+                            "incomingRuntimeGeneration=${snapshot.runtimeGeneration}"
+                    )
                     return@withLock false
                 }
-                mmkv.encode(KEY_APPLIED_PER_APP_POLICY, gson.toJson(snapshot))
+                mmkv.encode(KEY_APPLIED_PER_APP_POLICY, gson.toJson(snapshot)).also { committed ->
+                    if (!committed) Log.e(TAG, "Failed to persist applied per-app VPN policy")
+                }
             }
+        }.onFailure { error ->
+            Log.e(TAG, "Applied per-app policy commit failed", error)
         }.getOrDefault(false)
     }
 
     internal fun canCommitAppliedPerAppPolicy(
         current: AppliedPerAppPolicySnapshot,
         incoming: AppliedPerAppPolicySnapshot,
-        activeServiceInstanceId: String
+        activeServiceInstanceId: String,
+        activeServiceRunning: Boolean
     ): Boolean {
-        if (activeServiceInstanceId.isNotBlank() && incoming.serviceInstanceId != activeServiceInstanceId) return false
-        if (activeServiceInstanceId.isBlank() && current.serviceInstanceId.isNotBlank() &&
-            current.serviceInstanceId != incoming.serviceInstanceId
-        ) {
-            return false
+        if (activeServiceRunning) {
+            if (activeServiceInstanceId.isNotBlank() && incoming.serviceInstanceId != activeServiceInstanceId) {
+                return false
+            }
+            if (activeServiceInstanceId.isBlank() && current.serviceInstanceId.isNotBlank() &&
+                current.serviceInstanceId != incoming.serviceInstanceId
+            ) {
+                return false
+            }
         }
         return current.serviceInstanceId != incoming.serviceInstanceId || current.revision <= incoming.revision
     }

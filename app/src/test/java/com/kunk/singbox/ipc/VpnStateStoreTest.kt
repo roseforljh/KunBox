@@ -25,23 +25,45 @@ class VpnStateStoreTest {
             VpnStateStore.canCommitAppliedPerAppPolicy(
                 current,
                 current.copy(revision = 7L),
-                "new"
+                "new",
+                activeServiceRunning = true
             )
         )
         assertFalse(
             VpnStateStore.canCommitAppliedPerAppPolicy(
                 current,
                 current.copy(serviceInstanceId = "old", revision = 9L),
-                "new"
+                "new",
+                activeServiceRunning = true
             )
         )
         assertTrue(
             VpnStateStore.canCommitAppliedPerAppPolicy(
                 current,
                 current.copy(revision = 9L),
-                "new"
+                "new",
+                activeServiceRunning = true
             )
         )
+    }
+
+    @Test
+    fun `applied per-app policy permits a new service while runtime is not running`() {
+        val current = VpnStateStore.AppliedPerAppPolicySnapshot(
+            revision = 8L,
+            serviceInstanceId = "old"
+        )
+
+        listOf("", "old").forEach { staleRuntimeOwner ->
+            assertTrue(
+                VpnStateStore.canCommitAppliedPerAppPolicy(
+                    current,
+                    current.copy(revision = 9L, serviceInstanceId = "new"),
+                    activeServiceInstanceId = staleRuntimeOwner,
+                    activeServiceRunning = false
+                )
+            )
+        }
     }
 
     @Test

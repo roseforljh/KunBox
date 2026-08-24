@@ -185,6 +185,23 @@ class SingBoxRemoteStateTest {
     }
 
     @Test
+    fun `temporary ipc loss keeps a live data plane in recovering state`() {
+        val source = File("src/main/java/com/kunk/singbox/ipc/SingBoxRemote.kt").readText(Charsets.UTF_8)
+        val disconnectedBody = source
+            .substringAfter("override fun onServiceDisconnected")
+            .substringBefore("private fun unregisterCallback")
+
+        assertTrue(disconnectedBody.contains("markReadinessRecovering"))
+        assertFalse(disconnectedBody.contains("markReadinessUnavailable(\"service_disconnected\")"))
+
+        val callbackBody = source
+            .substringAfter("override fun onStateChanged(")
+            .substringBefore("override fun onUrlTestNodeDelayResult")
+        assertTrue(callbackBody.contains("markReadinessRecovering(\"callback_snapshot_failed\")"))
+        assertTrue(callbackBody.contains("let(::rebind)"))
+    }
+
+    @Test
     fun `ensure bound rebinds stale live reference`() {
         val result = resolveSingBoxEnsureBoundAction(
             connectionActive = true,

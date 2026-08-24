@@ -85,6 +85,12 @@ private inline fun <reified T : Enum<T>> enumValueOrDefault(value: String?, fall
     return value?.let { enumValue -> enumValues<T>().firstOrNull { it.name == enumValue } } ?: fallback
 }
 
+internal fun resolveUpdatedRuntimeLastError(
+    state: ServiceState?,
+    explicitError: String?,
+    previousError: String
+): String = explicitError ?: if (state == ServiceState.STARTING) "" else previousError
+
 @Suppress("TooManyFunctions")
 object SingBoxIpcHub {
     private const val TAG = "SingBoxIpcHub"
@@ -179,15 +185,39 @@ object SingBoxIpcHub {
         }
         synchronized(stateLock) {
             val persisted = VpnStateStore.getRuntimeStateSnapshot()
-            if (persisted.generation >= stateSnapshot.generation) {
-                stateSnapshot = persisted.copy(
-                    readiness = DataPlaneReadinessSnapshot.stopped(serviceInstanceId)
-                        .copy(generation = persisted.generation)
-                )
-            }
+            stateSnapshot = restoreSnapshotOnServiceRegistration(
+                current = stateSnapshot,
+                persisted = persisted,
+                liveCoreState = currentLiveCoreState(),
+                serviceInstanceId = serviceInstanceId,
+                nowElapsedMs = SystemClock.elapsedRealtime()
+            )
         }
         log("SingBoxIpcService registered")
         startReadinessHeartbeat()
+        if (currentLiveCoreState() != null) updateReadiness { it }
+    }
+
+    internal fun restoreSnapshotOnServiceRegistration(
+        current: VpnStateStore.RuntimeStateSnapshot,
+        persisted: VpnStateStore.RuntimeStateSnapshot,
+        liveCoreState: ServiceState?,
+        serviceInstanceId: String,
+        nowElapsedMs: Long
+    ): VpnStateStore.RuntimeStateSnapshot {
+        val restored = if (persisted.generation >= current.generation) persisted else current
+        val visibleStateOrdinal = resolveVisibleStateOrdinal(restored.stateOrdinal, liveCoreState)
+        val readiness = if (liveCoreState == null) {
+            DataPlaneReadinessSnapshot.stopped(serviceInstanceId).copy(generation = restored.generation)
+        } else {
+            val source = current.readiness.takeIf { current.generation > 0L } ?: restored.readiness
+            source.copy(
+                serviceInstanceId = serviceInstanceId,
+                updatedAtElapsedMs = nowElapsedMs,
+                generation = restored.generation
+            )
+        }
+        return restored.copy(stateOrdinal = visibleStateOrdinal, readiness = readiness)
     }
 
     fun serviceInstanceId(): String = serviceInstanceId
@@ -282,23 +312,8 @@ object SingBoxIpcHub {
         cachedStateOrdinal: Int,
         liveCoreState: ServiceState?
     ): Int {
-        return when (ServiceState.values().getOrNull(cachedStateOrdinal)) {
-            ServiceState.RUNNING -> {
-                if (liveCoreState == ServiceState.RUNNING) cachedStateOrdinal else ServiceState.STOPPED.ordinal
-            }
-            ServiceState.STARTING -> {
-                if (liveCoreState == ServiceState.STARTING || liveCoreState == ServiceState.RUNNING) {
-                    cachedStateOrdinal
-                } else {
-                    ServiceState.STOPPED.ordinal
-                }
-            }
-            ServiceState.STOPPING -> {
-                if (liveCoreState != null) cachedStateOrdinal else ServiceState.STOPPED.ordinal
-            }
-            ServiceState.STOPPED -> ServiceState.STOPPED.ordinal
-            null -> ServiceState.STOPPED.ordinal
-        }
+        if (ServiceState.values().getOrNull(cachedStateOrdinal) == null) return ServiceState.STOPPED.ordinal
+        return liveCoreState?.ordinal ?: ServiceState.STOPPED.ordinal
     }
 
     fun onAppLifecycle(isForeground: Boolean) {
@@ -326,21 +341,33 @@ object SingBoxIpcHub {
     private fun currentStateSnapshot(): VpnStateStore.RuntimeStateSnapshot {
         return synchronized(stateLock) {
             val snapshot = stateSnapshot
+            val liveCoreState = currentLiveCoreState()
             val visibleStateOrdinal = resolveVisibleStateOrdinal(
                 cachedStateOrdinal = snapshot.stateOrdinal,
-                liveCoreState = currentLiveCoreState()
+                liveCoreState = liveCoreState
             )
-            if (visibleStateOrdinal == snapshot.stateOrdinal) {
+            val reconciled = if (visibleStateOrdinal == snapshot.stateOrdinal) {
                 snapshot
             } else {
                 snapshot.copy(
                     stateOrdinal = visibleStateOrdinal,
-                    readiness = snapshot.readiness.copy(
-                        status = DataPlaneStatus.FAILED_UNPROTECTED,
-                        coreReady = false,
-                        selectorReady = false,
-                        lastReadinessReason = "live_core_missing"
-                    )
+                    readiness = if (visibleStateOrdinal == ServiceState.STOPPED.ordinal) {
+                        snapshot.readiness.copy(
+                            status = DataPlaneStatus.FAILED_UNPROTECTED,
+                            coreReady = false,
+                            selectorReady = false,
+                            lastReadinessReason = "live_core_missing"
+                        )
+                    } else {
+                        snapshot.readiness
+                    }
+                )
+            }
+            if (liveCoreState == null) {
+                reconciled
+            } else {
+                reconciled.copy(
+                    readiness = reconciled.readiness.copy(updatedAtElapsedMs = SystemClock.elapsedRealtime())
                 )
             }
         }
@@ -401,7 +428,7 @@ object SingBoxIpcHub {
                 snapshot.copy(
                     stateOrdinal = state?.ordinal ?: snapshot.stateOrdinal,
                     activeLabel = activeLabel ?: snapshot.activeLabel,
-                    lastError = lastError ?: snapshot.lastError,
+                    lastError = resolveUpdatedRuntimeLastError(state, lastError, snapshot.lastError),
                     manuallyStopped = manuallyStopped ?: snapshot.manuallyStopped,
                     readiness = readiness?.copy(
                         serviceInstanceId = serviceInstanceId,
