@@ -1,14 +1,11 @@
 package com.kunk.singbox.service.root
 
-import android.app.NotificationChannel
-import android.app.NotificationManager
 import android.app.Service
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
 import android.util.Log
-import androidx.core.app.NotificationCompat
 import com.kunk.singbox.R
 import com.kunk.singbox.core.SelectorManager
 import com.kunk.singbox.core.SingBoxCore
@@ -21,11 +18,17 @@ import com.kunk.singbox.model.PerAppVpnPolicy
 import com.kunk.singbox.model.SingBoxConfig
 import com.kunk.singbox.model.TrafficCaptureMode
 import com.kunk.singbox.repository.ConfigRepository
+import com.kunk.singbox.repository.LogRepository
 import com.kunk.singbox.repository.SettingsRepository
+import com.kunk.singbox.service.SingBoxService
 import com.kunk.singbox.service.ServiceState
 import com.kunk.singbox.service.VpnTileService
+import com.kunk.singbox.service.resolveNotificationNodeLabel
 import com.kunk.singbox.service.manager.CommandManager
+import com.kunk.singbox.service.manager.VpnStopInitiator
 import com.kunk.singbox.service.network.TrafficMonitor
+import com.kunk.singbox.service.notification.NotificationActionConfig
+import com.kunk.singbox.service.notification.VpnNotificationManager
 import com.kunk.singbox.utils.NetworkClient
 import com.google.gson.Gson
 import java.io.File
@@ -37,6 +40,8 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -66,28 +71,53 @@ class RootTransparentForegroundService : Service() {
     private lateinit var rootConnection: RootServiceConnection
     private lateinit var commandManager: CommandManager
     private lateinit var autoFailover: RootAutoFailoverController
+    private lateinit var rootNotificationManager: VpnNotificationManager
     private var monitorJob: Job? = null
     private val controlRecoveryScheduled = AtomicBoolean(false)
+    private val notificationNodeSwitchInFlight = AtomicBoolean(false)
     private var runtimeSessionId: String = ""
     @Volatile private var startAbortRequested = false
     @Volatile private var lastRootSnapshot = RootRuntimeSnapshot()
+    @Volatile private var showNotificationSpeed = true
+    @Volatile private var currentUploadSpeed = 0L
+    @Volatile private var currentDownloadSpeed = 0L
 
     override fun onCreate() {
         super.onCreate()
-        createNotificationChannel()
+        rootNotificationManager = VpnNotificationManager(
+            context = this,
+            serviceScope = serviceScope,
+            notificationId = NOTIFICATION_ID,
+            channelId = CHANNEL_ID,
+            channelName = getString(R.string.root_mode_channel),
+            actions = NotificationActionConfig(
+                serviceClass = RootTransparentForegroundService::class.java,
+                switchNodeAction = ACTION_SWITCH_NODE,
+                resetConnectionsAction = ACTION_RESET_CONNECTIONS,
+                stopAction = ACTION_STOP
+            )
+        ).also(VpnNotificationManager::createNotificationChannel)
         rootConnection = RootServiceConnection(this, ::onRootServiceDisconnected)
         commandManager = CommandManager(this, serviceScope).apply {
             init(object : CommandManager.Callbacks {
-                override fun requestNotificationUpdate(force: Boolean) = updateNotification()
+                override fun requestNotificationUpdate(force: Boolean) =
+                    this@RootTransparentForegroundService.requestNotificationUpdate(force)
 
                 override fun resolveEgressNodeName(tagOrSelector: String?): String? = tagOrSelector
 
                 override fun onRuntimeNodeChanged(nodeName: String) {
                     VpnStateStore.setActiveLabel(nodeName)
                     SingBoxIpcHub.update(activeLabel = nodeName)
+                    this@RootTransparentForegroundService.requestNotificationUpdate(force = true)
                 }
 
-                override fun onTrafficUpdate(snapshot: TrafficMonitor.TrafficSnapshot) = Unit
+                override fun onTrafficUpdate(snapshot: TrafficMonitor.TrafficSnapshot) {
+                    currentUploadSpeed = snapshot.uploadSpeed
+                    currentDownloadSpeed = snapshot.downloadSpeed
+                    if (showNotificationSpeed) {
+                        this@RootTransparentForegroundService.requestNotificationUpdate(force = false)
+                    }
+                }
 
                 override fun onControlChannelHealth(ready: Boolean) {
                     SingBoxIpcHub.updateReadiness { it.copy(selectorReady = ready) }
@@ -116,22 +146,39 @@ class RootTransparentForegroundService : Service() {
             updateNotification()
         }
         commandManager.setKernelLogObserver(autoFailover::onKernelLog)
+        serviceScope.launch {
+            SettingsRepository.getInstance(this@RootTransparentForegroundService)
+                .settings
+                .map { it.showNotificationSpeed }
+                .distinctUntilChanged()
+                .collect { enabled ->
+                    showNotificationSpeed = enabled
+                    if (isRunning) requestNotificationUpdate(force = true)
+                }
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_SWITCH_NODE -> serviceScope.launch {
-                switchNode(
-                    intent.getStringExtra(EXTRA_OUTBOUND_TAG).orEmpty(),
-                    intent.getStringExtra(EXTRA_NODE_NAME).orEmpty(),
-                    intent.getStringExtra(EXTRA_CONFIG_PATH)
-                )
+                val outboundTag = intent.getStringExtra(EXTRA_OUTBOUND_TAG).orEmpty()
+                if (outboundTag.isBlank()) {
+                    switchNextNodeFromNotification()
+                } else {
+                    switchNode(
+                        outboundTag,
+                        intent.getStringExtra(EXTRA_NODE_NAME).orEmpty(),
+                        intent.getStringExtra(EXTRA_CONFIG_PATH)
+                    )
+                }
             }
-            ACTION_RESET_CONNECTIONS -> {
-                commandManager.closeConnections()
-                rootConnection.service?.resetNetwork()
-            }
+            ACTION_RESET_CONNECTIONS -> serviceScope.launch { resetConnectionsFromNotification() }
             ACTION_STOP -> {
+                val initiator = VpnStopInitiator.fromWireValue(
+                    intent.getStringExtra(SingBoxService.EXTRA_STOP_INITIATOR)
+                )
+                VpnStateStore.setManuallyStopped(initiator.isManualStop)
+                SingBoxIpcHub.update(manuallyStopped = initiator.isManualStop)
                 if (isStarting) {
                     startAbortRequested = true
                     rootConnection.stopRootService()
@@ -182,6 +229,7 @@ class RootTransparentForegroundService : Service() {
             val settingsRepository = SettingsRepository.getInstance(this)
             settingsRepository.reloadFromStorage()
             val settings = settingsRepository.settings.value
+            showNotificationSpeed = settings.showNotificationSpeed
             check(settings.resolvedTrafficCaptureMode() == TrafficCaptureMode.ROOT_TRANSPARENT) {
                 "Root transparent mode is not selected"
             }
@@ -483,34 +531,78 @@ class RootTransparentForegroundService : Service() {
             lastReadinessReason = reason
         )
 
-    private fun createNotificationChannel() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
-        getSystemService(NotificationManager::class.java)?.createNotificationChannel(
-            NotificationChannel(CHANNEL_ID, getString(R.string.root_mode_channel), NotificationManager.IMPORTANCE_LOW)
-        )
-    }
-
     private fun startForegroundCompat(text: String) {
-        val notification = buildNotification(text)
+        val notification = rootNotificationManager.createStartingNotification(text)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
         } else {
             startForeground(NOTIFICATION_ID, notification)
         }
+        rootNotificationManager.markForegroundStarted()
     }
 
     private fun updateNotification() {
-        getSystemService(NotificationManager::class.java)?.notify(
-            NOTIFICATION_ID,
-            buildNotification(getString(R.string.root_mode_running))
+        requestNotificationUpdate(force = true)
+    }
+
+    private fun requestNotificationUpdate(force: Boolean) {
+        rootNotificationManager.requestNotificationUpdate(buildNotificationState(), this, force)
+    }
+
+    private fun buildNotificationState(): VpnNotificationManager.NotificationState {
+        val repository = ConfigRepository.getInstance(applicationContext)
+        val selectedNodeId = repository.activeNodeId.value
+        val nodeName = resolveNotificationNodeLabel(
+            selectedNodeName = repository.nodes.value.find { it.id == selectedNodeId }?.name,
+            selectedNodeStoreLabel = VpnStateStore.getSelectedNodeLabel(),
+            runtimeNodeName = commandManager.realTimeNodeName ?: VpnStateStore.getActiveLabel()
+        )
+        return VpnNotificationManager.NotificationState(
+            isRunning = isRunning,
+            activeNodeName = nodeName,
+            showSpeed = showNotificationSpeed,
+            uploadSpeed = currentUploadSpeed,
+            downloadSpeed = currentDownloadSpeed,
+            dataPlaneStatus = SingBoxIpcHub.currentReadiness().status
         )
     }
 
-    private fun buildNotification(text: String) = NotificationCompat.Builder(this, CHANNEL_ID)
-        .setSmallIcon(R.drawable.ic_notification)
-        .setContentTitle(getString(R.string.app_name))
-        .setContentText(text)
-        .setOngoing(true)
-        .setOnlyAlertOnce(true)
-        .build()
+    private suspend fun switchNextNodeFromNotification() {
+        if (!isRunning || !notificationNodeSwitchInFlight.compareAndSet(false, true)) return
+        try {
+            val repository = ConfigRepository.getInstance(applicationContext)
+            val candidates = repository.nodes.value.filter {
+                it.autoSelectionEligible && !it.meteredProtected
+            }
+            val nextNodeId = nextRootNotificationNodeId(candidates.map { it.id }, repository.activeNodeId.value)
+                ?: return
+            when (val result = repository.setActiveNodeWithResult(nextNodeId)) {
+                ConfigRepository.NodeSwitchResult.Success,
+                ConfigRepository.NodeSwitchResult.NotRunning -> requestNotificationUpdate(force = true)
+                is ConfigRepository.NodeSwitchResult.Failed -> Log.e(
+                    TAG,
+                    "Notification node switch failed: ${result.reason}"
+                )
+            }
+        } finally {
+            notificationNodeSwitchInFlight.set(false)
+        }
+    }
+
+    private fun resetConnectionsFromNotification() {
+        if (!isRunning) return
+        val closed = commandManager.closeConnections()
+        val reset = rootConnection.service?.resetNetwork() == true
+        LogRepository.getInstance().addLog(
+            "INFO: Root notification reset connections closed=$closed resetNetwork=$reset"
+        )
+        requestNotificationUpdate(force = true)
+    }
+}
+
+internal fun nextRootNotificationNodeId(candidateIds: List<String>, activeNodeId: String?): String? {
+    val candidates = candidateIds.map(String::trim).filter(String::isNotBlank).distinct()
+    if (candidates.size < 2) return null
+    val currentIndex = candidates.indexOf(activeNodeId)
+    return candidates[(currentIndex + 1) % candidates.size]
 }
