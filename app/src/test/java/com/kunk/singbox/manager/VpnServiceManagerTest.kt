@@ -136,9 +136,11 @@ class VpnServiceManagerTest {
 
         assertTrue(body.contains("SingBoxService::class.java"))
         assertTrue(body.contains("ProxyOnlyService::class.java"))
+        assertTrue(body.contains("RootTransparentForegroundService::class.java"))
         assertTrue(body.contains("val activeMode = VpnStateStore.getMode()"))
         assertTrue(body.contains("shouldDispatchStopToService(activeMode, VpnStateStore.CoreMode.VPN)"))
         assertTrue(body.contains("shouldDispatchStopToService(activeMode, VpnStateStore.CoreMode.PROXY)"))
+        assertTrue(body.contains("shouldDispatchStopToService(activeMode, VpnStateStore.CoreMode.ROOT)"))
         assertTrue(body.contains("putExtra(SingBoxService.EXTRA_STOP_INITIATOR, initiator.wireValue)"))
     }
 
@@ -151,6 +153,7 @@ class VpnServiceManagerTest {
 
         assertTrue(body.contains("SingBoxService.ACTION_FORCE_STOP"))
         assertTrue(body.contains("ProxyOnlyService.ACTION_FORCE_STOP"))
+        assertTrue(body.contains("RootTransparentForegroundService.ACTION_STOP"))
     }
 
     @Test

@@ -202,9 +202,17 @@ object NodeAutoFailoverPolicy {
         records: List<QuarantinedNode>,
         nowAtMs: Long
     ): List<QuarantinedNode> {
-        return records
+        val latestByTag = linkedMapOf<String, QuarantinedNode>()
+        records.asSequence()
             .filter { it.tag.isNotBlank() && it.expiresAtMs > nowAtMs }
-            .distinctBy { UrlTestTagMatcher.normalizeTag(it.tag) }
+            .forEach { record ->
+                val normalizedTag = UrlTestTagMatcher.normalizeTag(record.tag)
+                val current = latestByTag[normalizedTag]
+                if (current == null || record.expiresAtMs > current.expiresAtMs) {
+                    latestByTag[normalizedTag] = record
+                }
+            }
+        return latestByTag.values.toList()
     }
 
     internal fun encodeQuarantine(records: List<QuarantinedNode>): String {

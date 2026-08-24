@@ -217,6 +217,96 @@ class ConnectionStormGuardTest {
     }
 
     @Test
+    fun activeConnectionIdsForOutboundUseOutboundTagsAndChainWithoutCollateralMatches() {
+        val guard = ConnectionStormGuard()
+        guard.observe(
+            reset = false,
+            events = listOf(
+                ConnectionTrafficEventData(
+                    type = ConnectionTrafficAttributor.EVENT_NEW,
+                    id = "outbound-match",
+                    outbound = "bad-node"
+                ),
+                ConnectionTrafficEventData(
+                    type = ConnectionTrafficAttributor.EVENT_NEW,
+                    id = "tag-match",
+                    tags = listOf("bad-node")
+                ),
+                ConnectionTrafficEventData(
+                    type = ConnectionTrafficAttributor.EVENT_NEW,
+                    id = "chain-match",
+                    chain = listOf("front", "bad-node")
+                ),
+                ConnectionTrafficEventData(
+                    type = ConnectionTrafficAttributor.EVENT_NEW,
+                    id = "healthy",
+                    outbound = "healthy-node"
+                )
+            ),
+            nowMs = 1_000L
+        )
+
+        assertEquals(
+            setOf("outbound-match", "tag-match", "chain-match"),
+            guard.activeConnectionIdsForOutbound("bad-node")
+        )
+    }
+
+    @Test
+    fun targetedCloseAcknowledgementRemovesOnlyClosedConnectionIds() {
+        val guard = ConnectionStormGuard()
+        guard.observe(
+            reset = false,
+            events = listOf(
+                ConnectionTrafficEventData(
+                    type = ConnectionTrafficAttributor.EVENT_NEW,
+                    id = "closed",
+                    outbound = "bad-node"
+                ),
+                ConnectionTrafficEventData(
+                    type = ConnectionTrafficAttributor.EVENT_NEW,
+                    id = "remaining",
+                    outbound = "bad-node"
+                )
+            ),
+            nowMs = 1_000L
+        )
+
+        guard.acknowledgeClosedConnectionIds(setOf("closed"))
+
+        assertEquals(setOf("remaining"), guard.activeConnectionIdsForOutbound("bad-node"))
+    }
+
+    @Test
+    fun metadataFreeUpdateKeepsOriginalOutboundForTargetedClose() {
+        val guard = ConnectionStormGuard()
+        guard.observe(
+            reset = false,
+            events = listOf(
+                ConnectionTrafficEventData(
+                    type = ConnectionTrafficAttributor.EVENT_NEW,
+                    id = "connection",
+                    outbound = "bad-node"
+                )
+            ),
+            nowMs = 1_000L
+        )
+        guard.observe(
+            reset = false,
+            events = listOf(
+                ConnectionTrafficEventData(
+                    type = ConnectionTrafficAttributor.EVENT_UPDATE,
+                    id = "connection",
+                    downloadDelta = 100L
+                )
+            ),
+            nowMs = 2_000L
+        )
+
+        assertEquals(setOf("connection"), guard.activeConnectionIdsForOutbound("bad-node"))
+    }
+
+    @Test
     fun incidentHistoryPersistsBoundedAttributionSnapshots() {
         val directory = Files.createTempDirectory("kunbox-connection-incidents").toFile()
         val file = directory.resolve("connection_incidents.jsonl")
@@ -249,6 +339,28 @@ class ConnectionStormGuardTest {
             assertEquals(listOf(1L, 2L), retained.map { it.timestampEpochMs })
             assertEquals(listOf("com.example.storm"), retained.last().packageNames)
             assertEquals(mapOf("front-node>proxy-node" to 256), retained.last().chainCounts)
+        } finally {
+            directory.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun incidentHistoryNormalizesLegacyRowsBeforeDiagnosticExport() {
+        val directory = Files.createTempDirectory("kunbox-legacy-connection-incidents").toFile()
+        val file = directory.resolve("connection_incidents.jsonl")
+        try {
+            file.writeText(
+                """{"timestampEpochMs":1,"elapsedRealtimeMs":2,"mode":"root","reason":"legacy",""" +
+                    """"closeReason":"legacy","closeSucceeded":true}""" + "\n"
+            )
+
+            val snapshots = ConnectionIncidentHistory(file).read()
+            val exported = formatConnectionIncidentSnapshotsJsonl(snapshots)
+
+            assertTrue(exported.contains("\"package_names\":[]"))
+            assertTrue(exported.contains("\"outbounds\":[]"))
+            assertTrue(exported.contains("\"chains\":[]"))
+            assertTrue(exported.contains("\"protocols\":[]"))
         } finally {
             directory.deleteRecursively()
         }

@@ -274,6 +274,7 @@ object VpnServiceManager {
                     add(runCatching {
                         appContext.startService(Intent(appContext, RootTransparentForegroundService::class.java).apply {
                             action = RootTransparentForegroundService.ACTION_STOP
+                            putExtra(SingBoxService.EXTRA_STOP_INITIATOR, initiator.wireValue)
                         })
                     })
                 }

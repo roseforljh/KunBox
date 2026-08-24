@@ -63,6 +63,7 @@ class CommandManager(
         internal const val COMMAND_LOG_STABLE_WINDOW_MS = 30_000L
         internal const val BASE_COMMAND_HEARTBEAT_TIMEOUT_MS = 15_000L
         internal val COMMAND_LOG_RECONNECT_DELAYS_MS = longArrayOf(500L, 1_000L, 2_000L, 4_000L, 8_000L)
+        private val TARGETED_CLOSE_DISPATCHER = Dispatchers.IO.limitedParallelism(8)
 
         internal fun commandLogReconnectDelay(failureCount: Int): Long {
             require(failureCount > 0)
@@ -583,6 +584,35 @@ class CommandManager(
         } catch (_: Exception) {
             false
         }
+    }
+
+    fun connectionIdsForOutboundTag(outboundTag: String): Set<String> {
+        return connectionStormGuard.activeConnectionIdsForOutbound(outboundTag)
+    }
+
+    suspend fun closeConnectionsById(connectionIds: Collection<String>): Set<String> {
+        val ids = connectionIds.map(String::trim).filter(String::isNotBlank).distinct()
+        if (ids.isEmpty()) return emptySet()
+        val client = synchronized(runtimeAccess) {
+            commandClientConnections ?: commandClient
+        } ?: return emptySet()
+        val closed = coroutineScope {
+            ids.map { id ->
+                async(TARGETED_CLOSE_DISPATCHER) {
+                    try {
+                        client.closeConnection(id)
+                        id
+                    } catch (error: CancellationException) {
+                        throw error
+                    } catch (error: Exception) {
+                        Log.w(TAG, "closeConnection failed id=$id: ${error.message}")
+                        null
+                    }
+                }
+            }.awaitAll().filterNotNull().toSet()
+        }
+        connectionStormGuard.acknowledgeClosedConnectionIds(closed)
+        return closed
     }
 
     private fun beginCommandRuntime(fdProvider: (() -> ParcelFileDescriptor?)?): Long =

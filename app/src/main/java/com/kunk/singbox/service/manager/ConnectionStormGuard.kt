@@ -63,7 +63,8 @@ internal class ConnectionStormGuard(
 ) {
     private data class TrackedConnection(
         val source: ConnectionSourceIdentity,
-        val event: ConnectionTrafficEventData
+        val event: ConnectionTrafficEventData,
+        val routingTags: Set<String>
     )
 
     private data class Creation(
@@ -85,6 +86,23 @@ internal class ConnectionStormGuard(
         require(outboundFailureLimit > 0)
         require(windowMs > 0L)
         require(quarantineMs > 0L)
+    }
+
+    @Synchronized
+    fun activeConnectionIdsForOutbound(outboundTag: String): Set<String> {
+        val normalizedTag = outboundTag.trim()
+        if (normalizedTag.isEmpty()) return emptySet()
+        return activeConnections
+            .filterValues { tracked -> tracked.usesOutbound(normalizedTag) }
+            .keys
+            .toSet()
+    }
+
+    @Synchronized
+    fun acknowledgeClosedConnectionIds(connectionIds: Set<String>) {
+        if (connectionIds.isEmpty()) return
+        activeConnections.keys.removeAll(connectionIds)
+        recentCreations.removeAll { it.connectionId in connectionIds }
     }
 
     @Synchronized
@@ -149,11 +167,7 @@ internal class ConnectionStormGuard(
         if (quarantinedUntilMs[quarantineKey]?.let { it > nowMs } == true) return null
         quarantinedUntilMs[quarantineKey] = nowMs + quarantineMs
         val matchingConnectionIds = activeConnections
-            .filterValues { tracked ->
-                tracked.event.outbound == normalizedTag ||
-                    normalizedTag in tracked.event.tags ||
-                    normalizedTag in tracked.event.chain
-            }
+            .filterValues { tracked -> tracked.usesOutbound(normalizedTag) }
             .keys
             .toSet()
         return ConnectionStormDecision(
@@ -250,17 +264,32 @@ internal class ConnectionStormGuard(
             ?: recentCreations.firstOrNull { it.source.key == key }?.source
     }
 
+    private fun TrackedConnection.usesOutbound(outboundTag: String): Boolean {
+        return outboundTag in routingTags
+    }
+
     private fun observeEvent(event: ConnectionTrafficEventData, countAsCreation: Boolean, nowMs: Long): String? {
         when (event.type) {
             ConnectionTrafficAttributor.EVENT_CLOSED -> activeConnections.remove(event.id)
             ConnectionTrafficAttributor.EVENT_NEW -> {
                 val source = event.sourceIdentity()
-                val previous = activeConnections.put(event.id, TrackedConnection(source, event))
+                val existing = activeConnections[event.id]
+                val previous = activeConnections.put(
+                    event.id,
+                    TrackedConnection(
+                        source = source,
+                        event = event,
+                        routingTags = event.routingTags().ifEmpty { existing?.routingTags.orEmpty() }
+                    )
+                )
                 if (countAsCreation && previous == null) recentCreations.addLast(Creation(event.id, source, nowMs))
                 if (quarantinedUntilMs[source.key]?.let { it > nowMs } == true) return event.id
             }
             else -> activeConnections[event.id]?.let { tracked ->
-                activeConnections[event.id] = tracked.copy(event = event)
+                activeConnections[event.id] = tracked.copy(
+                    event = event,
+                    routingTags = event.routingTags().ifEmpty { tracked.routingTags }
+                )
             }
         }
         return null
@@ -279,6 +308,14 @@ internal class ConnectionStormGuard(
         inbound = inbound,
         source = source
     )
+
+    private fun ConnectionTrafficEventData.routingTags(): Set<String> {
+        return buildSet {
+            outbound?.trim()?.takeIf(String::isNotBlank)?.let(::add)
+            tags.map(String::trim).filter(String::isNotBlank).forEach(::add)
+            chain.map(String::trim).filter(String::isNotBlank).forEach(::add)
+        }
+    }
 
     private companion object {
         const val DEFAULT_SOURCE_CREATION_LIMIT = 256

@@ -190,7 +190,7 @@ internal class HealthSignalAggregator(
         private val QUERY_ID_REGEX = Regex("""\[(\d+)\s+[^\]]+]""")
         private val DNS_ROUTE_REGEX = Regex("""route\((dns-remote-[^)]+)\)""")
         private val DNS_TIMEOUT_REGEX = Regex(
-            """dns:\s+exchange failed for\s+(.+?)\.\s+IN\s+(?:A|AAAA):\s+context deadline exceeded""",
+            """dns:\s+exchange failed for\s+(.+?)\.\s+IN\s+(?:A|AAAA|HTTPS):\s+context deadline exceeded""",
             RegexOption.IGNORE_CASE
         )
         private val TRANSPORT_FAILURE_REGEX = Regex(
