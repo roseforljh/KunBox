@@ -6693,6 +6693,11 @@ class ConfigRepository(protected val context: Context) {
 
         internal fun buildRootExplicitFallbackGroupTag(nodeId: String): String = "F:$nodeId"
 
+        internal fun isRootExplicitFallbackGroupTag(tag: String): Boolean {
+            if (!tag.startsWith("F:")) return false
+            return runCatching { UUID.fromString(tag.substring(2)) }.isSuccess
+        }
+
         internal fun canBuildRootFallbackSelector(selectedTag: String, endpointTags: Set<String>): Boolean =
             selectedTag.isNotBlank() && selectedTag !in endpointTags
 

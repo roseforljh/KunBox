@@ -13,7 +13,18 @@ import org.junit.Test
 import java.io.File
 
 class DashboardViewModelStateResolutionTest {
+    @Test
+    fun stopCancelsPendingCoreStartBeforeItCanDispatchService() {
+        val source = File("src/main/java/com/kunk/singbox/viewmodel/DashboardViewModel.kt")
+            .readText(Charsets.UTF_8)
+        val stopBody = source.substringAfter("private fun stopVpn()")
+            .substringBefore("private fun waitForStopConfirmation")
+        val startBody = source.substringAfter("private fun startCore()")
+            .substringBefore("private fun stopVpn()")
 
+        assertTrue(stopBody.contains("startCoreJob?.cancel()"))
+        assertTrue(startBody.contains("catch (_: CancellationException)"))
+    }
     @Test
     fun persistedActiveDoesNotCreateConnectedUiStateWithoutRunningService() {
         assertEquals(
@@ -222,6 +233,40 @@ class DashboardViewModelStateResolutionTest {
                 ipcBound = true
             )
         )
+    }
+
+    @Test
+    fun recoveringDataPlaneDoesNotBecomeIdleDuringIpcReconnect() {
+        assertEquals(
+            ConnectionState.Connecting,
+            resolveTrustedDashboardConnectionState(
+                serviceState = ServiceState.RUNNING,
+                ipcBound = false,
+                readiness = DataPlaneReadinessSnapshot(
+                    status = DataPlaneStatus.RECOVERING,
+                    coreReady = true,
+                    selectorReady = true,
+                    recoveryActive = true,
+                    updatedAtElapsedMs = 1_000L
+                ),
+                mode = VpnStateStore.CoreMode.VPN,
+                apiLevel = 36,
+                nowElapsedMs = 1_000L
+            )
+        )
+    }
+
+    @Test
+    fun normalVpnConnectionDoesNotShowSystemLockdownReminder() {
+        val source = File("src/main/java/com/kunk/singbox/ui/screens/DashboardScreen.kt")
+            .readText(Charsets.UTF_8)
+        val warningBody = source
+            .substringAfter("val protectionWarning = when")
+            .substringBefore("if (protectionWarning != null)")
+
+        assertFalse(warningBody.contains("lockdownStatus"))
+        assertFalse(warningBody.contains("vpn_lockdown_incomplete"))
+        assertTrue(warningBody.contains("vpn_status_failed_unprotected"))
     }
 
     @Test

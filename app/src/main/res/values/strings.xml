@@ -847,6 +847,5 @@
     <string name="dashboard_status_protecting">保护中</string>
     <string name="dashboard_status_recovering">恢复中</string>
     <string name="dashboard_status_blocked">已阻断</string>
-    <string name="vpn_lockdown_incomplete">系统防直连未开启，点此设置</string>
     <string name="vpn_browser_not_covered">默认浏览器未被 VPN 接管，网页可能直接联网</string>
 </resources>

@@ -55,6 +55,7 @@ import kotlinx.coroutines.flow.onCompletion
 import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.withContext
@@ -370,6 +371,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
     private var pendingIdleJob: Job? = null
     private var startGraceUntilElapsedMs: Long? = null
     private var refreshStateJob: Job? = null
+    private var startCoreJob: Job? = null
 
     /**
      * 启动状态收集器（幂等方法）
@@ -783,7 +785,8 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     private fun startCore() {
-        viewModelScope.launch {
+        startCoreJob?.cancel()
+        startCoreJob = viewModelScope.launch {
             val context = getApplication<Application>()
             stopConfirmJob?.cancel()
             stopConfirmJob = null
@@ -808,6 +811,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
             }
 
             SingBoxRemote.clearLastErrorForNewStart()
+            withContext(Dispatchers.IO) { VpnStateStore.setLastError("") }
             _connectionState.value = ConnectionState.Connecting
 
             // Only stop an actually active opposite core. Starting an idle service just to stop it
@@ -951,6 +955,8 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                         )
                     )
                 }
+            } catch (_: CancellationException) {
+                return@launch
             } catch (e: Exception) {
                 _connectionState.value = ConnectionState.Error
                 emitToast(getApplication<Application>().getString(R.string.node_start_failed, e.message ?: ""))
@@ -960,6 +966,8 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
 
     private fun stopVpn() {
         val context = getApplication<Application>()
+        startCoreJob?.cancel()
+        startCoreJob = null
         startMonitorJob?.cancel()
         startMonitorJob = null
         stopTrafficMonitor()

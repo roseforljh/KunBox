@@ -847,6 +847,5 @@
     <string name="dashboard_status_protecting">Protecting</string>
     <string name="dashboard_status_recovering">Recovering</string>
     <string name="dashboard_status_blocked">Blocked</string>
-    <string name="vpn_lockdown_incomplete">System leak protection is off. Tap to configure</string>
     <string name="vpn_browser_not_covered">Default browser is outside VPN coverage</string>
 </resources>

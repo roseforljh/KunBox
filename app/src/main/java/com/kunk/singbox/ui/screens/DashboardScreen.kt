@@ -57,8 +57,7 @@ import com.kunk.singbox.ipc.SingBoxRemote
 import com.kunk.singbox.model.ConnectionState
 import com.kunk.singbox.model.PingDisplayText
 import com.kunk.singbox.model.RoutingMode
-import com.kunk.singbox.model.TrafficCaptureMode
-import com.kunk.singbox.ui.navigation.Screen
+import com.kunk.singbox.ui.navigation.Screen as AppScreen
 import com.kunk.singbox.viewmodel.DashboardViewModel
 import com.kunk.singbox.viewmodel.SettingsViewModel
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -441,11 +440,7 @@ fun DashboardScreen(
                 val protectionWarning = when {
                     browserExcluded ->
                         stringResource(R.string.vpn_browser_not_covered)
-                    failedUnprotected -> stringResource(R.string.vpn_lockdown_incomplete)
-                    settings.resolvedTrafficCaptureMode() == TrafficCaptureMode.VPN &&
-                        dataPlaneReadiness.status == com.kunk.singbox.ipc.DataPlaneStatus.READY &&
-                        dataPlaneReadiness.lockdownStatus != com.kunk.singbox.ipc.VpnLockdownStatus.ENABLED ->
-                        stringResource(R.string.vpn_lockdown_incomplete)
+                    failedUnprotected -> stringResource(R.string.vpn_status_failed_unprotected)
                     else -> null
                 }
                 if (protectionWarning != null) {
@@ -575,13 +570,13 @@ fun DashboardScreen(
                             Icons.Rounded.Terminal,
                             stringResource(R.string.dashboard_logs)
                         ) {
-                            navController.navigate(Screen.Logs.route)
+                            navController.navigate(AppScreen.Logs.route)
                         }
                         QuickActionButton(
                             Icons.Rounded.BugReport,
                             stringResource(R.string.dashboard_diagnostics)
                         ) {
-                            navController.navigate(Screen.Diagnostics.route)
+                            navController.navigate(AppScreen.Diagnostics.route)
                         }
                     }
                 }
