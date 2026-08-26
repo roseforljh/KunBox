@@ -15,6 +15,7 @@ internal data class ConnectionTrafficEventData(
     val protocol: String? = null,
     val source: String? = null,
     val outbound: String? = null,
+    val fromOutbound: String? = null,
     val chain: List<String> = emptyList(),
     val routeRule: String? = null,
     val destination: String? = null,
@@ -71,6 +72,7 @@ internal object ConnectionTrafficEventReader {
                                 source = runCatching { connection?.source }.getOrNull()
                                     ?.takeIf(String::isNotBlank),
                                 outbound = outbound,
+                                fromOutbound = fromOutbound,
                                 chain = chain,
                                 routeRule = routeRule,
                                 destination = runCatching { connection?.destination }.getOrNull()

@@ -49,6 +49,7 @@ import java.net.SocketTimeoutException
 import java.net.URI
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
+import java.security.MessageDigest
 import java.util.Collections
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
@@ -177,7 +178,10 @@ class ConfigRepository(protected val context: Context) {
         val path: String,
         val activeNodeTag: String?,
         val outboundTags: Set<String>,
-        val activeNodeName: String? = null
+        val activeNodeName: String? = null,
+        val requestId: String = "",
+        val configDigest: String = "",
+        val appRoutingDigest: String = ""
     )
 
     internal data class OutboundSemanticTestInput(
@@ -3624,7 +3628,8 @@ class ConfigRepository(protected val context: Context) {
     suspend fun generateConfigFile(
         selectedProfileId: String? = null,
         selectedNodeId: String? = null,
-        forceManualSelection: Boolean = false
+        forceManualSelection: Boolean = false,
+        candidateRequestId: String? = null
     ): ConfigRepository.ConfigGenerationResult? = withContext(Dispatchers.IO) {
         lastConfigGenerationError = null
         try {
@@ -3649,6 +3654,19 @@ class ConfigRepository(protected val context: Context) {
             val activeNode = _nodes.value.find { it.id == activeNodeId }
                 ?: allNodesSnapshot.find { it.id == activeNodeId }
             val sanitizedSettings = settingsRepository.settings.first()
+            val telegramCapturedPackages = filterVpnCapturedPackages(
+                sanitizedSettings,
+                listOf("org.telegram.messenger")
+            )
+            val appRouteScopeTrace = "[APP_ROUTE_TRACE] scope mode=${sanitizedSettings.routingMode} " +
+                "capture=${sanitizedSettings.resolvedTrafficCaptureMode()} " +
+                "vpnAppMode=${sanitizedSettings.vpnAppMode} " +
+                "telegramCaptured=${telegramCapturedPackages.isNotEmpty()} " +
+                "telegramPackages=${telegramCapturedPackages.joinToString("|")} " +
+                "appRules=${sanitizedSettings.appRules.count { it.enabled }} " +
+                "appGroups=${sanitizedSettings.appGroups.count { it.enabled }}"
+            Log.i(ConfigRepository.TAG, appRouteScopeTrace)
+            LogRepository.getInstance().addAlwaysLog("INFO $appRouteScopeTrace")
             if (activeNode?.meteredProtected == true &&
                 !NodeProtectionStore.isUseAuthorized(
                     nodeId = activeNode.id,
@@ -3775,6 +3793,12 @@ class ConfigRepository(protected val context: Context) {
                 )
             )
 
+            ConfigRepository.requireValidApplicationRoutes(
+                route = runConfig.route,
+                availableTags = runtimeOutbounds.mapTo(mutableSetOf(), Outbound::tag) +
+                    endpoints.orEmpty().map(Endpoint::tag)
+            )
+
             val validation = singBoxCore.validateConfig(stripInternalMetadata(runConfig))
             validation.exceptionOrNull()?.let { e ->
                 val msg = e.cause?.message ?: e.message ?: "unknown error"
@@ -3802,19 +3826,38 @@ class ConfigRepository(protected val context: Context) {
                     throw IllegalStateException("Selected node is not available in runtime outbounds: $candidateTag")
                 }
             }
-            val configFile = File(context.filesDir, "running_config.json")
             val runtimeConfigContent = gson.toJson(stripInternalMetadata(runConfig))
-            check(NodeProtectionStore.replaceRuntimeMappings(runtimeMappings, runtimeConfigContent)) {
-                "无法持久化运行时节点映射，已阻止启动"
+            val requestId = candidateRequestId.orEmpty()
+            val configFile = if (requestId.isBlank()) {
+                File(context.filesDir, "running_config.json")
+            } else {
+                require(requestId.all { it.isLetterOrDigit() || it == '-' || it == '_' }) {
+                    "Invalid candidate config request ID"
+                }
+                File(context.filesDir, "running_config_candidate_$requestId.json")
+            }
+            if (requestId.isBlank()) {
+                check(NodeProtectionStore.replaceRuntimeMappings(runtimeMappings, runtimeConfigContent)) {
+                    "无法持久化运行时节点映射，已阻止启动"
+                }
             }
             ConfigRepository.writeTextFileAtomically(configFile, runtimeConfigContent)
+            if (requestId.isNotBlank()) {
+                if (!NodeProtectionStore.stageRuntimeMappings(requestId, runtimeMappings, runtimeConfigContent)) {
+                    runCatching { configFile.delete() }
+                    throw IllegalStateException("无法暂存候选配置的运行时节点映射，已阻止启动")
+                }
+            }
             logRunningConfigPath(configFile, resolvedTag, allTags.size)
 
             ConfigRepository.ConfigGenerationResult(
                 path = configFile.absolutePath,
                 activeNodeTag = resolvedTag,
                 outboundTags = allTags,
-                activeNodeName = activeNode?.name.takeIf { activeAutoTag == null }
+                activeNodeName = activeNode?.name.takeIf { activeAutoTag == null },
+                requestId = requestId,
+                configDigest = ConfigRepository.sha256(runtimeConfigContent),
+                appRoutingDigest = ConfigRepository.appRoutingDigest(sanitizedSettings)
             )
         } catch (e: Exception) {
             lastConfigGenerationError = e.message ?: "配置生成失败"
@@ -4234,11 +4277,29 @@ class ConfigRepository(protected val context: Context) {
         nodeTagResolver: (String?) -> String?
     ): List<RouteRule> {
         val rules = mutableListOf<RouteRule>()
+        val targetByPackage = mutableMapOf<String, String>()
+
+        fun addAppRule(label: String, baseRule: RouteRule, packageNames: List<String>) {
+            if (packageNames.isEmpty()) return
+            val target = ConfigRepository.routeTargetKey(baseRule)
+            packageNames.forEach { packageName ->
+                val previous = targetByPackage.putIfAbsent(packageName, target)
+                require(previous == null || previous == target) {
+                    "应用分流冲突：$label 与其他规则展开到同一 UID 应用 $packageName，" +
+                        "但目标分别为 $previous 和 $target。请把共享 UID 应用放入同一分组并使用同一目标。"
+                }
+            }
+            rules.add(baseRule.copy(packageName = packageNames))
+        }
 
         settings.appRules
             .filter { ConfigRepository.shouldApplyCustomAndAppRules(settings.routingMode) && it.enabled }
             .forEach { rule ->
-                val semantic = ConfigRepository.resolveOutboundSemantic(
+                val packageNames = resolvePackagesSharingUid(
+                    filterVpnCapturedPackages(settings, listOf(rule.packageName))
+                )
+                if (packageNames.isEmpty()) return@forEach
+                val semantic = ConfigRepository.resolveAppOutboundSemanticStrict(
                     mode = ConfigRepository.resolveAppRuleOutboundMode(rule.outboundMode),
                     value = rule.outboundValue,
                     context = ConfigRepositoryOutboundSemanticContext(
@@ -4246,21 +4307,20 @@ class ConfigRepository(protected val context: Context) {
                         outbounds = outbounds,
                         profiles = profiles,
                         nodeTagResolver = nodeTagResolver
-                    )
+                    ),
+                    label = "应用「${rule.appName.ifBlank { rule.packageName }}」"
                 )
                 val baseRule = ConfigRepository.toRouteRule(semantic, defaultProxyTag)
-
-                val packageNames = resolvePackagesSharingUid(
-                    filterVpnCapturedPackages(settings, listOf(rule.packageName))
-                )
-                if (packageNames.isNotEmpty()) {
-                    rules.add(baseRule.copy(packageName = packageNames))
-                }
+                addAppRule("应用「${rule.appName.ifBlank { rule.packageName }}」", baseRule, packageNames)
             }
         settings.appGroups
             .filter { ConfigRepository.shouldApplyCustomAndAppRules(settings.routingMode) && it.enabled }
             .forEach { group ->
-                val semantic = ConfigRepository.resolveOutboundSemantic(
+                val packageNames = resolvePackagesSharingUid(
+                    filterVpnCapturedPackages(settings, group.apps.map { it.packageName })
+                )
+                if (packageNames.isEmpty()) return@forEach
+                val semantic = ConfigRepository.resolveAppOutboundSemanticStrict(
                     mode = ConfigRepository.resolveAppGroupOutboundMode(group.outboundMode),
                     value = group.outboundValue,
                     context = ConfigRepositoryOutboundSemanticContext(
@@ -4268,19 +4328,11 @@ class ConfigRepository(protected val context: Context) {
                         outbounds = outbounds,
                         profiles = profiles,
                         nodeTagResolver = nodeTagResolver
-                    )
+                    ),
+                    label = "应用分组「${group.name}」"
                 )
                 val baseRule = ConfigRepository.toRouteRule(semantic, defaultProxyTag)
-                val packageNames = resolvePackagesSharingUid(
-                    filterVpnCapturedPackages(settings, group.apps.map { it.packageName })
-                )
-                if (packageNames.isNotEmpty()) {
-                    rules.add(
-                        baseRule.copy(
-                            packageName = packageNames
-                        )
-                    )
-                }
+                addAppRule("应用分组「${group.name}」", baseRule, packageNames)
             }
 
         return rules
@@ -4570,7 +4622,11 @@ class ConfigRepository(protected val context: Context) {
         settings.appRules
             .filter { ConfigRepository.shouldApplyCustomAndAppRules(settings.routingMode) && it.enabled }
             .forEach { rule ->
-                val semantic = ConfigRepository.resolveOutboundSemantic(
+                val packageNames = resolvePackagesSharingUid(
+                    filterVpnCapturedPackages(settings, listOf(rule.packageName))
+                )
+                if (packageNames.isEmpty()) return@forEach
+                val semantic = ConfigRepository.resolveAppOutboundSemanticStrict(
                     mode = ConfigRepository.resolveAppRuleOutboundMode(rule.outboundMode),
                     value = rule.outboundValue,
                     context = ConfigRepositoryOutboundSemanticContext(
@@ -4578,19 +4634,19 @@ class ConfigRepository(protected val context: Context) {
                         outbounds = outboundsContext.outbounds,
                         profiles = profiles,
                         nodeTagResolver = outboundsContext.ruleNodeTagResolver
-                    )
+                    ),
+                    label = "应用「${rule.appName.ifBlank { rule.packageName }}」"
                 )
-                val packageNames = resolvePackagesSharingUid(
-                    filterVpnCapturedPackages(settings, listOf(rule.packageName))
-                )
-                if (packageNames.isNotEmpty()) {
-                    addPackageDnsRule(DnsRule(packageName = packageNames), semantic)
-                }
+                addPackageDnsRule(DnsRule(packageName = packageNames), semantic)
             }
         settings.appGroups
             .filter { ConfigRepository.shouldApplyCustomAndAppRules(settings.routingMode) && it.enabled }
             .forEach { group ->
-                val semantic = ConfigRepository.resolveOutboundSemantic(
+                val packageNames = resolvePackagesSharingUid(
+                    filterVpnCapturedPackages(settings, group.apps.map { it.packageName })
+                )
+                if (packageNames.isEmpty()) return@forEach
+                val semantic = ConfigRepository.resolveAppOutboundSemanticStrict(
                     mode = ConfigRepository.resolveAppGroupOutboundMode(group.outboundMode),
                     value = group.outboundValue,
                     context = ConfigRepositoryOutboundSemanticContext(
@@ -4598,14 +4654,10 @@ class ConfigRepository(protected val context: Context) {
                         outbounds = outboundsContext.outbounds,
                         profiles = profiles,
                         nodeTagResolver = outboundsContext.ruleNodeTagResolver
-                    )
+                    ),
+                    label = "应用分组「${group.name}」"
                 )
-                val packageNames = resolvePackagesSharingUid(
-                    filterVpnCapturedPackages(settings, group.apps.map { it.packageName })
-                )
-                if (packageNames.isNotEmpty()) {
-                    addPackageDnsRule(DnsRule(packageName = packageNames), semantic)
-                }
+                addPackageDnsRule(DnsRule(packageName = packageNames), semantic)
             }
 
         appDnsRules.addAll(
@@ -5444,6 +5496,16 @@ class ConfigRepository(protected val context: Context) {
         val defaultResolverTag = "dns-bootstrap"
 
         val normalizedRules = normalizeRunRouteRules(allRules)
+        normalizedRules.withIndex()
+            .filter { (_, rule) -> "org.telegram.messenger" in rule.packageName.orEmpty() }
+            .forEach { (index, rule) ->
+                val trace = "[APP_ROUTE_TRACE] config ruleIndex=$index " +
+                    "packages=${rule.packageName.orEmpty().joinToString("|")} " +
+                    "outbound=${rule.outbound.orEmpty()} action=${rule.action.orEmpty()} " +
+                    "selector=$selectorTag available=${outbounds.joinToString("|") { it.tag }}"
+                Log.i(ConfigRepository.TAG, trace)
+                LogRepository.getInstance().addAlwaysLog("INFO $trace")
+            }
 
         return RouteConfig(
             ruleSet = validRuleSets,
@@ -6038,7 +6100,9 @@ class ConfigRepository(protected val context: Context) {
     }
 
     protected fun filterVpnCapturedPackages(settings: AppSettings, packageNames: List<String>): List<String> {
-        if (!settings.tunEnabled) return packageNames.map(String::trim).filter(String::isNotBlank).distinct()
+        if (!shouldFilterCapturedPackages(settings)) {
+            return packageNames.map(String::trim).filter(String::isNotBlank).distinct()
+        }
         val policy = PerAppVpnPolicy.from(settings)
         val selectedPackages = when (policy.mode) {
             VpnAppMode.ALL -> emptySet()
@@ -7090,10 +7154,14 @@ class ConfigRepository(protected val context: Context) {
             domainRules: List<DnsRule>,
             appRules: List<DnsRule>,
             ruleSetRules: List<DnsRule>
-        ): List<DnsRule> = domainRules + appRules + ruleSetRules
+        ): List<DnsRule> = appRules + domainRules + ruleSetRules
 
         internal fun shouldApplyCustomAndAppRules(routingMode: RoutingMode): Boolean {
             return routingMode == RoutingMode.RULE
+        }
+
+        internal fun shouldFilterCapturedPackages(settings: AppSettings): Boolean {
+            return settings.resolvedTrafficCaptureMode() != TrafficCaptureMode.PROXY_ONLY
         }
 
         internal fun shouldApplyRuleSetRules(routingMode: RoutingMode): Boolean {
@@ -7113,8 +7181,86 @@ class ConfigRepository(protected val context: Context) {
             return when (settings.routingMode) {
                 RoutingMode.GLOBAL_PROXY -> baseRules
                 RoutingMode.GLOBAL_DIRECT -> baseRules + listOf(RouteRule(outbound = "direct"))
-                RoutingMode.RULE -> baseRules + bypassLanRules + customDomainRules + appRoutingRules +
+                RoutingMode.RULE -> baseRules + bypassLanRules + appRoutingRules + customDomainRules +
                     customRuleSetRules + defaultRuleCatchAll
+            }
+        }
+
+        internal fun routeTargetKey(rule: RouteRule): String = when {
+            rule.action == "reject" -> "BLOCK"
+            !rule.outbound.isNullOrBlank() -> "OUT:${rule.outbound}"
+            else -> "ACTION:${rule.action.orEmpty()}"
+        }
+
+        internal fun sha256(value: String): String = MessageDigest.getInstance("SHA-256")
+            .digest(value.toByteArray(Charsets.UTF_8))
+            .joinToString("") { byte -> "%02x".format(byte) }
+
+        internal fun appRoutingDigest(settings: AppSettings): String {
+            val canonical = buildString {
+                append(settings.routingMode.name).append('\n')
+                append(PerAppVpnPolicy.from(settings).digest()).append('\n')
+                settings.appRules.sortedBy { it.id }.forEach { rule ->
+                    append("R:").append(rule.id).append(':').append(rule.enabled).append(':')
+                    append(rule.packageName.trim()).append(':').append(rule.outboundMode?.name.orEmpty()).append(':')
+                    append(rule.outboundValue.orEmpty()).append('\n')
+                }
+                settings.appGroups.sortedBy { it.id }.forEach { group ->
+                    append("G:").append(group.id).append(':').append(group.enabled).append(':')
+                    append(group.outboundMode?.name.orEmpty()).append(':')
+                    append(group.outboundValue.orEmpty())
+                    val packageNames = group.apps
+                        .map { it.packageName.trim() }
+                        .filter(String::isNotBlank)
+                        .sorted()
+                    packageNames.forEach { packageName -> append(':').append(packageName) }
+                    append('\n')
+                }
+            }
+            return sha256(canonical)
+        }
+
+        internal fun resolveAppOutboundSemanticStrict(
+            mode: RuleSetOutboundMode?,
+            value: String?,
+            context: ConfigRepositoryOutboundSemanticContext,
+            label: String
+        ): ConfigRepository.OutboundSemantic {
+            val resolvedMode = mode ?: RuleSetOutboundMode.PROXY
+            val semantic = resolveOutboundSemantic(resolvedMode, value, context)
+            if (semantic is ConfigRepository.OutboundSemantic.FallbackProxy) {
+                val target = value?.takeIf(String::isNotBlank) ?: "未选择"
+                val targetType = when (resolvedMode) {
+                    RuleSetOutboundMode.NODE -> "单节点"
+                    RuleSetOutboundMode.PROFILE -> "配置"
+                    else -> resolvedMode.name
+                }
+                throw IllegalArgumentException(
+                    "$label 的${targetType}目标「$target」已失效，已阻止回退到全局代理。" +
+                        "请重新选择目标后再启动。"
+                )
+            }
+            return semantic
+        }
+
+        internal fun requireValidApplicationRoutes(
+            route: RouteConfig?,
+            availableTags: Set<String>
+        ) {
+            val targetByPackage = mutableMapOf<String, String>()
+            route?.rules.orEmpty().filter { !it.packageName.isNullOrEmpty() }.forEach { rule ->
+                val target = routeTargetKey(rule)
+                if (!rule.outbound.isNullOrBlank()) {
+                    require(rule.outbound == "direct" || rule.outbound in availableTags) {
+                        "应用分流目标 ${rule.outbound} 未进入最终运行配置，已阻止启动"
+                    }
+                }
+                rule.packageName.orEmpty().forEach { packageName ->
+                    val previous = targetByPackage.putIfAbsent(packageName, target)
+                    require(previous == null || previous == target) {
+                        "应用分流冲突：$packageName 同时指向 $previous 和 $target，已阻止启动"
+                    }
+                }
             }
         }
 

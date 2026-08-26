@@ -66,6 +66,7 @@ internal object NodeProtectionStore {
     private const val MANUAL_AUTHORIZATION_KEY = "manual_authorized_node_id"
     private const val PENDING_MANUAL_SELECTION_KEY = "pending_manual_selection"
     private const val RUNTIME_MAPPING_KEY = "runtime_mapping"
+    private const val RUNTIME_CANDIDATE_PREFIX = "runtime_candidate_"
     private const val PENDING_MANUAL_SELECTION_TTL_MS = 60_000L
 
     private val gson = Gson()
@@ -218,6 +219,32 @@ internal object NodeProtectionStore {
         return runtimeMmkv.encode(RUNTIME_MAPPING_KEY, gson.toJson(snapshot))
     }
 
+    fun stageRuntimeMappings(
+        requestId: String,
+        mapping: Map<String, RuntimeNodeRef>,
+        configContent: String
+    ): Boolean {
+        if (requestId.isBlank()) return false
+        val snapshot = RuntimeNodeMappingSnapshot(
+            configSha256 = runtimeConfigFingerprint(configContent),
+            mappings = mapping
+        )
+        return runtimeMmkv.encode(candidateKey(requestId), gson.toJson(snapshot))
+    }
+
+    fun activateStagedRuntimeMappings(requestId: String, configContent: String): Boolean {
+        if (requestId.isBlank()) return true
+        val snapshot = readCandidateSnapshot(requestId) ?: return false
+        if (snapshot.configSha256 != runtimeConfigFingerprint(configContent)) return false
+        val activated = replaceRuntimeMappings(snapshot.mappings, configContent)
+        if (activated) runtimeMmkv.removeValueForKey(candidateKey(requestId))
+        return activated
+    }
+
+    fun discardStagedRuntimeMappings(requestId: String) {
+        if (requestId.isNotBlank()) runtimeMmkv.removeValueForKey(candidateKey(requestId))
+    }
+
     fun runtimeMappings(): Map<String, RuntimeNodeRef> {
         return runtimeMappingSnapshot()?.mappings.orEmpty()
     }
@@ -239,6 +266,13 @@ internal object NodeProtectionStore {
     private fun readPendingManualSelection(): PendingManualNodeSelection? {
         val json = protectionMmkv.decodeString(PENDING_MANUAL_SELECTION_KEY, null) ?: return null
         return runCatching { gson.fromJson(json, PendingManualNodeSelection::class.java) }.getOrNull()
+    }
+
+    private fun candidateKey(requestId: String): String = "$RUNTIME_CANDIDATE_PREFIX$requestId"
+
+    private fun readCandidateSnapshot(requestId: String): RuntimeNodeMappingSnapshot? {
+        val json = runtimeMmkv.decodeString(candidateKey(requestId), null) ?: return null
+        return runCatching { gson.fromJson(json, RuntimeNodeMappingSnapshot::class.java) }.getOrNull()
     }
 
     private fun runtimeMappingSnapshot(): RuntimeNodeMappingSnapshot? {

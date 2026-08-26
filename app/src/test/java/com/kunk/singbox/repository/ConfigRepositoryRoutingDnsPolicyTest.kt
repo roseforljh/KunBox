@@ -34,6 +34,20 @@ class ConfigRepositoryRoutingDnsPolicyTest {
     }
 
     @Test
+    fun capturedPackageFilteringFollowsActualCaptureMode() {
+        assertTrue(
+            ConfigRepository.shouldFilterCapturedPackages(
+                AppSettings(tunEnabled = false, trafficCaptureMode = TrafficCaptureMode.ROOT_TRANSPARENT)
+            )
+        )
+        assertFalse(
+            ConfigRepository.shouldFilterCapturedPackages(
+                AppSettings(tunEnabled = false, trafficCaptureMode = TrafficCaptureMode.PROXY_ONLY)
+            )
+        )
+    }
+
+    @Test
     fun bareDnsDomainBuildsUdpServerAndUnknownSchemeFails() {
         val server = ConfigRepository.buildDnsServer("dns.example.com", "local")
 
@@ -108,7 +122,7 @@ class ConfigRepositoryRoutingDnsPolicyTest {
         val app = DnsRule(packageName = listOf("com.example"))
         val ruleSet = DnsRule(ruleSet = listOf("geosite-cn"))
         assertEquals(
-            listOf(domain, app, ruleSet),
+            listOf(app, domain, ruleSet),
             ConfigRepository.mergeUserDnsRules(listOf(domain), listOf(app), listOf(ruleSet))
         )
     }

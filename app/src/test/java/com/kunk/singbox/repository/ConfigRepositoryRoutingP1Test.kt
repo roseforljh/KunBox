@@ -195,11 +195,57 @@ class ConfigRepositoryRoutingP1Test {
             defaultRuleCatchAll = fallback
         )
 
-        assertEquals(base + bypass + custom + app + ruleSet + fallback, rules)
+        assertEquals(base + bypass + app + custom + ruleSet + fallback, rules)
         val fallbackIndex = rules.indexOf(fallback.single())
         assertTrue(rules.indexOf(custom.single()) < fallbackIndex)
         assertTrue(rules.indexOf(app.single()) < fallbackIndex)
         assertTrue(rules.indexOf(ruleSet.single()) < fallbackIndex)
+    }
+
+    @Test
+    fun appNodeTargetDoesNotSilentlyFallbackToGlobalProxy() {
+        val failure = runCatching {
+            ConfigRepository.resolveAppOutboundSemanticStrict(
+                mode = RuleSetOutboundMode.NODE,
+                value = "profile::missing-node",
+                context = ConfigRepositoryOutboundSemanticContext(
+                    selectorTag = "PROXY",
+                    outbounds = listOf(Outbound(type = "selector", tag = "PROXY")),
+                    profiles = emptyList(),
+                    nodeTagResolver = { null }
+                ),
+                label = "应用分组「Telegram」"
+            )
+        }.exceptionOrNull()
+
+        assertTrue(failure is IllegalArgumentException)
+        assertTrue(failure?.message.orEmpty().contains("已阻止回退到全局代理"))
+    }
+
+    @Test
+    fun finalApplicationRouteRejectsMissingOrConflictingTargets() {
+        val missingTarget = runCatching {
+            ConfigRepository.requireValidApplicationRoutes(
+                route = com.kunk.singbox.model.RouteConfig(
+                    rules = listOf(RouteRule(packageName = listOf("org.telegram.messenger"), outbound = "missing"))
+                ),
+                availableTags = setOf("PROXY", "germany")
+            )
+        }
+        assertTrue(missingTarget.isFailure)
+
+        val conflicting = runCatching {
+            ConfigRepository.requireValidApplicationRoutes(
+                route = com.kunk.singbox.model.RouteConfig(
+                    rules = listOf(
+                        RouteRule(packageName = listOf("org.telegram.messenger"), outbound = "germany"),
+                        RouteRule(packageName = listOf("org.telegram.messenger"), outbound = "PROXY")
+                    )
+                ),
+                availableTags = setOf("PROXY", "germany")
+            )
+        }
+        assertTrue(conflicting.isFailure)
     }
 
     @Test

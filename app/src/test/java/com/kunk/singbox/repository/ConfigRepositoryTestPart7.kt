@@ -510,7 +510,7 @@ abstract class ConfigRepositoryTestPart7 : ConfigRepositoryTestPart6() {
             ruleSetRules = listOf(ruleSetRule)
         )
 
-        assertEquals(listOf(domainRule, appRule, ruleSetRule), rules)
+        assertEquals(listOf(appRule, domainRule, ruleSetRule), rules)
     }
 
     @Test
