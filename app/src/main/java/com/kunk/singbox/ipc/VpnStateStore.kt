@@ -130,7 +130,10 @@ object VpnStateStore {
         val excludedCount: Int = 0,
         val appliedAtElapsedMs: Long = 0L,
         val serviceInstanceId: String = "",
-        val runtimeGeneration: Long = 0L
+        val runtimeGeneration: Long = 0L,
+        val requestId: String = "",
+        val configDigest: String = "",
+        val appRoutingDigest: String = ""
     )
 
     internal data class RuntimeStateSnapshot(
@@ -654,6 +657,7 @@ object VpnStateStore {
         }.getOrDefault(false)
     }
 
+    @Suppress("ReturnCount")
     internal fun canCommitAppliedPerAppPolicy(
         current: AppliedPerAppPolicySnapshot,
         incoming: AppliedPerAppPolicySnapshot,
@@ -669,6 +673,11 @@ object VpnStateStore {
             ) {
                 return false
             }
+        }
+        if (current.serviceInstanceId == incoming.serviceInstanceId &&
+            incoming.runtimeGeneration < current.runtimeGeneration
+        ) {
+            return false
         }
         return current.serviceInstanceId != incoming.serviceInstanceId || current.revision <= incoming.revision
     }

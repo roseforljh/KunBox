@@ -11,6 +11,7 @@ import com.kunk.singbox.ipc.VpnStateStore
 import com.kunk.singbox.model.PerAppVpnPolicy
 import com.kunk.singbox.model.TrafficCaptureMode
 import com.kunk.singbox.repository.ConfigRepository
+import com.kunk.singbox.repository.NodeProtectionStore
 import com.kunk.singbox.repository.SettingsRepository
 import com.kunk.singbox.service.ProxyOnlyService
 import com.kunk.singbox.service.SingBoxService
@@ -21,6 +22,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
+import java.io.File
+import java.util.UUID
 import java.util.concurrent.atomic.AtomicLong
 
 object VpnServiceManager {
@@ -139,6 +142,9 @@ object VpnServiceManager {
         val desiredPolicy = PerAppVpnPolicy.from(SettingsRepository.getInstance(appContext).settings.value)
         val targetRevision = expectedRevision ?: desiredPolicy.revision
         val targetDigest = desiredPolicy.digest()
+        val targetRoutingDigest = ConfigRepository.appRoutingDigest(
+            SettingsRepository.getInstance(appContext).settings.value
+        )
         val requestGeneration = perAppApplyGeneration.incrementAndGet()
         return perAppApplyMutex.withLock {
             if (requestGeneration != perAppApplyGeneration.get()) return@withLock Result.success(false)
@@ -146,6 +152,7 @@ object VpnServiceManager {
                 appContext = appContext,
                 targetRevision = targetRevision,
                 targetDigest = targetDigest,
+                targetRoutingDigest = targetRoutingDigest,
                 requestGeneration = requestGeneration
             )
         }
@@ -155,28 +162,65 @@ object VpnServiceManager {
         appContext: Context,
         targetRevision: Long,
         targetDigest: String,
+        targetRoutingDigest: String,
         requestGeneration: Long
     ): Result<Boolean> {
         if (!isPerAppRuntimeReady()) return Result.success(false)
 
+        val runtimeMode = VpnStateStore.getMode()
+        val runningConfigFile = File(appContext.filesDir, "running_config.json")
+        val previousConfig = runCatching { runningConfigFile.takeIf(File::isFile)?.readText() }.getOrNull()
+        var candidatePath: String? = null
+        var restartDispatched = false
         return try {
-            val configPath = generatePerAppConfigPath(appContext)
-            if (!isPerAppRuntimeReady()) return Result.success(false)
-            dispatchPerAppRestart(appContext, configPath, targetRevision)
+            val generation = generatePerAppConfig(appContext)
+            candidatePath = generation.path
+            if (!isPerAppRuntimeReady()) {
+                discardCandidateConfig(generation.path)
+                return Result.success(false)
+            }
+            dispatchPerAppRestart(appContext, generation, targetRevision)
+            restartDispatched = true
             val confirmed = awaitPerAppPolicyConfirmation(
                 targetRevision,
                 targetDigest,
-                requestGeneration
+                targetRoutingDigest,
+                generation,
+                requestGeneration,
+                runtimeMode
             )
             if (!confirmed && requestGeneration == perAppApplyGeneration.get()) {
                 throw IllegalStateException("Per-app VPN policy apply was not confirmed")
+            }
+            if (confirmed) {
+                promoteCandidateConfig(appContext, generation)
+            } else {
+                discardCandidateConfig(generation.path)
             }
             Result.success(confirmed)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
             Log.e(TAG, "Failed to apply per-app VPN policy", e)
+            if (restartDispatched && !previousConfig.isNullOrBlank()) {
+                rollbackPerAppConfig(appContext, runtimeMode, previousConfig, candidatePath)
+            } else {
+                discardCandidateConfig(candidatePath)
+            }
             Result.failure(e)
+        }
+    }
+
+    private fun discardCandidateConfig(path: String?) {
+        path?.takeIf(String::isNotBlank)?.let { candidatePath ->
+            val candidate = File(candidatePath)
+            val prefix = "running_config_candidate_"
+            val requestId = candidate.name
+                .takeIf { it.startsWith(prefix) && it.endsWith(".json") }
+                ?.removePrefix(prefix)
+                ?.removeSuffix(".json")
+            requestId?.let(NodeProtectionStore::discardStagedRuntimeMappings)
+            runCatching { candidate.delete() }
         }
     }
 
@@ -186,43 +230,120 @@ object VpnServiceManager {
             VpnStateStore.getPending().isBlank() &&
             VpnStateStore.getMode() in setOf(VpnStateStore.CoreMode.VPN, VpnStateStore.CoreMode.ROOT)
 
-    private suspend fun generatePerAppConfigPath(appContext: Context): String =
-        ConfigRepository.getInstance(appContext)
-            .generateConfigFile()
-            ?.path
-            ?.takeIf(String::isNotBlank)
+    private suspend fun generatePerAppConfig(appContext: Context): ConfigRepository.ConfigGenerationResult {
+        val requestId = UUID.randomUUID().toString()
+        return ConfigRepository.getInstance(appContext)
+            .generateConfigFile(candidateRequestId = requestId)
+            ?.takeIf { it.path.isNotBlank() && it.configDigest.isNotBlank() && it.appRoutingDigest.isNotBlank() }
             ?: throw IllegalStateException("Failed to generate config for per-app rule change")
+    }
 
-    private fun dispatchPerAppRestart(appContext: Context, configPath: String, targetRevision: Long) {
+    private fun dispatchPerAppRestart(
+        appContext: Context,
+        generation: ConfigRepository.ConfigGenerationResult,
+        targetRevision: Long
+    ) {
         if (VpnStateStore.getMode() == VpnStateStore.CoreMode.ROOT) {
             appContext.startService(Intent(appContext, RootTransparentForegroundService::class.java).apply {
                 action = RootTransparentForegroundService.ACTION_RESTART
-                putExtra(RootTransparentForegroundService.EXTRA_CONFIG_PATH, configPath)
+                putExtra(RootTransparentForegroundService.EXTRA_CONFIG_PATH, generation.path)
+                putExtra(RootTransparentForegroundService.EXTRA_APP_ROUTE_REQUEST_ID, generation.requestId)
+                putExtra(RootTransparentForegroundService.EXTRA_CONFIG_DIGEST, generation.configDigest)
+                putExtra(RootTransparentForegroundService.EXTRA_APP_ROUTING_DIGEST, generation.appRoutingDigest)
             })
             return
         }
         appContext.startService(Intent(appContext, SingBoxService::class.java).apply {
             action = SingBoxService.ACTION_FULL_RESTART
-            putExtra(SingBoxService.EXTRA_CONFIG_PATH, configPath)
+            putExtra(SingBoxService.EXTRA_CONFIG_PATH, generation.path)
             putExtra(SingBoxService.EXTRA_PER_APP_RULE_RESTART, true)
             putExtra(SingBoxService.EXTRA_PER_APP_POLICY_REVISION, targetRevision)
+            putExtra(SingBoxService.EXTRA_APP_ROUTE_REQUEST_ID, generation.requestId)
+            putExtra(SingBoxService.EXTRA_CONFIG_DIGEST, generation.configDigest)
+            putExtra(SingBoxService.EXTRA_APP_ROUTING_DIGEST, generation.appRoutingDigest)
         })
     }
 
+    @Suppress("LongParameterList", "CognitiveComplexMethod", "ComplexCondition")
     private suspend fun awaitPerAppPolicyConfirmation(
         targetRevision: Long,
         targetDigest: String,
-        requestGeneration: Long
+        targetRoutingDigest: String,
+        generation: ConfigRepository.ConfigGenerationResult,
+        requestGeneration: Long,
+        runtimeMode: VpnStateStore.CoreMode
     ): Boolean = withTimeoutOrNull<Boolean>(PER_APP_APPLY_TIMEOUT_MS) {
         while (true) {
             if (requestGeneration != perAppApplyGeneration.get()) return@withTimeoutOrNull false
             val applied = VpnStateStore.getAppliedPerAppPolicy()
-            if (applied.revision == targetRevision && applied.digest == targetDigest) break
-            if (!isPerAppRuntimeReady()) return@withTimeoutOrNull false
+            if (applied.revision == targetRevision &&
+                applied.digest == targetDigest &&
+                applied.requestId == generation.requestId &&
+                applied.configDigest == generation.configDigest &&
+                applied.appRoutingDigest == targetRoutingDigest
+            ) {
+                break
+            }
+            if (VpnStateStore.isManuallyStopped()) return@withTimeoutOrNull false
+            val currentMode = VpnStateStore.getMode()
+            if (currentMode != VpnStateStore.CoreMode.NONE && currentMode != runtimeMode) {
+                return@withTimeoutOrNull false
+            }
             delay(PER_APP_APPLY_POLL_MS)
         }
         true
     } ?: false
+
+    private fun promoteCandidateConfig(
+        appContext: Context,
+        generation: ConfigRepository.ConfigGenerationResult
+    ) {
+        val content = File(generation.path).readText(Charsets.UTF_8)
+        check(ConfigRepository.sha256(content) == generation.configDigest) {
+            "Applied candidate config changed before promotion"
+        }
+        ConfigRepository.writeTextFileAtomically(File(appContext.filesDir, "running_config.json"), content)
+        ConfigRepository.writeTextFileAtomically(File(appContext.filesDir, "last_good_running_config.json"), content)
+        if (generation.path != File(appContext.filesDir, "running_config.json").absolutePath) {
+            runCatching { File(generation.path).delete() }
+        }
+        Log.i(TAG, "[APP_ROUTE_TX] promoted request=${generation.requestId}")
+    }
+
+    private fun rollbackPerAppConfig(
+        appContext: Context,
+        runtimeMode: VpnStateStore.CoreMode,
+        previousConfig: String,
+        candidatePath: String?
+    ) {
+        runCatching {
+            val runningConfig = File(appContext.filesDir, "running_config.json")
+            ConfigRepository.writeTextFileAtomically(runningConfig, previousConfig)
+            check(NodeProtectionStore.replaceRuntimeMappings(emptyMap(), previousConfig)) {
+                "无法恢复上一配置的运行时节点映射"
+            }
+            discardCandidateConfig(candidatePath)
+            val intent = when (runtimeMode) {
+                VpnStateStore.CoreMode.ROOT -> Intent(
+                    appContext,
+                    RootTransparentForegroundService::class.java
+                ).apply {
+                    action = RootTransparentForegroundService.ACTION_RESTART
+                    putExtra(RootTransparentForegroundService.EXTRA_CONFIG_PATH, runningConfig.absolutePath)
+                }
+                VpnStateStore.CoreMode.VPN -> Intent(appContext, SingBoxService::class.java).apply {
+                    action = SingBoxService.ACTION_FULL_RESTART
+                    putExtra(SingBoxService.EXTRA_CONFIG_PATH, runningConfig.absolutePath)
+                }
+                else -> return
+            }
+            appContext.startService(intent)
+            Log.w(TAG, "[APP_ROUTE_TX] candidate failed, rollback dispatched")
+        }.onFailure { rollbackError ->
+            Log.e(TAG, "[APP_ROUTE_TX] rollback failed", rollbackError)
+            VpnStateStore.setLastError("应用分流应用失败，恢复上一配置也失败，请重新启动 VPN")
+        }
+    }
 
     fun startVpn(context: Context, mode: TrafficCaptureMode): Result<Unit> {
         Log.d(TAG, "startVpn: mode=$mode")

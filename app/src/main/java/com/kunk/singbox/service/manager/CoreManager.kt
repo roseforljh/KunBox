@@ -12,6 +12,7 @@ import com.kunk.singbox.core.BoxWrapperManager
 import com.kunk.singbox.core.SelectorManager
 import com.kunk.singbox.model.AppSettings
 import com.kunk.singbox.repository.SettingsRepository
+import com.kunk.singbox.repository.NodeProtectionStore
 import com.kunk.singbox.service.tun.VpnTunManager
 import com.kunk.singbox.utils.perf.PerfTracer
 import io.nekohasekai.libbox.CommandClient
@@ -460,7 +461,10 @@ class CoreManager(
         reuseExisting: Boolean = true,
         serviceInstanceId: String = "",
         runtimeGeneration: Long = 0L,
-        expectedPerAppPolicyRevision: Long = 0L
+        expectedPerAppPolicyRevision: Long = 0L,
+        requestId: String = "",
+        configDigest: String = "",
+        appRoutingDigest: String = ""
     ): Result<Int> {
         if (options == null) {
             return Result.failure(IllegalArgumentException("TunOptions cannot be null"))
@@ -506,12 +510,19 @@ class CoreManager(
                 if (!tunManager.commitConfiguredPerAppVpnPlan(
                         serviceInstanceId,
                         runtimeGeneration,
-                        expectedPerAppPolicyRevision
+                        expectedPerAppPolicyRevision,
+                        requestId,
+                        configDigest,
+                        appRoutingDigest
                     )
                 ) {
                     vpnInterface = previousInterface
                     runCatching { pfd.close() }
                     throw IllegalStateException("Failed to commit applied per-app VPN policy")
+                }
+
+                check(NodeProtectionStore.activateStagedRuntimeMappings(requestId, currentConfigContent.orEmpty())) {
+                    "Failed to activate candidate runtime node mappings"
                 }
 
                 if (previousInterface != null && previousInterface !== pfd) {

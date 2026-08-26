@@ -573,7 +573,10 @@ class VpnTunManager(
     fun commitConfiguredPerAppVpnPlan(
         serviceInstanceId: String,
         runtimeGeneration: Long,
-        expectedRevision: Long = 0L
+        expectedRevision: Long = 0L,
+        requestId: String = "",
+        configDigest: String = "",
+        appRoutingDigest: String = ""
     ): Boolean {
         val configured = configuredPerAppVpnPlan ?: run {
             Log.e(TAG, "Applied per-app VPN policy commit failed: no configured plan")
@@ -607,7 +610,10 @@ class VpnTunManager(
                 excludedCount = excludedCount,
                 appliedAtElapsedMs = SystemClock.elapsedRealtime(),
                 serviceInstanceId = serviceInstanceId,
-                runtimeGeneration = runtimeGeneration
+                runtimeGeneration = runtimeGeneration,
+                requestId = requestId,
+                configDigest = configDigest,
+                appRoutingDigest = appRoutingDigest
             )
         )
         if (!committed) {

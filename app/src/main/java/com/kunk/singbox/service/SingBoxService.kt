@@ -184,11 +184,21 @@ class SingBoxService : VpnService() {
                     reuseExisting = true,
                     serviceInstanceId = SingBoxIpcHub.serviceInstanceId(),
                     runtimeGeneration = VpnStateStore.getRuntimeStateSnapshot().generation,
-                    expectedPerAppPolicyRevision = pendingPerAppPolicyRevision
+                    expectedPerAppPolicyRevision = pendingPerAppPolicyRevision,
+                    requestId = pendingAppRouteRequestId,
+                    configDigest = pendingConfigDigest.ifBlank {
+                        coreManager.currentConfigContent?.let { ConfigRepository.sha256(it) }.orEmpty()
+                    },
+                    appRoutingDigest = pendingAppRoutingDigest.ifBlank {
+                        coreManager.currentSettings?.let { ConfigRepository.appRoutingDigest(it) }.orEmpty()
+                    }
                 )
                 result.onSuccess { _ ->
                     vpnInterface = coreManager.vpnInterface
                     pendingPerAppPolicyRevision = 0L
+                    pendingAppRouteRequestId = ""
+                    pendingConfigDigest = ""
+                    pendingAppRoutingDigest = ""
                     publishEstablishedTunReadiness()
                     if (network != null) {
                         lastKnownNetwork = network
@@ -634,6 +644,9 @@ class SingBoxService : VpnService() {
     @Volatile protected var pendingStartConfigPath: String? = null
     @Volatile private var pendingStartRecoveryIntentLease: RecoveryIntentLease? = null
     @Volatile private var pendingPerAppPolicyRevision: Long = 0L
+    @Volatile private var pendingAppRouteRequestId: String = ""
+    @Volatile private var pendingConfigDigest: String = ""
+    @Volatile private var pendingAppRoutingDigest: String = ""
 
     @Volatile protected var pendingHotSwitchFallbackConfigPath: String? = null
     @Volatile protected var pendingNodeName: String? = null
@@ -2657,6 +2670,13 @@ class SingBoxService : VpnService() {
         }
     }
 
+    @Suppress(
+        "NestedBlockDepth",
+        "LongMethod",
+        "CyclomaticComplexMethod",
+        "CognitiveComplexMethod",
+        "ReturnCount"
+    )
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         preserveRuntimeStateOnDestroy = false
         val recoveryFlag = intent?.getBooleanExtra(SingBoxService.EXTRA_RECOVERY, false) == true
@@ -2870,6 +2890,9 @@ class SingBoxService : VpnService() {
                     pendingStartConfigPath = null
                     pendingStartRecoveryIntentLease = null
                     pendingPerAppPolicyRevision = 0L
+                    pendingAppRouteRequestId = ""
+                    pendingConfigDigest = ""
+                    pendingAppRoutingDigest = ""
                 }
                 stopVpn(stopService = true, recoveryIntentLease = recoveryLease)
             }
@@ -2982,10 +3005,32 @@ class SingBoxService : VpnService() {
                     PerfTracer.recordEvent(PerfTracer.Phases.FULL_RESTART, "missing_config")
                     Log.e(SingBoxService.TAG, "SingBoxService.ACTION_FULL_RESTART: config path is empty")
                 } else {
+                    val expectedConfigDigest = intent.getStringExtra(
+                        ServiceStateHolder.EXTRA_CONFIG_DIGEST
+                    ).orEmpty()
+                    if (expectedConfigDigest.isNotBlank()) {
+                        val actualConfigDigest = runCatching {
+                            ConfigRepository.sha256(File(configPath).readText(Charsets.UTF_8))
+                        }.getOrNull()
+                        if (actualConfigDigest != expectedConfigDigest) {
+                            Log.e(SingBoxService.TAG, "Per-app candidate config digest mismatch")
+                            VpnStateStore.setLastError("应用分流候选配置校验失败，已阻止重启")
+                            return START_STICKY
+                        }
+                    }
                     PerfTracer.recordEvent(PerfTracer.Phases.FULL_RESTART, "requested")
                     val recoveryLease = setNonResourceRecoveryIntent(false)
                     synchronized(this) {
                         pendingPerAppPolicyRevision = if (isPerAppRuleRestart) expectedPerAppRevision else 0L
+                        pendingAppRouteRequestId = intent.getStringExtra(
+                            ServiceStateHolder.EXTRA_APP_ROUTE_REQUEST_ID
+                        ).orEmpty()
+                        pendingConfigDigest = intent.getStringExtra(
+                            ServiceStateHolder.EXTRA_CONFIG_DIGEST
+                        ).orEmpty()
+                        pendingAppRoutingDigest = intent.getStringExtra(
+                            ServiceStateHolder.EXTRA_APP_ROUTING_DIGEST
+                        ).orEmpty()
                         pendingStartConfigPath = configPath
                         pendingStartRecoveryIntentLease = recoveryLease
                         stopSelfRequested = false
@@ -4011,6 +4056,9 @@ class SingBoxService : VpnService() {
 
         val EXTRA_PER_APP_RULE_RESTART = ServiceStateHolder.EXTRA_PER_APP_RULE_RESTART
         val EXTRA_PER_APP_POLICY_REVISION = ServiceStateHolder.EXTRA_PER_APP_POLICY_REVISION
+        val EXTRA_APP_ROUTE_REQUEST_ID = ServiceStateHolder.EXTRA_APP_ROUTE_REQUEST_ID
+        val EXTRA_CONFIG_DIGEST = ServiceStateHolder.EXTRA_CONFIG_DIGEST
+        val EXTRA_APP_ROUTING_DIGEST = ServiceStateHolder.EXTRA_APP_ROUTING_DIGEST
 
         val EXTRA_SETTING_KEY = ServiceStateHolder.EXTRA_SETTING_KEY
 

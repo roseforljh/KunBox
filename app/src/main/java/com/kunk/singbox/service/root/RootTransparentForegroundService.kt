@@ -19,6 +19,7 @@ import com.kunk.singbox.model.SingBoxConfig
 import com.kunk.singbox.model.TrafficCaptureMode
 import com.kunk.singbox.repository.ConfigRepository
 import com.kunk.singbox.repository.LogRepository
+import com.kunk.singbox.repository.NodeProtectionStore
 import com.kunk.singbox.repository.SettingsRepository
 import com.kunk.singbox.service.SingBoxService
 import com.kunk.singbox.service.ServiceState
@@ -59,6 +60,9 @@ class RootTransparentForegroundService : Service() {
         const val EXTRA_CONFIG_PATH = "config_path"
         const val EXTRA_OUTBOUND_TAG = "outbound_tag"
         const val EXTRA_NODE_NAME = "node_name"
+        const val EXTRA_APP_ROUTE_REQUEST_ID = "app_route_request_id"
+        const val EXTRA_CONFIG_DIGEST = "config_digest"
+        const val EXTRA_APP_ROUTING_DIGEST = "app_routing_digest"
 
         @Volatile var isRunning: Boolean = false
             private set
@@ -185,7 +189,14 @@ class RootTransparentForegroundService : Service() {
                 }
                 serviceScope.launch { stopRuntime(stopSelfAfter = true) }
             }
-            ACTION_RESTART -> serviceScope.launch { restartRuntime(intent.getStringExtra(EXTRA_CONFIG_PATH)) }
+            ACTION_RESTART -> serviceScope.launch {
+                restartRuntime(
+                    configPathOverride = intent.getStringExtra(EXTRA_CONFIG_PATH),
+                    requestId = intent.getStringExtra(EXTRA_APP_ROUTE_REQUEST_ID).orEmpty(),
+                    expectedConfigDigest = intent.getStringExtra(EXTRA_CONFIG_DIGEST).orEmpty(),
+                    expectedAppRoutingDigest = intent.getStringExtra(EXTRA_APP_ROUTING_DIGEST).orEmpty()
+                )
+            }
             else -> serviceScope.launch { startRuntime(intent?.getStringExtra(EXTRA_CONFIG_PATH)) }
         }
         return START_NOT_STICKY
@@ -209,8 +220,13 @@ class RootTransparentForegroundService : Service() {
         startRuntimeLocked(configPathOverride)
     }
 
-    @Suppress("CognitiveComplexMethod", "LongMethod")
-    private suspend fun startRuntimeLocked(configPathOverride: String?) {
+    @Suppress("CognitiveComplexMethod", "LongMethod", "CyclomaticComplexMethod")
+    private suspend fun startRuntimeLocked(
+        configPathOverride: String?,
+        requestId: String = "",
+        expectedConfigDigest: String = "",
+        expectedAppRoutingDigest: String = ""
+    ) {
         val startedAt = android.os.SystemClock.elapsedRealtime()
         var phaseStartedAt = startedAt
         try {
@@ -237,6 +253,14 @@ class RootTransparentForegroundService : Service() {
                 ?: ConfigRepository.getInstance(this).generateConfigFile()?.path
                 ?: error("Failed to generate Root transparent config")
             val policy = PerAppVpnPolicy.from(settings)
+            val actualConfigDigest = ConfigRepository.sha256(File(configPath).readText(Charsets.UTF_8))
+            val actualAppRoutingDigest = ConfigRepository.appRoutingDigest(settings)
+            check(expectedConfigDigest.isBlank() || expectedConfigDigest == actualConfigDigest) {
+                "Root candidate config digest mismatch"
+            }
+            check(expectedAppRoutingDigest.isBlank() || expectedAppRoutingDigest == actualAppRoutingDigest) {
+                "Root app routing digest mismatch"
+            }
             logStartPhase("config", phaseStartedAt)
             phaseStartedAt = android.os.SystemClock.elapsedRealtime()
             val rootService = rootConnection.bind()
@@ -270,6 +294,14 @@ class RootTransparentForegroundService : Service() {
             check(rootSnapshot.phase == RootRuntimePhase.RUNNING) {
                 rootSnapshot.error.ifBlank { "Root runtime failed to enter RUNNING" }
             }
+            check(
+                NodeProtectionStore.activateStagedRuntimeMappings(
+                    requestId,
+                    File(configPath).readText(Charsets.UTF_8)
+                )
+            ) {
+                "Root candidate runtime node mappings could not be activated"
+            }
 
             SingBoxCore.ensureLibboxSetup(this)
             commandManager.startClientsWithFd { rootService.openCommandConnection() }.getOrThrow()
@@ -295,7 +327,10 @@ class RootTransparentForegroundService : Service() {
                     },
                     appliedAtElapsedMs = android.os.SystemClock.elapsedRealtime(),
                     serviceInstanceId = SingBoxIpcHub.serviceInstanceId(),
-                    runtimeGeneration = rootSnapshot.generation
+                    runtimeGeneration = rootSnapshot.generation,
+                    requestId = requestId,
+                    configDigest = actualConfigDigest,
+                    appRoutingDigest = actualAppRoutingDigest
                 )
             )
             isRunning = true
@@ -436,9 +471,14 @@ class RootTransparentForegroundService : Service() {
         }
     }
 
-    private suspend fun restartRuntime(configPathOverride: String?) = lifecycleMutex.withLock {
+    private suspend fun restartRuntime(
+        configPathOverride: String?,
+        requestId: String = "",
+        expectedConfigDigest: String = "",
+        expectedAppRoutingDigest: String = ""
+    ) = lifecycleMutex.withLock {
         stopRuntimeLocked(stopSelfAfter = false)
-        startRuntimeLocked(configPathOverride)
+        startRuntimeLocked(configPathOverride, requestId, expectedConfigDigest, expectedAppRoutingDigest)
     }
 
     private fun scheduleControlChannelRecovery(reason: String) {

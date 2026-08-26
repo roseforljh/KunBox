@@ -45,6 +45,14 @@ class VpnStateStoreTest {
                 activeServiceRunning = true
             )
         )
+        assertFalse(
+            VpnStateStore.canCommitAppliedPerAppPolicy(
+                current.copy(runtimeGeneration = 20L),
+                current.copy(revision = 9L, runtimeGeneration = 19L),
+                "new",
+                activeServiceRunning = true
+            )
+        )
     }
 
     @Test

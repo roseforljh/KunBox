@@ -57,6 +57,7 @@ class CommandManager(
         private const val PORT_CHECK_INTERVAL_MS = 50L
         private const val MAX_GROUP_SELECTION_DEPTH = 4
         private const val BASE_COMMAND_CLIENT_COUNT = 3
+        private const val TELEGRAM_PACKAGE = "org.telegram.messenger"
         internal const val GROUP_STATUS_INTERVAL_MS = 500L
         internal const val COMMAND_LOG_READY_TIMEOUT_MS = 5_000L
         internal const val COMMAND_LOG_HEARTBEAT_TIMEOUT_MS = 15_000L
@@ -213,6 +214,10 @@ class CommandManager(
         context,
         SingBoxIpcHub.serviceInstanceId()
     )
+    private val applicationRouteTraceSignatures = mutableMapOf<String, String>()
+    private val telegramUid: Int? = runCatching {
+        context.packageManager.getApplicationInfo(TELEGRAM_PACKAGE, 0).uid
+    }.getOrNull()
     private var lastConnectionsLabelLogged: String? = null
 
     interface Callbacks {
@@ -1087,6 +1092,7 @@ class CommandManager(
                 val runtimeMappings = NodeProtectionStore.runtimeMappings()
                 recordDirectIncidents(eventData)
                 if (events.reset) connectionTrafficAttributor.clear()
+                recordApplicationRouteTrace(eventData, runtimeMappings)
                 enforceConnectionStormGuard(
                     connectionStormGuard.observe(
                         reset = events.reset,
@@ -1252,6 +1258,45 @@ class CommandManager(
         }
     }
 
+    private fun recordApplicationRouteTrace(
+        events: List<ConnectionTrafficEventData>,
+        runtimeMappings: Map<String, RuntimeNodeRef>
+    ) {
+        events.forEach { event ->
+            if (event.uid != telegramUid && TELEGRAM_PACKAGE !in event.packageNames) return@forEach
+            val resolvedTargets = connectionTrafficAttributor.resolveTargets(event, runtimeMappings)
+                .joinToString(",") { target -> "${target.nodeName}/${target.nodeId}" }
+            val signature = listOf(
+                event.type,
+                event.uid,
+                event.packageNames.joinToString("|"),
+                event.inbound,
+                event.routeRule,
+                event.outbound,
+                event.fromOutbound,
+                event.chain.joinToString(">"),
+                resolvedTargets,
+                event.destination,
+                event.domain,
+                event.attributionStatus
+            ).joinToString(";")
+            if (applicationRouteTraceSignatures[event.id] == signature) return@forEach
+            applicationRouteTraceSignatures[event.id] = signature
+            val line = "[APP_ROUTE_TRACE] connection=${event.id} type=${event.type} " +
+                "uid=${event.uid ?: -1} packages=${event.packageNames.joinToString("|")} " +
+                "inbound=${event.inbound.orEmpty()} rule=${event.routeRule.orEmpty()} " +
+                "outbound=${event.outbound.orEmpty()} from=${event.fromOutbound.orEmpty()} " +
+                "chain=${event.chain.joinToString(">")} targets=$resolvedTargets " +
+                "destination=${event.destination.orEmpty()} domain=${event.domain.orEmpty()} " +
+                "attribution=${event.attributionStatus}"
+            Log.i(TAG, line)
+            LogRepository.getInstance().addAlwaysLog("INFO $line")
+            if (event.type == ConnectionTrafficAttributor.EVENT_CLOSED) {
+                applicationRouteTraceSignatures.remove(event.id)
+            }
+        }
+    }
+
     private fun recordAttributedTraffic(records: List<AttributedConnectionTraffic>) {
         val repository = TrafficRepository.getInstance(context)
         records.forEach { record ->
@@ -1382,6 +1427,7 @@ class CommandManager(
         activeConnectionLabel = null
         recentConnectionIds = emptyList()
         connectionsSnapshot = null
+        applicationRouteTraceSignatures.clear()
         connectionTrafficAttributor.clear()
         connectionStormGuard.clear()
         callbacks = null

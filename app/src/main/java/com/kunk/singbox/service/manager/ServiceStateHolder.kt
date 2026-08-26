@@ -65,6 +65,9 @@ object ServiceStateHolder {
     // 仅标记由按应用规则变更触发的完整重启
     const val EXTRA_PER_APP_RULE_RESTART = "per_app_rule_restart"
     const val EXTRA_PER_APP_POLICY_REVISION = "per_app_policy_revision"
+    const val EXTRA_APP_ROUTE_REQUEST_ID = "app_route_request_id"
+    const val EXTRA_CONFIG_DIGEST = "config_digest"
+    const val EXTRA_APP_ROUTING_DIGEST = "app_routing_digest"
     const val EXTRA_SETTING_KEY = "setting_key"
     const val EXTRA_SETTING_VALUE_BOOL = "setting_value_bool"
     const val EXTRA_STOP_INITIATOR = "stop_initiator"
