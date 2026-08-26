@@ -1,5 +1,6 @@
 package com.kunk.singbox.ui.screens
 
+import android.graphics.Bitmap
 import com.kunk.singbox.R
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -18,6 +19,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import com.kunk.singbox.model.*
+import com.kunk.singbox.repository.InstalledAppsRepository
 import com.kunk.singbox.ui.components.ConfirmDialog
 import com.kunk.singbox.ui.components.FloatingPageLayout
 import com.kunk.singbox.ui.components.rememberLocalNetworkPermissionRequest
@@ -43,6 +45,7 @@ fun AppRoutingScreen(
     installedAppsViewModel: InstalledAppsViewModel = viewModel()
 ) {
     val settings by settingsViewModel.settings.collectAsStateWithLifecycle()
+    val appRoutingSupported = settings.resolvedTrafficCaptureMode() != TrafficCaptureMode.PROXY_ONLY
     val context = LocalContext.current
     val requestLocalNetworkPermission = rememberLocalNetworkPermissionRequest()
 
@@ -66,6 +69,9 @@ fun AppRoutingScreen(
     }
 
     val installedApps by installedAppsViewModel.appItems.collectAsStateWithLifecycle()
+    val inventoryState by installedAppsViewModel.loadingState.collectAsStateWithLifecycle()
+    val inventoryAvailable = installedApps.isNotEmpty() &&
+        inventoryState is InstalledAppsRepository.LoadingState.Loaded
     val capturedPackages = remember(settings, installedApps, context.packageName) {
         PerAppVpnScopeResolver.resolve(
             policy = PerAppVpnPolicy.from(settings),
@@ -78,6 +84,24 @@ fun AppRoutingScreen(
     }
     val loadAppIcon = remember(installedAppsViewModel) {
         installedAppsViewModel::loadIcon
+    }
+    val loadAppIcons = remember(installedAppsViewModel) {
+        installedAppsViewModel::loadIcons
+    }
+    val previewPackages = remember(settings.appGroups, inventoryAvailable, capturedPackages) {
+        settings.appGroups.asSequence()
+            .flatMap { group ->
+                group.apps.asSequence()
+                    .filter { !inventoryAvailable || it.packageName in capturedPackages }
+                    .take(8)
+            }
+            .map(AppInfo::packageName)
+            .distinct()
+            .toList()
+    }
+    var previewIcons by remember { mutableStateOf<Map<String, Bitmap>>(emptyMap()) }
+    LaunchedEffect(previewPackages, loadAppIcons) {
+        previewIcons = loadAppIcons(previewPackages)
     }
 
     fun saveGroupWithPermissionCheck(group: AppGroup, save: () -> Unit) {
@@ -112,6 +136,7 @@ fun AppRoutingScreen(
             nodesForSelection = nodesForSelection,
             profiles = profiles,
             loadIcon = loadAppIcon,
+            loadIcons = loadAppIcons,
             onDismiss = { showAddGroupDialog = false },
             onConfirm = { group ->
                 saveGroupWithPermissionCheck(group) {
@@ -124,16 +149,25 @@ fun AppRoutingScreen(
 
     if (editingGroup != null) {
         val originalGroup = requireNotNull(editingGroup)
-        val dormantApps = originalGroup.apps.filterNot { it.packageName in capturedPackages }
+        val dormantApps = if (inventoryAvailable) {
+            originalGroup.apps.filterNot { it.packageName in capturedPackages }
+        } else {
+            emptyList()
+        }
         AppGroupEditorDialog(
             initialGroup = originalGroup.copy(
-                apps = originalGroup.apps.filter { it.packageName in capturedPackages }
+                apps = if (inventoryAvailable) {
+                    originalGroup.apps.filter { it.packageName in capturedPackages }
+                } else {
+                    originalGroup.apps
+                }
             ),
             installedApps = selectableApps,
             nodes = allNodes,
             nodesForSelection = nodesForSelection,
             profiles = profiles,
             loadIcon = loadAppIcon,
+            loadIcons = loadAppIcons,
             onDismiss = { editingGroup = null },
             onConfirm = { group ->
                 val mergedGroup = group.copy(
@@ -169,8 +203,10 @@ fun AppRoutingScreen(
         title = stringResource(R.string.app_rules_title),
         onBack = { navController.popBackStack() },
         actions = {
-            IconButton(onClick = { showAddGroupDialog = true }) {
-                Icon(Icons.Rounded.Add, contentDescription = stringResource(R.string.common_add), tint = MaterialTheme.colorScheme.onBackground)
+            if (appRoutingSupported) {
+                IconButton(onClick = { showAddGroupDialog = true }) {
+                    Icon(Icons.Rounded.Add, contentDescription = stringResource(R.string.common_add), tint = MaterialTheme.colorScheme.onBackground)
+                }
             }
         }
     ) { contentTopPadding ->
@@ -190,7 +226,15 @@ fun AppRoutingScreen(
                 ),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                if (settings.appGroups.isEmpty()) {
+                if (!appRoutingSupported) {
+                    item {
+                        EmptyState(
+                            Icons.Rounded.Info,
+                            stringResource(R.string.app_routing_proxy_only_unsupported),
+                            stringResource(R.string.app_routing_proxy_only_unsupported_hint)
+                        )
+                    }
+                } else if (settings.appGroups.isEmpty()) {
                     item {
                         EmptyState(
                             Icons.Rounded.Folder,
@@ -201,14 +245,18 @@ fun AppRoutingScreen(
                 } else {
                     items(settings.appGroups) { group ->
                         val effectiveGroup = group.copy(
-                            apps = group.apps.filter { it.packageName in capturedPackages }
+                            apps = if (inventoryAvailable) {
+                                group.apps.filter { it.packageName in capturedPackages }
+                            } else {
+                                group.apps
+                            }
                         )
                         val mode = group.outboundMode ?: RuleSetOutboundMode.PROXY
                         val outboundText = resolveOutboundText(mode, group.outboundValue, allNodes, profiles)
                         AppGroupCard(
                             group = effectiveGroup,
                             outboundText = "${stringResource(mode.displayNameRes)} -> $outboundText",
-                            loadIcon = loadAppIcon,
+                            icons = previewIcons,
                             onClick = { editingGroup = group },
                             onToggle = { toggleGroupWithPermissionCheck(group) },
                             onDelete = { showDeleteGroupConfirm = group }

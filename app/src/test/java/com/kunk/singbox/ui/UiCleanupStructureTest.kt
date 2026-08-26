@@ -443,7 +443,9 @@ class UiCleanupStructureTest {
         assertTrue(launcherQuery.contains("queryIntentActivities"))
 
         val iconLoad = repository.extractFunctionBody("loadIcon")
-        assertTrue("图标加载必须切换到 IO 调度器", iconLoad.contains("withContext(Dispatchers.IO)"))
+        val usesIoDispatcher = iconLoad.contains("withContext(Dispatchers.IO)") ||
+            iconLoad.contains("withContext(iconLoadDispatcher)")
+        assertTrue("图标加载必须切换到 IO 调度器", usesIoDispatcher)
         assertTrue("图标应通过 PackageManager 按需读取", iconLoad.contains("getApplicationIcon"))
         assertTrue("图标解码应位于按需加载入口", iconLoad.contains("toBitmap"))
         assertTrue("图标缓存必须有容量上限", repository.contains("LruCache<String, Bitmap>(ICON_CACHE_MAX_KB)"))

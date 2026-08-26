@@ -51,6 +51,7 @@ import com.kunk.singbox.ui.theme.liquidGlassTextButtonColors
 import com.kunk.singbox.ui.theme.liquidGlassTextButtonPanel
 
 private const val APP_INFO_SEPARATOR = "\t"
+private const val INITIAL_ICON_BATCH_SIZE = 32
 
 @Composable
 private fun rememberAppIcon(
@@ -157,10 +158,8 @@ private fun Modifier.selectedAppRemovePressFeedback(onClick: () -> Unit): Modifi
 
 @Composable
 fun AppIconSmall(
-    packageName: String,
-    loadIcon: suspend (String) -> Bitmap?
+    icon: Bitmap?
 ) {
-    val icon = rememberAppIcon(packageName, loadIcon)
     val appIcon = remember(icon) { icon?.asImageBitmap() }
 
     if (appIcon != null) {
@@ -191,7 +190,7 @@ fun AppIconSmall(
 fun AppGroupCard(
     group: AppGroup,
     outboundText: String,
-    loadIcon: suspend (String) -> Bitmap?,
+    icons: Map<String, Bitmap>,
     onClick: () -> Unit,
     onToggle: () -> Unit,
     onDelete: () -> Unit
@@ -263,8 +262,7 @@ fun AppGroupCard(
                 ) {
                     items(group.apps.take(8), key = { it.packageName }) { app ->
                         AppIconSmall(
-                            packageName = app.packageName,
-                            loadIcon = loadIcon
+                            icon = icons[app.packageName]
                         )
                     }
                     if (group.apps.size > 8) {
@@ -288,10 +286,9 @@ fun AppGroupCard(
 @Composable
 fun SelectedAppChip(
     app: AppInfo,
-    loadIcon: suspend (String) -> Bitmap?,
+    icon: Bitmap?,
     onRemove: () -> Unit
 ) {
-    val icon = rememberAppIcon(app.packageName, loadIcon)
     val appIcon = remember(icon) { icon?.asImageBitmap() }
 
     Row(
@@ -334,9 +331,16 @@ fun SelectableAppItem(
     app: InstalledAppUi,
     isSelected: Boolean,
     loadIcon: suspend (String) -> Bitmap?,
+    preloadedIcon: Bitmap? = null,
+    loadOnDemand: Boolean = true,
     onClick: () -> Unit
 ) {
-    val icon = rememberAppIcon(app.packageName, loadIcon)
+    val onDemandIcon = if (preloadedIcon == null && loadOnDemand) {
+        rememberAppIcon(app.packageName, loadIcon)
+    } else {
+        null
+    }
+    val icon = preloadedIcon ?: onDemandIcon
     val appIcon = remember(icon) { icon?.asImageBitmap() }
 
     Row(
@@ -398,11 +402,12 @@ fun SelectableAppItem(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-@Suppress("LongMethod")
+@Suppress("LongMethod", "LongParameterList")
 fun MultiAppSelectorDialog(
     installedApps: List<InstalledAppUi>,
     selectedApps: Set<AppInfo>,
     loadIcon: suspend (String) -> Bitmap?,
+    loadIcons: suspend (Collection<String>) -> Map<String, Bitmap>,
     onConfirm: (Set<AppInfo>) -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -432,6 +437,17 @@ fun MultiAppSelectorDialog(
     }
     val listState = rememberLazyListState()
     LaunchedEffect(searchQuery) { listState.scrollToItem(0) }
+    val initialIconPackages = remember(filteredApps) {
+        filteredApps.take(INITIAL_ICON_BATCH_SIZE).map(InstalledAppUi::packageName)
+    }
+    val initialIconPackageSet = remember(initialIconPackages) { initialIconPackages.toSet() }
+    var initialIcons by remember { mutableStateOf<Map<String, Bitmap>>(emptyMap()) }
+    var completedIconBatch by remember { mutableStateOf<Set<String>>(emptySet()) }
+    LaunchedEffect(initialIconPackages, loadIcons) {
+        completedIconBatch = emptySet()
+        initialIcons = loadIcons(initialIconPackages)
+        completedIconBatch = initialIconPackageSet
+    }
 
     FullScreenDialogPage(
         title = stringResource(R.string.app_groups_select_apps),
@@ -508,6 +524,9 @@ fun MultiAppSelectorDialog(
                     app = app,
                     isSelected = isSelected,
                     loadIcon = loadIcon,
+                    preloadedIcon = initialIcons[app.packageName],
+                    loadOnDemand = app.packageName !in initialIconPackageSet ||
+                        (app.packageName in completedIconBatch && app.packageName !in initialIcons),
                     onClick = {
                         val savedAppInfo = appInfo.toSavedValue()
                         tempSelectedEntries = if (isSelected) {
@@ -532,6 +551,7 @@ fun AppGroupEditorDialog(
     nodesForSelection: List<NodeUi>? = null,
     profiles: List<ProfileUi>,
     loadIcon: suspend (String) -> Bitmap?,
+    loadIcons: suspend (Collection<String>) -> Map<String, Bitmap>,
     onDismiss: () -> Unit,
     onConfirm: (AppGroup) -> Unit
 ) {
@@ -560,6 +580,11 @@ fun AppGroupEditorDialog(
     val selectProfileTitle = stringResource(R.string.rulesets_select_profile)
 
     val selectionNodes = nodesForSelection ?: nodes
+    val selectedIconPackages = remember(selectedApps) { selectedApps.map(AppInfo::packageName) }
+    var selectedIcons by remember { mutableStateOf<Map<String, Bitmap>>(emptyMap()) }
+    LaunchedEffect(selectedIconPackages, loadIcons) {
+        selectedIcons = loadIcons(selectedIconPackages)
+    }
 
     fun resolveNodeByStoredValue(value: String?): NodeUi? {
         if (value.isNullOrBlank()) return null
@@ -579,6 +604,7 @@ fun AppGroupEditorDialog(
             installedApps = installedApps,
             selectedApps = selectedApps.toSet(),
             loadIcon = loadIcon,
+            loadIcons = loadIcons,
             onConfirm = { apps ->
                 selectedAppEntries = apps.toSavedValues()
                 showAppSelector = false
@@ -804,7 +830,7 @@ fun AppGroupEditorDialog(
                         items(selectedApps, key = { it.packageName }) { app ->
                             SelectedAppChip(
                                 app = app,
-                                loadIcon = loadIcon,
+                                icon = selectedIcons[app.packageName],
                                 onRemove = {
                                     selectedAppEntries = selectedAppEntries.filterNot {
                                         it.toAppInfo().packageName == app.packageName

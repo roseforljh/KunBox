@@ -508,6 +508,8 @@
     <string name="app_groups_selected_count">Selected apps (%d)</string>
     <string name="app_groups_click_to_add">Click above to select apps</string>
     <string name="app_groups_remove">Remove</string>
+    <string name="app_routing_proxy_only_unsupported">Per-app routing is unavailable in proxy-only mode</string>
+    <string name="app_routing_proxy_only_unsupported_hint">Switch to VPN or Root transparent mode to identify apps and route them separately.</string>
 
     <!-- Domain Rules -->
     <string name="domain_rules_title">Domain Routing</string>

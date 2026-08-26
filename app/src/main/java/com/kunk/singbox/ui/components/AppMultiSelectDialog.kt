@@ -61,6 +61,8 @@ import com.kunk.singbox.ui.theme.liquidGlassPressFeedback
 import com.kunk.singbox.ui.theme.liquidGlassProgressColor
 import com.kunk.singbox.ui.theme.liquidGlassProgressTrackColor
 
+private const val INITIAL_ICON_BATCH_SIZE = 32
+
 internal fun toggleQuickSelectionPreset(
     currentSelection: Set<String>,
     quickTargets: Set<String>,
@@ -300,6 +302,17 @@ fun AppMultiSelectDialog(
     val isLoading = loadingState is InstalledAppsRepository.LoadingState.Loading
     val listState = rememberLazyListState()
     LaunchedEffect(query) { listState.scrollToItem(0) }
+    val initialIconPackages = remember(filteredApps) {
+        filteredApps.take(INITIAL_ICON_BATCH_SIZE).map(InstalledAppUi::packageName)
+    }
+    val initialIconPackageSet = remember(initialIconPackages) { initialIconPackages.toSet() }
+    var initialIcons by remember { mutableStateOf<Map<String, Bitmap>>(emptyMap()) }
+    var completedIconBatch by remember { mutableStateOf<Set<String>>(emptySet()) }
+    LaunchedEffect(initialIconPackages, installedAppsViewModel) {
+        completedIconBatch = emptySet()
+        initialIcons = installedAppsViewModel.loadIcons(initialIconPackages)
+        completedIconBatch = initialIconPackageSet
+    }
     val quickSelectApps = {
         val (selection, previousSelection) = toggleQuickSelectionPreset(
             currentSelection = tempSelected,
@@ -418,10 +431,16 @@ fun AppMultiSelectDialog(
             items(filteredApps, key = { it.packageName }) { app ->
                 val checked = tempSelected.contains(app.packageName)
                 val iconSize = 40.dp
-                var icon by remember(app.packageName) { mutableStateOf<Bitmap?>(null) }
-                LaunchedEffect(app.packageName) {
-                    icon = installedAppsViewModel.loadIcon(app.packageName)
+                val preloadedIcon = initialIcons[app.packageName]
+                val loadOnDemand = app.packageName !in initialIconPackageSet ||
+                    (app.packageName in completedIconBatch && preloadedIcon == null)
+                var onDemandIcon by remember(app.packageName) { mutableStateOf<Bitmap?>(null) }
+                LaunchedEffect(app.packageName, loadOnDemand) {
+                    if (loadOnDemand) {
+                        onDemandIcon = installedAppsViewModel.loadIcon(app.packageName)
+                    }
                 }
+                val icon = preloadedIcon ?: onDemandIcon
                 val iconBitmap = remember(icon) { icon?.asImageBitmap() }
                 Row(
                     modifier = Modifier

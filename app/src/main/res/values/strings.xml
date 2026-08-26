@@ -508,6 +508,8 @@
     <string name="app_groups_selected_count">已选应用 (%d)</string>
     <string name="app_groups_click_to_add">点击上方按钮选择应用</string>
     <string name="app_groups_remove">移除</string>
+    <string name="app_routing_proxy_only_unsupported">纯代理模式不支持应用分流</string>
+    <string name="app_routing_proxy_only_unsupported_hint">切换到 VPN 或 Root 透明代理后，才能识别应用并按应用选择出站。</string>
 
     <!-- Domain Rules -->
     <string name="domain_rules_title">域名分流</string>

@@ -35,6 +35,7 @@ import com.kunk.singbox.model.BackgroundPowerSavingDelay
 import com.kunk.singbox.repository.DataExportRepository
 import com.kunk.singbox.repository.RuleSetRepository
 import com.kunk.singbox.repository.SettingsRepository
+import com.kunk.singbox.repository.ConfigRepository
 import com.kunk.singbox.repository.PerAppPolicyUpdateResult
 import com.kunk.singbox.service.RuleSetAutoUpdateWorker
 import com.kunk.singbox.service.root.RootCapabilityReport
@@ -395,7 +396,12 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         ) return
         val desiredPolicy = PerAppVpnPolicy.from(desired)
         val applied = VpnStateStore.getAppliedPerAppPolicy()
-        if (applied.revision == desiredPolicy.revision && applied.digest == desiredPolicy.digest()) return
+        if (applied.revision == desiredPolicy.revision &&
+            applied.digest == desiredPolicy.digest() &&
+            applied.appRoutingDigest == ConfigRepository.appRoutingDigest(desired)
+        ) {
+            return
+        }
         if (lastPerAppReconcileRevision.getAndSet(desiredPolicy.revision) == desiredPolicy.revision) return
         _perAppPolicyApplyState.value = PerAppPolicyApplyState.Applying(desiredPolicy.revision)
         VpnServiceManager.applyPerAppRuleChangeIfRunning(getApplication(), desiredPolicy.revision)
@@ -734,8 +740,17 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 
     private suspend fun applyAppRoutingChange(update: suspend () -> Boolean) {
         if (!update()) return
+        val revision = settings.value.perAppPolicyRevision
+        _perAppPolicyApplyState.value = PerAppPolicyApplyState.Applying(revision)
         VpnServiceManager.applyPerAppRuleChangeIfRunning(getApplication())
-            .onFailure { error -> Log.e("SettingsViewModel", "自动应用应用分流配置失败", error) }
+            .onSuccess { _perAppPolicyApplyState.value = PerAppPolicyApplyState.Idle }
+            .onFailure { error ->
+                Log.e("SettingsViewModel", "自动应用应用分流配置失败", error)
+                _perAppPolicyApplyState.value = PerAppPolicyApplyState.Failed(
+                    revision,
+                    error.message ?: "应用分流配置应用失败"
+                )
+            }
     }
 
     fun exportData(uri: Uri) {
