@@ -101,6 +101,8 @@ class RootPlatformInterface(
 
             override fun forceConnectionOwnerRouting(): Boolean = this@RootPlatformInterface.forceConnectionOwnerRouting
 
+            override fun preferConnectivityOwnerRouting(): Boolean = true
+
             override fun incrementConnectionOwnerCalls() = Unit
 
             override fun incrementConnectionOwnerInvalidArgs() = Unit

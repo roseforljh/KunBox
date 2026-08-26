@@ -364,13 +364,29 @@ class PlatformInterfaceImplTest {
     }
 
     @Test
+    fun nullOwnerRoutingOverrideUsesVpnApplicationRules() {
+        val settings = AppSettings(
+            routingMode = RoutingMode.RULE,
+            appGroups = listOf(
+                AppGroup(name = "Telegram", apps = listOf(AppInfo("org.telegram.messenger", "Telegram")))
+            )
+        )
+
+        assertTrue(PlatformInterfaceImpl.resolveForceConnectionOwnerRouting(null, settings))
+        assertFalse(PlatformInterfaceImpl.resolveForceConnectionOwnerRouting(false, settings))
+    }
+
+    @Test
     fun testForcedConnectionOwnerRoutingPrefersOriginalProcFsTuple() {
         val source = File("src/main/java/com/kunk/singbox/service/manager/PlatformInterfaceImpl.kt").readText()
         val method = source.substringAfter("override fun findConnectionOwner(")
             .substringBefore("override fun startDefaultInterfaceMonitor")
 
         assertTrue(method.contains("if (forceConnectionOwnerRouting)"))
-        assertTrue(method.contains("return resolveFromProcFs(\"forced\") ?: unknownConnectionOwner()"))
+        assertTrue(method.contains("resolveForceConnectionOwnerRouting"))
+        assertTrue(method.contains("resolveFromProcFs(\"forced\")"))
+        assertTrue(method.contains("preferConnectivityOwnerRouting"))
+        assertTrue(method.contains("unknownConnectionOwner()"))
         assertTrue(method.contains("allowSourceEndpointFallback = forceConnectionOwnerRouting"))
     }
 

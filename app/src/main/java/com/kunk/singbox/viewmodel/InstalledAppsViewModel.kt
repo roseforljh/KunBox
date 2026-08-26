@@ -33,4 +33,6 @@ class InstalledAppsViewModel(application: Application) : AndroidViewModel(applic
     }
 
     suspend fun loadIcon(packageName: String): Bitmap? = repository.loadIcon(packageName)
+
+    suspend fun loadIcons(packageNames: Collection<String>): Map<String, Bitmap> = repository.loadIcons(packageNames)
 }
