@@ -212,8 +212,8 @@ internal object MeteredNodeConfigGuard {
         }
     }
 
-    /** 显式分流授权只允许 route.rules 及其 Root 专用故障切换组使用。 */
-    @Suppress("LongMethod", "CyclomaticComplexMethod", "CognitiveComplexMethod", "ComplexCondition")
+    /** 显式分流授权只允许 route.rules 使用，受保护节点不能进入任何可切换组。 */
+    @Suppress("LongMethod", "CyclomaticComplexMethod")
     fun findExplicitRouteScopeViolations(
         config: SingBoxConfig,
         protectedTags: Set<String>
@@ -222,48 +222,17 @@ internal object MeteredNodeConfigGuard {
 
         fun protectedTag(value: String?): String? = value?.trim()?.takeIf(protectedTags::contains)
 
-        val routeRuleOutbounds = config.route?.rules.orEmpty().mapNotNull { it.outbound }.toSet()
-        val rootFallbackProtectedTags = config.outbounds.orEmpty().mapNotNull { outbound ->
-            val protectedMembers = outbound.outbounds.orEmpty().mapNotNull(::protectedTag).distinct()
-            val protectedMember = protectedMembers.singleOrNull() ?: return@mapNotNull null
-            if (
-                outbound.type.lowercase() != "selector" ||
-                !ConfigRepository.isRootExplicitFallbackGroupTag(outbound.tag) ||
-                outbound.tag !in routeRuleOutbounds ||
-                outbound.default != protectedMember
-            ) {
-                return@mapNotNull null
-            }
-            outbound.tag to protectedMember
-        }.toMap()
-
-        fun rootFallbackTag(value: String?): String? =
-            value?.trim()?.takeIf(rootFallbackProtectedTags::containsKey)
-
         return buildList {
             config.outbounds.orEmpty().forEach { outbound ->
                 protectedTag(outbound.detour)?.let { tag ->
                     add("出站「${outbound.tag}」的前置代理引用「$tag」")
                 }
-                rootFallbackTag(outbound.detour)?.let { tag ->
-                    add("出站「${outbound.tag}」的前置代理引用 Root 分流组「$tag」")
-                }
                 if (outbound.type.lowercase() in groupTypes) {
                     outbound.outbounds.orEmpty().mapNotNull(::protectedTag).forEach { tag ->
-                        if (rootFallbackProtectedTags[outbound.tag] != tag) {
-                            add("${outbound.type}「${outbound.tag}」的候选引用「$tag」")
-                        }
-                    }
-                    outbound.outbounds.orEmpty().mapNotNull(::rootFallbackTag).forEach { tag ->
-                        add("${outbound.type}「${outbound.tag}」的候选引用 Root 分流组「$tag」")
+                        add("${outbound.type}「${outbound.tag}」的候选引用「$tag」")
                     }
                     protectedTag(outbound.default)?.let { tag ->
-                        if (rootFallbackProtectedTags[outbound.tag] != tag) {
-                            add("selector「${outbound.tag}」的默认节点引用「$tag」")
-                        }
-                    }
-                    rootFallbackTag(outbound.default)?.let { tag ->
-                        add("selector「${outbound.tag}」的默认节点引用 Root 分流组「$tag」")
+                        add("selector「${outbound.tag}」的默认节点引用「$tag」")
                     }
                 }
             }
@@ -271,25 +240,15 @@ internal object MeteredNodeConfigGuard {
                 protectedTag(endpoint.detour)?.let { tag ->
                     add("endpoint「${endpoint.tag}」的前置代理引用「$tag」")
                 }
-                rootFallbackTag(endpoint.detour)?.let { tag ->
-                    add("endpoint「${endpoint.tag}」的前置代理引用 Root 分流组「$tag」")
-                }
             }
             protectedTag(config.route?.finalOutbound)?.let { add("路由 final 引用「$it」") }
-            rootFallbackTag(config.route?.finalOutbound)?.let { add("路由 final 引用 Root 分流组「$it」") }
             config.route?.ruleSet.orEmpty().forEachIndexed { index, ruleSet ->
                 protectedTag(ruleSet.downloadDetour)?.let { add("规则集下载[$index]引用「$it」") }
-                rootFallbackTag(ruleSet.downloadDetour)?.let {
-                    add("规则集下载[$index]引用 Root 分流组「$it」")
-                }
             }
             config.dns?.servers.orEmpty().forEach { server ->
                 protectedTag(server.detour)
                     ?.takeUnless { tag -> server.tag == ConfigRepository.buildDynamicDnsServerTag(tag) }
                     ?.let { tag -> add("DNS「${server.tag.orEmpty()}」引用「$tag」") }
-                rootFallbackTag(server.detour)
-                    ?.takeUnless { tag -> server.tag == ConfigRepository.buildDynamicDnsServerTag(tag) }
-                    ?.let { tag -> add("DNS「${server.tag.orEmpty()}」引用 Root 分流组「$tag」") }
             }
         }
     }

@@ -181,7 +181,14 @@ class ConfigRepository(protected val context: Context) {
         val activeNodeName: String? = null,
         val requestId: String = "",
         val configDigest: String = "",
-        val appRoutingDigest: String = ""
+        val appRoutingDigest: String = "",
+        val rootRoutingSidecarPath: String = "",
+        val rootRoutingManifestPath: String = "",
+        val rootRoutingSidecarJson: String = "",
+        val rootRoutingSidecarDigest: String = "",
+        val rootRoutingStaticPlanDigest: String = "",
+        val rootRoutingAppDigest: String = "",
+        val rootRoutingGeneration: Long = 0L
     )
 
     internal data class OutboundSemanticTestInput(
@@ -2577,7 +2584,7 @@ class ConfigRepository(protected val context: Context) {
     private suspend fun requestFullRuntimeConfigReload(result: ConfigRepository.ConfigGenerationResult) {
         val coreMode = VpnStateStore.getMode()
         val previousGeneration = VpnStateStore.getRuntimeStateSnapshot().generation
-        requestRuntimeConfigReload(result.path, result.activeNodeTag, coreMode)
+        requestRuntimeConfigReload(result, coreMode)
         check(awaitRuntimeRunningAfter(previousGeneration)) { "Timed out waiting for reloaded core" }
         if (result.activeNodeTag?.endsWith("#AUTO", ignoreCase = true) == true) {
             check(awaitConcreteRuntimeLabel()) { "Automatic group did not resolve to a concrete node" }
@@ -2585,31 +2592,31 @@ class ConfigRepository(protected val context: Context) {
     }
 
     private fun requestRuntimeConfigReload(
-        configPath: String,
-        activeNodeTag: String?,
+        result: ConfigRepository.ConfigGenerationResult,
         coreMode: VpnStateStore.CoreMode
     ) {
         val intent = if (coreMode == VpnStateStore.CoreMode.PROXY) {
             Intent(context, ProxyOnlyService::class.java).apply {
                 action = ProxyOnlyService.ACTION_START
                 putExtra("node_id", _activeNodeId.value)
-                putExtra("outbound_tag", activeNodeTag)
+                putExtra("outbound_tag", result.activeNodeTag)
                 putExtra(SingBoxService.EXTRA_PENDING_NODE_NAME, "")
-                putExtra(ProxyOnlyService.EXTRA_CONFIG_PATH, configPath)
+                putExtra(ProxyOnlyService.EXTRA_CONFIG_PATH, result.path)
             }
         } else if (coreMode == VpnStateStore.CoreMode.ROOT) {
             Intent(context, RootTransparentForegroundService::class.java).apply {
                 action = RootTransparentForegroundService.ACTION_RESTART
-                putExtra(RootTransparentForegroundService.EXTRA_CONFIG_PATH, configPath)
+                putExtra(RootTransparentForegroundService.EXTRA_CONFIG_PATH, result.path)
+                putRootRoutingGenerationExtras(result)
             }
         } else {
             Intent(context, SingBoxService::class.java).apply {
                 action = SingBoxService.ACTION_START
                 putExtra(SingBoxService.EXTRA_CLEAN_CACHE, true)
                 putExtra("node_id", _activeNodeId.value)
-                putExtra("outbound_tag", activeNodeTag)
+                putExtra("outbound_tag", result.activeNodeTag)
                 putExtra(SingBoxService.EXTRA_PENDING_NODE_NAME, "")
-                putExtra(SingBoxService.EXTRA_CONFIG_PATH, configPath)
+                putExtra(SingBoxService.EXTRA_CONFIG_PATH, result.path)
             }
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -2710,11 +2717,21 @@ class ConfigRepository(protected val context: Context) {
         if (!VpnStateStore.isManuallyStopped() && previousCoreMode != VpnStateStore.CoreMode.NONE) {
             VpnStateStore.setMode(previousCoreMode)
             val previousGeneration = VpnStateStore.getRuntimeStateSnapshot().generation
-            requestRuntimeConfigReload(
-                runningConfigFile.absolutePath,
-                activeNodeTag = null,
-                coreMode = previousCoreMode
-            )
+            val restoreResult = if (previousCoreMode == VpnStateStore.CoreMode.ROOT) {
+                generateConfigFile()
+            } else {
+                ConfigRepository.ConfigGenerationResult(
+                    path = runningConfigFile.absolutePath,
+                    activeNodeTag = null,
+                    outboundTags = resolveRunningOutboundTags(previousRunningConfig).orEmpty(),
+                    configDigest = ConfigRepository.sha256(previousRunningConfig)
+                )
+            }
+            if (restoreResult == null) {
+                Log.e(ConfigRepository.TAG, "Failed to regenerate previous Root runtime config")
+                return
+            }
+            requestRuntimeConfigReload(restoreResult, previousCoreMode)
             if (!awaitRuntimeRunningAfter(previousGeneration)) {
                 Log.e(ConfigRepository.TAG, "Failed to restore previous runtime config")
             }
@@ -2974,6 +2991,7 @@ class ConfigRepository(protected val context: Context) {
                                 generationResult.activeNodeTag
                             )
                             putExtra(RootTransparentForegroundService.EXTRA_NODE_NAME, node.name)
+                            putRootRoutingGenerationExtras(generationResult)
                         }
                     } else {
                         Intent(context, SingBoxService::class.java).apply {
@@ -3681,7 +3699,6 @@ class ConfigRepository(protected val context: Context) {
             }
             val log = buildRunLogConfig(sanitizedSettings)
             val experimental = buildRunExperimentalConfig(sanitizedSettings)
-            val inbounds = buildRunInbounds(sanitizedSettings)
             val customRuleSets = buildCustomRuleSets(sanitizedSettings)
 
             val dnsOverrideConfig = parseDnsOverride(activeProfile?.dnsOverride)
@@ -3717,6 +3734,18 @@ class ConfigRepository(protected val context: Context) {
                     defaultResolverOutbounds
                 }
             )
+            val rootRoutingPlan = if (
+                sanitizedSettings.resolvedTrafficCaptureMode() == TrafficCaptureMode.ROOT_TRANSPARENT
+            ) {
+                buildRootAppRoutingPlan(
+                    settings = sanitizedSettings,
+                    outboundsContext = outboundsContext,
+                    generation = RootGenerationStore.nextGeneration(context.filesDir)
+                )
+            } else {
+                null
+            }
+            val inbounds = buildRunInbounds(sanitizedSettings, rootRoutingPlan)
             val endpoints = buildRunEndpoints(
                 baseConfig = config,
                 activeProfileId = activeId,
@@ -3729,14 +3758,16 @@ class ConfigRepository(protected val context: Context) {
                 customRuleSets,
                 outboundsContext,
                 dnsOverrideConfig,
-                config.dns
+                config.dns,
+                rootRoutingPlan
             )
             val route = buildRunRoute(
                 sanitizedSettings,
                 outboundsContext.selectorTag,
                 outboundsContext.outbounds,
                 outboundsContext.ruleNodeTagResolver,
-                customRuleSets
+                customRuleSets,
+                rootRoutingPlan
             )
             val runtimeOutbounds = ConfigRepository.pruneUnreachableGroupOutbounds(
                 outbounds = outboundsContext.outbounds,
@@ -3798,6 +3829,7 @@ class ConfigRepository(protected val context: Context) {
                 availableTags = runtimeOutbounds.mapTo(mutableSetOf(), Outbound::tag) +
                     endpoints.orEmpty().map(Endpoint::tag)
             )
+            rootRoutingPlan?.let { ConfigRepository.requireValidRootApplicationRoutes(runConfig, it) }
 
             val validation = singBoxCore.validateConfig(stripInternalMetadata(runConfig))
             validation.exceptionOrNull()?.let { e ->
@@ -3828,12 +3860,27 @@ class ConfigRepository(protected val context: Context) {
             }
             val runtimeConfigContent = gson.toJson(stripInternalMetadata(runConfig))
             val requestId = candidateRequestId.orEmpty()
-            val configFile = if (requestId.isBlank()) {
-                File(context.filesDir, "running_config.json")
-            } else {
+            if (requestId.isNotBlank()) {
                 require(requestId.all { it.isLetterOrDigit() || it == '-' || it == '_' }) {
                     "Invalid candidate config request ID"
                 }
+            }
+            val rootGenerationDir = rootRoutingPlan?.let { plan ->
+                RootGenerationStore.generationDirectory(context.filesDir, plan.generation).also { directory ->
+                    check(!Files.isSymbolicLink(directory.toPath())) {
+                        "Root routing generation directory cannot be a symbolic link"
+                    }
+                    check(!directory.exists() || directory.isDirectory) {
+                        "Root routing generation path is not a directory"
+                    }
+                    check(!directory.exists() && directory.mkdirs()) {
+                        "Cannot create Root routing generation directory"
+                    }
+                }
+            }
+            val configFile = rootGenerationDir?.let { File(it, "config.json") } ?: if (requestId.isBlank()) {
+                File(context.filesDir, "running_config.json")
+            } else {
                 File(context.filesDir, "running_config_candidate_$requestId.json")
             }
             if (requestId.isBlank()) {
@@ -3842,9 +3889,50 @@ class ConfigRepository(protected val context: Context) {
                 }
             }
             ConfigRepository.writeTextFileAtomically(configFile, runtimeConfigContent)
+            val configDigest = ConfigRepository.sha256(runtimeConfigContent)
+            val boundRootPlan = rootRoutingPlan?.copy(configFileSha256 = configDigest)
+            val sidecarFile = rootGenerationDir?.let { File(it, "root-routing.json") }
+            val manifestFile = rootGenerationDir?.let { File(it, "manifest.json") }
+            val sidecarJson = boundRootPlan?.let(gson::toJson).orEmpty()
+            val sidecarDigest = sidecarJson.takeIf(String::isNotEmpty)?.let(ConfigRepository::sha256).orEmpty()
+            if (boundRootPlan != null && sidecarFile != null && manifestFile != null) {
+                try {
+                    check(boundRootPlan.staticPlanSha256 == RootAppRoutingCanonical.staticPlanSha256(boundRootPlan)) {
+                        "Root static plan changed while binding config"
+                    }
+                    check(boundRootPlan.appRoutingSha256 == RootAppRoutingCanonical.appRoutingSha256(boundRootPlan)) {
+                        "Root app routing plan changed while binding config"
+                    }
+                    ConfigRepository.writeTextFileAtomically(sidecarFile, sidecarJson)
+                    check(RootRoutingArtifactValidator.requireBoundPlanJson(sidecarJson) == boundRootPlan) {
+                        "Root sidecar serialization changed the routing plan"
+                    }
+                    val manifest = RootRoutingManifest(
+                        generation = boundRootPlan.generation,
+                        configLength = runtimeConfigContent.toByteArray(Charsets.UTF_8).size.toLong(),
+                        configFileSha256 = configDigest,
+                        sidecarLength = sidecarJson.toByteArray(Charsets.UTF_8).size.toLong(),
+                        sidecarFileSha256 = sidecarDigest,
+                        staticPlanSha256 = boundRootPlan.staticPlanSha256,
+                        appRoutingSha256 = boundRootPlan.appRoutingSha256
+                    )
+                    val manifestJson = gson.toJson(manifest)
+                    RootRoutingArtifactValidator.requireManifestJson(manifestJson)
+                    ConfigRepository.writeTextFileAtomically(manifestFile, manifestJson)
+                } catch (error: Exception) {
+                    runCatching {
+                        RootGenerationStore.deleteGeneration(context.filesDir, boundRootPlan.generation)
+                    }.onFailure(error::addSuppressed)
+                    throw error
+                }
+            }
             if (requestId.isNotBlank()) {
                 if (!NodeProtectionStore.stageRuntimeMappings(requestId, runtimeMappings, runtimeConfigContent)) {
-                    runCatching { configFile.delete() }
+                    runCatching {
+                        rootRoutingPlan?.let { plan ->
+                            RootGenerationStore.deleteGeneration(context.filesDir, plan.generation)
+                        } ?: configFile.delete()
+                    }
                     throw IllegalStateException("无法暂存候选配置的运行时节点映射，已阻止启动")
                 }
             }
@@ -3856,8 +3944,15 @@ class ConfigRepository(protected val context: Context) {
                 outboundTags = allTags,
                 activeNodeName = activeNode?.name.takeIf { activeAutoTag == null },
                 requestId = requestId,
-                configDigest = ConfigRepository.sha256(runtimeConfigContent),
-                appRoutingDigest = ConfigRepository.appRoutingDigest(sanitizedSettings)
+                configDigest = configDigest,
+                appRoutingDigest = ConfigRepository.appRoutingDigest(sanitizedSettings),
+                rootRoutingSidecarPath = sidecarFile?.absolutePath.orEmpty(),
+                rootRoutingManifestPath = manifestFile?.absolutePath.orEmpty(),
+                rootRoutingSidecarJson = sidecarJson,
+                rootRoutingSidecarDigest = sidecarDigest,
+                rootRoutingStaticPlanDigest = boundRootPlan?.staticPlanSha256.orEmpty(),
+                rootRoutingAppDigest = boundRootPlan?.appRoutingSha256.orEmpty(),
+                rootRoutingGeneration = boundRootPlan?.generation ?: 0L
             )
         } catch (e: Exception) {
             lastConfigGenerationError = e.message ?: "配置生成失败"
@@ -4338,6 +4433,80 @@ class ConfigRepository(protected val context: Context) {
         return rules
     }
 
+    private fun buildRootAppRoutingPlan(
+        settings: AppSettings,
+        outboundsContext: ConfigRepositoryRunOutboundsContext,
+        generation: Long
+    ): RootAppRoutingPlan {
+        val semanticContext = ConfigRepositoryOutboundSemanticContext(
+            selectorTag = outboundsContext.selectorTag,
+            outbounds = outboundsContext.outbounds,
+            profiles = _profiles.value,
+            // Root 的 NODE 必须绑定物理 outbound。selector 只能表示 PROXY 或 PROFILE，
+            // 不能作为明确节点的隐藏故障切换入口。
+            nodeTagResolver = outboundsContext.nodeTagResolver
+        )
+        val assignments = buildList {
+            if (!ConfigRepository.shouldApplyCustomAndAppRules(settings.routingMode)) return@buildList
+            settings.appRules.filter(AppRule::enabled).forEach { rule ->
+                val packages = rootCapturedPackages(settings, listOf(rule.packageName))
+                if (packages.isEmpty()) return@forEach
+                val label = "应用「${rule.appName.ifBlank { rule.packageName }}」"
+                add(
+                    ConfigRepository.toRootAppRoutingAssignment(
+                        packageNames = packages,
+                        semantic = ConfigRepository.resolveAppOutboundSemanticStrict(
+                            mode = ConfigRepository.resolveAppRuleOutboundMode(rule.outboundMode),
+                            value = rule.outboundValue,
+                            context = semanticContext,
+                            label = label
+                        ),
+                        selectorTag = outboundsContext.selectorTag,
+                        sourceLabel = label
+                    )
+                )
+            }
+            settings.appGroups.filter(AppGroup::enabled).forEach { group ->
+                val packages = rootCapturedPackages(settings, group.apps.map(AppInfo::packageName))
+                if (packages.isEmpty()) return@forEach
+                val label = "应用分组「${group.name}」"
+                add(
+                    ConfigRepository.toRootAppRoutingAssignment(
+                        packageNames = packages,
+                        semantic = ConfigRepository.resolveAppOutboundSemanticStrict(
+                            mode = ConfigRepository.resolveAppGroupOutboundMode(group.outboundMode),
+                            value = group.outboundValue,
+                            context = semanticContext,
+                            label = label
+                        ),
+                        selectorTag = outboundsContext.selectorTag,
+                        sourceLabel = label
+                    )
+                )
+            }
+        }
+        return RootAppRoutingPlanCompiler.compile(settings, assignments, generation)
+    }
+
+    private fun Intent.putRootRoutingGenerationExtras(result: ConfigRepository.ConfigGenerationResult) {
+        putExtra(RootTransparentForegroundService.EXTRA_CONFIG_DIGEST, result.configDigest)
+        putExtra(RootTransparentForegroundService.EXTRA_APP_ROUTING_DIGEST, result.rootRoutingAppDigest)
+        putExtra(RootTransparentForegroundService.EXTRA_SIDECAR_DIGEST, result.rootRoutingSidecarDigest)
+        putExtra(RootTransparentForegroundService.EXTRA_SIDECAR_JSON, result.rootRoutingSidecarJson)
+        putExtra(RootTransparentForegroundService.EXTRA_STATIC_PLAN_DIGEST, result.rootRoutingStaticPlanDigest)
+        putExtra(RootTransparentForegroundService.EXTRA_ROUTING_GENERATION, result.rootRoutingGeneration)
+    }
+
+    private fun rootCapturedPackages(settings: AppSettings, packageNames: List<String>): List<String> {
+        val policy = PerAppVpnPolicy.from(settings)
+        return packageNames.asSequence()
+            .map(String::trim)
+            .filter(String::isNotBlank)
+            .filter { policy.captures(it, context.packageName) }
+            .distinct()
+            .toList()
+    }
+
     protected fun buildRunLogConfig(settings: AppSettings): LogConfig {
         return LogConfig(
             level = ConfigRepository.resolveRunLogLevel(settings.resolvedTrafficCaptureMode()),
@@ -4381,10 +4550,14 @@ class ConfigRepository(protected val context: Context) {
         )
     }
 
-    protected fun buildRunInbounds(settings: AppSettings): List<Inbound> =
+    protected fun buildRunInbounds(
+        settings: AppSettings,
+        rootRoutingPlan: RootAppRoutingPlan? = null
+    ): List<Inbound> =
         InboundBuilder.build(
             settings.copy(tunMtu = getEffectiveTunMtu(settings)),
-            getEffectiveTunStack(settings.tunStack)
+            getEffectiveTunStack(settings.tunStack),
+            rootRoutingPlan
         )
 
     protected fun resolveRunDnsFinalServer(
@@ -4416,7 +4589,9 @@ class ConfigRepository(protected val context: Context) {
         validRuleSets: List<RuleSetConfig>,
         outboundsContext: ConfigRepositoryRunOutboundsContext,
         dnsOverride: DnsConfig? = null,
-        originalDns: DnsConfig? = null): DnsConfig {
+        originalDns: DnsConfig? = null,
+        rootRoutingPlan: RootAppRoutingPlan? = null
+    ): DnsConfig {
         val dnsServers = mutableListOf<DnsServer>()
         val dnsRules = mutableListOf<DnsRule>()
         val customDomainDnsRules = mutableListOf<DnsRule>()
@@ -4619,46 +4794,55 @@ class ConfigRepository(protected val context: Context) {
             orderedPackageRules.add(rule to semantic)
         }
 
-        settings.appRules
-            .filter { ConfigRepository.shouldApplyCustomAndAppRules(settings.routingMode) && it.enabled }
-            .forEach { rule ->
-                val packageNames = resolvePackagesSharingUid(
-                    filterVpnCapturedPackages(settings, listOf(rule.packageName))
+        if (rootRoutingPlan != null) {
+            rootRoutingPlan.lanes.sortedBy(RootAppRouteLane::slot).forEach { lane ->
+                addPackageDnsRule(
+                    DnsRule(inbound = lane.inboundTags(rootRoutingPlan.proxyIpv4, rootRoutingPlan.proxyIpv6)),
+                    ConfigRepository.rootLaneSemantic(lane)
                 )
-                if (packageNames.isEmpty()) return@forEach
-                val semantic = ConfigRepository.resolveAppOutboundSemanticStrict(
-                    mode = ConfigRepository.resolveAppRuleOutboundMode(rule.outboundMode),
-                    value = rule.outboundValue,
-                    context = ConfigRepositoryOutboundSemanticContext(
-                        selectorTag = outboundsContext.selectorTag,
-                        outbounds = outboundsContext.outbounds,
-                        profiles = profiles,
-                        nodeTagResolver = outboundsContext.ruleNodeTagResolver
-                    ),
-                    label = "应用「${rule.appName.ifBlank { rule.packageName }}」"
-                )
-                addPackageDnsRule(DnsRule(packageName = packageNames), semantic)
             }
-        settings.appGroups
-            .filter { ConfigRepository.shouldApplyCustomAndAppRules(settings.routingMode) && it.enabled }
-            .forEach { group ->
-                val packageNames = resolvePackagesSharingUid(
-                    filterVpnCapturedPackages(settings, group.apps.map { it.packageName })
-                )
-                if (packageNames.isEmpty()) return@forEach
-                val semantic = ConfigRepository.resolveAppOutboundSemanticStrict(
-                    mode = ConfigRepository.resolveAppGroupOutboundMode(group.outboundMode),
-                    value = group.outboundValue,
-                    context = ConfigRepositoryOutboundSemanticContext(
-                        selectorTag = outboundsContext.selectorTag,
-                        outbounds = outboundsContext.outbounds,
-                        profiles = profiles,
-                        nodeTagResolver = outboundsContext.ruleNodeTagResolver
-                    ),
-                    label = "应用分组「${group.name}」"
-                )
-                addPackageDnsRule(DnsRule(packageName = packageNames), semantic)
-            }
+        } else {
+            settings.appRules
+                .filter { ConfigRepository.shouldApplyCustomAndAppRules(settings.routingMode) && it.enabled }
+                .forEach { rule ->
+                    val packageNames = resolvePackagesSharingUid(
+                        filterVpnCapturedPackages(settings, listOf(rule.packageName))
+                    )
+                    if (packageNames.isEmpty()) return@forEach
+                    val semantic = ConfigRepository.resolveAppOutboundSemanticStrict(
+                        mode = ConfigRepository.resolveAppRuleOutboundMode(rule.outboundMode),
+                        value = rule.outboundValue,
+                        context = ConfigRepositoryOutboundSemanticContext(
+                            selectorTag = outboundsContext.selectorTag,
+                            outbounds = outboundsContext.outbounds,
+                            profiles = profiles,
+                            nodeTagResolver = outboundsContext.ruleNodeTagResolver
+                        ),
+                        label = "应用「${rule.appName.ifBlank { rule.packageName }}」"
+                    )
+                    addPackageDnsRule(DnsRule(packageName = packageNames), semantic)
+                }
+            settings.appGroups
+                .filter { ConfigRepository.shouldApplyCustomAndAppRules(settings.routingMode) && it.enabled }
+                .forEach { group ->
+                    val packageNames = resolvePackagesSharingUid(
+                        filterVpnCapturedPackages(settings, group.apps.map { it.packageName })
+                    )
+                    if (packageNames.isEmpty()) return@forEach
+                    val semantic = ConfigRepository.resolveAppOutboundSemanticStrict(
+                        mode = ConfigRepository.resolveAppGroupOutboundMode(group.outboundMode),
+                        value = group.outboundValue,
+                        context = ConfigRepositoryOutboundSemanticContext(
+                            selectorTag = outboundsContext.selectorTag,
+                            outbounds = outboundsContext.outbounds,
+                            profiles = profiles,
+                            nodeTagResolver = outboundsContext.ruleNodeTagResolver
+                        ),
+                        label = "应用分组「${group.name}」"
+                    )
+                    addPackageDnsRule(DnsRule(packageName = packageNames), semantic)
+                }
+        }
 
         appDnsRules.addAll(
             ConfigRepository.buildOrderedDnsRules(
@@ -5218,39 +5402,6 @@ class ConfigRepository(protected val context: Context) {
                 }
             }
         }
-        val explicitFallbackGroupTags = mutableMapOf<String, String>()
-        if (settings.resolvedTrafficCaptureMode() == TrafficCaptureMode.ROOT_TRANSPARENT) {
-            explicitNodeIds.sorted().forEach { nodeId ->
-                val selectedNode = allNodes.firstOrNull { it.id == nodeId } ?: return@forEach
-                val selectedTag = nodeTagMap[nodeId] ?: return@forEach
-                if (!ConfigRepository.canBuildRootFallbackSelector(selectedTag, runtimeEndpointTags)) return@forEach
-                val candidateTags = buildList {
-                    add(selectedTag)
-                    allNodes.asSequence()
-                        .filter { candidate ->
-                            candidate.sourceProfileId == selectedNode.sourceProfileId &&
-                                candidate.id != nodeId &&
-                                candidate.id !in disallowedProtectedNodeIds &&
-                                isNodeAutoSelectionEligible(candidate.id) &&
-                                !candidate.meteredProtected
-                        }
-                        .sortedBy(NodeUi::id)
-                        .mapNotNull { candidate ->
-                            nodeTagMap[candidate.id]?.takeUnless(runtimeEndpointTags::contains)
-                        }
-                        .forEach(::add)
-                }
-                val groupTag = ConfigRepository.buildRootExplicitFallbackGroupTag(nodeId)
-                val selector = ConfigRepository.buildRootExplicitFallbackSelector(
-                    groupTag = groupTag,
-                    selectedTag = selectedTag,
-                    candidateTags = candidateTags
-                ) ?: return@forEach
-                fixedOutbounds.removeAll { it.tag == groupTag }
-                fixedOutbounds.add(0, selector)
-                explicitFallbackGroupTags[nodeId] = groupTag
-            }
-        }
         val routeOnlyRuntimeTags = routeOnlyProtectedNodeIds.mapNotNullTo(mutableSetOf()) { nodeTagMap[it] }
         val proxyTags = fixedOutbounds.filter {
             it.tag !in routeOnlyRuntimeTags && it.type in listOf(
@@ -5316,10 +5467,9 @@ class ConfigRepository(protected val context: Context) {
                     ?: if (fixedOutbounds.any { it.tag == value } || value in runtimeEndpointTags) value else null
             }
         }
-        val ruleNodeTagResolver: (String?) -> String? = { value ->
-            val nodeId = resolveNodeRefToId(value)
-            nodeId?.let(explicitFallbackGroupTags::get) ?: nodeTagResolver(value)
-        }
+        // 所有规则都使用同一套解析结果。显式 NODE 不能悄悄变成 selector，
+        // 否则首页切换或自动探测会改变应用已经指定的节点。
+        val ruleNodeTagResolver: (String?) -> String? = nodeTagResolver
 
         // Final safety check:
         // 1) Normalize detour node refs to runtime tag
@@ -5437,17 +5587,30 @@ class ConfigRepository(protected val context: Context) {
         selectorTag: String,
         outbounds: List<Outbound>,
         nodeTagResolver: (String?) -> String?,
-        validRuleSets: List<RuleSetConfig>
+        validRuleSets: List<RuleSetConfig>,
+        rootRoutingPlan: RootAppRoutingPlan? = null
     ): RouteConfig {
         val profileUis = _profiles.value
         val appRoutingRules = if (ConfigRepository.shouldApplyCustomAndAppRules(settings.routingMode)) {
-            buildAppRoutingRules(
-                settings = settings,
-                defaultProxyTag = selectorTag,
-                outbounds = outbounds,
-                profiles = profileUis,
-                nodeTagResolver = nodeTagResolver
-            )
+            if (rootRoutingPlan != null) {
+                rootRoutingPlan.lanes.map { lane ->
+                    val baseRule = ConfigRepository.toRouteRule(
+                        ConfigRepository.rootLaneSemantic(lane),
+                        selectorTag
+                    )
+                    baseRule.copy(
+                        inbound = lane.inboundTags(rootRoutingPlan.proxyIpv4, rootRoutingPlan.proxyIpv6)
+                    )
+                }
+            } else {
+                buildAppRoutingRules(
+                    settings = settings,
+                    defaultProxyTag = selectorTag,
+                    outbounds = outbounds,
+                    profiles = profileUis,
+                    nodeTagResolver = nodeTagResolver
+                )
+            }
         } else {
             emptyList()
         }
@@ -5480,8 +5643,8 @@ class ConfigRepository(protected val context: Context) {
             emptyList()
         }
         val defaultRuleCatchAll = buildDefaultRules(settings, selectorTag)
-        val hijackDnsRule = ConfigRepository.buildHijackDnsRulesStatic(settings)
-        val baseRules = hijackDnsRule + quicRule + multicastRejectRules + icmpEchoRules
+        val hijackDnsRule = ConfigRepository.buildHijackDnsRulesStatic(settings, rootRoutingPlan)
+        val baseRules = multicastRejectRules + hijackDnsRule + quicRule + icmpEchoRules
         val allRules = ConfigRepository.selectRunRouteRulesStatic(
             settings = settings,
             baseRules = baseRules,
@@ -6755,37 +6918,8 @@ class ConfigRepository(protected val context: Context) {
             return "P:$readableName#$profileId"
         }
 
-        internal fun buildRootExplicitFallbackGroupTag(nodeId: String): String = "F:$nodeId"
-
-        internal fun isRootExplicitFallbackGroupTag(tag: String): Boolean {
-            if (!tag.startsWith("F:")) return false
-            return runCatching { UUID.fromString(tag.substring(2)) }.isSuccess
-        }
-
-        internal fun canBuildRootFallbackSelector(selectedTag: String, endpointTags: Set<String>): Boolean =
-            selectedTag.isNotBlank() && selectedTag !in endpointTags
-
         internal fun resolveRunLogLevel(captureMode: TrafficCaptureMode): String =
             if (captureMode == TrafficCaptureMode.ROOT_TRANSPARENT) "debug" else "info"
-
-        internal fun buildRootExplicitFallbackSelector(
-            groupTag: String,
-            selectedTag: String,
-            candidateTags: List<String>
-        ): Outbound? {
-            val members = (listOf(selectedTag) + candidateTags)
-                .map(String::trim)
-                .filter(String::isNotBlank)
-                .distinct()
-            if (groupTag.isBlank() || selectedTag.isBlank() || members.size < 2) return null
-            return Outbound(
-                type = "selector",
-                tag = groupTag,
-                outbounds = members,
-                default = selectedTag,
-                interruptExistConnections = false
-            )
-        }
 
         internal fun buildConfigWithOutboundsPreservingProfileSettings(
             existingConfig: SingBoxConfig?,
@@ -7825,6 +7959,141 @@ class ConfigRepository(protected val context: Context) {
             }
         }
 
+        internal fun requireValidRootApplicationRoutes(
+            config: SingBoxConfig,
+            plan: RootAppRoutingPlan
+        ) {
+            val inboundTags = config.inbounds.orEmpty().mapNotNullTo(mutableSetOf(), Inbound::tag)
+            val outboundTags = config.outbounds.orEmpty().mapTo(mutableSetOf(), Outbound::tag) +
+                config.endpoints.orEmpty().map(Endpoint::tag)
+            val dnsServerTags = config.dns?.servers.orEmpty().mapNotNullTo(mutableSetOf(), DnsServer::tag)
+            val routeRules = config.route?.rules.orEmpty()
+            val dnsRules = config.dns?.rules.orEmpty()
+            require(routeRules.none { !it.packageName.isNullOrEmpty() }) {
+                "Root 运行配置仍含 package_name 路由，已阻止不确定应用分流"
+            }
+            require(dnsRules.none { !it.packageName.isNullOrEmpty() }) {
+                "Root 运行配置仍含 package_name DNS 规则，已阻止不确定应用分流"
+            }
+            plan.lanes.forEach { lane ->
+                val laneInbounds = lane.inboundTags(plan.proxyIpv4, plan.proxyIpv6)
+                requireValidRootLaneRoute(lane, laneInbounds, inboundTags, outboundTags, routeRules)
+                requireValidRootLaneDns(
+                    lane,
+                    laneInbounds,
+                    dnsServerTags,
+                    dnsRules,
+                    config.dns?.fakeip != null
+                )
+            }
+            require(plan.staticPlanSha256 == RootAppRoutingCanonical.staticPlanSha256(plan)) {
+                "Root static plan digest mismatch"
+            }
+            require(plan.appRoutingSha256 == RootAppRoutingCanonical.appRoutingSha256(plan)) {
+                "Root app routing digest mismatch"
+            }
+        }
+
+        private fun requireValidRootLaneRoute(
+            lane: RootAppRouteLane,
+            laneInbounds: List<String>,
+            inboundTags: Set<String>,
+            outboundTags: Set<String>,
+            routeRules: List<RouteRule>
+        ) {
+            require(laneInbounds.isNotEmpty() && laneInbounds.all(inboundTags::contains)) {
+                "Root lane ${lane.laneId} 缺少 inbound"
+            }
+            val expected = if (lane.targetKind == "BLOCK") {
+                RouteRule(inbound = laneInbounds, action = "reject")
+            } else {
+                RouteRule(inbound = laneInbounds, action = "route", outbound = lane.outboundTag)
+            }
+            require(routeRules.count(expected::equals) == 1) {
+                "Root lane ${lane.laneId} 缺少唯一且完整的 TCP/UDP 路由规则"
+            }
+            if (lane.targetKind != "BLOCK") {
+                require(lane.outboundTag == "direct" || lane.outboundTag in outboundTags) {
+                    "Root lane ${lane.laneId} 目标 ${lane.outboundTag} 不存在"
+                }
+            }
+        }
+
+        private fun requireValidRootLaneDns(
+            lane: RootAppRouteLane,
+            laneInbounds: List<String>,
+            dnsServerTags: Set<String>,
+            dnsRules: List<DnsRule>,
+            fakeDnsEnabled: Boolean
+        ) {
+            val expectedDnsServer = when (lane.targetKind) {
+                "DIRECT" -> "local"
+                "OUTBOUND" -> buildDynamicDnsServerTag(lane.outboundTag)
+                else -> null
+            }
+            val expected = if (lane.targetKind == "BLOCK") {
+                DnsRule(inbound = laneInbounds, action = "predefined", rcode = JsonPrimitive("NOERROR"))
+            } else {
+                DnsRule(
+                    inbound = laneInbounds,
+                    action = "route",
+                    server = expectedDnsServer,
+                    queryType = IP_DNS_QUERY_TYPES.takeIf { fakeDnsEnabled && lane.targetKind == "OUTBOUND" }
+                )
+            }
+            require(dnsRules.count(expected::equals) == 1) {
+                "Root lane ${lane.laneId} 缺少唯一且完整的 DNS 规则"
+            }
+            if (expectedDnsServer != null) {
+                require(expectedDnsServer in dnsServerTags) {
+                    "Root lane ${lane.laneId} DNS server 不存在"
+                }
+            }
+        }
+
+        internal fun toRootAppRoutingAssignment(
+            packageNames: List<String>,
+            semantic: ConfigRepository.OutboundSemantic,
+            selectorTag: String,
+            sourceLabel: String
+        ): RootAppRoutingAssignment = when (semantic) {
+            ConfigRepository.OutboundSemantic.Direct -> RootAppRoutingAssignment(
+                packageNames = packageNames,
+                targetKind = "DIRECT",
+                outboundTag = "direct",
+                sourceLabel = sourceLabel
+            )
+            ConfigRepository.OutboundSemantic.Block -> RootAppRoutingAssignment(
+                packageNames = packageNames,
+                targetKind = "BLOCK",
+                routeAction = "reject",
+                sourceLabel = sourceLabel
+            )
+            ConfigRepository.OutboundSemantic.Proxy -> RootAppRoutingAssignment(
+                packageNames = packageNames,
+                targetKind = "OUTBOUND",
+                outboundTag = selectorTag,
+                sourceLabel = sourceLabel
+            )
+            is ConfigRepository.OutboundSemantic.RouteTag -> RootAppRoutingAssignment(
+                packageNames = packageNames,
+                targetKind = "OUTBOUND",
+                outboundTag = semantic.tag,
+                sourceLabel = sourceLabel
+            )
+            is ConfigRepository.OutboundSemantic.FallbackProxy -> error(
+                "Root app route cannot use fallback outbound: ${semantic.tag}"
+            )
+        }
+
+        internal fun rootLaneSemantic(lane: RootAppRouteLane): ConfigRepository.OutboundSemantic = when {
+            lane.targetKind == "DIRECT" -> ConfigRepository.OutboundSemantic.Direct
+            lane.targetKind == "BLOCK" -> ConfigRepository.OutboundSemantic.Block
+            lane.targetKind == "OUTBOUND" && lane.outboundTag.isNotBlank() ->
+                ConfigRepository.OutboundSemantic.RouteTag(lane.outboundTag)
+            else -> error("Invalid Root lane target: ${lane.laneId}")
+        }
+
         internal fun buildRunRouteRulesForTest(
             settings: AppSettings,
             selectorTag: String,
@@ -7843,7 +8112,10 @@ class ConfigRepository(protected val context: Context) {
             )
         }
 
-        internal fun captureInboundTags(settings: AppSettings): List<String> = when (settings.resolvedTrafficCaptureMode()) {
+        internal fun captureInboundTags(
+            settings: AppSettings,
+            rootRoutingPlan: RootAppRoutingPlan? = null
+        ): List<String> = when (settings.resolvedTrafficCaptureMode()) {
             TrafficCaptureMode.VPN -> listOf("tun-in")
             TrafficCaptureMode.ROOT_TRANSPARENT -> buildList {
                 if (settings.ipVersionMode != IpVersionMode.IPV6_ONLY) {
@@ -7854,13 +8126,21 @@ class ConfigRepository(protected val context: Context) {
                     add(InboundBuilder.ROOT_REDIRECT_TAG_IPV6)
                     add(InboundBuilder.ROOT_TPROXY_TAG_IPV6)
                 }
+                rootRoutingPlan?.let { plan ->
+                    plan.lanes.forEach { lane ->
+                        addAll(lane.inboundTags(plan.proxyIpv4, plan.proxyIpv6))
+                    }
+                }
             }
             TrafficCaptureMode.PROXY_ONLY -> emptyList()
         }
 
-        internal fun buildHijackDnsRulesStatic(settings: AppSettings = AppSettings()): List<RouteRule> {
+        internal fun buildHijackDnsRulesStatic(
+            settings: AppSettings = AppSettings(),
+            rootRoutingPlan: RootAppRoutingPlan? = null
+        ): List<RouteRule> {
             // sing-box 1.13 的 sniff 是非终止动作，协议规则必须位于其后；TUN 53 端口保留前置劫持。
-            val captureTags = captureInboundTags(settings)
+            val captureTags = captureInboundTags(settings, rootRoutingPlan)
             val sniffInboundTags = (captureTags + "mixed-in").distinct()
             return listOfNotNull(
                 captureTags.takeIf(List<String>::isNotEmpty)?.let {
@@ -7897,7 +8177,7 @@ class ConfigRepository(protected val context: Context) {
             val hijackDnsRule = buildHijackDnsRulesStatic(settings)
             return selectRunRouteRulesStatic(
                 settings = settings,
-                baseRules = hijackDnsRule + quicRule + multicastRejectRules + icmpEchoRules,
+                baseRules = multicastRejectRules + hijackDnsRule + quicRule + icmpEchoRules,
                 bypassLanRules = bypassLanRules,
                 customDomainRules = emptyList(),
                 appRoutingRules = emptyList(),

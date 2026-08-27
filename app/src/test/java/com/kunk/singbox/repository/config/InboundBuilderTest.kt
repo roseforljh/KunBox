@@ -3,6 +3,8 @@ package com.kunk.singbox.repository.config
 import com.google.gson.Gson
 import com.kunk.singbox.model.AppSettings
 import com.kunk.singbox.model.IpVersionMode
+import com.kunk.singbox.model.RootAppRoutingAssignment
+import com.kunk.singbox.model.RootAppRoutingPlanCompiler
 import com.kunk.singbox.model.TunStack
 import com.kunk.singbox.model.TrafficCaptureMode
 import org.junit.Assert.assertEquals
@@ -155,5 +157,43 @@ class InboundBuilderTest {
         assertEquals(listOf(null, "5m", null, "5m"), rootInbounds.map { it.udpTimeout })
         assertEquals(listOf("0.0.0.0", "0.0.0.0", "::", "::"), rootInbounds.map { it.listen })
         assertTrue(rootInbounds.all { it.address == null })
+    }
+
+    @Test
+    fun buildRootTransparentInboundAddsDeterministicLaneListeners() {
+        val settings = AppSettings(
+            trafficCaptureMode = TrafficCaptureMode.ROOT_TRANSPARENT,
+            proxyPort = 0,
+            ipVersionMode = IpVersionMode.DUAL_STACK
+        )
+        val plan = RootAppRoutingPlanCompiler.compile(
+            settings = settings,
+            assignments = listOf(
+                RootAppRoutingAssignment(
+                    packageNames = listOf("org.telegram.messenger"),
+                    targetKind = "OUTBOUND",
+                    outboundTag = "germany",
+                    sourceLabel = "Telegram"
+                )
+            ),
+            generation = 1L
+        )
+
+        val inbounds = InboundBuilder.build(settings, TunStack.SYSTEM, plan)
+        val lane = plan.lanes.single()
+
+        assertEquals(
+            listOf(
+                lane.tcpInboundIpv4,
+                lane.udpInboundIpv4,
+                lane.tcpInboundIpv6,
+                lane.udpInboundIpv6
+            ),
+            inbounds.drop(4).mapNotNull { it.tag }
+        )
+        assertEquals(
+            listOf(lane.tcpPortIpv4, lane.udpPortIpv4, lane.tcpPortIpv6, lane.udpPortIpv6),
+            inbounds.drop(4).mapNotNull { it.listenPort }
+        )
     }
 }

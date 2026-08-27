@@ -5,6 +5,7 @@ import com.kunk.singbox.model.Inbound
 import com.kunk.singbox.model.TunStack
 import com.kunk.singbox.model.TrafficCaptureMode
 import com.kunk.singbox.model.IpVersionMode
+import com.kunk.singbox.model.RootAppRoutingPlan
 import com.kunk.singbox.service.tun.VpnTunAddressPlanner
 
 object InboundBuilder {
@@ -17,7 +18,11 @@ object InboundBuilder {
     const val ROOT_TPROXY_TAG_IPV4 = "tproxy-in-v4"
     const val ROOT_TPROXY_TAG_IPV6 = "tproxy-in-v6"
 
-    fun build(settings: AppSettings, effectiveTunStack: TunStack): List<Inbound> {
+    fun build(
+        settings: AppSettings,
+        effectiveTunStack: TunStack,
+        rootRoutingPlan: RootAppRoutingPlan? = null
+    ): List<Inbound> {
         val inbounds = mutableListOf<Inbound>()
 
         if (settings.proxyPort > 0) {
@@ -29,7 +34,10 @@ object InboundBuilder {
 
         when (settings.resolvedTrafficCaptureMode()) {
             TrafficCaptureMode.VPN -> inbounds += tunInbound(settings, effectiveTunStack)
-            TrafficCaptureMode.ROOT_TRANSPARENT -> inbounds += rootInbounds(settings.ipVersionMode)
+            TrafficCaptureMode.ROOT_TRANSPARENT -> {
+                inbounds += rootInbounds(settings.ipVersionMode)
+                rootRoutingPlan?.let { inbounds += rootLaneInbounds(it) }
+            }
             TrafficCaptureMode.PROXY_ONLY -> if (settings.proxyPort <= 0) {
                 inbounds += mixedInbound("127.0.0.1", 2080)
             }
@@ -57,6 +65,19 @@ object InboundBuilder {
         if (ipVersionMode != IpVersionMode.IPV4_ONLY) {
             add(redirectInbound(ROOT_REDIRECT_TAG_IPV6, "::", ROOT_REDIRECT_PORT_IPV6))
             add(tproxyInbound(ROOT_TPROXY_TAG_IPV6, "::", ROOT_TPROXY_PORT_IPV6))
+        }
+    }
+
+    private fun rootLaneInbounds(plan: RootAppRoutingPlan): List<Inbound> = buildList {
+        plan.lanes.sortedBy { it.slot }.forEach { lane ->
+            if (plan.proxyIpv4) {
+                add(redirectInbound(lane.tcpInboundIpv4, "0.0.0.0", lane.tcpPortIpv4))
+                add(tproxyInbound(lane.udpInboundIpv4, "0.0.0.0", lane.udpPortIpv4))
+            }
+            if (plan.proxyIpv6) {
+                add(redirectInbound(lane.tcpInboundIpv6, "::", lane.tcpPortIpv6))
+                add(tproxyInbound(lane.udpInboundIpv6, "::", lane.udpPortIpv6))
+            }
         }
     }
 

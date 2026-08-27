@@ -282,32 +282,29 @@ class MeteredNodeConfigGuardTest {
     }
 
     @Test
-    fun rootExplicitFallbackSelectorIsLimitedToItsExplicitRoute() {
+    fun protectedNodeCannotEnterAnySelectorEvenWhenRouteIsExplicit() {
         val protectedTag = "metered"
-        val groupTag = ConfigRepository.buildRootExplicitFallbackGroupTag(
-            ConfigRepository.stableNodeId("profile-a", protectedTag)
-        )
         val config = SingBoxConfig(
             outbounds = listOf(
                 Outbound(type = "http", tag = protectedTag),
                 Outbound(type = "http", tag = "safe"),
                 Outbound(
                     type = "selector",
-                    tag = groupTag,
+                    tag = "explicit-selector",
                     outbounds = listOf(protectedTag, "safe"),
                     default = protectedTag
                 )
             ),
             route = RouteConfig(
                 finalOutbound = "safe",
-                rules = listOf(RouteRule(packageName = listOf("com.example.app"), outbound = groupTag))
+                rules = listOf(RouteRule(packageName = listOf("com.example.app"), outbound = "explicit-selector"))
             ),
             dns = DnsConfig(
                 servers = listOf(
                     DnsServer(
-                        tag = ConfigRepository.buildDynamicDnsServerTag(groupTag),
+                        tag = ConfigRepository.buildDynamicDnsServerTag("explicit-selector"),
                         address = "https://dns.example",
-                        detour = groupTag
+                        detour = "explicit-selector"
                     )
                 )
             )
@@ -315,25 +312,7 @@ class MeteredNodeConfigGuardTest {
 
         val violations = MeteredNodeConfigGuard.findExplicitRouteScopeViolations(config, setOf(protectedTag))
 
-        assertTrue(violations.isEmpty())
-
-        val leakedConfig = config.copy(route = config.route?.copy(finalOutbound = groupTag))
-        val leakedViolations = MeteredNodeConfigGuard.findExplicitRouteScopeViolations(
-            leakedConfig,
-            setOf(protectedTag)
-        )
-        assertTrue(leakedViolations.any { it.contains("路由 final") })
-
-        val sharedDnsConfig = config.copy(
-            dns = DnsConfig(
-                servers = listOf(DnsServer(tag = "shared-dns", address = "https://dns.example", detour = groupTag))
-            )
-        )
-        val sharedDnsViolations = MeteredNodeConfigGuard.findExplicitRouteScopeViolations(
-            sharedDnsConfig,
-            setOf(protectedTag)
-        )
-        assertTrue(sharedDnsViolations.any { it.contains("DNS") })
+        assertTrue(violations.any { it.contains("selector") })
     }
 
     @Test

@@ -8,12 +8,16 @@ import com.kunk.singbox.model.DnsServer
 import com.kunk.singbox.model.DomainResolveConfig
 import com.kunk.singbox.model.Endpoint
 import com.kunk.singbox.model.Outbound
+import com.kunk.singbox.model.RootAppRoutingAssignment
+import com.kunk.singbox.model.RootAppRoutingPlanCompiler
 import com.kunk.singbox.model.RouteRule
 import com.kunk.singbox.model.RoutingMode
 import com.kunk.singbox.model.RuleType
 import com.kunk.singbox.model.SingBoxConfig
 import com.kunk.singbox.model.TrafficCaptureMode
+import com.kunk.singbox.model.TunStack
 import com.kunk.singbox.model.WireGuardPeer
+import com.kunk.singbox.repository.config.InboundBuilder
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -21,6 +25,102 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ConfigRepositoryRoutingDnsPolicyTest {
+
+    @Test
+    @Suppress("LongMethod")
+    fun rootLaneValidationRequiresEveryTcpUdpAndDnsInbound() {
+        val settings = AppSettings(
+            trafficCaptureMode = TrafficCaptureMode.ROOT_TRANSPARENT,
+            routingMode = RoutingMode.RULE
+        )
+        val plan = RootAppRoutingPlanCompiler.compile(
+            settings,
+            listOf(
+                RootAppRoutingAssignment(
+                    packageNames = listOf("org.telegram.messenger"),
+                    targetKind = "OUTBOUND",
+                    outboundTag = "germany",
+                    sourceLabel = "Telegram"
+                )
+            ),
+            generation = 1L
+        )
+        val lane = plan.lanes.single()
+        val laneInbounds = lane.inboundTags(plan.proxyIpv4, plan.proxyIpv6)
+        val dnsTag = ConfigRepository.buildDynamicDnsServerTag(lane.outboundTag)
+        val valid = SingBoxConfig(
+            inbounds = InboundBuilder.build(settings, TunStack.SYSTEM, plan),
+            outbounds = listOf(
+                Outbound(type = "socks", tag = lane.outboundTag),
+                Outbound(type = "direct", tag = "direct")
+            ),
+            route = com.kunk.singbox.model.RouteConfig(
+                rules = listOf(RouteRule(inbound = laneInbounds, action = "route", outbound = lane.outboundTag))
+            ),
+            dns = DnsConfig(
+                servers = listOf(DnsServer(type = "udp", tag = dnsTag, server = "1.1.1.1")),
+                rules = listOf(DnsRule(inbound = laneInbounds, action = "route", server = dnsTag))
+            )
+        )
+
+        ConfigRepository.requireValidRootApplicationRoutes(valid, plan)
+
+        assertTrue(runCatching {
+            ConfigRepository.requireValidRootApplicationRoutes(
+                valid.copy(
+                    route = valid.route?.copy(
+                        rules = listOf(
+                            RouteRule(
+                                inbound = laneInbounds.dropLast(1),
+                                action = "route",
+                                outbound = lane.outboundTag
+                            )
+                        )
+                    )
+                ),
+                plan
+            )
+        }.isFailure)
+        assertTrue(runCatching {
+            ConfigRepository.requireValidRootApplicationRoutes(
+                valid.copy(
+                    dns = valid.dns?.copy(
+                        rules = listOf(DnsRule(inbound = laneInbounds.drop(1), action = "route", server = dnsTag))
+                    )
+                ),
+                plan
+            )
+        }.isFailure)
+        assertTrue(runCatching {
+            ConfigRepository.requireValidRootApplicationRoutes(
+                valid.copy(
+                    route = valid.route?.copy(
+                        rules = listOf(
+                            RouteRule(inbound = laneInbounds, action = "resolve", outbound = lane.outboundTag)
+                        )
+                    )
+                ),
+                plan
+            )
+        }.isFailure)
+        assertTrue(runCatching {
+            ConfigRepository.requireValidRootApplicationRoutes(
+                valid.copy(
+                    dns = valid.dns?.copy(
+                        rules = listOf(
+                            DnsRule(
+                                inbound = laneInbounds,
+                                action = "route",
+                                server = dnsTag,
+                                sourcePort = listOf(53)
+                            )
+                        )
+                    )
+                ),
+                plan
+            )
+        }.isFailure)
+    }
 
     @Test
     fun sharedUidExpansionKeepsCompletePackageSet() {
@@ -136,38 +236,6 @@ class ConfigRepositoryRoutingDnsPolicyTest {
                 AppSettings(trafficCaptureMode = com.kunk.singbox.model.TrafficCaptureMode.ROOT_TRANSPARENT)
             )
         )
-    }
-
-    @Test
-    fun rootExplicitNodeFallbackSelectorKeepsRequestedNodeFirst() {
-        val selector = ConfigRepository.buildRootExplicitFallbackSelector(
-            groupTag = "F:node-id",
-            selectedTag = "bad-node",
-            candidateTags = listOf("bad-node", "backup-a", "backup-b", "backup-a")
-        )
-
-        assertEquals("selector", selector?.type)
-        assertEquals("F:node-id", selector?.tag)
-        assertEquals("bad-node", selector?.default)
-        assertEquals(listOf("bad-node", "backup-a", "backup-b"), selector?.outbounds)
-    }
-
-    @Test
-    fun rootExplicitNodeFallbackSelectorRequiresAlternative() {
-        assertEquals(
-            null,
-            ConfigRepository.buildRootExplicitFallbackSelector(
-                groupTag = "F:node-id",
-                selectedTag = "only-node",
-                candidateTags = listOf("only-node")
-            )
-        )
-    }
-
-    @Test
-    fun rootFallbackSelectorExcludesWireGuardEndpoints() {
-        assertFalse(ConfigRepository.canBuildRootFallbackSelector("wg-endpoint", setOf("wg-endpoint")))
-        assertTrue(ConfigRepository.canBuildRootFallbackSelector("vless-node", setOf("wg-endpoint")))
     }
 
     @Test

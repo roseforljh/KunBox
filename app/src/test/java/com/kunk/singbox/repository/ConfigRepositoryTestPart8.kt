@@ -529,7 +529,7 @@ abstract class ConfigRepositoryTestPart8 : ConfigRepositoryTestPart7() {
 
         assertTrue(
             source.contains(
-                "val hijackDnsRule = ConfigRepository.buildHijackDnsRulesStatic(settings)"
+                "val hijackDnsRule = ConfigRepository.buildHijackDnsRulesStatic(settings, rootRoutingPlan)"
             )
         )
     }
