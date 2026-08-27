@@ -133,7 +133,12 @@ object VpnStateStore {
         val runtimeGeneration: Long = 0L,
         val requestId: String = "",
         val configDigest: String = "",
-        val appRoutingDigest: String = ""
+        val appRoutingDigest: String = "",
+        val sidecarFileSha256: String = "",
+        val staticPlanSha256: String = "",
+        val rootRoutingAppSha256: String = "",
+        val resolvedPlanSha256: String = "",
+        val rootRuntimeSessionId: String = ""
     )
 
     internal data class RuntimeStateSnapshot(

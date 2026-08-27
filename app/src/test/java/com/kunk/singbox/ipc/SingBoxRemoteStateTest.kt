@@ -202,6 +202,30 @@ class SingBoxRemoteStateTest {
     }
 
     @Test
+    fun `normal ipc disconnect resets readiness without terminal failure`() {
+        val source = File("src/main/java/com/kunk/singbox/ipc/SingBoxRemote.kt")
+            .readText(Charsets.UTF_8)
+        val disconnectedBody = source
+            .substringAfter("private fun syncStoppedStateAfterDisconnect()")
+            .substringBefore("internal fun resolveLocalStateSnapshot")
+
+        assertTrue(disconnectedBody.contains("markReadinessStopped"))
+        assertFalse(disconnectedBody.contains("markReadinessUnavailable"))
+    }
+
+    @Test
+    fun `new start clears readiness failure state`() {
+        val source = File("src/main/java/com/kunk/singbox/ipc/SingBoxRemote.kt")
+            .readText(Charsets.UTF_8)
+        val body = source
+            .substringAfter("fun clearLastErrorForNewStart()")
+            .substringBefore("private fun syncStateFromStore()")
+
+        assertTrue(body.contains("DataPlaneStatus.STARTING"))
+        assertTrue(body.contains("lastReadinessReason = \"new_start\""))
+    }
+
+    @Test
     fun `ensure bound rebinds stale live reference`() {
         val result = resolveSingBoxEnsureBoundAction(
             connectionActive = true,

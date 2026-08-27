@@ -16,7 +16,8 @@ class VpnStateStoreReadinessTest {
                 tunEstablished = true,
                 recoveryActive = true,
                 serviceInstanceId = "instance",
-                generation = 9L
+                generation = 9L,
+                vpnSessionId = 4L
             )
         )
         val decoded = requireNotNull(VpnStateStore.decodeRuntimeStateSnapshot(
@@ -25,6 +26,7 @@ class VpnStateStoreReadinessTest {
         assertEquals(DataPlaneStatus.RECOVERING, decoded.readiness.status)
         assertTrue(decoded.readiness.tunEstablished)
         assertEquals(9L, decoded.readiness.generation)
+        assertEquals(4L, decoded.readiness.vpnSessionId)
     }
 
     @Test

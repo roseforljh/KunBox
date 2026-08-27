@@ -129,6 +129,46 @@ class SingBoxIpcHubStateTest {
     }
 
     @Test
+    fun `finishing vpn service exposes its tracked stopped state`() {
+        assertEquals(
+            ServiceState.STOPPED.ordinal,
+            SingBoxIpcHub.resolveVisibleStateOrdinal(
+                cachedStateOrdinal = ServiceState.STOPPING.ordinal,
+                liveCoreState = ServiceState.STOPPED
+            )
+        )
+
+        val source = File("src/main/java/com/kunk/singbox/ipc/SingBoxIpcHub.kt").readText(Charsets.UTF_8)
+        val body = source
+            .substringAfter("private fun currentLiveCoreState()")
+            .substringBefore("internal fun resolveVisibleStateOrdinal")
+
+        assertTrue(body.contains("vpnService?.currentServiceState()"))
+        assertFalse(body.contains("ServiceStateHolder.instance != null -> ServiceState.STOPPING"))
+    }
+
+    @Test
+    fun `missing live core does not manufacture an unprotected failure`() {
+        val source = File("src/main/java/com/kunk/singbox/ipc/SingBoxIpcHub.kt")
+            .readText(Charsets.UTF_8)
+        val body = source
+            .substringAfter("private fun currentStateSnapshot()")
+            .substringBefore("private fun VpnStateStore.RuntimeStateSnapshot.toBundle()")
+
+        assertTrue(body.contains("DataPlaneReadinessSnapshot.stopped(serviceInstanceId)"))
+        assertFalse(body.contains("status = DataPlaneStatus.FAILED_UNPROTECTED"))
+    }
+
+    @Test
+    fun readinessBundleCarriesVpnSessionId() {
+        val source = File("src/main/java/com/kunk/singbox/ipc/SingBoxIpcHub.kt")
+            .readText(Charsets.UTF_8)
+        assertTrue(source.contains("READINESS_VPN_SESSION"))
+        assertTrue(source.contains("vpnSessionId = getLong(SingBoxIpcHub.READINESS_VPN_SESSION, 0L)"))
+        assertTrue(source.contains("putLong(READINESS_VPN_SESSION, vpnSessionId)"))
+    }
+
+    @Test
     fun `ipc service registration preserves live readiness`() {
         val source = File("src/main/java/com/kunk/singbox/ipc/SingBoxIpcHub.kt").readText(Charsets.UTF_8)
         val body = source

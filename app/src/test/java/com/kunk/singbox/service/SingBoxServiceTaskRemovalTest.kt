@@ -83,6 +83,20 @@ class SingBoxServiceTaskRemovalTest {
         assertTrue(stopBranch.contains("lastStopInitiator = stopInitiator"))
         assertTrue(stopBranch.contains("val recoveryLease = setNonResourceRecoveryIntent(false)"))
         assertTrue(stopBranch.contains("stopVpn(stopService = true, recoveryIntentLease = recoveryLease)"))
+        assertTrue(stopBranch.contains("return START_NOT_STICKY"))
+    }
+
+    @Test
+    fun ineligibleStickyRestartStopsTheIdleService() {
+        val source = File("src/main/java/com/kunk/singbox/service/SingBoxService.kt")
+            .readText(Charsets.UTF_8)
+        val nullIntentBranch = source
+            .substringAfter("if (intent?.action == null)")
+            .substringBefore("when (intent.action)")
+
+        assertTrue(nullIntentBranch.contains("handleStickyRestartIntent()"))
+        assertTrue(nullIntentBranch.contains("stopSelf(startId)"))
+        assertTrue(nullIntentBranch.contains("START_NOT_STICKY"))
     }
 
     private fun readManifest(): org.w3c.dom.Document =

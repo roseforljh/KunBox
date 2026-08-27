@@ -72,12 +72,19 @@ private fun Bundle.toReadinessSnapshot(generation: Long): DataPlaneReadinessSnap
         rootFdCount = getInt(SingBoxIpcHub.READINESS_ROOT_FD_COUNT, 0),
         rootRuntimeSessionId = getString(SingBoxIpcHub.READINESS_ROOT_SESSION).orEmpty(),
         rootRuleRevision = getLong(SingBoxIpcHub.READINESS_ROOT_RULE_REVISION, 0L),
+        rootRoutingGeneration = getLong(SingBoxIpcHub.READINESS_ROOT_ROUTING_GENERATION, 0L),
+        rootConfigSha256 = getString(SingBoxIpcHub.READINESS_ROOT_CONFIG_SHA256).orEmpty(),
+        rootSidecarSha256 = getString(SingBoxIpcHub.READINESS_ROOT_SIDECAR_SHA256).orEmpty(),
+        rootStaticPlanSha256 = getString(SingBoxIpcHub.READINESS_ROOT_STATIC_SHA256).orEmpty(),
+        rootAppRoutingSha256 = getString(SingBoxIpcHub.READINESS_ROOT_APP_SHA256).orEmpty(),
+        rootResolvedPlanSha256 = getString(SingBoxIpcHub.READINESS_ROOT_RESOLVED_SHA256).orEmpty(),
         rootWatchdogReady = getBoolean(SingBoxIpcHub.READINESS_ROOT_WATCHDOG, false),
         rootRulesInstalled = getBoolean(SingBoxIpcHub.READINESS_ROOT_RULES, false),
         lastReadinessReason = getString(SingBoxIpcHub.READINESS_REASON).orEmpty(),
         updatedAtElapsedMs = getLong(SingBoxIpcHub.READINESS_UPDATED_AT, 0L),
         serviceInstanceId = getString(SingBoxIpcHub.READINESS_SERVICE_INSTANCE).orEmpty(),
-        generation = generation
+        generation = generation,
+        vpnSessionId = getLong(SingBoxIpcHub.READINESS_VPN_SESSION, 0L)
     ).normalized()
 }
 
@@ -119,11 +126,18 @@ object SingBoxIpcHub {
     internal const val READINESS_ROOT_FD_COUNT = "root_fd_count"
     internal const val READINESS_ROOT_SESSION = "root_runtime_session"
     internal const val READINESS_ROOT_RULE_REVISION = "root_rule_revision"
+    internal const val READINESS_ROOT_ROUTING_GENERATION = "root_routing_generation"
+    internal const val READINESS_ROOT_CONFIG_SHA256 = "root_config_sha256"
+    internal const val READINESS_ROOT_SIDECAR_SHA256 = "root_sidecar_sha256"
+    internal const val READINESS_ROOT_STATIC_SHA256 = "root_static_plan_sha256"
+    internal const val READINESS_ROOT_APP_SHA256 = "root_app_routing_sha256"
+    internal const val READINESS_ROOT_RESOLVED_SHA256 = "root_resolved_plan_sha256"
     internal const val READINESS_ROOT_WATCHDOG = "root_watchdog_ready"
     internal const val READINESS_ROOT_RULES = "root_rules_installed"
     internal const val READINESS_REASON = "reason"
     internal const val READINESS_UPDATED_AT = "updated_at_elapsed_ms"
     internal const val READINESS_SERVICE_INSTANCE = "service_instance_id"
+    internal const val READINESS_VPN_SESSION = "vpn_session_id"
 
     private const val MIN_BROADCAST_INTERVAL_MS = 50L
 
@@ -296,14 +310,15 @@ object SingBoxIpcHub {
     }
 
     private fun currentLiveCoreState(): ServiceState? {
+        val vpnService = ServiceStateHolder.instance
+        val vpnState = vpnService?.currentServiceState()
         return when {
-            ServiceStateHolder.instance != null && ServiceStateHolder.isRunning -> ServiceState.RUNNING
+            vpnState != null && vpnState != ServiceState.STOPPED -> vpnState
             ProxyOnlyService.isRunning -> ServiceState.RUNNING
             RootTransparentForegroundService.isRunning -> ServiceState.RUNNING
-            ServiceStateHolder.instance != null && ServiceStateHolder.isStarting -> ServiceState.STARTING
             ProxyOnlyService.isStarting -> ServiceState.STARTING
             RootTransparentForegroundService.isStarting -> ServiceState.STARTING
-            ServiceStateHolder.instance != null -> ServiceState.STOPPING
+            vpnState != null -> vpnState
             else -> null
         }
     }
@@ -346,30 +361,25 @@ object SingBoxIpcHub {
                 cachedStateOrdinal = snapshot.stateOrdinal,
                 liveCoreState = liveCoreState
             )
-            val reconciled = if (visibleStateOrdinal == snapshot.stateOrdinal) {
+            val visibleReadiness = if (visibleStateOrdinal == ServiceState.STOPPED.ordinal) {
+                DataPlaneReadinessSnapshot.stopped(serviceInstanceId).copy(
+                    lastReadinessReason = "live_core_missing",
+                    generation = snapshot.generation
+                )
+            } else {
+                snapshot.readiness
+            }
+            val reconciled = if (
+                visibleStateOrdinal == snapshot.stateOrdinal && visibleReadiness == snapshot.readiness
+            ) {
                 snapshot
             } else {
                 snapshot.copy(
                     stateOrdinal = visibleStateOrdinal,
-                    readiness = if (visibleStateOrdinal == ServiceState.STOPPED.ordinal) {
-                        snapshot.readiness.copy(
-                            status = DataPlaneStatus.FAILED_UNPROTECTED,
-                            coreReady = false,
-                            selectorReady = false,
-                            lastReadinessReason = "live_core_missing"
-                        )
-                    } else {
-                        snapshot.readiness
-                    }
+                    readiness = visibleReadiness
                 )
             }
-            if (liveCoreState == null) {
-                reconciled
-            } else {
-                reconciled.copy(
-                    readiness = reconciled.readiness.copy(updatedAtElapsedMs = SystemClock.elapsedRealtime())
-                )
-            }
+            reconciled
         }
     }
 
@@ -403,11 +413,18 @@ object SingBoxIpcHub {
         putInt(READINESS_ROOT_FD_COUNT, rootFdCount)
         putString(READINESS_ROOT_SESSION, rootRuntimeSessionId)
         putLong(READINESS_ROOT_RULE_REVISION, rootRuleRevision)
+        putLong(READINESS_ROOT_ROUTING_GENERATION, rootRoutingGeneration)
+        putString(READINESS_ROOT_CONFIG_SHA256, rootConfigSha256)
+        putString(READINESS_ROOT_SIDECAR_SHA256, rootSidecarSha256)
+        putString(READINESS_ROOT_STATIC_SHA256, rootStaticPlanSha256)
+        putString(READINESS_ROOT_APP_SHA256, rootAppRoutingSha256)
+        putString(READINESS_ROOT_RESOLVED_SHA256, rootResolvedPlanSha256)
         putBoolean(READINESS_ROOT_WATCHDOG, rootWatchdogReady)
         putBoolean(READINESS_ROOT_RULES, rootRulesInstalled)
         putString(READINESS_REASON, lastReadinessReason)
         putLong(READINESS_UPDATED_AT, updatedAtElapsedMs)
         putString(READINESS_SERVICE_INSTANCE, serviceInstanceId)
+        putLong(READINESS_VPN_SESSION, vpnSessionId)
     }
 
     fun update(

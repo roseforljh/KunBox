@@ -406,14 +406,18 @@ fun DashboardScreen(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    val safetyStatusLabel = when (dataPlaneReadiness.status) {
-                        com.kunk.singbox.ipc.DataPlaneStatus.BLOCKING ->
+                    val safetyStatusLabel = when {
+                        dataPlaneReadiness.status == com.kunk.singbox.ipc.DataPlaneStatus.BLOCKING &&
+                            connectionState == ConnectionState.Connecting ->
                             stringResource(R.string.dashboard_status_protecting)
-                        com.kunk.singbox.ipc.DataPlaneStatus.RECOVERING ->
+                        dataPlaneReadiness.status == com.kunk.singbox.ipc.DataPlaneStatus.RECOVERING &&
+                            connectionState == ConnectionState.Connecting ->
                             stringResource(R.string.dashboard_status_recovering)
-                        com.kunk.singbox.ipc.DataPlaneStatus.FAILED_BLOCKED ->
+                        dataPlaneReadiness.status == com.kunk.singbox.ipc.DataPlaneStatus.FAILED_BLOCKED &&
+                            connectionState == ConnectionState.Error ->
                             stringResource(R.string.dashboard_status_blocked)
-                        com.kunk.singbox.ipc.DataPlaneStatus.FAILED_UNPROTECTED ->
+                        dataPlaneReadiness.status == com.kunk.singbox.ipc.DataPlaneStatus.FAILED_UNPROTECTED &&
+                            connectionState == ConnectionState.Error ->
                             stringResource(R.string.connection_idle)
                         else -> stringResource(connectionState.displayNameRes)
                     }
@@ -434,9 +438,11 @@ fun DashboardScreen(
                     ) { showModeDialog = true }
                 }
 
-                val browserExcluded = dataPlaneReadiness.routingScope.contains("browser=excluded")
+                val browserExcluded = connectionState == ConnectionState.Connected &&
+                    dataPlaneReadiness.routingScope.contains("browser=excluded")
                 val failedUnprotected =
-                    dataPlaneReadiness.status == com.kunk.singbox.ipc.DataPlaneStatus.FAILED_UNPROTECTED
+                    connectionState == ConnectionState.Error &&
+                        dataPlaneReadiness.status == com.kunk.singbox.ipc.DataPlaneStatus.FAILED_UNPROTECTED
                 val protectionWarning = when {
                     browserExcluded ->
                         stringResource(R.string.vpn_browser_not_covered)

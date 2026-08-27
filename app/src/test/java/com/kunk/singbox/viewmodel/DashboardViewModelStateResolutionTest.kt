@@ -46,7 +46,7 @@ class DashboardViewModelStateResolutionTest {
     @Test
     fun onlyTrustedServiceStateCanShowRunningUi() {
         assertEquals(
-            ConnectionState.Idle,
+            ConnectionState.Connecting,
             resolveTrustedDashboardConnectionState(
                 serviceState = ServiceState.STARTING,
                 ipcBound = false
@@ -231,6 +231,38 @@ class DashboardViewModelStateResolutionTest {
             resolveTrustedDashboardConnectionState(
                 serviceState = ServiceState.RUNNING,
                 ipcBound = true
+            )
+        )
+    }
+
+    @Test
+    fun oldFailureDoesNotOverrideLifecycleStates() {
+        val failed = DataPlaneReadinessSnapshot(status = DataPlaneStatus.FAILED_UNPROTECTED)
+        assertEquals(
+            ConnectionState.Connecting,
+            resolveTrustedDashboardConnectionState(
+                serviceState = ServiceState.STARTING,
+                ipcBound = true,
+                readiness = failed,
+                mode = VpnStateStore.CoreMode.VPN
+            )
+        )
+        assertEquals(
+            ConnectionState.Disconnecting,
+            resolveTrustedDashboardConnectionState(
+                serviceState = ServiceState.STOPPING,
+                ipcBound = true,
+                readiness = failed,
+                mode = VpnStateStore.CoreMode.VPN
+            )
+        )
+        assertEquals(
+            ConnectionState.Idle,
+            resolveTrustedDashboardConnectionState(
+                serviceState = ServiceState.STOPPED,
+                ipcBound = true,
+                readiness = failed,
+                mode = VpnStateStore.CoreMode.VPN
             )
         )
     }

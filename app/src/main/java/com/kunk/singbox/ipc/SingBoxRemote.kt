@@ -312,6 +312,15 @@ object SingBoxRemote {
         )
     }
 
+    private fun markReadinessStopped(reason: String) {
+        _readiness.value = DataPlaneReadinessSnapshot.stopped(
+            serviceInstanceId = _readiness.value.serviceInstanceId
+        ).copy(
+            lastReadinessReason = reason,
+            updatedAtElapsedMs = SystemClock.elapsedRealtime()
+        )
+    }
+
     private fun markReadinessRecovering(reason: String) {
         _readiness.value = _readiness.value.copy(
             status = DataPlaneStatus.RECOVERING,
@@ -354,6 +363,11 @@ object SingBoxRemote {
     fun clearLastErrorForNewStart() {
         _activeLabel.value = ""
         _lastError.value = ""
+        _readiness.value = DataPlaneReadinessSnapshot(
+            status = DataPlaneStatus.STARTING,
+            serviceInstanceId = _readiness.value.serviceInstanceId,
+            lastReadinessReason = "new_start"
+        )
     }
 
     private fun syncStateFromStore() {
@@ -377,7 +391,7 @@ object SingBoxRemote {
             lastError = stopState.lastError,
             manuallyStopped = stopState.manuallyStopped
         )
-        markReadinessUnavailable("service_disconnected_stopped")
+        markReadinessStopped("service_disconnected_stopped")
     }
 
     internal fun resolveLocalStateSnapshot(
