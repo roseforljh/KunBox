@@ -24,12 +24,29 @@ interface IRootSingBoxService {
         boolean blockIpv4,
         boolean blockIpv6,
         boolean blockQuic,
-        String apkPath
+        String apkPath,
+        String configFileSha256,
+        String sidecarFileSha256,
+        String sidecarJson,
+        String staticPlanSha256,
+        String appRoutingSha256,
+        long routingGeneration
     );
 
-    Bundle hotReload(String configPath, String runtimeSessionId);
+    Bundle hotReload(
+        String configPath,
+        String runtimeSessionId,
+        String configFileSha256,
+        String sidecarFileSha256,
+        String sidecarJson,
+        String staticPlanSha256,
+        String appRoutingSha256,
+        long routingGeneration
+    );
 
     Bundle stop(String runtimeSessionId);
+
+    Bundle blockForUidRefresh(String runtimeSessionId);
 
     boolean resetNetwork();
 }

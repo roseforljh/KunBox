@@ -12,12 +12,12 @@ import com.kunk.singbox.ipc.VpnStateStore
 import com.kunk.singbox.model.Outbound
 import com.kunk.singbox.model.SingBoxConfig
 import com.kunk.singbox.repository.LogRepository
+import com.kunk.singbox.repository.RootGenerationStore
 import com.kunk.singbox.service.HealthSignalAggregator
 import com.kunk.singbox.service.HealthSignalKind
 import com.kunk.singbox.service.NodeAutoFailoverPolicy
 import com.kunk.singbox.service.manager.CommandManager
 import com.kunk.singbox.service.manager.UrlTestTagMatcher
-import java.io.File
 import java.util.ArrayDeque
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicLong
@@ -650,7 +650,9 @@ internal class RootAutoFailoverController(
     }
 
     private fun loadRunningConfig(): SingBoxConfig? = runCatching {
-        gson.fromJson(File(context.filesDir, "running_config.json").readText(), SingBoxConfig::class.java)
+        val configFile = RootGenerationStore.currentConfigFile(context.filesDir)
+            ?: error("Committed Root generation is unavailable")
+        gson.fromJson(configFile.readText(), SingBoxConfig::class.java)
     }.onFailure { error ->
         Log.e(TAG, "Load running config for Root failover failed", error)
     }.getOrNull()

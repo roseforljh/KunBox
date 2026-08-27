@@ -1,25 +1,41 @@
 package com.kunk.singbox.service.root
 
 import android.os.Bundle
+import com.kunk.singbox.model.isRootSha256
 
 enum class RootRuntimePhase {
     STOPPED,
     ROOT_BINDING,
+    VALIDATING_PLAN,
+    UID_SNAPSHOT_1,
+    FAIL_CLOSED,
     CORE_STARTING,
+    CORE_VERIFYING,
     RULES_STAGING,
+    UID_SNAPSHOT_2,
+    RULES_ACTIVATING,
     RUNNING,
     CLEANING,
+    ROLLBACK,
     FAILED_UNPROTECTED,
-    FAILED_RULES_PRESENT
+    FAILED_RULES_PRESENT,
+    FAILED_BLOCKED
 }
 
 data class RootRuntimeSnapshot(
     val phase: RootRuntimePhase = RootRuntimePhase.STOPPED,
     val runtimeSessionId: String = "",
     val generation: Long = 0L,
+    val routingGeneration: Long = 0L,
     val ruleRevision: Long = 0L,
     val rootPid: Int = 0,
     val rootFdCount: Int = 0,
+    val configFileSha256: String = "",
+    val sidecarFileSha256: String = "",
+    val staticPlanSha256: String = "",
+    val appRoutingSha256: String = "",
+    val resolvedPlanSha256: String = "",
+    val resolvedUidCount: Int = 0,
     val tproxyIpv4: Boolean = false,
     val tproxyIpv6: Boolean = false,
     val watchdogReady: Boolean = false,
@@ -31,9 +47,16 @@ data class RootRuntimeSnapshot(
         putString(KEY_PHASE, phase.name)
         putString(KEY_SESSION_ID, runtimeSessionId)
         putLong(KEY_GENERATION, generation)
+        putLong(KEY_ROUTING_GENERATION, routingGeneration)
         putLong(KEY_RULE_REVISION, ruleRevision)
         putInt(KEY_ROOT_PID, rootPid)
         putInt(KEY_ROOT_FD_COUNT, rootFdCount)
+        putString(KEY_CONFIG_SHA256, configFileSha256)
+        putString(KEY_SIDECAR_SHA256, sidecarFileSha256)
+        putString(KEY_STATIC_PLAN_SHA256, staticPlanSha256)
+        putString(KEY_APP_ROUTING_SHA256, appRoutingSha256)
+        putString(KEY_RESOLVED_PLAN_SHA256, resolvedPlanSha256)
+        putInt(KEY_RESOLVED_UID_COUNT, resolvedUidCount)
         putBoolean(KEY_TPROXY_IPV4, tproxyIpv4)
         putBoolean(KEY_TPROXY_IPV6, tproxyIpv6)
         putBoolean(KEY_WATCHDOG_READY, watchdogReady)
@@ -46,9 +69,16 @@ data class RootRuntimeSnapshot(
         private const val KEY_PHASE = "phase"
         private const val KEY_SESSION_ID = "runtime_session_id"
         private const val KEY_GENERATION = "generation"
+        private const val KEY_ROUTING_GENERATION = "routing_generation"
         private const val KEY_RULE_REVISION = "rule_revision"
         private const val KEY_ROOT_PID = "root_pid"
         private const val KEY_ROOT_FD_COUNT = "root_fd_count"
+        private const val KEY_CONFIG_SHA256 = "config_file_sha256"
+        private const val KEY_SIDECAR_SHA256 = "sidecar_file_sha256"
+        private const val KEY_STATIC_PLAN_SHA256 = "static_plan_sha256"
+        private const val KEY_APP_ROUTING_SHA256 = "app_routing_sha256"
+        private const val KEY_RESOLVED_PLAN_SHA256 = "resolved_plan_sha256"
+        private const val KEY_RESOLVED_UID_COUNT = "resolved_uid_count"
         private const val KEY_TPROXY_IPV4 = "tproxy_ipv4"
         private const val KEY_TPROXY_IPV6 = "tproxy_ipv6"
         private const val KEY_WATCHDOG_READY = "watchdog_ready"
@@ -58,15 +88,27 @@ data class RootRuntimeSnapshot(
 
         fun fromBundle(bundle: Bundle?): RootRuntimeSnapshot {
             if (bundle == null) return RootRuntimeSnapshot()
+            val rawPhase = runCatching {
+                RootRuntimePhase.valueOf(bundle.getString(KEY_PHASE).orEmpty())
+            }.getOrDefault(RootRuntimePhase.FAILED_UNPROTECTED)
             return RootRuntimeSnapshot(
-                phase = runCatching {
-                    RootRuntimePhase.valueOf(bundle.getString(KEY_PHASE).orEmpty())
-                }.getOrDefault(RootRuntimePhase.FAILED_UNPROTECTED),
+                phase = if (rawPhase == RootRuntimePhase.FAILED_RULES_PRESENT) {
+                    RootRuntimePhase.FAILED_BLOCKED
+                } else {
+                    rawPhase
+                },
                 runtimeSessionId = bundle.getString(KEY_SESSION_ID).orEmpty(),
                 generation = bundle.getLong(KEY_GENERATION),
+                routingGeneration = bundle.getLong(KEY_ROUTING_GENERATION),
                 ruleRevision = bundle.getLong(KEY_RULE_REVISION),
                 rootPid = bundle.getInt(KEY_ROOT_PID),
                 rootFdCount = bundle.getInt(KEY_ROOT_FD_COUNT),
+                configFileSha256 = bundle.getString(KEY_CONFIG_SHA256).orEmpty(),
+                sidecarFileSha256 = bundle.getString(KEY_SIDECAR_SHA256).orEmpty(),
+                staticPlanSha256 = bundle.getString(KEY_STATIC_PLAN_SHA256).orEmpty(),
+                appRoutingSha256 = bundle.getString(KEY_APP_ROUTING_SHA256).orEmpty(),
+                resolvedPlanSha256 = bundle.getString(KEY_RESOLVED_PLAN_SHA256).orEmpty(),
+                resolvedUidCount = bundle.getInt(KEY_RESOLVED_UID_COUNT),
                 tproxyIpv4 = bundle.getBoolean(KEY_TPROXY_IPV4),
                 tproxyIpv6 = bundle.getBoolean(KEY_TPROXY_IPV6),
                 watchdogReady = bundle.getBoolean(KEY_WATCHDOG_READY),
@@ -76,6 +118,40 @@ data class RootRuntimeSnapshot(
             )
         }
     }
+}
+
+data class RootRuntimeExpectation(
+    val runtimeSessionId: String,
+    val routingGeneration: Long,
+    val configFileSha256: String,
+    val sidecarFileSha256: String,
+    val staticPlanSha256: String,
+    val appRoutingSha256: String,
+    val tproxyIpv4: Boolean,
+    val tproxyIpv6: Boolean
+)
+
+internal fun rootRunningSnapshotError(
+    snapshot: RootRuntimeSnapshot,
+    expected: RootRuntimeExpectation
+): String? = when {
+    snapshot.phase != RootRuntimePhase.RUNNING -> snapshot.error.ifBlank { "Root runtime did not enter RUNNING" }
+    snapshot.runtimeSessionId != expected.runtimeSessionId -> "Root runtime session mismatch"
+    snapshot.routingGeneration != expected.routingGeneration -> "Root routing generation mismatch"
+    snapshot.configFileSha256 != expected.configFileSha256 -> "Root config digest mismatch"
+    snapshot.sidecarFileSha256 != expected.sidecarFileSha256 -> "Root sidecar digest mismatch"
+    snapshot.staticPlanSha256 != expected.staticPlanSha256 -> "Root static plan digest mismatch"
+    snapshot.appRoutingSha256 != expected.appRoutingSha256 -> "Root app routing digest mismatch"
+    !isRootSha256(snapshot.resolvedPlanSha256) -> "Root resolved plan digest is missing"
+    snapshot.resolvedUidCount <= 0 -> "Root resolved UID snapshot is empty"
+    snapshot.rootPid <= 0 -> "Root runtime PID is missing"
+    snapshot.ruleRevision <= 0L -> "Root rule revision is missing"
+    !snapshot.watchdogReady -> "Root watchdog is not ready"
+    !snapshot.rulesInstalled -> "Root rules are not installed"
+    expected.tproxyIpv4 && !snapshot.tproxyIpv4 -> "Root IPv4 capability result mismatch"
+    expected.tproxyIpv6 && !snapshot.tproxyIpv6 -> "Root IPv6 capability result mismatch"
+    snapshot.error.isNotBlank() -> snapshot.error
+    else -> null
 }
 
 internal fun shouldAcceptRootSnapshot(

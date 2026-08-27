@@ -4,6 +4,8 @@ import android.content.Context
 import android.os.Process
 import android.system.Os
 import java.io.File
+import java.io.FileOutputStream
+import java.nio.file.Files
 import java.util.concurrent.Executors
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.ScheduledExecutorService
@@ -17,8 +19,10 @@ class RootWatchdogInstaller(
     companion object {
         private const val RUNTIME_DIR = "/data/adb/kunbox"
         private const val WATCHDOG_PATH = "$RUNTIME_DIR/watchdog.sh"
+        private const val CLEANUP_PATH = "$RUNTIME_DIR/cleanup-owned.sh"
         private const val LEASE_TIMEOUT_SECONDS = 3
         private const val ACK_TIMEOUT_SECONDS = 2
+        private const val STOP_WAIT_MS = 750L
     }
 
     private val scheduler: ScheduledExecutorService = Executors.newSingleThreadScheduledExecutor()
@@ -38,9 +42,19 @@ class RootWatchdogInstaller(
     ): Result<Unit> = runCatching {
         require(runtimeSessionId.isNotBlank())
         require(apkPath.isNotBlank())
-        stopExistingWatchdog()
+        leaseTask?.cancel(true)
+        ackTask?.cancel(true)
+        leaseTask = null
+        ackTask = null
+        ackHealthy = false
+        stopWatchdogProcess()
         readyLatch = CountDownLatch(1)
-        installScript()
+        installScripts().getOrThrow()
+        // Keep an older watchdog alive until the caller has completed its
+        // stale-rule preflight. If preflight fails, that watchdog remains the
+        // last fail-closed cleanup owner. Only replace it once this session
+        // is ready to take ownership.
+        stopExistingWatchdog()
         writeAtomically(File(RUNTIME_DIR, "session"), runtimeSessionId)
         writeLease()
         val process = ProcessBuilder(
@@ -50,7 +64,8 @@ class RootWatchdogInstaller(
             apkPath,
             Process.myPid().toString(),
             runtimeSessionId,
-            LEASE_TIMEOUT_SECONDS.toString()
+            LEASE_TIMEOUT_SECONDS.toString(),
+            requireCurrentProcessStartTime()
         ).start()
         check(process.isAlive) { "Root watchdog exited during startup" }
         watchdogProcess = process
@@ -81,50 +96,139 @@ class RootWatchdogInstaller(
     }
 
     fun stop(cleanupRules: Boolean): Result<Unit> = runCatching {
+        val sessionId = activeSessionId
+        if (cleanupRules && sessionId.isNotBlank()) {
+            // The watchdog can delete its own launcher after detecting a stale
+            // parent.  The ownership cleanup script is the stable entrypoint.
+            cleanupOwnedRules(sessionId).getOrThrow()
+        }
         leaseTask?.cancel(true)
         ackTask?.cancel(true)
         leaseTask = null
         ackTask = null
         ackHealthy = false
         stopWatchdogProcess()
-        if (cleanupRules) {
-            val result = executor.execute(listOf("/system/bin/sh", WATCHDOG_PATH, "cleanup", activeSessionId))
-            check(result.success) { "Root watchdog cleanup failed: ${result.output}" }
-        }
+        clearRuntimeFiles(sessionId)
         activeSessionId = ""
     }
 
     fun close() {
-        stop(cleanupRules = false)
+        // Do not kill the external watchdog while an ownership session is
+        // still live.  A failed cleanup must remain supervised until the
+        // watchdog or a later retry can remove the rules safely.
+        if (activeSessionId.isBlank()) {
+            stop(cleanupRules = false)
+        }
         scheduler.shutdownNow()
     }
 
-    private fun installScript() {
-        val runtimeDir = File(RUNTIME_DIR)
-        check(runtimeDir.exists() || runtimeDir.mkdirs()) { "Cannot create $RUNTIME_DIR" }
-        val script = context.assets.open("root/kunbox-root-watchdog.sh").bufferedReader().use { it.readText() }
-        writeAtomically(File(WATCHDOG_PATH), script)
-        check(File(WATCHDOG_PATH).setExecutable(true, true)) { "Cannot make watchdog executable" }
-        File(WATCHDOG_PATH).setReadable(false, false)
-        File(WATCHDOG_PATH).setReadable(true, true)
-        File(WATCHDOG_PATH).setWritable(false, false)
-        File(WATCHDOG_PATH).setWritable(true, true)
+    internal fun cleanupOwnedRules(sessionId: String = activeSessionId): Result<Unit> = runCatching {
+        if (sessionId.isBlank()) return@runCatching
+        val result = executor.execute(listOf("/system/bin/sh", CLEANUP_PATH, "cleanup", sessionId))
+        check(result.success) { "Root watchdog cleanup failed: ${result.output}" }
     }
 
+    internal fun installScripts(): Result<Unit> = runCatching {
+        val runtimeDir = File(RUNTIME_DIR)
+        check(!Files.isSymbolicLink(runtimeDir.toPath())) { "Root watchdog directory cannot be a symbolic link" }
+        check(!runtimeDir.exists() || runtimeDir.isDirectory) { "Root watchdog path is not a directory" }
+        check(runtimeDir.exists() || runtimeDir.mkdirs()) { "Cannot create $RUNTIME_DIR" }
+        Os.chmod(runtimeDir.absolutePath, 0b111000000)
+        val script = context.assets.open("root/kunbox-root-watchdog.sh").bufferedReader().use { it.readText() }
+        val cleanupScript = context.assets.open("root/kunbox-root-cleanup-owned.sh")
+            .bufferedReader()
+            .use { it.readText() }
+        installScript(File(WATCHDOG_PATH), script, "watchdog")
+        installScript(File(CLEANUP_PATH), cleanupScript, "cleanup")
+    }
+
+    @Suppress("ReturnCount")
     private fun stopExistingWatchdog() {
-        val pid = runCatching { File(RUNTIME_DIR, "watchdog.pid").readText().trim().toInt() }.getOrNull() ?: return
-        val commandLine = runCatching { File("/proc/$pid/cmdline").readText() }.getOrDefault("")
-        if (WATCHDOG_PATH !in commandLine) return
+        val pidFile = File(RUNTIME_DIR, "watchdog.pid")
+        if (!pidFile.exists()) return
+        val pid = runCatching { pidFile.readText().trim().toInt() }.getOrNull() ?: run {
+            check(pidFile.delete()) { "Cannot remove malformed Root watchdog PID file" }
+            return
+        }
+        val identity = readWatchdogIdentity(pid) ?: run {
+            if (!File("/proc/$pid").exists()) runCatching { pidFile.delete() }
+            else error("Cannot verify existing Root watchdog PID $pid")
+            return
+        }
         executor.execute(listOf("kill", "-TERM", pid.toString()))
-        if (File("/proc/$pid").exists()) executor.execute(listOf("kill", "-KILL", pid.toString()))
+        awaitWatchdogExit(pid, identity)
+        if (readWatchdogIdentity(pid) == null) {
+            runCatching { pidFile.delete() }
+            return
+        }
+        check(readWatchdogIdentity(pid) == identity) { "Root watchdog PID was reused" }
+        executor.execute(listOf("kill", "-KILL", pid.toString()))
+        awaitWatchdogExit(pid, identity)
+        check(readWatchdogIdentity(pid) == null) { "Existing Root watchdog did not exit" }
+        runCatching { pidFile.delete() }
+    }
+
+    private fun clearRuntimeFiles(sessionId: String) {
+        if (sessionId.isBlank()) return
+        val runtimeDir = File(RUNTIME_DIR)
+        val sessionFile = File(runtimeDir, "session")
+        if (!sessionFile.isFile || Files.isSymbolicLink(sessionFile.toPath())) return
+        if (sessionFile.readText().trim() != sessionId) return
+        listOf("lease", "watchdog_ack", "watchdog.pid", "watchdog.sh").forEach { name ->
+            val file = File(runtimeDir, name)
+            check(!Files.isSymbolicLink(file.toPath())) { "Root watchdog runtime file is a symbolic link: $name" }
+            check(!file.exists() || file.delete()) { "Cannot remove Root watchdog runtime file: $name" }
+        }
+        check(!sessionFile.exists() || sessionFile.delete()) { "Cannot remove Root watchdog session file" }
+    }
+
+    private data class WatchdogIdentity(val commandLine: String, val startTime: String)
+
+    private fun readWatchdogIdentity(pid: Int): WatchdogIdentity? = runCatching {
+        require(pid > 1)
+        val processDir = File("/proc/$pid")
+        check(processDir.exists())
+        val commandLine = File(processDir, "cmdline").readText()
+        check(WATCHDOG_PATH in commandLine)
+        val stat = File(processDir, "stat").readText()
+        val fields = stat.substringAfterLast(") ", "").trim().split(' ').filter(String::isNotBlank)
+        WatchdogIdentity(commandLine, checkNotNull(fields.getOrNull(19)))
+    }.getOrNull()
+
+    private fun awaitWatchdogExit(pid: Int, identity: WatchdogIdentity) {
+        val deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(STOP_WAIT_MS)
+        val latch = CountDownLatch(1)
+        while (System.nanoTime() < deadline) {
+            val current = readWatchdogIdentity(pid)
+            if (current == null) return
+            check(current == identity) { "Root watchdog PID was reused" }
+            val remaining = deadline - System.nanoTime()
+            if (remaining > 0L) latch.await(
+                minOf(remaining, TimeUnit.MILLISECONDS.toNanos(25L)),
+                TimeUnit.NANOSECONDS
+            )
+        }
     }
 
     private fun stopWatchdogProcess() {
         val process = watchdogProcess ?: return
         process.destroy()
-        if (process.isAlive) process.destroyForcibly()
-        runCatching { process.waitFor() }
+        if (!runCatching { process.waitFor(STOP_WAIT_MS, TimeUnit.MILLISECONDS) }.getOrDefault(false)) {
+            process.destroyForcibly()
+            runCatching { process.waitFor(STOP_WAIT_MS, TimeUnit.MILLISECONDS) }
+        }
         watchdogProcess = null
+    }
+
+    private fun requireCurrentProcessStartTime(): String {
+        val stat = File("/proc/self/stat").readText()
+        return stat.substringAfterLast(") ", "")
+            .trim()
+            .split(' ')
+            .filter(String::isNotBlank)
+            .getOrNull(19)
+            ?.takeIf { it.all(Char::isDigit) }
+            ?: error("Cannot read Root process start time")
     }
 
     private fun writeLease() {
@@ -147,8 +251,39 @@ class RootWatchdogInstaller(
     }
 
     private fun writeAtomically(target: File, content: String) {
-        val temp = File(target.parentFile, "${target.name}.tmp.${Process.myPid()}")
-        temp.writeText(content)
-        Os.rename(temp.absolutePath, target.absolutePath)
+        val parent = target.parentFile ?: error("Root watchdog target has no parent")
+        check(!Files.isSymbolicLink(parent.toPath()) && parent.isDirectory) {
+            "Root watchdog target directory is unsafe"
+        }
+        check(!Files.isSymbolicLink(target.toPath()) && (!target.exists() || target.isFile)) {
+            "Root watchdog target is unsafe: ${target.name}"
+        }
+        val temp = File.createTempFile(".${target.name}.", ".tmp", parent)
+        try {
+            FileOutputStream(temp).use { output ->
+                output.write(content.toByteArray(Charsets.UTF_8))
+                output.flush()
+                output.fd.sync()
+            }
+            Os.rename(temp.absolutePath, target.absolutePath)
+        } finally {
+            if (temp.exists()) check(temp.delete()) { "Cannot remove Root watchdog temporary file" }
+        }
+    }
+
+    private fun installScript(target: File, expectedContent: String, label: String) {
+        check(!Files.isSymbolicLink(target.toPath()) && (!target.exists() || target.isFile)) {
+            "Root $label script path is unsafe"
+        }
+        if (!rootScriptContentMatches(target.takeIf(File::isFile)?.readText(Charsets.UTF_8), expectedContent)) {
+            writeAtomically(target, expectedContent)
+        }
+        check(target.isFile && target.readText(Charsets.UTF_8) == expectedContent) {
+            "Root $label script content does not match this APK"
+        }
+        Os.chmod(target.absolutePath, 0b111100000)
     }
 }
+
+internal fun rootScriptContentMatches(installed: String?, bundled: String): Boolean =
+    installed != null && installed == bundled
