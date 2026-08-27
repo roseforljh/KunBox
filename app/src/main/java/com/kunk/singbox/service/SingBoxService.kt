@@ -22,6 +22,7 @@ import com.kunk.singbox.core.LatencyProbeTrafficKind
 import com.kunk.singbox.core.SelectorManager
 import com.kunk.singbox.core.SingBoxCore
 import com.kunk.singbox.ipc.SingBoxIpcHub
+import com.kunk.singbox.ipc.VpnNetworkOwnership
 import com.kunk.singbox.ipc.VpnStateStore
 import com.kunk.singbox.model.AppSettings
 import com.kunk.singbox.model.BackgroundPowerSavingDelay
@@ -318,7 +319,7 @@ class SingBoxService : VpnService() {
 
         // 生命周期管理
         override fun registerScreenStateReceiver() { screenStateManager.registerScreenStateReceiver() }
-        override fun startForeignVpnMonitor() { foreignVpnMonitor.start() }
+        override fun startForeignVpnMonitor() { foreignVpnMonitor.start(activeVpnSessionId) }
         override fun stopForeignVpnMonitor() { foreignVpnMonitor.stop() }
         override fun detectExistingVpns(): Boolean = foreignVpnMonitor.hasExistingVpn()
 
@@ -377,13 +378,13 @@ class SingBoxService : VpnService() {
             pendingNodeName = null
             updateServiceState(ServiceState.RUNNING)
             SingBoxIpcHub.updateReadiness { readiness ->
-                readiness.copy(
-                    status = com.kunk.singbox.ipc.DataPlaneStatus.BLOCKING,
+                val updated = readiness.copy(
                     coreReady = true,
                     selectorReady = false,
                     recoveryActive = false,
                     lastReadinessReason = "selector_pending"
                 )
+                updated.copy(status = updated.resolveVpnStatus(canBeReady = false))
             }
             notificationManager.setSuppressUpdates(false)
             autoFailoverServiceStartedAtMs = System.currentTimeMillis()
@@ -664,6 +665,8 @@ class SingBoxService : VpnService() {
     // @Volatile protected var nodePollingJob: Job? = null // Removed in favor of CommandClient
 
     protected val isConnectingTun = AtomicBoolean(false)
+    private val vpnSessionGeneration = AtomicLong(0L)
+    @Volatile private var activeVpnSessionId = 0L
 
     // Command 相关变量已移至 CommandManager
     // 保留这些作为兼容性别名 (委托到 commandManager)
@@ -782,19 +785,14 @@ class SingBoxService : VpnService() {
             override fun onControlChannelHealth(ready: Boolean) {
                 SingBoxIpcHub.updateReadiness { readiness ->
                     val coreReady = ready && SingBoxService.isRunning
-                    val dataPlaneReady = coreReady && readiness.selectorReady &&
+                    val canBeReady = coreReady && readiness.selectorReady &&
                         readiness.tunEstablished && readiness.systemVpnTransport &&
                         isVpnIdentityReady(readiness)
-                    readiness.copy(
+                    val updated = readiness.copy(
                         coreReady = coreReady,
-                        status = when {
-                            dataPlaneReady -> com.kunk.singbox.ipc.DataPlaneStatus.READY
-                            !ready && readiness.status == com.kunk.singbox.ipc.DataPlaneStatus.READY ->
-                                com.kunk.singbox.ipc.DataPlaneStatus.BLOCKING
-                            else -> readiness.status
-                        },
                         lastReadinessReason = if (ready) "command_channel_ready" else "command_channel_lost"
                     )
+                    updated.copy(status = updated.resolveVpnStatus(canBeReady))
                 }
             }
             override fun onServiceStop() {
@@ -818,17 +816,13 @@ class SingBoxService : VpnService() {
 
     private fun publishSelectorReady(reason: String) {
         SingBoxIpcHub.updateReadiness { readiness ->
-            val ready = readiness.coreReady && readiness.tunEstablished && readiness.systemVpnTransport &&
+            val canBeReady = readiness.coreReady && readiness.tunEstablished && readiness.systemVpnTransport &&
                 isVpnIdentityReady(readiness)
-            readiness.copy(
+            val updated = readiness.copy(
                 selectorReady = true,
-                status = if (ready) {
-                    com.kunk.singbox.ipc.DataPlaneStatus.READY
-                } else {
-                    com.kunk.singbox.ipc.DataPlaneStatus.BLOCKING
-                },
                 lastReadinessReason = reason
             )
+            updated.copy(status = updated.resolveVpnStatus(canBeReady))
         }
     }
 
@@ -864,43 +858,44 @@ class SingBoxService : VpnService() {
             override val isConnectingTun: Boolean
                 get() = this@SingBoxService.isConnectingTun.get()
 
-            override fun onVpnNetworkObserved(network: Network, foreign: Boolean) {
-                SingBoxIpcHub.updateReadiness { readiness ->
-                    val canBeReady = !foreign && readiness.coreReady && readiness.selectorReady &&
-                        readiness.tunEstablished
-                    readiness.copy(
-                        systemVpnTransport = true,
-                        observedVpnNetworkHandle = network.networkHandle,
-                        ownedVpnNetworkHandle = if (foreign) {
-                            readiness.ownedVpnNetworkHandle
-                        } else {
-                            network.networkHandle
-                        },
-                        systemVpnOwnerStatus = if (!foreign && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                            com.kunk.singbox.ipc.VpnOwnerStatus.MATCH
-                        } else {
-                            readiness.systemVpnOwnerStatus
-                        },
-                        foreignVpnDetected = readiness.foreignVpnDetected || foreign,
-                        status = when {
-                            foreign -> com.kunk.singbox.ipc.DataPlaneStatus.FAILED_UNPROTECTED
-                            canBeReady -> com.kunk.singbox.ipc.DataPlaneStatus.READY
-                            else -> readiness.status
-                        },
-                        lastReadinessReason = if (foreign) "foreign_vpn_detected" else "owned_vpn_observed"
+            override fun onVpnNetworkObserved(
+                network: Network,
+                ownership: VpnNetworkOwnership,
+                sessionId: Long
+            ) {
+                if (sessionId != activeVpnSessionId || !foreignVpnMonitor.isSessionCurrent(sessionId)) {
+                    Log.d(
+                        SingBoxService.TAG,
+                        "Ignoring stale VPN observation session=$sessionId active=$activeVpnSessionId network=$network"
                     )
+                    return
+                }
+                Log.i(
+                    SingBoxService.TAG,
+                    "VPN ownership=$ownership session=$sessionId networkHandle=${network.networkHandle}"
+                )
+                SingBoxIpcHub.updateReadiness { readiness ->
+                    if (readiness.vpnSessionId != sessionId) return@updateReadiness readiness
+                    readiness.observeVpnNetwork(ownership, network.networkHandle, serviceState)
                 }
             }
 
-            override fun onVpnNetworkLost(network: Network, owned: Boolean) {
+            override fun onVpnNetworkLost(network: Network, owned: Boolean, sessionId: Long) {
                 if (!owned) return
-                SingBoxIpcHub.updateReadiness { readiness ->
-                    readiness.copy(
-                        systemVpnTransport = false,
-                        ownedVpnNetworkLost = true,
-                        status = com.kunk.singbox.ipc.DataPlaneStatus.FAILED_UNPROTECTED,
-                        lastReadinessReason = "owned_vpn_network_lost"
+                if (sessionId != activeVpnSessionId || !foreignVpnMonitor.isSessionCurrent(sessionId)) {
+                    Log.d(
+                        SingBoxService.TAG,
+                        "Ignoring stale VPN loss session=$sessionId active=$activeVpnSessionId network=$network"
                     )
+                    return
+                }
+                Log.w(
+                    SingBoxService.TAG,
+                    "Owned VPN network lost session=$sessionId networkHandle=${network.networkHandle}"
+                )
+                SingBoxIpcHub.updateReadiness { readiness ->
+                    if (readiness.vpnSessionId != sessionId) return@updateReadiness readiness
+                    readiness.observeOwnedVpnNetworkLost(network.networkHandle, serviceState)
                 }
             }
         })
@@ -1202,15 +1197,8 @@ class SingBoxService : VpnService() {
         val plan = coreManager.appliedPerAppVpnPlan()
         val (alwaysOnPackage, lockdown) = coreManager.alwaysOnVpnStatus()
         SingBoxIpcHub.updateReadiness { readiness ->
-            readiness.copy(
-                status = com.kunk.singbox.ipc.DataPlaneStatus.BLOCKING,
+            val updated = readiness.copy(
                 tunEstablished = coreManager.isVpnInterfaceValid(),
-                systemVpnTransport = ownedVpnNetwork != null,
-                systemVpnOwnerStatus = when {
-                    ownedVpnNetwork == null -> com.kunk.singbox.ipc.VpnOwnerStatus.UNKNOWN
-                    Build.VERSION.SDK_INT < Build.VERSION_CODES.R -> com.kunk.singbox.ipc.VpnOwnerStatus.UNKNOWN
-                    else -> com.kunk.singbox.ipc.VpnOwnerStatus.MATCH
-                },
                 routingScope = "${plan.mode}:allowed=${plan.appliedAllowedPackages.size}:" +
                     "excluded=${plan.appliedDisallowedPackages.size}:skipped=${plan.skippedPackages.size}:" +
                     "browser=${plan.browserCoverage}",
@@ -1219,12 +1207,21 @@ class SingBoxService : VpnService() {
                     alwaysOnPackage == packageName -> com.kunk.singbox.ipc.VpnLockdownStatus.DISABLED
                     else -> com.kunk.singbox.ipc.VpnLockdownStatus.UNKNOWN
                 },
-                foreignVpnDetected = false,
-                ownedVpnNetworkLost = false,
-                ownedVpnNetworkHandle = ownedHandle,
-                observedVpnNetworkHandle = ownedHandle,
-                lastReadinessReason = "tun_established"
+                lastReadinessReason = if (ownedVpnNetwork == null) {
+                    "tun_established_owner_pending"
+                } else {
+                    "tun_established"
+                }
             )
+            if (ownedVpnNetwork != null) {
+                updated.observeVpnNetwork(
+                    ownership = VpnNetworkOwnership.OWNED,
+                    networkHandle = ownedHandle,
+                    serviceState = serviceState
+                )
+            } else {
+                updated.copy(status = updated.resolveVpnStatus(canBeReady = false))
+            }
         }
     }
 
@@ -1276,14 +1273,14 @@ class SingBoxService : VpnService() {
         if (serviceState == state) return
         serviceState = state
         when (state) {
-            ServiceState.STARTING -> SingBoxIpcHub.updateReadiness { readiness ->
-                readiness.copy(
-                    status = com.kunk.singbox.ipc.DataPlaneStatus.STARTING,
-                    coreReady = false,
-                    selectorReady = false,
-                    recoveryActive = false,
-                    lastReadinessReason = "service_starting"
-                )
+            ServiceState.STARTING -> {
+                activeVpnSessionId = vpnSessionGeneration.incrementAndGet()
+                SingBoxIpcHub.updateReadiness { readiness ->
+                    readiness.beginVpnSession(
+                        serviceInstanceId = SingBoxIpcHub.serviceInstanceId(),
+                        sessionId = activeVpnSessionId
+                    )
+                }
             }
             ServiceState.STOPPED -> SingBoxIpcHub.updateReadiness { readiness ->
                 com.kunk.singbox.ipc.DataPlaneReadinessSnapshot.stopped(
@@ -1297,6 +1294,8 @@ class SingBoxService : VpnService() {
         }
         requestRemoteStateUpdate(force = true)
     }
+
+    internal fun currentServiceState(): ServiceState = serviceState
 
     protected fun forceStopProcess(reason: String) {
         val manuallyStopped = VpnStateStore.isManuallyStopped()
@@ -2697,7 +2696,12 @@ class SingBoxService : VpnService() {
         }
         if (intent?.action == null) {
             handleStickyRestartIntent()
-            return START_STICKY
+            return if (SingBoxService.isRunning || SingBoxService.isStarting) {
+                START_STICKY
+            } else {
+                stopSelf(startId)
+                START_NOT_STICKY
+            }
         }
         when (intent.action) {
             SingBoxService.ACTION_START -> {
@@ -2895,6 +2899,7 @@ class SingBoxService : VpnService() {
                     pendingAppRoutingDigest = ""
                 }
                 stopVpn(stopService = true, recoveryIntentLease = recoveryLease)
+                return START_NOT_STICKY
             }
             SingBoxService.ACTION_FORCE_STOP -> {
                 forceStopProcess("explicit_force_stop")
@@ -3837,6 +3842,7 @@ class SingBoxService : VpnService() {
 
         screenStateManager.unregisterActivityLifecycleCallbacks(application)
         DefaultNetworkListener.stop(defaultNetworkListenerKey)
+        foreignVpnMonitor.cleanup()
 
         val shouldStop = runCatching {
             synchronized(this@SingBoxService) {

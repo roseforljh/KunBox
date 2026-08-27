@@ -7,11 +7,14 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import com.kunk.singbox.ipc.SingBoxRemote
+import com.kunk.singbox.ipc.DataPlaneStatus
 import com.kunk.singbox.ipc.VpnStateStore
 import com.kunk.singbox.model.PerAppVpnPolicy
 import com.kunk.singbox.model.TrafficCaptureMode
 import com.kunk.singbox.repository.ConfigRepository
 import com.kunk.singbox.repository.NodeProtectionStore
+import com.kunk.singbox.repository.RootGenerationMarker
+import com.kunk.singbox.repository.RootGenerationStore
 import com.kunk.singbox.repository.SettingsRepository
 import com.kunk.singbox.service.ProxyOnlyService
 import com.kunk.singbox.service.SingBoxService
@@ -158,6 +161,7 @@ object VpnServiceManager {
         }
     }
 
+    @Suppress("LongMethod", "CognitiveComplexMethod")
     private suspend fun applyPerAppRuleChangeLocked(
         appContext: Context,
         targetRevision: Long,
@@ -169,7 +173,18 @@ object VpnServiceManager {
 
         val runtimeMode = VpnStateStore.getMode()
         val runningConfigFile = File(appContext.filesDir, "running_config.json")
-        val previousConfig = runCatching { runningConfigFile.takeIf(File::isFile)?.readText() }.getOrNull()
+        val previousRootMarker = if (runtimeMode == VpnStateStore.CoreMode.ROOT) {
+            RootGenerationStore.readCurrentStrict(appContext.filesDir)
+        } else {
+            null
+        }
+        val previousConfig = runCatching {
+            if (previousRootMarker != null) {
+                RootGenerationStore.configFile(appContext.filesDir, previousRootMarker).readText()
+            } else {
+                runningConfigFile.takeIf(File::isFile)?.readText()
+            }
+        }.getOrNull()
         var candidatePath: String? = null
         var restartDispatched = false
         return try {
@@ -203,7 +218,13 @@ object VpnServiceManager {
         } catch (e: Exception) {
             Log.e(TAG, "Failed to apply per-app VPN policy", e)
             if (restartDispatched && !previousConfig.isNullOrBlank()) {
-                rollbackPerAppConfig(appContext, runtimeMode, previousConfig, candidatePath)
+                rollbackPerAppConfig(
+                    appContext,
+                    runtimeMode,
+                    previousConfig,
+                    previousRootMarker,
+                    candidatePath
+                )
             } else {
                 discardCandidateConfig(candidatePath)
             }
@@ -220,7 +241,21 @@ object VpnServiceManager {
                 ?.removePrefix(prefix)
                 ?.removeSuffix(".json")
             requestId?.let(NodeProtectionStore::discardStagedRuntimeMappings)
-            runCatching { candidate.delete() }
+            val rootFilesDir = runCatching { resolveFilesDir(candidate) }.getOrNull()
+            val rootGeneration = rootFilesDir?.let { filesDir ->
+                RootGenerationStore.generationForConfigPath(filesDir, candidate.absolutePath)
+            }
+            runCatching {
+                if (rootGeneration != null) {
+                    val current = RootGenerationStore.readCurrent(rootFilesDir)
+                    val lastGood = RootGenerationStore.readLastGood(rootFilesDir)
+                    if (current?.generation != rootGeneration && lastGood?.generation != rootGeneration) {
+                        RootGenerationStore.deleteGeneration(rootFilesDir, rootGeneration)
+                    }
+                } else {
+                    candidate.delete()
+                }
+            }
         }
     }
 
@@ -249,7 +284,14 @@ object VpnServiceManager {
                 putExtra(RootTransparentForegroundService.EXTRA_CONFIG_PATH, generation.path)
                 putExtra(RootTransparentForegroundService.EXTRA_APP_ROUTE_REQUEST_ID, generation.requestId)
                 putExtra(RootTransparentForegroundService.EXTRA_CONFIG_DIGEST, generation.configDigest)
-                putExtra(RootTransparentForegroundService.EXTRA_APP_ROUTING_DIGEST, generation.appRoutingDigest)
+                putExtra(RootTransparentForegroundService.EXTRA_APP_ROUTING_DIGEST, generation.rootRoutingAppDigest)
+                putExtra(RootTransparentForegroundService.EXTRA_SIDECAR_DIGEST, generation.rootRoutingSidecarDigest)
+                putExtra(RootTransparentForegroundService.EXTRA_SIDECAR_JSON, generation.rootRoutingSidecarJson)
+                putExtra(
+                    RootTransparentForegroundService.EXTRA_STATIC_PLAN_DIGEST,
+                    generation.rootRoutingStaticPlanDigest
+                )
+                putExtra(RootTransparentForegroundService.EXTRA_ROUTING_GENERATION, generation.rootRoutingGeneration)
             })
             return
         }
@@ -264,7 +306,7 @@ object VpnServiceManager {
         })
     }
 
-    @Suppress("LongParameterList", "CognitiveComplexMethod", "ComplexCondition")
+    @Suppress("LongParameterList", "CognitiveComplexMethod", "ComplexCondition", "CyclomaticComplexMethod")
     private suspend fun awaitPerAppPolicyConfirmation(
         targetRevision: Long,
         targetDigest: String,
@@ -276,11 +318,30 @@ object VpnServiceManager {
         while (true) {
             if (requestGeneration != perAppApplyGeneration.get()) return@withTimeoutOrNull false
             val applied = VpnStateStore.getAppliedPerAppPolicy()
+            val runtime = VpnStateStore.getRuntimeStateSnapshot()
+            val rootReady = runtimeMode != VpnStateStore.CoreMode.ROOT || (
+                runtime.stateOrdinal == com.kunk.singbox.service.ServiceState.RUNNING.ordinal &&
+                    runtime.readiness.status == DataPlaneStatus.READY &&
+                    runtime.readiness.rootRoutingGeneration == generation.rootRoutingGeneration &&
+                    runtime.readiness.rootConfigSha256 == generation.configDigest &&
+                    runtime.readiness.rootSidecarSha256 == generation.rootRoutingSidecarDigest &&
+                    runtime.readiness.rootStaticPlanSha256 == generation.rootRoutingStaticPlanDigest &&
+                    runtime.readiness.rootAppRoutingSha256 == generation.rootRoutingAppDigest &&
+                    runtime.readiness.rootResolvedPlanSha256 == applied.resolvedPlanSha256
+                )
             if (applied.revision == targetRevision &&
                 applied.digest == targetDigest &&
                 applied.requestId == generation.requestId &&
                 applied.configDigest == generation.configDigest &&
-                applied.appRoutingDigest == targetRoutingDigest
+                applied.appRoutingDigest == targetRoutingDigest &&
+                (runtimeMode != VpnStateStore.CoreMode.ROOT ||
+                    (applied.sidecarFileSha256 == generation.rootRoutingSidecarDigest &&
+                        applied.staticPlanSha256 == generation.rootRoutingStaticPlanDigest &&
+                        applied.rootRoutingAppSha256 == generation.rootRoutingAppDigest &&
+                        applied.resolvedPlanSha256.isNotBlank() &&
+                        applied.runtimeGeneration == generation.rootRoutingGeneration &&
+                        applied.rootRuntimeSessionId.isNotBlank())) &&
+                rootReady
             ) {
                 break
             }
@@ -298,6 +359,23 @@ object VpnServiceManager {
         appContext: Context,
         generation: ConfigRepository.ConfigGenerationResult
     ) {
+        if (generation.rootRoutingGeneration > 0L) {
+            val marker = RootGenerationStore.marker(
+                generation.rootRoutingGeneration,
+                generation.configDigest,
+                generation.rootRoutingSidecarDigest,
+                generation.rootRoutingStaticPlanDigest,
+                generation.rootRoutingAppDigest
+            )
+            check(RootGenerationStore.readCurrentStrict(appContext.filesDir) == marker) {
+                "Applied Root candidate generation was not committed by the runtime"
+            }
+            check(RootGenerationStore.cacheMatchesCurrent(appContext.filesDir, "running_config.json", marker)) {
+                "Applied Root candidate cache does not match the committed generation"
+            }
+            Log.i(TAG, "[APP_ROUTE_TX] promoted Root request=${generation.requestId}")
+            return
+        }
         val content = File(generation.path).readText(Charsets.UTF_8)
         check(ConfigRepository.sha256(content) == generation.configDigest) {
             "Applied candidate config changed before promotion"
@@ -314,6 +392,7 @@ object VpnServiceManager {
         appContext: Context,
         runtimeMode: VpnStateStore.CoreMode,
         previousConfig: String,
+        previousRootMarker: RootGenerationMarker?,
         candidatePath: String?
     ) {
         runCatching {
@@ -329,7 +408,20 @@ object VpnServiceManager {
                     RootTransparentForegroundService::class.java
                 ).apply {
                     action = RootTransparentForegroundService.ACTION_RESTART
-                    putExtra(RootTransparentForegroundService.EXTRA_CONFIG_PATH, runningConfig.absolutePath)
+                    val marker = previousRootMarker ?: error("Previous Root generation is unavailable")
+                    check(RootGenerationStore.restorePrevious(appContext.filesDir, marker)) {
+                        "无法恢复上一 Root 代次"
+                    }
+                    RootGenerationStore.restoreCompatibilityCaches(appContext.filesDir, marker)
+                    putExtra(
+                        RootTransparentForegroundService.EXTRA_CONFIG_PATH,
+                        RootGenerationStore.configFile(appContext.filesDir, marker).absolutePath
+                    )
+                    putExtra(RootTransparentForegroundService.EXTRA_CONFIG_DIGEST, marker.configFileSha256)
+                    putExtra(RootTransparentForegroundService.EXTRA_SIDECAR_DIGEST, marker.sidecarFileSha256)
+                    putExtra(RootTransparentForegroundService.EXTRA_STATIC_PLAN_DIGEST, marker.staticPlanSha256)
+                    putExtra(RootTransparentForegroundService.EXTRA_APP_ROUTING_DIGEST, marker.appRoutingSha256)
+                    putExtra(RootTransparentForegroundService.EXTRA_ROUTING_GENERATION, marker.generation)
                 }
                 VpnStateStore.CoreMode.VPN -> Intent(appContext, SingBoxService::class.java).apply {
                     action = SingBoxService.ACTION_FULL_RESTART
@@ -343,6 +435,13 @@ object VpnServiceManager {
             Log.e(TAG, "[APP_ROUTE_TX] rollback failed", rollbackError)
             VpnStateStore.setLastError("应用分流应用失败，恢复上一配置也失败，请重新启动 VPN")
         }
+    }
+
+    private fun resolveFilesDir(config: File): File {
+        val generationDirectory = config.parentFile ?: error("Root generation config has no parent")
+        val generationsDirectory = generationDirectory.parentFile ?: error("Root generations directory is missing")
+        check(generationsDirectory.name == RootGenerationStore.GENERATIONS_DIR_NAME)
+        return generationsDirectory.parentFile ?: error("App files directory is missing")
     }
 
     fun startVpn(context: Context, mode: TrafficCaptureMode): Result<Unit> {
