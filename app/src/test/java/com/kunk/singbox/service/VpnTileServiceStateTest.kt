@@ -1,5 +1,7 @@
 package com.kunk.singbox.service
 
+import com.kunk.singbox.ipc.DataPlaneReadinessSnapshot
+import com.kunk.singbox.ipc.DataPlaneStatus
 import com.kunk.singbox.repository.resolveRestoredProfileSelection
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -165,6 +167,49 @@ class VpnTileServiceStateTest {
 
         assertFalse(body.contains("delay(2000)"))
         assertFalse(body.contains("isStartingSequence = false\n                        startSequenceId = 0L"))
+    }
+
+    @Test
+    fun tileRefreshClearsCompletedLocalStartingSequenceWithoutReopeningPanel() {
+        val source = File("src/main/java/com/kunk/singbox/service/VpnTileService.kt").readText()
+        val body = source.substring(
+            source.indexOf("private fun updateTile("),
+            source.indexOf("private fun hasSystemVpnTransport()")
+        )
+
+        assertTrue(body.contains("shouldClearStartingSequenceOnListen(isStartingSequence, pending)"))
+        assertTrue(body.indexOf("shouldClearStartingSequenceOnListen") < body.indexOf("val effectiveState"))
+    }
+
+    @Test
+    fun freshPersistedReadinessCanDriveTileBeforeIpcBindCompletes() {
+        val readiness = DataPlaneReadinessSnapshot(
+            status = DataPlaneStatus.READY,
+            updatedAtElapsedMs = 50_000L
+        )
+
+        assertTrue(VpnTileService.hasTileControlPlane(false, readiness, 50_001L))
+        assertFalse(VpnTileService.hasTileControlPlane(false, readiness, Long.MAX_VALUE))
+        assertTrue(VpnTileService.hasTileControlPlane(true, DataPlaneReadinessSnapshot.stopped(), Long.MAX_VALUE))
+    }
+
+    @Test
+    fun refreshPathHydratesPersistedSnapshotAndRequestsBinding() {
+        val source = File("src/main/java/com/kunk/singbox/service/VpnTileService.kt").readText()
+        val updateBody = source.substring(
+            source.indexOf("private fun updateTile("),
+            source.indexOf("private fun hasSystemVpnTransport()")
+        )
+        val receiverBody = source.substring(
+            source.indexOf("private val tileRefreshReceiver"),
+            source.indexOf("private val remoteCallback")
+        )
+
+        assertTrue(updateBody.contains("VpnStateStore.getRuntimeStateSnapshot()"))
+        assertTrue(updateBody.contains("applyRemoteStateSnapshot(runtimeSnapshot)"))
+        assertFalse(updateBody.contains("persistVpnState("))
+        assertFalse(updateBody.contains("persistVpnPending("))
+        assertTrue(receiverBody.contains("bindService()"))
     }
 
     @Test

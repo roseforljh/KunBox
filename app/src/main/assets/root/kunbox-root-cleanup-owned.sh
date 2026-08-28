@@ -80,7 +80,7 @@ owned_rule_count() {
     printf '%s\n' "$RC_OUTPUT" | awk \
         -v p="$RC_PRIORITY:" -v m="$RC_MARK" -v full="$RC_MARK/$RC_MASK" -v t="$RC_TABLE" -v r="$RC_PROTOCOL" \
         '$1==p && $2=="from" && $3=="all" {\
-            mark=lookup=protocol=0;\
+            mark=lookup=0; protocol=(r=="0");\
             for (i=1; i<=NF; i++) {\
                 if ($i=="fwmark" && ($(i+1)==m || $(i+1)==full)) mark=1;\
                 if (($i=="lookup" || $i=="table") && $(i+1)==t) lookup=1;\
@@ -103,7 +103,7 @@ owned_route_count() {
     fi
     printf '%s\n' "$RT_OUTPUT" | awk -v p="$RT_PREFIX" -v d="$RT_DEVICE" -v r="$RT_PROTOCOL" \
         '$1=="local" && (($2==p) || (p=="0.0.0.0/0" && $2=="default")) {\
-            dev=protocol=0;\
+            dev=0; protocol=(r=="0");\
             for (i=1; i<=NF; i++) {\
                 if ($i=="dev" && $(i+1)==d) dev=1;\
                 if (($i=="proto" || $i=="protocol") && $(i+1)==r) protocol=1;\
@@ -190,11 +190,16 @@ validate_owner_records() {
                 [ "$C" = "0xffffffff" ] || fail_conflict "rule_mask"
                 is_decimal "$D" || fail_conflict "rule_priority"
                 [ "$E" = "$ROUTE_TABLE" ] || fail_conflict "rule_table"
-                [ "$F" = "$ROUTE_PROTOCOL" ] || fail_conflict "rule_protocol"
+                [ "$F" = "0" ] || [ "$F" = "$ROUTE_PROTOCOL" ] || fail_conflict "rule_protocol"
                 is_owned_rule_tuple "$A" "$B" "$D" || fail_conflict "rule_tuple"
                 is_sha256 "$G" || fail_conflict "rule_command_sha"
                 if [ "$A" = "6" ]; then IP_PREFIX="ip -6"; else IP_PREFIX="ip"; fi
-                EXPECTED_SHA="$(printf '%s' "$IP_PREFIX rule add fwmark $B/$C table $E pref $D protocol $F" | sha256_text)" ||
+                if [ "$F" = "0" ]; then
+                    EXPECTED_RULE="$IP_PREFIX rule add fwmark $B/$C table $E pref $D"
+                else
+                    EXPECTED_RULE="$IP_PREFIX rule add fwmark $B/$C table $E pref $D protocol $F"
+                fi
+                EXPECTED_SHA="$(printf '%s' "$EXPECTED_RULE" | sha256_text)" ||
                     fail_conflict "sha256_unavailable"
                 [ "$EXPECTED_SHA" = "$G" ] || fail_conflict "rule_command_sha"
                 RECORD_COUNT=$((RECORD_COUNT + 1))
@@ -206,10 +211,15 @@ validate_owner_records() {
                     fail_conflict "route_prefix"
                 [ "$C" = "lo" ] || fail_conflict "route_device"
                 [ "$D" = "$ROUTE_TABLE" ] || fail_conflict "route_table"
-                [ "$E" = "$ROUTE_PROTOCOL" ] || fail_conflict "route_protocol"
+                [ "$E" = "0" ] || [ "$E" = "$ROUTE_PROTOCOL" ] || fail_conflict "route_protocol"
                 is_sha256 "$F" || fail_conflict "route_command_sha"
                 if [ "$A" = "6" ]; then IP_PREFIX="ip -6"; else IP_PREFIX="ip"; fi
-                EXPECTED_SHA="$(printf '%s' "$IP_PREFIX route add local $B dev $C table $D proto $E" | sha256_text)" ||
+                if [ "$E" = "0" ]; then
+                    EXPECTED_ROUTE="$IP_PREFIX route add local $B dev $C table $D"
+                else
+                    EXPECTED_ROUTE="$IP_PREFIX route add local $B dev $C table $D proto $E"
+                fi
+                EXPECTED_SHA="$(printf '%s' "$EXPECTED_ROUTE" | sha256_text)" ||
                     fail_conflict "sha256_unavailable"
                 [ "$EXPECTED_SHA" = "$F" ] || fail_conflict "route_command_sha"
                 RECORD_COUNT=$((RECORD_COUNT + 1))
@@ -296,7 +306,8 @@ cleanup_owned() {
     while IFS='|' read -r TYPE FAMILY MARK MASK PRIORITY TABLE PROTOCOL COMMAND_SHA EXTRA; do
         [ "$TYPE" = "RULE" ] || continue
         [ -z "$EXTRA" ] || fail_conflict "rule_record_fields"
-        [ "$TABLE" = "$ROUTE_TABLE" ] && [ "$PROTOCOL" = "$ROUTE_PROTOCOL" ] || fail_conflict "rule_scope"
+        [ "$TABLE" = "$ROUTE_TABLE" ] && { [ "$PROTOCOL" = "0" ] || [ "$PROTOCOL" = "$ROUTE_PROTOCOL" ]; } ||
+            fail_conflict "rule_scope"
         COUNT="$(owned_rule_count "$FAMILY" "$MARK" "$MASK" "$PRIORITY" "$TABLE" "$PROTOCOL")" || \
             fail_conflict "rule_query:$FAMILY:$PRIORITY"
         is_decimal "$COUNT" || fail_conflict "rule_query:$FAMILY:$PRIORITY"
@@ -306,7 +317,8 @@ cleanup_owned() {
     while IFS='|' read -r TYPE FAMILY PREFIX DEVICE TABLE PROTOCOL COMMAND_SHA EXTRA; do
         [ "$TYPE" = "ROUTE" ] || continue
         [ -z "$EXTRA" ] || fail_conflict "route_record_fields"
-        [ "$TABLE" = "$ROUTE_TABLE" ] && [ "$PROTOCOL" = "$ROUTE_PROTOCOL" ] || fail_conflict "route_scope"
+        [ "$TABLE" = "$ROUTE_TABLE" ] && { [ "$PROTOCOL" = "0" ] || [ "$PROTOCOL" = "$ROUTE_PROTOCOL" ]; } ||
+            fail_conflict "route_scope"
         COUNT="$(owned_route_count "$FAMILY" "$PREFIX" "$DEVICE" "$TABLE" "$PROTOCOL")" || \
             fail_conflict "route_query:$FAMILY:$PREFIX"
         is_decimal "$COUNT" || fail_conflict "route_query:$FAMILY:$PREFIX"
@@ -327,7 +339,11 @@ cleanup_owned() {
         is_decimal "$COUNT" || fail_conflict "rule_query:$FAMILY:$PRIORITY"
         [ "$COUNT" -le 1 ] || fail_conflict "rule_fingerprint:$FAMILY:$PRIORITY"
         if [ "$COUNT" -eq 1 ]; then
-            if [ "$FAMILY" = "6" ]; then
+            if [ "$PROTOCOL" = "0" ]; then
+                if [ "$FAMILY" = "6" ]; then IP_PREFIX="ip -6"; else IP_PREFIX="ip"; fi
+                $IP_PREFIX rule del fwmark "$MARK/$MASK" table "$TABLE" pref "$PRIORITY" 2>/dev/null ||
+                    fail_conflict "rule_delete:$FAMILY:$PRIORITY"
+            elif [ "$FAMILY" = "6" ]; then
                 ip -6 rule del fwmark "$MARK/$MASK" table "$TABLE" pref "$PRIORITY" protocol "$PROTOCOL" \
                     2>/dev/null || fail_conflict "rule_delete:$FAMILY:$PRIORITY"
             else
@@ -343,7 +359,11 @@ cleanup_owned() {
         is_decimal "$COUNT" || fail_conflict "route_query:$FAMILY:$PREFIX"
         [ "$COUNT" -le 1 ] || fail_conflict "route_fingerprint:$FAMILY:$PREFIX"
         if [ "$COUNT" -eq 1 ]; then
-            if [ "$FAMILY" = "6" ]; then
+            if [ "$PROTOCOL" = "0" ]; then
+                if [ "$FAMILY" = "6" ]; then IP_PREFIX="ip -6"; else IP_PREFIX="ip"; fi
+                $IP_PREFIX route del local "$PREFIX" dev "$DEVICE" table "$TABLE" 2>/dev/null ||
+                    fail_conflict "route_delete:$FAMILY:$PREFIX"
+            elif [ "$FAMILY" = "6" ]; then
                 ip -6 route del local "$PREFIX" dev "$DEVICE" table "$TABLE" proto "$PROTOCOL" 2>/dev/null || \
                     fail_conflict "route_delete:$FAMILY:$PREFIX"
             else
@@ -522,7 +542,7 @@ legacy_cleanup() {
     done
     for SPEC in "4 0x2331 12031" "6 0x2332 12032"; do
         set -- $SPEC
-        PREFLIGHT_COUNT="$(owned_rule_count "$1" "$2" "0xffffffff" "$3" "$ROUTE_TABLE" "$ROUTE_PROTOCOL")" ||
+        PREFLIGHT_COUNT="$(owned_rule_count "$1" "$2" "0xffffffff" "$3" "$ROUTE_TABLE" "0")" ||
             fail_conflict "legacy_rule_query:$1:$3"
         is_decimal "$PREFLIGHT_COUNT" || fail_conflict "legacy_rule_query:$1:$3"
         [ "$PREFLIGHT_COUNT" -le 1 ] || fail_conflict "legacy_rule_duplicate:$1:$3"
@@ -533,7 +553,7 @@ legacy_cleanup() {
             "4 $(printf '0x%x' $((0x2400 + SLOT))) $((12100 + SLOT))" \
             "6 $(printf '0x%x' $((0x2500 + SLOT))) $((12300 + SLOT))"; do
             set -- $SPEC
-            PREFLIGHT_COUNT="$(owned_rule_count "$1" "$2" "0xffffffff" "$3" "$ROUTE_TABLE" "$ROUTE_PROTOCOL")" ||
+            PREFLIGHT_COUNT="$(owned_rule_count "$1" "$2" "0xffffffff" "$3" "$ROUTE_TABLE" "0")" ||
                 fail_conflict "legacy_rule_query:$1:$3"
             is_decimal "$PREFLIGHT_COUNT" || fail_conflict "legacy_rule_query:$1:$3"
             [ "$PREFLIGHT_COUNT" -le 1 ] || fail_conflict "legacy_rule_duplicate:$1:$3"
@@ -542,7 +562,7 @@ legacy_cleanup() {
     done
     for SPEC in "4 0.0.0.0/0" "6 ::/0"; do
         set -- $SPEC
-        PREFLIGHT_COUNT="$(owned_route_count "$1" "$2" lo "$ROUTE_TABLE" "$ROUTE_PROTOCOL")" ||
+        PREFLIGHT_COUNT="$(owned_route_count "$1" "$2" lo "$ROUTE_TABLE" "0")" ||
             fail_conflict "legacy_route_query:$1"
         is_decimal "$PREFLIGHT_COUNT" || fail_conflict "legacy_route_query:$1"
         [ "$PREFLIGHT_COUNT" -le 1 ] || fail_conflict "legacy_route_duplicate:$1"
@@ -581,20 +601,20 @@ legacy_cleanup() {
     for SPEC in \
         "4 0x2331 12031" "6 0x2332 12032"; do
         set -- $SPEC
-        COUNT="$(owned_rule_count "$1" "$2" "0xffffffff" "$3" "$ROUTE_TABLE" "$ROUTE_PROTOCOL")" || \
+        COUNT="$(owned_rule_count "$1" "$2" "0xffffffff" "$3" "$ROUTE_TABLE" "0")" || \
             fail_conflict "legacy_rule_query:$1:$3"
         is_decimal "$COUNT" || fail_conflict "legacy_rule_query:$1:$3"
         [ "$COUNT" -le 1 ] || fail_conflict "legacy_rule_duplicate:$1:$3"
         if [ "$COUNT" -eq 1 ]; then
             if [ "$1" = "6" ]; then
-                ip -6 rule del fwmark "$2/0xffffffff" table "$ROUTE_TABLE" pref "$3" protocol "$ROUTE_PROTOCOL" 2>/dev/null ||
+                ip -6 rule del fwmark "$2/0xffffffff" table "$ROUTE_TABLE" pref "$3" 2>/dev/null ||
                     fail_conflict "legacy_rule_delete:$1:$3"
             else
-                ip rule del fwmark "$2/0xffffffff" table "$ROUTE_TABLE" pref "$3" protocol "$ROUTE_PROTOCOL" 2>/dev/null ||
+                ip rule del fwmark "$2/0xffffffff" table "$ROUTE_TABLE" pref "$3" 2>/dev/null ||
                     fail_conflict "legacy_rule_delete:$1:$3"
             fi
         fi
-        COUNT="$(owned_rule_count "$1" "$2" "0xffffffff" "$3" "$ROUTE_TABLE" "$ROUTE_PROTOCOL")" || \
+        COUNT="$(owned_rule_count "$1" "$2" "0xffffffff" "$3" "$ROUTE_TABLE" "0")" || \
             fail_conflict "legacy_rule_query:$1:$3"
         [ "$COUNT" -eq 0 ] || fail_conflict "legacy_rule_present:$1:$3"
     done
@@ -605,20 +625,20 @@ legacy_cleanup() {
         V6="$(printf '0x%x' $((0x2500 + SLOT)))"
         for SPEC in "4 $V4 $((12100 + SLOT))" "6 $V6 $((12300 + SLOT))"; do
             set -- $SPEC
-            COUNT="$(owned_rule_count "$1" "$2" "0xffffffff" "$3" "$ROUTE_TABLE" "$ROUTE_PROTOCOL")" || \
+            COUNT="$(owned_rule_count "$1" "$2" "0xffffffff" "$3" "$ROUTE_TABLE" "0")" || \
                 fail_conflict "legacy_rule_query:$1:$3"
             is_decimal "$COUNT" || fail_conflict "legacy_rule_query:$1:$3"
             [ "$COUNT" -le 1 ] || fail_conflict "legacy_rule_duplicate:$1:$3"
             if [ "$COUNT" -eq 1 ]; then
                 if [ "$1" = "6" ]; then
-                    ip -6 rule del fwmark "$2/0xffffffff" table "$ROUTE_TABLE" pref "$3" protocol "$ROUTE_PROTOCOL" 2>/dev/null ||
+                    ip -6 rule del fwmark "$2/0xffffffff" table "$ROUTE_TABLE" pref "$3" 2>/dev/null ||
                         fail_conflict "legacy_rule_delete:$1:$3"
                 else
-                    ip rule del fwmark "$2/0xffffffff" table "$ROUTE_TABLE" pref "$3" protocol "$ROUTE_PROTOCOL" 2>/dev/null ||
+                    ip rule del fwmark "$2/0xffffffff" table "$ROUTE_TABLE" pref "$3" 2>/dev/null ||
                         fail_conflict "legacy_rule_delete:$1:$3"
                 fi
             fi
-            COUNT="$(owned_rule_count "$1" "$2" "0xffffffff" "$3" "$ROUTE_TABLE" "$ROUTE_PROTOCOL")" || \
+            COUNT="$(owned_rule_count "$1" "$2" "0xffffffff" "$3" "$ROUTE_TABLE" "0")" || \
                 fail_conflict "legacy_rule_query:$1:$3"
             [ "$COUNT" -eq 0 ] || fail_conflict "legacy_rule_present:$1:$3"
         done
@@ -627,20 +647,20 @@ legacy_cleanup() {
 
     for SPEC in "4 0.0.0.0/0" "6 ::/0"; do
         set -- $SPEC
-        COUNT="$(owned_route_count "$1" "$2" lo "$ROUTE_TABLE" "$ROUTE_PROTOCOL")" || \
+        COUNT="$(owned_route_count "$1" "$2" lo "$ROUTE_TABLE" "0")" || \
             fail_conflict "legacy_route_query:$1"
         is_decimal "$COUNT" || fail_conflict "legacy_route_query:$1"
         [ "$COUNT" -le 1 ] || fail_conflict "legacy_route_duplicate:$1"
         if [ "$COUNT" -eq 1 ]; then
             if [ "$1" = "6" ]; then
-                ip -6 route del local "$2" dev lo table "$ROUTE_TABLE" proto "$ROUTE_PROTOCOL" 2>/dev/null ||
+                ip -6 route del local "$2" dev lo table "$ROUTE_TABLE" 2>/dev/null ||
                     fail_conflict "legacy_route_delete:$1"
             else
-                ip route del local "$2" dev lo table "$ROUTE_TABLE" proto "$ROUTE_PROTOCOL" 2>/dev/null ||
+                ip route del local "$2" dev lo table "$ROUTE_TABLE" 2>/dev/null ||
                     fail_conflict "legacy_route_delete:$1"
             fi
         fi
-        COUNT="$(owned_route_count "$1" "$2" lo "$ROUTE_TABLE" "$ROUTE_PROTOCOL")" || \
+        COUNT="$(owned_route_count "$1" "$2" lo "$ROUTE_TABLE" "0")" || \
             fail_conflict "legacy_route_query:$1"
         [ "$COUNT" -eq 0 ] || fail_conflict "legacy_route_present:$1"
     done

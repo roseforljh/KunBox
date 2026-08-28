@@ -20,7 +20,13 @@ class RootNetfilterOwnershipTest {
 
             assertEquals(manifest, RootNetfilterOwnership.read(file))
             assertTrue(manifest.records.any { it is RootNetfilterOwnerRecord.Rule })
+            assertTrue(
+                manifest.records.filterIsInstance<RootNetfilterOwnerRecord.Rule>().all { it.protocol == 0 }
+            )
             assertTrue(manifest.records.any { it is RootNetfilterOwnerRecord.Route })
+            assertTrue(
+                manifest.records.filterIsInstance<RootNetfilterOwnerRecord.Route>().all { it.protocol == 0 }
+            )
             assertTrue(manifest.records.any { it is RootNetfilterOwnerRecord.Chain })
         } finally {
             directory.deleteRecursively()

@@ -1,5 +1,6 @@
 package com.kunk.singbox.model
 
+import com.google.gson.Gson
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertThrows
@@ -94,4 +95,52 @@ class RootAppRoutingPlanTest {
             RootAppRoutingCanonical.resolvedPlanSha256(plan, listOf(first, first))
         }
     }
+
+    @Test
+    fun acceptsReorderedJsonObjectFields() {
+        val plan = boundPlan()
+        val root = Gson().toJsonTree(plan).asJsonObject
+        root.add("schema", root.remove("schema"))
+        root.getAsJsonArray("lanes").first().asJsonObject.apply {
+            add("laneId", remove("laneId"))
+        }
+
+        assertEquals(plan, RootRoutingArtifactValidator.requireBoundPlanJson(root.toString()))
+    }
+
+    @Test
+    fun stillRejectsMissingOrUnknownJsonObjectFields() {
+        val planJson = Gson().toJsonTree(boundPlan()).asJsonObject
+        val missing = planJson.deepCopy().apply { remove("schema") }
+        val unknown = planJson.deepCopy().apply { addProperty("unknown", true) }
+
+        assertThrows(IllegalStateException::class.java) {
+            RootRoutingArtifactValidator.requireBoundPlanJson(missing.toString())
+        }
+        assertThrows(IllegalStateException::class.java) {
+            RootRoutingArtifactValidator.requireBoundPlanJson(unknown.toString())
+        }
+    }
+
+    @Test
+    fun acceptsAndroidFrameworkPackageButRejectsOtherSingleSegmentNames() {
+        requireValidRootPackageName("android")
+
+        assertThrows(IllegalArgumentException::class.java) {
+            requireValidRootPackageName("untrusted")
+        }
+    }
+
+    private fun boundPlan(): RootAppRoutingPlan = RootAppRoutingPlanCompiler.compile(
+        settings = AppSettings(trafficCaptureMode = TrafficCaptureMode.ROOT_TRANSPARENT),
+        assignments = listOf(
+            RootAppRoutingAssignment(
+                packageNames = listOf("org.telegram.messenger"),
+                targetKind = "OUTBOUND",
+                outboundTag = "germany",
+                sourceLabel = "Telegram"
+            )
+        ),
+        generation = 11L
+    ).copy(configFileSha256 = "0".repeat(64))
 }

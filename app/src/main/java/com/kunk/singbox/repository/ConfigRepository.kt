@@ -5530,6 +5530,10 @@ class ConfigRepository(protected val context: Context) {
         }
     }
 
+    protected fun buildWebRtcLeakProtectionRules(): List<RouteRule> {
+        return ConfigRepository.buildWebRtcLeakProtectionRulesStatic()
+    }
+
     protected fun buildBypassLanRules(settings: AppSettings): List<RouteRule> {
         return ConfigRepository.buildBypassLanRulesStatic(settings)
     }
@@ -5628,6 +5632,7 @@ class ConfigRepository(protected val context: Context) {
         }
 
         val quicRule = buildQuicBlockRule(settings)
+        val webRtcLeakProtectionRules = buildWebRtcLeakProtectionRules()
         val multicastRejectRules = buildMulticastRejectRules(settings)
         val bypassLanRules = buildBypassLanRules(settings)
         val icmpEchoRules = buildIcmpEchoRules(settings)
@@ -5644,7 +5649,7 @@ class ConfigRepository(protected val context: Context) {
         }
         val defaultRuleCatchAll = buildDefaultRules(settings, selectorTag)
         val hijackDnsRule = ConfigRepository.buildHijackDnsRulesStatic(settings, rootRoutingPlan)
-        val baseRules = multicastRejectRules + hijackDnsRule + quicRule + icmpEchoRules
+        val baseRules = multicastRejectRules + hijackDnsRule + webRtcLeakProtectionRules + quicRule + icmpEchoRules
         val allRules = ConfigRepository.selectRunRouteRulesStatic(
             settings = settings,
             baseRules = baseRules,
@@ -8170,6 +8175,7 @@ class ConfigRepository(protected val context: Context) {
                 validRuleSets = validRuleSets
             )
             val quicRule = buildQuicBlockRuleStatic(settings)
+            val webRtcLeakProtectionRules = buildWebRtcLeakProtectionRulesStatic()
             val multicastRejectRules = buildMulticastRejectRulesStatic(settings)
             val bypassLanRules = buildBypassLanRulesStatic(settings)
             val icmpEchoRules = buildIcmpEchoRulesStatic(settings)
@@ -8177,7 +8183,8 @@ class ConfigRepository(protected val context: Context) {
             val hijackDnsRule = buildHijackDnsRulesStatic(settings)
             return selectRunRouteRulesStatic(
                 settings = settings,
-                baseRules = multicastRejectRules + hijackDnsRule + quicRule + icmpEchoRules,
+                baseRules = multicastRejectRules + hijackDnsRule + webRtcLeakProtectionRules + quicRule +
+                    icmpEchoRules,
                 bypassLanRules = bypassLanRules,
                 customDomainRules = emptyList(),
                 appRoutingRules = emptyList(),
@@ -8192,6 +8199,10 @@ class ConfigRepository(protected val context: Context) {
             } else {
                 emptyList()
             }
+        }
+
+        internal fun buildWebRtcLeakProtectionRulesStatic(): List<RouteRule> {
+            return listOf(RouteRule(protocolRaw = listOf("stun"), action = "reject"))
         }
 
         internal fun buildIcmpEchoRulesStatic(settings: AppSettings): List<RouteRule> {

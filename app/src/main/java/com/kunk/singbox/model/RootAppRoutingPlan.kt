@@ -509,7 +509,9 @@ object RootRoutingArtifactValidator {
         expected: List<String>,
         label: String
     ) {
-        check(objectValue.keySet().toList() == expected) { "$label contains missing, unknown, or reordered fields" }
+        check(objectValue.size() == expected.size && objectValue.keySet() == expected.toSet()) {
+            "$label contains missing or unknown fields"
+        }
     }
 
     private fun requireObject(element: JsonElement, label: String): com.google.gson.JsonObject {
@@ -740,7 +742,7 @@ private fun Collection<String>.normalizePackageNames(): List<String> = asSequenc
     .toList()
 
 internal fun requireValidRootPackageName(packageName: String) {
-    require(packageName.length in 3..255 && '.' in packageName) {
+    require(packageName == "android" || packageName.length in 3..255 && '.' in packageName) {
         "Invalid Android package name: $packageName"
     }
     require(packageName.split('.').all { segment ->

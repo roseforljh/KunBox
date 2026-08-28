@@ -37,6 +37,7 @@ build_log.txt
 docs/mcp-setup/
 
 # 临时文件和调试文件
+artifacts/
 temp_fix.txt
 planning-with-files/
 .worktrees/

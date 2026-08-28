@@ -23,6 +23,7 @@ import com.kunk.singbox.aidl.ISingBoxService
 import com.kunk.singbox.aidl.ISingBoxServiceCallback
 import com.kunk.singbox.R
 import com.kunk.singbox.ipc.StateGenerationGate
+import com.kunk.singbox.ipc.DataPlaneReadinessSnapshot
 import com.kunk.singbox.ipc.VpnStateStore
 import com.kunk.singbox.ipc.SingBoxIpcService
 import com.kunk.singbox.ipc.toRuntimeStateSnapshot
@@ -66,6 +67,7 @@ class VpnTileService : TileService() {
         override fun onReceive(context: Context?, intent: Intent?) {
             if (intent?.action == ACTION_REFRESH_TILE) {
                 updateTile()
+                bindService()
             }
         }
     }
@@ -167,6 +169,12 @@ class VpnTileService : TileService() {
         ): Boolean {
             return !isActive && tunEnabled && vpnPrepareRequired
         }
+
+        internal fun hasTileControlPlane(
+            serviceBound: Boolean,
+            readiness: DataPlaneReadinessSnapshot,
+            nowElapsedMs: Long
+        ): Boolean = serviceBound || readiness.isFresh(nowElapsedMs)
     }
 
     override fun onStartListening() {
@@ -192,6 +200,7 @@ class VpnTileService : TileService() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_REFRESH_TILE) {
             updateTile()
+            bindService()
         }
         return START_NOT_STICKY
     }
@@ -260,39 +269,14 @@ class VpnTileService : TileService() {
 
     @Suppress("LongMethod", "CyclomaticComplexMethod", "CognitiveComplexMethod")
     private fun updateTile(activeLabelOverride: String? = null) {
-        var persistedActive = VpnStateStore.getActive()
-
-        val coreMode = VpnStateStore.getMode()
-        var pending = VpnStateStore.getPending()
-        val hasVpnTransport = hasSystemVpnTransport()
-        val serviceActuallyRunning = isCoreServiceAvailable()
-
-        if (coreMode != VpnStateStore.CoreMode.NONE && shouldClearUnavailablePersistedActive(
-                pending = pending,
-                persistedActive = persistedActive,
-                serviceActuallyRunning = serviceActuallyRunning,
-                hasVpnTransport = coreMode == VpnStateStore.CoreMode.VPN && hasVpnTransport
-            )
-        ) {
-            persistVpnState(false)
-            persistVpnPending("")
-            pending = ""
-            persistedActive = false
+        val runtimeSnapshot = VpnStateStore.getRuntimeStateSnapshot()
+        applyRemoteStateSnapshot(runtimeSnapshot)
+        val persistedActive = runtimeSnapshot.stateOrdinal == ServiceState.RUNNING.ordinal
+        val pending = VpnStateStore.getPending()
+        if (shouldClearStartingSequenceOnListen(isStartingSequence, pending)) {
+            isStartingSequence = false
+            startSequenceId = 0L
         }
-
-        if (shouldClearUnavailablePending(
-                pending = pending,
-                isStartingSequence = isStartingSequence,
-                serviceActuallyRunning = serviceActuallyRunning,
-                hasVpnTransport = hasVpnTransport
-            )
-        ) {
-            persistVpnPending("")
-            persistVpnState(false)
-            pending = ""
-            persistedActive = false
-        }
-
         val effectiveState = if (isStartingSequence) {
             ServiceState.STARTING
         } else if (!serviceBound || remoteService == null || pending.isNotEmpty()) {
@@ -307,12 +291,13 @@ class VpnTileService : TileService() {
 
         val tile = qsTile ?: return
 
+        val nowElapsedMs = SystemClock.elapsedRealtime()
         val dataPlaneReady = lastReadiness.isReady(
             serviceState = effectiveState,
             mode = VpnStateStore.getMode(),
-            ipcBound = serviceBound,
+            ipcBound = hasTileControlPlane(serviceBound, lastReadiness, nowElapsedMs),
             apiLevel = android.os.Build.VERSION.SDK_INT,
-            nowElapsedMs = SystemClock.elapsedRealtime()
+            nowElapsedMs = nowElapsedMs
         )
         if (lastReadiness.status == com.kunk.singbox.ipc.DataPlaneStatus.FAILED_BLOCKED) {
             tile.state = Tile.STATE_UNAVAILABLE
@@ -475,6 +460,7 @@ class VpnTileService : TileService() {
                     } else {
                         startService(intent)
                     }
+                    withContext(Dispatchers.Main) { bindService(force = true) }
                 } else {
                     handleStartFailure(getString(R.string.dashboard_config_generation_failed))
                 }

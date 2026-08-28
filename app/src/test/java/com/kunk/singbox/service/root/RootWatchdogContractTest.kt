@@ -34,7 +34,14 @@ class RootWatchdogContractTest {
         assertTrue(cleanup.contains("SLOT=0") && cleanup.contains("-lt 128"))
         assertTrue(
             cleanup.contains("ROUTE_PROTOCOL=\"233\"") &&
-                cleanup.contains("protocol \"${'$'}ROUTE_PROTOCOL\"")
+                cleanup.contains("[ \"${'$'}PROTOCOL\" = \"0\" ]")
+        )
+        assertFalse(
+            cleanup.contains("rule del fwmark") && cleanup.contains("protocol \"${'$'}ROUTE_PROTOCOL\"")
+        )
+        assertFalse(
+            cleanup.contains("route del local \"${'$'}2\"") &&
+                cleanup.contains("proto \"${'$'}ROUTE_PROTOCOL\"")
         )
         assertTrue(cleanup.contains("STAGING=1") && cleanup.contains("chain_template"))
         assertTrue(cleanup.contains("chain_present_after"))

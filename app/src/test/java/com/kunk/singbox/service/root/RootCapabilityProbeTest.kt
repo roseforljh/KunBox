@@ -38,5 +38,37 @@ class RootCapabilityProbeTest {
         assertFalse(report.tproxyIpv6)
         assertTrue(report.redirectIpv4)
         assertFalse(report.redirectIpv6)
+        assertFalse(report.routeProtocol)
+    }
+
+    @Test
+    fun routeOwnershipDoesNotDependOnOptionalProtocolSupport() {
+        var script = ""
+        val executor = RootCommandExecutor { command ->
+            script = command.last()
+            RootCommandResult(0, "")
+        }
+
+        RootCapabilityProbe(executor).probe()
+
+        assertFalse(script.contains("ip route add local"))
+        assertFalse(script.contains("protocol 233"))
+        assertTrue(
+            RootCapabilityReport(
+                rootUid = true,
+                capNetAdmin = true,
+                capNetRaw = true,
+                ipCommand = true,
+                iptables = true,
+                ip6tables = false,
+                tproxyIpv4 = true,
+                tproxyIpv6 = false,
+                redirectIpv4 = true,
+                redirectIpv6 = false,
+                ownerMatch = true,
+                routeProtocol = false,
+                selinuxDomain = "u:r:su:s0"
+            ).supported
+        )
     }
 }

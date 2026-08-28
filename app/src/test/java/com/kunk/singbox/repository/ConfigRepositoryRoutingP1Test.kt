@@ -320,11 +320,13 @@ class ConfigRepositoryRoutingP1Test {
         val sniffIndex = rules.indexOfFirst { it.inbound == listOf("tun-in", "mixed-in") && it.action == "sniff" }
         val protocolDnsIndex = rules.indexOfFirst { it.protocol == listOf("dns") && it.action == "hijack-dns" }
         val dotIndex = rules.indexOfFirst { it.port == listOf(853) && it.action == "reject" }
+        val stunIndex = rules.indexOfFirst { it.protocol == listOf("stun") && it.action == "reject" }
 
         assertTrue(tunDnsIndex >= 0)
         assertEquals(tunDnsIndex + 1, sniffIndex)
         assertEquals(sniffIndex + 1, protocolDnsIndex)
         assertEquals(protocolDnsIndex + 1, dotIndex)
+        assertEquals(dotIndex + 1, stunIndex)
         assertTrue(rules.take(tunDnsIndex).all { !it.ipCidr.isNullOrEmpty() })
     }
 

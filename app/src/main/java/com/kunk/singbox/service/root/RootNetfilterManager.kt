@@ -369,7 +369,6 @@ object RootNetfilterPlanner {
     val ROUTE_TABLE = RootRoutingConstants.ROUTE_TABLE.toString()
     val RULE_PRIORITY_V4 = RootRoutingConstants.GENERIC_PRIORITY_IPV4.toString()
     val RULE_PRIORITY_V6 = RootRoutingConstants.GENERIC_PRIORITY_IPV6.toString()
-    val ROUTE_PROTOCOL = RootRoutingConstants.ROUTE_PROTOCOL.toString()
     const val CHAIN_OUT4 = "KBX_OUT4"
     const val CHAIN_PRE4 = "KBX_PRE4"
     const val CHAIN_IN4 = "KBX_IN4"
@@ -565,13 +564,13 @@ object RootNetfilterPlanner {
         add(
             listOf(
                 "ip", "route", "del", "local", "0.0.0.0/0", "dev", "lo",
-                "table", ROUTE_TABLE, "proto", ROUTE_PROTOCOL
+                "table", ROUTE_TABLE
             )
         )
         add(
             listOf(
                 "ip", "-6", "route", "del", "local", "::/0", "dev", "lo",
-                "table", ROUTE_TABLE, "proto", ROUTE_PROTOCOL
+                "table", ROUTE_TABLE
             )
         )
         listOf(
@@ -635,8 +634,7 @@ object RootNetfilterPlanner {
             )
         }
         destination += ipPrefix + listOf(
-            "route", "add", "local", family.localRoute, "dev", "lo", "table", ROUTE_TABLE,
-            "proto", ROUTE_PROTOCOL
+            "route", "add", "local", family.localRoute, "dev", "lo", "table", ROUTE_TABLE
         )
         destination += listOf(binary, "-t", "mangle", "-I", "PREROUTING", "1", "-j", family.preChain)
         destination += listOf(binary, "-t", "filter", "-I", "INPUT", "1", "-j", family.inputChain)
@@ -892,7 +890,7 @@ object RootNetfilterPlanner {
         addAll(
             listOf(
                 "rule", operation, "fwmark", "$mark/0xffffffff", "table", ROUTE_TABLE,
-                "pref", priority, "protocol", ROUTE_PROTOCOL
+                "pref", priority
             )
         )
     }

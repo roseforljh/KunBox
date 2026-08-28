@@ -48,8 +48,10 @@ class RootNetfilterPlanTest {
             "KBX_IN4 -i lo -p udp -m mark --mark 0x2400/0xffffffff -j ACCEPT" in it
         })
         assertTrue(commands.any {
-            "ip rule add fwmark 0x2400/0xffffffff table 20231 pref 12100 protocol 233" == it
+            "ip rule add fwmark 0x2400/0xffffffff table 20231 pref 12100" == it
         })
+        assertFalse(commands.any { it.startsWith("ip rule") && " protocol " in it })
+        assertFalse(commands.any { it.startsWith("ip route") && " proto " in it })
         assertTrue(plan.verifyCommands.any { command ->
             command.joinToString(" ").contains(
                 "-C KBX_IN4 -i lo -p udp -m mark --mark 0x2401/0xffffffff -j ACCEPT"

@@ -2,7 +2,6 @@ package com.kunk.singbox.service.root
 
 import android.os.Bundle
 import android.os.Process
-import com.kunk.singbox.model.RootRoutingConstants
 import java.io.File
 
 data class RootCapabilityReport(
@@ -23,7 +22,7 @@ data class RootCapabilityReport(
 ) {
     val supported: Boolean get() =
         rootUid && capNetAdmin && capNetRaw && ipCommand && iptables && tproxyIpv4 && redirectIpv4 &&
-            ownerMatch && routeProtocol
+            ownerMatch
 
     fun toBundle(): Bundle = Bundle().apply {
         putBoolean("root_uid", rootUid)
@@ -129,7 +128,6 @@ class RootCapabilityProbe(
             if (!ipCommand) add("ip command unavailable")
             if (!iptables) add("iptables unavailable")
             if (!ownerMatch) add("owner match unavailable")
-            if (!routeProtocol) add("ip rule protocol 233 unavailable")
             if (!tproxyIpv4) add("IPv4 TPROXY unavailable")
             if (!redirectIpv4) add("IPv4 REDIRECT unavailable")
         }.joinToString("; ")
@@ -185,21 +183,6 @@ class RootCapabilityProbe(
             cleanup_chain "${'$'}1" nat "${'$'}2"
             return "${'$'}result"
         }
-        probe_route_protocol() {
-            MARK="0x7f00${Process.myPid().toString(16).takeLast(2)}"
-            PREF=$((32000 + ${Process.myPid()} % 500))
-            ip rule del fwmark "${'$'}MARK/0xffffffff" table ${RootRoutingConstants.ROUTE_TABLE} \
-                pref "${'$'}PREF" protocol ${RootRoutingConstants.ROUTE_PROTOCOL} >/dev/null 2>&1 || :
-            ip rule add fwmark "${'$'}MARK/0xffffffff" table ${RootRoutingConstants.ROUTE_TABLE} \
-                pref "${'$'}PREF" protocol ${RootRoutingConstants.ROUTE_PROTOCOL} >/dev/null 2>&1 || return 1
-            ip rule show | grep -F "${'$'}MARK" | grep -F "protocol ${RootRoutingConstants.ROUTE_PROTOCOL}" \
-                >/dev/null 2>&1
-            RESULT=${'$'}?
-            ip rule del fwmark "${'$'}MARK/0xffffffff" table ${RootRoutingConstants.ROUTE_TABLE} \
-                pref "${'$'}PREF" protocol ${RootRoutingConstants.ROUTE_PROTOCOL} >/dev/null 2>&1 || :
-            return "${'$'}RESULT"
-        }
-
         IPTABLES=0
         IP6TABLES=0
         IP_COMMAND=0
@@ -208,11 +191,9 @@ class RootCapabilityProbe(
         TPROXY_IPV6=0
         REDIRECT_IPV4=0
         REDIRECT_IPV6=0
-        ROUTE_PROTOCOL=0
         iptables -V >/dev/null 2>&1 && IPTABLES=1
         ip6tables -V >/dev/null 2>&1 && IP6TABLES=1
         ip rule show >/dev/null 2>&1 && IP_COMMAND=1
-        [ "${'$'}IP_COMMAND" -eq 1 ] && probe_route_protocol && ROUTE_PROTOCOL=1
         [ "${'$'}IPTABLES" -eq 1 ] && probe_owner iptables ${shellQuote(probeChain4)} && OWNER_MATCH=1
         [ "${'$'}IPTABLES" -eq 1 ] && \
             probe_tproxy iptables ${shellQuote(probeChain4)} ${RootNetfilterPlanner.IPV4_MARK} && TPROXY_IPV4=1
@@ -229,7 +210,6 @@ class RootCapabilityProbe(
         printf 'tproxy_ipv6=%s\n' "${'$'}TPROXY_IPV6"
         printf 'redirect_ipv4=%s\n' "${'$'}REDIRECT_IPV4"
         printf 'redirect_ipv6=%s\n' "${'$'}REDIRECT_IPV6"
-        printf 'route_protocol=%s\n' "${'$'}ROUTE_PROTOCOL"
     """.trimIndent()
 
     private fun readProcFile(path: String): String = runCatching { File(path).readText().trim() }.getOrDefault("")

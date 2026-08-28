@@ -19,7 +19,8 @@ class RootUidResolverTest {
             )
             command.lastOrNull() == "0" -> RootCommandResult(
                 0,
-                "package:com.example.proxy uid:10123\n" +
+                "package:android uid:1000\n" +
+                    "package:com.example.proxy uid:10123\n" +
                     "package:com.example.shared uid:10123\n" +
                     "package:com.example.direct uid:10124\n" +
                     "package:com.kunk.singbox uid:10234"

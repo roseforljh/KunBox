@@ -304,7 +304,7 @@ internal object RootNetfilterOwnership {
             val (markValue, mask) = mark.split('/', limit = 2).let { it[0] to it.getOrElse(1) { "0xffffffff" } }
             val table = (command.valueAfter("table") ?: return null).toIntOrNull() ?: return null
             val priority = (command.valueAfter("pref") ?: return null).toIntOrNull() ?: return null
-            val protocol = (command.valueAfter("protocol") ?: return null).toIntOrNull() ?: return null
+            val protocol = command.valueAfter("protocol")?.toIntOrNull() ?: 0
             val family = if ("-6" in command) "6" else "4"
             val canonical = command.joinToString(" ")
             return RootNetfilterOwnerRecord.Rule(
@@ -317,7 +317,7 @@ internal object RootNetfilterOwnership {
             val prefix = command.getOrNull(routeIndex + 3) ?: return null
             val device = command.valueAfter("dev") ?: return null
             val table = (command.valueAfter("table") ?: return null).toIntOrNull() ?: return null
-            val protocol = (command.valueAfter("proto") ?: return null).toIntOrNull() ?: return null
+            val protocol = command.valueAfter("proto")?.toIntOrNull() ?: 0
             return RootNetfilterOwnerRecord.Route(
                 family, prefix, device, table, protocol, sha256(command.joinToString(" "))
             ).also(::validateRoute)
@@ -332,7 +332,7 @@ internal object RootNetfilterOwnership {
         check(record.family == "4" || record.family == "6")
         check(record.mark.matches(Regex("0x[0-9a-f]+")) && record.mask == "0xffffffff")
         check(record.table == RootRoutingConstants.ROUTE_TABLE)
-        check(record.protocol == RootRoutingConstants.ROUTE_PROTOCOL)
+        check(record.protocol == 0 || record.protocol == RootRoutingConstants.ROUTE_PROTOCOL)
         check(record.priority in 1..32_767)
         val mark = record.mark.removePrefix("0x").toIntOrNull(16)
         check(mark != null && mark to record.priority in reservedPolicyTuples())
@@ -343,7 +343,7 @@ internal object RootNetfilterOwnership {
         check(record.family == "4" || record.family == "6")
         check(record.device == "lo")
         check(record.table == RootRoutingConstants.ROUTE_TABLE)
-        check(record.protocol == RootRoutingConstants.ROUTE_PROTOCOL)
+        check(record.protocol == 0 || record.protocol == RootRoutingConstants.ROUTE_PROTOCOL)
         check(record.prefix == "0.0.0.0/0" || record.prefix == "::/0")
         check(isRootSha256(record.commandSha256))
     }
