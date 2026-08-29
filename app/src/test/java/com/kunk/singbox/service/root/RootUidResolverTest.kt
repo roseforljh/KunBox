@@ -20,6 +20,7 @@ class RootUidResolverTest {
             command.lastOrNull() == "0" -> RootCommandResult(
                 0,
                 "package:android uid:1000\n" +
+                    "package:oplus\tuid:1001\n" +
                     "package:com.example.proxy uid:10123\n" +
                     "package:com.example.shared uid:10123\n" +
                     "package:com.example.direct uid:10124\n" +
@@ -158,7 +159,7 @@ class RootUidResolverTest {
     }
 
     @Test
-    fun rejectsExplicitLaneForMissingPackage() {
+    fun ignoresExplicitLaneForMissingPackage() {
         val plan = RootAppRoutingPlanCompiler.compile(
             AppSettings(trafficCaptureMode = TrafficCaptureMode.ROOT_TRANSPARENT),
             listOf(
@@ -172,9 +173,10 @@ class RootUidResolverTest {
             4L
         )
 
-        assertThrows(IllegalStateException::class.java) {
-            RootUidResolver(executor).resolveRouting(plan, "com.kunk.singbox", 10234)
-        }
+        val resolved = RootUidResolver(executor).resolveRouting(plan, "com.kunk.singbox", 10234)
+
+        assertEquals(emptyMap<String, List<Int>>(), resolved.laneUids)
+        assertEquals(64, resolved.resolvedPlanSha256.length)
     }
 
     @Test

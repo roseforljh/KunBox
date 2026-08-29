@@ -123,12 +123,42 @@ class RootAppRoutingPlanTest {
     }
 
     @Test
-    fun acceptsAndroidFrameworkPackageButRejectsOtherSingleSegmentNames() {
-        requireValidRootPackageName("android")
-
-        assertThrows(IllegalArgumentException::class.java) {
-            requireValidRootPackageName("untrusted")
+    fun acceptsPlatformAndOemPackageNamesButRejectsMalformedNames() {
+        listOf("a", "android", "oplus", "vendor_service", "com.example.app").forEach {
+            requireValidRootPackageName(it)
         }
+
+        listOf(
+            "", ".oplus", "oplus.", "com..oplus", "0plus", "_oplus", "oplus-service",
+            "oplus service", "oplus;id", "oplus١", "欧加", "a".repeat(256)
+        )
+            .forEach { packageName ->
+                assertThrows(IllegalArgumentException::class.java) {
+                    requireValidRootPackageName(packageName)
+                }
+            }
+    }
+
+    @Test
+    fun preservesRuntimeOutboundTagsWithoutShellCharacterRestrictions() {
+        val outboundTag = "🇺🇸 VL | 美国 \"1.1\" \\ residential"
+        val plan = RootAppRoutingPlanCompiler.compile(
+            settings = AppSettings(trafficCaptureMode = TrafficCaptureMode.ROOT_TRANSPARENT),
+            assignments = listOf(
+                RootAppRoutingAssignment(
+                    packageNames = listOf("org.telegram.messenger"),
+                    targetKind = "OUTBOUND",
+                    outboundTag = outboundTag,
+                    sourceLabel = "Telegram"
+                )
+            ),
+            generation = 12L
+        ).copy(configFileSha256 = "0".repeat(64))
+
+        val restored = RootRoutingArtifactValidator.requireBoundPlanJson(Gson().toJson(plan))
+
+        assertEquals(outboundTag, restored.lanes.single().outboundTag)
+        assertEquals(plan.staticPlanSha256, restored.staticPlanSha256)
     }
 
     private fun boundPlan(): RootAppRoutingPlan = RootAppRoutingPlanCompiler.compile(

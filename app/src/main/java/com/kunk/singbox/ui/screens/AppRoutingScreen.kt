@@ -69,8 +69,9 @@ fun AppRoutingScreen(
     }
 
     val installedApps by installedAppsViewModel.appItems.collectAsStateWithLifecycle()
+    val installedPackageNames by installedAppsViewModel.installedPackageNames.collectAsStateWithLifecycle()
     val inventoryState by installedAppsViewModel.loadingState.collectAsStateWithLifecycle()
-    val inventoryAvailable = installedApps.isNotEmpty() &&
+    val inventoryAvailable = installedPackageNames.isNotEmpty() ||
         inventoryState is InstalledAppsRepository.LoadingState.Loaded
     val capturedPackages = remember(settings, installedApps, context.packageName) {
         PerAppVpnScopeResolver.resolve(
@@ -92,7 +93,7 @@ fun AppRoutingScreen(
         settings.appGroups.asSequence()
             .flatMap { group ->
                 group.apps.asSequence()
-                    .filter { !inventoryAvailable || it.packageName in capturedPackages }
+                    .filter { inventoryAvailable && it.packageName in capturedPackages }
                     .take(8)
             }
             .map(AppInfo::packageName)
@@ -150,7 +151,9 @@ fun AppRoutingScreen(
     if (editingGroup != null) {
         val originalGroup = requireNotNull(editingGroup)
         val dormantApps = if (inventoryAvailable) {
-            originalGroup.apps.filterNot { it.packageName in capturedPackages }
+            originalGroup.apps.filter {
+                it.packageName in installedPackageNames && it.packageName !in capturedPackages
+            }
         } else {
             emptyList()
         }
@@ -159,7 +162,7 @@ fun AppRoutingScreen(
                 apps = if (inventoryAvailable) {
                     originalGroup.apps.filter { it.packageName in capturedPackages }
                 } else {
-                    originalGroup.apps
+                    emptyList()
                 }
             ),
             installedApps = selectableApps,
@@ -248,7 +251,7 @@ fun AppRoutingScreen(
                             apps = if (inventoryAvailable) {
                                 group.apps.filter { it.packageName in capturedPackages }
                             } else {
-                                group.apps
+                                emptyList()
                             }
                         )
                         val mode = group.outboundMode ?: RuleSetOutboundMode.PROXY

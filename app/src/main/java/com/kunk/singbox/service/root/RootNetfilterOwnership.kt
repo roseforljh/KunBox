@@ -1,5 +1,6 @@
 package com.kunk.singbox.service.root
 
+import android.util.Log
 import com.kunk.singbox.model.RootRoutingConstants
 import com.kunk.singbox.model.isRootSha256
 import java.io.File
@@ -114,14 +115,27 @@ internal object RootNetfilterOwnership {
         manifest: RootNetfilterOwnerManifest,
         executor: RootCommandExecutor
     ): RootNetfilterOwnerManifest {
+        val chains = manifest.records.filterIsInstance<RootNetfilterOwnerRecord.Chain>()
+        if (chains.isEmpty()) return manifest
+        val commands = chains.map { record ->
+            val binary = if (record.family == "6") "ip6tables" else "iptables"
+            listOf(binary, "-t", record.table, "-S", record.chain)
+        }
+        val result = executor.executeBatch(commands)
+        check(result.success) { "Cannot read owned Root chains: ${result.diagnosticOutput}" }
+        val outputLines = result.output.lineSequence().map(String::trim).filter(String::isNotBlank).toList()
+        val fingerprints = chains.associate { record ->
+            val declaration = "-N ${record.chain}"
+            val rulePrefix = "-A ${record.chain} "
+            val live = outputLines.filter { it == declaration || it.startsWith(rulePrefix) }
+            check(live.firstOrNull() == declaration) {
+                "Cannot read owned Root chain ${record.chain}"
+            }
+            record.sortKey to sha256(live.joinToString("\n"))
+        }
         val refreshed = manifest.records.map { record ->
             if (record !is RootNetfilterOwnerRecord.Chain) return@map record
-            val binary = if (record.family == "6") "ip6tables" else "iptables"
-            val result = executor.execute(listOf(binary, "-t", record.table, "-S", record.chain))
-            check(result.success) {
-                "Cannot read owned Root chain ${record.chain}: ${result.output}"
-            }
-            record.copy(rulesSha256 = sha256(result.output.trim()))
+            record.copy(rulesSha256 = fingerprints.getValue(record.sortKey))
         }
         return manifest.copy(records = refreshed.sortedBy(RootNetfilterOwnerRecord::sortKey))
     }
@@ -166,6 +180,13 @@ internal object RootNetfilterOwnership {
             add(RootRoutingConstants.markIpv4(slot) to RootRoutingConstants.priorityIpv4(slot))
             add(RootRoutingConstants.markIpv6(slot) to RootRoutingConstants.priorityIpv6(slot))
         }
+    }
+
+    fun isReservedPolicyLine(line: String): Boolean = reservedPolicyTuples().any { (mark, priority) ->
+        line.trimStart().startsWith("$priority:") &&
+            line.contains("fwmark ${rootMark(mark)}") &&
+            (line.contains("lookup ${RootRoutingConstants.ROUTE_TABLE}") ||
+                line.contains("table ${RootRoutingConstants.ROUTE_TABLE}"))
     }
 
     fun sha256(value: String): String = sha256(value.toByteArray(Charsets.UTF_8))
@@ -369,9 +390,15 @@ internal class RootNetfilterOwnershipStore(
     private val executor: RootCommandExecutor,
     private val rootDirectory: File = File(RootNetfilterOwnership.RUNTIME_DIR)
 ) {
+    private companion object {
+        const val STARTUP_CLEANUP_TIMEOUT_MS = 3_000L
+        const val TAG = "RootNetfilterOwnership"
+    }
+
     private val ownerFile = File(rootDirectory, "netfilter-owner")
     private val stagingFile = File(rootDirectory, "netfilter-owner.staging")
     private val cleanupScript = File(rootDirectory, "cleanup-owned.sh")
+    private val conflictFile = File(rootDirectory, "cleanup_conflict")
 
     fun clearStaging() {
         check(!Files.isSymbolicLink(stagingFile.toPath())) {
@@ -414,20 +441,139 @@ internal class RootNetfilterOwnershipStore(
         }
     }
 
-    fun cleanupAnyOwner(): Result<Unit> = runCatching {
+    fun cleanupAnyOwner(timeoutMs: Long? = null): Result<Unit> = runCatching {
         hasOwner()
-        val owner = RootNetfilterOwnership.read(stagingFile) ?: RootNetfilterOwnership.read(ownerFile)
-        if (owner == null) return@runCatching
-        val result = executor.execute(
-            listOf("/system/bin/sh", cleanupScript.absolutePath, "cleanup", owner.context.sessionId)
-        )
-        check(result.success) { "Root owned netfilter cleanup failed: ${result.output}" }
+        val owner = runCatching {
+            RootNetfilterOwnership.read(stagingFile) ?: RootNetfilterOwnership.read(ownerFile)
+        }.getOrNull()
+        val command = RootNetfilterOwnership.cleanupCommand(owner?.context?.sessionId).toMutableList().apply {
+            this[1] = cleanupScript.absolutePath
+        }
+        val result = timeoutMs?.let { executor.executeWithTimeout(command, it) } ?: executor.execute(command)
+        if (!result.success) cleanupFailed("owned", result)
         check(!ownerFile.exists() || ownerFile.delete()) { "Cannot remove Root owner file" }
         check(!stagingFile.exists() || stagingFile.delete()) { "Cannot remove Root owner staging file" }
     }
 
-    fun cleanupLegacy(): Result<Unit> = runCatching {
-        val result = executor.execute(listOf("/system/bin/sh", cleanupScript.absolutePath, "legacy-cleanup"))
-        check(result.success) { "Legacy Root netfilter cleanup failed: ${result.output}" }
+    fun cleanupLegacy(timeoutMs: Long? = null): Result<Unit> = runCatching {
+        val command = listOf("/system/bin/sh", cleanupScript.absolutePath, "legacy-cleanup")
+        val result = timeoutMs?.let { executor.executeWithTimeout(command, it) } ?: executor.execute(command)
+        if (!result.success) cleanupFailed("legacy", result)
+    }
+
+    fun cleanupAnyOwnerForStartup(): Result<Unit> = cleanupAnyOwner(STARTUP_CLEANUP_TIMEOUT_MS)
+
+    fun cleanupLegacyForStartup(): Result<Unit> = cleanupLegacy(STARTUP_CLEANUP_TIMEOUT_MS)
+
+    private fun cleanupFailed(mode: String, result: RootCommandResult): Nothing {
+        val fileReason = runCatching {
+            check(!Files.isSymbolicLink(conflictFile.toPath()))
+            conflictFile.takeIf(File::isFile)?.readText()?.trim()
+        }.getOrNull().orEmpty()
+        val reason = fileReason.ifBlank {
+            result.diagnosticOutput.ifBlank { "cleanup_script_exitCode=${result.exitCode}" }
+        }
+        val diagnostics = if (hasCleanupScriptDiagnostics(result)) {
+            Log.i(TAG, "[ROOT_NET] event=cleanup_diagnostics source=cleanup_script")
+            cleanupScriptDiagnostics(mode, reason, result)
+        } else {
+            cleanupDiagnostics(mode, reason, result)
+        }
+        diagnostics.forEachIndexed { index, line ->
+            Log.e(TAG, "[ROOT_NET] event=cleanup_failed part=$index $line")
+        }
+        error("Root $mode netfilter cleanup failed: exitCode=${result.exitCode} reason=$reason")
+    }
+
+    private fun hasCleanupScriptDiagnostics(cleanup: RootCommandResult): Boolean =
+        cleanup.output.lineSequence().any(::isCleanupScriptDiagnosticLine) ||
+            cleanup.stderr.lineSequence().any(::isCleanupScriptDiagnosticLine)
+
+    private fun isCleanupScriptDiagnosticLine(line: String): Boolean =
+        "[ROOT_NET_QUERY]" in line || "cleanup_command=" in line || "[ROOT_NET_CLEANUP]" in line
+
+    private fun cleanupScriptDiagnostics(
+        mode: String,
+        reason: String,
+        cleanup: RootCommandResult
+    ): List<String> = buildList {
+        add("mode=$mode reason=$reason cleanup_exitCode=${cleanup.exitCode}")
+        cleanup.output.lineSequence().filter(String::isNotBlank).forEach { add("cleanup_stdout=$it") }
+        cleanup.stderr.lineSequence().filter(String::isNotBlank).forEach { add("cleanup_stderr=$it") }
+    }
+
+    private fun cleanupDiagnostics(mode: String, reason: String, cleanup: RootCommandResult): List<String> {
+        val probes = listOf(
+            "backend_ipv4" to listOf("iptables", "-V"),
+            "backend_ipv6" to listOf("ip6tables", "-V"),
+            "table_ipv4_mangle" to listOf("iptables", "-t", "mangle", "-S"),
+            "table_ipv4_nat" to listOf("iptables", "-t", "nat", "-S"),
+            "table_ipv4_filter" to listOf("iptables", "-t", "filter", "-S"),
+            "table_ipv6_mangle" to listOf("ip6tables", "-t", "mangle", "-S"),
+            "table_ipv6_nat" to listOf("ip6tables", "-t", "nat", "-S"),
+            "table_ipv6_filter" to listOf("ip6tables", "-t", "filter", "-S"),
+            "ip_rule_ipv4" to listOf("ip", "rule", "show"),
+            "ip_rule_ipv6" to listOf("ip", "-6", "rule", "show"),
+            "route_ipv4_20231" to listOf("ip", "route", "show", "table", "20231"),
+            "route_ipv6_20231" to listOf("ip", "-6", "route", "show", "table", "20231"),
+            "nft_version" to listOf("nft", "--version"),
+            "nft_ruleset" to listOf("nft", "-a", "list", "ruleset"),
+            "ipset" to listOf("ipset", "list", "-n")
+        )
+        return buildList {
+            add("mode=$mode reason=$reason cleanup_exitCode=${cleanup.exitCode}")
+            cleanup.output.lineSequence().filter(String::isNotBlank).forEach { add("cleanup_stdout=$it") }
+            cleanup.stderr.lineSequence().filter(String::isNotBlank).forEach { add("cleanup_stderr=$it") }
+            probes.forEach { (name, command) ->
+                val probe = runCatching { executor.execute(command) }.getOrElse { error ->
+                    add("probe=$name command=${command.joinToString(" ")} exception=${error.message.orEmpty()}")
+                    return@forEach
+                }
+                val ownedOutput = ownedDiagnosticLines(name, probe.output)
+                val backend = if (name.startsWith("backend_")) {
+                    " backend=${classifyIptablesBackend(probe.output)}"
+                } else {
+                    ""
+                }
+                val commandText = command.joinToString(" ")
+                add("probe=$name$backend command=$commandText exitCode=${probe.exitCode}")
+                ownedOutput.ifEmpty { listOf("<none>") }.forEach { add("probe=$name stdout=$it") }
+                probe.stderr.lineSequence().filter(String::isNotBlank).toList()
+                    .ifEmpty { listOf("<none>") }
+                    .forEach { add("probe=$name stderr=$it") }
+            }
+        }
+    }
+
+    private fun classifyIptablesBackend(version: String): String = when {
+        version.contains("nf_tables", ignoreCase = true) -> "iptables-nft"
+        version.contains("legacy", ignoreCase = true) -> "iptables-legacy"
+        version.isBlank() -> "unknown"
+        else -> "iptables"
+    }
+
+    private fun ownedDiagnosticLines(probe: String, output: String): List<String> {
+        if (probe == "nft_ruleset") {
+            var table = "table=<unknown>"
+            return buildList {
+                output.lineSequence().map(String::trim).filter(String::isNotBlank).forEach { line ->
+                    if (line.startsWith("table ")) table = line.substringBefore('{').trim()
+                    if ("KBX_" in line) add("$table $line")
+                }
+            }
+        }
+        return output.lineSequence()
+            .map(String::trim)
+            .filter(String::isNotBlank)
+            .filter { line -> diagnosticLineOwnedByKunBox(probe, line) }
+            .toList()
+    }
+
+    private fun diagnosticLineOwnedByKunBox(probe: String, line: String): Boolean = when {
+        probe.startsWith("backend_") || probe == "nft_version" -> true
+        probe.startsWith("table_") || probe == "ipset" -> "KBX_" in line
+        probe.startsWith("route_") -> true
+        probe.startsWith("ip_rule_") -> RootNetfilterOwnership.isReservedPolicyLine(line)
+        else -> false
     }
 }

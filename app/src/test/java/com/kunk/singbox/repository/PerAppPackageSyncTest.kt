@@ -238,6 +238,37 @@ class PerAppPackageSyncTest {
     }
 
     @Test
+    fun removeUninstalledPackagesFromPerAppSettings_cleansEveryPersistedReference() {
+        val settings = AppSettings(
+            vpnAllowlist = "com.keep\ncom.removed",
+            vpnBlocklist = "com.removed\ncom.blocked",
+            appRules = listOf(
+                AppRule(packageName = "com.removed", appName = "Removed"),
+                AppRule(packageName = "com.keep", appName = "Keep")
+            ),
+            appGroups = listOf(
+                AppGroup(
+                    name = "group",
+                    apps = listOf(
+                        AppInfo(packageName = "com.removed", appName = "Removed"),
+                        AppInfo(packageName = "com.keep", appName = "Keep")
+                    )
+                )
+            )
+        )
+
+        val result = removeUninstalledPackagesFromPerAppSettings(
+            settings,
+            setOf("com.keep", "com.blocked")
+        )
+
+        assertEquals("com.keep", result.vpnAllowlist)
+        assertEquals("com.blocked", result.vpnBlocklist)
+        assertEquals(listOf("com.keep"), result.appRules.map { it.packageName })
+        assertEquals(listOf("com.keep"), result.appGroups.single().apps.map { it.packageName })
+    }
+
+    @Test
     fun latestGroupAssignmentMovesAppsOutOfPreviousConfigurations() {
         val settings = AppSettings(
             appRules = listOf(

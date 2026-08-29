@@ -1,7 +1,6 @@
 package com.kunk.singbox.service.root
 
 import com.kunk.singbox.model.VpnAppMode
-import com.kunk.singbox.model.RootAppRouteLane
 import com.kunk.singbox.model.RootAppRoutingCanonical
 import com.kunk.singbox.model.RootAppRoutingPlan
 import com.kunk.singbox.model.RootResolvedUidRoute
@@ -88,17 +87,9 @@ class RootUidResolver(
             "Root blocklist contains duplicate or empty packages"
         }
         val installedNames = packages.mapTo(mutableSetOf(), RootInstalledPackage::packageName)
-        // Stale allow/block-list entries are ordinary persisted preferences.
-        // Only an explicitly routed lane is a hard startup dependency. A
-        // missing historical list entry must not block every Root start.
-        val policySelectedNames = plan.lanes.flatMap(RootAppRouteLane::packageNames)
-        val missingPackages = policySelectedNames.toSet() - installedNames
-        check(missingPackages.isEmpty()) {
-            "Root 应用分流包含未安装应用：${missingPackages.sorted().joinToString()}"
-        }
         val laneByPackage = buildMap {
             plan.lanes.forEach { lane ->
-                lane.packageNames.forEach { packageName ->
+                lane.packageNames.filter { it in installedNames }.forEach { packageName ->
                     val previous = put(packageName, lane.laneId)
                     require(previous == null || previous == lane.laneId) {
                         "Root package $packageName maps to multiple lanes"
@@ -221,7 +212,7 @@ class RootUidResolver(
             "Root package UID enumeration returned no packages for Android user $userId"
         }
         return packageLines.map { line ->
-            val packageName = line.substringAfter("package:").substringBefore(' ').trim()
+            val packageName = line.removePrefix("package:").takeWhile { !it.isWhitespace() }
             val fields = line.split(' ', '\t').filter(String::isNotBlank)
             val uid = fields.firstOrNull { it.startsWith("uid:") }
                 ?.substringAfter("uid:")

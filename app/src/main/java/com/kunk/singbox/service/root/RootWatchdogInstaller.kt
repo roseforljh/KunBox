@@ -125,7 +125,7 @@ class RootWatchdogInstaller(
     internal fun cleanupOwnedRules(sessionId: String = activeSessionId): Result<Unit> = runCatching {
         if (sessionId.isBlank()) return@runCatching
         val result = executor.execute(listOf("/system/bin/sh", CLEANUP_PATH, "cleanup", sessionId))
-        check(result.success) { "Root watchdog cleanup failed: ${result.output}" }
+        check(result.success) { "Root watchdog cleanup failed: ${result.diagnosticOutput}" }
     }
 
     internal fun installScripts(): Result<Unit> = runCatching {

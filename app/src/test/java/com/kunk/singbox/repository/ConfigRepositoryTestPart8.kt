@@ -517,7 +517,7 @@ abstract class ConfigRepositoryTestPart8 : ConfigRepositoryTestPart7() {
 
         val rootTags = listOf("redirect-in-v4", "tproxy-in-v4", "redirect-in-v6", "tproxy-in-v6")
         assertEquals(rootTags, routeRules[0].inbound)
-        assertEquals(rootTags + "mixed-in", routeRules[1].inbound)
+        assertEquals(rootTags, routeRules[1].inbound)
         assertEquals(rootTags, dnsRules.single().inbound)
     }
 

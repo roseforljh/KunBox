@@ -1,4 +1,4 @@
-﻿package com.kunk.singbox.manager
+package com.kunk.singbox.manager
 
 import android.content.Context
 import android.content.Intent
@@ -11,7 +11,7 @@ import com.kunk.singbox.ipc.DataPlaneStatus
 import com.kunk.singbox.ipc.VpnStateStore
 import com.kunk.singbox.model.PerAppVpnPolicy
 import com.kunk.singbox.model.TrafficCaptureMode
-import com.kunk.singbox.repository.ConfigRepository
+import com.kunk.singbox.repository.*
 import com.kunk.singbox.repository.NodeProtectionStore
 import com.kunk.singbox.repository.RootGenerationMarker
 import com.kunk.singbox.repository.RootGenerationStore
@@ -283,15 +283,6 @@ object VpnServiceManager {
                 action = RootTransparentForegroundService.ACTION_RESTART
                 putExtra(RootTransparentForegroundService.EXTRA_CONFIG_PATH, generation.path)
                 putExtra(RootTransparentForegroundService.EXTRA_APP_ROUTE_REQUEST_ID, generation.requestId)
-                putExtra(RootTransparentForegroundService.EXTRA_CONFIG_DIGEST, generation.configDigest)
-                putExtra(RootTransparentForegroundService.EXTRA_APP_ROUTING_DIGEST, generation.rootRoutingAppDigest)
-                putExtra(RootTransparentForegroundService.EXTRA_SIDECAR_DIGEST, generation.rootRoutingSidecarDigest)
-                putExtra(RootTransparentForegroundService.EXTRA_SIDECAR_JSON, generation.rootRoutingSidecarJson)
-                putExtra(
-                    RootTransparentForegroundService.EXTRA_STATIC_PLAN_DIGEST,
-                    generation.rootRoutingStaticPlanDigest
-                )
-                putExtra(RootTransparentForegroundService.EXTRA_ROUTING_GENERATION, generation.rootRoutingGeneration)
             })
             return
         }
@@ -417,11 +408,6 @@ object VpnServiceManager {
                         RootTransparentForegroundService.EXTRA_CONFIG_PATH,
                         RootGenerationStore.configFile(appContext.filesDir, marker).absolutePath
                     )
-                    putExtra(RootTransparentForegroundService.EXTRA_CONFIG_DIGEST, marker.configFileSha256)
-                    putExtra(RootTransparentForegroundService.EXTRA_SIDECAR_DIGEST, marker.sidecarFileSha256)
-                    putExtra(RootTransparentForegroundService.EXTRA_STATIC_PLAN_DIGEST, marker.staticPlanSha256)
-                    putExtra(RootTransparentForegroundService.EXTRA_APP_ROUTING_DIGEST, marker.appRoutingSha256)
-                    putExtra(RootTransparentForegroundService.EXTRA_ROUTING_GENERATION, marker.generation)
                 }
                 VpnStateStore.CoreMode.VPN -> Intent(appContext, SingBoxService::class.java).apply {
                     action = SingBoxService.ACTION_FULL_RESTART
@@ -444,27 +430,61 @@ object VpnServiceManager {
         return generationsDirectory.parentFile ?: error("App files directory is missing")
     }
 
-    fun startVpn(context: Context, mode: TrafficCaptureMode): Result<Unit> {
+    fun startVpn(context: Context, mode: TrafficCaptureMode): Result<Unit> =
+        startVpn(context, mode, configPath = null, cleanCache = false, pendingNodeName = null)
+
+    fun startVpn(
+        context: Context,
+        mode: TrafficCaptureMode,
+        configPath: String?,
+        cleanCache: Boolean,
+        pendingNodeName: String? = null
+    ): Result<Unit> {
         Log.d(TAG, "startVpn: mode=$mode")
 
-        val command = buildStartCommand(mode)
-        val intent = Intent(context, command.serviceClass).apply {
+        val command = buildStartCommand(mode, configPath, cleanCache)
+        val appContext = context.applicationContext
+        val previousMode = VpnStateStore.getMode()
+        val intent = Intent(appContext, command.serviceClass).apply {
             action = command.action
             command.configPath?.let { putExtra(SingBoxService.EXTRA_CONFIG_PATH, it) }
+            pendingNodeName?.let { putExtra(SingBoxService.EXTRA_PENDING_NODE_NAME, it) }
             if (command.cleanCache) {
                 putExtra(SingBoxService.EXTRA_CLEAN_CACHE, true)
             }
         }
 
         return runCatching {
+            VpnStateStore.setMode(mode.toCoreMode())
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                context.startForegroundService(intent)
+                appContext.startForegroundService(intent)
             } else {
-                context.startService(intent)
+                appContext.startService(intent)
             }
             Unit
         }
-            .onFailure { Log.e(TAG, "Failed to start VPN service", it) }
+            .onFailure { error ->
+                if (!VpnStateStore.getActive() && VpnStateStore.getMode() == mode.toCoreMode()) {
+                    VpnStateStore.setMode(previousMode)
+                }
+                Log.e(TAG, "Failed to start VPN service", error)
+            }
+    }
+
+    private fun TrafficCaptureMode.toCoreMode(): VpnStateStore.CoreMode = when (this) {
+        TrafficCaptureMode.VPN -> VpnStateStore.CoreMode.VPN
+        TrafficCaptureMode.ROOT_TRANSPARENT -> VpnStateStore.CoreMode.ROOT
+        TrafficCaptureMode.PROXY_ONLY -> VpnStateStore.CoreMode.PROXY
+    }
+
+    private fun resolveActiveMode(): VpnStateStore.CoreMode {
+        return when {
+            RootTransparentForegroundService.isRunning || RootTransparentForegroundService.isStarting ->
+                VpnStateStore.CoreMode.ROOT
+            ProxyOnlyService.isRunning || ProxyOnlyService.isStarting -> VpnStateStore.CoreMode.PROXY
+            SingBoxService.isRunning || SingBoxService.isStarting -> VpnStateStore.CoreMode.VPN
+            else -> VpnStateStore.getMode()
+        }
     }
 
     fun stopVpn(context: Context, initiator: VpnStopInitiator): Result<Unit> {
@@ -472,7 +492,7 @@ object VpnServiceManager {
 
         return runCatching {
             val appContext = context.applicationContext
-            val activeMode = VpnStateStore.getMode()
+            val activeMode = resolveActiveMode()
             val stopResults = buildList {
                 if (shouldDispatchStopToService(activeMode, VpnStateStore.CoreMode.VPN)) {
                     add(runCatching {
@@ -512,7 +532,7 @@ object VpnServiceManager {
         Log.e(TAG, "forceStop: dispatching emergency stop")
         return runCatching {
             val appContext = context.applicationContext
-            val activeMode = VpnStateStore.getMode()
+            val activeMode = resolveActiveMode()
             val stopResults = buildList {
                 if (shouldDispatchStopToService(activeMode, VpnStateStore.CoreMode.VPN)) {
                     add(runCatching {

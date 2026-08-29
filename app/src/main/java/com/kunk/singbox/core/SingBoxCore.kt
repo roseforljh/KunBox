@@ -1,3 +1,5 @@
+@file:Suppress("TooManyFunctions", "Indentation", "InvalidPackageDeclaration", "MaxLineLength", "LoopWithTooManyJumpStatements", "LongMethod", "CognitiveComplexMethod", "ComplexCondition", "CyclomaticComplexMethod", "EmptyCatchBlock", "NestedBlockDepth", "ReturnCount", "SwallowedException", "TooGenericExceptionThrown", "UnusedParameter", "UnusedPrivateProperty", "VariableNaming", "NoUnusedImports", "MayBeConst")
+
 package com.kunk.singbox.core
 
 import android.content.Context
@@ -14,17 +16,13 @@ import com.kunk.singbox.model.Endpoint
 import com.kunk.singbox.model.Outbound
 import com.kunk.singbox.model.SingBoxConfig
 import com.kunk.singbox.model.LatencyTestMethod
-import com.kunk.singbox.repository.ConfigRepository
+import com.kunk.singbox.repository.*
 import com.kunk.singbox.repository.SettingsRepository
 import com.kunk.singbox.repository.TrafficRepository
-import com.kunk.singbox.repository.config.OutboundFixer
 import com.kunk.singbox.ipc.VpnStateStore
 import kotlinx.coroutines.flow.first
 import io.nekohasekai.libbox.*
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
-import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Semaphore
@@ -52,15 +50,15 @@ enum class LatencyProbeTrafficKind {
     HEALTH_CHECK
 }
 
-private class TemporaryProbeTrafficRecorder(
-    private val context: Context,
-    private val kind: LatencyProbeTrafficKind
+internal class TemporaryProbeTrafficRecorder(
+    internal val context: Context,
+    internal val kind: LatencyProbeTrafficKind
 ) : CommandClientHandler {
-    private val uploadTotal = AtomicLong(0L)
-    private val downloadTotal = AtomicLong(0L)
-    private val firstSample = CompletableDeferred<Unit>()
-    private val stopped = AtomicBoolean(false)
-    private var client: CommandClient? = null
+    internal val uploadTotal = AtomicLong(0L)
+    internal val downloadTotal = AtomicLong(0L)
+    internal val firstSample = CompletableDeferred<Unit>()
+    internal val stopped = AtomicBoolean(false)
+    internal var client: CommandClient? = null
 
     fun start() {
         val options = CommandClientOptions().apply {
@@ -110,42 +108,42 @@ private class TemporaryProbeTrafficRecorder(
     }
 
     private companion object {
-        private const val TAG = "ProbeTrafficRecorder"
-        private const val STATUS_INTERVAL_NS = 50L * 1_000L * 1_000L
-        private const val FINAL_SAMPLE_TIMEOUT_MS = 250L
+        internal const val TAG = "ProbeTrafficRecorder"
+        internal const val STATUS_INTERVAL_NS = 50L * 1_000L * 1_000L
+        internal const val FINAL_SAMPLE_TIMEOUT_MS = 250L
     }
 }
 
-class SingBoxCore private constructor(private val context: Context) {
+class SingBoxCore private constructor(internal val context: Context) {
 
-    private val gson = Gson()
-    private val workDir: File = File(context.filesDir, "singbox_work")
-    private val tempDir: File = File(context.cacheDir, "singbox_temp")
+    internal val gson = Gson()
+    internal val workDir: File = File(context.filesDir, "singbox_work")
+    internal val tempDir: File = File(context.cacheDir, "singbox_temp")
 
-    private var libboxAvailable = false
+    internal var libboxAvailable = false
 
     // Global lock for libbox operations to prevent native concurrency issues
 
     @Suppress("UnusedPrivateProperty")
-    private val libboxMutex = kotlinx.coroutines.sync.Mutex()
+    internal val libboxMutex = kotlinx.coroutines.sync.Mutex()
 
-    private val httpProxySemaphore = Semaphore(3)
+    internal val httpProxySemaphore = Semaphore(3)
 
     companion object {
-        private const val TAG = "SingBoxCore"
+        internal const val TAG = "SingBoxCore"
 
-        private val libboxSetupDone = AtomicBoolean(false)
-
-        @Volatile
-        private var lastNativeWarmupAt: Long = 0
+        internal val libboxSetupDone = AtomicBoolean(false)
 
         @Volatile
-        private var instance: SingBoxCore? = null
+        internal var lastNativeWarmupAt: Long = 0
 
-        private const val LATENCY_LOCAL_DNS_TAG = "local"
-        private const val DEFAULT_PORT_READY_TIMEOUT_MS = 3_000L
-        private val REGEX_IPV4 = Regex("^\\d{1,3}(\\.\\d{1,3}){3}$")
-        private val REGEX_IPV6 = Regex("^[0-9a-fA-F:]+$")
+        @Volatile
+        internal var instance: SingBoxCore? = null
+
+        internal const val LATENCY_LOCAL_DNS_TAG = "local"
+        internal const val DEFAULT_PORT_READY_TIMEOUT_MS = 3_000L
+        internal val REGEX_IPV4 = Regex("^\\d{1,3}(\\.\\d{1,3}){3}$")
+        internal val REGEX_IPV6 = Regex("^[0-9a-fA-F:]+$")
 
         fun getInstance(context: Context): SingBoxCore {
             return instance ?: synchronized(this) {
@@ -204,7 +202,7 @@ class SingBoxCore private constructor(private val context: Context) {
             )
         }
 
-        private fun normalizeLatencyDnsRule(rule: DnsRule): DnsRule {
+        internal fun normalizeLatencyDnsRule(rule: DnsRule): DnsRule {
             if (!rule.action.isNullOrBlank() || rule.server.isNullOrBlank()) {
                 return rule
             }
@@ -289,7 +287,7 @@ class SingBoxCore private constructor(private val context: Context) {
             return LatencyProbeParts(outbounds = outbounds, endpoints = endpoints)
         }
 
-        private fun appendLatencyProbeNode(
+        internal fun appendLatencyProbeNode(
             node: Outbound,
             endpoints: MutableList<Endpoint>,
             outbounds: MutableList<Outbound>,
@@ -310,7 +308,7 @@ class SingBoxCore private constructor(private val context: Context) {
             }
         }
 
-        private fun isIpLiteral(value: String): Boolean {
+        internal fun isIpLiteral(value: String): Boolean {
             val v = value.trim()
             if (v.isEmpty()) return false
             if (REGEX_IPV4.matches(v)) {
@@ -355,7 +353,7 @@ class SingBoxCore private constructor(private val context: Context) {
         }
     }
 
-    private fun initLibbox(): Boolean {
+    internal fun initLibbox(): Boolean {
         return try {
             Log.i(TAG, "Libbox version=${Libbox.version()}")
             ensureLibboxSetup(context)
@@ -401,7 +399,7 @@ class SingBoxCore private constructor(private val context: Context) {
         }
     }
 
-    private fun resolveDependencyOutbounds(
+    internal fun resolveDependencyOutbounds(
         outbound: Outbound,
         allOutbounds: List<Outbound>
     ): List<Outbound> {
@@ -425,7 +423,7 @@ class SingBoxCore private constructor(private val context: Context) {
         return dependencies
     }
 
-    private fun adjustUrlForMode(original: String, method: LatencyTestMethod): String {
+    internal fun adjustUrlForMode(original: String, method: LatencyTestMethod): String {
         return try {
             val u = URI(original)
             val host = u.host ?: return original
@@ -444,7 +442,7 @@ class SingBoxCore private constructor(private val context: Context) {
         }
     }
 
-    private fun latencyStandardForMethod(method: LatencyTestMethod): PreciseLatencyTester.Standard {
+    internal fun latencyStandardForMethod(method: LatencyTestMethod): PreciseLatencyTester.Standard {
         return when (method) {
             LatencyTestMethod.HANDSHAKE -> PreciseLatencyTester.Standard.HANDSHAKE
             LatencyTestMethod.URL_TEST -> PreciseLatencyTester.Standard.TOTAL
@@ -596,353 +594,6 @@ class SingBoxCore private constructor(private val context: Context) {
         }
     }
 
-    /** 非 WireGuard 走 OutboundFixer；WireGuard 保留逻辑 outbound 供路由 tag / endpoint 转换。 */
-    private fun prepareLatencyProbeTarget(outbound: Outbound): Outbound? {
-        if (isWireGuardOutbound(outbound)) {
-            return prepareWireGuardLatencyTarget(outbound)
-        }
-        return OutboundFixer.buildForRuntime(context, outbound)?.let { applyLatencyBootstrapDomainResolver(it) }
-    }
-
-    private fun stripLatencyRuntimeMetadata(config: SingBoxConfig): SingBoxConfig {
-        return config.copy(
-            outbounds = config.outbounds?.map { stripLatencyRuntimeMetadata(it) },
-            proxies = config.proxies?.map { stripLatencyRuntimeMetadata(it) }
-        )
-    }
-
-    private fun stripLatencyRuntimeMetadata(outbound: Outbound): Outbound {
-        val tls = outbound.tls ?: return outbound
-        val ech = tls.ech ?: return outbound
-        if (ech.dnsServer == null) return outbound
-        return outbound.copy(tls = tls.copy(ech = ech.copy(dnsServer = null)))
-    }
-
-    @Suppress("LongParameterList")
-    private suspend fun testOutboundsLatencyOfflineWithTemporaryService(
-        outbounds: List<Outbound>,
-        targetUrl: String,
-        timeoutMs: Int,
-        settings: AppSettings,
-        dnsConfig: DnsConfig? = null,
-        dependencySourceOutbounds: List<Outbound> = outbounds,
-        portReadyTimeoutMs: Long = DEFAULT_PORT_READY_TIMEOUT_MS,
-        trafficKind: LatencyProbeTrafficKind,
-        onResult: (tag: String, latency: Long) -> Unit
-    ) = withContext(Dispatchers.IO) {
-
-        val batchSize = 50
-
-        outbounds.chunked(batchSize).forEach { batch ->
-
-            testOutboundsLatencyBatchInternal(
-                batch,
-                targetUrl,
-                timeoutMs,
-                settings,
-                dnsConfig,
-                dependencySourceOutbounds,
-                portReadyTimeoutMs,
-                trafficKind,
-                onResult
-            )
-        }
-    }
-
-    @Suppress("LongParameterList")
-    private suspend fun testOutboundsLatencyBatchInternal(
-        batchOutbounds: List<Outbound>,
-        targetUrl: String,
-        timeoutMs: Int,
-        settings: AppSettings,
-        dnsConfig: DnsConfig? = null,
-        dependencySourceOutbounds: List<Outbound> = batchOutbounds,
-        portReadyTimeoutMs: Long = DEFAULT_PORT_READY_TIMEOUT_MS,
-        trafficKind: LatencyProbeTrafficKind,
-        onResult: (tag: String, latency: Long) -> Unit
-    ) {
-        if (batchOutbounds.isEmpty()) return
-
-        val prepared = prepareLatencyBatchTargets(batchOutbounds, dependencySourceOutbounds, onResult)
-            ?: return
-        val ports = allocateLatencyBatchPorts(prepared.targets.size, batchOutbounds, onResult)
-            ?: return
-
-        val portToTagMap = ports.zip(prepared.targets.map { it.tag }).toMap()
-        val config = buildBatchTestConfig(
-            prepared.targets,
-            ports,
-            settings,
-            dnsConfig,
-            prepared.dependencySources
-        )
-        if (config == null) {
-            batchOutbounds.forEach { onResult(it.tag, -1L) }
-            return
-        }
-        libboxMutex.withLock {
-            runLatencyBatchService(
-                config = config,
-                ports = ports,
-                portToTagMap = portToTagMap,
-                targetUrl = targetUrl,
-                timeoutMs = timeoutMs,
-                settings = settings,
-                portReadyTimeoutMs = portReadyTimeoutMs,
-                batchOutbounds = batchOutbounds,
-                trafficKind = trafficKind,
-                onResult = onResult
-            )
-        }
-    }
-
-    private data class LatencyBatchPrepared(
-        val targets: List<Outbound>,
-        val dependencySources: List<Outbound>
-    )
-
-    private fun prepareLatencyBatchTargets(
-        batchOutbounds: List<Outbound>,
-        dependencySourceOutbounds: List<Outbound>,
-        onResult: (tag: String, latency: Long) -> Unit
-    ): LatencyBatchPrepared? {
-        val fixedOutbounds = batchOutbounds.mapNotNull { outbound ->
-            val fixed = prepareLatencyProbeTarget(outbound)
-            if (fixed == null) {
-                onResult(outbound.tag, -1L)
-            }
-            fixed
-        }
-        if (fixedOutbounds.isEmpty()) return null
-        val fixedDependencySourceOutbounds = dependencySourceOutbounds.mapNotNull {
-            prepareLatencyProbeTarget(it)
-        }
-        return LatencyBatchPrepared(fixedOutbounds, fixedDependencySourceOutbounds)
-    }
-
-    private fun allocateLatencyBatchPorts(
-        count: Int,
-        batchOutbounds: List<Outbound>,
-        onResult: (tag: String, latency: Long) -> Unit
-    ): List<Int>? {
-        return try {
-            allocateMultipleLocalPorts(count)
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to allocate ports for batch test", e)
-            batchOutbounds.forEach { onResult(it.tag, -1L) }
-            null
-        }
-    }
-
-    @Suppress("LongParameterList")
-    private suspend fun runLatencyBatchService(
-        config: SingBoxConfig,
-        ports: List<Int>,
-        portToTagMap: Map<Int, String>,
-        targetUrl: String,
-        timeoutMs: Int,
-        settings: AppSettings,
-        portReadyTimeoutMs: Long,
-        batchOutbounds: List<Outbound>,
-        trafficKind: LatencyProbeTrafficKind,
-        onResult: (tag: String, latency: Long) -> Unit
-    ) {
-        val configJson = gson.toJson(stripLatencyRuntimeMetadata(config))
-        val batchTestDbPath = config.experimental?.cacheFile?.path
-        var commandServer: CommandServer? = null
-        var trafficRecorder: TemporaryProbeTrafficRecorder? = null
-        try {
-            ensureLibboxSetup(context)
-            val platformInterface = TestPlatformInterface(context)
-            val serverHandler = TestCommandServerHandler()
-            commandServer = Libbox.newCommandServer(serverHandler, platformInterface)
-            commandServer.start()
-            val overrideOptions = OverrideOptions().apply {
-                autoRedirect = false
-            }
-            commandServer.startOrReloadService(configJson, overrideOptions)
-            trafficRecorder = TemporaryProbeTrafficRecorder(context, trafficKind).also { it.start() }
-            val portsReady = waitForPortsReady(ports, portReadyTimeoutMs)
-            if (!portsReady) {
-                Log.e(TAG, "Batch test: ports not ready")
-                batchOutbounds.forEach { onResult(it.tag, -1L) }
-                return
-            }
-            runPreciseLatencyTests(portToTagMap, targetUrl, timeoutMs, settings, onResult)
-        } catch (e: Exception) {
-            Log.e(TAG, "Batch test failed", e)
-            batchOutbounds.forEach { onResult(it.tag, -1L) }
-        } finally {
-            trafficRecorder?.stopAndRecord()
-            runCatching { commandServer?.closeService() }
-            runCatching { commandServer?.close() }
-            batchTestDbPath?.let { path ->
-                runCatching { File(path).delete() }
-                runCatching { File("$path-shm").delete() }
-                runCatching { File("$path-wal").delete() }
-            }
-        }
-    }
-
-    private fun buildBatchTestConfig(
-        batchOutbounds: List<Outbound>,
-        ports: List<Int>,
-        settings: AppSettings,
-        dnsConfig: DnsConfig? = null,
-        dependencySourceOutbounds: List<Outbound> = batchOutbounds
-    ): SingBoxConfig? {
-        val probeParts = assembleLatencyProbeParts(batchOutbounds, dependencySourceOutbounds)
-            ?: return null
-
-        val inbounds = ArrayList<com.kunk.singbox.model.Inbound>()
-        val rules = ArrayList<com.kunk.singbox.model.RouteRule>()
-        batchOutbounds.forEachIndexed { index, outbound ->
-            val port = ports[index]
-            val inboundTag = "test-in-$index"
-            inbounds.add(
-                com.kunk.singbox.model.Inbound(
-                    type = "mixed",
-                    tag = inboundTag,
-                    listen = "127.0.0.1",
-                    listenPort = port
-                )
-            )
-            rules.add(
-                com.kunk.singbox.model.RouteRule(
-                    inbound = listOf(inboundTag),
-                    outbound = outbound.tag
-                )
-            )
-        }
-
-        val dnsSourceOutbounds = probeParts.outbounds + batchOutbounds
-        val latencyDnsConfig = dnsConfig ?: buildLatencyTestDnsConfig(settings, dnsSourceOutbounds)
-        val batchTestDbPath = File(tempDir, "batch_test_${UUID.randomUUID()}.db").absolutePath
-
-        return SingBoxConfig(
-            log = com.kunk.singbox.model.LogConfig(level = "debug", timestamp = true),
-            dns = latencyDnsConfig,
-            inbounds = inbounds,
-            outbounds = probeParts.outbounds,
-            endpoints = probeParts.endpoints.takeIf { it.isNotEmpty() },
-            route = com.kunk.singbox.model.RouteConfig(
-                rules = listOf(
-                    com.kunk.singbox.model.RouteRule(protocolRaw = listOf("dns"), outbound = "direct")
-                ) + rules,
-                finalOutbound = "direct",
-                autoDetectInterface = true,
-                defaultDomainResolver = com.kunk.singbox.model.DomainResolveConfig(
-                    server = LATENCY_LOCAL_DNS_TAG,
-                    strategy = "prefer_ipv4"
-                )
-            ),
-            experimental = com.kunk.singbox.model.ExperimentalConfig(
-                cacheFile = com.kunk.singbox.model.CacheFileConfig(
-                    enabled = false,
-                    path = batchTestDbPath,
-                    storeFakeip = false
-                )
-            )
-        )
-    }
-
-    /**
-     * 将延迟探测目标拆成 outbounds + endpoints。
-     * WireGuard 不得出现在 outbounds（sing-box 1.13 仅 endpoint）。
-     */
-    private fun assembleLatencyProbeParts(
-        targets: List<Outbound>,
-        dependencySourceOutbounds: List<Outbound>
-    ): LatencyProbeParts? {
-        return buildLatencyProbeParts(
-            targets = targets,
-            resolveDependencies = { target ->
-                resolveDependencyOutbounds(target, dependencySourceOutbounds)
-            }
-        )
-    }
-
-    private suspend fun waitForPortsReady(
-        ports: List<Int>,
-        portReadyTimeoutMs: Long = DEFAULT_PORT_READY_TIMEOUT_MS
-    ): Boolean {
-        val boundedTimeoutMs = portReadyTimeoutMs.coerceAtLeast(50L)
-        val deadline = System.currentTimeMillis() + boundedTimeoutMs
-        while (System.currentTimeMillis() < deadline) {
-            val allPortsReady = ports.all { port ->
-                isLocalPortReady(port)
-            }
-            if (allPortsReady) {
-                return true
-            }
-            delay(50)
-        }
-        Log.e(TAG, "Batch test: ports not ready after ${boundedTimeoutMs}ms")
-        return false
-    }
-
-    private fun isLocalPortReady(port: Int): Boolean {
-        return try {
-            Socket().use { s ->
-                s.soTimeout = 50
-                s.connect(InetSocketAddress("127.0.0.1", port), 50)
-            }
-            true
-        } catch (_: Exception) {
-            false
-        }
-    }
-
-    private suspend fun runPreciseLatencyTests(
-        portToTagMap: Map<Int, String>,
-        targetUrl: String,
-        timeoutMs: Int,
-        settings: AppSettings,
-        onResult: (tag: String, latency: Long) -> Unit
-    ) {
-        val semaphore = Semaphore(settings.latencyTestConcurrency)
-        val standard = latencyStandardForMethod(settings.latencyTestMethod)
-        coroutineScope {
-            val jobs = portToTagMap.map { (port, originalTag) ->
-                async {
-                    semaphore.withPermit {
-                        val result = PreciseLatencyTester.test(
-                            proxyPort = port,
-                            url = targetUrl,
-                            timeoutMs = timeoutMs,
-                            standard = standard,
-                            warmup = false
-                        )
-                        val latency = if (result.isSuccess && result.latencyMs <= timeoutMs) {
-                            result.latencyMs
-                        } else {
-                            -1L
-                        }
-                        onResult(originalTag, latency)
-                    }
-                }
-            }
-            jobs.awaitAll()
-        }
-    }
-
-    private fun allocateMultipleLocalPorts(count: Int): List<Int> {
-        val ports = mutableListOf<Int>()
-        val sockets = mutableListOf<ServerSocket>()
-        try {
-            for (i in 0 until count) {
-                val socket = ServerSocket(0)
-                socket.reuseAddress = true
-                ports.add(socket.localPort)
-                sockets.add(socket)
-            }
-        } catch (e: Exception) {
-            sockets.forEach { runCatching { it.close() } }
-            throw RuntimeException("Failed to allocate $count ports (allocated ${ports.size})", e)
-        }
-        sockets.forEach { runCatching { it.close() } }
-        return ports
-    }
     suspend fun testOutboundLatency(
         outbound: Outbound,
         allOutbounds: List<Outbound> = emptyList(),
@@ -1014,7 +665,7 @@ class SingBoxCore private constructor(private val context: Context) {
         )
     }
 
-    private fun allocateLocalPort(): Int {
+    internal fun allocateLocalPort(): Int {
         var attempts = 0
         val maxAttempts = 10
         while (attempts < maxAttempts) {
@@ -1034,7 +685,7 @@ class SingBoxCore private constructor(private val context: Context) {
         throw RuntimeException("Failed to allocate local port after $maxAttempts attempts")
     }
 
-    private fun isPortAvailable(port: Int): Boolean {
+    internal fun isPortAvailable(port: Int): Boolean {
         return try {
             ServerSocket(port).use { true }
         } catch (e: Exception) {

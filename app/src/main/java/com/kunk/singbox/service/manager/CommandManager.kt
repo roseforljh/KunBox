@@ -1,21 +1,13 @@
-﻿package com.kunk.singbox.service.manager
+package com.kunk.singbox.service.manager
 
 import android.app.NotificationManager
 import android.content.Context
 import android.os.SystemClock
 import android.os.ParcelFileDescriptor
 import android.util.Log
-import com.kunk.singbox.R
 import com.kunk.singbox.core.BoxWrapperManager
-import com.kunk.singbox.core.SelectorManager
-import com.kunk.singbox.ipc.VpnStateStore
 import com.kunk.singbox.ipc.SingBoxIpcHub
-import com.kunk.singbox.repository.ConfigRepository
 import com.kunk.singbox.repository.LogRepository
-import com.kunk.singbox.repository.NodeProtectionStore
-import com.kunk.singbox.repository.RuntimeNodeRef
-import com.kunk.singbox.repository.TrafficRepository
-import com.kunk.singbox.service.resolveRuntimeNodeLabel
 import com.kunk.singbox.service.notification.VpnNotificationManager
 import com.kunk.singbox.service.network.TrafficMonitor
 import io.nekohasekai.libbox.*
@@ -24,13 +16,12 @@ import kotlinx.coroutines.channels.Channel
 import java.net.InetSocketAddress
 import java.net.ServerSocket
 import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.selects.select
 
 internal class TrafficStatusGate {
-    private val lock = Any()
-    private var accepting = false
+    internal val lock = Any()
+    internal var accepting = false
 
     fun start() = synchronized(lock) {
         accepting = true
@@ -47,24 +38,24 @@ internal class TrafficStatusGate {
 
 @Suppress("LargeClass", "TooManyFunctions")
 class CommandManager(
-    private val context: Context,
-    private val serviceScope: CoroutineScope
+    internal val context: Context,
+    internal val serviceScope: CoroutineScope
 ) {
     companion object {
-        private const val TAG = "CommandManager"
-        private const val MAX_LOG_LINES = 300
-        private const val PORT_RELEASE_TIMEOUT_MS = 10000L
-        private const val PORT_CHECK_INTERVAL_MS = 50L
-        private const val MAX_GROUP_SELECTION_DEPTH = 4
-        private const val BASE_COMMAND_CLIENT_COUNT = 3
-        private const val TELEGRAM_PACKAGE = "org.telegram.messenger"
+        internal const val TAG = "CommandManager"
+        internal const val MAX_LOG_LINES = 300
+        internal const val PORT_RELEASE_TIMEOUT_MS = 10000L
+        internal const val PORT_CHECK_INTERVAL_MS = 50L
+        internal const val MAX_GROUP_SELECTION_DEPTH = 4
+        internal const val BASE_COMMAND_CLIENT_COUNT = 3
+        internal const val TELEGRAM_PACKAGE = "org.telegram.messenger"
         internal const val GROUP_STATUS_INTERVAL_MS = 500L
         internal const val COMMAND_LOG_READY_TIMEOUT_MS = 5_000L
         internal const val COMMAND_LOG_HEARTBEAT_TIMEOUT_MS = 15_000L
         internal const val COMMAND_LOG_STABLE_WINDOW_MS = 30_000L
         internal const val BASE_COMMAND_HEARTBEAT_TIMEOUT_MS = 15_000L
         internal val COMMAND_LOG_RECONNECT_DELAYS_MS = longArrayOf(500L, 1_000L, 2_000L, 4_000L, 8_000L)
-        private val TARGETED_CLOSE_DISPATCHER = Dispatchers.IO.limitedParallelism(8)
+        internal val TARGETED_CLOSE_DISPATCHER = Dispatchers.IO.limitedParallelism(8)
 
         internal fun commandLogReconnectDelay(failureCount: Int): Long {
             require(failureCount > 0)
@@ -136,16 +127,16 @@ class CommandManager(
     }
 
     // Command Server/Client
-    private var commandServer: CommandServer? = null
-    private var commandClient: CommandClient? = null
-    private var commandClientGroup: CommandClient? = null
-    private var commandClientLogs: CommandClient? = null
-    private var commandClientConnections: CommandClient? = null
-    private val runtimeAccess = Any()
-    private val runtimeGeneration = java.util.concurrent.atomic.AtomicLong(0L)
-    @Volatile private var runtimeHandle: CommandRuntimeHandle? = null
+    internal var commandServer: CommandServer? = null
+    internal var commandClient: CommandClient? = null
+    internal var commandClientGroup: CommandClient? = null
+    internal var commandClientLogs: CommandClient? = null
+    internal var commandClientConnections: CommandClient? = null
+    internal val runtimeAccess = Any()
+    internal val runtimeGeneration = java.util.concurrent.atomic.AtomicLong(0L)
+    @Volatile internal var runtimeHandle: CommandRuntimeHandle? = null
 
-    private data class CommandRuntimeHandle(
+    internal data class CommandRuntimeHandle(
         val generation: Long,
         val server: CommandServer?,
         val statusClient: CommandClient?,
@@ -154,71 +145,71 @@ class CommandManager(
         val connectionsClient: CommandClient?
     )
 
-    private data class DetachedCommandRuntime(
+    internal data class DetachedCommandRuntime(
         val handle: CommandRuntimeHandle?,
         val logSupervisor: Job?,
         val logReady: CompletableDeferred<Unit>?
     )
 
-    private data class CommandLogAttemptSignals(
+    internal data class CommandLogAttemptSignals(
         val ready: CompletableDeferred<Unit> = CompletableDeferred(),
         val disconnected: CompletableDeferred<String?> = CompletableDeferred(),
         val heartbeat: Channel<Unit> = Channel(Channel.CONFLATED)
     )
 
-    private enum class BaseCommandChannel {
+    internal enum class BaseCommandChannel {
         STATUS,
         GROUP,
         CONNECTIONS
     }
 
     @Volatile
-    private var kernelLogObserver: KernelLogObserver? = null
+    internal var kernelLogObserver: KernelLogObserver? = null
 
-    private var commandFdProvider: (() -> ParcelFileDescriptor?)? = null
+    internal var commandFdProvider: (() -> ParcelFileDescriptor?)? = null
 
-    private var commandLogReconnectEnabled = false
+    internal var commandLogReconnectEnabled = false
 
-    private var commandLogReconnectJob: Job? = null
+    internal var commandLogReconnectJob: Job? = null
 
-    private var activeCommandSessionGeneration = 0L
-    private var activeCommandLogClientToken = 0L
-    private var pendingCommandLogClientToken = 0L
-    private val commandLogClientTokenSequence = AtomicLong(0L)
-    private var commandLogSessionReady: CompletableDeferred<Unit>? = null
-    private val readyBaseCommandChannels = mutableSetOf<BaseCommandChannel>()
-    private val baseCommandHeartbeatAtMs = mutableMapOf<BaseCommandChannel, Long>()
-    private var commandBaseHealthy = false
-    private var commandLogHealthy = false
-    private var lastPublishedControlHealth: Boolean? = null
+    internal var activeCommandSessionGeneration = 0L
+    internal var activeCommandLogClientToken = 0L
+    internal var pendingCommandLogClientToken = 0L
+    internal val commandLogClientTokenSequence = AtomicLong(0L)
+    internal var commandLogSessionReady: CompletableDeferred<Unit>? = null
+    internal val readyBaseCommandChannels = mutableSetOf<BaseCommandChannel>()
+    internal val baseCommandHeartbeatAtMs = mutableMapOf<BaseCommandChannel, Long>()
+    internal var commandBaseHealthy = false
+    internal var commandLogHealthy = false
+    internal var lastPublishedControlHealth: Boolean? = null
 
-    private val trafficStatusGate = TrafficStatusGate()
-    private var connectionsSnapshot: Connections? = null
+    internal val trafficStatusGate = TrafficStatusGate()
+    internal var connectionsSnapshot: Connections? = null
 
-    private val groupSelectedOutbounds = ConcurrentHashMap<String, String>()
+    internal val groupSelectedOutbounds = ConcurrentHashMap<String, String>()
     @Volatile var realTimeNodeName: String? = null
         internal set
 
     @Volatile var activeConnectionNode: String? = null
-        private set
+        internal set
     @Volatile var activeConnectionLabel: String? = null
-        private set
+        internal set
     var recentConnectionIds: List<String> = emptyList()
-        private set
+        internal set
 
-    private val trafficMonitor = TrafficMonitor()
-    private val connectionTrafficAttributor = ConnectionTrafficAttributor()
-    private val connectionStormGuard = ConnectionStormGuard()
-    private val connectionIncidentHistory = ConnectionIncidentHistory(context)
-    private val directConnectionIncidentHistory = DirectConnectionIncidentHistory(
+    internal val trafficMonitor = TrafficMonitor()
+    internal val connectionTrafficAttributor = ConnectionTrafficAttributor()
+    internal val connectionStormGuard = ConnectionStormGuard()
+    internal val connectionIncidentHistory = ConnectionIncidentHistory(context)
+    internal val directConnectionIncidentHistory = DirectConnectionIncidentHistory(
         context,
         SingBoxIpcHub.serviceInstanceId()
     )
-    private val applicationRouteTraceSignatures = mutableMapOf<String, String>()
-    private val telegramUid: Int? = runCatching {
+    internal val applicationRouteTraceSignatures = mutableMapOf<String, String>()
+    internal val telegramUid: Int? = runCatching {
         context.packageManager.getApplicationInfo(TELEGRAM_PACKAGE, 0).uid
     }.getOrNull()
-    private var lastConnectionsLabelLogged: String? = null
+    internal var lastConnectionsLabelLogged: String? = null
 
     interface Callbacks {
         fun requestNotificationUpdate(force: Boolean)
@@ -232,7 +223,7 @@ class CommandManager(
         fun onServiceReload(): Unit
     }
 
-    private var callbacks: Callbacks? = null
+    internal var callbacks: Callbacks? = null
 
     fun init(callbacks: Callbacks) {
         this.callbacks = callbacks
@@ -346,14 +337,14 @@ class CommandManager(
         }
     }
 
-    private fun startClients(fdProvider: (() -> ParcelFileDescriptor?)?): Result<Unit> =
+    internal fun startClients(fdProvider: (() -> ParcelFileDescriptor?)?): Result<Unit> =
         runCatching { beginCommandRuntime(fdProvider) }.fold(
             onSuccess = { generation -> startCommandClients(generation, fdProvider) },
             onFailure = Result.Companion::failure
         )
 
     @Suppress("LongMethod")
-    private fun startCommandClients(
+    internal fun startCommandClients(
         generation: Long,
         fdProvider: (() -> ParcelFileDescriptor?)?
     ): Result<Unit> = runCatching {
@@ -523,7 +514,7 @@ class CommandManager(
         trafficMonitor.reset()
     }
 
-    private suspend fun waitForPortRelease(port: Int, timeoutMs: Long): Boolean {
+    internal suspend fun waitForPortRelease(port: Int, timeoutMs: Long): Boolean {
         val startTime = SystemClock.elapsedRealtime()
         while (SystemClock.elapsedRealtime() - startTime < timeoutMs) {
             if (isPortAvailable(port)) {
@@ -534,7 +525,7 @@ class CommandManager(
         return false
     }
 
-    private fun isPortAvailable(port: Int): Boolean {
+    internal fun isPortAvailable(port: Int): Boolean {
         return try {
             ServerSocket().use { socket ->
                 socket.reuseAddress = true
@@ -620,7 +611,7 @@ class CommandManager(
         return closed
     }
 
-    private fun beginCommandRuntime(fdProvider: (() -> ParcelFileDescriptor?)?): Long =
+    internal fun beginCommandRuntime(fdProvider: (() -> ParcelFileDescriptor?)?): Long =
         synchronized(runtimeAccess) {
             check(runtimeHandle == null && activeCommandSessionGeneration == 0L) {
                 "Command runtime is already active"
@@ -645,7 +636,7 @@ class CommandManager(
         }
 
     @Suppress("ComplexCondition")
-    private fun detachCommandRuntime(expectedGeneration: Long = 0L): DetachedCommandRuntime? =
+    internal fun detachCommandRuntime(expectedGeneration: Long = 0L): DetachedCommandRuntime? =
         synchronized(runtimeAccess) {
             val observedGeneration = runtimeHandle?.generation ?: activeCommandSessionGeneration
             if (expectedGeneration > 0L && observedGeneration != expectedGeneration) {
@@ -691,7 +682,7 @@ class CommandManager(
             DetachedCommandRuntime(handle, supervisor, logReady)
         }
 
-    private suspend fun awaitCommandLogReady(generation: Long) {
+    internal suspend fun awaitCommandLogReady(generation: Long) {
         val ready = synchronized(runtimeAccess) {
             check(generation > 0L && generation == activeCommandSessionGeneration) {
                 "Command runtime changed before log readiness"
@@ -708,7 +699,7 @@ class CommandManager(
         activeCommandSessionGeneration > 0L && commandBaseHealthy && commandLogHealthy
     }
 
-    private fun startCommandLogSupervisor(
+    internal fun startCommandLogSupervisor(
         generation: Long,
         handler: CommandClientHandler,
         fdProvider: (() -> ParcelFileDescriptor?)?
@@ -736,7 +727,7 @@ class CommandManager(
         }
     }
 
-    private suspend fun superviseCommandLog(
+    internal suspend fun superviseCommandLog(
         generation: Long,
         handler: CommandClientHandler,
         fdProvider: (() -> ParcelFileDescriptor?)?
@@ -779,7 +770,7 @@ class CommandManager(
     }
 
     @Suppress("CognitiveComplexMethod", "LongMethod")
-    private suspend fun runCommandLogAttempt(
+    internal suspend fun runCommandLogAttempt(
         generation: Long,
         delegate: CommandClientHandler,
         fdProvider: (() -> ParcelFileDescriptor?)?,
@@ -845,591 +836,5 @@ class CommandManager(
             }
             runCatching { client.disconnect() }
         }
-    }
-
-    private fun createLogClientHandler(
-        delegate: CommandClientHandler,
-        generation: Long,
-        token: Long,
-        signals: CommandLogAttemptSignals
-    ): CommandClientHandler = object : CommandClientHandler by delegate {
-        private val replayPending = AtomicBoolean(false)
-
-        override fun connected() = Unit
-
-        override fun disconnected(message: String?) {
-            if (acceptsCommandLogCallback(generation, token)) signals.disconnected.complete(message)
-        }
-
-        override fun clearLogs() {
-            if (!acceptsCommandLogCallback(generation, token)) return
-            replayPending.set(true)
-            delegate.clearLogs()
-        }
-
-        override fun setDefaultLogLevel(level: Int) {
-            if (!acceptsCommandLogCallback(generation, token)) return
-            delegate.setDefaultLogLevel(level)
-            signals.ready.complete(Unit)
-        }
-
-        override fun writeLogs(messageList: LogIterator?) {
-            if (!acceptsCommandLogCallback(generation, token)) return
-            signals.heartbeat.trySend(Unit)
-            consumeCommandLogMessages(
-                messageList,
-                notifyObserver = shouldNotifyCommandLogObserver(replayPending.getAndSet(false)),
-                acceptsCallbackLocked = {
-                    acceptsCommandLogCallback(
-                        generation,
-                        activeCommandSessionGeneration,
-                        token,
-                        activeCommandLogClientToken,
-                        pendingCommandLogClientToken
-                    )
-                }
-            )
-        }
-    }
-
-    private fun acceptsCommandLogCallback(generation: Long, token: Long): Boolean =
-        synchronized(runtimeAccess) {
-            acceptsCommandLogCallback(
-                sessionGeneration = generation,
-                activeSessionGeneration = activeCommandSessionGeneration,
-                clientToken = token,
-                activeClientToken = activeCommandLogClientToken,
-                pendingClientToken = pendingCommandLogClientToken
-            )
-        }
-
-    private fun isCommandLogSessionActive(generation: Long): Boolean = synchronized(runtimeAccess) {
-        isCommandLogSessionActiveLocked(generation)
-    }
-
-    private fun isCommandLogSessionActiveLocked(generation: Long): Boolean =
-        generation > 0L && generation == activeCommandSessionGeneration &&
-            commandLogReconnectEnabled
-
-    private fun isCommandSessionActive(generation: Long): Boolean = synchronized(runtimeAccess) {
-        generation > 0L && generation == activeCommandSessionGeneration
-    }
-
-    private suspend fun awaitCommandLogStream(
-        generation: Long,
-        heartbeat: Channel<Unit>,
-        disconnected: CompletableDeferred<String?>
-    ): String? {
-        while (true) {
-            val result = withTimeoutOrNull(COMMAND_LOG_HEARTBEAT_TIMEOUT_MS) {
-                select<Pair<Boolean, String?>> {
-                    heartbeat.onReceive { false to null }
-                    disconnected.onAwait { true to it }
-                }
-            } ?: error("Command log heartbeat timeout")
-            if (result.first) return result.second
-            requireBaseCommandHeartbeats(generation)
-        }
-    }
-
-    private fun requireBaseCommandHeartbeats(generation: Long) {
-        val staleChannels = synchronized(runtimeAccess) {
-            if (generation != activeCommandSessionGeneration) {
-                throw CancellationException("Command runtime changed")
-            }
-            val now = SystemClock.uptimeMillis()
-            BaseCommandChannel.entries.filter { channel ->
-                isCommandHeartbeatStale(baseCommandHeartbeatAtMs[channel], now)
-            }.also { stale ->
-                if (stale.isNotEmpty()) {
-                    readyBaseCommandChannels.removeAll(stale.toSet())
-                    stale.forEach(baseCommandHeartbeatAtMs::remove)
-                    commandBaseHealthy = false
-                    notifyCombinedCommandHealthLocked()
-                    callbacks?.onControlChannelRecoveryRequired(
-                        "heartbeat_timeout_${stale.joinToString("_") { it.name.lowercase() }}"
-                    )
-                }
-            }
-        }
-        check(staleChannels.isEmpty()) {
-            "Base command heartbeat timeout: ${staleChannels.joinToString()}"
-        }
-    }
-
-    private fun markCommandLogHealth(generation: Long, ready: Boolean) {
-        synchronized(runtimeAccess) {
-            if (!isCommandLogSessionActiveLocked(generation)) return
-            commandLogHealthy = ready
-            completeCommandControlReadyLocked()
-            notifyCombinedCommandHealthLocked()
-        }
-    }
-
-    private fun completeCommandControlReadyLocked() {
-        if (commandBaseHealthy && commandLogHealthy) commandLogSessionReady?.complete(Unit)
-    }
-
-    private fun notifyCombinedCommandHealthLocked() {
-        val ready = commandBaseHealthy && commandLogHealthy
-        if (lastPublishedControlHealth == ready) return
-        lastPublishedControlHealth = ready
-        callbacks?.onControlChannelHealth(ready)
-    }
-
-    private fun markBaseCommandHealth(generation: Long, channel: BaseCommandChannel, ready: Boolean) {
-        synchronized(runtimeAccess) {
-            if (generation != activeCommandSessionGeneration) return
-            if (ready) readyBaseCommandChannels += channel else readyBaseCommandChannels -= channel
-            if (ready) baseCommandHeartbeatAtMs[channel] = SystemClock.uptimeMillis()
-            else baseCommandHeartbeatAtMs.remove(channel)
-            commandBaseHealthy = readyBaseCommandChannels.size == BASE_COMMAND_CLIENT_COUNT
-            completeCommandControlReadyLocked()
-            notifyCombinedCommandHealthLocked()
-            if (!ready) callbacks?.onControlChannelRecoveryRequired("${channel.name.lowercase()}_disconnected")
-        }
-    }
-
-    @Suppress("CognitiveComplexMethod")
-    private fun consumeCommandLogMessages(
-        messageList: LogIterator?,
-        notifyObserver: Boolean,
-        acceptsCallbackLocked: () -> Boolean
-    ) {
-        if (messageList == null) return
-        val repo = LogRepository.getInstance()
-        runCatching {
-            while (messageList.hasNext()) {
-                val message = messageList.next()?.message
-                if (!message.isNullOrBlank()) {
-                    synchronized(runtimeAccess) {
-                        if (!acceptsCallbackLocked()) return@runCatching
-                        val observer = if (notifyObserver) kernelLogObserver else null
-                        dispatchKernelLog(
-                            message = message,
-                            uiLogsEnabled = repo.isEnabled(),
-                            observer = observer?.let { logObserver ->
-                                { line -> logObserver.onKernelLog(line) }
-                            },
-                            addToRepository = repo::addLog
-                        )
-                    }
-                }
-            }
-        }
-    }
-
-    @Suppress("CognitiveComplexMethod")
-    private fun createClientHandler(
-        generation: Long,
-        channel: BaseCommandChannel?
-    ): CommandClientHandler = object : CommandClientHandler {
-        override fun connected() = Unit
-
-        override fun disconnected(message: String?) {
-            channel?.let { markBaseCommandHealth(generation, it, ready = false) }
-            Log.w(TAG, "CommandClient disconnected: $message")
-        }
-
-        override fun clearLogs() {
-            if (!isCommandSessionActive(generation)) return
-            runCatching {
-                LogRepository.getInstance().clearLogs(preserveRecoveryDiagnostics = true)
-            }
-        }
-
-        override fun setDefaultLogLevel(level: Int) {}
-
-        override fun writeLogs(messageList: LogIterator?) {
-            if (!isCommandSessionActive(generation)) return
-            consumeCommandLogMessages(
-                messageList,
-                notifyObserver = true,
-                acceptsCallbackLocked = { generation == activeCommandSessionGeneration }
-            )
-        }
-
-        @Suppress("LongMethod")
-        override fun writeStatus(message: StatusMessage?) {
-            if (!isCommandSessionActive(generation)) return
-            if (message == null) return
-            channel?.let { markBaseCommandHealth(generation, it, ready = true) }
-            trafficStatusGate.runIfActive {
-                try {
-                    val snapshot = trafficMonitor.updateTotals(
-                        uploadTotal = message.uplinkTotal,
-                        downloadTotal = message.downlinkTotal,
-                        sampleTimeMs = SystemClock.elapsedRealtime()
-                    )
-                    callbacks?.onTrafficUpdate(snapshot)
-                } catch (e: Exception) {
-                    Log.e(TAG, "writeStatus callback error", e)
-                }
-            }
-        }
-
-        override fun writeGroups(groups: OutboundGroupIterator?) {
-            if (!isCommandSessionActive(generation)) return
-            if (groups == null) return
-            channel?.let { markBaseCommandHealth(generation, it, ready = true) }
-            try {
-                processGroups(groups)
-            } catch (e: Exception) {
-                Log.e(TAG, "Error processing groups update", e)
-            }
-        }
-
-        override fun initializeClashMode(modeList: StringIterator?, currentMode: String?) {}
-        override fun updateClashMode(newMode: String?) {}
-
-        override fun writeConnectionEvents(events: ConnectionEvents?) {
-            if (!isCommandSessionActive(generation)) return
-            events ?: return
-            channel?.let { markBaseCommandHealth(generation, it, ready = true) }
-            try {
-                val eventData = ConnectionTrafficEventReader.read(events)
-                if (!events.reset && eventData.isEmpty()) return
-                val runtimeMappings = NodeProtectionStore.runtimeMappings()
-                recordDirectIncidents(eventData)
-                if (events.reset) connectionTrafficAttributor.clear()
-                recordApplicationRouteTrace(eventData, runtimeMappings)
-                enforceConnectionStormGuard(
-                    connectionStormGuard.observe(
-                        reset = events.reset,
-                        events = eventData,
-                        nowMs = SystemClock.elapsedRealtime()
-                    )
-                )
-                enforceRuntimeMeteredProtection(eventData, runtimeMappings)
-                recordAttributedTraffic(
-                    connectionTrafficAttributor.apply(
-                        reset = false,
-                        events = eventData,
-                        runtimeMappings = runtimeMappings
-                    )
-                )
-                val snapshot = connectionsSnapshot ?: Libbox.newConnections().also {
-                    connectionsSnapshot = it
-                }
-                snapshot.applyEvents(events)
-                processConnections(snapshot)
-            } catch (e: Exception) {
-                Log.e(TAG, "Error processing connection events", e)
-            }
-        }
-    }
-
-    private fun processGroups(groups: OutboundGroupIterator) {
-        var changed = false
-
-        Log.d(TAG, "writeGroups called")
-
-        while (groups.hasNext()) {
-            val group = groups.next()
-            val groupChanged = processGroup(group)
-            if (groupChanged) changed = true
-        }
-        changed = updateResolvedProxySelection() || changed
-
-        if (changed) {
-            callbacks?.requestNotificationUpdate(false)
-        }
-    }
-
-    private fun processGroup(group: OutboundGroup): Boolean {
-        val tag = group.tag
-        val selected = group.selected
-        var changed = false
-
-        Log.d(TAG, "Processing group: $tag, selected=$selected")
-
-        if (!tag.isNullOrBlank() && !selected.isNullOrBlank()) {
-            SelectorManager.recordKernelSelection(tag, selected)
-            val prev = groupSelectedOutbounds.put(tag, selected)
-            if (prev != selected) {
-                changed = true
-                callbacks?.onGroupSelectionChanged(tag, selected)
-            }
-        }
-
-        return changed
-    }
-
-    private fun enforceRuntimeMeteredProtection(
-        events: List<ConnectionTrafficEventData>,
-        mappings: Map<String, RuntimeNodeRef>
-    ) {
-        val selectedNodeId = VpnStateStore.getSelectedNodeId()
-        events.asSequence()
-            .filter { it.type != ConnectionTrafficAttributor.EVENT_CLOSED }
-            .forEach { event ->
-                val unauthorized = connectionTrafficAttributor.resolveTargets(event, mappings)
-                    .asSequence()
-                    .firstOrNull { ref ->
-                        NodeProtectionStore.isProtected(ref.nodeId) &&
-                            !NodeProtectionStore.isRuntimeRefAuthorized(ref, selectedNodeId)
-                    } ?: return@forEach
-                val closed = closeConnection(event.id) || closeConnections()
-                LogRepository.getInstance().addAlwaysLog(
-                    "ERROR [METERED_GUARD] closed=$closed connection=${event.id} " +
-                        "node=${unauthorized.nodeName} node_id=${unauthorized.nodeId}"
-                )
-            }
-    }
-
-    private fun enforceConnectionStormGuard(decision: ConnectionStormDecision?) {
-        decision ?: return
-        val closed = if (decision.closeAll) {
-            closeConnections()
-        } else {
-            decision.connectionIds.fold(true) { success, id -> closeConnection(id) && success }
-        }
-        if (closed) connectionStormGuard.acknowledgeClosed(decision)
-        persistConnectionIncident(decision, closed)
-        LogRepository.getInstance().addAlwaysLog(
-            "ERROR [CONNECTION_STORM] mode=vpn reason=${decision.reason} closed=$closed " +
-                "active=${decision.activeConnections} created=${decision.newConnectionsInWindow} " +
-                "rate=${String.format(java.util.Locale.US, "%.1f", decision.creationRatePerSecond)} " +
-                "uid=${decision.offender?.uid ?: -1} " +
-                "package=${decision.offender?.packageNames?.joinToString(",").orEmpty()} " +
-                "inbound=${decision.offender?.inbound.orEmpty()} source=${decision.offender?.source.orEmpty()}"
-        )
-    }
-
-    private fun persistConnectionIncident(decision: ConnectionStormDecision, closed: Boolean) {
-        val snapshot = decision.toIncidentSnapshot(
-            mode = "vpn",
-            closeReason = decision.incidentCloseReason(),
-            closeSucceeded = closed,
-            timestampEpochMs = System.currentTimeMillis(),
-            elapsedRealtimeMs = SystemClock.elapsedRealtime()
-        )
-        serviceScope.launch(Dispatchers.IO) {
-            runCatching { connectionIncidentHistory.append(snapshot) }
-                .onFailure { error -> Log.e(TAG, "Failed to persist connection incident", error) }
-        }
-    }
-
-    private fun connectClient(
-        client: CommandClient?,
-        fdProvider: (() -> ParcelFileDescriptor?)?
-    ) {
-        requireNotNull(client) { "CommandClient creation failed" }
-        if (fdProvider == null) {
-            client.connect()
-            return
-        }
-        val descriptor = requireNotNull(fdProvider()) { "Root command connection is unavailable" }
-        descriptor.use {
-            val fd = it.detachFd()
-            // libbox 会在成功和失败路径消费并关闭该 FD，Kotlin 侧禁止再次 adopt/close。
-            client.connectWithFD(fd)
-        }
-    }
-
-    private fun createConnectedCommandClient(
-        handler: CommandClientHandler,
-        fdProvider: (() -> ParcelFileDescriptor?)?,
-        configure: CommandClientOptions.() -> Unit
-    ): CommandClient {
-        val client = requireNotNull(Libbox.newCommandClient(handler, CommandClientOptions().apply(configure)))
-        return try {
-            connectClient(client, fdProvider)
-            client
-        } catch (error: Exception) {
-            runCatching { client.disconnect() }
-            throw error
-        }
-    }
-
-    private fun recordDirectIncidents(events: List<ConnectionTrafficEventData>) {
-        serviceScope.launch(Dispatchers.IO) {
-            runCatching { directConnectionIncidentHistory.recordNew(events) }
-                .onSuccess { incidents ->
-                    incidents.filter { it.routeRuleSemantic == "unknown" }.forEach { incident ->
-                        LogRepository.getInstance().addAlwaysLog(
-                            "WARN [DIRECT_INCIDENT] connection=${incident.connectionId} " +
-                                "uid=${incident.uid ?: -1} outbound=${incident.outbound.orEmpty()} " +
-                                "chain=${incident.chain.joinToString(">")} semantic=unknown"
-                        )
-                    }
-                }
-                .onFailure { error -> Log.e(TAG, "Failed to persist direct incidents", error) }
-        }
-    }
-
-    private fun recordApplicationRouteTrace(
-        events: List<ConnectionTrafficEventData>,
-        runtimeMappings: Map<String, RuntimeNodeRef>
-    ) {
-        events.forEach { event ->
-            if (event.uid != telegramUid && TELEGRAM_PACKAGE !in event.packageNames) return@forEach
-            val resolvedTargets = connectionTrafficAttributor.resolveTargets(event, runtimeMappings)
-                .joinToString(",") { target -> "${target.nodeName}/${target.nodeId}" }
-            val signature = listOf(
-                event.type,
-                event.uid,
-                event.packageNames.joinToString("|"),
-                event.inbound,
-                event.routeRule,
-                event.outbound,
-                event.fromOutbound,
-                event.chain.joinToString(">"),
-                resolvedTargets,
-                event.destination,
-                event.domain,
-                event.attributionStatus
-            ).joinToString(";")
-            if (applicationRouteTraceSignatures[event.id] == signature) return@forEach
-            applicationRouteTraceSignatures[event.id] = signature
-            val line = "[APP_ROUTE_TRACE] connection=${event.id} type=${event.type} " +
-                "uid=${event.uid ?: -1} packages=${event.packageNames.joinToString("|")} " +
-                "inbound=${event.inbound.orEmpty()} rule=${event.routeRule.orEmpty()} " +
-                "outbound=${event.outbound.orEmpty()} from=${event.fromOutbound.orEmpty()} " +
-                "chain=${event.chain.joinToString(">")} targets=$resolvedTargets " +
-                "destination=${event.destination.orEmpty()} domain=${event.domain.orEmpty()} " +
-                "attribution=${event.attributionStatus}"
-            Log.i(TAG, line)
-            LogRepository.getInstance().addAlwaysLog("INFO $line")
-            if (event.type == ConnectionTrafficAttributor.EVENT_CLOSED) {
-                applicationRouteTraceSignatures.remove(event.id)
-            }
-        }
-    }
-
-    private fun recordAttributedTraffic(records: List<AttributedConnectionTraffic>) {
-        val repository = TrafficRepository.getInstance(context)
-        records.forEach { record ->
-            val targets = record.targets.ifEmpty {
-                setOf(
-                    RuntimeNodeRef(
-                        nodeId = TrafficRepository.UNATTRIBUTED_NODE_ID,
-                        nodeName = context.getString(R.string.traffic_unattributed)
-                    )
-                )
-            }
-            targets.forEach { target ->
-                repository.addTraffic(
-                    nodeId = target.nodeId,
-                    uploadDiff = record.uploadDelta,
-                    downloadDiff = record.downloadDelta,
-                    nodeName = target.nodeName
-                )
-            }
-        }
-    }
-
-    private fun updateResolvedProxySelection(): Boolean {
-        val selectedTag = resolveConcreteGroupSelection("PROXY", groupSelectedOutbounds) ?: return false
-        if (SelectorManager.isSelectionPending()) {
-            Log.d(TAG, "Deferring runtime node publication until explicit switch cleanup: $selectedTag")
-            return false
-        }
-        val selected = resolveRuntimeNodeLabel(selectedTag, NodeProtectionStore.runtimeMappings()) ?: return false
-        if (selected == realTimeNodeName) return false
-
-        // 只更新运行态展示，不写回用户手选节点。
-        // writeGroups 会在 urltest/自动切换时频繁回调，写回 activeNodeId 会造成节点乱飞。
-        realTimeNodeName = selected
-        VpnStateStore.setActiveLabel(selected)
-        callbacks?.onRuntimeNodeChanged(selected)
-        Log.i(TAG, "Real-time node update: tag=$selectedTag, display=$selected")
-        return true
-    }
-
-    @Suppress("LongMethod", "CyclomaticComplexMethod", "CognitiveComplexMethod", "NestedBlockDepth")
-    private fun processConnections(connections: Connections) {
-        val iterator = connections.iterator()
-        var newestConnection: io.nekohasekai.libbox.Connection? = null
-        val ids = ArrayList<String>(64)
-        val egressCounts = LinkedHashMap<String, Int>()
-        val configRepo = ConfigRepository.getInstance(context)
-
-        while (iterator.hasNext()) {
-            val connection = iterator.next() ?: continue
-
-            if (connection.closedAt > 0) continue
-            val outbound = connection.outbound
-
-            if (newestConnection == null || connection.createdAt > newestConnection.createdAt) {
-                newestConnection = connection
-            }
-
-            val id = connection.id
-            if (!id.isNullOrBlank()) {
-                ids.add(id)
-            }
-
-            var candidateTag: String? = outbound
-            if (candidateTag.isNullOrBlank()) {
-                candidateTag = null
-            }
-
-            if (!candidateTag.isNullOrBlank()) {
-                val resolved = callbacks?.resolveEgressNodeName(candidateTag)
-                    ?: configRepo.resolveNodeNameFromOutboundTag(candidateTag)
-                    ?: candidateTag
-                if (!resolved.isNullOrBlank()) {
-                    egressCounts[resolved] = (egressCounts[resolved] ?: 0) + 1
-                }
-            }
-        }
-
-        recentConnectionIds = ids
-
-        val newLabel = when {
-            egressCounts.isEmpty() -> null
-            egressCounts.size == 1 -> egressCounts.keys.first()
-            else -> {
-                val sorted = egressCounts.entries.sortedByDescending { it.value }.map { it.key }
-                val top = sorted.take(2)
-                val more = sorted.size - top.size
-                if (more > 0) "Mixed: ${top.joinToString(" + ")}(+$more)"
-                else "Mixed: ${top.joinToString(" + ")}"
-            }
-        }
-
-        val labelChanged = newLabel != activeConnectionLabel
-        if (labelChanged) {
-            activeConnectionLabel = newLabel
-            if (newLabel != lastConnectionsLabelLogged) {
-                lastConnectionsLabelLogged = newLabel
-                Log.d(TAG, "Connections label updated: ${newLabel ?: "(null)"}")
-            }
-        }
-
-        var newNode: String? = null
-        if (newestConnection != null) {
-            val chainIter = newestConnection.chain()
-            val chainList = mutableListOf<String>()
-            if (chainIter != null) {
-                while (chainIter.hasNext()) {
-                    val tag = chainIter.next()
-                    if (!tag.isNullOrBlank()) {
-                        chainList.add(tag)
-                    }
-                }
-            }
-            newNode = chainList.lastOrNull()
-        }
-
-        if (newNode != activeConnectionNode || labelChanged) {
-            activeConnectionNode = newNode
-            callbacks?.requestNotificationUpdate(false)
-        }
-    }
-
-    fun cleanup() {
-        stop()
-        groupSelectedOutbounds.clear()
-        realTimeNodeName = null
-        activeConnectionNode = null
-        activeConnectionLabel = null
-        recentConnectionIds = emptyList()
-        connectionsSnapshot = null
-        applicationRouteTraceSignatures.clear()
-        connectionTrafficAttributor.clear()
-        connectionStormGuard.clear()
-        callbacks = null
     }
 }

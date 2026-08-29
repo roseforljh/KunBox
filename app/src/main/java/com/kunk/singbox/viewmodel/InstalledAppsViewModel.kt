@@ -18,6 +18,8 @@ class InstalledAppsViewModel(application: Application) : AndroidViewModel(applic
 
     val appItems: StateFlow<List<InstalledAppUi>> = repository.appItems
 
+    val installedPackageNames: StateFlow<Set<String>> = repository.installedPackageNames
+
     fun loadAppsIfNeeded() {
         if (repository.needsLoading()) {
             viewModelScope.launch {

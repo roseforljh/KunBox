@@ -18,8 +18,80 @@ enum class RootRuntimePhase {
     CLEANING,
     ROLLBACK,
     FAILED_UNPROTECTED,
+    FAILED_VERIFICATION,
     FAILED_RULES_PRESENT,
     FAILED_BLOCKED
+}
+
+internal enum class RootLifecycleState {
+    STOPPED,
+    STARTING,
+    RUNNING,
+    RELOADING,
+    STOPPING,
+    FAILED
+}
+
+internal enum class RootDesiredState {
+    STOPPED,
+    RUNNING
+}
+
+internal data class RootLifecycleSnapshot(
+    val state: RootLifecycleState,
+    val desiredState: RootDesiredState,
+    val generation: Long
+)
+
+internal class RootLifecycleCoordinator {
+    private var state = RootLifecycleState.STOPPED
+    private var desiredState = RootDesiredState.STOPPED
+    private var generation = 0L
+
+    @Synchronized
+    fun requestRunning(reload: Boolean): Long {
+        desiredState = RootDesiredState.RUNNING
+        generation += 1
+        if (state != RootLifecycleState.STOPPING) {
+            state = if (reload) RootLifecycleState.RELOADING else RootLifecycleState.STARTING
+        }
+        return generation
+    }
+
+    @Synchronized
+    fun requestStopped(): Long {
+        desiredState = RootDesiredState.STOPPED
+        generation += 1
+        state = RootLifecycleState.STOPPING
+        return generation
+    }
+
+    @Synchronized
+    fun transition(token: Long, target: RootLifecycleState): Boolean {
+        if (token != generation) {
+            val completesActiveStop = state == RootLifecycleState.STOPPING &&
+                target in setOf(RootLifecycleState.STOPPED, RootLifecycleState.FAILED)
+            if (!completesActiveStop) return false
+        }
+        if (desiredState == RootDesiredState.STOPPED && target in RUNNING_STATES) return false
+        state = target
+        return true
+    }
+
+    @Synchronized
+    fun isCurrentRunningRequest(token: Long): Boolean =
+        token == generation && desiredState == RootDesiredState.RUNNING
+
+    @Synchronized
+    fun snapshot(): RootLifecycleSnapshot = RootLifecycleSnapshot(state, desiredState, generation)
+
+    companion object {
+        private val RUNNING_STATES = setOf(
+            RootLifecycleState.STARTING,
+            RootLifecycleState.RUNNING,
+            RootLifecycleState.RELOADING
+        )
+    }
 }
 
 data class RootRuntimeSnapshot(
@@ -130,6 +202,25 @@ data class RootRuntimeExpectation(
     val tproxyIpv4: Boolean,
     val tproxyIpv6: Boolean
 )
+
+internal fun rootStartFailureRequiresSynchronousStop(snapshot: RootRuntimeSnapshot?): Boolean {
+    val phase = snapshot?.phase ?: return true
+    return phase !in setOf(
+        RootRuntimePhase.FAILED_UNPROTECTED,
+        RootRuntimePhase.FAILED_VERIFICATION,
+        RootRuntimePhase.FAILED_RULES_PRESENT,
+        RootRuntimePhase.FAILED_BLOCKED
+    )
+}
+
+internal fun rootDestroyRequiresCleanup(snapshot: RootRuntimeSnapshot, activeTransactions: Int): Boolean =
+    activeTransactions == 0 && snapshot.phase !in setOf(
+        RootRuntimePhase.STOPPED,
+        RootRuntimePhase.FAILED_UNPROTECTED,
+        RootRuntimePhase.FAILED_VERIFICATION,
+        RootRuntimePhase.FAILED_RULES_PRESENT,
+        RootRuntimePhase.FAILED_BLOCKED
+    )
 
 internal fun rootRunningSnapshotError(
     snapshot: RootRuntimeSnapshot,

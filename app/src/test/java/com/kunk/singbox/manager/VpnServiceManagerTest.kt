@@ -137,11 +137,34 @@ class VpnServiceManagerTest {
         assertTrue(body.contains("SingBoxService::class.java"))
         assertTrue(body.contains("ProxyOnlyService::class.java"))
         assertTrue(body.contains("RootTransparentForegroundService::class.java"))
-        assertTrue(body.contains("val activeMode = VpnStateStore.getMode()"))
+        assertTrue(body.contains("val activeMode = resolveActiveMode()"))
         assertTrue(body.contains("shouldDispatchStopToService(activeMode, VpnStateStore.CoreMode.VPN)"))
         assertTrue(body.contains("shouldDispatchStopToService(activeMode, VpnStateStore.CoreMode.PROXY)"))
         assertTrue(body.contains("shouldDispatchStopToService(activeMode, VpnStateStore.CoreMode.ROOT)"))
         assertTrue(body.contains("putExtra(SingBoxService.EXTRA_STOP_INITIATOR, initiator.wireValue)"))
+    }
+
+    @Test
+    fun startPersistsTargetModeBeforeDispatchingService() {
+        val source = File("src/main/java/com/kunk/singbox/manager/VpnServiceManager.kt").readText()
+        val body = source.substringAfter("fun startVpn(context: Context, mode: TrafficCaptureMode)")
+            .substringBefore("fun stopVpn(context: Context, initiator: VpnStopInitiator)")
+
+        val persistIndex = body.indexOf("VpnStateStore.setMode(mode.toCoreMode())")
+        val dispatchIndex = body.indexOf("startForegroundService(intent)")
+        assertTrue(persistIndex >= 0)
+        assertTrue(dispatchIndex > persistIndex)
+    }
+
+    @Test
+    fun stopModeResolutionUsesLiveRootStartupWhenPersistedModeIsUnknown() {
+        val source = File("src/main/java/com/kunk/singbox/manager/VpnServiceManager.kt").readText()
+        val resolver = source.substringAfter("private fun resolveActiveMode()")
+            .substringBefore("fun stopVpn(context: Context")
+
+        assertTrue(resolver.contains("RootTransparentForegroundService.isRunning"))
+        assertTrue(resolver.contains("RootTransparentForegroundService.isStarting"))
+        assertTrue(resolver.contains("VpnStateStore.CoreMode.ROOT"))
     }
 
     @Test

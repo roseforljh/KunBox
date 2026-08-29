@@ -7,7 +7,6 @@ import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.kunk.singbox.manager.VpnServiceManager
-import com.kunk.singbox.ipc.VpnStateStore
 import com.kunk.singbox.model.AppSettings
 import com.kunk.singbox.model.CustomRule
 import com.kunk.singbox.model.DefaultRule
@@ -20,7 +19,6 @@ import com.kunk.singbox.model.ExportDataSummary
 import com.kunk.singbox.model.ImportOptions
 import com.kunk.singbox.model.ImportResult
 import com.kunk.singbox.model.IpVersionMode
-import com.kunk.singbox.model.PerAppVpnPolicy
 import com.kunk.singbox.model.RoutingMode
 import com.kunk.singbox.model.AppGroup
 import com.kunk.singbox.model.RuleSet
@@ -35,7 +33,6 @@ import com.kunk.singbox.model.BackgroundPowerSavingDelay
 import com.kunk.singbox.repository.DataExportRepository
 import com.kunk.singbox.repository.RuleSetRepository
 import com.kunk.singbox.repository.SettingsRepository
-import com.kunk.singbox.repository.ConfigRepository
 import com.kunk.singbox.repository.PerAppPolicyUpdateResult
 import com.kunk.singbox.service.RuleSetAutoUpdateWorker
 import com.kunk.singbox.service.root.RootCapabilityReport
@@ -49,9 +46,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import java.util.concurrent.atomic.AtomicLong
-
-private val lastPerAppReconcileRevision = AtomicLong(-1L)
 
 data class DefaultRuleSetDownloadState(
     val isActive: Boolean = false,
@@ -94,10 +88,6 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     val perAppPolicyApplyState: StateFlow<PerAppPolicyApplyState> = _perAppPolicyApplyState.asStateFlow()
     private val _rootCapabilityError = MutableStateFlow("")
     val rootCapabilityError: StateFlow<String> = _rootCapabilityError.asStateFlow()
-
-    init {
-        viewModelScope.launch { reconcilePerAppPolicyOnce() }
-    }
 
     fun ensureDefaultRuleSetsReady() {
         viewModelScope.launch {
@@ -384,32 +374,6 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                 _perAppPolicyApplyState.value = PerAppPolicyApplyState.Failed(
                     update.revision,
                     error.message ?: "Per-app VPN policy apply failed"
-                )
-            }
-    }
-
-    private suspend fun reconcilePerAppPolicyOnce() {
-        val desired = settings.first()
-        if (
-            !VpnServiceManager.isRunning() ||
-            VpnStateStore.getMode() !in setOf(VpnStateStore.CoreMode.VPN, VpnStateStore.CoreMode.ROOT)
-        ) return
-        val desiredPolicy = PerAppVpnPolicy.from(desired)
-        val applied = VpnStateStore.getAppliedPerAppPolicy()
-        if (applied.revision == desiredPolicy.revision &&
-            applied.digest == desiredPolicy.digest() &&
-            applied.appRoutingDigest == ConfigRepository.appRoutingDigest(desired)
-        ) {
-            return
-        }
-        if (lastPerAppReconcileRevision.getAndSet(desiredPolicy.revision) == desiredPolicy.revision) return
-        _perAppPolicyApplyState.value = PerAppPolicyApplyState.Applying(desiredPolicy.revision)
-        VpnServiceManager.applyPerAppRuleChangeIfRunning(getApplication(), desiredPolicy.revision)
-            .onSuccess { _perAppPolicyApplyState.value = PerAppPolicyApplyState.Idle }
-            .onFailure { error ->
-                _perAppPolicyApplyState.value = PerAppPolicyApplyState.Failed(
-                    desiredPolicy.revision,
-                    error.message ?: "Per-app VPN policy reconciliation failed"
                 )
             }
     }

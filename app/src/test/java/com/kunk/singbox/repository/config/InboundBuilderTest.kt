@@ -148,10 +148,10 @@ class InboundBuilderTest {
         )
 
         assertEquals(
-            listOf("mixed-in", "redirect-in-v4", "tproxy-in-v4", "redirect-in-v6", "tproxy-in-v6"),
+            listOf("redirect-in-v4", "tproxy-in-v4", "redirect-in-v6", "tproxy-in-v6"),
             inbounds.mapNotNull { it.tag }
         )
-        val rootInbounds = inbounds.drop(1)
+        val rootInbounds = inbounds
         assertEquals(listOf("redirect", "tproxy", "redirect", "tproxy"), rootInbounds.map { it.type })
         assertEquals(listOf(null, "udp", null, "udp"), rootInbounds.map { it.network })
         assertEquals(listOf(null, "5m", null, "5m"), rootInbounds.map { it.udpTimeout })

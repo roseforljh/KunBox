@@ -39,7 +39,7 @@ class ConfigRepositoryRoutingDnsPolicyTest {
                 RootAppRoutingAssignment(
                     packageNames = listOf("org.telegram.messenger"),
                     targetKind = "OUTBOUND",
-                    outboundTag = "germany",
+                    outboundTag = "🇺🇸 VL | 美国 \"1.1\" \\ residential",
                     sourceLabel = "Telegram"
                 )
             ),
@@ -120,6 +120,22 @@ class ConfigRepositoryRoutingDnsPolicyTest {
                 plan
             )
         }.isFailure)
+    }
+
+    @Test
+    fun rootLaneDnsRuleAddsAddressQueriesWhenFakeDnsIsEnabled() {
+        val laneInbounds = listOf("root-lane-000-tcp-v4", "root-lane-000-udp-v4")
+        val rules = ConfigRepository.buildOrderedDnsRules(
+            entries = listOf(
+                DnsRule(inbound = laneInbounds) to
+                    ConfigRepository.OutboundSemantic.RouteTag("PROXY")
+            ),
+            fakeDnsEnabled = true,
+            directServerTag = "local",
+            proxyServerTag = ConfigRepository.buildDynamicDnsServerTag("PROXY")
+        )
+
+        assertEquals(listOf("A", "AAAA"), rules.single().queryType)
     }
 
     @Test

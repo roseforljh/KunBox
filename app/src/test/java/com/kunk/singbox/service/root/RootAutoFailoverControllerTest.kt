@@ -385,7 +385,7 @@ class RootAutoFailoverControllerTest {
     @Test
     fun rootManualSwitchConvergesOldConnectionsAndNetwork() {
         val source = java.io.File(
-            "src/main/java/com/kunk/singbox/service/root/RootTransparentForegroundService.kt"
+            "src/main/java/com/kunk/singbox/service/root/runtime/RootTransparentForegroundRuntime.kt"
         ).readText()
         val successBranch = source.substringAfter("is SelectorManager.SwitchResult.Success ->")
             .substringBefore("is SelectorManager.SwitchResult.NeedRestart")

@@ -8,6 +8,96 @@ import org.junit.Test
 
 class RootRuntimeStateMachineTest {
     @Test
+    fun terminalStartFailureDoesNotRepeatTheSameSynchronousCleanup() {
+        assertFalse(
+            rootStartFailureRequiresSynchronousStop(
+                RootRuntimeSnapshot(phase = RootRuntimePhase.FAILED_VERIFICATION)
+            )
+        )
+        assertFalse(
+            rootStartFailureRequiresSynchronousStop(
+                RootRuntimeSnapshot(phase = RootRuntimePhase.FAILED_BLOCKED, rulesInstalled = true)
+            )
+        )
+        assertTrue(rootStartFailureRequiresSynchronousStop(RootRuntimeSnapshot(phase = RootRuntimePhase.RUNNING)))
+        assertTrue(rootStartFailureRequiresSynchronousStop(null))
+    }
+
+    @Test
+    fun rootServiceDoesNotRepeatCleanupAfterTerminalStartFailure() {
+        assertFalse(
+            rootDestroyRequiresCleanup(
+                RootRuntimeSnapshot(phase = RootRuntimePhase.FAILED_VERIFICATION),
+                activeTransactions = 0
+            )
+        )
+        assertFalse(
+            rootDestroyRequiresCleanup(
+                RootRuntimeSnapshot(phase = RootRuntimePhase.FAILED_BLOCKED, rulesInstalled = true),
+                activeTransactions = 0
+            )
+        )
+        assertFalse(rootDestroyRequiresCleanup(RootRuntimeSnapshot(), activeTransactions = 1))
+        assertTrue(
+            rootDestroyRequiresCleanup(
+                RootRuntimeSnapshot(phase = RootRuntimePhase.ROOT_BINDING),
+                activeTransactions = 0
+            )
+        )
+    }
+
+    @Test
+    fun stopInvalidatesEveryOlderStartOrReloadGeneration() {
+        val lifecycle = RootLifecycleCoordinator()
+        val start = lifecycle.requestRunning(reload = false)
+        val reload = lifecycle.requestRunning(reload = true)
+        val stop = lifecycle.requestStopped()
+
+        assertFalse(lifecycle.transition(start, RootLifecycleState.RUNNING))
+        assertFalse(lifecycle.transition(reload, RootLifecycleState.RUNNING))
+        assertTrue(lifecycle.transition(stop, RootLifecycleState.STOPPED))
+        assertEquals(RootDesiredState.STOPPED, lifecycle.snapshot().desiredState)
+    }
+
+    @Test
+    fun startRequestedWhileStoppingWaitsForStopCompletion() {
+        val lifecycle = RootLifecycleCoordinator()
+        lifecycle.requestRunning(reload = false)
+        val stop = lifecycle.requestStopped()
+        val finalStart = lifecycle.requestRunning(reload = false)
+
+        assertEquals(RootLifecycleState.STOPPING, lifecycle.snapshot().state)
+        assertEquals(RootDesiredState.RUNNING, lifecycle.snapshot().desiredState)
+        assertTrue(lifecycle.transition(stop, RootLifecycleState.STOPPED))
+        assertTrue(lifecycle.transition(finalStart, RootLifecycleState.STARTING))
+        assertTrue(lifecycle.isCurrentRunningRequest(finalStart))
+        assertTrue(lifecycle.transition(finalStart, RootLifecycleState.RUNNING))
+        assertEquals(RootLifecycleState.RUNNING, lifecycle.snapshot().state)
+    }
+
+    @Test
+    fun settingsPageConstructionCannotRestartVpn() {
+        val source = File("src/main/java/com/kunk/singbox/viewmodel/SettingsViewModel.kt")
+            .readText(Charsets.UTF_8)
+
+        assertFalse(source.contains("reconcilePerAppPolicyOnce"))
+    }
+
+    @Test
+    fun reloadValidatesCandidateBeforeTouchingActiveNetworkAndStopAlwaysCleans() {
+        val source = File("src/main/java/com/kunk/singbox/service/root/runtime/KunBoxRootServiceRuntime.kt")
+            .readText(Charsets.UTF_8)
+        val reload = source.substringAfter("fun KunBoxRootService.hotReloadLocked")
+            .substringBefore("fun KunBoxRootService.unionGuardConfig")
+        val stop = source.substringAfter("fun KunBoxRootService.stopLocked")
+            .substringBefore("fun KunBoxRootService.rollbackLocked")
+
+        assertTrue(reload.indexOf("readValidatedArtifacts") < reload.indexOf("installGuard"))
+        assertTrue(stop.indexOf("closeCommandServer") < stop.indexOf("cleanupRulesVerified"))
+        assertFalse(stop.contains("snapshot.phase == RootRuntimePhase.STOPPED") && stop.contains("return snapshot"))
+    }
+
+    @Test
     fun notificationNodeSwitchCyclesOnlyProvidedSafeCandidates() {
         val candidates = listOf("node-a", "node-b", "node-c")
 
@@ -19,8 +109,10 @@ class RootRuntimeStateMachineTest {
 
     @Test
     fun rootNotificationUsesSharedVpnNotificationActionsAndLiveData() {
-        val rootSource = File("src/main/java/com/kunk/singbox/service/root/RootTransparentForegroundService.kt")
-            .readText(Charsets.UTF_8)
+        val rootSource = listOf(
+            "src/main/java/com/kunk/singbox/service/root/RootTransparentForegroundService.kt",
+            "src/main/java/com/kunk/singbox/service/root/runtime/RootTransparentForegroundRuntime.kt"
+        ).joinToString("\n") { File(it).readText(Charsets.UTF_8) }
         val sharedSource = File("src/main/java/com/kunk/singbox/service/notification/VpnNotificationManager.kt")
             .readText(Charsets.UTF_8)
 
@@ -36,27 +128,38 @@ class RootRuntimeStateMachineTest {
     @Test
     fun formatsRootStartupTimingsForAppProcessLogging() {
         assertEquals(
-            "cleanup=20,core=100,watchdog=30,uid_scope=4000,netfilter=200",
+            "legacy_cleanup_ms=20,guard_ms=30,rules_staging_ms=200,core_ms=100," +
+                "xtables_wait_ms=40,total_ms=4000",
             formatRootStartupTimings(
                 linkedMapOf(
-                    "cleanup" to 20L,
-                    "core" to 100L,
-                    "watchdog" to 30L,
-                    "uid_scope" to 4000L,
-                    "netfilter" to 200L
+                    "legacy_cleanup_ms" to 20L,
+                    "guard_ms" to 30L,
+                    "rules_staging_ms" to 200L,
+                    "core_ms" to 100L,
+                    "xtables_wait_ms" to 40L,
+                    "total_ms" to 4000L
                 )
             )
         )
     }
 
     @Test
-    fun startingRootCanBeStoppedThroughLibsuManagementChannel() {
-        val source = File("src/main/java/com/kunk/singbox/service/root/RootTransparentForegroundService.kt")
-            .readText(Charsets.UTF_8)
+    fun startingRootStopUsesPreemptionSignalThenVerifiedCleanup() {
+        val source = listOf(
+            "src/main/java/com/kunk/singbox/service/root/RootTransparentForegroundService.kt",
+            "src/main/java/com/kunk/singbox/service/root/runtime/RootTransparentForegroundRuntime.kt"
+        ).joinToString("\n") { File(it).readText(Charsets.UTF_8) }
         val stopBranch = source.substringAfter("ACTION_STOP ->")
             .substringBefore("ACTION_RESTART ->")
+        val stopRuntime = source.substringAfter("suspend fun stopRuntimeLocked")
+            .substringBefore("fun RootTransparentForegroundService.restartRuntime")
 
-        assertTrue(stopBranch.contains("rootConnection.stopRootService()"))
+        assertTrue(stopBranch.contains("requestStopRuntime"))
+        assertTrue(source.contains("rootConnection.service?.requestStop(sessionId)"))
+        assertTrue(
+            stopRuntime.indexOf("stopped.phase == RootRuntimePhase.STOPPED") <
+                stopRuntime.indexOf("rootConnection.stopRootService()")
+        )
     }
 
     @Test

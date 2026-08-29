@@ -3,6 +3,7 @@ package com.kunk.singbox.repository
 import com.kunk.singbox.model.InstalledAppUi
 import java.io.File
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -10,32 +11,18 @@ import org.junit.Test
 class InstalledAppsRepositoryTest {
 
     @Test
-    fun partialScanKeepsCachedAppsAndUpdatesScannedMetadata() {
+    fun cachedSnapshotDropsPackagesMissingFromCurrentInventory() {
         val cached = listOf(
             app("org.telegram.messenger", "Telegram", 10_376),
-            app("com.example.old", "Old", 10_400)
-        )
-        val scanned = listOf(
-            app("org.telegram.messenger", "Telegram New", 10_376),
-            app("com.example.new", "New", 10_401)
+            app("com.example.removed", "Removed", 10_400)
         )
 
-        val merged = InstalledAppsRepository.mergeScannedApps(cached, scanned, complete = false)
+        val filtered = InstalledAppsRepository.filterInstalledSnapshot(
+            cached,
+            setOf("org.telegram.messenger", "com.example.new")
+        )
 
-        assertEquals(3, merged.size)
-        assertEquals("Telegram New", merged.first { it.packageName == "org.telegram.messenger" }.appName)
-        assertTrue(merged.any { it.packageName == "com.example.old" })
-        assertTrue(merged.any { it.packageName == "com.example.new" })
-    }
-
-    @Test
-    fun completeScanRemovesPackagesMissingFromSystemInventory() {
-        val cached = listOf(app("com.example.old", "Old", 10_400))
-        val scanned = listOf(app("org.telegram.messenger", "Telegram", 10_376))
-
-        val merged = InstalledAppsRepository.mergeScannedApps(cached, scanned, complete = true)
-
-        assertEquals(listOf("org.telegram.messenger"), merged.map(InstalledAppUi::packageName))
+        assertEquals(listOf("org.telegram.messenger"), filtered.map(InstalledAppUi::packageName))
     }
 
     @Test
@@ -80,8 +67,9 @@ class InstalledAppsRepositoryTest {
     fun iconBatchUsesBoundedIoDispatcher() {
         val source = File("src/main/java/com/kunk/singbox/repository/InstalledAppsRepository.kt").readText()
 
-        assertTrue(source.contains("Dispatchers.IO.limitedParallelism(4)"))
+        assertTrue(source.contains("Dispatchers.IO.limitedParallelism(8)"))
         assertTrue(source.contains("withContext(iconLoadDispatcher)"))
+        assertFalse(source.contains("_appItems.value = mergeScannedApps"))
     }
 
     private fun app(packageName: String, name: String, uid: Int) = InstalledAppUi(

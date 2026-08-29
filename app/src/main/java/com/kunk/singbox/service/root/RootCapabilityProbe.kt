@@ -151,6 +151,30 @@ class RootCapabilityProbe(
 
     @Suppress("LongMethod")
     private fun buildProbeScript(): String = """
+        xtables_probe_run() {
+            xt_binary="${'$'}1"
+            shift
+            xt_attempt=1
+            while [ "${'$'}xt_attempt" -le $XTABLES_MAX_ATTEMPTS ]; do
+                xt_error="${'$'}{TMPDIR:-/data/local/tmp}/kunbox-probe-xtables.${'$'}${'$'}"
+                command "${'$'}xt_binary" -w $XTABLES_WAIT_SECONDS "${'$'}@" 2>"${'$'}xt_error"
+                xt_status="${'$'}?"
+                if [ "${'$'}xt_status" -eq 0 ]; then
+                    rm -f "${'$'}xt_error"
+                    return 0
+                fi
+                if { grep -F -q 'xtables.lock' "${'$'}xt_error" || \
+                    grep -F -q 'holding the xtables lock' "${'$'}xt_error"; } && \
+                    [ "${'$'}xt_attempt" -lt $XTABLES_MAX_ATTEMPTS ]; then
+                    xt_attempt="${'$'}((xt_attempt + 1))"
+                    continue
+                fi
+                rm -f "${'$'}xt_error"
+                return "${'$'}xt_status"
+            done
+        }
+        iptables() { xtables_probe_run iptables "${'$'}@"; }
+        ip6tables() { xtables_probe_run ip6tables "${'$'}@"; }
         cleanup_chain() {
             "${'$'}1" -t "${'$'}2" -F "${'$'}3" >/dev/null 2>&1 || :
             "${'$'}1" -t "${'$'}2" -X "${'$'}3" >/dev/null 2>&1 || :

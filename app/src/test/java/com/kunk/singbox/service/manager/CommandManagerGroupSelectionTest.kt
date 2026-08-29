@@ -51,7 +51,7 @@ class CommandManagerGroupSelectionTest {
     @Test
     fun resolvedAutomaticNodeIsPropagatedToServiceAndMainProcess() {
         val managerSource = File(
-            "src/main/java/com/kunk/singbox/service/manager/CommandManager.kt"
+            "src/main/java/com/kunk/singbox/service/manager/runtime/CommandManagerRuntime.kt"
         ).readText()
         val serviceSource = File(
             "src/main/java/com/kunk/singbox/service/SingBoxService.kt"

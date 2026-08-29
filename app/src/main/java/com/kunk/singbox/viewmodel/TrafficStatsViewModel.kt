@@ -3,7 +3,7 @@ package com.kunk.singbox.viewmodel
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.kunk.singbox.repository.ConfigRepository
+import com.kunk.singbox.repository.*
 import com.kunk.singbox.repository.NodeTrafficStats
 import com.kunk.singbox.repository.TrafficPeriod
 import com.kunk.singbox.repository.TrafficRepository

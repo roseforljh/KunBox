@@ -1,30 +1,25 @@
+@file:Suppress("TooManyFunctions")
+
 package com.kunk.singbox.service.root
 
 import android.app.Service
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import android.content.IntentFilter
-import android.content.pm.ServiceInfo
-import android.os.Build
 import android.os.IBinder
 import android.util.Log
 import com.kunk.singbox.R
 import com.kunk.singbox.aidl.IRootSingBoxService
 import com.kunk.singbox.core.SelectorManager
 import com.kunk.singbox.core.SingBoxCore
-import com.kunk.singbox.ipc.DataPlaneReadinessSnapshot
 import com.kunk.singbox.ipc.DataPlaneStatus
 import com.kunk.singbox.ipc.SingBoxIpcHub
 import com.kunk.singbox.ipc.VpnStateStore
 import com.kunk.singbox.model.IpVersionMode
 import com.kunk.singbox.model.PerAppVpnPolicy
-import com.kunk.singbox.model.SingBoxConfig
 import com.kunk.singbox.model.TrafficCaptureMode
-import com.kunk.singbox.model.RootAppRoutingCanonical
-import com.kunk.singbox.model.RootRoutingArtifactValidator
-import com.kunk.singbox.repository.ConfigRepository
-import com.kunk.singbox.repository.LogRepository
+import com.kunk.singbox.repository.*
+import com.kunk.singbox.repository.InstalledAppsRepository
 import com.kunk.singbox.repository.NodeProtectionStore
 import com.kunk.singbox.repository.RootGenerationMarker
 import com.kunk.singbox.repository.RootGenerationStore
@@ -32,37 +27,35 @@ import com.kunk.singbox.repository.SettingsRepository
 import com.kunk.singbox.service.SingBoxService
 import com.kunk.singbox.service.ServiceState
 import com.kunk.singbox.service.VpnTileService
-import com.kunk.singbox.service.resolveNotificationNodeLabel
 import com.kunk.singbox.service.manager.CommandManager
 import com.kunk.singbox.service.manager.VpnStopInitiator
 import com.kunk.singbox.service.network.TrafficMonitor
 import com.kunk.singbox.service.notification.NotificationActionConfig
 import com.kunk.singbox.service.notification.VpnNotificationManager
 import com.kunk.singbox.utils.NetworkClient
-import com.google.gson.Gson
 import java.io.File
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.currentCoroutineContext
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
 @Suppress("LargeClass")
 class RootTransparentForegroundService : Service() {
     companion object {
-        private const val TAG = "RootTransparentService"
-        private const val CHANNEL_ID = "root_transparent"
-        private const val NOTIFICATION_ID = 12
+        internal const val TAG = "RootTransparentService"
+        internal const val CHANNEL_ID = "root_transparent"
+        internal const val NOTIFICATION_ID = 12
         const val ACTION_START = "com.kunk.singbox.action.ROOT_START"
         const val ACTION_STOP = "com.kunk.singbox.action.ROOT_STOP"
         const val ACTION_RESTART = "com.kunk.singbox.action.ROOT_RESTART"
@@ -72,43 +65,38 @@ class RootTransparentForegroundService : Service() {
         const val EXTRA_OUTBOUND_TAG = "outbound_tag"
         const val EXTRA_NODE_NAME = "node_name"
         const val EXTRA_APP_ROUTE_REQUEST_ID = "app_route_request_id"
-        const val EXTRA_CONFIG_DIGEST = "config_digest"
-        const val EXTRA_APP_ROUTING_DIGEST = "app_routing_digest"
-        const val EXTRA_SIDECAR_DIGEST = "root_sidecar_digest"
-        const val EXTRA_SIDECAR_JSON = "root_sidecar_json"
-        const val EXTRA_STATIC_PLAN_DIGEST = "root_static_plan_digest"
-        const val EXTRA_ROUTING_GENERATION = "root_routing_generation"
 
         @Volatile var isRunning: Boolean = false
-            private set
+            internal set
         @Volatile var isStarting: Boolean = false
-            private set
+            internal set
     }
 
-    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
-    private val lifecycleMutex = Mutex()
-    private lateinit var rootConnection: RootServiceConnection
-    private lateinit var commandManager: CommandManager
-    private lateinit var autoFailover: RootAutoFailoverController
-    private lateinit var rootNotificationManager: VpnNotificationManager
-    private var monitorJob: Job? = null
-    private var uidRefreshRetryJob: Job? = null
-    private val controlRecoveryScheduled = AtomicBoolean(false)
-    private val notificationNodeSwitchInFlight = AtomicBoolean(false)
-    private val uidRefreshScheduled = AtomicBoolean(false)
-    private var runtimeSessionId: String = ""
-    @Volatile private var startAbortRequested = false
-    @Volatile private var lastRootSnapshot = RootRuntimeSnapshot()
-    @Volatile private var showNotificationSpeed = true
-    @Volatile private var currentUploadSpeed = 0L
-    @Volatile private var currentDownloadSpeed = 0L
-    private var uidRefreshRetryCount = 0
-    private val packageChangeReceiver = object : BroadcastReceiver() {
+    internal val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    internal val lifecycleMutex = Mutex()
+    internal val lifecycle = RootLifecycleCoordinator()
+    internal lateinit var rootConnection: RootServiceConnection
+    internal lateinit var commandManager: CommandManager
+    internal lateinit var autoFailover: RootAutoFailoverController
+    internal lateinit var rootNotificationManager: VpnNotificationManager
+    internal var monitorJob: Job? = null
+    internal var lifecycleJob: Job? = null
+    internal var uidRefreshJob: Job? = null
+    internal val controlRecoveryScheduled = AtomicBoolean(false)
+    internal val notificationNodeSwitchInFlight = AtomicBoolean(false)
+    internal val uidRefreshScheduled = AtomicBoolean(false)
+    internal var runtimeSessionId: String = ""
+    @Volatile internal var lifecycleStartedAtMs = 0L
+    @Volatile internal var lastRootSnapshot = RootRuntimeSnapshot()
+    @Volatile internal var showNotificationSpeed = true
+    @Volatile internal var currentUploadSpeed = 0L
+    @Volatile internal var currentDownloadSpeed = 0L
+    internal val packageChangeReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             scheduleUidRefresh(intent?.action.orEmpty())
         }
     }
-    private val userChangeReceiver = object : BroadcastReceiver() {
+    internal val userChangeReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             scheduleUidRefresh(intent?.action.orEmpty())
         }
@@ -159,7 +147,7 @@ class RootTransparentForegroundService : Service() {
                     scheduleControlChannelRecovery(reason)
 
                 override fun onServiceStop() {
-                    serviceScope.launch { stopRuntime(stopSelfAfter = true) }
+                    requestStopRuntime(stopSelfAfter = true, reason = "core_requested_stop")
                 }
 
                 override fun onServiceReload() = Unit
@@ -212,25 +200,22 @@ class RootTransparentForegroundService : Service() {
                 )
                 VpnStateStore.setManuallyStopped(initiator.isManualStop)
                 SingBoxIpcHub.update(manuallyStopped = initiator.isManualStop)
-                if (isStarting) {
-                    startAbortRequested = true
-                    rootConnection.stopRootService()
-                }
-                serviceScope.launch { stopRuntime(stopSelfAfter = true) }
+                requestStopRuntime(stopSelfAfter = true, reason = initiator.wireValue)
             }
-            ACTION_RESTART -> serviceScope.launch {
+            ACTION_RESTART -> requestRunningRuntime(reload = true) { token ->
                 restartRuntime(
                     configPathOverride = intent.getStringExtra(EXTRA_CONFIG_PATH),
                     requestId = intent.getStringExtra(EXTRA_APP_ROUTE_REQUEST_ID).orEmpty(),
-                    expectedConfigDigest = intent.getStringExtra(EXTRA_CONFIG_DIGEST).orEmpty(),
-                    expectedAppRoutingDigest = intent.getStringExtra(EXTRA_APP_ROUTING_DIGEST).orEmpty(),
-                    expectedSidecarDigest = intent.getStringExtra(EXTRA_SIDECAR_DIGEST).orEmpty(),
-                    expectedSidecarJson = intent.getStringExtra(EXTRA_SIDECAR_JSON).orEmpty(),
-                    expectedStaticPlanDigest = intent.getStringExtra(EXTRA_STATIC_PLAN_DIGEST).orEmpty(),
-                    expectedRoutingGeneration = intent.getLongExtra(EXTRA_ROUTING_GENERATION, 0L)
+                    token = token
                 )
             }
-            else -> serviceScope.launch { startRuntime(intent?.getStringExtra(EXTRA_CONFIG_PATH)) }
+            else -> requestRunningRuntime(reload = false) { token ->
+                startRuntime(
+                    configPathOverride = intent?.getStringExtra(EXTRA_CONFIG_PATH),
+                    requestId = intent?.getStringExtra(EXTRA_APP_ROUTE_REQUEST_ID).orEmpty(),
+                    token = token
+                )
+            }
         }
         return START_NOT_STICKY
     }
@@ -238,9 +223,11 @@ class RootTransparentForegroundService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
-        startAbortRequested = true
+        lifecycle.requestStopped()
+        syncLifecycleFlags()
+        lifecycleJob?.cancel()
+        uidRefreshJob?.cancel()
         monitorJob?.cancel()
-        uidRefreshRetryJob?.cancel()
         unregisterUidRefreshReceivers()
         autoFailover.stop()
         commandManager.stop()
@@ -249,35 +236,103 @@ class RootTransparentForegroundService : Service() {
         runCatching { rootConnection.stopRootService() }
             .onFailure { error -> Log.e(TAG, "Could not stop RootService during foreground destroy", error) }
         serviceScope.cancel()
-        isRunning = false
-        isStarting = false
         super.onDestroy()
     }
 
+    internal fun requestRunningRuntime(
+        reload: Boolean,
+        operation: suspend (Long) -> Unit
+    ) {
+        val before = lifecycle.snapshot()
+        val supersededSession = runtimeSessionId.takeIf {
+            it.isNotBlank() && before.state in setOf(RootLifecycleState.STARTING, RootLifecycleState.RELOADING)
+        }
+        lifecycleStartedAtMs = android.os.SystemClock.elapsedRealtime()
+        val token = lifecycle.requestRunning(reload)
+        syncLifecycleFlags()
+        logLifecycle(
+            event = if (reload) "reload_requested" else "start_requested",
+            generation = token,
+            reason = "service_command",
+            from = before.state
+        )
+        if (before.state == RootLifecycleState.STOPPING) {
+            val stoppingJob = lifecycleJob
+            lifecycleJob = serviceScope.launch {
+                stoppingJob?.join()
+                val stopped = lifecycle.snapshot()
+                if (lifecycle.isCurrentRunningRequest(token) && stopped.state == RootLifecycleState.STOPPED) {
+                    operation(token)
+                } else if (lifecycle.isCurrentRunningRequest(token)) {
+                    Log.e(
+                        TAG,
+                        "[ROOT_LIFECYCLE] event=queued_start_blocked generation=$token state=${stopped.state}"
+                    )
+                }
+            }
+            return
+        }
+        lifecycleJob?.cancel()
+        lifecycleJob = serviceScope.launch {
+            try {
+                supersededSession?.let { sessionId ->
+                    runCatching { rootConnection.service?.requestStop(sessionId) }
+                        .onFailure { error -> Log.w(TAG, "Root superseded generation stop signal failed", error) }
+                }
+                operation(token)
+            } catch (_: CancellationException) {
+                Log.i(TAG, "[ROOT_LIFECYCLE] event=generation_cancelled generation=$token")
+            }
+        }
+    }
+
+    internal fun requestStopRuntime(stopSelfAfter: Boolean, reason: String) {
+        val before = lifecycle.snapshot()
+        lifecycleStartedAtMs = android.os.SystemClock.elapsedRealtime()
+        val token = lifecycle.requestStopped()
+        syncLifecycleFlags()
+        logLifecycle("stop_requested", token, reason, before.state)
+        lifecycleJob?.cancel()
+        uidRefreshJob?.cancel()
+        uidRefreshJob = null
+        monitorJob?.cancel()
+        monitorJob = null
+        val sessionId = runtimeSessionId
+        lifecycleJob = serviceScope.launch {
+            if (sessionId.isNotBlank()) {
+                runCatching { rootConnection.service?.requestStop(sessionId) }
+                    .onFailure { error -> Log.w(TAG, "Root stop preemption signal failed", error) }
+            }
+            stopRuntime(stopSelfAfter, token)
+        }
+    }
+
     @Suppress("CognitiveComplexMethod", "LongMethod")
-    private suspend fun startRuntime(configPathOverride: String?) = lifecycleMutex.withLock {
-        startRuntimeLocked(configPathOverride)
+    internal suspend fun startRuntime(
+        configPathOverride: String?,
+        requestId: String = "",
+        token: Long
+    ) = lifecycleMutex.withLock {
+        ensureRunningRequest(token)
+        startRuntimeLocked(configPathOverride, requestId, token)
     }
 
     @Suppress("CognitiveComplexMethod", "LongMethod", "CyclomaticComplexMethod")
-    private suspend fun startRuntimeLocked(
+    internal suspend fun startRuntimeLocked(
         configPathOverride: String?,
         requestId: String = "",
-        expectedConfigDigest: String = "",
-        expectedAppRoutingDigest: String = "",
-        expectedSidecarDigest: String = "",
-        expectedSidecarJson: String = "",
-        expectedStaticPlanDigest: String = "",
-        expectedRoutingGeneration: Long = 0L
+        token: Long
     ) {
         val startedAt = android.os.SystemClock.elapsedRealtime()
         var phaseStartedAt = startedAt
         var previousMarker: RootGenerationMarker? = null
         var candidateGeneration: ConfigRepository.ConfigGenerationResult? = null
+        var returnedRootSnapshot: RootRuntimeSnapshot? = null
         try {
-            if (isRunning || isStarting) return
-            startAbortRequested = false
-            isStarting = true
+            ensureRunningRequest(token)
+            if (!transitionLifecycle(token, RootLifecycleState.STARTING, "start_entered")) {
+                throw CancellationException("Root start generation $token was superseded")
+            }
             startForegroundCompat(getString(R.string.root_mode_starting))
             VpnStateStore.setPending("starting")
             VpnStateStore.setManuallyStopped(false)
@@ -290,40 +345,39 @@ class RootTransparentForegroundService : Service() {
             val settingsRepository = SettingsRepository.getInstance(this)
             previousMarker = RootGenerationStore.readCurrentStrict(filesDir)
             settingsRepository.reloadFromStorage()
+            val packageCleanup = settingsRepository.removeUninstalledPerAppPackages(
+                InstalledAppsRepository.queryInstalledPackageNames(this)
+            ).getOrThrow()
+            if (packageCleanup.changed) {
+                Log.w(
+                    TAG,
+                    "[ROOT_NET] event=stale_packages_removed revision=${packageCleanup.revision}"
+                )
+            }
             val settings = settingsRepository.settings.value
             showNotificationSpeed = settings.showNotificationSpeed
             check(settings.resolvedTrafficCaptureMode() == TrafficCaptureMode.ROOT_TRANSPARENT) {
                 "Root transparent mode is not selected"
             }
-            val generation = configPathOverride?.takeIf(String::isNotBlank)?.let { path ->
-                loadRootGenerationResult(
-                    path = path,
-                    requestId = requestId,
-                    expectedConfigDigest = expectedConfigDigest,
-                    expectedSidecarDigest = expectedSidecarDigest,
-                    expectedSidecarJson = expectedSidecarJson,
-                    expectedStaticPlanDigest = expectedStaticPlanDigest,
-                    expectedAppRoutingDigest = expectedAppRoutingDigest,
-                    expectedRoutingGeneration = expectedRoutingGeneration
-                )
-            } ?: ConfigRepository.getInstance(this).generateConfigFile()
+            val candidateRequestId = requestId.ifBlank { UUID.randomUUID().toString() }
+            val generation = configPathOverride
+                ?.takeIf { it.isNotBlank() && !packageCleanup.changed }
+                ?.let { path ->
+                    loadRootGenerationResult(
+                        path = path,
+                        requestId = candidateRequestId
+                    )
+                } ?: ConfigRepository.getInstance(this).generateConfigFile(candidateRequestId = candidateRequestId)
                 ?: error("Failed to generate Root transparent config")
+            ensureRunningRequest(token)
             candidateGeneration = generation
             val configPath = generation.path
             val policy = PerAppVpnPolicy.from(settings)
             val actualAppRoutingDigest = ConfigRepository.appRoutingDigest(settings)
-            check(expectedConfigDigest.isBlank() || expectedConfigDigest == generation.configDigest) {
-                "Root candidate config digest mismatch"
-            }
-            check(
-                expectedAppRoutingDigest.isBlank() ||
-                    expectedAppRoutingDigest == generation.rootRoutingAppDigest
-            ) {
-                "Root lane app routing digest mismatch"
-            }
             logStartPhase("config", phaseStartedAt)
             phaseStartedAt = android.os.SystemClock.elapsedRealtime()
             val rootService = rootConnection.bind()
+            ensureRunningRequest(token)
             logStartPhase("bind", phaseStartedAt)
             phaseStartedAt = android.os.SystemClock.elapsedRealtime()
             runtimeSessionId = UUID.randomUUID().toString()
@@ -352,46 +406,73 @@ class RootTransparentForegroundService : Service() {
                     generation.rootRoutingAppDigest,
                     generation.rootRoutingGeneration
                 )
-            )
+            ).also { returnedRootSnapshot = it }
+            ensureRunningRequest(token)
             lastRootSnapshot = rootSnapshot
             logStartPhase("root_runtime", phaseStartedAt)
-            Log.i(TAG, "[ROOT_START] inner=${rootSnapshot.startupTimings}")
+            val rootTiming = rootSnapshot.startupTimings.ifBlank {
+                "phase=${rootSnapshot.phase.name};error=${rootSnapshot.error.ifBlank { "unknown" }}"
+            }
+            Log.i(TAG, "[ROOT_START] inner=$rootTiming")
             phaseStartedAt = android.os.SystemClock.elapsedRealtime()
             completeRootRuntime(
                 rootService = rootService,
                 rootSnapshot = rootSnapshot,
                 generation = generation,
-                requestId = requestId,
+                requestId = generation.requestId,
                 policy = policy,
                 settings = settings,
-                appRoutingDigest = actualAppRoutingDigest
+                appRoutingDigest = actualAppRoutingDigest,
+                token = token
             )
             logStartPhase("total", startedAt)
+        } catch (error: CancellationException) {
+            restoreRootGenerationAfterFailure(previousMarker, candidateGeneration)
+            candidateGeneration?.requestId?.takeIf(String::isNotBlank)
+                ?.let(NodeProtectionStore::discardStagedRuntimeMappings)
+            Log.i(TAG, "Root transparent startup superseded generation=$token")
+            throw error
         } catch (error: Exception) {
             restoreRootGenerationAfterFailure(previousMarker, candidateGeneration)
-            requestId.takeIf(String::isNotBlank)?.let(NodeProtectionStore::discardStagedRuntimeMappings)
-            if (startAbortRequested) {
-                Log.i(TAG, "Root transparent startup aborted by stop request")
-                isStarting = false
-                return
-            }
+            candidateGeneration?.requestId?.takeIf(String::isNotBlank)
+                ?.let(NodeProtectionStore::discardStagedRuntimeMappings)
+            ensureRunningRequest(token)
             Log.e(TAG, "Root transparent startup failed", error)
-            val stopped = runCatching {
-                rootConnection.service?.stop(runtimeSessionId)?.let(RootRuntimeSnapshot::fromBundle)
-            }.getOrNull()
+            val requiresSynchronousStop = rootStartFailureRequiresSynchronousStop(returnedRootSnapshot)
+            val rollbackStartedAt = android.os.SystemClock.elapsedRealtime()
+            if (requiresSynchronousStop) {
+                SingBoxIpcHub.update(
+                    state = ServiceState.STOPPING,
+                    lastError = error.message ?: "Root transparent startup failed",
+                    readiness = rootReadiness(DataPlaneStatus.BLOCKING, "root_start_rollback")
+                )
+            }
+            val stopped = if (requiresSynchronousStop) {
+                runCatching {
+                    rootConnection.service?.stop(runtimeSessionId)?.let(RootRuntimeSnapshot::fromBundle)
+                }.getOrNull()
+            } else {
+                returnedRootSnapshot
+            }
+            Log.i(
+                TAG,
+                "[ROOT_START] phase=failure_rollback " +
+                    "duration_ms=${android.os.SystemClock.elapsedRealtime() - rollbackStartedAt} " +
+                    "synchronous=$requiresSynchronousStop returned_phase=${returnedRootSnapshot?.phase}"
+            )
             if (stopped != null) {
                 lastRootSnapshot = stopped
             } else if (runtimeSessionId.isNotBlank()) {
                 lastRootSnapshot = RootRuntimeSnapshot(
-                    phase = RootRuntimePhase.FAILED_BLOCKED,
+                    phase = RootRuntimePhase.FAILED_VERIFICATION,
                     runtimeSessionId = runtimeSessionId,
-                    rulesInstalled = true,
+                    rulesInstalled = false,
                     error = "Root startup cleanup could not be confirmed"
                 )
             }
-            val cleanupFailed = lastRootSnapshot.phase == RootRuntimePhase.FAILED_BLOCKED
-            isRunning = false
-            isStarting = false
+            val cleanupFailed = lastRootSnapshot.phase == RootRuntimePhase.FAILED_BLOCKED ||
+                lastRootSnapshot.rulesInstalled
+            transitionLifecycle(token, RootLifecycleState.FAILED, "start_failed")
             VpnStateStore.setActive(false)
             VpnStateStore.setPending("")
             VpnStateStore.setMode(VpnStateStore.CoreMode.NONE)
@@ -403,22 +484,29 @@ class RootTransparentForegroundService : Service() {
                     if (cleanupFailed) "root_rules_present" else "root_start_failed"
                 )
             )
-            rootConnection.unbind()
-            stopForeground(STOP_FOREGROUND_REMOVE)
-            stopSelf()
+            if (cleanupFailed) {
+                updateNotification()
+            } else {
+                runtimeSessionId = ""
+                rootConnection.stopRootService()
+                stopForeground(STOP_FOREGROUND_REMOVE)
+                stopSelf()
+            }
         }
     }
 
     @Suppress("LongParameterList", "LongMethod")
-    private suspend fun completeRootRuntime(
+    internal suspend fun completeRootRuntime(
         rootService: IRootSingBoxService,
         rootSnapshot: RootRuntimeSnapshot,
         generation: ConfigRepository.ConfigGenerationResult,
         requestId: String,
         policy: PerAppVpnPolicy,
         settings: com.kunk.singbox.model.AppSettings,
-        appRoutingDigest: String
+        appRoutingDigest: String,
+        token: Long
     ) {
+        ensureRunningRequest(token)
         rootRunningSnapshotError(
             rootSnapshot,
             RootRuntimeExpectation(
@@ -433,11 +521,9 @@ class RootTransparentForegroundService : Service() {
             )
         )?.let(::error)
         val configContent = File(generation.path).readText(Charsets.UTF_8)
-        check(NodeProtectionStore.activateStagedRuntimeMappings(requestId, configContent)) {
-            "Root candidate runtime node mappings could not be activated"
-        }
         SingBoxCore.ensureLibboxSetup(this)
         commandManager.startClientsWithFd { rootService.openCommandConnection() }.getOrThrow()
+        ensureRunningRequest(token)
         SelectorManager.updateCommandClient(commandManager.getCommandClient())
         recordSelector(generation.path)
         VpnStateStore.clearAutoFailoverRuntimeState()
@@ -469,6 +555,7 @@ class RootTransparentForegroundService : Service() {
                 rootRuntimeSessionId = rootSnapshot.runtimeSessionId
             )
         )) { "Root applied application policy could not be committed" }
+        ensureRunningRequest(token)
         val rootMarker = generation.toRootGenerationMarker()
         check(RootGenerationStore.commit(filesDir, rootMarker, configContent)) {
             "Root generation marker could not be committed"
@@ -476,13 +563,23 @@ class RootTransparentForegroundService : Service() {
         RootGenerationStore.writeCompatibilityCaches(filesDir, configContent, rootMarker)
         check(RootGenerationStore.readCurrentStrict(filesDir) == rootMarker)
         check(RootGenerationStore.cacheMatchesCurrent(filesDir, "running_config.json", rootMarker))
+        check(NodeProtectionStore.activateStagedRuntimeMappings(requestId, configContent)) {
+            "Root candidate runtime node mappings could not be activated"
+        }
+        Log.i(
+            TAG,
+            "[ROOT_GENERATION] generation=${rootMarker.generation} phase=commit " +
+                "config=${rootMarker.configFileSha256} appRouting=${rootMarker.appRoutingSha256}"
+        )
+        ensureRunningRequest(token)
         runCatching {
             RootGenerationStore.pruneGenerations(filesDir, setOf(rootMarker.generation))
         }.onFailure { error ->
             Log.w(TAG, "Could not prune stale Root generations", error)
         }
-        isRunning = true
-        isStarting = false
+        check(transitionLifecycle(token, RootLifecycleState.RUNNING, "runtime_ready")) {
+            "Root lifecycle generation became stale before RUNNING"
+        }
         VpnStateStore.setMode(VpnStateStore.CoreMode.ROOT)
         VpnStateStore.setActive(true)
         VpnStateStore.setPending("")
@@ -500,7 +597,7 @@ class RootTransparentForegroundService : Service() {
         startMonitor()
     }
 
-    private fun ConfigRepository.ConfigGenerationResult.toRootGenerationMarker(): RootGenerationMarker =
+    internal fun ConfigRepository.ConfigGenerationResult.toRootGenerationMarker(): RootGenerationMarker =
         RootGenerationStore.marker(
             generation = rootRoutingGeneration,
             configFileSha256 = configDigest,
@@ -509,7 +606,7 @@ class RootTransparentForegroundService : Service() {
             appRoutingSha256 = rootRoutingAppDigest
         )
 
-    private fun restoreRootGenerationAfterFailure(
+    internal fun restoreRootGenerationAfterFailure(
         previousMarker: RootGenerationMarker?,
         candidate: ConfigRepository.ConfigGenerationResult?
     ) {
@@ -533,85 +630,87 @@ class RootTransparentForegroundService : Service() {
         }
     }
 
-    private fun logStartPhase(phase: String, startedAt: Long) {
+    internal fun logStartPhase(phase: String, startedAt: Long) {
         Log.i(TAG, "[ROOT_START] phase=$phase duration_ms=${android.os.SystemClock.elapsedRealtime() - startedAt}")
     }
 
-    @Suppress("LongParameterList")
-    private fun loadRootGenerationResult(
+    internal suspend fun ensureRunningRequest(token: Long) {
+        currentCoroutineContext().ensureActive()
+        if (!lifecycle.isCurrentRunningRequest(token)) {
+            throw CancellationException("Root lifecycle generation $token is no longer desired")
+        }
+    }
+
+    internal fun transitionLifecycle(token: Long, target: RootLifecycleState, reason: String): Boolean {
+        val before = lifecycle.snapshot()
+        val accepted = lifecycle.transition(token, target)
+        if (accepted) {
+            syncLifecycleFlags()
+            logLifecycle("transition", token, reason, before.state)
+        }
+        return accepted
+    }
+
+    internal fun syncLifecycleFlags() {
+        val state = lifecycle.snapshot().state
+        isRunning = state == RootLifecycleState.RUNNING
+        isStarting = state == RootLifecycleState.STARTING || state == RootLifecycleState.RELOADING
+    }
+
+    internal fun logLifecycle(
+        event: String,
+        generation: Long,
+        reason: String,
+        from: RootLifecycleState
+    ) {
+        val current = lifecycle.snapshot()
+        Log.i(
+            TAG,
+            "[ROOT_LIFECYCLE] event=$event from=$from to=${current.state} " +
+                "desiredState=${current.desiredState} generation=$generation reason=$reason " +
+                "caller=RootTransparentForegroundService thread=${Thread.currentThread().name} " +
+                "elapsed_ms=${android.os.SystemClock.elapsedRealtime() - lifecycleStartedAtMs}"
+        )
+    }
+
+    internal fun loadRootGenerationResult(
         path: String,
-        requestId: String,
-        expectedConfigDigest: String,
-        expectedSidecarDigest: String,
-        expectedSidecarJson: String,
-        expectedStaticPlanDigest: String,
-        expectedAppRoutingDigest: String,
-        expectedRoutingGeneration: Long
+        requestId: String
     ): ConfigRepository.ConfigGenerationResult {
-        check(expectedRoutingGeneration > 0L) { "Root candidate routing generation is missing" }
-        check(
-            RootGenerationStore.generationForConfigPath(filesDir, path) == expectedRoutingGeneration
-        ) {
-            "Root candidate config is outside its generation directory"
-        }
-        val configFile = File(path).canonicalFile
-        check(configFile.isFile) { "Root candidate config does not exist" }
-        val configContent = configFile.readText(Charsets.UTF_8)
-        val sidecarFile = File(configFile.parentFile, "root-routing.json")
-        val manifestFile = File(configFile.parentFile, "manifest.json")
-        check(sidecarFile.isFile && manifestFile.isFile) { "Root candidate routing artifacts are incomplete" }
+        val marker = RootGenerationStore.resolveConfigMarker(filesDir, path)
+        val configFile = RootGenerationStore.configFile(filesDir, marker)
+        val sidecarFile = RootGenerationStore.sidecarFile(filesDir, marker)
+        val manifestFile = RootGenerationStore.manifestFile(filesDir, marker)
         val sidecarJson = sidecarFile.readText(Charsets.UTF_8)
-        val plan = RootRoutingArtifactValidator.requireBoundPlanJson(sidecarJson)
-        val manifest = RootRoutingArtifactValidator.requireManifestJson(manifestFile.readText(Charsets.UTF_8))
-        val configDigest = ConfigRepository.sha256(configContent)
-        val sidecarDigest = ConfigRepository.sha256(sidecarJson)
-        check(configDigest == manifest.configFileSha256 && sidecarDigest == manifest.sidecarFileSha256) {
-            "Root candidate routing artifact digest mismatch"
-        }
-        check(plan.configFileSha256 == configDigest) { "Root candidate plan config digest mismatch" }
-        check(plan.staticPlanSha256 == RootAppRoutingCanonical.staticPlanSha256(plan)) {
-            "Root candidate static plan digest mismatch"
-        }
-        check(plan.appRoutingSha256 == RootAppRoutingCanonical.appRoutingSha256(plan)) {
-            "Root candidate app routing digest mismatch"
-        }
-        check(expectedConfigDigest.isBlank() || expectedConfigDigest == configDigest)
-        check(expectedSidecarDigest.isBlank() || expectedSidecarDigest == sidecarDigest)
-        check(expectedSidecarJson.isBlank() || expectedSidecarJson == sidecarJson)
-        check(expectedStaticPlanDigest.isBlank() || expectedStaticPlanDigest == plan.staticPlanSha256)
-        check(expectedAppRoutingDigest.isBlank() || expectedAppRoutingDigest == plan.appRoutingSha256)
-        check(expectedRoutingGeneration == 0L || expectedRoutingGeneration == plan.generation)
         return ConfigRepository.ConfigGenerationResult(
             path = configFile.absolutePath,
             activeNodeTag = null,
             outboundTags = emptySet(),
             requestId = requestId,
-            configDigest = configDigest,
-            appRoutingDigest = plan.appRoutingSha256,
+            configDigest = marker.configFileSha256,
+            appRoutingDigest = marker.appRoutingSha256,
             rootRoutingSidecarPath = sidecarFile.absolutePath,
             rootRoutingManifestPath = manifestFile.absolutePath,
             rootRoutingSidecarJson = sidecarJson,
-            rootRoutingSidecarDigest = sidecarDigest,
-            rootRoutingStaticPlanDigest = plan.staticPlanSha256,
-            rootRoutingAppDigest = plan.appRoutingSha256,
-            rootRoutingGeneration = plan.generation
+            rootRoutingSidecarDigest = marker.sidecarFileSha256,
+            rootRoutingStaticPlanDigest = marker.staticPlanSha256,
+            rootRoutingAppDigest = marker.appRoutingSha256,
+            rootRoutingGeneration = marker.generation
         )
     }
 
     @Suppress("LongMethod")
-    private suspend fun stopRuntime(stopSelfAfter: Boolean) = lifecycleMutex.withLock {
-        stopRuntimeLocked(stopSelfAfter)
+    internal suspend fun stopRuntime(stopSelfAfter: Boolean, token: Long) = lifecycleMutex.withLock {
+        stopRuntimeLocked(stopSelfAfter, token)
     }
 
-    @Suppress("LongMethod")
-    private suspend fun stopRuntimeLocked(stopSelfAfter: Boolean) {
+    @Suppress("LongMethod", "CognitiveComplexMethod", "CyclomaticComplexMethod")
+    internal suspend fun stopRuntimeLocked(stopSelfAfter: Boolean, token: Long) {
         try {
+            transitionLifecycle(token, RootLifecycleState.STOPPING, "cleanup_started")
             monitorJob?.cancel()
             monitorJob = null
-            uidRefreshRetryJob?.cancel()
-            uidRefreshRetryJob = null
             uidRefreshScheduled.set(false)
-            uidRefreshRetryCount = 0
             autoFailover.stop()
             SingBoxIpcHub.update(
                 state = ServiceState.STOPPING,
@@ -619,26 +718,35 @@ class RootTransparentForegroundService : Service() {
             )
             commandManager.stop()
             SelectorManager.clear()
-            val stopped = if (runtimeSessionId.isBlank() || startAbortRequested) {
-                RootRuntimeSnapshot(phase = RootRuntimePhase.STOPPED)
-            } else runCatching {
-                val rootService = rootConnection.service
-                    ?: error("RootService disconnected before cleanup confirmation")
+            val stopped = runCatching {
+                val rootService = rootConnection.service ?: rootConnection.bind()
+                runtimeSessionId.takeIf(String::isNotBlank)?.let(rootService::requestStop)
                 RootRuntimeSnapshot.fromBundle(rootService.stop(runtimeSessionId))
             }.getOrElse { error ->
                 RootRuntimeSnapshot(
-                    phase = RootRuntimePhase.FAILED_BLOCKED,
+                    phase = RootRuntimePhase.FAILED_VERIFICATION,
                     runtimeSessionId = runtimeSessionId,
-                    rulesInstalled = true,
+                    rulesInstalled = false,
                     error = error.message ?: "Root cleanup could not be confirmed"
                 )
             }
             lastRootSnapshot = stopped
-            val cleanupFailed = stopped.phase == RootRuntimePhase.FAILED_BLOCKED
-            if (!cleanupFailed) rootConnection.unbind()
-            isRunning = false
-            isStarting = false
-            startAbortRequested = false
+            val cleanupFailed = stopped.phase == RootRuntimePhase.FAILED_BLOCKED || stopped.rulesInstalled
+            val verificationFailed = stopped.phase == RootRuntimePhase.FAILED_VERIFICATION
+            if (cleanupFailed) {
+                transitionLifecycle(token, RootLifecycleState.FAILED, "cleanup_failed")
+            } else if (verificationFailed) {
+                transitionLifecycle(token, RootLifecycleState.FAILED, "cleanup_verification_failed")
+            } else {
+                check(
+                    stopped.phase == RootRuntimePhase.STOPPED ||
+                        stopped.phase == RootRuntimePhase.FAILED_UNPROTECTED
+                ) {
+                    stopped.error.ifBlank { "Root cleanup did not reach STOPPED" }
+                }
+                transitionLifecycle(token, RootLifecycleState.STOPPED, "cleanup_verified")
+            }
+            if (!cleanupFailed) rootConnection.stopRootService()
             if (!cleanupFailed) runtimeSessionId = ""
             VpnStateStore.setActive(false)
             VpnStateStore.setPending("")
@@ -648,582 +756,47 @@ class RootTransparentForegroundService : Service() {
             SingBoxIpcHub.update(
                 state = ServiceState.STOPPED,
                 activeLabel = "",
-                lastError = stopped.error.takeIf { cleanupFailed }.orEmpty(),
+                lastError = stopped.error,
                 readiness = rootReadiness(
-                    if (cleanupFailed) DataPlaneStatus.FAILED_BLOCKED else DataPlaneStatus.STOPPED,
-                    if (cleanupFailed) "root_rules_present" else "root_stopped"
+                    when {
+                        cleanupFailed -> DataPlaneStatus.FAILED_BLOCKED
+                        verificationFailed -> DataPlaneStatus.FAILED_UNPROTECTED
+                        else -> DataPlaneStatus.STOPPED
+                    },
+                    when {
+                        cleanupFailed -> "root_rules_present"
+                        verificationFailed -> "root_cleanup_verification_failed"
+                        else -> "root_stopped"
+                    }
                 )
             )
-            stopForeground(STOP_FOREGROUND_REMOVE)
-            if (stopSelfAfter && !cleanupFailed) stopSelf()
+            if (cleanupFailed || verificationFailed) {
+                updateNotification()
+            } else {
+                stopForeground(STOP_FOREGROUND_REMOVE)
+                if (stopSelfAfter && lifecycle.snapshot().desiredState == RootDesiredState.STOPPED) stopSelf()
+            }
         } catch (error: Exception) {
             Log.e(TAG, "Root transparent stop failed", error)
             lastRootSnapshot = RootRuntimeSnapshot(
-                phase = RootRuntimePhase.FAILED_BLOCKED,
+                phase = RootRuntimePhase.FAILED_VERIFICATION,
                 runtimeSessionId = runtimeSessionId,
-                rulesInstalled = true,
+                rulesInstalled = false,
                 error = error.message ?: "Root cleanup could not be confirmed"
             )
-            isRunning = false
-            isStarting = false
+            transitionLifecycle(token, RootLifecycleState.FAILED, "cleanup_exception")
             VpnStateStore.setActive(false)
             VpnStateStore.setPending("")
             VpnStateStore.setMode(VpnStateStore.CoreMode.NONE)
             SingBoxIpcHub.update(
                 state = ServiceState.STOPPED,
                 lastError = lastRootSnapshot.error,
-                readiness = rootReadiness(DataPlaneStatus.FAILED_BLOCKED, "root_cleanup_unconfirmed")
-            )
-            stopForeground(STOP_FOREGROUND_REMOVE)
-            if (stopSelfAfter) {
-                Log.w(TAG, "Root stop remains blocked; keeping service alive for cleanup retry")
-            }
-        }
-    }
-
-    private suspend fun restartRuntime(
-        configPathOverride: String?,
-        requestId: String = "",
-        expectedConfigDigest: String = "",
-        expectedAppRoutingDigest: String = "",
-        expectedSidecarDigest: String = "",
-        expectedSidecarJson: String = "",
-        expectedStaticPlanDigest: String = "",
-        expectedRoutingGeneration: Long = 0L
-    ) = lifecycleMutex.withLock {
-        if (isRunning && rootConnection.service != null && lastRootSnapshot.phase == RootRuntimePhase.RUNNING) {
-            reloadRuntimeLocked(
-                configPathOverride,
-                requestId,
-                expectedConfigDigest,
-                expectedAppRoutingDigest,
-                expectedSidecarDigest,
-                expectedSidecarJson,
-                expectedStaticPlanDigest,
-                expectedRoutingGeneration
-            )
-            return@withLock
-        }
-        stopRuntimeLocked(stopSelfAfter = false)
-        // A blocked cleanup is retried by startRuntimeLocked. The Root
-        // process checks ownership and listener absence before accepting the
-        // next generation; a persistent conflict remains blocked.
-        startRuntimeLocked(
-            configPathOverride = configPathOverride,
-            requestId = requestId,
-            expectedConfigDigest = expectedConfigDigest,
-            expectedAppRoutingDigest = expectedAppRoutingDigest,
-            expectedSidecarDigest = expectedSidecarDigest,
-            expectedSidecarJson = expectedSidecarJson,
-            expectedStaticPlanDigest = expectedStaticPlanDigest,
-            expectedRoutingGeneration = expectedRoutingGeneration
-        )
-    }
-
-    @Suppress("LongParameterList", "LongMethod", "CognitiveComplexMethod", "CyclomaticComplexMethod")
-    private suspend fun reloadRuntimeLocked(
-        configPathOverride: String?,
-        requestId: String,
-        expectedConfigDigest: String,
-        expectedAppRoutingDigest: String,
-        expectedSidecarDigest: String,
-        expectedSidecarJson: String,
-        expectedStaticPlanDigest: String,
-        expectedRoutingGeneration: Long
-    ) {
-        val previousMarker = RootGenerationStore.readCurrentStrict(filesDir)
-        var generation: ConfigRepository.ConfigGenerationResult? = null
-        try {
-            monitorJob?.cancel()
-            monitorJob = null
-            autoFailover.stop()
-            isStarting = true
-            VpnStateStore.setPending("starting")
-            SingBoxIpcHub.update(
-                state = ServiceState.STARTING,
-                lastError = "",
-                readiness = rootReadiness(DataPlaneStatus.BLOCKING, "root_cold_reload")
-            )
-            val settingsRepository = SettingsRepository.getInstance(this)
-            settingsRepository.reloadFromStorage()
-            val settings = settingsRepository.settings.value
-            val candidate = configPathOverride?.takeIf(String::isNotBlank)?.let { path ->
-                loadRootGenerationResult(
-                    path,
-                    requestId,
-                    expectedConfigDigest,
-                    expectedSidecarDigest,
-                    expectedSidecarJson,
-                    expectedStaticPlanDigest,
-                    expectedAppRoutingDigest,
-                    expectedRoutingGeneration
-                )
-            } ?: ConfigRepository.getInstance(this).generateConfigFile()
-                ?: error("Failed to generate Root reload config")
-            generation = candidate
-            check(candidate.rootRoutingGeneration > (previousMarker?.generation ?: 0L)) {
-                "Root reload candidate is not newer than the committed generation"
-            }
-            val rootService = rootConnection.service ?: error("RootService disconnected before reload")
-            commandManager.stop()
-            SelectorManager.clear()
-            val rootSnapshot = RootRuntimeSnapshot.fromBundle(
-                rootService.hotReload(
-                    candidate.path,
-                    runtimeSessionId,
-                    candidate.configDigest,
-                    candidate.rootRoutingSidecarDigest,
-                    candidate.rootRoutingSidecarJson,
-                    candidate.rootRoutingStaticPlanDigest,
-                    candidate.rootRoutingAppDigest,
-                    candidate.rootRoutingGeneration
-                )
-            )
-            lastRootSnapshot = rootSnapshot
-            val snapshotError = rootRunningSnapshotError(
-                rootSnapshot,
-                RootRuntimeExpectation(
-                    runtimeSessionId,
-                    candidate.rootRoutingGeneration,
-                    candidate.configDigest,
-                    candidate.rootRoutingSidecarDigest,
-                    candidate.rootRoutingStaticPlanDigest,
-                    candidate.rootRoutingAppDigest,
-                    settings.ipVersionMode != IpVersionMode.IPV6_ONLY,
-                    settings.ipVersionMode != IpVersionMode.IPV4_ONLY
-                )
-            )
-            if (snapshotError != null) {
-                if (rootSnapshot.phase == RootRuntimePhase.RUNNING &&
-                    rootSnapshot.routingGeneration == previousMarker?.generation
-                ) {
-                    restoreReloadedPreviousRuntime(rootService, rootSnapshot, snapshotError)
-                } else {
-                    publishReloadFailure(rootSnapshot, snapshotError)
-                }
-                restoreRootGenerationAfterFailure(previousMarker, candidate)
-                requestId.takeIf(String::isNotBlank)?.let(NodeProtectionStore::discardStagedRuntimeMappings)
-                return
-            }
-            completeRootRuntime(
-                rootService,
-                rootSnapshot,
-                candidate,
-                requestId,
-                PerAppVpnPolicy.from(settings),
-                settings,
-                ConfigRepository.appRoutingDigest(settings)
-            )
-        } catch (error: Exception) {
-            Log.e(TAG, "Root cold reload failed", error)
-            restoreRootGenerationAfterFailure(previousMarker, generation)
-            requestId.takeIf(String::isNotBlank)?.let(NodeProtectionStore::discardStagedRuntimeMappings)
-            val rootService = rootConnection.service
-            val snapshot = runCatching { RootRuntimeSnapshot.fromBundle(rootService?.snapshot) }
-                .getOrDefault(lastRootSnapshot)
-            lastRootSnapshot = snapshot
-            if (rootService != null && snapshot.phase == RootRuntimePhase.RUNNING &&
-                snapshot.routingGeneration == previousMarker?.generation
-            ) {
-                restoreReloadedPreviousRuntime(rootService, snapshot, error.message ?: "Root reload failed")
-            } else {
-                publishReloadFailure(snapshot, error.message ?: "Root reload failed")
-            }
-        }
-    }
-
-    private suspend fun restoreReloadedPreviousRuntime(
-        rootService: IRootSingBoxService,
-        snapshot: RootRuntimeSnapshot,
-        reason: String
-    ) {
-        commandManager.startClientsWithFd { rootService.openCommandConnection() }.getOrThrow()
-        SelectorManager.updateCommandClient(commandManager.getCommandClient())
-        isRunning = true
-        isStarting = false
-        VpnStateStore.setMode(VpnStateStore.CoreMode.ROOT)
-        VpnStateStore.setActive(true)
-        VpnStateStore.setPending("")
-        lastRootSnapshot = snapshot
-        SingBoxIpcHub.update(
-            state = ServiceState.RUNNING,
-            lastError = reason,
-            readiness = rootReadiness(DataPlaneStatus.READY, "root_reload_rolled_back")
-        )
-        updateNotification()
-        startMonitor()
-    }
-
-    private fun publishReloadFailure(snapshot: RootRuntimeSnapshot, reason: String) {
-        if (snapshot.phase == RootRuntimePhase.FAILED_BLOCKED) {
-            isRunning = true
-            publishUidRefreshBlocked(snapshot.copy(error = snapshot.error.ifBlank { reason }))
-            scheduleUidRefreshRetry()
-            return
-        }
-        isRunning = false
-        isStarting = false
-        VpnStateStore.setActive(false)
-        VpnStateStore.setPending("")
-        VpnStateStore.setMode(VpnStateStore.CoreMode.NONE)
-        SingBoxIpcHub.update(
-            state = ServiceState.STOPPED,
-            lastError = reason,
-            readiness = rootReadiness(
-                DataPlaneStatus.FAILED_UNPROTECTED,
-                "root_reload_failed"
-            )
-        )
-        updateNotification()
-    }
-
-    private fun scheduleUidRefresh(reason: String) {
-        if (!isRunning || runtimeSessionId.isBlank() || VpnStateStore.isManuallyStopped()) return
-        if (!uidRefreshScheduled.compareAndSet(false, true)) return
-        uidRefreshRetryJob?.cancel()
-        uidRefreshRetryJob = null
-        serviceScope.launch {
-            try {
-                lifecycleMutex.withLock { refreshUidRoutingLocked(reason) }
-            } finally {
-                uidRefreshScheduled.set(false)
-            }
-            if (lastRootSnapshot.phase == RootRuntimePhase.FAILED_BLOCKED) {
-                scheduleUidRefreshRetry()
-            }
-        }
-    }
-
-    @Suppress("LongMethod")
-    private suspend fun refreshUidRoutingLocked(reason: String) {
-        if (!isRunning || runtimeSessionId.isBlank() || VpnStateStore.isManuallyStopped()) return
-        val rootService = rootConnection.service ?: runCatching { rootConnection.bind() }.getOrNull() ?: return
-        try {
-            monitorJob?.cancel()
-            monitorJob = null
-            autoFailover.stop()
-            isStarting = true
-            VpnStateStore.setActive(false)
-            VpnStateStore.setPending("uid_refresh")
-            SingBoxIpcHub.update(
-                state = ServiceState.STARTING,
-                lastError = "",
-                readiness = rootReadiness(DataPlaneStatus.BLOCKING, "root_uid_refresh")
-            )
-            Log.i(TAG, "Refreshing Root UID routing: $reason")
-            commandManager.stop()
-            SelectorManager.clear()
-            val refreshed = RootRuntimeSnapshot.fromBundle(rootService.blockForUidRefresh(runtimeSessionId))
-            lastRootSnapshot = refreshed
-            val marker = RootGenerationStore.readCurrentStrict(filesDir)
-                ?: error("Committed Root generation is unavailable during UID refresh")
-            val settings = SettingsRepository.getInstance(this).settings.value
-            rootRunningSnapshotError(
-                refreshed,
-                RootRuntimeExpectation(
-                    runtimeSessionId = runtimeSessionId,
-                    routingGeneration = marker.generation,
-                    configFileSha256 = marker.configFileSha256,
-                    sidecarFileSha256 = marker.sidecarFileSha256,
-                    staticPlanSha256 = marker.staticPlanSha256,
-                    appRoutingSha256 = marker.appRoutingSha256,
-                    tproxyIpv4 = settings.ipVersionMode != IpVersionMode.IPV6_ONLY,
-                    tproxyIpv6 = settings.ipVersionMode != IpVersionMode.IPV4_ONLY
-                )
-            )?.let(::error)
-            commandManager.startClientsWithFd { rootService.openCommandConnection() }.getOrThrow()
-            SelectorManager.updateCommandClient(commandManager.getCommandClient())
-            val applied = VpnStateStore.getAppliedPerAppPolicy()
-            check(VpnStateStore.commitAppliedPerAppPolicy(
-                applied.copy(
-                    appliedAtElapsedMs = android.os.SystemClock.elapsedRealtime(),
-                    runtimeGeneration = refreshed.routingGeneration,
-                    resolvedPlanSha256 = refreshed.resolvedPlanSha256,
-                    rootRuntimeSessionId = refreshed.runtimeSessionId
-                )
-            )) { "Refreshed Root UID policy could not be committed" }
-            uidRefreshRetryCount = 0
-            isStarting = false
-            VpnStateStore.setMode(VpnStateStore.CoreMode.ROOT)
-            VpnStateStore.setActive(true)
-            VpnStateStore.setPending("")
-            VpnTileService.persistVpnState(true)
-            NetworkClient.onVpnStateChanged(true)
-            SingBoxIpcHub.update(
-                state = ServiceState.RUNNING,
-                lastError = "",
-                readiness = rootReadiness(DataPlaneStatus.READY, "root_uid_refresh_ready")
+                readiness = rootReadiness(DataPlaneStatus.FAILED_UNPROTECTED, "root_cleanup_unconfirmed")
             )
             updateNotification()
-            startMonitor()
-        } catch (error: Exception) {
-            Log.e(TAG, "Root UID routing refresh failed", error)
-            val current = runCatching {
-                RootRuntimeSnapshot.fromBundle(rootService.snapshot)
-            }.getOrDefault(lastRootSnapshot)
-            lastRootSnapshot = current
-            if (current.phase == RootRuntimePhase.FAILED_BLOCKED) {
-                publishUidRefreshBlocked(current.copy(error = current.error.ifBlank { error.message.orEmpty() }))
-            } else {
-                isStarting = false
-                stopRuntimeLocked(stopSelfAfter = true)
+            if (stopSelfAfter && lifecycle.snapshot().desiredState == RootDesiredState.STOPPED) {
+                Log.w(TAG, "Root stop verification failed; keeping service alive for cleanup retry")
             }
         }
     }
-
-    private fun publishUidRefreshBlocked(snapshot: RootRuntimeSnapshot) {
-        lastRootSnapshot = snapshot
-        isStarting = false
-        VpnStateStore.setMode(VpnStateStore.CoreMode.ROOT)
-        VpnStateStore.setActive(false)
-        VpnStateStore.setPending("")
-        VpnTileService.persistVpnState(false)
-        NetworkClient.onVpnStateChanged(false)
-        SingBoxIpcHub.update(
-            state = ServiceState.STOPPED,
-            lastError = snapshot.error.ifBlank { "Root UID refresh is blocked" },
-            readiness = rootReadiness(DataPlaneStatus.FAILED_BLOCKED, "root_uid_refresh_blocked")
-        )
-        updateNotification()
-    }
-
-    private fun scheduleUidRefreshRetry() {
-        if (!isRunning || runtimeSessionId.isBlank() || VpnStateStore.isManuallyStopped()) return
-        uidRefreshRetryJob?.cancel()
-        val retryDelay = minOf(30_000L, 2_000L shl minOf(uidRefreshRetryCount, 4))
-        uidRefreshRetryCount++
-        uidRefreshRetryJob = serviceScope.launch {
-            delay(retryDelay)
-            scheduleUidRefresh("root_uid_refresh_retry")
-        }
-    }
-
-    @Suppress("DEPRECATION")
-    private fun registerUidRefreshReceivers() {
-        val packageFilter = IntentFilter().apply {
-            addAction(Intent.ACTION_PACKAGE_ADDED)
-            addAction(Intent.ACTION_PACKAGE_REMOVED)
-            addAction(Intent.ACTION_PACKAGE_REPLACED)
-            addAction(Intent.ACTION_PACKAGE_CHANGED)
-            addDataScheme("package")
-        }
-        val userFilter = IntentFilter().apply {
-            addAction("android.intent.action.USER_ADDED")
-            addAction("android.intent.action.USER_REMOVED")
-            addAction(Intent.ACTION_USER_UNLOCKED)
-            addAction(Intent.ACTION_MANAGED_PROFILE_ADDED)
-            addAction(Intent.ACTION_MANAGED_PROFILE_REMOVED)
-            addAction(Intent.ACTION_MANAGED_PROFILE_AVAILABLE)
-            addAction(Intent.ACTION_MANAGED_PROFILE_UNAVAILABLE)
-        }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            registerReceiver(packageChangeReceiver, packageFilter, Context.RECEIVER_NOT_EXPORTED)
-            registerReceiver(userChangeReceiver, userFilter, Context.RECEIVER_NOT_EXPORTED)
-        } else {
-            registerReceiver(packageChangeReceiver, packageFilter)
-            registerReceiver(userChangeReceiver, userFilter)
-        }
-    }
-
-    private fun unregisterUidRefreshReceivers() {
-        runCatching { unregisterReceiver(packageChangeReceiver) }
-        runCatching { unregisterReceiver(userChangeReceiver) }
-    }
-
-    @Suppress("ComplexCondition")
-    private fun scheduleControlChannelRecovery(reason: String) {
-        if (!isRunning || isStarting || lastRootSnapshot.phase != RootRuntimePhase.RUNNING ||
-            VpnStateStore.isManuallyStopped()
-        ) return
-        if (!controlRecoveryScheduled.compareAndSet(false, true)) return
-        serviceScope.launch {
-            try {
-                Log.w(TAG, "Root command channel unhealthy, restarting runtime: $reason")
-                restartRuntime(configPathOverride = null)
-            } finally {
-                controlRecoveryScheduled.set(false)
-            }
-        }
-    }
-
-    private fun recordSelector(configPath: String) {
-        val config = runCatching { Gson().fromJson(File(configPath).readText(), SingBoxConfig::class.java) }.getOrNull()
-        val proxy = config?.outbounds.orEmpty().firstOrNull { it.tag == "PROXY" }
-        SelectorManager.recordSelectorSignature(proxy?.outbounds.orEmpty())
-    }
-
-    @Suppress("LoopWithTooManyJumpStatements")
-    private fun startMonitor() {
-        monitorJob?.cancel()
-        monitorJob = serviceScope.launch {
-            while (currentCoroutineContext().isActive && isRunning) {
-                delay(1_000)
-                val rootSnapshot = RootRuntimeSnapshot.fromBundle(rootConnection.service?.snapshot)
-                lastRootSnapshot = rootSnapshot
-                when (rootSnapshot.phase) {
-                    RootRuntimePhase.RUNNING -> Unit
-                    RootRuntimePhase.FAIL_CLOSED -> {
-                        scheduleUidRefresh(rootSnapshot.error.ifBlank { "root_uid_snapshot_changed" })
-                        break
-                    }
-                    RootRuntimePhase.FAILED_BLOCKED -> {
-                        publishUidRefreshBlocked(rootSnapshot)
-                        scheduleUidRefreshRetry()
-                        break
-                    }
-                    RootRuntimePhase.VALIDATING_PLAN,
-                    RootRuntimePhase.UID_SNAPSHOT_1,
-                    RootRuntimePhase.CORE_STARTING,
-                    RootRuntimePhase.CORE_VERIFYING,
-                    RootRuntimePhase.RULES_STAGING,
-                    RootRuntimePhase.UID_SNAPSHOT_2,
-                    RootRuntimePhase.RULES_ACTIVATING,
-                    RootRuntimePhase.ROLLBACK -> SingBoxIpcHub.update(
-                        readiness = rootReadiness(DataPlaneStatus.BLOCKING, "root_uid_refresh")
-                    )
-                    else -> {
-                        val reason = rootSnapshot.error.ifBlank { "Root runtime left RUNNING" }
-                        SingBoxIpcHub.update(
-                            lastError = reason,
-                            readiness = rootReadiness(DataPlaneStatus.FAILED_UNPROTECTED, "root_runtime_lost")
-                        )
-                        stopRuntime(stopSelfAfter = true)
-                        break
-                    }
-                }
-            }
-        }
-    }
-
-    private fun onRootServiceDisconnected() {
-        if (!isRunning && !isStarting) return
-        serviceScope.launch {
-            SingBoxIpcHub.update(
-                lastError = "RootService disconnected",
-                readiness = rootReadiness(DataPlaneStatus.FAILED_UNPROTECTED, "root_binder_died")
-            )
-            stopRuntime(stopSelfAfter = true)
-        }
-    }
-
-    private suspend fun switchNode(
-        outboundTag: String,
-        nodeName: String,
-        fallbackConfigPath: String?
-    ) = lifecycleMutex.withLock {
-        if (outboundTag.isBlank()) return@withLock
-        when (SelectorManager.switchNode(outboundTag)) {
-            is SelectorManager.SwitchResult.Success -> {
-                commandManager.closeConnections()
-                rootConnection.service?.resetNetwork()
-                if (nodeName.isNotBlank()) {
-                    VpnStateStore.setActiveLabel(nodeName)
-                    SingBoxIpcHub.update(activeLabel = nodeName)
-                }
-                updateNotification()
-            }
-            is SelectorManager.SwitchResult.NeedRestart -> {
-                stopRuntimeLocked(stopSelfAfter = false)
-                startRuntimeLocked(fallbackConfigPath)
-            }
-        }
-    }
-
-    private fun rootReadiness(status: DataPlaneStatus, reason: String): DataPlaneReadinessSnapshot =
-        DataPlaneReadinessSnapshot(
-            status = status,
-            tunEstablished = false,
-            systemVpnTransport = false,
-            coreReady = status == DataPlaneStatus.READY,
-            selectorReady = status == DataPlaneStatus.READY && commandManager.isControlChannelReady(),
-            routingScope = "root_tproxy",
-            rootPid = lastRootSnapshot.rootPid,
-            rootFdCount = lastRootSnapshot.rootFdCount,
-            rootRuntimeSessionId = lastRootSnapshot.runtimeSessionId,
-            rootRuleRevision = lastRootSnapshot.ruleRevision,
-            rootRoutingGeneration = lastRootSnapshot.routingGeneration,
-            rootConfigSha256 = lastRootSnapshot.configFileSha256,
-            rootSidecarSha256 = lastRootSnapshot.sidecarFileSha256,
-            rootStaticPlanSha256 = lastRootSnapshot.staticPlanSha256,
-            rootAppRoutingSha256 = lastRootSnapshot.appRoutingSha256,
-            rootResolvedPlanSha256 = lastRootSnapshot.resolvedPlanSha256,
-            rootWatchdogReady = lastRootSnapshot.watchdogReady,
-            rootRulesInstalled = lastRootSnapshot.rulesInstalled,
-            lastReadinessReason = reason
-        )
-
-    private fun startForegroundCompat(text: String) {
-        val notification = rootNotificationManager.createStartingNotification(text)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
-        } else {
-            startForeground(NOTIFICATION_ID, notification)
-        }
-        rootNotificationManager.markForegroundStarted()
-    }
-
-    private fun updateNotification() {
-        requestNotificationUpdate(force = true)
-    }
-
-    private fun requestNotificationUpdate(force: Boolean) {
-        rootNotificationManager.requestNotificationUpdate(buildNotificationState(), this, force)
-    }
-
-    private fun buildNotificationState(): VpnNotificationManager.NotificationState {
-        val repository = ConfigRepository.getInstance(applicationContext)
-        val selectedNodeId = repository.activeNodeId.value
-        val nodeName = resolveNotificationNodeLabel(
-            selectedNodeName = repository.nodes.value.find { it.id == selectedNodeId }?.name,
-            selectedNodeStoreLabel = VpnStateStore.getSelectedNodeLabel(),
-            runtimeNodeName = commandManager.realTimeNodeName ?: VpnStateStore.getActiveLabel()
-        )
-        return VpnNotificationManager.NotificationState(
-            isRunning = isRunning,
-            activeNodeName = nodeName,
-            showSpeed = showNotificationSpeed,
-            uploadSpeed = currentUploadSpeed,
-            downloadSpeed = currentDownloadSpeed,
-            dataPlaneStatus = SingBoxIpcHub.currentReadiness().status
-        )
-    }
-
-    private suspend fun switchNextNodeFromNotification() {
-        if (!isRunning || !notificationNodeSwitchInFlight.compareAndSet(false, true)) return
-        try {
-            val repository = ConfigRepository.getInstance(applicationContext)
-            val candidates = repository.nodes.value.filter {
-                it.autoSelectionEligible && !it.meteredProtected
-            }
-            val nextNodeId = nextRootNotificationNodeId(candidates.map { it.id }, repository.activeNodeId.value)
-                ?: return
-            when (val result = repository.setActiveNodeWithResult(nextNodeId)) {
-                ConfigRepository.NodeSwitchResult.Success,
-                ConfigRepository.NodeSwitchResult.NotRunning -> requestNotificationUpdate(force = true)
-                is ConfigRepository.NodeSwitchResult.Failed -> Log.e(
-                    TAG,
-                    "Notification node switch failed: ${result.reason}"
-                )
-            }
-        } finally {
-            notificationNodeSwitchInFlight.set(false)
-        }
-    }
-
-    private fun resetConnectionsFromNotification() {
-        if (!isRunning) return
-        val closed = commandManager.closeConnections()
-        val reset = rootConnection.service?.resetNetwork() == true
-        LogRepository.getInstance().addLog(
-            "INFO: Root notification reset connections closed=$closed resetNetwork=$reset"
-        )
-        requestNotificationUpdate(force = true)
-    }
-}
-
-internal fun nextRootNotificationNodeId(candidateIds: List<String>, activeNodeId: String?): String? {
-    val candidates = candidateIds.map(String::trim).filter(String::isNotBlank).distinct()
-    if (candidates.size < 2) return null
-    val currentIndex = candidates.indexOf(activeNodeId)
-    return candidates[(currentIndex + 1) % candidates.size]
 }

@@ -81,6 +81,30 @@ internal object RootGenerationStore {
         parent.name.removePrefix("generation_").toLongOrNull()?.takeIf { it > 0L }
     }.getOrNull()
 
+    fun resolveConfigMarker(filesDir: File, path: String): RootGenerationMarker {
+        val generation = generationForConfigPath(filesDir, path)
+            ?: error("Root candidate config is outside its generation directory")
+        val config = File(path).canonicalFile
+        val manifestFile = File(config.parentFile, "manifest.json")
+        requireSafeFile(manifestFile, "Root generation manifest")
+        check(manifestFile.isFile) { "Root generation manifest is missing" }
+        val manifest = RootRoutingArtifactValidator.requireManifestJson(manifestFile.readText(Charsets.UTF_8))
+        check(manifest.generation == generation) { "Root generation path and manifest do not match" }
+        val marker = RootGenerationMarker(
+            generation = generation,
+            configFileSha256 = manifest.configFileSha256,
+            sidecarFileSha256 = manifest.sidecarFileSha256,
+            staticPlanSha256 = manifest.staticPlanSha256,
+            appRoutingSha256 = manifest.appRoutingSha256
+        )
+        requireValid(marker)
+        validateArtifacts(filesDir, marker)
+        check(configFile(filesDir, marker).canonicalFile == config) {
+            "Root generation config path does not match its manifest"
+        }
+        return marker
+    }
+
     fun currentConfigFile(filesDir: File): File? = readCurrentStrict(filesDir)?.let { marker ->
         validateArtifacts(filesDir, marker)
         configFile(filesDir, marker)

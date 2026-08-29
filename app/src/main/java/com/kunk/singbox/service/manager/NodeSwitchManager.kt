@@ -1,4 +1,4 @@
-﻿package com.kunk.singbox.service.manager
+package com.kunk.singbox.service.manager
 
 import android.content.Context
 import android.content.Intent
@@ -7,7 +7,7 @@ import android.util.Log
 import com.kunk.singbox.core.SelectorManager
 import com.kunk.singbox.ipc.VpnStateStore
 import com.kunk.singbox.model.NodeUi
-import com.kunk.singbox.repository.ConfigRepository
+import com.kunk.singbox.repository.*
 import com.kunk.singbox.repository.LogRepository
 import com.kunk.singbox.repository.NodeProtectionStore
 import com.kunk.singbox.utils.perf.PerfTracer

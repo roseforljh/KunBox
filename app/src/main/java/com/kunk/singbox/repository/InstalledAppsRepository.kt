@@ -100,12 +100,16 @@ class InstalledAppsRepository private constructor(private val context: Context) 
     private val _appItems = MutableStateFlow<List<InstalledAppUi>>(emptyList())
     val appItems: StateFlow<List<InstalledAppUi>> = _appItems.asStateFlow()
 
+    private val _installedPackageNames = MutableStateFlow<Set<String>>(emptySet())
+    val installedPackageNames: StateFlow<Set<String>> = _installedPackageNames.asStateFlow()
+
     private val _loadingState = MutableStateFlow<LoadingState>(LoadingState.Idle)
     val loadingState: StateFlow<LoadingState> = _loadingState.asStateFlow()
 
     private val loadMutex = Mutex()
     private val snapshotFile = File(context.noBackupFilesDir, SNAPSHOT_FILE_NAME)
-    private val iconLoadDispatcher = Dispatchers.IO.limitedParallelism(4)
+    private val metadataLoadDispatcher = Dispatchers.IO.limitedParallelism(8)
+    private val iconLoadDispatcher = Dispatchers.IO.limitedParallelism(8)
     private val iconCache = object : LruCache<String, Bitmap>(ICON_CACHE_MAX_KB) {
         override fun sizeOf(key: String, value: Bitmap): Int {
             return (value.allocationByteCount / 1024).coerceAtLeast(1)
@@ -125,16 +129,38 @@ class InstalledAppsRepository private constructor(private val context: Context) 
         try {
             withContext(Dispatchers.IO) {
                 val startedAt = android.os.SystemClock.elapsedRealtime()
-                if (_appItems.value.isEmpty()) {
-                    readSnapshot()?.let { cached ->
-                        _appItems.value = cached
-                        android.util.Log.i(TAG, "[APP_INVENTORY] snapshot_loaded count=${cached.size}")
-                    }
-                }
                 val pm = context.packageManager
                 val allApps = pm.getInstalledApplications(0)
                     .filter { it.packageName != context.packageName }
+                val installedPackages = allApps.mapTo(linkedSetOf(), ApplicationInfo::packageName)
+                _installedPackageNames.value = installedPackages
                 val launcherPackages = queryLauncherPackages(pm)
+                val cached = if (_appItems.value.isEmpty()) {
+                    readSnapshot().orEmpty().also { snapshot ->
+                        if (snapshot.isNotEmpty()) {
+                            android.util.Log.i(TAG, "[APP_INVENTORY] snapshot_loaded count=${snapshot.size}")
+                        }
+                    }
+                } else {
+                    _appItems.value
+                }
+                val trustedSnapshot = filterInstalledSnapshot(cached, installedPackages)
+                _appItems.value = trustedSnapshot.ifEmpty {
+                    allApps.map { app ->
+                        InstalledAppUi(
+                            packageName = app.packageName,
+                            appName = app.packageName,
+                            isSystemApp = (app.flags and ApplicationInfo.FLAG_SYSTEM) != 0,
+                            hasLauncher = app.packageName in launcherPackages,
+                            uid = app.uid
+                        )
+                    }.sortedBy(InstalledAppUi::packageName)
+                }
+                SettingsRepository.getInstance(context)
+                    .removeUninstalledPerAppPackages(installedPackages)
+                    .onFailure { error ->
+                        android.util.Log.w(TAG, "[APP_INVENTORY] stale_assignment_cleanup_failed", error)
+                    }
 
                 val total = allApps.size
                 val result = mutableListOf<InstalledAppUi>()
@@ -145,15 +171,10 @@ class InstalledAppsRepository private constructor(private val context: Context) 
                     total = total
                 )
 
-                val batchSize = 40
-                allApps.forEachIndexed { index, app ->
-                    val appName = try {
-                        app.loadLabel(pm).toString()
-                    } catch (e: Exception) {
-                        app.packageName
-                    }
-
-                    result.add(
+                result += allApps.map { app ->
+                    async(metadataLoadDispatcher) {
+                        val appName = runCatching { app.loadLabel(pm).toString() }
+                            .getOrDefault(app.packageName)
                         InstalledAppUi(
                             packageName = app.packageName,
                             appName = appName,
@@ -161,17 +182,13 @@ class InstalledAppsRepository private constructor(private val context: Context) 
                             hasLauncher = app.packageName in launcherPackages,
                             uid = app.uid
                         )
-                    )
-
-                    if ((index + 1) % batchSize == 0 || index == total - 1) {
-                        _appItems.value = mergeScannedApps(_appItems.value, result, complete = false)
-                        _loadingState.value = LoadingState.Loading(
-                            progress = (index + 1).toFloat() / total,
-                            current = index + 1,
-                            total = total
-                        )
                     }
-                }
+                }.awaitAll()
+                _loadingState.value = LoadingState.Loading(
+                    progress = 1f,
+                    current = total,
+                    total = total
+                )
 
                 val sortedItems = result.sortedBy { it.appName.lowercase() }
                 _appItems.value = sortedItems
@@ -291,16 +308,15 @@ class InstalledAppsRepository private constructor(private val context: Context) 
         private const val ICON_CACHE_MAX_KB = 8 * 1024
         private const val SNAPSHOT_FILE_NAME = "installed_apps_snapshot.json"
 
-        internal fun mergeScannedApps(
+        internal fun filterInstalledSnapshot(
             cached: List<InstalledAppUi>,
-            scanned: List<InstalledAppUi>,
-            complete: Boolean
-        ): List<InstalledAppUi> {
-            if (complete) return scanned.sortedBy { it.appName.lowercase() }
-            val merged = cached.associateByTo(linkedMapOf(), InstalledAppUi::packageName)
-            scanned.forEach { merged[it.packageName] = it }
-            return merged.values.sortedBy { it.appName.lowercase() }
-        }
+            installedPackages: Set<String>
+        ): List<InstalledAppUi> = cached.filter { it.packageName in installedPackages }
+
+        @Suppress("DEPRECATION")
+        fun queryInstalledPackageNames(context: Context): Set<String> = context.packageManager
+            .getInstalledApplications(0)
+            .mapTo(linkedSetOf(), ApplicationInfo::packageName)
 
         internal fun normalizeIconPackages(packageNames: Collection<String>): List<String> = packageNames
             .asSequence()

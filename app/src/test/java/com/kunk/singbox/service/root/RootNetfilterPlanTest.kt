@@ -6,8 +6,95 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 
 class RootNetfilterPlanTest {
+    @Test
+    fun everySerializedXtablesCommandGetsBoundedWaitAndRetry() {
+        assertEquals(
+            listOf("ip6tables", "-w", "2", "-t", "filter", "-C", "KBX_GUARD6"),
+            withXtablesWait(listOf("ip6tables", "-t", "filter", "-C", "KBX_GUARD6"))
+        )
+        assertEquals(
+            listOf("iptables", "-w", "7", "-S"),
+            withXtablesWait(listOf("iptables", "-w", "7", "-S"))
+        )
+        val script = buildRootCommandBatchScript(
+            listOf(listOf("iptables", "-t", "nat", "-D", "OUTPUT", "-j", "KBX_RED4"))
+        )
+        assertTrue(script.contains("'iptables' '-w' '2' '-t' 'nat' '-D'"))
+        assertTrue(script.contains("event=xtables_lock_wait"))
+        assertTrue(script.contains("-lt 3"))
+    }
+
+    @Test
+    fun xtablesLockFailureIsRecognizedAsTransient() {
+        assertTrue(
+            isXtablesLockContention(
+                RootCommandResult(4, "", "Can't lock /system/etc/xtables.lock: Try again")
+            )
+        )
+        assertFalse(isXtablesLockContention(RootCommandResult(1, "", "Bad rule")))
+    }
+
+    @Test
+    fun completeSaveSnapshotProvesWhetherTableExists() {
+        val save = "*mangle\n:OUTPUT ACCEPT [0:0]\nCOMMIT\n*nat\n:OUTPUT ACCEPT [0:0]\nCOMMIT"
+
+        assertTrue(requireNotNull(extractIptablesSaveTable(save, "nat")).startsWith("*nat"))
+        assertEquals(null, extractIptablesSaveTable(save, "filter"))
+        assertThrows(IllegalStateException::class.java) {
+            extractIptablesSaveTable("*nat\n:OUTPUT ACCEPT [0:0]", "nat")
+        }
+    }
+
+    @Test
+    fun firstXtablesLockFailureRetriesAndSecondAttemptContinues() {
+        var attempts = 0
+        val result = executeXtablesWithRetry(
+            executeOnce = {
+                attempts += 1
+                if (attempts == 1) {
+                    RootCommandResult(4, "", "Another app is currently holding the xtables lock")
+                } else {
+                    RootCommandResult(0, "ready")
+                }
+            }
+        )
+
+        assertTrue(result.success)
+        assertEquals(2, attempts)
+    }
+
+    @Test
+    fun rootCommandCriticalSectionSerializesCompetingOperations() {
+        val firstEntered = CountDownLatch(1)
+        val releaseFirst = CountDownLatch(1)
+        val secondAttempted = CountDownLatch(1)
+        val secondEntered = CountDownLatch(1)
+        val first = Thread {
+            withSerializedRootCommand {
+                firstEntered.countDown()
+                releaseFirst.await(1, TimeUnit.SECONDS)
+            }
+        }
+        val second = Thread {
+            secondAttempted.countDown()
+            withSerializedRootCommand { secondEntered.countDown() }
+        }
+
+        first.start()
+        assertTrue(firstEntered.await(1, TimeUnit.SECONDS))
+        second.start()
+        assertTrue(secondAttempted.await(1, TimeUnit.SECONDS))
+        assertFalse(secondEntered.await(100, TimeUnit.MILLISECONDS))
+        releaseFirst.countDown()
+        first.join(1_000L)
+        second.join(1_000L)
+        assertTrue(secondEntered.count == 0L)
+    }
+
     @Test
     fun twoLanesBindUidTcpUdpAndInputToTheirOwnPortsAndMarks() {
         val lanes = listOf(lane(0, 10123), lane(1, 10124))
@@ -81,16 +168,16 @@ class RootNetfilterPlanTest {
 
         val script = requireNotNull(buildRootNetfilterRestoreScript(plan.setupCommands))
 
-        assertTrue(script.contains("iptables-restore --noflush"))
-        assertTrue(script.contains("ip6tables-restore --noflush"))
+        assertTrue(script.contains("iptables-restore -w 2 --noflush"))
+        assertTrue(script.contains("ip6tables-restore -w 2 --noflush"))
         assertTrue(script.contains(":KBX_OUT4 - [0:0]"))
         assertTrue(script.contains("-A KBX_OUT4 -m owner --uid-owner 10123 -p udp"))
         assertTrue(
             script.indexOf("'ip' 'rule' 'add'") <
-                script.indexOf("'iptables' '-t' 'mangle' '-I' 'PREROUTING'")
+                script.indexOf("'iptables' '-w' '2' '-t' 'mangle' '-I' 'PREROUTING'")
         )
-        assertEquals(1, script.split("iptables-restore --noflush").size - 1)
-        assertEquals(1, script.split("ip6tables-restore --noflush").size - 1)
+        assertEquals(1, script.split("iptables-restore -w 2 --noflush").size - 1)
+        assertEquals(1, script.split("ip6tables-restore -w 2 --noflush").size - 1)
     }
 
     @Test
@@ -150,6 +237,49 @@ class RootNetfilterPlanTest {
     }
 
     @Test
+    fun defaultBatchExecutorKeepsStderrSeparate() {
+        val executor = RootCommandExecutor { command ->
+            RootCommandResult(0, command.last(), "warning-${command.last()}")
+        }
+
+        val result = executor.executeBatch(listOf(listOf("probe", "first"), listOf("probe", "second")))
+
+        assertEquals("first\nsecond", result.output)
+        assertEquals("warning-first\nwarning-second", result.stderr)
+    }
+
+    @Test
+    fun nftVerifierIgnoresUnreferencedKunBoxChainButFindsExternalJump() {
+        val metadataOnly = """
+            table ip filter {
+                chain KBX_GUARD4 {
+                    reject
+                }
+            }
+        """.trimIndent()
+        val hooked = """
+            table ip filter {
+                chain OUTPUT {
+                    jump KBX_GUARD4 # handle 7
+                }
+                chain KBX_GUARD4 {
+                    reject
+                }
+            }
+        """.trimIndent()
+
+        assertTrue(trafficAffectingKunBoxNftReferences(metadataOnly).isEmpty())
+        assertTrue(trafficAffectingKunBoxNftReferences(hooked).single().contains("chain=OUTPUT"))
+    }
+
+    @Test
+    fun iptablesVerifierFindsCustomParentJumpButIgnoresInternalKunBoxJump() {
+        assertTrue(isTrafficAffectingKunBoxIptablesReference("-A oem_out -j KBX_OUT4"))
+        assertFalse(isTrafficAffectingKunBoxIptablesReference("-A KBX_OUT4 -j KBX_GUARD4"))
+        assertFalse(isTrafficAffectingKunBoxIptablesReference("-N KBX_OUT4"))
+    }
+
+    @Test
     fun batchScriptQuotesArgumentsAndReportsTheFailedCommand() {
         val script = buildRootCommandBatchScript(
             listOf(
@@ -176,9 +306,20 @@ class RootNetfilterPlanTest {
             maxAttempts = 32
         )
 
-        assertEquals(1, script.split("while [").size - 1)
+        assertEquals(1, script.split("kb_attempt=0").size - 1)
         assertTrue(script.contains("-lt 32"))
-        assertTrue(script.contains("'iptables' '-F' 'KBX_OUT4' >/dev/null 2>&1 || :"))
+        assertTrue(script.contains("'iptables' '-w' '2' '-F' 'KBX_OUT4' >/dev/null 2>&1 || :"))
+    }
+
+    @Test
+    fun ipv6RedirectCleanupDeletesHookBeforeFlushingAndDeletingChain() {
+        val commands = RootNetfilterPlanner.cleanupCommands().map { it.joinToString(" ") }
+        val hook = commands.indexOf("ip6tables -t nat -D OUTPUT -j KBX_RED6")
+        val flush = commands.indexOf("ip6tables -t nat -F KBX_RED6")
+        val delete = commands.indexOf("ip6tables -t nat -X KBX_RED6")
+
+        assertTrue(hook in 0 until flush)
+        assertTrue(flush in 0 until delete)
     }
 
     @Test
@@ -205,6 +346,42 @@ class RootNetfilterPlanTest {
                 "-D" in command || "-F" in command || "-X" in command || "del" in command ->
                     RootCommandResult(1, "not present")
                 else -> RootCommandResult(0, "")
+            }
+        }
+
+        assertTrue(RootNetfilterManager(executor).cleanup().isSuccess)
+    }
+
+    @Test
+    fun cleanupUsesAndroidCompatibleIpv6SaveWithoutWaitOption() {
+        val commands = mutableListOf<List<String>>()
+        val executor = RootCommandExecutor { command ->
+            commands += command
+            when (command) {
+                listOf("ip6tables", "-t", "nat", "-S") ->
+                    RootCommandResult(3, "", "Table does not exist")
+                listOf("ip6tables-save") ->
+                    RootCommandResult(0, "*mangle\n:OUTPUT ACCEPT [0:0]\nCOMMIT")
+                else -> RootCommandResult(0, "")
+            }
+        }
+
+        assertTrue(RootNetfilterManager(executor).cleanup().isSuccess)
+        assertTrue(listOf("ip6tables-save") in commands)
+        assertFalse(listOf("ip6tables-save", "-w", "2") in commands)
+    }
+
+    @Test
+    fun cleanupAllowsUnreferencedEmptyKunBoxChainMetadata() {
+        val executor = RootCommandExecutor { command ->
+            when {
+                command == listOf("iptables", "-t", "mangle", "-S") ->
+                    RootCommandResult(0, "-N KBX_OUT4")
+                command.lastOrNull() == "-S" || command.takeLast(2) == listOf("table", "all") ->
+                    RootCommandResult(0, "")
+                command.take(2) == listOf("nft", "-a") -> RootCommandResult(0, "")
+                "show" in command -> RootCommandResult(0, "")
+                else -> RootCommandResult(1, "not present")
             }
         }
 

@@ -28,7 +28,7 @@ import com.kunk.singbox.ipc.VpnStateStore
 import com.kunk.singbox.ipc.SingBoxIpcService
 import com.kunk.singbox.ipc.toRuntimeStateSnapshot
 import com.kunk.singbox.manager.VpnServiceManager
-import com.kunk.singbox.repository.ConfigRepository
+import com.kunk.singbox.repository.*
 import com.kunk.singbox.ui.components.AppNotificationManager
 import com.kunk.singbox.repository.SettingsRepository
 import com.kunk.singbox.model.TrafficCaptureMode
@@ -440,26 +440,13 @@ class VpnTileService : TileService() {
                 )
 
                 if (configResult != null) {
-                    val command = VpnServiceManager.buildStartCommand(
+                    VpnServiceManager.startVpn(
+                        context = this@VpnTileService,
                         mode = captureMode,
                         configPath = configResult.path,
-                        cleanCache = true
-                    )
-                    val intent = Intent(this@VpnTileService, command.serviceClass).apply {
-                        action = command.action
-                        command.configPath?.let { putExtra(SingBoxService.EXTRA_CONFIG_PATH, it) }
-                        configResult.activeNodeName?.let {
-                            putExtra(SingBoxService.EXTRA_PENDING_NODE_NAME, it)
-                        }
-                        if (command.cleanCache) {
-                            putExtra(SingBoxService.EXTRA_CLEAN_CACHE, true)
-                        }
-                    }
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                        startForegroundService(intent)
-                    } else {
-                        startService(intent)
-                    }
+                        cleanCache = true,
+                        pendingNodeName = configResult.activeNodeName
+                    ).getOrThrow()
                     withContext(Dispatchers.Main) { bindService(force = true) }
                 } else {
                     handleStartFailure(getString(R.string.dashboard_config_generation_failed))

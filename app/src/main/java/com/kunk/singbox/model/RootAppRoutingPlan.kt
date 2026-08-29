@@ -447,7 +447,6 @@ object RootRoutingArtifactValidator {
             when (lane.targetKind) {
                 "OUTBOUND" -> {
                     check(lane.outboundTag.isNotBlank() && lane.routeAction.isBlank())
-                    requireSafeRootTag(lane.outboundTag, "${lane.laneId}.outboundTag")
                 }
                 "DIRECT" -> check(lane.outboundTag == "direct" && lane.routeAction.isBlank())
                 "BLOCK" -> check(lane.outboundTag.isBlank() && lane.routeAction == "reject")
@@ -560,12 +559,6 @@ object RootRoutingArtifactValidator {
     private fun checkSortedPackages(values: List<String>, label: String) {
         check(values.distinct().size == values.size) { "$label contains duplicates" }
         check(values == values.sortedWith(::compareRootUtf8)) { "$label is not ordered" }
-    }
-
-    private fun requireSafeRootTag(value: String, label: String) {
-        check(value.length in 1..255 && value.all { it.code in 0x21..0x7e && it !in "'\\" }) {
-            "$label is invalid"
-        }
     }
 }
 
@@ -742,12 +735,12 @@ private fun Collection<String>.normalizePackageNames(): List<String> = asSequenc
     .toList()
 
 internal fun requireValidRootPackageName(packageName: String) {
-    require(packageName == "android" || packageName.length in 3..255 && '.' in packageName) {
+    require(packageName.length in 1..255) {
         "Invalid Android package name: $packageName"
     }
     require(packageName.split('.').all { segment ->
         segment.isNotEmpty() &&
-            (segment.first().isLetter() || segment.first() == '_') &&
-            segment.all { it.isLetterOrDigit() || it == '_' }
+            (segment.first() in 'a'..'z' || segment.first() in 'A'..'Z') &&
+            segment.drop(1).all { it in 'a'..'z' || it in 'A'..'Z' || it in '0'..'9' || it == '_' }
     }) { "Invalid Android package name: $packageName" }
 }

@@ -44,6 +44,8 @@ interface IRootSingBoxService {
         long routingGeneration
     );
 
+    void requestStop(String runtimeSessionId);
+
     Bundle stop(String runtimeSessionId);
 
     Bundle blockForUidRefresh(String runtimeSessionId);

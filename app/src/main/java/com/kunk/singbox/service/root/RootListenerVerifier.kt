@@ -46,15 +46,15 @@ class RootListenerVerifier(
 
     fun verifyAbsent(expectation: RootListenerExpectation): Result<Unit> = runCatching {
         listOf(
-            File(procRoot, "net/tcp") to expectation.ipv4,
-            File(procRoot, "net/tcp6") to expectation.ipv6,
-            File(procRoot, "net/udp") to expectation.udpIpv4,
-            File(procRoot, "net/udp6") to expectation.udpIpv6
-        ).forEach { (file, ports) ->
+            Triple(File(procRoot, "net/tcp"), expectation.ipv4, "0A"),
+            Triple(File(procRoot, "net/tcp6"), expectation.ipv6, "0A"),
+            Triple(File(procRoot, "net/udp"), expectation.udpIpv4, null),
+            Triple(File(procRoot, "net/udp6"), expectation.udpIpv6, null)
+        ).forEach { (file, ports, state) ->
             if (ports.isEmpty()) return@forEach
             check(file.isFile) { "Listener proc table is unavailable: ${file.path}" }
             val owned = file.readLines().drop(1).mapNotNull(::parseRow)
-                .filter { it.port in ports }
+                .filter { it.port in ports && (state == null || it.state == state) }
             check(owned.isEmpty()) {
                 "Listener remained after core stop, including foreign sockets: ${owned.map { it.port }}"
             }
@@ -74,18 +74,13 @@ class RootListenerVerifier(
         val inodes = socketInodes(rootPid)
         check(inodes.isNotEmpty()) { "$label Root PID $rootPid has no socket descriptors" }
         ports.forEach { port ->
-            val matches = rows.filter { it.port == port }
+            val matches = rows.filter { it.port == port && (state == null || it.state == state) }
             check(matches.isNotEmpty()) { "$label listener is missing for port $port" }
-            if (state != null) {
-                check(matches.all { it.state == state }) {
-                    "$label listener port $port is not in state $state"
-                }
-            }
             check(matches.all { it.inode in inodes }) {
                 "$label listener port $port has a socket outside Root PID $rootPid"
             }
         }
-        check(rows.filter { it.port in ports }.all { it.inode in inodes }) {
+        check(rows.filter { it.port in ports && (state == null || it.state == state) }.all { it.inode in inodes }) {
             "$label contains a foreign listener socket"
         }
     }

@@ -60,6 +60,21 @@ internal fun removePackageFromPerAppSettings(settings: AppSettings, packageName:
     )
 }
 
+internal fun removeUninstalledPackagesFromPerAppSettings(
+    settings: AppSettings,
+    installedPackages: Set<String>
+): AppSettings {
+    if (installedPackages.isEmpty()) return settings
+    return settings.copy(
+        vpnAllowlist = sanitizePackageList(settings.vpnAllowlist, installedPackages),
+        vpnBlocklist = sanitizePackageList(settings.vpnBlocklist, installedPackages),
+        appRules = settings.appRules.filter { it.packageName in installedPackages },
+        appGroups = settings.appGroups.map { group ->
+            group.copy(apps = group.apps.filter { it.packageName in installedPackages })
+        }
+    )
+}
+
 internal fun upsertExclusiveAppGroup(settings: AppSettings, group: AppGroup): AppSettings {
     val normalizedApps = group.apps
         .map { app -> app.copy(packageName = app.packageName.trim()) }

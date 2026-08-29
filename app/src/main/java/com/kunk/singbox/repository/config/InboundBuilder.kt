@@ -25,7 +25,10 @@ object InboundBuilder {
     ): List<Inbound> {
         val inbounds = mutableListOf<Inbound>()
 
-        if (settings.proxyPort > 0) {
+        // Root transparent mode captures traffic through redirect/tproxy. A mixed
+        // listener is not part of that data plane and can collide with another
+        // sing-box process on the default local proxy port.
+        if (settings.proxyPort > 0 && settings.resolvedTrafficCaptureMode() != TrafficCaptureMode.ROOT_TRANSPARENT) {
             inbounds += mixedInbound(
                 listen = if (settings.allowLan) "0.0.0.0" else "127.0.0.1",
                 port = settings.proxyPort

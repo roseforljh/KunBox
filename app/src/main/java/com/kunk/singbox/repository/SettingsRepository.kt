@@ -230,6 +230,25 @@ class SettingsRepository(private val context: Context) {
             updated to activeListChanged
         }
 
+    suspend fun removeUninstalledPerAppPackages(
+        installedPackages: Set<String>
+    ): Result<PerAppPolicyUpdateResult> {
+        val current = settings.value
+        val updated = removeUninstalledPackagesFromPerAppSettings(current, installedPackages)
+        if (updated == current) {
+            return Result.success(
+                PerAppPolicyUpdateResult(
+                    changed = false,
+                    runtimeChanged = false,
+                    revision = current.perAppPolicyRevision
+                )
+            )
+        }
+        return updatePerAppPolicy { latest ->
+            removeUninstalledPackagesFromPerAppSettings(latest, installedPackages) to false
+        }
+    }
+
     suspend fun setLocalDns(value: String) {
         updateSettingsAndNotifyRestart { it.copy(localDns = value) }
     }

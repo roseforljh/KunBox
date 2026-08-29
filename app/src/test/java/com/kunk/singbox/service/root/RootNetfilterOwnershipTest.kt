@@ -3,6 +3,7 @@ package com.kunk.singbox.service.root
 import com.kunk.singbox.model.RootRoutingConstants
 import java.nio.file.Files
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -48,6 +49,177 @@ class RootNetfilterOwnershipTest {
         assertTrue(RootRoutingConstants.GENERIC_MARK_IPV4 to RootRoutingConstants.GENERIC_PRIORITY_IPV4 in tuples)
         assertTrue(RootRoutingConstants.markIpv4(127) to RootRoutingConstants.priorityIpv4(127) in tuples)
         assertTrue(RootRoutingConstants.markIpv6(127) to RootRoutingConstants.priorityIpv6(127) in tuples)
+    }
+
+    @Test
+    fun reservedPolicyVerifierRequiresExactPriorityMarkAndTable() {
+        assertTrue(
+            RootNetfilterOwnership.isReservedPolicyLine(
+                "12031: from all fwmark 0x2331/0xffffffff lookup 20231"
+            )
+        )
+        assertFalse(
+            RootNetfilterOwnership.isReservedPolicyLine(
+                "12031: from all fwmark 0x9999/0xffffffff lookup 999"
+            )
+        )
+    }
+
+    @Test
+    fun refreshesEveryChainFingerprintWithOneBatchProbe() {
+        val context = RootNetfilterOwnership.context("session-2", 2L, "b".repeat(64))
+        val manifest = RootNetfilterOwnership.fromCommands(
+            context,
+            RootNetfilterPlanner.build(configWithLane(0)).setupCommands
+        )
+        var batches = 0
+        val executor = RootCommandExecutor { RootCommandResult(1, "unexpected single probe") }.let { fallback ->
+            object : RootCommandExecutor by fallback {
+                override fun executeBatch(commands: List<List<String>>): RootCommandResult {
+                    batches += 1
+                    return RootCommandResult(
+                        0,
+                        commands.joinToString("\n") { command ->
+                            val chain = command.last()
+                            "-N $chain\n-A $chain -j RETURN"
+                        }
+                    )
+                }
+            }
+        }
+
+        val refreshed = RootNetfilterOwnership.refreshChainFingerprints(manifest, executor)
+
+        assertEquals(1, batches)
+        assertTrue(
+            refreshed.records.filterIsInstance<RootNetfilterOwnerRecord.Chain>().all { record ->
+                record.rulesSha256 == RootNetfilterOwnership.sha256(
+                    "-N ${record.chain}\n-A ${record.chain} -j RETURN"
+                )
+            }
+        )
+    }
+
+    @Test
+    fun cleanupWithoutManifestRunsScopedLegacyRecoveryThenVerifiesEmptyState() {
+        val directory = Files.createTempDirectory("root-owner-cleanup-test").toFile()
+        val commands = mutableListOf<List<String>>()
+        val executor = RootCommandExecutor { command ->
+            commands += command
+            RootCommandResult(0, "")
+        }
+        try {
+            val manager = RootNetfilterManager(
+                executor,
+                RootNetfilterOwnershipStore(executor, directory)
+            )
+
+            assertTrue(manager.cleanup().isSuccess)
+            assertTrue(commands.any { it.takeLast(1) == listOf("legacy-cleanup") })
+            assertEquals(2, commands.size)
+            assertEquals(listOf("nft", "-a", "list", "ruleset"), commands.last())
+        } finally {
+            directory.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun startupIgnoresUnreferencedLegacyChainMetadata() {
+        val directory = Files.createTempDirectory("root-owner-start-cleanup-test").toFile()
+        val commands = mutableListOf<List<String>>()
+        val executor = RootCommandExecutor { command ->
+            commands += command
+            RootCommandResult(
+                0,
+                if (command == listOf("iptables", "-t", "mangle", "-S")) "-N KBX_OUT4" else ""
+            )
+        }
+        try {
+            val manager = RootNetfilterManager(
+                executor,
+                RootNetfilterOwnershipStore(executor, directory)
+            )
+
+            assertTrue(manager.prepareForStart(staleRuntimePresent = true).isSuccess)
+            assertFalse(commands.any { it.takeLast(1) == listOf("legacy-cleanup") })
+        } finally {
+            directory.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun startupLegacyCleanupUsesThreeSecondDeadline() {
+        val directory = Files.createTempDirectory("root-owner-start-deadline-test").toFile()
+        var cleanupTimeoutMs = 0L
+        val fallback = RootCommandExecutor { command ->
+            RootCommandResult(
+                0,
+                if (command == listOf("iptables", "-t", "mangle", "-S")) {
+                    "-N KBX_OUT4\n-A OUTPUT -j KBX_OUT4"
+                } else {
+                    ""
+                }
+            )
+        }
+        val executor = object : RootCommandExecutor by fallback {
+            override fun executeWithTimeout(arguments: List<String>, timeoutMs: Long): RootCommandResult {
+                cleanupTimeoutMs = timeoutMs
+                return RootCommandResult(0, "")
+            }
+        }
+        try {
+            val manager = RootNetfilterManager(
+                executor,
+                RootNetfilterOwnershipStore(executor, directory)
+            )
+
+            assertTrue(manager.prepareForStart(staleRuntimePresent = true).isSuccess)
+            assertEquals(3_000L, cleanupTimeoutMs)
+        } finally {
+            directory.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun malformedManifestStillInvokesScopedCleanupWithoutSessionConstraint() {
+        val directory = Files.createTempDirectory("root-owner-malformed-test").toFile()
+        val owner = directory.resolve("netfilter-owner").apply { writeText("damaged") }
+        var cleanupCommand = emptyList<String>()
+        val executor = RootCommandExecutor { command ->
+            cleanupCommand = command
+            RootCommandResult(0, "")
+        }
+        try {
+            val result = RootNetfilterOwnershipStore(executor, directory).cleanupAnyOwner()
+
+            assertTrue(result.isSuccess)
+            assertEquals(
+                listOf("/system/bin/sh", directory.resolve("cleanup-owned.sh").path, "cleanup"),
+                cleanupCommand
+            )
+            assertFalse(owner.exists())
+        } finally {
+            directory.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun cleanupFailureUsesScriptDiagnosticsWithoutStartingRedundantRootProbes() {
+        val directory = Files.createTempDirectory("root-owner-script-diagnostics-test").toFile()
+        directory.resolve("netfilter-owner").writeText("damaged")
+        val commands = mutableListOf<List<String>>()
+        val executor = RootCommandExecutor { command ->
+            commands += command
+            RootCommandResult(75, "", "[ROOT_NET_QUERY] binary=ip6tables classification=QUERY_FAILED")
+        }
+        try {
+            val result = RootNetfilterOwnershipStore(executor, directory).cleanupAnyOwner()
+
+            assertTrue(result.isFailure)
+            assertEquals(1, commands.size)
+        } finally {
+            directory.deleteRecursively()
+        }
     }
 
     private fun configWithLane(slot: Int): RootNetfilterConfig = RootNetfilterConfig(

@@ -38,6 +38,59 @@ class RootListenerVerifierTest {
         ).isFailure)
     }
 
+    @Test
+    fun verifyAbsentIgnoresEstablishedAndTimeWaitSockets() = withProcFixture { proc ->
+        writeTable(
+            proc,
+            "net/tcp",
+            listOf(row(1_536, "01", 301L), row(1_536, "06", 302L))
+        )
+        val verifier = RootListenerVerifier(proc)
+
+        assertTrue(verifier.verifyAbsent(
+            RootListenerExpectation(setOf(1_536), emptySet(), emptySet(), emptySet())
+        ).isSuccess)
+    }
+
+    @Test
+    fun verifyAbsentRejectsListenWhenEstablishedSocketUsesSamePort() = withProcFixture { proc ->
+        writeTable(
+            proc,
+            "net/tcp",
+            listOf(row(1_536, "0A", 303L), row(1_536, "01", 304L))
+        )
+        val verifier = RootListenerVerifier(proc)
+
+        assertTrue(verifier.verifyAbsent(
+            RootListenerExpectation(setOf(1_536), emptySet(), emptySet(), emptySet())
+        ).isFailure)
+    }
+
+    @Test
+    fun verifyAbsentIgnoresOtherListeningPort() = withProcFixture { proc ->
+        writeTable(proc, "net/tcp", listOf(row(1_537, "0A", 305L)))
+        val verifier = RootListenerVerifier(proc)
+
+        assertTrue(verifier.verifyAbsent(
+            RootListenerExpectation(setOf(1_536), emptySet(), emptySet(), emptySet())
+        ).isSuccess)
+    }
+
+    @Test
+    fun activeVerificationAcceptsListenerAndEstablishedSocketOnSamePort() = withProcFixture { proc ->
+        writeTable(
+            proc,
+            "net/tcp",
+            listOf(row(1_536, "0A", 306L), row(1_536, "01", 999L))
+        )
+        val verifier = RootListenerVerifier(proc) { setOf(306L) }
+
+        assertTrue(verifier.verify(
+            RootListenerExpectation(setOf(1_536), emptySet(), emptySet(), emptySet()),
+            77
+        ).isSuccess)
+    }
+
     private fun row(port: Int, state: String, inode: Long): String =
         "0: 00000000:${port.toString(16).padStart(4, '0')} 00000000:0000 $state " +
             "00000000:00000000 00:00000000 00000000 0 0 $inode"

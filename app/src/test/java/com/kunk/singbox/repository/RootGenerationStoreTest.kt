@@ -151,6 +151,27 @@ class RootGenerationStoreTest {
         assertNull(RootGenerationStore.generationForConfigPath(filesDir, link.absolutePath))
     }
 
+    @Test
+    fun configPathResolvesAuthoritativeGenerationWithoutIntentMetadata() = withTempDirectory { filesDir ->
+        val expected = writeGeneration(filesDir, 24L, "{\"generation\":24}").first
+        val config = RootGenerationStore.configFile(filesDir, expected)
+
+        assertEquals(expected, RootGenerationStore.resolveConfigMarker(filesDir, config.absolutePath))
+    }
+
+    @Test
+    fun configPathResolutionRejectsTamperedGenerationArtifacts() = withTempDirectory { filesDir ->
+        val expected = writeGeneration(filesDir, 25L, "{\"generation\":25}").first
+        RootGenerationStore.sidecarFile(filesDir, expected).appendText("tampered")
+
+        assertThrows(IllegalStateException::class.java) {
+            RootGenerationStore.resolveConfigMarker(
+                filesDir,
+                RootGenerationStore.configFile(filesDir, expected).absolutePath
+            )
+        }
+    }
+
     private fun writeGeneration(
         filesDir: File,
         generation: Long,
