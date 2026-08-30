@@ -498,6 +498,8 @@ class KunBoxRootService : RootService() {
             logStartPhase("rules_activation", phaseStartedAt)
             netfilterOwned = true
             phaseStartedAt = android.os.SystemClock.elapsedRealtime()
+            ipv6PrivacyGuard.activate(request.runtimeSessionId).getOrThrow()
+            logStartPhase("ipv6_privacy", phaseStartedAt)
             logStartPhase("total_ms", startedAt)
             val runningSnapshot = updateSnapshot(
                 phase = RootRuntimePhase.RUNNING,

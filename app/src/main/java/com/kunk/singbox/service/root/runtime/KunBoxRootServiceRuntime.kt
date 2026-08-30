@@ -534,7 +534,12 @@ internal fun KunBoxRootService.matchesRunningSession(runtimeSessionId: String): 
 internal fun KunBoxRootService.startResourceGuard(runtimeSessionId: String) {
     resourceGuard?.close()
     resourceGuard = RootResourceGuard { fdCount, action ->
-        handleRootResourceSample(runtimeSessionId, fdCount, action)
+        val privacyError = ipv6PrivacyGuard.enforce().exceptionOrNull()
+        if (privacyError != null) {
+            handleIpv6PrivacyLost(runtimeSessionId, privacyError)
+        } else {
+            handleRootResourceSample(runtimeSessionId, fdCount, action)
+        }
     }.also(RootResourceGuard::start)
 }
 

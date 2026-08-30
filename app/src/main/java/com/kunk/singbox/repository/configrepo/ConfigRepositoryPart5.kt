@@ -653,10 +653,15 @@ internal suspend fun ConfigRepository.generateConfigFile(
             dnsOverrideConfig,
             activeProfileAutoSelectionEnabled
         )
-        val serverAddressStrategy = ConfigRepository.resolveOutboundServerAddressStrategy(
-            sanitizedSettings.serverAddressStrategy,
-            sanitizedSettings.ipVersionMode
-        )
+        val rootTransparent = sanitizedSettings.resolvedTrafficCaptureMode() == TrafficCaptureMode.ROOT_TRANSPARENT
+        val serverAddressStrategy = if (rootTransparent) {
+            "ipv4_only"
+        } else {
+            ConfigRepository.resolveOutboundServerAddressStrategy(
+                sanitizedSettings.serverAddressStrategy,
+                sanitizedSettings.ipVersionMode
+            )
+        }
         logOutboundServerAddressStrategy(
             scope = "run_config",
             strategy = sanitizedSettings.serverAddressStrategy,
@@ -675,9 +680,7 @@ internal suspend fun ConfigRepository.generateConfigFile(
                 defaultResolverOutbounds
             }
         )
-        val rootRoutingPlan = if (
-            sanitizedSettings.resolvedTrafficCaptureMode() == TrafficCaptureMode.ROOT_TRANSPARENT
-        ) {
+        val rootRoutingPlan = if (rootTransparent) {
             buildRootAppRoutingPlan(
                 settings = sanitizedSettings,
                 outboundsContext = outboundsContext,
