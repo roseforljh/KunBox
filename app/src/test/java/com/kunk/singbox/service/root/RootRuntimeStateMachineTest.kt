@@ -40,6 +40,28 @@ class RootRuntimeStateMachineTest {
     }
 
     @Test
+    fun coldRootStartDispatchesBindBeforeRuntimeWork() {
+        val source = File("src/main/java/com/kunk/singbox/service/root/RootTransparentForegroundService.kt")
+            .readText(Charsets.UTF_8)
+        val startCommand = source.substringAfter("override fun onStartCommand")
+            .substringBefore("override fun onBind")
+        val coldStart = startCommand.substringAfter("else -> {")
+
+        assertTrue(coldStart.indexOf("rootConnection.beginBind()") in 0 until coldStart.indexOf("startRuntime("))
+    }
+
+    @Test
+    fun failedPrewarmDoesNotUnbindConnectionAfterForegroundAcquiresIt() {
+        val source = File("src/main/java/com/kunk/singbox/service/root/RootServiceConnection.kt")
+            .readText(Charsets.UTF_8)
+        val failure = source.substringAfter("}.onFailure { error ->")
+            .substringBefore("fun acquire")
+
+        assertTrue(failure.contains("if (connection === next)"))
+        assertTrue(failure.indexOf("if (connection === next)") < failure.indexOf("next.unbind()"))
+    }
+
+    @Test
     fun externalRootConfigRequiresItsOriginalCandidateRequestId() {
         val failure = runCatching {
             resolveRootCandidateRequestId(

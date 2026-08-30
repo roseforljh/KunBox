@@ -1302,9 +1302,9 @@ index 9fdc6cda..35646347 100644
 +	if metadata.Network != N.NetworkTCP || !metadata.Destination.IsIP() || !M.IsDomainName(metadata.Domain) {
 +		return false
 +	}
-+	switch metadata.Inbound {
-+	case "redirect-in-v4", "redirect-in-v6":
-+	default:
++	if metadata.Inbound != "redirect-in-v4" && metadata.Inbound != "redirect-in-v6" &&
++		!(strings.HasPrefix(metadata.Inbound, "root-lane-") &&
++			(strings.HasSuffix(metadata.Inbound, "-tcp-v4") || strings.HasSuffix(metadata.Inbound, "-tcp-v6"))) {
 +		return false
 +	}
 +	if metadata.Destination.Port != 80 && metadata.Destination.Port != 443 {
@@ -2455,7 +2455,7 @@ new file mode 100644
 index 0000000..ebf0301
 --- /dev/null
 +++ b/route/kunbox_root_destination_test.go
-@@ -0,0 +1,108 @@
+@@ -0,0 +1,124 @@
 +package route
 +
 +import (
@@ -2504,6 +2504,22 @@ index 0000000..ebf0301
 +	require.Equal(t, original, metadata.RouteOriginalDestination)
 +	require.Equal(t, "graph.instagram.com", metadata.Destination.Fqdn)
 +	require.Empty(t, metadata.DestinationAddresses)
++}
++
++func TestApplyKunBoxRootProxyDestinationOverrideSupportsAppRouteLanes(t *testing.T) {
++	for _, inbound := range []string{"root-lane-003-tcp-v4", "root-lane-003-tcp-v6"} {
++		t.Run(inbound, func(t *testing.T) {
++			original := M.Socksaddr{Addr: netip.MustParseAddr("199.59.150.43"), Port: 443}
++			metadata := adapter.InboundContext{
++				Inbound: inbound, Network: N.NetworkTCP, Destination: original, Domain: "iapi.example.com",
++			}
++
++			require.True(t, applyKunBoxRootProxyDestinationOverride(&metadata, &testKunBoxOutbound{C.TypeVLESS}))
++			require.Equal(t, original, metadata.RouteOriginalDestination)
++			require.Equal(t, "iapi.example.com", metadata.Destination.Fqdn)
++			require.Empty(t, metadata.DestinationAddresses)
++		})
++	}
 +}
 +
 +func TestApplyKunBoxRootProxyDestinationOverrideRejectsUnsafePaths(t *testing.T) {

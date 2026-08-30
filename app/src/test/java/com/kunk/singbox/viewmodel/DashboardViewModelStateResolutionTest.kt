@@ -374,6 +374,18 @@ class DashboardViewModelStateResolutionTest {
     }
 
     @Test
+    fun mainActivityStartsRootPrewarmBeforeCompose() {
+        val source = File("src/main/java/com/kunk/singbox/MainActivity.kt")
+            .readText(Charsets.UTF_8)
+        val onCreate = source.substringAfter("override fun onCreate(savedInstanceState: Bundle?)")
+        val bindIndex = onCreate.indexOf("SingBoxRemote.ensureBound(this)")
+        val composeIndex = onCreate.indexOf("setContent {")
+
+        assertTrue(bindIndex >= 0)
+        assertTrue(composeIndex > bindIndex)
+    }
+
+    @Test
     fun persistedActiveIsClearedOnBootOnlyWhenIpcConfirmsStopped() {
         // IPC 未绑定：无权清，避免"假停"窗口
         assertFalse(

@@ -121,6 +121,7 @@ class MainActivity : ComponentActivity() {
             window.isNavigationBarContrastEnforced = false
         }
         MainIntentEvents.emit(intent)
+        SingBoxRemote.ensureBound(this)
         setContent {
             SingBoxApp()
         }
@@ -143,7 +144,6 @@ fun SingBoxApp() {
     )
 
     LaunchedEffect(Unit) {
-        SingBoxRemote.ensureBound(context)
         // Best-effort: ask system to refresh QS tile state after app process restarts/force-stops.
         runCatching {
             TileService.requestListeningState(context, ComponentName(context, VpnTileService::class.java))

@@ -39,6 +39,14 @@ class RootServiceConnection(
 
     private var pending = CompletableDeferred<IRootSingBoxService>()
 
+    internal fun beginBind() {
+        if (service != null || bound) return
+        pending = CompletableDeferred()
+        RootService.bind(Intent(context, KunBoxRootService::class.java), this)
+        bound = true
+        Log.i(TAG, "[ROOT_BOOT] stage=bind_dispatched")
+    }
+
     suspend fun bind(): IRootSingBoxService = withContext(Dispatchers.Main) {
         val startedAt = android.os.SystemClock.elapsedRealtime()
         service?.let {
@@ -47,11 +55,7 @@ class RootServiceConnection(
         }
         Log.i(TAG, "[ROOT_BOOT] stage=bind_begin alreadyBound=$bound")
         try {
-            if (!bound) {
-                pending = CompletableDeferred()
-                RootService.bind(Intent(context, KunBoxRootService::class.java), this@RootServiceConnection)
-                bound = true
-            }
+            beginBind()
             withTimeout(BIND_TIMEOUT_MS) { pending.await() }.also {
                 Log.i(
                     TAG,
@@ -168,8 +172,10 @@ object RootServicePrewarmer {
             Unit
         }.onFailure { error ->
             Log.w(TAG, "[ROOT_PREWARM] event=failed", error)
-            next.unbind()
-            if (connection === next) connection = null
+            if (connection === next) {
+                next.unbind()
+                connection = null
+            }
         }
     }
 

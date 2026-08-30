@@ -263,12 +263,16 @@ class RootTransparentForegroundService : Service() {
                     token = token
                 )
             }
-            else -> requestRunningRuntime(reload = false) { token ->
-                startRuntime(
-                    configPathOverride = intent?.getStringExtra(EXTRA_CONFIG_PATH),
-                    requestId = intent?.getStringExtra(EXTRA_APP_ROUTE_REQUEST_ID).orEmpty(),
-                    token = token
-                )
+            else -> {
+                runCatching { rootConnection.beginBind() }
+                    .onFailure { error -> Log.w(TAG, "Root cold bind dispatch failed", error) }
+                requestRunningRuntime(reload = false) { token ->
+                    startRuntime(
+                        configPathOverride = intent?.getStringExtra(EXTRA_CONFIG_PATH),
+                        requestId = intent?.getStringExtra(EXTRA_APP_ROUTE_REQUEST_ID).orEmpty(),
+                        token = token
+                    )
+                }
             }
         }
         return START_NOT_STICKY
