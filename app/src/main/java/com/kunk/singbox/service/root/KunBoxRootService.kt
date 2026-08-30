@@ -9,6 +9,7 @@ import android.os.Process
 import android.os.ParcelFileDescriptor
 import android.net.LocalSocket
 import android.net.LocalSocketAddress
+import android.os.SystemClock
 import android.util.Log
 import com.kunk.singbox.aidl.IRootSingBoxService
 import com.kunk.singbox.core.SingBoxCore
@@ -115,6 +116,7 @@ class KunBoxRootService : RootService() {
     internal var commandServer: CommandServer? = null
     internal var watchdog: RootWatchdogInstaller? = null
     internal var resourceGuard: RootResourceGuard? = null
+    internal val ipv6PrivacyGuard = RootIpv6PrivacyGuard()
     internal var netfilterOwned = false
     internal var activeNetfilterPlan: RootNetfilterPlan? = null
     internal var activeRoutingArtifacts: RootRoutingArtifacts? = null
@@ -182,32 +184,44 @@ class KunBoxRootService : RootService() {
             enforceCaller()
             require(appUid == applicationInfo.uid) { "Unexpected KunBox UID" }
             clearStopRequestForNewSession(runtimeSessionId.orEmpty())
-            return runRuntimeTransaction {
-                startLocked(
-                    RootStartRequest(
-                        configPath = configPath.orEmpty(),
-                        runtimeSessionId = runtimeSessionId.orEmpty(),
-                        appMode = appMode.orEmpty(),
-                        allowlist = allowlist?.toSet().orEmpty(),
-                        blocklist = blocklist?.toSet().orEmpty(),
-                        selfPackage = selfPackage.orEmpty(),
-                        forceConnectionOwnerRouting = forceConnectionOwnerRouting,
-                        appUid = appUid,
-                        proxyIpv4 = proxyIpv4,
-                        proxyIpv6 = proxyIpv6,
-                        blockIpv4 = blockIpv4,
-                        blockIpv6 = blockIpv6,
-                        blockQuic = blockQuic,
-                        apkPath = apkPath.orEmpty(),
-                        configFileSha256 = configFileSha256.orEmpty(),
-                        sidecarFileSha256 = sidecarFileSha256.orEmpty(),
-                        sidecarJson = sidecarJson.orEmpty(),
-                        staticPlanSha256 = staticPlanSha256.orEmpty(),
-                        appRoutingSha256 = appRoutingSha256.orEmpty(),
-                        routingGeneration = routingGeneration
-                    )
-                ).toBundle()
-            }
+            val request = RootStartRequest(
+                configPath = configPath.orEmpty(),
+                runtimeSessionId = runtimeSessionId.orEmpty(),
+                appMode = appMode.orEmpty(),
+                allowlist = allowlist?.toSet().orEmpty(),
+                blocklist = blocklist?.toSet().orEmpty(),
+                selfPackage = selfPackage.orEmpty(),
+                forceConnectionOwnerRouting = forceConnectionOwnerRouting,
+                appUid = appUid,
+                proxyIpv4 = proxyIpv4,
+                proxyIpv6 = proxyIpv6,
+                blockIpv4 = blockIpv4,
+                blockIpv6 = blockIpv6,
+                blockQuic = blockQuic,
+                apkPath = apkPath.orEmpty(),
+                configFileSha256 = configFileSha256.orEmpty(),
+                sidecarFileSha256 = sidecarFileSha256.orEmpty(),
+                sidecarJson = sidecarJson.orEmpty(),
+                staticPlanSha256 = staticPlanSha256.orEmpty(),
+                appRoutingSha256 = appRoutingSha256.orEmpty(),
+                routingGeneration = routingGeneration
+            )
+            Log.i(
+                TAG,
+                "[ROOT_BOOT] stage=root_start_received session=${request.runtimeSessionId} " +
+                    "routingGeneration=${request.routingGeneration} appMode=${request.appMode} " +
+                    "allowCount=${request.allowlist.size} blockCount=${request.blocklist.size} " +
+                    "ipv4=${request.proxyIpv4} ipv6=${request.proxyIpv6} " +
+                    "configExists=${File(request.configPath).isFile}"
+            )
+            val result = runRuntimeTransaction { startLocked(request) }
+            Log.i(
+                TAG,
+                "[ROOT_BOOT] stage=root_start_returned session=${request.runtimeSessionId} " +
+                    "phase=${result.phase} rulesInstalled=${result.rulesInstalled} " +
+                    "watchdogReady=${result.watchdogReady} error=${result.error}"
+            )
+            return result.toBundle()
         }
 
         override fun hotReload(
@@ -269,16 +283,8 @@ class KunBoxRootService : RootService() {
     override fun onCreate() {
         val startedAt = android.os.SystemClock.elapsedRealtime()
         super.onCreate()
+        Log.i(TAG, "[ROOT_BOOT] stage=root_process_create_begin pid=${Process.myPid()} uid=${Process.myUid()}")
         check(Process.myUid() == 0) { "KunBoxRootService is not running as root" }
-        SingBoxCore.ensureLibboxSetup(this)
-        capabilityReport = RootCapabilityProbe().probe()
-        logStartPhase("capability", startedAt)
-        updateSnapshot(
-            phase = RootRuntimePhase.STOPPED,
-            error = capabilityReport.error,
-            tproxyIpv4 = capabilityReport.tproxyIpv4,
-            tproxyIpv6 = capabilityReport.tproxyIpv6
-        )
         serviceScope.launch(Dispatchers.IO) {
             runCatching { RootUidResolver().captureSnapshot() }
                 .onSuccess { uidSnapshot ->
@@ -290,9 +296,29 @@ class KunBoxRootService : RootService() {
                 .onFailure { error -> Log.w(TAG, "Root UID prewarm failed", error) }
                 .also { uidPrewarmReady.countDown() }
         }
+        SingBoxCore.ensureLibboxSetup(this)
+        capabilityReport = RootCapabilityProbe().probe()
+        logStartPhase("capability", startedAt)
+        Log.i(
+            TAG,
+            "[ROOT_BOOT] stage=root_capability_ready supported=${capabilityReport.supported} " +
+                "uid=${capabilityReport.rootUid} netAdmin=${capabilityReport.capNetAdmin} " +
+                "netRaw=${capabilityReport.capNetRaw} iptables=${capabilityReport.iptables} " +
+                "ip6tables=${capabilityReport.ip6tables} tproxy4=${capabilityReport.tproxyIpv4} " +
+                "tproxy6=${capabilityReport.tproxyIpv6} error=${capabilityReport.error}"
+        )
+        updateSnapshot(
+            phase = RootRuntimePhase.STOPPED,
+            error = capabilityReport.error,
+            tproxyIpv4 = capabilityReport.tproxyIpv4,
+            tproxyIpv6 = capabilityReport.tproxyIpv6
+        )
     }
 
-    override fun onBind(intent: Intent): IBinder = binder
+    override fun onBind(intent: Intent): IBinder {
+        Log.i(TAG, "[ROOT_BOOT] stage=root_binder_bound action=${intent.action.orEmpty()}")
+        return binder
+    }
 
     override fun onDestroy() {
         destroying = true
@@ -336,7 +362,10 @@ class KunBoxRootService : RootService() {
         var phaseStartedAt = startedAt
         startupTimings.clear()
         rootCommandExecutor.resetXtablesWaitMetrics()
-        validateStartRequest(request)?.let { return failUnprotected(it) }
+        validateStartRequest(request)?.let { error ->
+            Log.e(TAG, "[ROOT_BOOT] stage=request_validation_failed error=$error")
+            return failUnprotected(error)
+        }
         throwIfStopRequested(request.runtimeSessionId)
         if (snapshot.phase != RootRuntimePhase.STOPPED) {
             val stopped = stopLocked(snapshot.runtimeSessionId)
@@ -344,6 +373,7 @@ class KunBoxRootService : RootService() {
         }
         val cleanupSupport = watchdog ?: RootWatchdogInstaller(this).also { watchdog = it }
         cleanupSupport.installScripts().getOrElse { error ->
+            Log.e(TAG, "[ROOT_BOOT] stage=watchdog_install_failed", error)
             return failUnprotected(error.message ?: "Cannot install Root cleanup support")
         }
         val staleRuntimePresent = File("/data/adb/kunbox/session").exists()
@@ -351,6 +381,11 @@ class KunBoxRootService : RootService() {
         logStartPhase("legacy_cleanup_ms", phaseStartedAt)
         phaseStartedAt = android.os.SystemClock.elapsedRealtime()
         if (prepareError != null) {
+            Log.e(
+                TAG,
+                "[ROOT_BOOT] stage=legacy_cleanup_failed staleRuntimePresent=$staleRuntimePresent",
+                prepareError
+            )
             logStartPhase("total_ms", startedAt)
             return failCleanup(
                 prepareError,
@@ -457,6 +492,9 @@ class KunBoxRootService : RootService() {
             throwIfStopRequested(request.runtimeSessionId)
             logStartPhase("rules_activation", phaseStartedAt)
             netfilterOwned = true
+            phaseStartedAt = android.os.SystemClock.elapsedRealtime()
+            ipv6PrivacyGuard.activate(request.runtimeSessionId).getOrThrow()
+            logStartPhase("ipv6_privacy", phaseStartedAt)
             logStartPhase("total_ms", startedAt)
             val runningSnapshot = updateSnapshot(
                 phase = RootRuntimePhase.RUNNING,
@@ -549,6 +587,7 @@ class KunBoxRootService : RootService() {
     }
 
     internal fun closeCommandServer(plan: RootAppRoutingPlan?) {
+        val startedAt = SystemClock.elapsedRealtime()
         val server = commandServer
         if (server != null) {
             runCatching { server.closeService() }
@@ -559,6 +598,7 @@ class KunBoxRootService : RootService() {
         }
         plan?.let(::awaitListenersAbsent)
         awaitCommandSocketAbsent()
+        Log.i(TAG, "[ROOT_STOP] phase=core_and_socket duration_ms=${SystemClock.elapsedRealtime() - startedAt}")
     }
 
     internal fun awaitListenersAbsent(plan: RootAppRoutingPlan, timeoutMs: Long = 1_000L) {

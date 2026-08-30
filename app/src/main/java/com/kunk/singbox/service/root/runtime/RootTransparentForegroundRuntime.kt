@@ -299,7 +299,10 @@ internal suspend fun RootTransparentForegroundService.refreshUidRoutingLocked(re
         check(VpnStateStore.commitAppliedPerAppPolicy(
             applied.copy(
                 appliedAtElapsedMs = android.os.SystemClock.elapsedRealtime(),
-                runtimeGeneration = refreshed.routingGeneration,
+                runtimeGeneration = maxOf(
+                    VpnStateStore.getRuntimeStateSnapshot().generation,
+                    SingBoxIpcHub.currentStateGeneration()
+                ),
                 resolvedPlanSha256 = refreshed.resolvedPlanSha256,
                 rootRuntimeSessionId = refreshed.runtimeSessionId
             )

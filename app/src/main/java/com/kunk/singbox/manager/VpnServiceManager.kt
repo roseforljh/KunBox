@@ -18,6 +18,7 @@ import com.kunk.singbox.repository.RootGenerationStore
 import com.kunk.singbox.repository.SettingsRepository
 import com.kunk.singbox.service.ProxyOnlyService
 import com.kunk.singbox.service.SingBoxService
+import com.kunk.singbox.service.ServiceState
 import com.kunk.singbox.service.root.RootTransparentForegroundService
 import com.kunk.singbox.service.manager.VpnStopInitiator
 import kotlinx.coroutines.CancellationException
@@ -29,7 +30,7 @@ import java.io.File
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicLong
 
-@Suppress("TooManyFunctions")
+@Suppress("TooManyFunctions", "LargeClass")
 object VpnServiceManager {
     private const val TAG = "VpnServiceManager"
 
@@ -65,14 +66,48 @@ object VpnServiceManager {
         val pending = VpnStateStore.getPending()
 
         if (pending.isNotEmpty()) {
-            return persistedActive || pending == "starting" || pending == "stopping"
+            val terminalStop = pending == "stopping" &&
+                isTerminalStoppingState(
+                    pending,
+                    persistedActive,
+                    VpnStateStore.getRuntimeStateSnapshot().stateOrdinal
+                )
+            return !terminalStop && (persistedActive || pending == "starting" || pending == "stopping")
         }
 
-        if (persistedActive) {
-            return true
-        }
+        return persistedActive || SingBoxRemote.isRunning.value || SingBoxRemote.isStarting.value
+    }
 
-        return SingBoxRemote.isRunning.value || SingBoxRemote.isStarting.value
+    internal fun isTerminalStoppingState(
+        pending: String,
+        active: Boolean,
+        runtimeStateOrdinal: Int
+    ): Boolean = pending == "stopping" && !active && runtimeStateOrdinal == ServiceState.STOPPED.ordinal
+
+    private fun preparePendingForStart(mode: TrafficCaptureMode): Boolean {
+        val pending = VpnStateStore.getPending()
+        if (pending != "stopping") return false
+        val runtime = VpnStateStore.getRuntimeStateSnapshot()
+        val recover = mode == TrafficCaptureMode.ROOT_TRANSPARENT &&
+            isTerminalStoppingState(pending, VpnStateStore.getActive(), runtime.stateOrdinal)
+        if (!recover) {
+            Log.e(
+                TAG,
+                "[ROOT_BOOT] stage=dispatch_rejected reason=stop_in_progress mode=$mode " +
+                    "runtimeState=${runtime.stateOrdinal} readiness=${runtime.readiness.status} " +
+                    "rulesInstalled=${runtime.readiness.rootRulesInstalled} " +
+                    "owner=${VpnStateStore.getStopOwnerMode()}"
+            )
+            error("VPN stop is still in progress")
+        }
+        Log.w(
+            TAG,
+            "[ROOT_BOOT] stage=stale_stop_recovered readiness=${runtime.readiness.status} " +
+                "rulesInstalled=${runtime.readiness.rootRulesInstalled} owner=${VpnStateStore.getStopOwnerMode()} " +
+                "reason=${runtime.readiness.lastReadinessReason}"
+        )
+        VpnStateStore.setPending("starting")
+        return true
     }
 
     fun isStarting(): Boolean {
@@ -277,6 +312,49 @@ object VpnServiceManager {
             VpnStateStore.getPending().isBlank() &&
             VpnStateStore.getMode() in setOf(VpnStateStore.CoreMode.VPN, VpnStateStore.CoreMode.ROOT)
 
+    @Suppress("LongParameterList", "CyclomaticComplexMethod")
+    internal fun isRootPerAppPolicyConfirmationSatisfied(
+        targetRevision: Long,
+        targetDigest: String,
+        targetRoutingDigest: String,
+        generation: ConfigRepository.ConfigGenerationResult,
+        applied: VpnStateStore.AppliedPerAppPolicySnapshot,
+        runtime: VpnStateStore.RuntimeStateSnapshot
+    ): Boolean {
+        val readiness = runtime.readiness
+        val sameRuntimeInstance = applied.serviceInstanceId.isNotBlank() &&
+            applied.serviceInstanceId == readiness.serviceInstanceId
+        val sameRootSession = applied.rootRuntimeSessionId.isNotBlank() &&
+            applied.rootRuntimeSessionId == readiness.rootRuntimeSessionId
+        return runtime.stateOrdinal == ServiceState.RUNNING.ordinal &&
+            !runtime.manuallyStopped &&
+            runtime.lastError.isBlank() &&
+            readiness.status == DataPlaneStatus.READY &&
+            readiness.coreReady &&
+            readiness.selectorReady &&
+            readiness.rootWatchdogReady &&
+            readiness.rootRulesInstalled &&
+            sameRuntimeInstance &&
+            sameRootSession &&
+            applied.revision == targetRevision &&
+            applied.digest == targetDigest &&
+            applied.requestId == generation.requestId &&
+            applied.configDigest == generation.configDigest &&
+            applied.appRoutingDigest == targetRoutingDigest &&
+            applied.sidecarFileSha256 == generation.rootRoutingSidecarDigest &&
+            applied.staticPlanSha256 == generation.rootRoutingStaticPlanDigest &&
+            applied.rootRoutingAppSha256 == generation.rootRoutingAppDigest &&
+            applied.resolvedPlanSha256.isNotBlank() &&
+            applied.runtimeGeneration > 0L &&
+            runtime.generation >= applied.runtimeGeneration &&
+            readiness.rootRoutingGeneration == generation.rootRoutingGeneration &&
+            readiness.rootConfigSha256 == generation.configDigest &&
+            readiness.rootSidecarSha256 == generation.rootRoutingSidecarDigest &&
+            readiness.rootStaticPlanSha256 == generation.rootRoutingStaticPlanDigest &&
+            readiness.rootAppRoutingSha256 == generation.rootRoutingAppDigest &&
+            readiness.rootResolvedPlanSha256 == applied.resolvedPlanSha256
+    }
+
     private suspend fun generatePerAppConfig(appContext: Context): ConfigRepository.ConfigGenerationResult {
         val requestId = UUID.randomUUID().toString()
         return ConfigRepository.getInstance(appContext)
@@ -322,15 +400,14 @@ object VpnServiceManager {
             if (requestGeneration != perAppApplyGeneration.get()) return@withTimeoutOrNull false
             val applied = VpnStateStore.getAppliedPerAppPolicy()
             val runtime = VpnStateStore.getRuntimeStateSnapshot()
-            val rootReady = runtimeMode != VpnStateStore.CoreMode.ROOT || (
-                runtime.stateOrdinal == com.kunk.singbox.service.ServiceState.RUNNING.ordinal &&
-                    runtime.readiness.status == DataPlaneStatus.READY &&
-                    runtime.readiness.rootRoutingGeneration == generation.rootRoutingGeneration &&
-                    runtime.readiness.rootConfigSha256 == generation.configDigest &&
-                    runtime.readiness.rootSidecarSha256 == generation.rootRoutingSidecarDigest &&
-                    runtime.readiness.rootStaticPlanSha256 == generation.rootRoutingStaticPlanDigest &&
-                    runtime.readiness.rootAppRoutingSha256 == generation.rootRoutingAppDigest &&
-                    runtime.readiness.rootResolvedPlanSha256 == applied.resolvedPlanSha256
+            val rootReady = runtimeMode != VpnStateStore.CoreMode.ROOT ||
+                isRootPerAppPolicyConfirmationSatisfied(
+                    targetRevision = targetRevision,
+                    targetDigest = targetDigest,
+                    targetRoutingDigest = targetRoutingDigest,
+                    generation = generation,
+                    applied = applied,
+                    runtime = runtime
                 )
             if (applied.revision == targetRevision &&
                 applied.digest == targetDigest &&
@@ -342,7 +419,6 @@ object VpnServiceManager {
                         applied.staticPlanSha256 == generation.rootRoutingStaticPlanDigest &&
                         applied.rootRoutingAppSha256 == generation.rootRoutingAppDigest &&
                         applied.resolvedPlanSha256.isNotBlank() &&
-                        applied.runtimeGeneration == generation.rootRoutingGeneration &&
                         applied.rootRuntimeSessionId.isNotBlank())) &&
                 rootReady
             ) {
@@ -461,16 +537,35 @@ object VpnServiceManager {
         pendingNodeName: String? = null
     ): Result<Unit> {
         Log.d(TAG, "startVpn: mode=$mode")
-
-        if (VpnStateStore.getPending() == "stopping") {
-            return Result.failure(IllegalStateException("VPN stop is still in progress"))
+        val pendingPreparation = runCatching { preparePendingForStart(mode) }
+        if (pendingPreparation.isFailure) {
+            return Result.failure(requireNotNull(pendingPreparation.exceptionOrNull()))
         }
-
+        val recoverStaleRootStop = pendingPreparation.getOrThrow()
         val command = buildStartCommand(mode, configPath, requestId, cleanCache)
+        return dispatchStartService(context, mode, command, pendingNodeName, recoverStaleRootStop)
+    }
+
+    private fun dispatchStartService(
+        context: Context,
+        mode: TrafficCaptureMode,
+        command: StartCommand,
+        pendingNodeName: String?,
+        recoverStaleRootStop: Boolean
+    ): Result<Unit> {
         val appContext = context.applicationContext
         val previousMode = VpnStateStore.getMode()
         val previousOwner = VpnStateStore.getStopOwnerMode()
         val targetMode = mode.toCoreMode()
+        if (mode == TrafficCaptureMode.ROOT_TRANSPARENT) {
+            Log.i(
+                TAG,
+                "[ROOT_BOOT] stage=dispatch_begin action=${command.action} " +
+                    "previousMode=$previousMode previousOwner=$previousOwner " +
+                    "pending=${VpnStateStore.getPending()} active=${VpnStateStore.getActive()} " +
+                    "requestId=${command.requestId.orEmpty()} config=${command.configPath.orEmpty()}"
+            )
+        }
         val intent = Intent(appContext, command.serviceClass).apply {
             action = command.action
             command.configPath?.let { putExtra(SingBoxService.EXTRA_CONFIG_PATH, it) }
@@ -486,10 +581,17 @@ object VpnServiceManager {
         return runCatching {
             VpnStateStore.setStopOwnerMode(targetMode)
             VpnStateStore.setMode(targetMode)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val component = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 appContext.startForegroundService(intent)
             } else {
                 appContext.startService(intent)
+            }
+            if (mode == TrafficCaptureMode.ROOT_TRANSPARENT) {
+                Log.i(
+                    TAG,
+                    "[ROOT_BOOT] stage=dispatch_accepted component=${component?.flattenToShortString().orEmpty()} " +
+                        "mode=${VpnStateStore.getMode()} owner=${VpnStateStore.getStopOwnerMode()}"
+                )
             }
             Unit
         }
@@ -498,6 +600,9 @@ object VpnServiceManager {
                     VpnStateStore.setMode(previousMode)
                     previousOwner?.let(VpnStateStore::setStopOwnerMode)
                         ?: VpnStateStore.clearStopOwnerMode()
+                }
+                if (recoverStaleRootStop && VpnStateStore.getPending() == "starting") {
+                    VpnStateStore.setPending("stopping")
                 }
                 Log.e(TAG, "Failed to start VPN service", error)
             }
@@ -523,6 +628,14 @@ object VpnServiceManager {
         return VpnStateStore.getStopOwnerMode() ?: resolveActiveMode()
     }
 
+    private fun markStopCompletedWithoutService(manualStop: Boolean? = null) {
+        manualStop?.let(VpnStateStore::setManuallyStopped)
+        VpnStateStore.setPending("")
+        VpnStateStore.setActive(false)
+        VpnStateStore.clearStopOwnerMode()
+        VpnStateStore.setMode(VpnStateStore.CoreMode.NONE)
+    }
+
     fun stopVpn(context: Context, initiator: VpnStopInitiator): Result<Unit> {
         Log.d(TAG, "stopVpn: initiator=${initiator.wireValue}")
 
@@ -530,7 +643,9 @@ object VpnServiceManager {
             val appContext = context.applicationContext
             val activeMode = resolveStopOwnerMode()
             if (activeMode == VpnStateStore.CoreMode.NONE) {
-                throw IllegalStateException("No active VPN stop owner")
+                Log.i(TAG, "stopVpn: no active service; treating stop as already completed")
+                markStopCompletedWithoutService(initiator.isManualStop)
+                return@runCatching Unit
             }
             VpnStateStore.setPending("stopping")
             val stopResults = buildList {
@@ -575,7 +690,9 @@ object VpnServiceManager {
             val appContext = context.applicationContext
             val activeMode = resolveStopOwnerMode()
             if (activeMode == VpnStateStore.CoreMode.NONE) {
-                throw IllegalStateException("No active VPN stop owner")
+                Log.i(TAG, "forceStop: no active service; treating stop as already completed")
+                markStopCompletedWithoutService()
+                return@runCatching Unit
             }
             VpnStateStore.setPending("stopping")
             val stopResults = buildList {

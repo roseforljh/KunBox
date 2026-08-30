@@ -7,8 +7,6 @@ import android.os.IBinder
 import com.kunk.singbox.aidl.ISingBoxService
 import com.kunk.singbox.aidl.ISingBoxServiceCallback
 import com.kunk.singbox.service.root.RootTransparentForegroundService
-import com.kunk.singbox.model.TrafficCaptureMode
-import com.kunk.singbox.repository.SettingsRepository
 import com.kunk.singbox.service.root.RootServicePrewarmer
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -35,6 +33,7 @@ class SingBoxIpcService : Service() {
 
         override fun notifyAppLifecycle(isForeground: Boolean) {
             SingBoxIpcHub.onAppLifecycle(isForeground)
+            if (isForeground) scheduleRootPrewarm()
         }
 
         override fun hotReloadConfig(configContent: String?): Int {
@@ -65,14 +64,7 @@ class SingBoxIpcService : Service() {
             VpnStateStore.setMode(VpnStateStore.CoreMode.NONE)
         }
         SingBoxIpcHub.registerService(this)
-        serviceScope.launch {
-            val settings = SettingsRepository.getInstance(this@SingBoxIpcService).settings.value
-            if (settings.resolvedTrafficCaptureMode() == TrafficCaptureMode.ROOT_TRANSPARENT &&
-                VpnStateStore.getPending().isBlank()
-            ) {
-                RootServicePrewarmer.prewarm(this@SingBoxIpcService)
-            }
-        }
+        scheduleRootPrewarm()
     }
 
     override fun onDestroy() {
@@ -81,5 +73,12 @@ class SingBoxIpcService : Service() {
         super.onDestroy()
     }
 
-    override fun onBind(intent: Intent?): IBinder = binder
+    override fun onBind(intent: Intent?): IBinder {
+        scheduleRootPrewarm()
+        return binder
+    }
+
+    private fun scheduleRootPrewarm() {
+        serviceScope.launch { RootServicePrewarmer.prewarmIfIdle(this@SingBoxIpcService) }
+    }
 }

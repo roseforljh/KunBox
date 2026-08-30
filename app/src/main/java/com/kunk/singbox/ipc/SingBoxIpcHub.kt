@@ -351,6 +351,10 @@ object SingBoxIpcHub {
         stateSnapshot.readiness
     }
 
+    fun currentStateGeneration(): Long = synchronized(stateLock) {
+        stateSnapshot.generation
+    }
+
     fun getLastStateUpdateTime(): Long = lastStateUpdateAtMs.get()
 
     private fun currentStateSnapshot(): VpnStateStore.RuntimeStateSnapshot {

@@ -510,6 +510,22 @@ internal fun KunBoxRootService.handleWatchdogLost(runtimeSessionId: String) {
     }
 }
 
+internal fun KunBoxRootService.handleIpv6PrivacyLost(runtimeSessionId: String, error: Throwable) {
+    synchronized(runtimeLock) {
+        if (!matchesRunningSession(runtimeSessionId)) return
+        Log.e(KunBoxRootService.TAG, "Root IPv6 privacy guard failed", error)
+        val stopped = stopLocked(runtimeSessionId)
+        if (stopped.phase == RootRuntimePhase.STOPPED) {
+            updateSnapshot(
+                phase = RootRuntimePhase.FAILED_UNPROTECTED,
+                error = "Root IPv6 privacy guard failed: ${error.message}",
+                rulesInstalled = false,
+                watchdogReady = false
+            )
+        }
+    }
+}
+
 internal fun KunBoxRootService.matchesRunningSession(runtimeSessionId: String): Boolean =
     runtimeSessionId.isNotBlank() &&
         runtimeSessionId == snapshot.runtimeSessionId &&
@@ -518,27 +534,38 @@ internal fun KunBoxRootService.matchesRunningSession(runtimeSessionId: String): 
 internal fun KunBoxRootService.startResourceGuard(runtimeSessionId: String) {
     resourceGuard?.close()
     resourceGuard = RootResourceGuard { fdCount, action ->
-        synchronized(runtimeLock) {
-            if (snapshot.runtimeSessionId == runtimeSessionId) {
-                snapshot = snapshot.copy(rootFdCount = fdCount, generation = snapshot.generation + 1)
-                if (action == RootResourceAction.STOP) {
-                    stopUidMonitor()
-                    runCatching { closeCommandServer(activeRoutingArtifacts?.plan) }
-                    val cleanupError = cleanupRulesVerified()
-                    resourceGuard?.stop()
-                    if (cleanupError == null) {
-                        updateSnapshot(
-                            phase = RootRuntimePhase.FAILED_UNPROTECTED,
-                            error = "Root file descriptor safety limit reached: $fdCount",
-                            rulesInstalled = false
-                        )
-                    } else {
-                        failCleanup(cleanupError, cleanupError.message ?: "Root resource cleanup failed")
-                    }
-                }
-            }
+        val privacyError = ipv6PrivacyGuard.enforce().exceptionOrNull()
+        if (privacyError != null) {
+            handleIpv6PrivacyLost(runtimeSessionId, privacyError)
+        } else {
+            handleRootResourceSample(runtimeSessionId, fdCount, action)
         }
     }.also(RootResourceGuard::start)
+}
+
+internal fun KunBoxRootService.handleRootResourceSample(
+    runtimeSessionId: String,
+    fdCount: Int,
+    action: RootResourceAction
+) {
+    synchronized(runtimeLock) {
+        if (snapshot.runtimeSessionId != runtimeSessionId) return
+        snapshot = snapshot.copy(rootFdCount = fdCount, generation = snapshot.generation + 1)
+        if (action != RootResourceAction.STOP) return
+        stopUidMonitor()
+        runCatching { closeCommandServer(activeRoutingArtifacts?.plan) }
+        val cleanupError = cleanupRulesVerified()
+        resourceGuard?.stop()
+        if (cleanupError == null) {
+            updateSnapshot(
+                phase = RootRuntimePhase.FAILED_UNPROTECTED,
+                error = "Root file descriptor safety limit reached: $fdCount",
+                rulesInstalled = false
+            )
+        } else {
+            failCleanup(cleanupError, cleanupError.message ?: "Root resource cleanup failed")
+        }
+    }
 }
 
 @Suppress("LongMethod")
@@ -707,6 +734,11 @@ internal fun KunBoxRootService.cleanupRulesVerified(): Throwable? {
         // Keep the external watchdog alive when ownership cleanup is not
         // confirmed. Its stale-lease path is the last fail-closed guard.
         return cleanupError
+    }
+    val privacyRestoreError = ipv6PrivacyGuard.restore().exceptionOrNull()
+    if (privacyRestoreError != null) {
+        Log.e(KunBoxRootService.TAG, "Root IPv6 privacy state could not be restored", privacyRestoreError)
+        return privacyRestoreError
     }
     val watchdogStopError = currentWatchdog?.stop(cleanupRules = false)?.exceptionOrNull()
     if (watchdogStopError != null) {

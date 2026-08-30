@@ -5,6 +5,7 @@ package com.kunk.singbox.repository
 import android.util.Log
 import com.kunk.singbox.R
 import com.kunk.singbox.database.entity.ProfileEntity
+import com.kunk.singbox.ipc.VpnStateStore
 import com.kunk.singbox.model.*
 import com.kunk.singbox.model.PingResultCode
 import java.io.File
@@ -17,8 +18,29 @@ import kotlinx.coroutines.sync.withPermit
 
 internal suspend fun ConfigRepository.deleteProfile(profileId: String) = withContext(Dispatchers.IO) {
     com.kunk.singbox.service.SubscriptionAutoUpdateWorker.cancel(context, profileId)
-    val removedNodeIds = (profileNodes[profileId] ?: _allNodes.value.filter { it.sourceProfileId == profileId })
-        .map { it.id }
+    val allNodesSnapshot = _allNodes.value.takeIf { it.isNotEmpty() } ?: loadAllNodesSnapshot()
+    val removedNodes = allNodesSnapshot.filter { it.sourceProfileId == profileId }.ifEmpty {
+        loadConfig(profileId)?.let { config -> extractNodesFromConfigSync(config, profileId) }.orEmpty()
+    }
+    val removedNodeIds = removedNodes.map { it.id }
+    val removedNodeIdSet = removedNodeIds.toSet()
+    val remainingNodes = allNodesSnapshot.filterNot { it.id in removedNodeIdSet }
+    val removedNodeReferences = removedNodes.flatMap { node ->
+        buildList {
+            add("${node.sourceProfileId}::${node.name}")
+            if (remainingNodes.none { it.name == node.name }) add(node.name)
+        }
+    }.toSet()
+    val runtimeTags = NodeProtectionStore.runtimeMappings()
+        .filterValues { reference -> reference.nodeId in removedNodeIdSet }
+        .keys
+    check(
+        settingsRepository.removeDeletedRoutingReferences(
+            deletedProfileId = profileId,
+            deletedNodeIds = removedNodeIdSet,
+            deletedNodeReferences = removedNodeReferences
+        )
+    ) { "Failed to remove routing references for deleted profile $profileId" }
 
     _profiles.update { list -> list.filter { it.id != profileId } }
     removeCachedConfig(profileId)
@@ -29,7 +51,11 @@ internal suspend fun ConfigRepository.deleteProfile(profileId: String) = withCon
     profileAutoSelectionMmkv.removeValueForKey(profileId)
     _profileAutoSelections.update { it - profileId }
     removeNodeLatencies(removedNodeIds)
-    removedNodeIds.forEach(NodeProtectionStore::removeNode)
+    removedNodeIds.forEach { nodeId ->
+        nodeAutoSelectionMmkv.removeValueForKey(nodeId)
+        NodeProtectionStore.removeNode(nodeId)
+    }
+    if (runtimeTags.isNotEmpty()) lastTagToNodeName = lastTagToNodeName - runtimeTags
     updateAllNodesAndGroups()
     val configFile = File(configDir, "$profileId.json")
     if (configFile.exists() && !configFile.delete()) {
@@ -49,9 +75,17 @@ internal suspend fun ConfigRepository.deleteProfile(profileId: String) = withCon
         } else {
             _nodes.value = emptyList()
             _activeNodeId.value = null
+            VpnStateStore.setSelectedNode(null, null)
+            VpnStateStore.setSelectedNodeLabel(null)
         }
+    } else if (VpnStateStore.getSelectedProfileId() == profileId) {
+        VpnStateStore.setSelectedNode(_activeProfileId.value, _activeNodeId.value)
+        VpnStateStore.setSelectedNodeLabel(
+            _nodes.value.firstOrNull { it.id == _activeNodeId.value }?.name
+        )
     }
     saveProfiles()
+    reloadRuntimeAfterDestructiveMutation("profile_deleted")
 }
 
 internal suspend fun ConfigRepository.importProfileDirectly(profile: ProfileUi, config: SingBoxConfig) = withContext(Dispatchers.IO) {
@@ -389,7 +423,10 @@ internal suspend fun ConfigRepository.importFromSubscriptionUpdate(
 ): SubscriptionUpdateResult = withContext(Dispatchers.IO) {
     var previousConfigText: String? = null
     try {
-        val oldNodes = profileNodes[profile.id] ?: emptyList()
+        val oldNodes = profileNodes[profile.id]
+            ?: loadConfig(profile.id)?.let { oldConfig ->
+                extractNodesFromConfigSync(oldConfig, profile.id)
+            }.orEmpty()
         val oldNodeNames = oldNodes.map { it.name }.toSet()
         val profileUrl = profile.url
         if (profileUrl.isNullOrBlank()) {
@@ -411,6 +448,19 @@ internal suspend fun ConfigRepository.importFromSubscriptionUpdate(
         val newNodeNames = newNodes.map { it.name }.toSet()
         val addedNodes = newNodeNames - oldNodeNames
         val removedNodes = oldNodeNames - newNodeNames
+        val removedNodeItems = oldNodes.filter { it.name in removedNodes }
+        val removedNodeIds = removedNodeItems.mapTo(mutableSetOf(), NodeUi::id)
+        val allNodesBeforeUpdate = _allNodes.value.takeIf { it.isNotEmpty() } ?: loadAllNodesSnapshot()
+        val remainingNodes = allNodesBeforeUpdate.filter { it.sourceProfileId != profile.id } + newNodes
+        val removedNodeReferences = removedNodeItems.flatMapTo(mutableSetOf()) { node ->
+            buildList {
+                add("${node.sourceProfileId}::${node.name}")
+                if (remainingNodes.none { it.name == node.name }) add(node.name)
+            }
+        }
+        val removedRuntimeTags = NodeProtectionStore.runtimeMappings()
+            .filterValues { reference -> reference.nodeId in removedNodeIds }
+            .keys
         setProfileUpdateStage(profile.id, updateRunId, SubscriptionUpdateStage.Saving)
         previousConfigText = File(configDir, "${profile.id}.json")
             .takeIf { it.exists() }
@@ -418,6 +468,22 @@ internal suspend fun ConfigRepository.importFromSubscriptionUpdate(
         writeConfigFileOrThrow(profile.id, deduplicatedConfig)
 
         cacheConfig(profile.id, deduplicatedConfig)
+        if (removedNodeIds.isNotEmpty()) {
+            check(
+                settingsRepository.removeDeletedRoutingReferences(
+                    deletedNodeIds = removedNodeIds,
+                    deletedNodeReferences = removedNodeReferences
+                )
+            ) { "Failed to remove routing references for deleted subscription nodes" }
+            removeNodeLatencies(removedNodeIds)
+            removedNodeIds.forEach { nodeId ->
+                nodeAutoSelectionMmkv.removeValueForKey(nodeId)
+                NodeProtectionStore.removeNode(nodeId)
+            }
+            if (removedRuntimeTags.isNotEmpty()) {
+                lastTagToNodeName = lastTagToNodeName - removedRuntimeTags
+            }
+        }
         profileNodes[profile.id] = newNodes
         updateAllNodesAndGroups()
         if (_activeProfileId.value == profile.id) {
@@ -446,6 +512,9 @@ internal suspend fun ConfigRepository.importFromSubscriptionUpdate(
         }
 
         saveProfiles()
+        if (removedNodeIds.isNotEmpty()) {
+            reloadRuntimeAfterDestructiveMutation("subscription_nodes_removed")
+        }
         if (profile.dnsPreResolve) {
             scope.launch {
                 setProfileUpdateStage(profile.id, updateRunId, SubscriptionUpdateStage.DnsBackground)
@@ -533,6 +602,16 @@ internal suspend fun ConfigRepository.generateConfigFile(
         val allNodesSnapshot = _allNodes.value.takeIf { it.isNotEmpty() } ?: loadAllNodesSnapshot()
         val activeNode = _nodes.value.find { it.id == activeNodeId }
             ?: allNodesSnapshot.find { it.id == activeNodeId }
+        check(
+            settingsRepository.removeInvalidRoutingReferences(
+                validProfileIds = _profiles.value.mapTo(mutableSetOf(), ProfileUi::id),
+                validNodeIds = allNodesSnapshot.mapTo(mutableSetOf(), NodeUi::id),
+                validQualifiedNodeReferences = allNodesSnapshot.mapTo(mutableSetOf()) { node ->
+                    "${node.sourceProfileId}::${node.name}"
+                },
+                validBareNodeNames = allNodesSnapshot.mapTo(mutableSetOf(), NodeUi::name)
+            )
+        ) { "Failed to repair invalid routing references" }
         val sanitizedSettings = settingsRepository.settings.first()
         val telegramCapturedPackages = filterVpnCapturedPackages(
             sanitizedSettings,

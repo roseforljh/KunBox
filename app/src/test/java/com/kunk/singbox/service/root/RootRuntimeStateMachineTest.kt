@@ -1,5 +1,6 @@
 package com.kunk.singbox.service.root
 
+import com.kunk.singbox.model.TrafficCaptureMode
 import java.io.File
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -7,6 +8,37 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class RootRuntimeStateMachineTest {
+    @Test
+    fun rootPrewarmRunsOnlyWhileRootModeIsIdle() {
+        assertTrue(
+            shouldPrewarmRootService(
+                TrafficCaptureMode.ROOT_TRANSPARENT,
+                active = false,
+                pending = "",
+                running = false,
+                starting = false
+            )
+        )
+        assertFalse(
+            shouldPrewarmRootService(
+                TrafficCaptureMode.ROOT_TRANSPARENT,
+                active = false,
+                pending = "starting",
+                running = false,
+                starting = true
+            )
+        )
+        assertFalse(
+            shouldPrewarmRootService(
+                TrafficCaptureMode.VPN,
+                active = false,
+                pending = "",
+                running = false,
+                starting = false
+            )
+        )
+    }
+
     @Test
     fun externalRootConfigRequiresItsOriginalCandidateRequestId() {
         val failure = runCatching {
@@ -233,6 +265,23 @@ class RootRuntimeStateMachineTest {
             startSuccess.indexOf("commitAppliedPerAppPolicy") <
                 startSuccess.indexOf("VpnStateStore.setActive(true)")
         )
+    }
+
+    @Test
+    fun rootAppliedPolicyUsesRuntimeStateGeneration() {
+        val startSource = File(
+            "src/main/java/com/kunk/singbox/service/root/RootTransparentForegroundService.kt"
+        ).readText(Charsets.UTF_8)
+        val refreshSource = File(
+            "src/main/java/com/kunk/singbox/service/root/runtime/RootTransparentForegroundRuntime.kt"
+        ).readText(Charsets.UTF_8)
+
+        assertTrue(startSource.contains("val runtimeState = VpnStateStore.getRuntimeStateSnapshot()"))
+        assertTrue(startSource.contains("runtimeGeneration = policyRuntimeGeneration"))
+        assertTrue(refreshSource.contains("VpnStateStore.getRuntimeStateSnapshot().generation"))
+        assertTrue(refreshSource.contains("runtimeGeneration = maxOf("))
+        assertFalse(startSource.contains("runtimeGeneration = rootSnapshot.routingGeneration"))
+        assertFalse(refreshSource.contains("runtimeGeneration = refreshed.routingGeneration"))
     }
 
     @Test

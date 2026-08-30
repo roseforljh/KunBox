@@ -5,6 +5,40 @@ LEASE_FILE="$RUNTIME_DIR/lease"
 ACK_FILE="$RUNTIME_DIR/watchdog_ack"
 SESSION_FILE="$RUNTIME_DIR/session"
 CLEANUP_SCRIPT="$RUNTIME_DIR/cleanup-owned.sh"
+IPV6_PRIVACY_STATE="$RUNTIME_DIR/ipv6-privacy-state"
+
+restore_ipv6_privacy() {
+    EXPECTED_SESSION="$1"
+    [ -e "$IPV6_PRIVACY_STATE" ] || return 0
+    [ -f "$IPV6_PRIVACY_STATE" ] && [ ! -L "$IPV6_PRIVACY_STATE" ] || return 75
+    STATE_SESSION="$(sed -n 's/^session=//p' "$IPV6_PRIVACY_STATE" | head -n 1)"
+    [ -n "$EXPECTED_SESSION" ] && [ "$STATE_SESSION" != "$EXPECTED_SESSION" ] && return 0
+    DEFAULT_VALUE="$(sed -n 's/^default=//p' "$IPV6_PRIVACY_STATE" | head -n 1)"
+    case "$DEFAULT_VALUE" in 0|1) ;; *) return 75 ;; esac
+    RESTORE_FAILED=0
+    while IFS='|' read -r KEY VALUE; do
+        case "$KEY" in
+            iface=*) INTERFACE="${KEY#iface=}" ;;
+            *) continue ;;
+        esac
+        case "$INTERFACE" in ''|*[!A-Za-z0-9_.:-]*) return 75 ;; esac
+        case "$VALUE" in 0|1) ;; *) return 75 ;; esac
+        CONTROL="/proc/sys/net/ipv6/conf/$INTERFACE/disable_ipv6"
+        [ -f "$CONTROL" ] || continue
+        printf '%s' "$VALUE" > "$CONTROL" 2>/dev/null || RESTORE_FAILED=1
+    done < "$IPV6_PRIVACY_STATE"
+    for CONTROL in /proc/sys/net/ipv6/conf/*/disable_ipv6; do
+        [ -f "$CONTROL" ] || continue
+        INTERFACE="${CONTROL%/disable_ipv6}"
+        INTERFACE="${INTERFACE##*/}"
+        case "$INTERFACE" in all|default|lo) continue ;; esac
+        grep -F -q "iface=$INTERFACE|" "$IPV6_PRIVACY_STATE" ||
+            printf '%s' "$DEFAULT_VALUE" > "$CONTROL" 2>/dev/null || RESTORE_FAILED=1
+    done
+    printf '%s' "$DEFAULT_VALUE" > /proc/sys/net/ipv6/conf/default/disable_ipv6 2>/dev/null || RESTORE_FAILED=1
+    [ "$RESTORE_FAILED" -eq 0 ] || return 75
+    rm -f "$IPV6_PRIVACY_STATE"
+}
 
 cleanup_runtime() {
     rm -f "$LEASE_FILE" "$ACK_FILE" "$SESSION_FILE" "$RUNTIME_DIR/watchdog.pid"
@@ -25,6 +59,7 @@ if [ "$1" = "cleanup" ]; then
         exit 0
     fi
     cleanup_owned "$EXPECTED_SESSION" || exit $?
+    restore_ipv6_privacy "$EXPECTED_SESSION" || exit $?
     cleanup_runtime
     exit 0
 fi
@@ -68,6 +103,12 @@ while :; do
             if [ "$CLEANUP_STATUS" -ne 0 ]; then
                 printf '%s\n' "watchdog_cleanup:$CLEANUP_STATUS" > "$RUNTIME_DIR/cleanup_conflict"
                 exit "$CLEANUP_STATUS"
+            fi
+            restore_ipv6_privacy "$SESSION_ID"
+            PRIVACY_STATUS=$?
+            if [ "$PRIVACY_STATUS" -ne 0 ]; then
+                printf '%s\n' "watchdog_privacy_restore:$PRIVACY_STATUS" > "$RUNTIME_DIR/cleanup_conflict"
+                exit "$PRIVACY_STATUS"
             fi
             kill "$ROOT_PID" 2>/dev/null
             cleanup_runtime

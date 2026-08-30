@@ -3,6 +3,7 @@ package com.kunk.singbox.service.root
 import android.content.Context
 import android.os.Process
 import android.system.Os
+import android.util.Log
 import java.io.File
 import java.io.FileOutputStream
 import java.nio.file.Files
@@ -23,6 +24,8 @@ class RootWatchdogInstaller(
         private const val LEASE_TIMEOUT_SECONDS = 3
         private const val ACK_TIMEOUT_SECONDS = 2
         private const val STOP_WAIT_MS = 750L
+        private const val PROCESS_REAP_WAIT_MS = 100L
+        private const val TAG = "RootWatchdogInstaller"
     }
 
     private val scheduler: ScheduledExecutorService = Executors.newSingleThreadScheduledExecutor()
@@ -212,12 +215,15 @@ class RootWatchdogInstaller(
 
     private fun stopWatchdogProcess() {
         val process = watchdogProcess ?: return
-        process.destroy()
-        if (!runCatching { process.waitFor(STOP_WAIT_MS, TimeUnit.MILLISECONDS) }.getOrDefault(false)) {
-            process.destroyForcibly()
-            runCatching { process.waitFor(STOP_WAIT_MS, TimeUnit.MILLISECONDS) }
-        }
+        val startedAt = System.nanoTime()
+        process.destroyForcibly()
+        runCatching { process.waitFor(PROCESS_REAP_WAIT_MS, TimeUnit.MILLISECONDS) }
         watchdogProcess = null
+        Log.i(
+            TAG,
+            "[ROOT_STOP] phase=watchdog_stop duration_ms=" +
+                TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt)
+        )
     }
 
     private fun requireCurrentProcessStartTime(): String {

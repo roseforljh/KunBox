@@ -22,6 +22,7 @@ import androidx.core.content.ContextCompat
 import com.kunk.singbox.aidl.ISingBoxService
 import com.kunk.singbox.aidl.ISingBoxServiceCallback
 import com.kunk.singbox.R
+import com.kunk.singbox.ipc.DataPlaneStatus
 import com.kunk.singbox.ipc.StateGenerationGate
 import com.kunk.singbox.ipc.DataPlaneReadinessSnapshot
 import com.kunk.singbox.ipc.VpnStateStore
@@ -32,6 +33,7 @@ import com.kunk.singbox.repository.*
 import com.kunk.singbox.ui.components.AppNotificationManager
 import com.kunk.singbox.repository.SettingsRepository
 import com.kunk.singbox.model.TrafficCaptureMode
+import com.kunk.singbox.service.root.RootServicePrewarmer
 import com.kunk.singbox.service.root.RootTransparentForegroundService
 import com.kunk.singbox.service.manager.ServiceStateHolder
 import com.kunk.singbox.service.manager.VpnStopInitiator
@@ -175,10 +177,25 @@ class VpnTileService : TileService() {
             readiness: DataPlaneReadinessSnapshot,
             nowElapsedMs: Long
         ): Boolean = serviceBound || readiness.isFresh(nowElapsedMs)
+
+        internal fun resolveTileState(
+            serviceState: ServiceState,
+            readinessStatus: DataPlaneStatus,
+            isStartingSequence: Boolean
+        ): Int = when {
+            readinessStatus == DataPlaneStatus.FAILED_BLOCKED -> Tile.STATE_UNAVAILABLE
+            readinessStatus == DataPlaneStatus.FAILED_UNPROTECTED -> Tile.STATE_INACTIVE
+            isStartingSequence || serviceState == ServiceState.STARTING -> Tile.STATE_ACTIVE
+            serviceState == ServiceState.RUNNING -> Tile.STATE_ACTIVE
+            else -> Tile.STATE_INACTIVE
+        }
     }
 
     override fun onStartListening() {
         super.onStartListening()
+        serviceScope.launch(Dispatchers.IO) {
+            RootServicePrewarmer.prewarmIfIdle(this@VpnTileService)
+        }
         clearStaleStartingSequenceOnListen()
         updateTile()
         registerTileRefreshReceiver()
@@ -228,7 +245,7 @@ class VpnTileService : TileService() {
 
         if (isActive) {
 
-            tile.state = Tile.STATE_UNAVAILABLE
+            tile.state = Tile.STATE_INACTIVE
             tile.label = getString(R.string.connection_disconnecting)
             try {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -242,7 +259,7 @@ class VpnTileService : TileService() {
             executeStopVpn()
         } else {
 
-            tile.state = Tile.STATE_UNAVAILABLE
+            tile.state = Tile.STATE_ACTIVE
             tile.label = getString(R.string.connection_connecting)
             tile.updateTile()
 
@@ -291,36 +308,7 @@ class VpnTileService : TileService() {
 
         val tile = qsTile ?: return
 
-        val nowElapsedMs = SystemClock.elapsedRealtime()
-        val dataPlaneReady = lastReadiness.isReady(
-            serviceState = effectiveState,
-            mode = VpnStateStore.getMode(),
-            ipcBound = hasTileControlPlane(serviceBound, lastReadiness, nowElapsedMs),
-            apiLevel = android.os.Build.VERSION.SDK_INT,
-            nowElapsedMs = nowElapsedMs
-        )
-        if (lastReadiness.status == com.kunk.singbox.ipc.DataPlaneStatus.FAILED_BLOCKED) {
-            tile.state = Tile.STATE_UNAVAILABLE
-        } else if (lastReadiness.status == com.kunk.singbox.ipc.DataPlaneStatus.FAILED_UNPROTECTED) {
-            tile.state = Tile.STATE_INACTIVE
-        } else if (isStartingSequence) {
-            tile.state = Tile.STATE_UNAVAILABLE
-        } else {
-            when (effectiveState) {
-                ServiceState.STARTING -> tile.state = Tile.STATE_UNAVAILABLE
-                ServiceState.RUNNING -> tile.state = if (dataPlaneReady) {
-                    Tile.STATE_ACTIVE
-                } else {
-                    Tile.STATE_UNAVAILABLE
-                }
-                ServiceState.STOPPING -> {
-                    tile.state = Tile.STATE_UNAVAILABLE
-                }
-                ServiceState.STOPPED -> {
-                    tile.state = Tile.STATE_INACTIVE
-                }
-            }
-        }
+        tile.state = resolveTileState(effectiveState, lastReadiness.status, isStartingSequence)
         val activeLabel = if (effectiveState == ServiceState.RUNNING ||
             effectiveState == ServiceState.STARTING
         ) {
@@ -335,7 +323,12 @@ class VpnTileService : TileService() {
             null
         }
 
-        tile.label = activeLabel ?: getString(R.string.app_name)
+        tile.label = when (effectiveState) {
+            ServiceState.STARTING -> getString(R.string.connection_connecting)
+            ServiceState.STOPPING -> getString(R.string.connection_disconnecting)
+            ServiceState.RUNNING -> activeLabel ?: getString(R.string.app_name)
+            ServiceState.STOPPED -> getString(R.string.app_name)
+        }
         try {
             tile.icon = android.graphics.drawable.Icon.createWithResource(this, R.drawable.ic_qs_tile)
         } catch (_: Exception) {

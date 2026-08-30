@@ -257,7 +257,9 @@ class RootNetfilterManager internal constructor(
         val binaries = plan.activationCommands.mapNotNull(List<String>::firstOrNull)
             .filter { it == "iptables" || it == "ip6tables" }
             .distinct()
-        val transitionResult = executor.executeBatch(transitionCommands + rootStateSnapshotCommands(binaries))
+        val transitionResult = executor.executeBatch(
+            transitionCommands + rootStateSnapshotCommands(binaries, includePolicyRouting = false)
+        )
         val snapshot = transitionResult.takeIf(RootCommandResult::success)?.output
             ?.let(::parseRootStateSnapshot)
         if (!transitionResult.success || snapshot == null) {
@@ -288,25 +290,65 @@ class RootNetfilterManager internal constructor(
     }
 
     fun cleanup(): Result<Unit> = runCatching {
-        if (ownership != null) {
-            val hadPlan = activePlan != null || guardPlan != null
-            if (ownership.hasOwner()) {
-                ownership.cleanupAnyOwner().getOrThrow()
-            } else {
-                ownership.cleanupLegacy().getOrThrow()
-            }
-            checkNoResidualNftState()
-            check(!hadPlan || !ownership.hasOwner()) {
-                "Root ownership record disappeared before cleanup confirmation"
-            }
-        } else {
-            guardPlan?.let { cleanup(it.cleanupCommands) }
-            cleanup(activePlan?.cleanupCommands ?: RootNetfilterPlanner.cleanupCommands())
-            checkNoResidualState()
-        }
+        ownership?.let(::cleanupOwnedState) ?: cleanupUnownedState()
         activePlan = null
         guardPlan = null
         ownershipContext = null
+    }
+
+    private fun cleanupOwnedState(owner: RootNetfilterOwnershipStore) {
+        val hadPlan = activePlan != null || guardPlan != null
+        val installedCommands = buildList {
+            guardPlan?.setupCommands?.let(::addAll)
+            activePlan?.setupCommands?.let(::addAll)
+        }
+        when {
+            owner.hasOwner() && installedCommands.isNotEmpty() -> cleanupKnownOwner(owner, installedCommands)
+            owner.hasOwner() -> cleanupRecovery(owner, "recovery")
+            else -> cleanupRecovery(owner, "legacy")
+        }
+        check(!hadPlan || !owner.hasOwner()) {
+            "Root ownership record disappeared before cleanup confirmation"
+        }
+    }
+
+    private fun cleanupKnownOwner(
+        owner: RootNetfilterOwnershipStore,
+        installedCommands: List<List<String>>
+    ) {
+        val startedAt = System.nanoTime()
+        val fastError = runCatching {
+            val cleanupCommands = cleanupCommandsForInstalledSetup(installedCommands)
+            val result = executor.executeFastNetfilterCleanupPlan(cleanupCommands)
+                ?: error("Fast netfilter cleanup serializer is unavailable")
+            check(result.success) { result.diagnosticOutput.ifBlank { "Fast netfilter cleanup failed" } }
+            val snapshot = parseRootStateSnapshot(result.output)
+                ?: error("Fast netfilter cleanup snapshot is unavailable")
+            checkNoResidualState(snapshot = snapshot)
+        }.exceptionOrNull()
+        if (fastError == null) {
+            owner.clearVerifiedOwner()
+            Log.i(TAG, "[ROOT_STOP] phase=netfilter_cleanup path=fast duration_ms=${elapsedMs(startedAt)}")
+            return
+        }
+        Log.w(TAG, "Fast netfilter cleanup fell back to recovery: ${fastError.message}")
+        cleanupRecovery(owner, "recovery", startedAt)
+    }
+
+    private fun cleanupRecovery(
+        owner: RootNetfilterOwnershipStore,
+        path: String,
+        startedAt: Long = System.nanoTime()
+    ) {
+        if (path == "legacy") owner.cleanupLegacy().getOrThrow() else owner.cleanupAnyOwner().getOrThrow()
+        checkNoResidualNftState()
+        Log.i(TAG, "[ROOT_STOP] phase=netfilter_cleanup path=$path duration_ms=${elapsedMs(startedAt)}")
+    }
+
+    private fun cleanupUnownedState() {
+        guardPlan?.let { cleanup(it.cleanupCommands) }
+        cleanup(activePlan?.cleanupCommands ?: RootNetfilterPlanner.cleanupCommands())
+        checkNoResidualState()
     }
 
     fun cleanupActivePlanKeepingGuard(): Result<Unit> = runCatching {
@@ -321,6 +363,9 @@ class RootNetfilterManager internal constructor(
         val repeatable = commands.indices.filterTo(mutableSetOf()) { isRepeatableCleanup(commands[it]) }
         executor.executeBestEffortBatch(commands, repeatable, MAX_CLEANUP_REPEATS)
     }
+
+    private fun elapsedMs(startedAt: Long): Long =
+        java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt)
 
     private fun isRepeatableCleanup(command: List<String>): Boolean =
         "-D" in command || ("rule" in command && "del" in command)
@@ -341,20 +386,23 @@ class RootNetfilterManager internal constructor(
     }
 
     @Suppress("LongMethod")
-    private fun checkNoResidualState(allowGuard: Boolean = false) {
-        val tableRules = buildString {
-            append(executeRequiredBatchResult(tableProbeCommands()).output)
-            append('\n')
-            append(optionalIpv6NatRules())
+    private fun checkNoResidualState(
+        allowGuard: Boolean = false,
+        snapshot: Map<String, String>? = null
+    ) {
+        val tableRules = if (snapshot == null) {
+            buildString {
+                append(executeRequiredBatchResult(tableProbeCommands()).output)
+                append('\n')
+                append(optionalIpv6NatRules())
+            }
+        } else {
+            check(
+                listOf(ROOT_STATE_IPTABLES4, ROOT_STATE_IPTABLES6).all(snapshot::containsKey)
+            ) { "Fast cleanup netfilter snapshot is incomplete" }
+            listOf(snapshot.getValue(ROOT_STATE_IPTABLES4), snapshot.getValue(ROOT_STATE_IPTABLES6))
+                .joinToString("\n")
         }
-        val policyState = executeRequiredBatchResult(
-            listOf(
-                listOf("ip", "rule", "show"),
-                listOf("ip", "-6", "rule", "show"),
-                listOf("ip", "route", "show", "table", "all"),
-                listOf("ip", "-6", "route", "show", "table", "all")
-            )
-        ).output
         val nftRules = optionalNftRules()
         val chainNames = buildList {
             addAll(listOf(
@@ -389,13 +437,36 @@ class RootNetfilterManager internal constructor(
                     remainingNftHooks.none { reference -> reference.endsWith("rule=$line") }
             }
             .toList()
-        val remainingPolicy = policyState.lineSequence()
-            .filter { line ->
+        val remainingPolicy = if (snapshot == null) {
+            executeRequiredBatchResult(
+                listOf(
+                    listOf("ip", "rule", "show"),
+                    listOf("ip", "-6", "rule", "show"),
+                    listOf("ip", "route", "show", "table", "all"),
+                    listOf("ip", "-6", "route", "show", "table", "all")
+                )
+            ).output.lineSequence().filter { line ->
                 RootNetfilterOwnership.isReservedPolicyLine(line) ||
                     (line.contains("table ${RootNetfilterPlanner.ROUTE_TABLE}") &&
                         (line.trimStart().startsWith("local ") || line.trimStart().startsWith("default ")))
+            }.toList()
+        } else {
+            check(
+                listOf(ROOT_STATE_RULE4, ROOT_STATE_RULE6, ROOT_STATE_ROUTE4, ROOT_STATE_ROUTE6)
+                    .all(snapshot::containsKey)
+            ) { "Fast cleanup policy snapshot is incomplete" }
+            buildList {
+                listOf(ROOT_STATE_RULE4, ROOT_STATE_RULE6).forEach { section ->
+                    addAll(
+                        snapshot.getValue(section).lineSequence()
+                            .filter(RootNetfilterOwnership::isReservedPolicyLine)
+                    )
+                }
+                listOf(ROOT_STATE_ROUTE4, ROOT_STATE_ROUTE6).forEach { section ->
+                    addAll(snapshot.getValue(section).lineSequence().filter(String::isNotBlank))
+                }
             }
-            .toList()
+        }
         if (remainingMetadata.isNotEmpty()) {
             Log.w(
                 TAG,
@@ -560,5 +631,53 @@ class RootNetfilterManager internal constructor(
                 "Reserved Root policy route conflict: $line"
             }
         }
+    }
+}
+
+internal fun cleanupCommandsForInstalledSetup(commands: List<List<String>>): List<List<String>> {
+    val hooks = commands.mapNotNull(::installedHookCleanup).distinct()
+    val policy = commands.mapNotNull(::installedPolicyCleanup).distinct()
+    val chains = commands.mapNotNull(::installedChain).distinct()
+    return buildList {
+        addAll(hooks)
+        addAll(policy)
+        chains.forEach { (binary, table, chain) ->
+            add(listOf(binary, "-t", table, "-F", chain))
+            add(listOf(binary, "-t", table, "-X", chain))
+        }
+    }
+}
+
+private fun installedHookCleanup(command: List<String>): List<String>? {
+    if (command.firstOrNull() !in setOf("iptables", "ip6tables")) return null
+    val operationIndex = command.indexOf("-I")
+    if (operationIndex < 0) return null
+    return command.toMutableList().apply {
+        this[operationIndex] = "-D"
+        val positionIndex = operationIndex + 2
+        if (getOrNull(positionIndex)?.toIntOrNull() != null) removeAt(positionIndex)
+    }
+}
+
+private fun installedPolicyCleanup(command: List<String>): List<String>? {
+    if (command.firstOrNull() != "ip" || "rule" !in command && "route" !in command) return null
+    val addIndex = command.indexOf("add")
+    if (addIndex < 0) return null
+    return command.toMutableList().apply { this[addIndex] = "del" }
+}
+
+private fun installedChain(command: List<String>): Triple<String, String, String>? {
+    val binary = command.firstOrNull()
+    val tableIndex = command.indexOf("-t")
+    val chainIndex = command.indexOf("-N")
+    val table = command.getOrNull(tableIndex + 1)
+    val chain = command.getOrNull(chainIndex + 1)
+    val binaryValid = binary in setOf("iptables", "ip6tables")
+    val indexesValid = tableIndex >= 0 && chainIndex >= 0
+    val valuesValid = table != null && chain != null
+    return if (binaryValid && indexesValid && valuesValid) {
+        Triple(requireNotNull(binary), table, chain)
+    } else {
+        null
     }
 }

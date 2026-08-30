@@ -115,20 +115,37 @@ internal object NodeProtectionStore {
         if (readPendingManualSelection()?.nodeId == nodeId) {
             protectionMmkv.removeValueForKey(PENDING_MANUAL_SELECTION_KEY)
         }
+        removeRuntimeNodeMappings(nodeId)
     }
 
-    fun migrateNode(oldNodeId: String, newNodeId: String) {
+    fun migrateNode(
+        oldNodeId: String,
+        newNodeId: String,
+        newNodeName: String? = null
+    ) {
         if (oldNodeId == newNodeId || oldNodeId.isBlank() || newNodeId.isBlank()) return
         val protected = isProtected(oldNodeId)
-        if (protected) {
+        if (protected && !isProtected(newNodeId)) {
             check(protectionMmkv.encode(newNodeId, true)) {
                 "Failed to migrate metered node protection"
             }
         }
+        val previousAuthorization = manuallyAuthorizedNodeId()
         protectionMmkv.removeValueForKey(oldNodeId)
-        if (manuallyAuthorizedNodeId() == oldNodeId) {
+        if (previousAuthorization == oldNodeId) {
             authorizeManualNode(newNodeId)
         }
+        readPendingManualSelection()
+            ?.takeIf { it.nodeId == oldNodeId }
+            ?.let { pending ->
+                check(protectionMmkv.encode(
+                    PENDING_MANUAL_SELECTION_KEY,
+                    gson.toJson(pending.copy(nodeId = newNodeId))
+                )) {
+                    "Failed to migrate pending metered node selection"
+                }
+            }
+        migrateRuntimeNodeMappings(oldNodeId, newNodeId, newNodeName)
     }
 
     fun manuallyAuthorizedNodeId(): String? {
@@ -252,6 +269,93 @@ internal object NodeProtectionStore {
     fun runtimeConfigMatches(configContent: String): Boolean {
         val snapshot = runtimeMappingSnapshot() ?: return false
         return snapshot.configSha256.isNotBlank() && snapshot.configSha256 == runtimeConfigFingerprint(configContent)
+    }
+
+    private fun migrateRuntimeNodeMappings(
+        oldNodeId: String,
+        newNodeId: String,
+        newNodeName: String?
+    ) {
+        val current = runtimeMappingSnapshot()
+        if (current != null) {
+            val migrated = migrateRuntimeSnapshot(current, oldNodeId, newNodeId, newNodeName)
+            if (migrated != current) {
+                check(runtimeMmkv.encode(RUNTIME_MAPPING_KEY, gson.toJson(migrated))) {
+                    "Failed to migrate active runtime node mapping"
+                }
+            }
+        }
+        runtimeMmkv.allKeys()
+            .orEmpty()
+            .filter { it.startsWith(RUNTIME_CANDIDATE_PREFIX) }
+            .forEach { key ->
+                val snapshot = runtimeMmkv.decodeString(key, null)
+                    ?.let { json ->
+                        runCatching {
+                            gson.fromJson<RuntimeNodeMappingSnapshot>(json, runtimeSnapshotType)
+                        }.getOrNull()
+                    }
+                    ?: return@forEach
+                val migrated = migrateRuntimeSnapshot(snapshot, oldNodeId, newNodeId, newNodeName)
+                if (migrated != snapshot) {
+                    check(runtimeMmkv.encode(key, gson.toJson(migrated))) {
+                        "Failed to migrate staged runtime node mapping"
+                    }
+                }
+            }
+    }
+
+    private fun removeRuntimeNodeMappings(nodeId: String) {
+        val current = runtimeMappingSnapshot()
+        if (current != null) {
+            val cleaned = current.copy(
+                mappings = current.mappings.filterValues { reference -> reference.nodeId != nodeId }
+            )
+            if (cleaned != current) {
+                check(runtimeMmkv.encode(RUNTIME_MAPPING_KEY, gson.toJson(cleaned))) {
+                    "Failed to remove deleted node from active runtime mapping"
+                }
+            }
+        }
+        runtimeMmkv.allKeys()
+            .orEmpty()
+            .filter { it.startsWith(RUNTIME_CANDIDATE_PREFIX) }
+            .forEach { key ->
+                val snapshot = runtimeMmkv.decodeString(key, null)
+                    ?.let { json ->
+                        runCatching {
+                            gson.fromJson<RuntimeNodeMappingSnapshot>(json, runtimeSnapshotType)
+                        }.getOrNull()
+                    }
+                    ?: return@forEach
+                val cleaned = snapshot.copy(
+                    mappings = snapshot.mappings.filterValues { reference -> reference.nodeId != nodeId }
+                )
+                if (cleaned != snapshot) {
+                    check(runtimeMmkv.encode(key, gson.toJson(cleaned))) {
+                        "Failed to remove deleted node from staged runtime mapping"
+                    }
+                }
+            }
+    }
+
+    private fun migrateRuntimeSnapshot(
+        snapshot: RuntimeNodeMappingSnapshot,
+        oldNodeId: String,
+        newNodeId: String,
+        newNodeName: String?
+    ): RuntimeNodeMappingSnapshot {
+        val mappings = snapshot.mappings.mapValues { (_, ref) ->
+            if (ref.nodeId != oldNodeId) {
+                ref
+            } else {
+                ref.copy(
+                    nodeId = newNodeId,
+                    nodeName = newNodeName?.takeIf(String::isNotBlank) ?: ref.nodeName
+                )
+            }
+        }
+        return snapshot.copy(mappings = mappings)
     }
 
     private fun pendingManualSelection(nowEpochMs: Long = System.currentTimeMillis()): PendingManualNodeSelection? {

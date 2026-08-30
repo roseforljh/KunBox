@@ -51,7 +51,10 @@ internal fun extractIptablesSaveTable(output: String, table: String): String? {
     return null
 }
 
-internal fun rootStateSnapshotCommands(netfilterBinaries: Collection<String> = emptyList()): List<List<String>> =
+internal fun rootStateSnapshotCommands(
+    netfilterBinaries: Collection<String> = emptyList(),
+    includePolicyRouting: Boolean = true
+): List<List<String>> =
     buildList {
         if ("iptables" in netfilterBinaries) {
             add(rootStateMarkerCommand(ROOT_STATE_IPTABLES4))
@@ -61,14 +64,16 @@ internal fun rootStateSnapshotCommands(netfilterBinaries: Collection<String> = e
             add(rootStateMarkerCommand(ROOT_STATE_IPTABLES6))
             add(listOf("ip6tables-save"))
         }
-        add(rootStateMarkerCommand(ROOT_STATE_RULE4))
-        add(listOf("ip", "rule", "show"))
-        add(rootStateMarkerCommand(ROOT_STATE_RULE6))
-        add(listOf("ip", "-6", "rule", "show"))
-        add(rootStateMarkerCommand(ROOT_STATE_ROUTE4))
-        add(listOf("ip", "route", "show", "table", RootNetfilterPlanner.ROUTE_TABLE))
-        add(rootStateMarkerCommand(ROOT_STATE_ROUTE6))
-        add(listOf("ip", "-6", "route", "show", "table", RootNetfilterPlanner.ROUTE_TABLE))
+        if (includePolicyRouting) {
+            add(rootStateMarkerCommand(ROOT_STATE_RULE4))
+            add(listOf("ip", "rule", "show"))
+            add(rootStateMarkerCommand(ROOT_STATE_RULE6))
+            add(listOf("ip", "-6", "rule", "show"))
+            add(rootStateMarkerCommand(ROOT_STATE_ROUTE4))
+            add(listOf("ip", "route", "show", "table", RootNetfilterPlanner.ROUTE_TABLE))
+            add(rootStateMarkerCommand(ROOT_STATE_ROUTE6))
+            add(listOf("ip", "-6", "route", "show", "table", RootNetfilterPlanner.ROUTE_TABLE))
+        }
     }
 
 internal fun parseRootStateSnapshot(output: String): Map<String, String>? {
@@ -132,6 +137,8 @@ fun interface RootCommandExecutor {
 
     fun executeFastNetfilterPlan(commands: List<List<String>>): RootCommandResult? = null
 
+    fun executeFastNetfilterCleanupPlan(commands: List<List<String>>): RootCommandResult? = null
+
     fun executeBatch(commands: List<List<String>>): RootCommandResult {
         val output = mutableListOf<String>()
         val stderr = mutableListOf<String>()
@@ -177,7 +184,7 @@ class ProcessRootCommandExecutor internal constructor(
         require(timeoutMs > 0L)
     }
 
-    override fun execute(arguments: List<String>): RootCommandResult = withSerializedRootCommand {
+    override fun execute(arguments: List<String>): RootCommandResult = executeSerializedIfNeeded(arguments) {
         require(arguments.isNotEmpty()) { "Root command is empty" }
         val command = withXtablesWait(arguments)
         if (isXtablesCommand(command)) {
@@ -188,12 +195,15 @@ class ProcessRootCommandExecutor internal constructor(
     }
 
     override fun executeWithTimeout(arguments: List<String>, timeoutMs: Long): RootCommandResult =
-        withSerializedRootCommand {
+        executeSerializedIfNeeded(arguments) {
             require(arguments.isNotEmpty()) { "Root command is empty" }
             require(timeoutMs > 0L) { "Root command timeout must be positive" }
             val command = withXtablesWait(arguments)
             collectProcess(startProcess(command), timeoutMs).also(::recordXtablesWaitEvents)
         }
+
+    private fun <T> executeSerializedIfNeeded(arguments: List<String>, block: () -> T): T =
+        if (isReadOnlyPackageInventoryCommand(arguments)) block() else withSerializedRootCommand(block)
 
     override fun executeBatch(commands: List<List<String>>): RootCommandResult =
         withSerializedRootCommand {
@@ -211,6 +221,11 @@ class ProcessRootCommandExecutor internal constructor(
     override fun executeFastNetfilterPlan(commands: List<List<String>>): RootCommandResult? =
         withSerializedRootCommand {
             buildRootNetfilterRestoreScript(commands)?.let(::executeScript)
+        }
+
+    override fun executeFastNetfilterCleanupPlan(commands: List<List<String>>): RootCommandResult? =
+        withSerializedRootCommand {
+            buildRootNetfilterCleanupScript(commands)?.let(::executeScript)
         }
 
     internal fun resetXtablesWaitMetrics() = xtablesWaitMs.set(0L)
@@ -393,6 +408,58 @@ internal fun buildRootNetfilterRestoreScript(commands: List<List<String>>): Stri
     }
 }
 
+internal fun buildRootNetfilterCleanupScript(commands: List<List<String>>): String? {
+    val restores = linkedMapOf<String, LinkedHashMap<String, MutableList<String>>>()
+    val policyCommands = commands.filter { it.firstOrNull() == "ip" }
+    val xtablesCommands = commands.filter { it.firstOrNull() != "ip" }
+    val parsedCommands = xtablesCommands.mapNotNull(::parseRootCleanupCommand)
+    if (policyCommands.size + xtablesCommands.size != commands.size || parsedCommands.size != xtablesCommands.size) {
+        return null
+    }
+    parsedCommands.forEach { (binary, table, arguments) ->
+        restores.getOrPut(binary) { linkedMapOf() }.getOrPut(table) { mutableListOf() }.add(arguments)
+    }
+    if (restores.isEmpty()) return null
+
+    return buildString {
+        append(xtablesRetryShellFunction())
+        restores.forEach { (binary, tables) ->
+            val suffix = if (binary == "iptables") "4" else "6"
+            val restoreBinary = if (binary == "iptables") "iptables-restore" else "ip6tables-restore"
+            append("command -v ").append(restoreBinary).append(" >/dev/null 2>&1 || exit 127\n")
+            append("kb_run_xtables ").append(shellQuote(restoreBinary)).append(' ')
+                .append(restoreBinary).append(" -w ").append(XTABLES_WAIT_SECONDS)
+                .append(" --noflush <<'KBX_CLEANUP_").append(suffix).append("'\n")
+            tables.forEach { (table, operations) ->
+                append('*').append(table).append('\n')
+                operations.forEach { append(it).append('\n') }
+                append("COMMIT\n")
+            }
+            append("KBX_CLEANUP_").append(suffix).append('\n')
+            append("kb_status=${'$'}?\nif [ \"${'$'}kb_status\" -ne 0 ]; then exit \"${'$'}kb_status\"; fi\n")
+        }
+        append(buildRootIpBatchScript(policyCommands))
+        append(buildRootCommandBatchScript(rootStateSnapshotCommands(listOf("iptables", "ip6tables"))))
+    }
+}
+
+private fun parseRootCleanupCommand(command: List<String>): Triple<String, String, String>? {
+    val binary = command.firstOrNull()
+    val tableIndex = command.indexOf("-t")
+    val table = command.getOrNull(tableIndex + 1)
+    val operationIndex = tableIndex + 2
+    val operation = command.getOrNull(operationIndex)
+    val arguments = command.drop(operationIndex.coerceIn(0, command.size))
+    val headerValid = binary in setOf("iptables", "ip6tables") && table != null
+    val operationValid = operation in setOf("-D", "-F", "-X")
+    val argumentsValid = arguments.isNotEmpty() && arguments.all(::isSafeRestoreToken)
+    return if (headerValid && operationValid && argumentsValid) {
+        Triple(requireNotNull(binary), table, arguments.joinToString(" "))
+    } else {
+        null
+    }
+}
+
 internal fun buildRootIpBatchScript(commands: List<List<String>>): String {
     if (commands.isEmpty()) return ""
     require(commands.all { it.firstOrNull() == "ip" }) { "Root policy batch contains a non-ip command" }
@@ -461,6 +528,9 @@ internal fun buildRootCommandBatchScript(
 
 private fun isXtablesCommand(arguments: List<String>): Boolean =
     arguments.firstOrNull() == "iptables" || arguments.firstOrNull() == "ip6tables"
+
+internal fun isReadOnlyPackageInventoryCommand(arguments: List<String>): Boolean =
+    arguments.take(2) == listOf("cmd", "user") || arguments.take(2) == listOf("cmd", "package")
 
 private fun xtablesRetryShellFunction(): String = """
     kb_run_xtables() {

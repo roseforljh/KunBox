@@ -310,7 +310,7 @@ internal fun ConfigRepository.Companion.buildCustomRuleSetRulesStatic(
     )
 
     orderedRuleSets.forEach { ruleSet ->
-        val semantic = resolveOutboundSemantic(
+        val semantic = resolveAppOutboundSemanticStrict(
             mode = resolveRuleSetOutboundMode(ruleSet.outboundMode),
             value = ruleSet.outboundValue,
             context = ConfigRepositoryOutboundSemanticContext(
@@ -318,7 +318,8 @@ internal fun ConfigRepository.Companion.buildCustomRuleSetRulesStatic(
                 outbounds = outbounds,
                 profiles = profiles,
                 nodeTagResolver = nodeTagResolver
-            )
+            ),
+            label = "静态规则集「${ruleSet.tag}」"
         )
         val baseRule = toRouteRule(semantic, defaultProxyTag)
         val inboundTags = normalizeRuleSetInboundTags(ruleSet.inbounds, settings)

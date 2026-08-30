@@ -1,8 +1,11 @@
 package com.kunk.singbox.manager
 
 import com.kunk.singbox.ipc.VpnStateStore
+import com.kunk.singbox.ipc.DataPlaneReadinessSnapshot
+import com.kunk.singbox.ipc.DataPlaneStatus
 import com.kunk.singbox.service.ProxyOnlyService
 import com.kunk.singbox.service.SingBoxService
+import com.kunk.singbox.service.ServiceState
 import com.kunk.singbox.service.root.RootTransparentForegroundService
 import com.kunk.singbox.model.TrafficCaptureMode
 import com.kunk.singbox.service.manager.VpnStopInitiator
@@ -85,6 +88,31 @@ class VpnServiceManagerTest {
     }
 
     @Test
+    fun terminalStoppingStateDoesNotKeepVpnBusyForever() {
+        assertTrue(
+            VpnServiceManager.isTerminalStoppingState(
+                pending = "stopping",
+                active = false,
+                runtimeStateOrdinal = ServiceState.STOPPED.ordinal
+            )
+        )
+        assertFalse(
+            VpnServiceManager.isTerminalStoppingState(
+                pending = "stopping",
+                active = false,
+                runtimeStateOrdinal = ServiceState.STOPPING.ordinal
+            )
+        )
+        assertFalse(
+            VpnServiceManager.isTerminalStoppingState(
+                pending = "stopping",
+                active = true,
+                runtimeStateOrdinal = ServiceState.STOPPED.ordinal
+            )
+        )
+    }
+
+    @Test
     fun knownRuntimeModeStopsOnlyMatchingService() {
         assertTrue(
             VpnServiceManager.shouldDispatchStopToService(
@@ -132,6 +160,18 @@ class VpnServiceManagerTest {
                 serviceMode = VpnStateStore.CoreMode.PROXY
             )
         )
+    }
+
+    @Test
+    fun stopWithoutAnOwnerIsIdempotentAndClearsStaleState() {
+        val source = File("src/main/java/com/kunk/singbox/manager/VpnServiceManager.kt")
+            .readText(Charsets.UTF_8)
+        val stop = source.substringAfter("fun stopVpn(context: Context, initiator: VpnStopInitiator)")
+            .substringBefore("fun restartVpn(context: Context)")
+
+        assertTrue(stop.contains("markStopCompletedWithoutService(initiator.isManualStop)"))
+        assertTrue(stop.contains("return@runCatching Unit"))
+        assertFalse(stop.contains("No active VPN stop owner"))
     }
 
     @Test
@@ -207,11 +247,93 @@ class VpnServiceManagerTest {
     }
 
     @Test
+    @Suppress("LongMethod")
+    fun rootPolicyConfirmationSeparatesRuntimeAndRoutingGenerations() {
+        val generation = com.kunk.singbox.repository.ConfigRepository.ConfigGenerationResult(
+            path = "root/config.json",
+            activeNodeTag = "node",
+            outboundTags = setOf("node"),
+            requestId = "request-1",
+            configDigest = "config",
+            appRoutingDigest = "app",
+            rootRoutingSidecarDigest = "sidecar",
+            rootRoutingStaticPlanDigest = "static",
+            rootRoutingAppDigest = "routing",
+            rootRoutingGeneration = 1_788_054_884_342L
+        )
+        val readiness = DataPlaneReadinessSnapshot(
+            status = DataPlaneStatus.READY,
+            coreReady = true,
+            selectorReady = true,
+            rootRuntimeSessionId = "root-session",
+            rootRoutingGeneration = generation.rootRoutingGeneration,
+            rootConfigSha256 = generation.configDigest,
+            rootSidecarSha256 = generation.rootRoutingSidecarDigest,
+            rootStaticPlanSha256 = generation.rootRoutingStaticPlanDigest,
+            rootAppRoutingSha256 = generation.rootRoutingAppDigest,
+            rootResolvedPlanSha256 = "resolved",
+            rootWatchdogReady = true,
+            rootRulesInstalled = true,
+            serviceInstanceId = "service-1"
+        )
+        val applied = VpnStateStore.AppliedPerAppPolicySnapshot(
+            revision = 5L,
+            digest = "policy",
+            serviceInstanceId = "service-1",
+            runtimeGeneration = 114_746_858_063_364L,
+            requestId = generation.requestId,
+            configDigest = generation.configDigest,
+            appRoutingDigest = "app",
+            sidecarFileSha256 = generation.rootRoutingSidecarDigest,
+            staticPlanSha256 = generation.rootRoutingStaticPlanDigest,
+            rootRoutingAppSha256 = generation.rootRoutingAppDigest,
+            resolvedPlanSha256 = "resolved",
+            rootRuntimeSessionId = "root-session"
+        )
+        val runtime = VpnStateStore.RuntimeStateSnapshot(
+            generation = 114_746_858_063_365L,
+            stateOrdinal = ServiceState.RUNNING.ordinal,
+            readiness = readiness
+        )
+
+        assertTrue(
+            VpnServiceManager.isRootPerAppPolicyConfirmationSatisfied(
+                targetRevision = 5L,
+                targetDigest = "policy",
+                targetRoutingDigest = "app",
+                generation = generation,
+                applied = applied,
+                runtime = runtime
+            )
+        )
+        assertFalse(
+            VpnServiceManager.isRootPerAppPolicyConfirmationSatisfied(
+                targetRevision = 5L,
+                targetDigest = "policy",
+                targetRoutingDigest = "app",
+                generation = generation,
+                applied = applied.copy(serviceInstanceId = "stale-service"),
+                runtime = runtime
+            )
+        )
+        assertFalse(
+            VpnServiceManager.isRootPerAppPolicyConfirmationSatisfied(
+                targetRevision = 5L,
+                targetDigest = "policy",
+                targetRoutingDigest = "app",
+                generation = generation,
+                applied = applied.copy(rootRuntimeSessionId = "stale-session"),
+                runtime = runtime
+            )
+        )
+    }
+
+    @Test
     fun systemRevokeIsRecordedAsAutomaticStop() {
-        val source = File("src/main/java/com/kunk/singbox/service/SingBoxService.kt")
+        val source = File("src/main/java/com/kunk/singbox/service/vpn/SingBoxControlRuntime.kt")
             .readText(Charsets.UTF_8)
-        val body = source.substringAfter("override fun onRevoke()")
-            .substringBefore("protected suspend fun ensureNetworkCallbackReady")
+        val body = source.substringAfter("internal fun SingBoxService.onRevokeRuntime()")
+            .substringBefore("internal fun SingBoxService")
 
         assertTrue(body.contains("lastStopInitiator = VpnStopInitiator.SYSTEM_REVOKE"))
         assertTrue(body.contains("VpnStateStore.setManuallyStopped(false)"))

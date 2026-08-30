@@ -96,6 +96,26 @@ class RootNetfilterPlanTest {
     }
 
     @Test
+    fun packageInventoryCanRunBesideSerializedNetfilterWork() {
+        assertTrue(isReadOnlyPackageInventoryCommand(listOf("cmd", "user", "list")))
+        assertTrue(isReadOnlyPackageInventoryCommand(listOf("cmd", "package", "list", "packages", "-U")))
+        assertFalse(isReadOnlyPackageInventoryCommand(listOf("ip", "rule", "show")))
+        assertFalse(isReadOnlyPackageInventoryCommand(listOf("/system/bin/sh", "cleanup-owned.sh")))
+    }
+
+    @Test
+    fun activationSnapshotDoesNotRequeryUnchangedPolicyRouting() {
+        val commands = rootStateSnapshotCommands(
+            netfilterBinaries = listOf("iptables", "ip6tables"),
+            includePolicyRouting = false
+        )
+
+        assertTrue(listOf("iptables-save") in commands)
+        assertTrue(listOf("ip6tables-save") in commands)
+        assertFalse(commands.any { it.firstOrNull() == "ip" })
+    }
+
+    @Test
     fun twoLanesBindUidTcpUdpAndInputToTheirOwnPortsAndMarks() {
         val lanes = listOf(lane(0, 10123), lane(1, 10124))
         val plan = RootNetfilterPlanner.build(

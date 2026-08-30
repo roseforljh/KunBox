@@ -1,5 +1,6 @@
 package com.kunk.singbox.service
 
+import android.service.quicksettings.Tile
 import com.kunk.singbox.ipc.DataPlaneReadinessSnapshot
 import com.kunk.singbox.ipc.DataPlaneStatus
 import com.kunk.singbox.repository.resolveRestoredProfileSelection
@@ -194,6 +195,33 @@ class VpnTileServiceStateTest {
     }
 
     @Test
+    fun transitionStatesUseRequestedEndStateColor() {
+        assertEquals(
+            Tile.STATE_ACTIVE,
+            VpnTileService.resolveTileState(ServiceState.STARTING, DataPlaneStatus.STARTING, true)
+        )
+        assertEquals(
+            Tile.STATE_INACTIVE,
+            VpnTileService.resolveTileState(ServiceState.STOPPING, DataPlaneStatus.BLOCKING, false)
+        )
+        assertEquals(
+            Tile.STATE_UNAVAILABLE,
+            VpnTileService.resolveTileState(ServiceState.STARTING, DataPlaneStatus.FAILED_BLOCKED, true)
+        )
+    }
+
+    @Test
+    fun tileClickDoesNotTurnOrdinaryStartOrStopGray() {
+        val source = File("src/main/java/com/kunk/singbox/service/VpnTileService.kt").readText()
+        val body = source.substringAfter("private fun handleClick()")
+            .substringBefore("private fun startActivityAndCollapseCompat")
+
+        assertTrue(body.contains("tile.state = Tile.STATE_INACTIVE"))
+        assertTrue(body.contains("tile.state = Tile.STATE_ACTIVE"))
+        assertFalse(body.contains("tile.state = Tile.STATE_UNAVAILABLE"))
+    }
+
+    @Test
     fun refreshPathHydratesPersistedSnapshotAndRequestsBinding() {
         val source = File("src/main/java/com/kunk/singbox/service/VpnTileService.kt").readText()
         val updateBody = source.substring(
@@ -224,13 +252,15 @@ class VpnTileServiceStateTest {
 
     @Test
     fun restoredActiveNodeOnlyRefreshesTileSelectionStoreFromMainProcess() {
-        val source = File("src/main/java/com/kunk/singbox/repository/ConfigRepository.kt").readText()
+        val source = File(
+            "src/main/java/com/kunk/singbox/repository/configrepo/ConfigRepositoryPart1.kt"
+        ).readText()
         val helperBody = source
-            .substringAfter("private fun persistMainProcessSelection(")
-            .substringBefore("protected fun applyActiveProfileNodes(")
+            .substringAfter("internal fun ConfigRepository.persistMainProcessSelection(")
+            .substringBefore("internal fun ConfigRepository.applyActiveProfileNodes(")
         val applyBody = source
-            .substringAfter("protected fun applyActiveProfileNodes(")
-            .substringBefore("protected suspend fun loadProfileNodesWithLatency")
+            .substringAfter("internal fun ConfigRepository.applyActiveProfileNodes(")
+            .substringBefore("internal suspend fun ConfigRepository.loadProfileNodesWithLatency")
 
         assertTrue(helperBody.contains("if (!isMainProcess) return"))
         assertTrue(applyBody.contains("persistMainProcessSelection(profileId, _activeNodeId.value, selectedName)"))
@@ -238,10 +268,12 @@ class VpnTileServiceStateTest {
 
     @Test
     fun serviceSelectionRefreshesTileSelectionStore() {
-        val source = File("src/main/java/com/kunk/singbox/repository/ConfigRepository.kt").readText()
+        val source = File(
+            "src/main/java/com/kunk/singbox/repository/configrepo/ConfigRepositoryPart4.kt"
+        ).readText()
         val body = source
-            .substringAfter("suspend fun syncActiveNodeFromProxySelection(proxyName: String?): Boolean")
-            .substringBefore("suspend fun deleteProfile(profileId: String)")
+            .substringAfter("internal suspend fun ConfigRepository.syncActiveNodeFromProxySelection(")
+            .substringBefore("internal suspend fun ConfigRepository.commitSelectedNodeState(")
 
         assertTrue(body.contains("VpnStateStore.setSelectedNode(activeProfileId, matched.id)"))
     }
@@ -290,20 +322,19 @@ class VpnTileServiceStateTest {
 
     @Test
     fun explicitTileProfileIsUsedThroughoutRuntimeConfigGeneration() {
-        val source = File("src/main/java/com/kunk/singbox/repository/ConfigRepository.kt")
+        val source = File(
+            "src/main/java/com/kunk/singbox/repository/configrepo/ConfigRepositoryPart5.kt"
+        )
             .readText(Charsets.UTF_8)
             .replace("\r\n", "\n")
         val generationBody = source
-            .substringAfter("suspend fun generateConfigFile(")
-            .substringBefore("private fun logRunningConfigPath")
+            .substringAfter("internal suspend fun ConfigRepository.generateConfigFile(")
+            .substringBefore("internal data class ConfigRepository.RunOutboundsContext")
+        val outboundsCall = generationBody.substringAfter("buildRunOutbounds(").substringBefore(')')
+        val endpointsCall = generationBody.substringAfter("buildRunEndpoints(").substringBefore(')')
 
-        assertTrue(
-            generationBody.contains("buildRunOutbounds(\n                config,\n                activeId,")
-        )
-        assertTrue(
-            generationBody.contains(
-                "buildRunEndpoints(\n                baseConfig = config,\n                activeProfileId = activeId,"
-            )
-        )
+        assertTrue(outboundsCall.indexOf("config,") < outboundsCall.indexOf("activeId,"))
+        assertTrue(endpointsCall.contains("baseConfig = config"))
+        assertTrue(endpointsCall.contains("activeProfileId = activeId"))
     }
 }

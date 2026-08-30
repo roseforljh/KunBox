@@ -265,7 +265,7 @@ internal fun ConfigRepository.buildCustomDomainRules(
             val values = splitValues(rule.value)
             if (values.isEmpty()) return@mapNotNull null
 
-            val semantic = ConfigRepository.resolveOutboundSemantic(
+            val semantic = ConfigRepository.resolveAppOutboundSemanticStrict(
                 mode = ConfigRepository.resolveCustomRuleOutboundMode(rule.outboundMode, rule.outbound),
                 value = rule.outboundValue,
                 context = ConfigRepositoryOutboundSemanticContext(
@@ -273,7 +273,8 @@ internal fun ConfigRepository.buildCustomDomainRules(
                     outbounds = outbounds,
                     profiles = profiles,
                     nodeTagResolver = nodeTagResolver
-                )
+                ),
+                label = "自定义规则「${rule.name}」"
             )
             val baseRule = ConfigRepository.toRouteRule(semantic, defaultProxyTag)
             Log.d(
@@ -304,7 +305,7 @@ internal fun ConfigRepository.buildCustomRuleSetRules(
     )
 
     orderedRuleSets.forEach { ruleSet ->
-        val semantic = ConfigRepository.resolveOutboundSemantic(
+        val semantic = ConfigRepository.resolveAppOutboundSemanticStrict(
             mode = ConfigRepository.resolveRuleSetOutboundMode(ruleSet.outboundMode),
             value = ruleSet.outboundValue,
             context = ConfigRepositoryOutboundSemanticContext(
@@ -312,7 +313,8 @@ internal fun ConfigRepository.buildCustomRuleSetRules(
                 outbounds = outbounds,
                 profiles = profiles,
                 nodeTagResolver = nodeTagResolver
-            )
+            ),
+            label = "规则集「${ruleSet.tag}」"
         )
         val baseRule = ConfigRepository.toRouteRule(semantic, defaultProxyTag)
         val inboundTags = ConfigRepository.normalizeRuleSetInboundTags(ruleSet.inbounds, settings)

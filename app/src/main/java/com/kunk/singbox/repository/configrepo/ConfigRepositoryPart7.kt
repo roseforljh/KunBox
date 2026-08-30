@@ -209,7 +209,7 @@ internal fun ConfigRepository.buildRunDns(
 
             if (values.isEmpty()) return@forEach
 
-            val semantic = ConfigRepository.resolveOutboundSemantic(
+            val semantic = ConfigRepository.resolveAppOutboundSemanticStrict(
                 mode = ConfigRepository.resolveCustomRuleOutboundMode(rule.outboundMode, rule.outbound),
                 value = rule.outboundValue,
                 context = ConfigRepositoryOutboundSemanticContext(
@@ -217,7 +217,8 @@ internal fun ConfigRepository.buildRunDns(
                     outbounds = outboundsContext.outbounds,
                     profiles = profiles,
                     nodeTagResolver = outboundsContext.ruleNodeTagResolver
-                )
+                ),
+                label = "DNS 自定义规则「${rule.name}」"
             )
 
             ConfigRepository.buildCustomDnsRuleMatcher(rule.type, values.distinct())
@@ -262,7 +263,7 @@ internal fun ConfigRepository.buildRunDns(
             return@forEach
         }
 
-        val semantic = ConfigRepository.resolveOutboundSemantic(
+        val semantic = ConfigRepository.resolveAppOutboundSemanticStrict(
             mode = ConfigRepository.resolveRuleSetOutboundMode(ruleSet.outboundMode),
             value = ruleSet.outboundValue,
             context = ConfigRepositoryOutboundSemanticContext(
@@ -270,7 +271,8 @@ internal fun ConfigRepository.buildRunDns(
                 outbounds = outboundsContext.outbounds,
                 profiles = profiles,
                 nodeTagResolver = outboundsContext.ruleNodeTagResolver
-            )
+            ),
+            label = "DNS 规则集「${ruleSet.tag}」"
         )
         addRuleSetDnsRule(
             DnsRule(

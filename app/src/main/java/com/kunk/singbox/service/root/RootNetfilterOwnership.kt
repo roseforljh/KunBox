@@ -429,6 +429,15 @@ internal class RootNetfilterOwnershipStore(
         if (stagingFile.isFile) check(stagingFile.delete()) { "Cannot clear Root owner staging file" }
     }
 
+    fun clearVerifiedOwner() {
+        listOf(ownerFile, stagingFile, conflictFile).forEach { file ->
+            check(!Files.isSymbolicLink(file.toPath())) {
+                "Root netfilter cleanup file cannot be a symbolic link: ${file.name}"
+            }
+            check(!file.exists() || file.delete()) { "Cannot remove Root netfilter cleanup file: ${file.name}" }
+        }
+    }
+
     fun hasOwner(): Boolean {
         check(!Files.isSymbolicLink(ownerFile.toPath())) { "Root owner file cannot be a symbolic link" }
         check(!Files.isSymbolicLink(stagingFile.toPath())) {

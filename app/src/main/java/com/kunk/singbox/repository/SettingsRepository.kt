@@ -352,6 +352,84 @@ class SettingsRepository(private val context: Context) {
         updateSettingsAndNotifyRestart { it.copy(customRules = value) }
     }
 
+    suspend fun removeDeletedRoutingReferences(
+        deletedProfileId: String? = null,
+        deletedNodeIds: Set<String> = emptySet(),
+        deletedNodeReferences: Set<String> = emptySet()
+    ): Boolean {
+        var changed = false
+        val persisted = settingsStore.updateSettingsAndWait { current ->
+            val updated = com.kunk.singbox.repository.removeDeletedRoutingReferences(
+                settings = current,
+                deletedProfileId = deletedProfileId,
+                deletedNodeIds = deletedNodeIds,
+                deletedNodeReferences = deletedNodeReferences
+            )
+            changed = updated != current
+            updated
+        }
+        if (persisted && changed) notifyRestartRequired()
+        return persisted
+    }
+
+    @Suppress("LongParameterList")
+    suspend fun migrateNodeRoutingReferences(
+        oldNodeId: String,
+        newNodeId: String,
+        oldQualifiedReference: String,
+        newQualifiedReference: String,
+        oldBareReference: String,
+        newBareReference: String,
+        oldBareNameIsUnique: Boolean,
+        newBareNameIsUnique: Boolean,
+        notify: Boolean = true
+    ): Boolean {
+        var changed = false
+        val persisted = settingsStore.updateSettingsAndWait { current ->
+            val updated = com.kunk.singbox.repository.migrateNodeRoutingReferences(
+                settings = current,
+                oldNodeId = oldNodeId,
+                newNodeId = newNodeId,
+                oldQualifiedReference = oldQualifiedReference,
+                newQualifiedReference = newQualifiedReference,
+                oldBareReference = oldBareReference,
+                newBareReference = newBareReference,
+                oldBareNameIsUnique = oldBareNameIsUnique,
+                newBareNameIsUnique = newBareNameIsUnique
+            )
+            changed = updated != current
+            updated
+        }
+        if (persisted && changed && notify) notifyRestartRequired()
+        return persisted
+    }
+
+    suspend fun removeInvalidRoutingReferences(
+        validProfileIds: Set<String>,
+        validNodeIds: Set<String>,
+        validQualifiedNodeReferences: Set<String>,
+        validBareNodeNames: Set<String>
+    ): Boolean {
+        var removed = 0
+        val persisted = settingsStore.updateSettingsAndWait { current ->
+            val updated = com.kunk.singbox.repository.removeInvalidRoutingReferences(
+                settings = current,
+                validProfileIds = validProfileIds,
+                validNodeIds = validNodeIds,
+                validQualifiedNodeReferences = validQualifiedNodeReferences,
+                validBareNodeNames = validBareNodeNames
+            )
+            removed = current.appRules.size + current.appGroups.size + current.customRules.size +
+                current.ruleSets.size - updated.appRules.size - updated.appGroups.size -
+                updated.customRules.size - updated.ruleSets.size
+            updated
+        }
+        if (persisted && removed > 0) {
+            Log.w("SettingsRepository", "Removed $removed invalid routing reference(s)")
+        }
+        return persisted
+    }
+
     suspend fun setRuleSets(value: List<RuleSet>, notify: Boolean = true) {
         val persisted = settingsStore.updateSettingsAndWait { it.copy(ruleSets = value) }
         if (persisted && notify) {

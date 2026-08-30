@@ -121,7 +121,13 @@ class RootTransparentForegroundService : Service() {
     }
 
     override fun onCreate() {
+        val startedAt = android.os.SystemClock.elapsedRealtime()
         super.onCreate()
+        Log.i(
+            TAG,
+            "[ROOT_BOOT] stage=foreground_create_begin pid=${android.os.Process.myPid()} " +
+                "mode=${VpnStateStore.getMode()} pending=${VpnStateStore.getPending()}"
+        )
         rootNotificationManager = VpnNotificationManager(
             context = this,
             serviceScope = serviceScope,
@@ -135,8 +141,8 @@ class RootTransparentForegroundService : Service() {
                 stopAction = ACTION_STOP
             )
         ).also(VpnNotificationManager::createNotificationChannel)
-        rootConnection = RootServicePrewarmer.acquire(::onRootServiceDisconnected)
-            ?: RootServiceConnection(this, ::onRootServiceDisconnected)
+        Log.i(TAG, "[ROOT_BOOT] stage=notification_ready")
+        rootConnection = acquireRootConnection()
         commandManager = CommandManager(this, serviceScope).apply {
             init(object : CommandManager.Callbacks {
                 override fun requestNotificationUpdate(force: Boolean) =
@@ -185,6 +191,7 @@ class RootTransparentForegroundService : Service() {
             updateNotification()
         }
         commandManager.setKernelLogObserver(autoFailover::onKernelLog)
+        Log.i(TAG, "[ROOT_BOOT] stage=controllers_ready")
         serviceScope.launch {
             SettingsRepository.getInstance(this@RootTransparentForegroundService)
                 .settings
@@ -196,9 +203,34 @@ class RootTransparentForegroundService : Service() {
                 }
         }
         registerUidRefreshReceivers()
+        Log.i(
+            TAG,
+            "[ROOT_BOOT] stage=foreground_create_ready duration_ms=" +
+                (android.os.SystemClock.elapsedRealtime() - startedAt)
+        )
+    }
+
+    private fun acquireRootConnection(): RootServiceConnection {
+        val prewarmed = RootServicePrewarmer.acquire(::onRootServiceDisconnected)
+        val connection = prewarmed ?: RootServiceConnection(this, ::onRootServiceDisconnected)
+        Log.i(
+            TAG,
+            "[ROOT_BOOT] stage=root_connection_ready prewarmed=${prewarmed != null} " +
+                "binderReady=${connection.service != null}"
+        )
+        return connection
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        val lifecycleState = lifecycle.snapshot()
+        Log.i(
+            TAG,
+            "[ROOT_BOOT] stage=command_received action=${intent?.action.orEmpty()} startId=$startId flags=$flags " +
+                "state=${lifecycleState.state} desired=${lifecycleState.desiredState} " +
+                "generation=${lifecycleState.generation} pending=${VpnStateStore.getPending()} " +
+                "requestId=${intent?.getStringExtra(EXTRA_APP_ROUTE_REQUEST_ID).orEmpty()} " +
+                "config=${intent?.getStringExtra(EXTRA_CONFIG_PATH).orEmpty()}"
+        )
         when (intent?.action) {
             ACTION_SWITCH_NODE -> serviceScope.launch {
                 val outboundTag = intent.getStringExtra(EXTRA_OUTBOUND_TAG).orEmpty()
@@ -280,18 +312,21 @@ class RootTransparentForegroundService : Service() {
                 RootRuntimePhase.FAILED_RULES_PRESENT
             )
         ) {
-            Log.e(
+            Log.w(
                 TAG,
-                "[ROOT_LIFECYCLE] event=start_rejected reason=cleanup_unconfirmed " +
-                    "phase=${lastRootSnapshot.phase}"
+                "[ROOT_BOOT] stage=retry_after_cleanup_failure phase=${lastRootSnapshot.phase} " +
+                    "rulesInstalled=${lastRootSnapshot.rulesInstalled}"
             )
-            return
         }
         val supersededSession = runtimeSessionId.takeIf {
             it.isNotBlank() && before.state in setOf(RootLifecycleState.STARTING, RootLifecycleState.RELOADING)
         }
         lifecycleStartedAtMs = android.os.SystemClock.elapsedRealtime()
-        val token = lifecycle.requestRunning(reload) ?: return
+        val token = lifecycle.requestRunning(reload)
+        if (token == null) {
+            logRunningRequestRejected(reload)
+            return
+        }
         syncLifecycleFlags()
         logLifecycle(
             event = if (reload) "reload_requested" else "start_requested",
@@ -309,8 +344,21 @@ class RootTransparentForegroundService : Service() {
                 operation(token)
             } catch (_: CancellationException) {
                 Log.i(TAG, "[ROOT_LIFECYCLE] event=generation_cancelled generation=$token")
+            } catch (error: Exception) {
+                Log.e(TAG, "[ROOT_BOOT] stage=foreground_operation_failed generation=$token", error)
+                throw error
             }
         }
+    }
+
+    private fun logRunningRequestRejected(reload: Boolean) {
+        val rejected = lifecycle.snapshot()
+        Log.e(
+            TAG,
+            "[ROOT_BOOT] stage=request_running_rejected reload=$reload state=${rejected.state} " +
+                "desired=${rejected.desiredState} generation=${rejected.generation} " +
+                "pending=${VpnStateStore.getPending()}"
+        )
     }
 
     internal fun requestStopRuntime(stopSelfAfter: Boolean, reason: String) {
@@ -575,6 +623,16 @@ class RootTransparentForegroundService : Service() {
         SelectorManager.updateCommandClient(commandManager.getCommandClient())
         recordSelector(generation.path)
         VpnStateStore.clearAutoFailoverRuntimeState()
+        val runtimeState = VpnStateStore.getRuntimeStateSnapshot()
+        val hubGeneration = SingBoxIpcHub.currentStateGeneration()
+        val policyRuntimeGeneration = maxOf(runtimeState.generation, hubGeneration)
+        Log.i(
+            TAG,
+            "[ROOT_BOOT] stage=policy_commit_begin runtimeState=${runtimeState.stateOrdinal} " +
+                "runtimeGeneration=${runtimeState.generation} hubGeneration=$hubGeneration " +
+                "incomingGeneration=$policyRuntimeGeneration serviceInstance=${SingBoxIpcHub.serviceInstanceId()} " +
+                "revision=${policy.revision} requestId=$requestId"
+        )
         check(VpnStateStore.commitAppliedPerAppPolicy(
             VpnStateStore.AppliedPerAppPolicySnapshot(
                 revision = policy.revision,
@@ -592,7 +650,7 @@ class RootTransparentForegroundService : Service() {
                 },
                 appliedAtElapsedMs = android.os.SystemClock.elapsedRealtime(),
                 serviceInstanceId = SingBoxIpcHub.serviceInstanceId(),
-                runtimeGeneration = rootSnapshot.routingGeneration,
+                runtimeGeneration = policyRuntimeGeneration,
                 requestId = requestId,
                 configDigest = generation.configDigest,
                 appRoutingDigest = appRoutingDigest,
@@ -603,6 +661,7 @@ class RootTransparentForegroundService : Service() {
                 rootRuntimeSessionId = rootSnapshot.runtimeSessionId
             )
         )) { "Root applied application policy could not be committed" }
+        Log.i(TAG, "[ROOT_BOOT] stage=policy_commit_ready generation=$policyRuntimeGeneration")
         ensureRunningRequest(token)
         val rootMarker = generation.toRootGenerationMarker()
         check(RootGenerationStore.commit(filesDir, rootMarker, configContent)) {

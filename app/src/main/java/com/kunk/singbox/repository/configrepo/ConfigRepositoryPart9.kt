@@ -236,48 +236,49 @@ internal fun ConfigRepository.createNode(
     }
 }
 
-internal fun ConfigRepository.removeOutboundFromConfig(config: SingBoxConfig, removedTag: String): SingBoxConfig {
-    val outbounds = config.outbounds ?: return config
-    val filteredOutbounds = outbounds
-        .filter { it.tag != removedTag }
-        .map { outbound ->
-            when {
-                outbound.outbounds?.contains(removedTag) == true -> {
-                    val filteredRefs = outbound.outbounds.filter { it != removedTag }
-                    outbound.copy(
-                        outbounds = if (filteredRefs.isEmpty()) listOf("direct") else filteredRefs,
-                        default = outbound.default?.takeIf { it != removedTag }
-                    )
-                }
-                outbound.detour == removedTag -> {
-                    outbound.copy(detour = null)
-                }
-                else -> outbound
-            }
-        }
-    return config.copy(outbounds = filteredOutbounds)
-}
-
 internal suspend fun ConfigRepository.deleteNode(nodeId: String) = withContext(Dispatchers.IO) {
     val node = getNodeById(nodeId) ?: return@withContext
     val profileId = node.sourceProfileId
     val config = loadConfig(profileId) ?: return@withContext
     val newConfig = removeOutboundFromConfig(config, node.name)
-    cacheConfig(profileId, newConfig)
-    writeConfigFileOrThrow(profileId, newConfig)
+    val allNodesSnapshot = _allNodes.value.takeIf { it.isNotEmpty() } ?: loadAllNodesSnapshot()
+    val remainingNodes = allNodesSnapshot.filter { it.id != node.id }
+    val deletedNodeReferences = buildSet {
+        add("${node.sourceProfileId}::${node.name}")
+        if (remainingNodes.none { it.name == node.name }) add(node.name)
+    }
+    val runtimeTags = NodeProtectionStore.runtimeMappings()
+        .filterValues { reference -> reference.nodeId == node.id }
+        .keys
+    try {
+        writeConfigFileOrThrow(profileId, newConfig)
+        cacheConfig(profileId, newConfig)
+        check(
+            settingsRepository.removeDeletedRoutingReferences(
+                deletedNodeIds = setOf(node.id),
+                deletedNodeReferences = deletedNodeReferences
+            )
+        ) { "Failed to remove routing references for deleted node ${node.name}" }
+    } catch (error: Exception) {
+        runCatching {
+            writeConfigFileOrThrow(profileId, config)
+            cacheConfig(profileId, config)
+        }.onFailure(error::addSuppressed)
+        throw error
+    }
     removeNodeLatencies(listOf(nodeId))
     nodeAutoSelectionMmkv.removeValueForKey(nodeId)
     NodeProtectionStore.removeNode(nodeId)
+    if (runtimeTags.isNotEmpty()) lastTagToNodeName = lastTagToNodeName - runtimeTags
 
-    val immediateNodes = (profileNodes[profileId] ?: _nodes.value)
-        .filter { it.id != nodeId && it.name != node.name }
+    val immediateNodes = (profileNodes[profileId]
+        ?: allNodesSnapshot.filter { it.sourceProfileId == profileId })
+        .filter { it.id != nodeId }
     applyDeletedNodeSnapshot(profileId, nodeId, immediateNodes)
-
-    scope.launch {
-        val newNodes = extractNodesFromConfig(newConfig, profileId)
-        applyDeletedNodeSnapshot(profileId, nodeId, newNodes)
-        saveProfiles()
-    }
+    val newNodes = extractNodesFromConfig(newConfig, profileId)
+    applyDeletedNodeSnapshot(profileId, nodeId, newNodes)
+    saveProfiles()
+    reloadRuntimeAfterDestructiveMutation("node_deleted")
 }
 
 internal suspend fun ConfigRepository.removeNodeLatencies(nodeIds: Collection<String>) {
@@ -294,15 +295,56 @@ internal suspend fun ConfigRepository.removeNodeLatencies(nodeIds: Collection<St
     }
 }
 
+internal fun ConfigRepository.migrateNodeSelectionState(
+    profileId: String,
+    oldNodeId: String,
+    newNodeId: String,
+    newNodeName: String
+) {
+    if (getProfileLastSelectedNode(profileId) == oldNodeId) {
+        saveProfileNodeMemory(profileId, newNodeId)
+    }
+    if (_activeNodeId.value == oldNodeId) {
+        _activeNodeId.value = newNodeId
+    }
+    if (VpnStateStore.getSelectedNodeId() == oldNodeId) {
+        VpnStateStore.setSelectedNode(profileId, newNodeId)
+        VpnStateStore.setSelectedNodeLabel(newNodeName)
+    }
+}
+
+internal suspend fun ConfigRepository.migrateNodeLatency(oldNodeId: String, newNodeId: String) {
+    if (oldNodeId == newNodeId) return
+    val latency = savedNodeLatencies.remove(oldNodeId) ?: return
+    savedNodeLatencies[newNodeId] = latency
+    runCatching {
+        nodeLatencyDao.upsert(newNodeId, latency.latencyMs, latency.testedAt)
+        nodeLatencyDao.deleteByNodeIds(listOf(oldNodeId))
+    }.onFailure { error ->
+        Log.w(ConfigRepository.TAG, "Failed to migrate persisted node latency", error)
+    }
+}
+
 internal fun ConfigRepository.applyDeletedNodeSnapshot(profileId: String, deletedNodeId: String, nodes: List<NodeUi>) {
     profileNodes[profileId] = nodes
     updateAllNodesAndGroups()
+    val fallbackNode = nodes.minByOrNull(NodeUi::id)
+    if (getProfileLastSelectedNode(profileId) == deletedNodeId) {
+        if (fallbackNode == null) {
+            profileLastSelectedNode.remove(profileId)
+            profileNodeMemoryMmkv.removeValueForKey(profileId)
+        } else {
+            saveProfileNodeMemory(profileId, fallbackNode.id)
+        }
+    }
     if (_activeProfileId.value != profileId) return
 
     _nodes.value = nodes
     if (_activeNodeId.value == deletedNodeId) {
-        _activeNodeId.value = nodes.firstOrNull()?.id
+        _activeNodeId.value = fallbackNode?.id
     }
+    val selectedName = nodes.firstOrNull { it.id == _activeNodeId.value }?.name
+    persistMainProcessSelection(profileId, _activeNodeId.value, selectedName)
 }
 
 internal suspend fun ConfigRepository.addSingleNode(
@@ -420,71 +462,135 @@ internal suspend fun ConfigRepository.updateNode(
     autoSelectionEligible: Boolean = isNodeAutoSelectionEligible(nodeId),
     meteredProtected: Boolean = isNodeMeteredProtected(nodeId)
 ) = withContext(Dispatchers.IO) {
-    val node = _nodes.value.find { it.id == nodeId } ?: return@withContext
+    val node = getNodeById(nodeId) ?: return@withContext
     val profileId = node.sourceProfileId
     val config = loadConfig(profileId) ?: return@withContext
+    val allNodesSnapshot = _allNodes.value.takeIf { it.isNotEmpty() } ?: loadAllNodesSnapshot()
     val effectiveAutoSelectionEligible = autoSelectionEligible && !meteredProtected
-    val (newConfig, previousEligibility, previousProtection) = persistUpdatedNodeConfig(
+    val mutation = persistUpdatedNodeConfig(
         node = node,
         config = config,
         newOutbound = newOutbound,
         autoSelectionEligible = effectiveAutoSelectionEligible,
-        meteredProtected = meteredProtected
+        meteredProtected = meteredProtected,
+        allNodesSnapshot = allNodesSnapshot
     )
     val refreshedNodes = refreshNodesAfterNodeMutation(
         profileId = profileId,
         oldNodeId = nodeId,
-        newTag = newOutbound.tag,
-        newConfig = newConfig
+        newTag = mutation.finalTag,
+        newConfig = mutation.config
     )
     applyNodeAutoSelectionEligibilityChange(
         profileId = profileId,
-        previousEligibility = previousEligibility,
+        previousEligibility = mutation.previousEligibility,
         autoSelectionEligible = effectiveAutoSelectionEligible,
-        previousProtection = previousProtection,
+        previousProtection = mutation.previousProtection,
         meteredProtected = meteredProtected,
-        refreshedNodes = refreshedNodes
+        refreshedNodes = refreshedNodes,
+        forceReload = mutation.config != config
     )
 }
 
-internal fun ConfigRepository.persistUpdatedNodeConfig(
+internal data class PersistedNodeMutation(
+    val config: SingBoxConfig,
+    val finalTag: String,
+    val previousEligibility: Boolean,
+    val previousProtection: Boolean
+)
+
+@Suppress("LongParameterList")
+internal suspend fun ConfigRepository.persistUpdatedNodeConfig(
     node: NodeUi,
     config: SingBoxConfig,
     newOutbound: Outbound,
     autoSelectionEligible: Boolean,
-    meteredProtected: Boolean
-): Triple<SingBoxConfig, Boolean, Boolean> {
+    meteredProtected: Boolean,
+    allNodesSnapshot: List<NodeUi>
+): PersistedNodeMutation {
     val profileId = node.sourceProfileId
     val previousEligibility = isNodeAutoSelectionEligible(node.id)
     val previousProtection = isNodeMeteredProtected(node.id)
     val previousAuthorization = NodeProtectionStore.manuallyAuthorizedNodeId()
-    val updatedNodeId = ConfigRepository.stableNodeId(profileId, newOutbound.tag)
-    check(saveNodeAutoSelectionEligibility(updatedNodeId, autoSelectionEligible)) {
-        "Failed to persist automatic selection eligibility for ${node.name}"
-    }
-    check(NodeProtectionStore.setProtected(updatedNodeId, meteredProtected)) {
-        "Failed to persist metered protection for ${node.name}"
-    }
-    NodeProtectionStore.authorizeManualNode(
-        authorizationAfterProtectionUpdate(
-            previousAuthorizedNodeId = previousAuthorization,
-            oldNodeId = node.id,
-            updatedNodeId = updatedNodeId,
-            wasProtected = previousProtection,
-            isProtected = meteredProtected
-        )
-    )
-    val newOutbounds = config.outbounds?.map {
-        if (it.tag == node.name) newOutbound else it
-    }
-    val newConfig = deduplicateTags(config.copy(outbounds = newOutbounds))
+    require(
+        config.outbounds.orEmpty().any { it.tag == node.name } ||
+            config.proxies.orEmpty().any { it.tag == node.name }
+    ) { "Outbound not found: ${node.name}" }
+    val (newConfig, finalTag) = replaceOutboundInConfig(config, node.name, newOutbound)
+    val updatedNodeId = ConfigRepository.stableNodeId(profileId, finalTag)
+    val oldQualifiedReference = "$profileId::${node.name}"
+    val newQualifiedReference = "$profileId::$finalTag"
+    val oldBareNameIsUnique = allNodesSnapshot.count { it.name == node.name } == 1
+    val newBareNameIsUnique = allNodesSnapshot.none { it.id != node.id && it.name == finalTag }
+    val oldRuntimeTags = NodeProtectionStore.runtimeMappings()
+        .filterValues { reference -> reference.nodeId == node.id }
+        .keys
+    var settingsMigrated = false
+    var protectionMigrated = false
     try {
-        cacheConfig(profileId, newConfig)
         writeConfigFileOrThrow(profileId, newConfig)
+        cacheConfig(profileId, newConfig)
+        if (updatedNodeId != node.id) {
+            check(
+                settingsRepository.migrateNodeRoutingReferences(
+                    oldNodeId = node.id,
+                    newNodeId = updatedNodeId,
+                    oldQualifiedReference = oldQualifiedReference,
+                    newQualifiedReference = newQualifiedReference,
+                    oldBareReference = node.name,
+                    newBareReference = finalTag,
+                    oldBareNameIsUnique = oldBareNameIsUnique,
+                    newBareNameIsUnique = newBareNameIsUnique,
+                    notify = false
+                )
+            ) { "Failed to migrate routing references for ${node.name}" }
+            settingsMigrated = true
+        }
+        check(saveNodeAutoSelectionEligibility(updatedNodeId, autoSelectionEligible)) {
+            "Failed to persist automatic selection eligibility for ${node.name}"
+        }
+        if (updatedNodeId != node.id) {
+            protectionMigrated = true
+            NodeProtectionStore.migrateNode(node.id, updatedNodeId, finalTag)
+        }
+        check(NodeProtectionStore.setProtected(updatedNodeId, meteredProtected)) {
+            "Failed to persist metered protection for ${node.name}"
+        }
+        NodeProtectionStore.authorizeManualNode(
+            authorizationAfterProtectionUpdate(
+                previousAuthorizedNodeId = previousAuthorization,
+                oldNodeId = node.id,
+                updatedNodeId = updatedNodeId,
+                wasProtected = previousProtection,
+                isProtected = meteredProtected
+            )
+        )
     } catch (e: Exception) {
-        if (updatedNodeId == node.id) {
-            saveNodeAutoSelectionEligibility(node.id, previousEligibility)
-        } else {
+        runCatching {
+            writeConfigFileOrThrow(profileId, config)
+            cacheConfig(profileId, config)
+        }.onFailure(e::addSuppressed)
+        if (settingsMigrated) {
+            runCatching {
+                settingsRepository.migrateNodeRoutingReferences(
+                    oldNodeId = updatedNodeId,
+                    newNodeId = node.id,
+                    oldQualifiedReference = newQualifiedReference,
+                    newQualifiedReference = oldQualifiedReference,
+                    oldBareReference = finalTag,
+                    newBareReference = node.name,
+                    oldBareNameIsUnique = newBareNameIsUnique,
+                    newBareNameIsUnique = oldBareNameIsUnique,
+                    notify = false
+                )
+            }.onFailure(e::addSuppressed)
+        }
+        if (protectionMigrated) {
+            runCatching { NodeProtectionStore.migrateNode(updatedNodeId, node.id, node.name) }
+                .onFailure(e::addSuppressed)
+        }
+        saveNodeAutoSelectionEligibility(node.id, previousEligibility)
+        if (updatedNodeId != node.id) {
             nodeAutoSelectionMmkv.removeValueForKey(updatedNodeId)
         }
         NodeProtectionStore.setProtected(node.id, previousProtection)
@@ -494,9 +600,15 @@ internal fun ConfigRepository.persistUpdatedNodeConfig(
     }
     if (updatedNodeId != node.id) {
         nodeAutoSelectionMmkv.removeValueForKey(node.id)
-        NodeProtectionStore.removeNode(node.id)
+        migrateNodeSelectionState(profileId, node.id, updatedNodeId, finalTag)
+        migrateNodeLatency(node.id, updatedNodeId)
+        if (oldRuntimeTags.isNotEmpty()) {
+            lastTagToNodeName = lastTagToNodeName.mapValues { (runtimeTag, nodeName) ->
+                if (runtimeTag in oldRuntimeTags) finalTag else nodeName
+            }
+        }
     }
-    return Triple(newConfig, previousEligibility, previousProtection)
+    return PersistedNodeMutation(newConfig, finalTag, previousEligibility, previousProtection)
 }
 
 @Suppress("LongParameterList", "CognitiveComplexMethod")
@@ -506,7 +618,8 @@ internal suspend fun ConfigRepository.applyNodeAutoSelectionEligibilityChange(
     autoSelectionEligible: Boolean,
     previousProtection: Boolean,
     meteredProtected: Boolean,
-    refreshedNodes: List<NodeUi>
+    refreshedNodes: List<NodeUi>,
+    forceReload: Boolean = false
 ) {
     val protectionEnabled = !previousProtection && meteredProtected
     disableProfileAutoSelectionWithoutCandidates(profileId, autoSelectionEligible, refreshedNodes)
@@ -515,7 +628,8 @@ internal suspend fun ConfigRepository.applyNodeAutoSelectionEligibilityChange(
         resetRuntimeConnectionsForMeteredProtection()
         if (leaveNewlyProtectedActiveNode(refreshedNodes)) return
     }
-    val settingsChanged = previousEligibility != autoSelectionEligible || previousProtection != meteredProtected
+    val settingsChanged = forceReload || previousEligibility != autoSelectionEligible ||
+        previousProtection != meteredProtected
     if (!settingsChanged || !shouldReloadNodeSettingsChange()) return
 
     val generationResult = generateConfigFile()
@@ -578,24 +692,58 @@ internal fun ConfigRepository.resetRuntimeConnectionsForMeteredProtection() {
 }
 
 internal fun ConfigRepository.stopRuntimeForMeteredProtection() {
+    stopRuntimeAfterConfigMutation(
+        initiator = VpnStopInitiator.METERED_PROTECTION,
+        logMessage = "WARN [METERED_GUARD] stopped runtime because protected-node paths could not be purged safely"
+    )
+}
+
+internal suspend fun ConfigRepository.reloadRuntimeAfterDestructiveMutation(reason: String) {
+    if (!shouldReloadNodeSettingsChange()) return
+    resetRuntimeConnectionsForMeteredProtection()
+    val generation = generateConfigFile()
+    if (generation == null) {
+        stopRuntimeAfterConfigMutation(
+            initiator = VpnStopInitiator.MODE_SWITCH,
+            logMessage = "ERROR [CFG] stopped runtime after $reason because no safe config could be generated"
+        )
+        if (_profiles.value.isEmpty()) return
+        error(lastConfigGenerationError ?: "Failed to generate config after $reason")
+    }
+    try {
+        requestFullRuntimeConfigReload(generation)
+        lastRunOutboundTags = generation.outboundTags
+        lastRunProfileId = _activeProfileId.value
+    } catch (error: Exception) {
+        stopRuntimeAfterConfigMutation(
+            initiator = VpnStopInitiator.MODE_SWITCH,
+            logMessage = "ERROR [CFG] stopped runtime after $reason because reload failed"
+        )
+        throw error
+    }
+}
+
+internal fun ConfigRepository.stopRuntimeAfterConfigMutation(
+    initiator: VpnStopInitiator,
+    logMessage: String
+) {
     val intent = when (VpnStateStore.getMode()) {
         VpnStateStore.CoreMode.PROXY -> Intent(context, ProxyOnlyService::class.java).apply {
             action = ProxyOnlyService.ACTION_STOP
-            putExtra(SingBoxService.EXTRA_STOP_INITIATOR, VpnStopInitiator.METERED_PROTECTION.wireValue)
+            putExtra(SingBoxService.EXTRA_STOP_INITIATOR, initiator.wireValue)
         }
         VpnStateStore.CoreMode.VPN -> Intent(context, SingBoxService::class.java).apply {
             action = SingBoxService.ACTION_STOP
-            putExtra(SingBoxService.EXTRA_STOP_INITIATOR, VpnStopInitiator.METERED_PROTECTION.wireValue)
+            putExtra(SingBoxService.EXTRA_STOP_INITIATOR, initiator.wireValue)
         }
         VpnStateStore.CoreMode.ROOT -> Intent(context, RootTransparentForegroundService::class.java).apply {
             action = RootTransparentForegroundService.ACTION_STOP
+            putExtra(SingBoxService.EXTRA_STOP_INITIATOR, initiator.wireValue)
         }
         VpnStateStore.CoreMode.NONE -> return
     }
     context.startService(intent)
-    LogRepository.getInstance().addAlwaysLog(
-        "WARN [METERED_GUARD] stopped runtime because protected-node paths could not be purged safely"
-    )
+    LogRepository.getInstance().addAlwaysLog(logMessage)
 }
 
 internal fun ConfigRepository.filterVpnCapturedPackages(settings: AppSettings, packageNames: List<String>): List<String> {
