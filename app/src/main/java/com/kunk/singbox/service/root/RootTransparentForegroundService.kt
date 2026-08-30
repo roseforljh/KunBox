@@ -379,15 +379,20 @@ class RootTransparentForegroundService : Service() {
         syncLifecycleFlags()
         logLifecycle("stop_requested", token, reason, before.state)
         val diagnostic = commandManager.controlChannelDiagnosticSnapshot(token)
+        val rootError = lastRootSnapshot.error
+            .replace('\n', ' ')
+            .replace('\r', ' ')
+            .take(512)
+            .ifBlank { "none" }
         Log.w(
             TAG,
             "[ROOT_STOP] event=requested reason=$reason state=${before.state} " +
-                "rootPhase=${lastRootSnapshot.phase} $diagnostic"
+                "rootPhase=${lastRootSnapshot.phase} rootError=$rootError $diagnostic"
         )
         LogRepository.getInstance().addAlwaysLog(
             "WARN [ROOT_STOP] event=requested reason=$reason state=${before.state} " +
                 "rootPhase=${lastRootSnapshot.phase} rootPid=${lastRootSnapshot.rootPid} " +
-                "rootFd=${lastRootSnapshot.rootFdCount} $diagnostic"
+                "rootFd=${lastRootSnapshot.rootFdCount} rootError=$rootError $diagnostic"
         )
         lifecycleJob?.cancel()
         uidRefreshJob?.cancel()

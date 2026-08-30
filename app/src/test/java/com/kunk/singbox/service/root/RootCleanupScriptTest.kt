@@ -68,6 +68,24 @@ class RootCleanupScriptTest {
     }
 
     @Test
+    fun confirmedIpv6PrivacyJumpIsDeletedBeforeItsChain() {
+        val result = runCleanup(
+            mode = "dirty",
+            ipv6FilterRules = "-N KBX_PRIV6\n-A OUTPUT -j KBX_PRIV6\n" +
+                "-A KBX_PRIV6 -m owner --uid-owner 10000-99999 -j REJECT\n"
+        )
+        val commands = result.commands.lineSequence().toList()
+        val hook = commands.indexOfFirst { "ip6tables" in it && " -D OUTPUT -j KBX_PRIV6" in it }
+        val flush = commands.indexOfFirst { "ip6tables" in it && " -F KBX_PRIV6" in it }
+        val delete = commands.indexOfFirst { "ip6tables" in it && " -X KBX_PRIV6" in it }
+
+        assertEquals(result.output, 0, result.exitCode)
+        assertTrue(hook in 0 until flush)
+        assertTrue(flush in 0 until delete)
+        assertFalse(result.finalIpv6FilterRules.contains("KBX_PRIV6"))
+    }
+
+    @Test
     fun mdnsCidrRuleIsRecognizedAsOwnedChain() {
         val result = runCleanup(
             "dirty",
@@ -102,8 +120,12 @@ class RootCleanupScriptTest {
         assertTrue(saveCommands.isEmpty())
     }
 
-    private fun runCleanup(mode: String, ipv6NatRules: String = ""): CleanupResult {
-        if (mode == "empty" && ipv6NatRules.isBlank()) cachedEmptyResult?.let { return it }
+    private fun runCleanup(
+        mode: String,
+        ipv6NatRules: String = "",
+        ipv6FilterRules: String = ""
+    ): CleanupResult {
+        cachedResult(mode, ipv6NatRules, ipv6FilterRules)?.let { return it }
         val root = Files.createTempDirectory("kunbox-root-cleanup-test").toFile()
         val result = try {
             val runtime = root.resolve("runtime").apply { mkdirs() }
@@ -129,7 +151,7 @@ class RootCleanupScriptTest {
                     setExecutable(true)
                 }
             }
-            if (ipv6NatRules.isNotBlank()) state.resolve("ip6tables-nat.rules").writeText(ipv6NatRules)
+            writeMockRules(state, ipv6NatRules, ipv6FilterRules)
             val shellCommand = "PATH=${bin.posixPath().shellQuote()}:/usr/bin:/bin; export PATH; " +
                 "exec /usr/bin/sh ${script.posixPath().shellQuote()} legacy-cleanup"
             val process = ProcessBuilder(findShell(), "-c", shellCommand)
@@ -150,15 +172,38 @@ class RootCleanupScriptTest {
                 exitCode = process.exitValue(),
                 output = output,
                 commands = commandLog.takeIf(File::isFile)?.readText().orEmpty(),
-                finalIpv6NatRules = state.resolve("ip6tables-nat.rules").takeIf(File::isFile)?.readText().orEmpty(),
+                finalIpv6NatRules = readRules(state, "ip6tables-nat.rules"),
+                finalIpv6FilterRules = readRules(state, "ip6tables-filter.rules"),
                 elapsedMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt)
             )
         } finally {
             root.deleteRecursively()
         }
-        if (mode == "empty" && ipv6NatRules.isBlank()) cachedEmptyResult = result
+        cacheResult(result, mode, ipv6NatRules, ipv6FilterRules)
         return result
     }
+
+    private fun cachedResult(mode: String, ipv6NatRules: String, ipv6FilterRules: String): CleanupResult? =
+        cachedEmptyResult.takeIf {
+            mode == "empty" && ipv6NatRules.isBlank() && ipv6FilterRules.isBlank()
+        }
+
+    private fun cacheResult(
+        result: CleanupResult,
+        mode: String,
+        ipv6NatRules: String,
+        ipv6FilterRules: String
+    ) {
+        if (mode == "empty" && ipv6NatRules.isBlank() && ipv6FilterRules.isBlank()) cachedEmptyResult = result
+    }
+
+    private fun writeMockRules(state: File, ipv6NatRules: String, ipv6FilterRules: String) {
+        if (ipv6NatRules.isNotBlank()) state.resolve("ip6tables-nat.rules").writeText(ipv6NatRules)
+        if (ipv6FilterRules.isNotBlank()) state.resolve("ip6tables-filter.rules").writeText(ipv6FilterRules)
+    }
+
+    private fun readRules(state: File, name: String): String =
+        state.resolve(name).takeIf(File::isFile)?.readText().orEmpty()
 
     private fun findShell(): String = listOf(
         "/bin/sh",
@@ -182,6 +227,7 @@ class RootCleanupScriptTest {
         val output: String,
         val commands: String,
         val finalIpv6NatRules: String,
+        val finalIpv6FilterRules: String,
         val elapsedMs: Long
     )
 

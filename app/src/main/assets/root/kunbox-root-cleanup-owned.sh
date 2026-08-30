@@ -24,6 +24,7 @@ iptables|filter|KBX_BLOCK4|OUTPUT \
 ip6tables|filter|KBX_BLOCK6|OUTPUT \
 iptables|filter|KBX_QUIC4|OUTPUT \
 ip6tables|filter|KBX_QUIC6|OUTPUT \
+ip6tables|filter|KBX_PRIV6|OUTPUT \
 iptables|filter|KBX_GUARD4|OUTPUT \
 ip6tables|filter|KBX_GUARD6|OUTPUT"
 
@@ -141,7 +142,7 @@ query_table() {
 known_chain() {
     case "$1" in
         KBX_OUT4|KBX_PRE4|KBX_IN4|KBX_RED4|KBX_OUT6|KBX_PRE6|KBX_IN6|KBX_RED6|\
-        KBX_BLOCK4|KBX_BLOCK6|KBX_QUIC4|KBX_QUIC6|KBX_GUARD4|KBX_GUARD6) return 0 ;;
+        KBX_BLOCK4|KBX_BLOCK6|KBX_QUIC4|KBX_QUIC6|KBX_PRIV6|KBX_GUARD4|KBX_GUARD6) return 0 ;;
     esac
     return 1
 }
@@ -177,11 +178,18 @@ delete_known_chains() {
 
 owned_policy_line() {
     line="$1"
+    family="$2"
     priority="${line%%:*}"
     case "$priority" in ''|*[!0-9]*) return 1 ;; esac
-    [ "$priority" -eq 12031 ] || [ "$priority" -eq 12032 ] || \
+    if [ "$priority" -ge 12450 ] && [ "$priority" -le 12705 ]; then
+        [ "$family" = 6 ] && printf '%s\n' "$line" | grep -q ' uidrange ' || return 1
+    elif [ "$priority" -eq 12031 ] || [ "$priority" -eq 12032 ] || \
         { [ "$priority" -ge 12100 ] && [ "$priority" -le 12227 ]; } || \
-        { [ "$priority" -ge 12300 ] && [ "$priority" -le 12427 ]; } || return 1
+        { [ "$priority" -ge 12300 ] && [ "$priority" -le 12427 ]; }; then
+        :
+    else
+        return 1
+    fi
     case "$line" in *"lookup $ROUTE_TABLE"*|*"table $ROUTE_TABLE"*) return 0 ;; esac
     return 1
 }
@@ -192,11 +200,15 @@ delete_policy_family() {
     ip_run ip $prefix rule show
     rules="$CMD_STDOUT"
     printf '%s\n' "$rules" | while IFS= read -r line; do
-        owned_policy_line "$line" || continue
+        owned_policy_line "$line" "$family" || continue
         priority="${line%%:*}"
         mark="$(printf '%s\n' "$line" | sed -n 's/.*fwmark \([^ /]*\).*/\1/p')"
-        [ -n "$mark" ] || continue
-        ip_run ip $prefix rule del fwmark "$mark/0xffffffff" table "$ROUTE_TABLE" pref "$priority"
+        uidrange="$(printf '%s\n' "$line" | sed -n 's/.*uidrange \([^ ]*\).*/\1/p')"
+        if [ -n "$mark" ]; then
+            ip_run ip $prefix rule del fwmark "$mark/0xffffffff" table "$ROUTE_TABLE" pref "$priority"
+        elif [ -n "$uidrange" ]; then
+            ip_run ip $prefix rule del uidrange "$uidrange" table "$ROUTE_TABLE" pref "$priority"
+        fi
     done
     ip_run ip $prefix route show table "$ROUTE_TABLE"
     [ -z "$CMD_STDOUT" ] || ip_run ip $prefix route del local "$route" dev lo table "$ROUTE_TABLE"
@@ -237,7 +249,7 @@ verify_policy_family() {
     ip_run ip $prefix rule show
     [ "$CMD_STATUS" -eq 0 ] || record_failure "verify_rule_query:$family exitCode=$CMD_STATUS stderr=$(diag "$CMD_STDERR")"
     while IFS= read -r line; do
-        owned_policy_line "$line" || continue
+        owned_policy_line "$line" "$family" || continue
         REMAINING_POLICY="${REMAINING_POLICY}${REMAINING_POLICY:+;}family=$family rule=$line"
     done <<EOF
 $CMD_STDOUT

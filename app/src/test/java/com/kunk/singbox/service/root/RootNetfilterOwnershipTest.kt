@@ -1,6 +1,7 @@
 package com.kunk.singbox.service.root
 
 import com.kunk.singbox.model.RootRoutingConstants
+import java.io.File
 import java.nio.file.Files
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -38,6 +39,7 @@ class RootNetfilterOwnershipTest {
     fun ownershipManifestAcceptsIpv6PrivacyChain() {
         val context = RootNetfilterOwnership.context("session-ipv6", 1L, "a".repeat(64))
         val config = configWithLane(0).copy(
+            proxyIpv6 = true,
             protectIpv6 = true,
             applicationUidRanges = listOf(RootUidRange(10_000, 99_999))
         )
@@ -50,6 +52,10 @@ class RootNetfilterOwnershipTest {
         assertTrue(
             manifest.records.filterIsInstance<RootNetfilterOwnerRecord.Chain>()
                 .any { it.chain == RootNetfilterPlanner.CHAIN_PRIVACY6 }
+        )
+        assertTrue(
+            manifest.records.filterIsInstance<RootNetfilterOwnerRecord.UidRule>()
+                .any { it.uidRange == "10123-10123" && it.priority == 12_450 }
         )
     }
 
@@ -82,6 +88,21 @@ class RootNetfilterOwnershipTest {
                 "12031: from all fwmark 0x9999/0xffffffff lookup 999"
             )
         )
+        assertTrue(
+            RootNetfilterOwnership.isReservedPolicyLine(
+                "12450: from all uidrange 10123-10123 lookup 20231"
+            )
+        )
+    }
+
+    @Test
+    fun cleanupScriptDeletesOnlyReservedIpv6UidRoutes() {
+        val script = File("src/main/assets/root/kunbox-root-cleanup-owned.sh").readText()
+
+        assertTrue(script.contains("12450"))
+        assertTrue(script.contains("12705"))
+        assertTrue(script.contains("rule del uidrange"))
+        assertTrue(script.contains("[ \"\$family\" = 6 ]"))
     }
 
     @Test

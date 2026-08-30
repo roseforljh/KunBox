@@ -22,7 +22,7 @@ class RootWatchdogContractTest {
             "KBX_OUT4", "KBX_PRE4", "KBX_IN4", "KBX_RED4",
             "KBX_OUT6", "KBX_PRE6", "KBX_IN6", "KBX_RED6",
             "KBX_BLOCK4", "KBX_BLOCK6", "KBX_QUIC4", "KBX_QUIC6",
-            "KBX_GUARD4", "KBX_GUARD6"
+            "KBX_PRIV6", "KBX_GUARD4", "KBX_GUARD6"
         ).forEach { assertTrue(cleanup.contains(it)) }
         assertTrue(cleanup.contains("delete_known_chains"))
         assertTrue(cleanup.contains("remaining_owned_rules"))
@@ -38,5 +38,13 @@ class RootWatchdogContractTest {
         assertFalse(watchdog.contains("rm -rf"))
         assertFalse(watchdog.contains("setenforce"))
         assertFalse(cleanup.contains("setenforce"))
+        assertFalse(watchdog.contains("NOW - LEASE"))
+        assertTrue(watchdog.contains("CURRENT_ROOT_START_TIME"))
+    }
+
+    @Test
+    fun staleAckDoesNotKillAStillRunningWatchdog() {
+        assertFalse(shouldReportWatchdogLost(wasHealthy = true, ackHealthy = false, watchdogProcessAlive = true))
+        assertTrue(shouldReportWatchdogLost(wasHealthy = true, ackHealthy = false, watchdogProcessAlive = false))
     }
 }

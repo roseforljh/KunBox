@@ -148,6 +148,12 @@ class RootNetfilterPlanTest {
         assertTrue(mdns in 0 until laneUdp)
         assertTrue(laneUdp in 0 until genericUdp)
         assertFalse(commands.any { "KBX_OUT4 -p udp --dport 53" in it })
+        assertTrue(commands.any {
+            "--uid-owner 10123 -p udp --dport 53 -j REDIRECT --to-ports 16001" in it
+        })
+        assertTrue(commands.any {
+            "--uid-owner 10124 -p udp --dport 53 -j REDIRECT --to-ports 16005" in it
+        })
         assertTrue(commands.any { "--uid-owner 10123 -p tcp -j REDIRECT --to-ports 16000" in it })
         assertTrue(commands.any { "--uid-owner 10124 -p tcp -j REDIRECT --to-ports 16004" in it })
         assertTrue(commands.any { "--mark 0x2400/0xffffffff -p udp -j TPROXY --on-port 16001" in it })
@@ -464,6 +470,14 @@ class RootNetfilterPlanTest {
         assertTrue(commands.any { "TPROXY --on-port 1539" in it })
         assertTrue(commands.any { "iptables -t nat -A KBX_RED4" in it && "-p tcp -j REDIRECT" in it })
         assertTrue(commands.any { "ip6tables -t nat -A KBX_RED6" in it && "-p tcp -j REDIRECT" in it })
+        assertTrue(commands.any {
+            "iptables -t nat -A KBX_RED4 -m owner --uid-owner 10123-10124 " +
+                "-p udp --dport 53 -j REDIRECT --to-ports 1538" == it
+        })
+        assertTrue(commands.any {
+            "ip6tables -t nat -A KBX_RED6 -m owner --uid-owner 10123-10124 " +
+                "-p udp --dport 53 -j REDIRECT --to-ports 1539" == it
+        })
         assertFalse(commands.any { "KBX_OUT4" in it && "-p tcp -j MARK" in it })
         assertTrue(commands.any { "iptables -t mangle -A KBX_OUT4 -d 127.0.0.0/8 -j RETURN" == it })
         assertTrue(commands.any { "ip6tables -t mangle -A KBX_OUT6 -d ::1/128 -j RETURN" == it })
@@ -519,10 +533,19 @@ class RootNetfilterPlanTest {
         val capturedTcp = commands.indexOfFirst {
             "KBX_RED4 -m owner --uid-owner 10123 -p tcp -j REDIRECT --to-ports 1536" in it
         }
+        val capturedUdpDns = commands.indexOfFirst {
+            "KBX_RED4 -m owner --uid-owner 10123 -p udp --dport 53 " +
+                "-j REDIRECT --to-ports 1538" in it
+        }
+        val capturedTcpDns = commands.indexOfFirst {
+            "KBX_RED4 -m owner --uid-owner 10123 -p tcp --dport 53 " +
+                "-j REDIRECT --to-ports 1536" in it
+        }
         assertTrue(excludedReturn in 0 until capturedUdp)
         assertTrue(redirectExcludedReturn in 0 until capturedTcp)
         assertFalse(commands.any { "KBX_OUT4 -p udp --dport 53" in it })
-        assertFalse(commands.any { "KBX_RED4 -p tcp --dport 53" in it })
+        assertTrue(redirectExcludedReturn in 0 until capturedUdpDns)
+        assertTrue(redirectExcludedReturn in 0 until capturedTcpDns)
         assertFalse(commands.any { "--dport 853" in it && "--uid-owner" !in it })
     }
 
@@ -552,9 +575,14 @@ class RootNetfilterPlanTest {
             "KBX_OUT4 -m owner --uid-owner 10123 -p udp -j MARK --set-mark 0x2331" in it
         }
         val rootUid = commands.indexOfFirst { "KBX_OUT4 -m owner --uid-owner 0 -j RETURN" in it }
+        val rootDnsBypass = commands.indexOfFirst { "KBX_RED4 -m owner --uid-owner 0 -j RETURN" in it }
+        val capturedDns = commands.indexOfFirst {
+            "KBX_RED4 -m owner --uid-owner 10123 -p udp --dport 53" in it
+        }
 
         assertTrue(bypass in 0 until capturedUdp)
         assertTrue(rootUid in 0 until capturedUdp)
+        assertTrue(rootDnsBypass in 0 until capturedDns)
         assertEquals(
             0x100100e1,
             RootNetfilterPlanner.withCoreBypassMark(0x100e1)
@@ -618,6 +646,12 @@ class RootNetfilterPlanTest {
             "KBX_PRIV6 -m mark --mark ${RootNetfilterPlanner.IPV6_MARK}/0xffffffff -j RETURN" in it
         })
         assertTrue(commands.any { "ip6tables -t filter -I OUTPUT 1 -j KBX_PRIV6" == it })
+        assertTrue(commands.any {
+            it == "ip -6 rule add uidrange 10123-10123 table 20231 pref 12450"
+        })
+        assertTrue(plan.cleanupCommands.any {
+            it.joinToString(" ") == "ip -6 rule del uidrange 10123-10123 table 20231 pref 12450"
+        })
         assertTrue(plan.cleanupCommands.any { it.lastOrNull() == RootNetfilterPlanner.CHAIN_PRIVACY6 })
     }
 
