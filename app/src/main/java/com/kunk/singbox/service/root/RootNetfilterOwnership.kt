@@ -398,7 +398,7 @@ internal object RootNetfilterOwnership {
                 "4" to "KBX_RED4", "4" to "KBX_BLOCK4", "4" to "KBX_QUIC4",
                 "4" to "KBX_GUARD4", "6" to "KBX_OUT6", "6" to "KBX_PRE6",
                 "6" to "KBX_IN6", "6" to "KBX_RED6", "6" to "KBX_BLOCK6",
-                "6" to "KBX_QUIC6", "6" to "KBX_GUARD6" -> true
+                "6" to "KBX_QUIC6", "6" to "KBX_PRIV6", "6" to "KBX_GUARD6" -> true
                 else -> false
             }
         )

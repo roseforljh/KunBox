@@ -35,6 +35,25 @@ class RootNetfilterOwnershipTest {
     }
 
     @Test
+    fun ownershipManifestAcceptsIpv6PrivacyChain() {
+        val context = RootNetfilterOwnership.context("session-ipv6", 1L, "a".repeat(64))
+        val config = configWithLane(0).copy(
+            protectIpv6 = true,
+            applicationUidRanges = listOf(RootUidRange(10_000, 99_999))
+        )
+
+        val manifest = RootNetfilterOwnership.fromCommands(
+            context,
+            RootNetfilterPlanner.build(config).setupCommands
+        )
+
+        assertTrue(
+            manifest.records.filterIsInstance<RootNetfilterOwnerRecord.Chain>()
+                .any { it.chain == RootNetfilterPlanner.CHAIN_PRIVACY6 }
+        )
+    }
+
+    @Test
     fun rejectsUnsafeSessionIdentifier() {
         assertThrows(IllegalArgumentException::class.java) {
             RootNetfilterOwnership.context("session\nmalformed", 1L, "a".repeat(64))
