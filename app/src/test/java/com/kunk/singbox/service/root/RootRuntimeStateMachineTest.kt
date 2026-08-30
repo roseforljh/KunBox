@@ -8,6 +8,47 @@ import org.junit.Test
 
 class RootRuntimeStateMachineTest {
     @Test
+    fun externalRootConfigRequiresItsOriginalCandidateRequestId() {
+        val failure = runCatching {
+            resolveRootCandidateRequestId(
+                configPathOverride = "/data/user/0/com.kunk.singbox/files/root/config.json",
+                requestId = "",
+                generatedId = "generated"
+            )
+        }.exceptionOrNull()
+
+        assertTrue(failure is IllegalArgumentException)
+        assertEquals(
+            "request-1",
+            resolveRootCandidateRequestId(
+                configPathOverride = "/data/user/0/com.kunk.singbox/files/root/config.json",
+                requestId = "request-1",
+                generatedId = "generated"
+            )
+        )
+        assertEquals(
+            "",
+            resolveRootCandidateRequestId(
+                configPathOverride = "/data/user/0/com.kunk.singbox/files/running_config.json",
+                requestId = "",
+                generatedId = "generated"
+            )
+        )
+    }
+
+    @Test
+    fun rootGeneratedConfigCreatesOneCandidateRequestId() {
+        assertEquals(
+            "generated",
+            resolveRootCandidateRequestId(
+                configPathOverride = null,
+                requestId = "",
+                generatedId = "generated"
+            )
+        )
+    }
+
+    @Test
     fun terminalStartFailureDoesNotRepeatTheSameSynchronousCleanup() {
         assertFalse(
             rootStartFailureRequiresSynchronousStop(
@@ -49,8 +90,8 @@ class RootRuntimeStateMachineTest {
     @Test
     fun stopInvalidatesEveryOlderStartOrReloadGeneration() {
         val lifecycle = RootLifecycleCoordinator()
-        val start = lifecycle.requestRunning(reload = false)
-        val reload = lifecycle.requestRunning(reload = true)
+        val start = lifecycle.requestRunning(reload = false) ?: error("start request rejected")
+        val reload = lifecycle.requestRunning(reload = true) ?: error("reload request rejected")
         val stop = lifecycle.requestStopped()
 
         assertFalse(lifecycle.transition(start, RootLifecycleState.RUNNING))
@@ -60,19 +101,17 @@ class RootRuntimeStateMachineTest {
     }
 
     @Test
-    fun startRequestedWhileStoppingWaitsForStopCompletion() {
+    fun startRequestedWhileStoppingIsRejected() {
         val lifecycle = RootLifecycleCoordinator()
         lifecycle.requestRunning(reload = false)
         val stop = lifecycle.requestStopped()
         val finalStart = lifecycle.requestRunning(reload = false)
 
         assertEquals(RootLifecycleState.STOPPING, lifecycle.snapshot().state)
-        assertEquals(RootDesiredState.RUNNING, lifecycle.snapshot().desiredState)
+        assertEquals(null, finalStart)
+        assertEquals(RootDesiredState.STOPPED, lifecycle.snapshot().desiredState)
         assertTrue(lifecycle.transition(stop, RootLifecycleState.STOPPED))
-        assertTrue(lifecycle.transition(finalStart, RootLifecycleState.STARTING))
-        assertTrue(lifecycle.isCurrentRunningRequest(finalStart))
-        assertTrue(lifecycle.transition(finalStart, RootLifecycleState.RUNNING))
-        assertEquals(RootLifecycleState.RUNNING, lifecycle.snapshot().state)
+        assertEquals(RootLifecycleState.STOPPED, lifecycle.snapshot().state)
     }
 
     @Test
@@ -93,6 +132,13 @@ class RootRuntimeStateMachineTest {
             .substringBefore("fun KunBoxRootService.rollbackLocked")
 
         assertTrue(reload.indexOf("readValidatedArtifacts") < reload.indexOf("installGuard"))
+        assertTrue(reload.indexOf("reloadCommandServer") < reload.indexOf("installGuard"))
+        assertTrue(reload.contains("candidateNetfilterConfig == previousNetfilterConfig"))
+        assertTrue(
+            File("src/main/java/com/kunk/singbox/service/root/KunBoxRootService.kt")
+                .readText()
+                .contains("installGuardAndStage")
+        )
         assertTrue(stop.indexOf("closeCommandServer") < stop.indexOf("cleanupRulesVerified"))
         assertFalse(stop.contains("snapshot.phase == RootRuntimePhase.STOPPED") && stop.contains("return snapshot"))
     }
@@ -160,6 +206,20 @@ class RootRuntimeStateMachineTest {
             stopRuntime.indexOf("stopped.phase == RootRuntimePhase.STOPPED") <
                 stopRuntime.indexOf("rootConnection.stopRootService()")
         )
+        assertFalse(source.contains("ROOT_STOP_OPERATION_TIMEOUT_MS"))
+        assertTrue(source.contains("stopRemoteRuntime()"))
+        assertTrue(source.contains("val rootService = rootConnection.service ?: return if"))
+        assertTrue(!stopRuntime.contains("rootConnection.service ?: rootConnection.bind()"))
+        val stopEntry = source.substringAfter("suspend fun stopRuntime(stopSelfAfter: Boolean, token: Long)")
+            .substringBefore("suspend fun stopRuntimeLocked")
+        assertFalse(stopEntry.contains("lifecycleMutex.withLock"))
+        assertTrue(source.contains("phase = RootRuntimePhase.FAILED_VERIFICATION"))
+        val aidl = File("src/main/aidl/com/kunk/singbox/aidl/IRootSingBoxService.aidl")
+            .readText(Charsets.UTF_8)
+        val rootService = File("src/main/java/com/kunk/singbox/service/root/KunBoxRootService.kt")
+            .readText(Charsets.UTF_8)
+        assertTrue(aidl.contains("oneway void requestStop"))
+        assertTrue(rootService.contains("rootCommandExecutor.cancelActiveCommands()"))
     }
 
     @Test

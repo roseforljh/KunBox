@@ -119,7 +119,13 @@ internal fun KunBoxRootService.stopUidMonitor() {
     uidMonitorJob = null
 }
 
-@Suppress("LongParameterList", "LongMethod")
+@Suppress(
+    "LongParameterList",
+    "LongMethod",
+    "CognitiveComplexMethod",
+    "NestedBlockDepth",
+    "ReturnCount"
+)
 internal fun KunBoxRootService.hotReloadLocked(
     configPath: String,
     runtimeSessionId: String,
@@ -130,6 +136,7 @@ internal fun KunBoxRootService.hotReloadLocked(
     appRoutingSha256: String,
     routingGeneration: Long
 ): RootRuntimeSnapshot {
+    val reloadStartedAt = android.os.SystemClock.elapsedRealtime()
     if (!matchesRunningSession(runtimeSessionId)) return snapshot
     val previousRequest = activeStartRequest ?: return failRulesPresent("Root active request is unavailable")
     val previousArtifacts = activeRoutingArtifacts
@@ -140,6 +147,7 @@ internal fun KunBoxRootService.hotReloadLocked(
         ?: return failRulesPresent("Root active netfilter plan is unavailable")
     var guardInstalled = false
     var oldCoreStopped = false
+    var inPlaceReloadAttempted = false
     var candidateArtifacts: RootRoutingArtifacts? = null
     return try {
         throwIfStopRequested(runtimeSessionId)
@@ -168,8 +176,48 @@ internal fun KunBoxRootService.hotReloadLocked(
             blockIpv4 = !artifacts.plan.proxyIpv4,
             blockIpv6 = !artifacts.plan.proxyIpv6
         )
+        val previousNetfilterConfig = buildNetfilterConfig(previousRequest, previousResolved, previousArtifacts.plan)
+        val candidateNetfilterConfig = buildNetfilterConfig(request, previousResolved, artifacts.plan)
+        if (artifacts.plan.appRoutingSha256 == previousArtifacts.plan.appRoutingSha256 &&
+            candidateNetfilterConfig == previousNetfilterConfig
+        ) {
+            inPlaceReloadAttempted = true
+            reloadCommandServer(artifacts)
+            val reloadedResolved = previousResolved.copy(
+                resolvedPlanSha256 = RootAppRoutingCanonical.resolvedPlanSha256(
+                    artifacts.plan,
+                    previousResolved.routes
+                )
+            )
+            activeRoutingArtifacts = artifacts
+            activeResolvedRouting = reloadedResolved
+            activeStartRequest = request
+            logResolvedRouting(artifacts.plan, reloadedResolved)
+            val runningSnapshot = updateSnapshot(
+                phase = RootRuntimePhase.RUNNING,
+                ruleRevision = snapshot.ruleRevision + 1,
+                routingGeneration = artifacts.plan.generation,
+                configFileSha256 = artifacts.plan.configFileSha256,
+                sidecarFileSha256 = request.sidecarFileSha256,
+                staticPlanSha256 = artifacts.plan.staticPlanSha256,
+                appRoutingSha256 = artifacts.plan.appRoutingSha256,
+                resolvedPlanSha256 = reloadedResolved.resolvedPlanSha256,
+                resolvedUidCount = reloadedResolved.routes.size,
+                watchdogReady = true,
+                rulesInstalled = true,
+                error = ""
+            )
+            Log.i(
+                KunBoxRootService.TAG,
+                "[ROOT_RELOAD] strategy=in_place duration_ms=" +
+                    (android.os.SystemClock.elapsedRealtime() - reloadStartedAt)
+            )
+            runningSnapshot
+        } else {
+        inPlaceReloadAttempted = false
         val resolver = RootUidResolver()
-        val firstResolved = resolver.resolveRouting(artifacts.plan, request.selfPackage, request.appUid)
+        val uidSnapshot = resolver.captureSnapshot()
+        val firstResolved = resolver.resolveRouting(artifacts.plan, request.selfPackage, request.appUid, uidSnapshot)
         throwIfStopRequested(runtimeSessionId)
         netfilterManager.beginOwnership(
             RootNetfilterOwnership.context(
@@ -202,14 +250,12 @@ internal fun KunBoxRootService.hotReloadLocked(
         updateSnapshot(phase = RootRuntimePhase.CORE_VERIFYING)
         verifyAllLaneListeners(artifacts.plan)
         throwIfStopRequested(runtimeSessionId)
-        val secondResolved = resolver.resolveRouting(artifacts.plan, request.selfPackage, request.appUid)
+        val secondResolved = resolver.resolveRouting(artifacts.plan, request.selfPackage, request.appUid, uidSnapshot)
         check(firstResolved.resolvedPlanSha256 == secondResolved.resolvedPlanSha256) {
             "Root UID snapshot changed during cold reload"
         }
         throwIfStopRequested(runtimeSessionId)
-        netfilterManager.activate(candidatePlan).getOrThrow()
-        throwIfStopRequested(runtimeSessionId)
-        netfilterManager.removeGuard().getOrThrow()
+        netfilterManager.activateAndRemoveGuard(candidatePlan).getOrThrow()
         guardInstalled = false
         throwIfStopRequested(runtimeSessionId)
         activeRoutingArtifacts = artifacts
@@ -218,7 +264,7 @@ internal fun KunBoxRootService.hotReloadLocked(
         logResolvedRouting(artifacts.plan, secondResolved)
         startUidMonitor(request.runtimeSessionId)
         pruneLockedArtifacts(artifacts.plan.generation)
-        updateSnapshot(
+        val runningSnapshot = updateSnapshot(
             phase = RootRuntimePhase.RUNNING,
             ruleRevision = snapshot.ruleRevision + 1,
             routingGeneration = artifacts.plan.generation,
@@ -232,6 +278,13 @@ internal fun KunBoxRootService.hotReloadLocked(
             rulesInstalled = true,
             error = ""
         )
+        Log.i(
+            KunBoxRootService.TAG,
+            "[ROOT_RELOAD] strategy=full duration_ms=" +
+                (android.os.SystemClock.elapsedRealtime() - reloadStartedAt)
+        )
+        runningSnapshot
+        }
     } catch (error: Exception) {
         Log.e(KunBoxRootService.TAG, "Root cold reload failed", error)
         if (error is RootStopRequestedException) {
@@ -241,6 +294,14 @@ internal fun KunBoxRootService.hotReloadLocked(
                 "Root stop cleanup failed: ${cleanupError.message}"
             )
         } else {
+            if (inPlaceReloadAttempted && !oldCoreStopped) {
+                val rollbackError = runCatching { reloadCommandServer(previousArtifacts) }.exceptionOrNull()
+                if (rollbackError != null) {
+                    Log.e(KunBoxRootService.TAG, "Root in-place reload rollback failed", rollbackError)
+                    runCatching { closeCommandServer(candidateArtifacts?.plan) }
+                    oldCoreStopped = true
+                }
+            }
             restorePreviousAfterReload(
                 previousRequest = previousRequest,
                 previousArtifacts = previousArtifacts,
@@ -336,8 +397,7 @@ internal fun KunBoxRootService.restorePreviousAfterReload(
         check(verifiedResolved.resolvedPlanSha256 == previousResolved.resolvedPlanSha256) {
             "Root UID snapshot changed while restoring the previous generation"
         }
-        netfilterManager.activate(restoredPlan).getOrThrow()
-        netfilterManager.removeGuard().getOrThrow()
+        netfilterManager.activateAndRemoveGuard(restoredPlan).getOrThrow()
         activeNetfilterPlan = restoredPlan
         activeRoutingArtifacts = previousArtifacts
         activeResolvedRouting = verifiedResolved

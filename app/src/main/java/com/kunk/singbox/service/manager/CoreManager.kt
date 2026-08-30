@@ -317,6 +317,10 @@ class CoreManager(
 
                     if (!isStartTokenCurrent(startToken)) {
                         Log.i(TAG, "Libbox start invalidated while native start was running")
+                        runCatching { server.closeService() }
+                        runCatching { server.close() }
+                        if (commandServer === server) commandServer = null
+                        BoxWrapperManager.release()
                         PerfTracer.end(PerfTracer.Phases.LIBBOX_START, "cancelled")
                         return@withLock StartResult.Cancelled
                     }

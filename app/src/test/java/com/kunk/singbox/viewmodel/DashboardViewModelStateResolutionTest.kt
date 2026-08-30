@@ -15,15 +15,36 @@ import java.io.File
 class DashboardViewModelStateResolutionTest {
     @Test
     fun stopCancelsPendingCoreStartBeforeItCanDispatchService() {
-        val source = File("src/main/java/com/kunk/singbox/viewmodel/DashboardViewModel.kt")
+        val source = File("src/main/java/com/kunk/singbox/viewmodel/DashboardConnectionRuntime.kt")
             .readText(Charsets.UTF_8)
-        val stopBody = source.substringAfter("private fun stopVpn()")
-            .substringBefore("private fun waitForStopConfirmation")
-        val startBody = source.substringAfter("private fun startCore()")
-            .substringBefore("private fun stopVpn()")
-
+        val stopBody = source.substringAfter("internal fun DashboardViewModel.stopVpnRuntime()")
+            .substringBefore("internal fun DashboardViewModel.startPingTestRuntime")
         assertTrue(stopBody.contains("startCoreJob?.cancel()"))
-        assertTrue(startBody.contains("catch (_: CancellationException)"))
+        val dashboardSource = File("src/main/java/com/kunk/singbox/viewmodel/DashboardViewModel.kt")
+            .readText(Charsets.UTF_8)
+        assertTrue(dashboardSource.contains("catch (_: CancellationException)"))
+    }
+
+    @Test
+    fun cancellingBeforeServiceDispatchDoesNotCreateAServiceToStop() {
+        val source = File("src/main/java/com/kunk/singbox/viewmodel/DashboardConnectionRuntime.kt")
+            .readText(Charsets.UTF_8)
+
+        assertTrue(source.contains("startWasNotDispatched"))
+        assertTrue(source.contains("!startServiceDispatched"))
+        assertTrue(source.contains("if (startWasNotDispatched)"))
+        assertTrue(source.contains("VpnTileService.persistVpnPending(\"\")"))
+        assertTrue(source.indexOf("if (startWasNotDispatched)") < source.indexOf("VpnServiceManager.stopVpn"))
+    }
+
+    @Test
+    fun stopReturnsToIdleWithoutWaitingForServiceConfirmation() {
+        val runtime = File("src/main/java/com/kunk/singbox/viewmodel/DashboardConnectionRuntime.kt")
+            .readText(Charsets.UTF_8)
+
+        assertTrue(runtime.contains("_connectionState.value = ConnectionState.Idle"))
+        assertTrue(!runtime.contains("withTimeout"))
+        assertTrue(!runtime.contains("forceStop(context)"))
     }
     @Test
     fun persistedActiveDoesNotCreateConnectedUiStateWithoutRunningService() {
@@ -325,11 +346,10 @@ class DashboardViewModelStateResolutionTest {
 
     @Test
     fun currentNodePingUsesTheManualSingleNodeLatencyPath() {
-        val source = File("src/main/java/com/kunk/singbox/viewmodel/DashboardViewModel.kt")
+        val source = File("src/main/java/com/kunk/singbox/viewmodel/DashboardConnectionRuntime.kt")
             .readText(Charsets.UTF_8)
-        val body = source
-            .substringAfter("private fun startPingTest()")
-            .substringBefore("private fun stopPingTest()")
+        val body = source.substringAfter("internal fun DashboardViewModel.startPingTestRuntime()")
+            .substringBefore("internal fun DashboardViewModel.stopPingTestRuntime()")
 
         assertTrue(body.contains("configRepository.testNodeLatency(targetNodeId)"))
         assertFalse(body.contains("configRepository.testAllNodesLatency"))

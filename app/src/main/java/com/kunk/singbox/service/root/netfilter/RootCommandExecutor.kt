@@ -5,12 +5,20 @@ package com.kunk.singbox.service.root
 import android.util.Log
 import java.io.BufferedReader
 import java.io.InputStreamReader
+import java.util.Collections
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 
 internal const val XTABLES_WAIT_SECONDS = 2
 internal const val XTABLES_MAX_ATTEMPTS = 3
+internal const val ROOT_STATE_IPTABLES4 = "iptables4"
+internal const val ROOT_STATE_IPTABLES6 = "iptables6"
+internal const val ROOT_STATE_RULE4 = "rule4"
+internal const val ROOT_STATE_RULE6 = "rule6"
+internal const val ROOT_STATE_ROUTE4 = "route4"
+internal const val ROOT_STATE_ROUTE6 = "route6"
+private const val ROOT_STATE_MARKER_PREFIX = "__KBX_ROOT_STATE_"
 private val rootCommandSerializationLock = Any()
 
 internal fun <T> withSerializedRootCommand(block: () -> T): T = synchronized(rootCommandSerializationLock, block)
@@ -42,6 +50,48 @@ internal fun extractIptablesSaveTable(output: String, table: String): String? {
     check(!inside) { "iptables-save table $table is incomplete" }
     return null
 }
+
+internal fun rootStateSnapshotCommands(netfilterBinaries: Collection<String> = emptyList()): List<List<String>> =
+    buildList {
+        if ("iptables" in netfilterBinaries) {
+            add(rootStateMarkerCommand(ROOT_STATE_IPTABLES4))
+            add(listOf("iptables-save"))
+        }
+        if ("ip6tables" in netfilterBinaries) {
+            add(rootStateMarkerCommand(ROOT_STATE_IPTABLES6))
+            add(listOf("ip6tables-save"))
+        }
+        add(rootStateMarkerCommand(ROOT_STATE_RULE4))
+        add(listOf("ip", "rule", "show"))
+        add(rootStateMarkerCommand(ROOT_STATE_RULE6))
+        add(listOf("ip", "-6", "rule", "show"))
+        add(rootStateMarkerCommand(ROOT_STATE_ROUTE4))
+        add(listOf("ip", "route", "show", "table", RootNetfilterPlanner.ROUTE_TABLE))
+        add(rootStateMarkerCommand(ROOT_STATE_ROUTE6))
+        add(listOf("ip", "-6", "route", "show", "table", RootNetfilterPlanner.ROUTE_TABLE))
+    }
+
+internal fun parseRootStateSnapshot(output: String): Map<String, String>? {
+    val sections = linkedMapOf<String, StringBuilder>()
+    var current: String? = null
+    output.lineSequence().forEach { line ->
+        val trimmed = line.trim()
+        if (trimmed.startsWith(ROOT_STATE_MARKER_PREFIX) && trimmed.endsWith("__")) {
+            val section = trimmed.removePrefix(ROOT_STATE_MARKER_PREFIX).removeSuffix("__")
+            current = section
+            sections.getOrPut(section) { StringBuilder() }
+            return@forEach
+        }
+        val section = current ?: return@forEach
+        val content = sections.getValue(section)
+        if (content.isNotEmpty()) content.append('\n')
+        content.append(line)
+    }
+    return sections.takeIf { it.isNotEmpty() }?.mapValues { it.value.toString().trim() }
+}
+
+private fun rootStateMarkerCommand(section: String): List<String> =
+    listOf("printf", "$ROOT_STATE_MARKER_PREFIX${section}__\\n")
 
 internal fun executeXtablesWithRetry(
     executeOnce: () -> RootCommandResult,
@@ -121,6 +171,7 @@ class ProcessRootCommandExecutor internal constructor(
     private val timeoutMs: Long = DEFAULT_COMMAND_TIMEOUT_MS
 ) : RootCommandExecutor {
     private val xtablesWaitMs = AtomicLong(0L)
+    private val activeProcesses = Collections.synchronizedSet(mutableSetOf<Process>())
 
     init {
         require(timeoutMs > 0L)
@@ -132,7 +183,7 @@ class ProcessRootCommandExecutor internal constructor(
         if (isXtablesCommand(command)) {
             executeWithXtablesRetry(command)
         } else {
-            collectProcess(ProcessBuilder(command).start()).also(::recordXtablesWaitEvents)
+            collectProcess(startProcess(command)).also(::recordXtablesWaitEvents)
         }
     }
 
@@ -141,7 +192,7 @@ class ProcessRootCommandExecutor internal constructor(
             require(arguments.isNotEmpty()) { "Root command is empty" }
             require(timeoutMs > 0L) { "Root command timeout must be positive" }
             val command = withXtablesWait(arguments)
-            collectProcess(ProcessBuilder(command).start(), timeoutMs).also(::recordXtablesWaitEvents)
+            collectProcess(startProcess(command), timeoutMs).also(::recordXtablesWaitEvents)
         }
 
     override fun executeBatch(commands: List<List<String>>): RootCommandResult =
@@ -169,7 +220,7 @@ class ProcessRootCommandExecutor internal constructor(
     private fun executeWithXtablesRetry(arguments: List<String>): RootCommandResult {
         return executeXtablesWithRetry(
             executeOnce = {
-                collectProcess(ProcessBuilder(arguments).start()).also(::recordXtablesWaitEvents)
+                collectProcess(startProcess(arguments)).also(::recordXtablesWaitEvents)
             }
         ) { attempt, elapsedMs ->
             xtablesWaitMs.addAndGet(elapsedMs)
@@ -183,8 +234,7 @@ class ProcessRootCommandExecutor internal constructor(
 
     private fun executeScript(script: String): RootCommandResult {
         if (script.isBlank()) return RootCommandResult(0, "")
-        val process = ProcessBuilder("/system/bin/sh")
-            .start()
+        val process = startProcess(listOf("/system/bin/sh"))
         process.outputStream.bufferedWriter().use { it.write(script) }
         return collectProcess(process).also(::recordXtablesWaitEvents)
     }
@@ -195,6 +245,17 @@ class ProcessRootCommandExecutor internal constructor(
             .mapNotNull { it.substringAfter("elapsed_ms=", "").substringBefore(' ').toLongOrNull() }
             .forEach(xtablesWaitMs::addAndGet)
     }
+
+    internal fun cancelActiveCommands() {
+        val processes = synchronized(activeProcesses) { activeProcesses.filter(Process::isAlive) }
+        processes.forEach { process ->
+            runCatching { process.destroyForcibly() }
+        }
+    }
+
+    private fun startProcess(command: List<String>): Process = ProcessBuilder(command)
+        .start()
+        .also(activeProcesses::add)
 
     @Suppress("CyclomaticComplexMethod", "CognitiveComplexMethod")
     private fun collectProcess(process: Process, commandTimeoutMs: Long = timeoutMs): RootCommandResult {
@@ -240,6 +301,7 @@ class ProcessRootCommandExecutor internal constructor(
             }
             outputReader.join(PROCESS_READER_JOIN_MS)
             errorReader.join(PROCESS_READER_JOIN_MS)
+            activeProcesses.remove(process)
             return RootCommandResult(
                 COMMAND_TIMEOUT_EXIT_CODE,
                 output.toString().trim(),
@@ -251,6 +313,7 @@ class ProcessRootCommandExecutor internal constructor(
         check(!outputReader.isAlive && !errorReader.isAlive) { "Root command output reader did not finish" }
         outputReadError.get()?.let { throw IllegalStateException("Cannot read Root command stdout", it) }
         errorReadError.get()?.let { throw IllegalStateException("Cannot read Root command stderr", it) }
+        activeProcesses.remove(process)
         return RootCommandResult(process.exitValue(), output.toString().trim(), errorOutput.toString().trim())
     }
 
@@ -263,7 +326,7 @@ class ProcessRootCommandExecutor internal constructor(
     }
 }
 
-@Suppress("CyclomaticComplexMethod", "CognitiveComplexMethod", "ReturnCount")
+@Suppress("CyclomaticComplexMethod", "CognitiveComplexMethod", "ReturnCount", "LongMethod")
 internal fun buildRootNetfilterRestoreScript(commands: List<List<String>>): String? {
     data class TableRestore(
         val chains: MutableList<String> = mutableListOf(),
@@ -303,6 +366,8 @@ internal fun buildRootNetfilterRestoreScript(commands: List<List<String>>): Stri
     }
     if (restores.isEmpty()) return null
 
+    val (ipCommands, otherPolicyCommands) = policyCommands.partition { it.firstOrNull() == "ip" }
+
     return buildString {
         append(xtablesRetryShellFunction())
         restores.forEach { (binary, tables) ->
@@ -322,7 +387,33 @@ internal fun buildRootNetfilterRestoreScript(commands: List<List<String>>): Stri
             append("kb_status=${'$'}?\nif [ \"${'$'}kb_status\" -ne 0 ]; then ")
                 .append("exit \"${'$'}kb_status\"; fi\n")
         }
-        append(buildRootCommandBatchScript(policyCommands + activationCommands))
+        append(buildRootIpBatchScript(ipCommands))
+        append(buildRootCommandBatchScript(otherPolicyCommands + activationCommands))
+        append(buildRootCommandBatchScript(rootStateSnapshotCommands(restores.keys)))
+    }
+}
+
+internal fun buildRootIpBatchScript(commands: List<List<String>>): String {
+    if (commands.isEmpty()) return ""
+    require(commands.all { it.firstOrNull() == "ip" }) { "Root policy batch contains a non-ip command" }
+    val groups = commands.groupBy { it.getOrNull(1) == "-6" }
+    return buildString {
+        append("command -v ip >/dev/null 2>&1 || exit 127\n")
+        groups.forEach { (ipv6, familyCommands) ->
+            val suffix = if (ipv6) "6" else "4"
+            append("ip ")
+            if (ipv6) append("-6 ")
+            append("-batch - <<'KBX_IP_").append(suffix).append("'\n")
+            familyCommands.forEach { command ->
+                val arguments = command.drop(if (ipv6) 2 else 1)
+                require(arguments.isNotEmpty() && arguments.all(::isSafeRestoreToken)) {
+                    "Unsafe Root policy batch command"
+                }
+                append(arguments.joinToString(" ")).append('\n')
+            }
+            append("KBX_IP_").append(suffix).append("\n")
+            append("kb_status=${'$'}?\nif [ \"${'$'}kb_status\" -ne 0 ]; then exit \"${'$'}kb_status\"; fi\n")
+        }
     }
 }
 

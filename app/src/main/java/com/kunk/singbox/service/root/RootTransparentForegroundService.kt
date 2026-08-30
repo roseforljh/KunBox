@@ -49,6 +49,23 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.NonCancellable
+
+internal fun resolveRootCandidateRequestId(
+    configPathOverride: String?,
+    requestId: String,
+    generatedId: String
+): String {
+    if (!configPathOverride.isNullOrBlank() &&
+        !configPathOverride.endsWith("/running_config.json") &&
+        !configPathOverride.endsWith("\\running_config.json")
+    ) {
+        require(requestId.isNotBlank()) { "Root candidate request ID is missing" }
+    }
+    if (requestId.isNotBlank()) return requestId
+    return if (configPathOverride.isNullOrBlank()) generatedId else ""
+}
 
 @Suppress("LargeClass")
 class RootTransparentForegroundService : Service() {
@@ -65,6 +82,7 @@ class RootTransparentForegroundService : Service() {
         const val EXTRA_OUTBOUND_TAG = "outbound_tag"
         const val EXTRA_NODE_NAME = "node_name"
         const val EXTRA_APP_ROUTE_REQUEST_ID = "app_route_request_id"
+        const val ACTION_FORCE_STOP = "com.kunk.singbox.action.ROOT_FORCE_STOP"
 
         @Volatile var isRunning: Boolean = false
             internal set
@@ -117,7 +135,8 @@ class RootTransparentForegroundService : Service() {
                 stopAction = ACTION_STOP
             )
         ).also(VpnNotificationManager::createNotificationChannel)
-        rootConnection = RootServiceConnection(this, ::onRootServiceDisconnected)
+        rootConnection = RootServicePrewarmer.acquire(::onRootServiceDisconnected)
+            ?: RootServiceConnection(this, ::onRootServiceDisconnected)
         commandManager = CommandManager(this, serviceScope).apply {
             init(object : CommandManager.Callbacks {
                 override fun requestNotificationUpdate(force: Boolean) =
@@ -189,12 +208,14 @@ class RootTransparentForegroundService : Service() {
                     switchNode(
                         outboundTag,
                         intent.getStringExtra(EXTRA_NODE_NAME).orEmpty(),
-                        intent.getStringExtra(EXTRA_CONFIG_PATH)
+                        intent.getStringExtra(EXTRA_CONFIG_PATH),
+                        intent.getStringExtra(EXTRA_APP_ROUTE_REQUEST_ID).orEmpty()
                     )
                 }
             }
             ACTION_RESET_CONNECTIONS -> serviceScope.launch { resetConnectionsFromNotification() }
             ACTION_STOP -> {
+                VpnStateStore.setStopOwnerMode(VpnStateStore.CoreMode.ROOT)
                 val initiator = VpnStopInitiator.fromWireValue(
                     intent.getStringExtra(SingBoxService.EXTRA_STOP_INITIATOR)
                 )
@@ -202,6 +223,7 @@ class RootTransparentForegroundService : Service() {
                 SingBoxIpcHub.update(manuallyStopped = initiator.isManualStop)
                 requestStopRuntime(stopSelfAfter = true, reason = initiator.wireValue)
             }
+            ACTION_FORCE_STOP -> requestStopRuntime(stopSelfAfter = true, reason = "force_stop")
             ACTION_RESTART -> requestRunningRuntime(reload = true) { token ->
                 restartRuntime(
                     configPathOverride = intent.getStringExtra(EXTRA_CONFIG_PATH),
@@ -244,11 +266,32 @@ class RootTransparentForegroundService : Service() {
         operation: suspend (Long) -> Unit
     ) {
         val before = lifecycle.snapshot()
+        if (before.state == RootLifecycleState.STOPPING || VpnStateStore.getPending() == "stopping") {
+            Log.w(
+                TAG,
+                "[ROOT_LIFECYCLE] event=start_rejected reason=stop_in_progress " +
+                    "state=${before.state} generation=${before.generation}"
+            )
+            return
+        }
+        if (before.state == RootLifecycleState.FAILED && lastRootSnapshot.phase in setOf(
+                RootRuntimePhase.FAILED_VERIFICATION,
+                RootRuntimePhase.FAILED_BLOCKED,
+                RootRuntimePhase.FAILED_RULES_PRESENT
+            )
+        ) {
+            Log.e(
+                TAG,
+                "[ROOT_LIFECYCLE] event=start_rejected reason=cleanup_unconfirmed " +
+                    "phase=${lastRootSnapshot.phase}"
+            )
+            return
+        }
         val supersededSession = runtimeSessionId.takeIf {
             it.isNotBlank() && before.state in setOf(RootLifecycleState.STARTING, RootLifecycleState.RELOADING)
         }
         lifecycleStartedAtMs = android.os.SystemClock.elapsedRealtime()
-        val token = lifecycle.requestRunning(reload)
+        val token = lifecycle.requestRunning(reload) ?: return
         syncLifecycleFlags()
         logLifecycle(
             event = if (reload) "reload_requested" else "start_requested",
@@ -256,22 +299,6 @@ class RootTransparentForegroundService : Service() {
             reason = "service_command",
             from = before.state
         )
-        if (before.state == RootLifecycleState.STOPPING) {
-            val stoppingJob = lifecycleJob
-            lifecycleJob = serviceScope.launch {
-                stoppingJob?.join()
-                val stopped = lifecycle.snapshot()
-                if (lifecycle.isCurrentRunningRequest(token) && stopped.state == RootLifecycleState.STOPPED) {
-                    operation(token)
-                } else if (lifecycle.isCurrentRunningRequest(token)) {
-                    Log.e(
-                        TAG,
-                        "[ROOT_LIFECYCLE] event=queued_start_blocked generation=$token state=${stopped.state}"
-                    )
-                }
-            }
-            return
-        }
         lifecycleJob?.cancel()
         lifecycleJob = serviceScope.launch {
             try {
@@ -288,6 +315,9 @@ class RootTransparentForegroundService : Service() {
 
     internal fun requestStopRuntime(stopSelfAfter: Boolean, reason: String) {
         val before = lifecycle.snapshot()
+        if (before.state == RootLifecycleState.STOPPING && before.desiredState == RootDesiredState.STOPPED) {
+            return
+        }
         lifecycleStartedAtMs = android.os.SystemClock.elapsedRealtime()
         val token = lifecycle.requestStopped()
         syncLifecycleFlags()
@@ -297,12 +327,20 @@ class RootTransparentForegroundService : Service() {
         uidRefreshJob = null
         monitorJob?.cancel()
         monitorJob = null
+        commandManager.stop()
+        SelectorManager.clear()
+        VpnStateStore.setStopOwnerMode(VpnStateStore.CoreMode.ROOT)
+        VpnStateStore.setPending("stopping")
+        SingBoxIpcHub.update(
+            state = ServiceState.STOPPING,
+            readiness = rootReadiness(DataPlaneStatus.BLOCKING, "root_stop_requested")
+        )
         val sessionId = runtimeSessionId
+        serviceScope.launch(Dispatchers.IO) {
+            runCatching { rootConnection.service?.requestStop(sessionId) }
+                .onFailure { error -> Log.w(TAG, "Root stop preemption signal failed", error) }
+        }
         lifecycleJob = serviceScope.launch {
-            if (sessionId.isNotBlank()) {
-                runCatching { rootConnection.service?.requestStop(sessionId) }
-                    .onFailure { error -> Log.w(TAG, "Root stop preemption signal failed", error) }
-            }
             stopRuntime(stopSelfAfter, token)
         }
     }
@@ -359,7 +397,11 @@ class RootTransparentForegroundService : Service() {
             check(settings.resolvedTrafficCaptureMode() == TrafficCaptureMode.ROOT_TRANSPARENT) {
                 "Root transparent mode is not selected"
             }
-            val candidateRequestId = requestId.ifBlank { UUID.randomUUID().toString() }
+            val candidateRequestId = resolveRootCandidateRequestId(
+                configPathOverride = configPathOverride,
+                requestId = requestId,
+                generatedId = UUID.randomUUID().toString()
+            )
             val generation = configPathOverride
                 ?.takeIf { it.isNotBlank() && !packageCleanup.changed }
                 ?.let { path ->
@@ -475,7 +517,13 @@ class RootTransparentForegroundService : Service() {
             transitionLifecycle(token, RootLifecycleState.FAILED, "start_failed")
             VpnStateStore.setActive(false)
             VpnStateStore.setPending("")
-            VpnStateStore.setMode(VpnStateStore.CoreMode.NONE)
+            if (cleanupFailed) {
+                VpnStateStore.setStopOwnerMode(VpnStateStore.CoreMode.ROOT)
+                VpnStateStore.setMode(VpnStateStore.CoreMode.ROOT)
+            } else {
+                VpnStateStore.clearStopOwnerMode()
+                VpnStateStore.setMode(VpnStateStore.CoreMode.NONE)
+            }
             SingBoxIpcHub.update(
                 state = ServiceState.STOPPED,
                 lastError = error.message ?: "Root transparent startup failed",
@@ -580,6 +628,7 @@ class RootTransparentForegroundService : Service() {
         check(transitionLifecycle(token, RootLifecycleState.RUNNING, "runtime_ready")) {
             "Root lifecycle generation became stale before RUNNING"
         }
+        VpnStateStore.setStopOwnerMode(VpnStateStore.CoreMode.ROOT)
         VpnStateStore.setMode(VpnStateStore.CoreMode.ROOT)
         VpnStateStore.setActive(true)
         VpnStateStore.setPending("")
@@ -700,7 +749,7 @@ class RootTransparentForegroundService : Service() {
     }
 
     @Suppress("LongMethod")
-    internal suspend fun stopRuntime(stopSelfAfter: Boolean, token: Long) = lifecycleMutex.withLock {
+    internal suspend fun stopRuntime(stopSelfAfter: Boolean, token: Long) {
         stopRuntimeLocked(stopSelfAfter, token)
     }
 
@@ -718,43 +767,36 @@ class RootTransparentForegroundService : Service() {
             )
             commandManager.stop()
             SelectorManager.clear()
-            val stopped = runCatching {
-                val rootService = rootConnection.service ?: rootConnection.bind()
-                runtimeSessionId.takeIf(String::isNotBlank)?.let(rootService::requestStop)
-                RootRuntimeSnapshot.fromBundle(rootService.stop(runtimeSessionId))
-            }.getOrElse { error ->
-                RootRuntimeSnapshot(
-                    phase = RootRuntimePhase.FAILED_VERIFICATION,
-                    runtimeSessionId = runtimeSessionId,
-                    rulesInstalled = false,
-                    error = error.message ?: "Root cleanup could not be confirmed"
-                )
-            }
+            val stopped = stopRemoteRuntime()
             lastRootSnapshot = stopped
+            val cleanupConfirmed = stopped.phase == RootRuntimePhase.STOPPED && !stopped.rulesInstalled
             val cleanupFailed = stopped.phase == RootRuntimePhase.FAILED_BLOCKED || stopped.rulesInstalled
-            val verificationFailed = stopped.phase == RootRuntimePhase.FAILED_VERIFICATION
+            val verificationFailed = !cleanupConfirmed && !cleanupFailed
             if (cleanupFailed) {
                 transitionLifecycle(token, RootLifecycleState.FAILED, "cleanup_failed")
             } else if (verificationFailed) {
                 transitionLifecycle(token, RootLifecycleState.FAILED, "cleanup_verification_failed")
             } else {
-                check(
-                    stopped.phase == RootRuntimePhase.STOPPED ||
-                        stopped.phase == RootRuntimePhase.FAILED_UNPROTECTED
-                ) {
+                check(cleanupConfirmed) {
                     stopped.error.ifBlank { "Root cleanup did not reach STOPPED" }
                 }
                 transitionLifecycle(token, RootLifecycleState.STOPPED, "cleanup_verified")
             }
-            if (!cleanupFailed) rootConnection.stopRootService()
-            if (!cleanupFailed) runtimeSessionId = ""
+            if (cleanupConfirmed) {
+                rootConnection.stopRootService()
+                runtimeSessionId = ""
+                VpnStateStore.clearStopOwnerMode()
+                VpnStateStore.setMode(VpnStateStore.CoreMode.NONE)
+            } else {
+                VpnStateStore.setStopOwnerMode(VpnStateStore.CoreMode.ROOT)
+                VpnStateStore.setMode(VpnStateStore.CoreMode.ROOT)
+            }
             VpnStateStore.setActive(false)
-            VpnStateStore.setPending("")
-            VpnStateStore.setMode(VpnStateStore.CoreMode.NONE)
+            VpnStateStore.setPending(if (cleanupConfirmed) "" else "stopping")
             VpnTileService.persistVpnState(false)
             NetworkClient.onVpnStateChanged(false)
             SingBoxIpcHub.update(
-                state = ServiceState.STOPPED,
+                state = if (cleanupConfirmed) ServiceState.STOPPED else ServiceState.STOPPING,
                 activeLabel = "",
                 lastError = stopped.error,
                 readiness = rootReadiness(
@@ -770,7 +812,7 @@ class RootTransparentForegroundService : Service() {
                     }
                 )
             )
-            if (cleanupFailed || verificationFailed) {
+            if (!cleanupConfirmed) {
                 updateNotification()
             } else {
                 stopForeground(STOP_FOREGROUND_REMOVE)
@@ -786,16 +828,45 @@ class RootTransparentForegroundService : Service() {
             )
             transitionLifecycle(token, RootLifecycleState.FAILED, "cleanup_exception")
             VpnStateStore.setActive(false)
-            VpnStateStore.setPending("")
-            VpnStateStore.setMode(VpnStateStore.CoreMode.NONE)
+            VpnStateStore.setPending("stopping")
+            VpnStateStore.setStopOwnerMode(VpnStateStore.CoreMode.ROOT)
+            VpnStateStore.setMode(VpnStateStore.CoreMode.ROOT)
             SingBoxIpcHub.update(
-                state = ServiceState.STOPPED,
+                state = ServiceState.STOPPING,
                 lastError = lastRootSnapshot.error,
                 readiness = rootReadiness(DataPlaneStatus.FAILED_UNPROTECTED, "root_cleanup_unconfirmed")
             )
             updateNotification()
             if (stopSelfAfter && lifecycle.snapshot().desiredState == RootDesiredState.STOPPED) {
                 Log.w(TAG, "Root stop verification failed; keeping service alive for cleanup retry")
+            }
+        }
+    }
+
+    private suspend fun stopRemoteRuntime(): RootRuntimeSnapshot {
+        val rootService = rootConnection.service ?: return if (
+            runtimeSessionId.isBlank() && lastRootSnapshot.phase == RootRuntimePhase.STOPPED
+        ) {
+            RootRuntimeSnapshot(phase = RootRuntimePhase.STOPPED)
+        } else {
+            RootRuntimeSnapshot(
+                phase = RootRuntimePhase.FAILED_VERIFICATION,
+                runtimeSessionId = runtimeSessionId,
+                rulesInstalled = lastRootSnapshot.rulesInstalled,
+                error = "Root service disconnected before cleanup could be verified"
+            )
+        }
+        return withContext(NonCancellable + Dispatchers.IO) {
+            runCatching {
+                runtimeSessionId.takeIf(String::isNotBlank)?.let(rootService::requestStop)
+                RootRuntimeSnapshot.fromBundle(rootService.stop(runtimeSessionId))
+            }.getOrElse { error ->
+                RootRuntimeSnapshot(
+                    phase = RootRuntimePhase.FAILED_VERIFICATION,
+                    runtimeSessionId = runtimeSessionId,
+                    rulesInstalled = false,
+                    error = error.message ?: "Root cleanup could not be confirmed"
+                )
             }
         }
     }

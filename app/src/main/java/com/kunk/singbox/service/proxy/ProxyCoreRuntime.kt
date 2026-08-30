@@ -30,9 +30,11 @@ import io.nekohasekai.libbox.OverrideOptions
 import io.nekohasekai.libbox.Libbox
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.flow.first
@@ -231,9 +233,6 @@ internal fun ProxyOnlyService.startCore(configPath: String, recoveryIntentLease:
                 } else {
                     Libbox.newCommandServer(serverHandler, platformInterface).also { createdServer ->
                         commandServer = createdServer
-                        createdServer.start()
-                        BoxWrapperManager.init(createdServer)
-                        createdServer.startOrReloadService(configContent, overrideOptions)
                     }
                 }
             }
@@ -242,6 +241,11 @@ internal fun ProxyOnlyService.startCore(configPath: String, recoveryIntentLease:
                 withContext(Dispatchers.Main) { stopSupersededStartup() }
                 return@launch
             }
+            currentCoroutineContext().ensureActive()
+            server.start()
+            BoxWrapperManager.init(server)
+            currentCoroutineContext().ensureActive()
+            server.startOrReloadService(configContent, overrideOptions)
 
             val baselineLease = synchronized(this@startCore) {
                 if (!ServiceStateHolder.isRecoveryIntentCurrent(recoveryIntentLease) ||
@@ -258,6 +262,7 @@ internal fun ProxyOnlyService.startCore(configPath: String, recoveryIntentLease:
                 startRuntimeCommandClient()
                 NetworkClient.onVpnStateChanged(true)
                 VpnTileService.persistVpnState(true)
+                VpnStateStore.setStopOwnerMode(VpnStateStore.CoreMode.PROXY)
                 VpnStateStore.setMode(VpnStateStore.CoreMode.PROXY)
                 VpnStateStore.setManuallyStopped(false)
                 VpnTileService.persistVpnPending("")
@@ -512,6 +517,9 @@ internal fun ProxyOnlyService.clearStartupFailureState(recoveryIntentLease: Reco
         VpnStateStore.clearRuntimeState(preserveLastError = true)
     } else {
         VpnStateStore.setMode(VpnStateStore.CoreMode.NONE)
+        if (VpnStateStore.getStopOwnerMode() == VpnStateStore.CoreMode.PROXY) {
+            VpnStateStore.clearStopOwnerMode()
+        }
     }
     VpnTileService.persistVpnPending("")
     VpnStateStore.clearRecoveryClaim()
@@ -544,6 +552,8 @@ internal fun ProxyOnlyService.stopCore(
             pendingStartConfigPath = null
             pendingStartRecoveryIntentLease = null
             pendingStopRecoveryIntentLease = recoveryIntentLease
+            configGenerationJob?.cancel()
+            configGenerationJob = null
         }
         if (resourceRecoveryAttemptId == null) {
             cancelResourceGuard()
@@ -599,11 +609,6 @@ internal fun ProxyOnlyService.stopCore(
     // ponytail: ATOMIC 仅保证销毁竞态中进入不可取消清理段，任务仍由 cleanupSupervisorJob 持有。
     val job = cleanupScope.launch(start = CoroutineStart.ATOMIC) {
         withContext(NonCancellable) {
-            try {
-                jobToJoin?.join()
-            } catch (e: Exception) {
-                Log.w(TAG, "Failed to join start job", e)
-            }
             BoxWrapperManager.release()
 
             if (serverToClose != null) {
@@ -685,6 +690,9 @@ internal fun ProxyOnlyService.stopCore(
                                 Log.w(TAG, "Recovery start failed, mode preserved for next issuer")
                             } else {
                                 VpnStateStore.setMode(VpnStateStore.CoreMode.NONE)
+                                if (VpnStateStore.getStopOwnerMode() == VpnStateStore.CoreMode.PROXY) {
+                                    VpnStateStore.clearStopOwnerMode()
+                                }
                             }
                             VpnTileService.persistVpnPending("")
                             notifyRemoteState(state = ServiceState.STOPPED)

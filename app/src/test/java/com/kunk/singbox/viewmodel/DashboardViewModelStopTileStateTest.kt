@@ -7,11 +7,11 @@ import java.io.File
 class DashboardViewModelStopTileStateTest {
 
     @Test
-    fun stopVpnKeepsDisconnectingUntilServiceStopIsConfirmed() {
-        val source = File("src/main/java/com/kunk/singbox/viewmodel/DashboardViewModel.kt").readText()
+    fun stopVpnReturnsToIdleImmediatelyAfterDispatch() {
+        val source = File("src/main/java/com/kunk/singbox/viewmodel/DashboardConnectionRuntime.kt").readText()
         val body = source.substring(
-            source.indexOf("private fun stopVpn()"),
-            source.indexOf("private fun startPingTest()")
+            source.indexOf("internal fun DashboardViewModel.stopVpnRuntime()"),
+            source.indexOf("internal fun DashboardViewModel.startPingTestRuntime()")
         )
 
         val pendingIndex = body.indexOf("VpnTileService.persistVpnPending(\"stopping\")")
@@ -23,9 +23,8 @@ class DashboardViewModelStopTileStateTest {
         assertTrue(pendingIndex < stopIndex)
         assertTrue(refreshIndex >= 0)
         assertTrue(body.contains("ConnectionState.Disconnecting"))
-        assertTrue(body.contains("ServiceState.STOPPED"))
-        assertTrue(body.contains("performDisconnect()"))
-        assertTrue(body.contains("VpnServiceManager.forceStop(context)"))
+        assertTrue(body.contains("ConnectionState.Idle"))
+        assertTrue(!body.contains("VpnServiceManager.forceStop(context)"))
         assertTrue(!body.contains("VpnTileService.persistVpnState(false)"))
     }
 

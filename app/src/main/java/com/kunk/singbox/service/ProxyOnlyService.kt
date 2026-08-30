@@ -44,6 +44,8 @@ import io.nekohasekai.libbox.CommandClient
 import io.nekohasekai.libbox.InterfaceUpdateListener
 import io.nekohasekai.libbox.PlatformInterface
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
@@ -176,6 +178,7 @@ class ProxyOnlyService : Service() {
     @Volatile internal var stopSelfRequested: Boolean = false
     @Volatile internal var lastStopInitiator: VpnStopInitiator = VpnStopInitiator.UNKNOWN
     @Volatile internal var startJob: Job? = null
+    @Volatile internal var configGenerationJob: Job? = null
     @Volatile internal var cleanupJob: Job? = null
     @Volatile internal var currentConfigPath: String? = null
     @Volatile internal var pendingStartConfigPath: String? = null
@@ -281,6 +284,10 @@ class ProxyOnlyService : Service() {
 
         when (intent?.action) {
             ACTION_START -> {
+                if (VpnStateStore.getPending() == "stopping") {
+                    Log.w(TAG, "Ignoring proxy START while VPN stop is still in progress")
+                    return START_NOT_STICKY
+                }
                 val isRecoveryStart = intent.getBooleanExtra(SingBoxService.EXTRA_RECOVERY, false)
                 if (!isRecoveryStart) lastStopInitiator = VpnStopInitiator.UNKNOWN
                 val requestedConfigPath = intent.getStringExtra(EXTRA_CONFIG_PATH)
@@ -327,7 +334,8 @@ class ProxyOnlyService : Service() {
                         return START_NOT_STICKY
                     }
                     Log.i(TAG, "ACTION_START received without config path, generating config...")
-                    serviceScope.launch {
+                    configGenerationJob?.cancel()
+                    configGenerationJob = serviceScope.launch {
                         try {
                             SettingsRepository.getInstance(applicationContext).reloadFromStorage()
                             val repo = ConfigRepository.getInstance(applicationContext)
@@ -344,6 +352,8 @@ class ProxyOnlyService : Service() {
                                     if (clearStartupFailureState(recoveryIntentLease)) stopSelf()
                                 }
                             }
+                        } catch (_: CancellationException) {
+                            Log.i(TAG, "Proxy config generation cancelled by stop request")
                         } catch (e: Exception) {
                             if (!setLastErrorIfCurrent(recoveryIntentLease, "Error generating config: ${e.message}")) {
                                 return@launch
@@ -351,6 +361,11 @@ class ProxyOnlyService : Service() {
                             Log.e(TAG, "Error generating config in Service", e)
                             withContext(Dispatchers.Main) {
                                 if (clearStartupFailureState(recoveryIntentLease)) stopSelf()
+                            }
+                        } finally {
+                            val runningJob = currentCoroutineContext()[Job]
+                            synchronized(this@ProxyOnlyService) {
+                                if (configGenerationJob === runningJob) configGenerationJob = null
                             }
                         }
                     }
@@ -368,6 +383,7 @@ class ProxyOnlyService : Service() {
                 }
             }
             ACTION_STOP -> {
+                VpnStateStore.setStopOwnerMode(VpnStateStore.CoreMode.PROXY)
                 if (ServiceStateHolder.shouldIgnoreDuplicateHardStop(isStopping, stopSelfRequested)) {
                     Log.i(TAG, "Ignoring duplicate ACTION_STOP while cleanup is already running")
                     return START_NOT_STICKY
@@ -552,6 +568,9 @@ class ProxyOnlyService : Service() {
             VpnStateStore.clearRuntimeState(preserveLastError = manuallyStopped)
             if (manuallyStopped) {
                 VpnStateStore.setMode(VpnStateStore.CoreMode.NONE)
+                if (VpnStateStore.getStopOwnerMode() == VpnStateStore.CoreMode.PROXY) {
+                    VpnStateStore.clearStopOwnerMode()
+                }
                 VpnStateStore.clearRecoveryClaim()
             }
             VpnTileService.persistVpnPending("")
@@ -663,6 +682,9 @@ class ProxyOnlyService : Service() {
         VpnTileService.persistVpnState(false)
         VpnStateStore.clearRuntimeState()
         VpnStateStore.setMode(VpnStateStore.CoreMode.NONE)
+        if (VpnStateStore.getStopOwnerMode() == VpnStateStore.CoreMode.PROXY) {
+            VpnStateStore.clearStopOwnerMode()
+        }
         VpnTileService.persistVpnPending("")
         notifyRemoteState(state = ServiceState.STOPPED)
         updateTileState()
@@ -701,6 +723,8 @@ class ProxyOnlyService : Service() {
             pendingStartRecoveryIntentLease = null
             pendingStopRecoveryIntentLease = null
             startJobToCancel = startJob.also { startJob = null }
+            configGenerationJob?.cancel()
+            configGenerationJob = null
             serverToClose = commandServer.also { commandServer = null }
             runtimeClientToDisconnect = runtimeCommandClient.also { runtimeCommandClient = null }
             cleanupJob = null

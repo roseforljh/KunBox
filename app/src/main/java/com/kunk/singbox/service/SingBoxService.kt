@@ -238,6 +238,7 @@ class SingBoxService : VpnService() {
             SingBoxService.setLastError(null)
             VpnStateStore.setLastError(null)
             VpnTileService.persistVpnState(true)
+            VpnStateStore.setStopOwnerMode(VpnStateStore.CoreMode.VPN)
             VpnStateStore.setMode(VpnStateStore.CoreMode.VPN)
             VpnStateStore.clearRecoveryClaim()
             VpnTileService.persistVpnPending("")
@@ -263,6 +264,7 @@ class SingBoxService : VpnService() {
         override fun persistVpnState(isRunning: Boolean) {
             VpnTileService.persistVpnState(isRunning)
             if (isRunning) {
+                VpnStateStore.setStopOwnerMode(VpnStateStore.CoreMode.VPN)
                 VpnStateStore.setMode(VpnStateStore.CoreMode.VPN)
             }
         }

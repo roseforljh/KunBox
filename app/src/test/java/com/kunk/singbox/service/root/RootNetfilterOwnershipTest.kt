@@ -101,6 +101,64 @@ class RootNetfilterOwnershipTest {
     }
 
     @Test
+    fun refreshesChainFingerprintsFromVerifiedRestoreSnapshotWithoutRootProbe() {
+        val context = RootNetfilterOwnership.context("session-snapshot", 3L, "c".repeat(64))
+        val manifest = RootNetfilterOwnership.fromCommands(
+            context,
+            RootNetfilterPlanner.build(configWithLane(0)).setupCommands
+        )
+        val snapshot = mapOf(
+            ROOT_STATE_IPTABLES4 to manifest.records.filterIsInstance<RootNetfilterOwnerRecord.Chain>()
+                .joinToString("\n") { record ->
+                    ":${record.chain} - [0:0]\n-A ${record.chain} -j RETURN"
+                }
+        )
+
+        val refreshed = RootNetfilterOwnership.refreshChainFingerprints(manifest, snapshot)
+
+        assertTrue(
+            refreshed.records.filterIsInstance<RootNetfilterOwnerRecord.Chain>().all { record ->
+                record.rulesSha256 == RootNetfilterOwnership.sha256(
+                    "-N ${record.chain}\n-A ${record.chain} -j RETURN"
+                )
+            }
+        )
+    }
+
+    @Test
+    fun promotesVerifiedStagingOwnershipWithoutReprobingChains() {
+        val directory = Files.createTempDirectory("root-owner-promote-test").toFile()
+        var probes = 0
+        val executor = RootCommandExecutor {
+            probes += 1
+            RootCommandResult(1, "unexpected probe")
+        }
+        val store = RootNetfilterOwnershipStore(executor, directory)
+        val context = RootNetfilterOwnership.context("session-promote", 3L, "c".repeat(64))
+        val commands = RootNetfilterPlanner.buildGuard(
+            RootFailClosedConfig(listOf(10_123), emptyList(), emptyList(), 10_234, true, false)
+        ).setupCommands + RootNetfilterPlanner.build(configWithLane(0)).setupCommands
+        try {
+            store.persist(
+                RootNetfilterOwnership.fromCommands(context, commands),
+                active = false,
+                refreshChainFingerprints = false
+            )
+            store.promoteStagingExcludingChains(setOf("KBX_GUARD4", "KBX_GUARD6"))
+
+            val active = store.readAnyOwner() ?: error("active ownership missing")
+            assertEquals(0, probes)
+            assertFalse(
+                active.records.filterIsInstance<RootNetfilterOwnerRecord.Chain>()
+                    .any { it.chain == "KBX_GUARD4" || it.chain == "KBX_GUARD6" }
+            )
+            assertTrue(active.records.any { it is RootNetfilterOwnerRecord.Chain })
+        } finally {
+            directory.deleteRecursively()
+        }
+    }
+
+    @Test
     fun cleanupWithoutManifestRunsScopedLegacyRecoveryThenVerifiesEmptyState() {
         val directory = Files.createTempDirectory("root-owner-cleanup-test").toFile()
         val commands = mutableListOf<List<String>>()
@@ -142,6 +200,31 @@ class RootNetfilterOwnershipTest {
 
             assertTrue(manager.prepareForStart(staleRuntimePresent = true).isSuccess)
             assertFalse(commands.any { it.takeLast(1) == listOf("legacy-cleanup") })
+        } finally {
+            directory.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun completedLegacyScanSkipsRepeatedRootProbesOnCleanStarts() {
+        val directory = Files.createTempDirectory("root-owner-start-cache-test").toFile()
+        val commands = mutableListOf<List<String>>()
+        val executor = RootCommandExecutor { command ->
+            commands += command
+            RootCommandResult(0, "")
+        }
+        try {
+            val manager = RootNetfilterManager(
+                executor,
+                RootNetfilterOwnershipStore(executor, directory)
+            )
+
+            assertTrue(manager.prepareForStart(staleRuntimePresent = false).isSuccess)
+            val firstStartCommandCount = commands.size
+            assertTrue(firstStartCommandCount > 0)
+            assertTrue(manager.prepareForStart(staleRuntimePresent = false).isSuccess)
+
+            assertEquals(firstStartCommandCount, commands.size)
         } finally {
             directory.deleteRecursively()
         }

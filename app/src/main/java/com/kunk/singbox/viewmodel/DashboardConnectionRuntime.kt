@@ -3,7 +3,6 @@
 package com.kunk.singbox.viewmodel
 
 import android.app.Application
-import android.content.Context
 import android.content.Intent
 import android.util.Log
 import androidx.lifecycle.viewModelScope
@@ -13,22 +12,20 @@ import com.kunk.singbox.repository.*
 import com.kunk.singbox.model.ConnectionState
 import com.kunk.singbox.model.ConnectionStats
 import com.kunk.singbox.ipc.SingBoxRemote
-import com.kunk.singbox.ipc.VpnStateStore
-import com.kunk.singbox.service.ServiceState
 import com.kunk.singbox.service.VpnTileService
 import com.kunk.singbox.service.manager.VpnStopInitiator
-import kotlinx.coroutines.TimeoutCancellationException
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withTimeout
-import kotlinx.coroutines.withTimeoutOrNull
 
 internal fun DashboardViewModel.stopVpnRuntime() {
     val context = getApplication<Application>()
+    val startWasNotDispatched = _connectionState.value == ConnectionState.Connecting &&
+        startCoreJob?.isActive == true &&
+        !startServiceDispatched
     startCoreJob?.cancel()
     startCoreJob = null
     startMonitorJob?.cancel()
     startMonitorJob = null
+    stopRequestedByUser = true
     stopTrafficMonitorRuntime()
     stopPingTestRuntime()
     _connectionState.value = ConnectionState.Disconnecting
@@ -36,8 +33,17 @@ internal fun DashboardViewModel.stopVpnRuntime() {
     _statsBase.value = ConnectionStats(0, 0, 0, 0, 0)
     VpnTileService.persistVpnPending("stopping")
 
+    if (startWasNotDispatched) {
+        // 配置尚未提交给服务端时，不要为了停止而创建三个服务实例。
+        VpnTileService.persistVpnPending("")
+        startServiceDispatched = false
+        performDisconnect()
+        return
+    }
+
     val stopResult = VpnServiceManager.stopVpn(context, VpnStopInitiator.USER_UI)
     if (stopResult.isFailure) {
+        stopRequestedByUser = false
         _connectionState.value = ConnectionState.Error
         return
     }
@@ -45,42 +51,9 @@ internal fun DashboardViewModel.stopVpnRuntime() {
     context.startService(Intent(context, VpnTileService::class.java).apply {
         action = VpnTileService.ACTION_REFRESH_TILE
     })
-    waitForStopConfirmationRuntime(context)
-}
-
-private fun DashboardViewModel.waitForStopConfirmationRuntime(context: Context) {
-    stopConfirmJob?.cancel()
-    stopConfirmJob = viewModelScope.launch {
-        try {
-            if (SingBoxRemote.state.value != ServiceState.STOPPED) {
-                withTimeout(DashboardViewModel.STOP_CONFIRM_TIMEOUT_MS) {
-                    SingBoxRemote.state.first { it == ServiceState.STOPPED }
-                }
-            }
-        } catch (e: TimeoutCancellationException) {
-            Log.e(DashboardViewModel.TAG, "Stop confirmation timed out, forcing service process stop", e)
-            VpnServiceManager.forceStop(context).onFailure { error ->
-                Log.e(DashboardViewModel.TAG, "Failed to dispatch force stop", error)
-            }
-            SingBoxRemote.ensureBound(context)
-            withTimeoutOrNull(DashboardViewModel.FORCE_STOP_CONFIRM_TIMEOUT_MS) {
-                SingBoxRemote.state.first { it == ServiceState.STOPPED }
-            }
-            SingBoxRemote.queryAndSyncState(context)
-        }
-
-        val persistedStopped = !VpnStateStore.getActive() &&
-            VpnStateStore.getPending().isBlank() &&
-            VpnStateStore.getMode() == VpnStateStore.CoreMode.NONE
-        if (SingBoxRemote.state.value == ServiceState.STOPPED || persistedStopped) {
-            VpnTileService.persistVpnPending("")
-            performDisconnect()
-        } else {
-            Log.e(DashboardViewModel.TAG, "Service did not confirm stop after force stop")
-            setConnectionState(ConnectionState.Error)
-        }
-        stopConfirmJob = null
-    }
+    startServiceDispatched = false
+    _connectionState.value = ConnectionState.Idle
+    _connectedAtElapsedMs.value = null
 }
 
 internal fun DashboardViewModel.startPingTestRuntime() {

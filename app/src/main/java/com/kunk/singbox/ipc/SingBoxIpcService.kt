@@ -7,8 +7,18 @@ import android.os.IBinder
 import com.kunk.singbox.aidl.ISingBoxService
 import com.kunk.singbox.aidl.ISingBoxServiceCallback
 import com.kunk.singbox.service.root.RootTransparentForegroundService
+import com.kunk.singbox.model.TrafficCaptureMode
+import com.kunk.singbox.repository.SettingsRepository
+import com.kunk.singbox.service.root.RootServicePrewarmer
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 
 class SingBoxIpcService : Service() {
+
+    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     private val binder = object : ISingBoxService.Stub() {
         override fun getStateSnapshot(): Bundle = SingBoxIpcHub.getStateSnapshotBundle()
@@ -55,9 +65,18 @@ class SingBoxIpcService : Service() {
             VpnStateStore.setMode(VpnStateStore.CoreMode.NONE)
         }
         SingBoxIpcHub.registerService(this)
+        serviceScope.launch {
+            val settings = SettingsRepository.getInstance(this@SingBoxIpcService).settings.value
+            if (settings.resolvedTrafficCaptureMode() == TrafficCaptureMode.ROOT_TRANSPARENT &&
+                VpnStateStore.getPending().isBlank()
+            ) {
+                RootServicePrewarmer.prewarm(this@SingBoxIpcService)
+            }
+        }
     }
 
     override fun onDestroy() {
+        serviceScope.cancel()
         SingBoxIpcHub.unregisterService()
         super.onDestroy()
     }

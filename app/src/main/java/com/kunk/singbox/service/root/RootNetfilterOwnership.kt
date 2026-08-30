@@ -140,6 +140,27 @@ internal object RootNetfilterOwnership {
         return manifest.copy(records = refreshed.sortedBy(RootNetfilterOwnerRecord::sortKey))
     }
 
+    fun refreshChainFingerprints(
+        manifest: RootNetfilterOwnerManifest,
+        snapshot: Map<String, String>
+    ): RootNetfilterOwnerManifest {
+        val refreshed = manifest.records.map { record ->
+            if (record !is RootNetfilterOwnerRecord.Chain) return@map record
+            val section = snapshot[if (record.family == "6") ROOT_STATE_IPTABLES6 else ROOT_STATE_IPTABLES4]
+                ?: error("Root netfilter snapshot is missing for IPv${record.family}")
+            val lines = section.lineSequence().map(String::trim).filter(String::isNotBlank).toList()
+            check(lines.any { it.startsWith(":${record.chain} ") }) {
+                "Cannot read owned Root chain ${record.chain}"
+            }
+            val live = buildList {
+                add("-N ${record.chain}")
+                addAll(lines.filter { it.startsWith("-A ${record.chain} ") })
+            }
+            record.copy(rulesSha256 = sha256(live.joinToString("\n")))
+        }
+        return manifest.copy(records = refreshed.sortedBy(RootNetfilterOwnerRecord::sortKey))
+    }
+
     fun writeStaging(manifest: RootNetfilterOwnerManifest, file: File = File(STAGING_FILE)) =
         write(manifest, file)
 
@@ -399,6 +420,7 @@ internal class RootNetfilterOwnershipStore(
     private val stagingFile = File(rootDirectory, "netfilter-owner.staging")
     private val cleanupScript = File(rootDirectory, "cleanup-owned.sh")
     private val conflictFile = File(rootDirectory, "cleanup_conflict")
+    private val legacyScanMarker = File(rootDirectory, "legacy-scan-v1")
 
     fun clearStaging() {
         check(!Files.isSymbolicLink(stagingFile.toPath())) {
@@ -423,15 +445,16 @@ internal class RootNetfilterOwnershipStore(
     fun persist(
         manifest: RootNetfilterOwnerManifest,
         active: Boolean,
-        refreshChainFingerprints: Boolean = true
+        refreshChainFingerprints: Boolean = true,
+        chainSnapshot: Map<String, String>? = null
     ) {
         check(!Files.isSymbolicLink(rootDirectory.toPath())) {
             "Root netfilter runtime directory cannot be a symbolic link"
         }
-        val refreshed = if (refreshChainFingerprints) {
-            RootNetfilterOwnership.refreshChainFingerprints(manifest, executor)
-        } else {
-            manifest
+        val refreshed = when {
+            !refreshChainFingerprints -> manifest
+            chainSnapshot != null -> RootNetfilterOwnership.refreshChainFingerprints(manifest, chainSnapshot)
+            else -> RootNetfilterOwnership.refreshChainFingerprints(manifest, executor)
         }
         if (active) {
             RootNetfilterOwnership.writeActive(refreshed, ownerFile)
@@ -439,6 +462,20 @@ internal class RootNetfilterOwnershipStore(
         } else {
             RootNetfilterOwnership.writeStaging(refreshed, stagingFile)
         }
+    }
+
+    fun promoteStagingExcludingChains(chains: Set<String>) {
+        val manifest = RootNetfilterOwnership.read(stagingFile)
+            ?: error("Root netfilter staging ownership is unavailable")
+        persist(
+            manifest.copy(
+                records = manifest.records.filterNot { record ->
+                    record is RootNetfilterOwnerRecord.Chain && record.chain in chains
+                }
+            ),
+            active = true,
+            refreshChainFingerprints = false
+        )
     }
 
     fun cleanupAnyOwner(timeoutMs: Long? = null): Result<Unit> = runCatching {
@@ -464,6 +501,20 @@ internal class RootNetfilterOwnershipStore(
     fun cleanupAnyOwnerForStartup(): Result<Unit> = cleanupAnyOwner(STARTUP_CLEANUP_TIMEOUT_MS)
 
     fun cleanupLegacyForStartup(): Result<Unit> = cleanupLegacy(STARTUP_CLEANUP_TIMEOUT_MS)
+
+    fun hasCompletedLegacyScan(): Boolean {
+        check(!Files.isSymbolicLink(legacyScanMarker.toPath())) { "Root legacy marker cannot be a symbolic link" }
+        return legacyScanMarker.isFile
+    }
+
+    fun markLegacyScanCompleted() {
+        check(!Files.isSymbolicLink(rootDirectory.toPath())) {
+            "Root netfilter runtime directory cannot be a symbolic link"
+        }
+        check(rootDirectory.exists() || rootDirectory.mkdirs()) { "Cannot create Root runtime directory" }
+        check(!Files.isSymbolicLink(legacyScanMarker.toPath())) { "Root legacy marker cannot be a symbolic link" }
+        check(legacyScanMarker.isFile || legacyScanMarker.createNewFile()) { "Cannot persist Root legacy marker" }
+    }
 
     private fun cleanupFailed(mode: String, result: RootCommandResult): Nothing {
         val fileReason = runCatching {

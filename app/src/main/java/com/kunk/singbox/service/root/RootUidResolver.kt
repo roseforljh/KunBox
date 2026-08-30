@@ -25,6 +25,11 @@ data class RootUidSelection(
     val excludedUids: List<Int>
 )
 
+internal data class RootUidSnapshot(
+    val users: List<Int>,
+    val packages: List<RootInstalledPackage>
+)
+
 data class RootResolvedRouting(
     val selection: RootUidSelection,
     val laneUids: Map<String, List<Int>>,
@@ -54,6 +59,21 @@ class RootUidResolver(
         plan: RootAppRoutingPlan,
         selfPackage: String,
         selfUid: Int
+    ): RootResolvedRouting = resolveRouting(plan, selfPackage, selfUid, captureSnapshot())
+
+    internal fun captureSnapshot(): RootUidSnapshot {
+        val users = listUsers()
+        val packages = users.flatMap(::listPackages)
+        check(packages.isNotEmpty()) { "Root package UID enumeration returned no applications" }
+        return RootUidSnapshot(users, packages)
+    }
+
+    @Suppress("LongMethod", "CyclomaticComplexMethod")
+    internal fun resolveRouting(
+        plan: RootAppRoutingPlan,
+        selfPackage: String,
+        selfUid: Int,
+        snapshot: RootUidSnapshot
     ): RootResolvedRouting {
         require(selfPackage.isNotBlank() && selfUid > 0)
         require(plan.staticPlanSha256 == RootAppRoutingCanonical.staticPlanSha256(plan)) {
@@ -63,9 +83,9 @@ class RootUidResolver(
             "Root app routing digest mismatch"
         }
         val mode = VpnAppMode.valueOf(plan.vpnAppMode)
-        val users = listUsers()
+        val users = snapshot.users
         check(users.isNotEmpty()) { "Root Android user enumeration returned no users" }
-        val packages = users.flatMap(::listPackages)
+        val packages = snapshot.packages
         check(packages.isNotEmpty()) { "Root package UID enumeration returned no applications" }
         val duplicates = packages.groupBy { it.userId to it.packageName }.filterValues { it.size > 1 }
         check(duplicates.isEmpty()) { "Root package UID enumeration returned duplicate packages" }

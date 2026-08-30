@@ -50,7 +50,7 @@ private const val MAX_RESOURCE_ERROR_CAUSE_DEPTH = 16
  * MMKV 浼樺娍:
  *
  */
-@Suppress("TooManyFunctions")
+@Suppress("TooManyFunctions", "LargeClass")
 object VpnStateStore {
     private const val TAG = "VpnStateStore"
     private const val MMKV_ID = "vpn_state"
@@ -71,6 +71,7 @@ object VpnStateStore {
     private const val SNAPSHOT_JSON_MANUALLY_STOPPED = "manuallyStopped"
     private const val SNAPSHOT_JSON_READINESS = "readiness"
     private const val KEY_CORE_MODE = "core_mode"
+    private const val KEY_STOP_OWNER_MODE = "stop_owner_mode"
     private const val KEY_LAST_APP_MODE = "last_app_mode"
     private const val KEY_LAST_ALLOWLIST_HASH = "last_allowlist_hash"
     private const val KEY_LAST_BLOCKLIST_HASH = "last_blocklist_hash"
@@ -418,6 +419,23 @@ object VpnStateStore {
         mmkv.encode(KEY_CORE_MODE, mode.name)
     }
 
+    fun getStopOwnerMode(): CoreMode? {
+        val raw = mmkv.decodeString(KEY_STOP_OWNER_MODE, null).orEmpty()
+        if (raw.isBlank()) return null
+        return runCatching { CoreMode.valueOf(raw) }
+            .getOrNull()
+            ?.takeUnless { it == CoreMode.NONE }
+    }
+
+    fun setStopOwnerMode(mode: CoreMode) {
+        if (mode == CoreMode.NONE) return
+        mmkv.encode(KEY_STOP_OWNER_MODE, mode.name)
+    }
+
+    fun clearStopOwnerMode() {
+        mmkv.removeValueForKey(KEY_STOP_OWNER_MODE)
+    }
+
     fun getLastAppMode(): String = mmkv.decodeString(KEY_LAST_APP_MODE, "") ?: ""
 
     fun setLastAppMode(mode: String) {
@@ -763,6 +781,7 @@ object VpnStateStore {
             mmkv.removeValueForKey(KEY_VPN_LAST_ERROR)
             mmkv.removeValueForKey(KEY_VPN_MANUALLY_STOPPED)
             mmkv.removeValueForKey(KEY_CORE_MODE)
+            mmkv.removeValueForKey(KEY_STOP_OWNER_MODE)
             mmkv.removeValueForKey(KEY_LAST_APP_MODE)
             mmkv.removeValueForKey(KEY_LAST_ALLOWLIST_HASH)
             mmkv.removeValueForKey(KEY_LAST_BLOCKLIST_HASH)

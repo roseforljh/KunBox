@@ -29,6 +29,7 @@ import java.io.File
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicLong
 
+@Suppress("TooManyFunctions")
 object VpnServiceManager {
     private const val TAG = "VpnServiceManager"
 
@@ -36,6 +37,7 @@ object VpnServiceManager {
         val serviceClass: Class<*>,
         val action: String,
         val configPath: String? = null,
+        val requestId: String? = null,
         val cleanCache: Boolean = false
     )
 
@@ -77,6 +79,10 @@ object VpnServiceManager {
         return SingBoxRemote.isStarting.value
     }
 
+    internal fun newCandidateRequestId(mode: TrafficCaptureMode): String? {
+        return if (mode == TrafficCaptureMode.ROOT_TRANSPARENT) UUID.randomUUID().toString() else null
+    }
+
     fun toggleVpn(context: Context): Result<Unit> {
         return if (isRunning()) {
             stopVpn(context, VpnStopInitiator.USER_UI)
@@ -92,16 +98,19 @@ object VpnServiceManager {
     fun buildStartCommand(
         tunMode: Boolean,
         configPath: String? = null,
+        requestId: String? = null,
         cleanCache: Boolean = false
     ): StartCommand = buildStartCommand(
         mode = if (tunMode) TrafficCaptureMode.VPN else TrafficCaptureMode.PROXY_ONLY,
         configPath = configPath,
+        requestId = requestId,
         cleanCache = cleanCache
     )
 
     fun buildStartCommand(
         mode: TrafficCaptureMode,
         configPath: String? = null,
+        requestId: String? = null,
         cleanCache: Boolean = false
     ): StartCommand {
         return when (mode) {
@@ -110,6 +119,7 @@ object VpnServiceManager {
                     serviceClass = SingBoxService::class.java,
                     action = SingBoxService.ACTION_START,
                     configPath = configPath,
+                    requestId = requestId,
                     cleanCache = cleanCache
                 )
             }
@@ -117,6 +127,7 @@ object VpnServiceManager {
                 serviceClass = RootTransparentForegroundService::class.java,
                 action = RootTransparentForegroundService.ACTION_START,
                 configPath = configPath,
+                requestId = requestId,
                 cleanCache = false
             )
             TrafficCaptureMode.PROXY_ONLY -> {
@@ -124,6 +135,7 @@ object VpnServiceManager {
                     serviceClass = ProxyOnlyService::class.java,
                     action = ProxyOnlyService.ACTION_START,
                     configPath = configPath,
+                    requestId = requestId,
                     cleanCache = cleanCache
                 )
             }
@@ -134,7 +146,7 @@ object VpnServiceManager {
         activeMode: VpnStateStore.CoreMode,
         serviceMode: VpnStateStore.CoreMode
     ): Boolean {
-        return activeMode == VpnStateStore.CoreMode.NONE || activeMode == serviceMode
+        return activeMode != VpnStateStore.CoreMode.NONE && activeMode == serviceMode
     }
 
     suspend fun applyPerAppRuleChangeIfRunning(
@@ -431,23 +443,40 @@ object VpnServiceManager {
     }
 
     fun startVpn(context: Context, mode: TrafficCaptureMode): Result<Unit> =
-        startVpn(context, mode, configPath = null, cleanCache = false, pendingNodeName = null)
+        startVpn(
+            context,
+            mode,
+            configPath = null,
+            requestId = null,
+            cleanCache = false,
+            pendingNodeName = null
+        )
 
     fun startVpn(
         context: Context,
         mode: TrafficCaptureMode,
         configPath: String?,
+        requestId: String? = null,
         cleanCache: Boolean,
         pendingNodeName: String? = null
     ): Result<Unit> {
         Log.d(TAG, "startVpn: mode=$mode")
 
-        val command = buildStartCommand(mode, configPath, cleanCache)
+        if (VpnStateStore.getPending() == "stopping") {
+            return Result.failure(IllegalStateException("VPN stop is still in progress"))
+        }
+
+        val command = buildStartCommand(mode, configPath, requestId, cleanCache)
         val appContext = context.applicationContext
         val previousMode = VpnStateStore.getMode()
+        val previousOwner = VpnStateStore.getStopOwnerMode()
+        val targetMode = mode.toCoreMode()
         val intent = Intent(appContext, command.serviceClass).apply {
             action = command.action
             command.configPath?.let { putExtra(SingBoxService.EXTRA_CONFIG_PATH, it) }
+            command.requestId?.takeIf(String::isNotBlank)?.let {
+                putExtra(SingBoxService.EXTRA_APP_ROUTE_REQUEST_ID, it)
+            }
             pendingNodeName?.let { putExtra(SingBoxService.EXTRA_PENDING_NODE_NAME, it) }
             if (command.cleanCache) {
                 putExtra(SingBoxService.EXTRA_CLEAN_CACHE, true)
@@ -455,7 +484,8 @@ object VpnServiceManager {
         }
 
         return runCatching {
-            VpnStateStore.setMode(mode.toCoreMode())
+            VpnStateStore.setStopOwnerMode(targetMode)
+            VpnStateStore.setMode(targetMode)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 appContext.startForegroundService(intent)
             } else {
@@ -464,8 +494,10 @@ object VpnServiceManager {
             Unit
         }
             .onFailure { error ->
-                if (!VpnStateStore.getActive() && VpnStateStore.getMode() == mode.toCoreMode()) {
+                if (!VpnStateStore.getActive() && VpnStateStore.getMode() == targetMode) {
                     VpnStateStore.setMode(previousMode)
+                    previousOwner?.let(VpnStateStore::setStopOwnerMode)
+                        ?: VpnStateStore.clearStopOwnerMode()
                 }
                 Log.e(TAG, "Failed to start VPN service", error)
             }
@@ -487,12 +519,20 @@ object VpnServiceManager {
         }
     }
 
+    private fun resolveStopOwnerMode(): VpnStateStore.CoreMode {
+        return VpnStateStore.getStopOwnerMode() ?: resolveActiveMode()
+    }
+
     fun stopVpn(context: Context, initiator: VpnStopInitiator): Result<Unit> {
         Log.d(TAG, "stopVpn: initiator=${initiator.wireValue}")
 
         return runCatching {
             val appContext = context.applicationContext
-            val activeMode = resolveActiveMode()
+            val activeMode = resolveStopOwnerMode()
+            if (activeMode == VpnStateStore.CoreMode.NONE) {
+                throw IllegalStateException("No active VPN stop owner")
+            }
+            VpnStateStore.setPending("stopping")
             val stopResults = buildList {
                 if (shouldDispatchStopToService(activeMode, VpnStateStore.CoreMode.VPN)) {
                     add(runCatching {
@@ -520,6 +560,7 @@ object VpnServiceManager {
                 }
             }
             if (stopResults.none { it.isSuccess }) {
+                VpnStateStore.setPending("")
                 throw stopResults.firstNotNullOfOrNull { it.exceptionOrNull() }
                     ?: IllegalStateException("Failed to send stop commands")
             }
@@ -532,7 +573,11 @@ object VpnServiceManager {
         Log.e(TAG, "forceStop: dispatching emergency stop")
         return runCatching {
             val appContext = context.applicationContext
-            val activeMode = resolveActiveMode()
+            val activeMode = resolveStopOwnerMode()
+            if (activeMode == VpnStateStore.CoreMode.NONE) {
+                throw IllegalStateException("No active VPN stop owner")
+            }
+            VpnStateStore.setPending("stopping")
             val stopResults = buildList {
                 if (shouldDispatchStopToService(activeMode, VpnStateStore.CoreMode.VPN)) {
                     add(runCatching {
@@ -551,12 +596,13 @@ object VpnServiceManager {
                 if (shouldDispatchStopToService(activeMode, VpnStateStore.CoreMode.ROOT)) {
                     add(runCatching {
                         appContext.startService(Intent(appContext, RootTransparentForegroundService::class.java).apply {
-                            action = RootTransparentForegroundService.ACTION_STOP
+                            action = RootTransparentForegroundService.ACTION_FORCE_STOP
                         })
                     })
                 }
             }
             if (stopResults.none { it.isSuccess }) {
+                VpnStateStore.setPending("")
                 throw stopResults.firstNotNullOfOrNull { it.exceptionOrNull() }
                     ?: IllegalStateException("Failed to send force stop commands")
             }

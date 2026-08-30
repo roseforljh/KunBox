@@ -153,11 +153,9 @@ class ShutdownManager(
         val commandRuntimeGeneration = commandManager.currentRuntimeGeneration()
         val coreRuntimeGeneration = coreManager.currentRuntimeGeneration()
 
-        val jobsToJoin = listOfNotNull(
-            callbacks.cancelStartVpnJob(),
-            callbacks.cancelPostStartJob(),
-            callbacks.cancelHotReloadJob()
-        )
+        callbacks.cancelStartVpnJob()
+        callbacks.cancelPostStartJob()
+        callbacks.cancelHotReloadJob()
         callbacks.cancelRemoteStateUpdateJob()
         callbacks.cancelAutoFailoverJob()
 
@@ -187,13 +185,6 @@ class ShutdownManager(
 
         val cleanupJob = cleanupScope.launch {
             withContext(NonCancellable) {
-                try {
-                    Log.i(TAG, "stop phase=join_jobs")
-                    jobsToJoin.forEach { it.join() }
-                } catch (e: Exception) {
-                    Log.w(TAG, "Failed to wait for startup tasks before shutdown", e)
-                }
-
                 Log.i(TAG, "stop phase=core")
                 stopTrafficProducerThenFlush(
                     stopProducer = {
@@ -297,6 +288,9 @@ class ShutdownManager(
                                     Log.w(TAG, "Recovery start failed, mode preserved for next issuer")
                                 } else {
                                     VpnStateStore.setMode(VpnStateStore.CoreMode.NONE)
+                                    if (VpnStateStore.getStopOwnerMode() == VpnStateStore.CoreMode.VPN) {
+                                        VpnStateStore.clearStopOwnerMode()
+                                    }
                                 }
                                 VpnTileService.persistVpnPending("")
                                 callbacks.updateServiceState(ServiceState.STOPPED)

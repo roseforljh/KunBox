@@ -56,13 +56,22 @@ class VpnServiceManagerTest {
         val command = VpnServiceManager.buildStartCommand(
             mode = TrafficCaptureMode.ROOT_TRANSPARENT,
             configPath = "/data/user/0/com.kunk.singbox/files/root.json",
+            requestId = "root-request",
             cleanCache = true
         )
 
         assertEquals(RootTransparentForegroundService::class.java, command.serviceClass)
         assertEquals(RootTransparentForegroundService.ACTION_START, command.action)
         assertEquals("/data/user/0/com.kunk.singbox/files/root.json", command.configPath)
+        assertEquals("root-request", command.requestId)
         assertFalse(command.cleanCache)
+    }
+
+    @Test
+    fun onlyRootModeCreatesCandidateRequestId() {
+        assertTrue(VpnServiceManager.newCandidateRequestId(TrafficCaptureMode.ROOT_TRANSPARENT).isNullOrBlank().not())
+        assertNull(VpnServiceManager.newCandidateRequestId(TrafficCaptureMode.VPN))
+        assertNull(VpnServiceManager.newCandidateRequestId(TrafficCaptureMode.PROXY_ONLY))
     }
 
     @Test
@@ -110,14 +119,14 @@ class VpnServiceManagerTest {
     }
 
     @Test
-    fun unknownRuntimeModeKeepsBothStopFallbacks() {
-        assertTrue(
+    fun unknownRuntimeModeDoesNotStartServicesJustToStopThem() {
+        assertFalse(
             VpnServiceManager.shouldDispatchStopToService(
                 activeMode = VpnStateStore.CoreMode.NONE,
                 serviceMode = VpnStateStore.CoreMode.VPN
             )
         )
-        assertTrue(
+        assertFalse(
             VpnServiceManager.shouldDispatchStopToService(
                 activeMode = VpnStateStore.CoreMode.NONE,
                 serviceMode = VpnStateStore.CoreMode.PROXY
@@ -137,7 +146,7 @@ class VpnServiceManagerTest {
         assertTrue(body.contains("SingBoxService::class.java"))
         assertTrue(body.contains("ProxyOnlyService::class.java"))
         assertTrue(body.contains("RootTransparentForegroundService::class.java"))
-        assertTrue(body.contains("val activeMode = resolveActiveMode()"))
+        assertTrue(body.contains("val activeMode = resolveStopOwnerMode()"))
         assertTrue(body.contains("shouldDispatchStopToService(activeMode, VpnStateStore.CoreMode.VPN)"))
         assertTrue(body.contains("shouldDispatchStopToService(activeMode, VpnStateStore.CoreMode.PROXY)"))
         assertTrue(body.contains("shouldDispatchStopToService(activeMode, VpnStateStore.CoreMode.ROOT)"))
@@ -150,9 +159,11 @@ class VpnServiceManagerTest {
         val body = source.substringAfter("fun startVpn(context: Context, mode: TrafficCaptureMode)")
             .substringBefore("fun stopVpn(context: Context, initiator: VpnStopInitiator)")
 
-        val persistIndex = body.indexOf("VpnStateStore.setMode(mode.toCoreMode())")
+        val ownerIndex = body.indexOf("VpnStateStore.setStopOwnerMode(targetMode)")
+        val persistIndex = body.indexOf("VpnStateStore.setMode(targetMode)")
         val dispatchIndex = body.indexOf("startForegroundService(intent)")
-        assertTrue(persistIndex >= 0)
+        assertTrue(ownerIndex >= 0)
+        assertTrue(persistIndex > ownerIndex)
         assertTrue(dispatchIndex > persistIndex)
     }
 
@@ -165,6 +176,7 @@ class VpnServiceManagerTest {
         assertTrue(resolver.contains("RootTransparentForegroundService.isRunning"))
         assertTrue(resolver.contains("RootTransparentForegroundService.isStarting"))
         assertTrue(resolver.contains("VpnStateStore.CoreMode.ROOT"))
+        assertTrue(resolver.contains("VpnStateStore.getStopOwnerMode() ?: resolveActiveMode()"))
     }
 
     @Test
@@ -176,7 +188,7 @@ class VpnServiceManagerTest {
 
         assertTrue(body.contains("SingBoxService.ACTION_FORCE_STOP"))
         assertTrue(body.contains("ProxyOnlyService.ACTION_FORCE_STOP"))
-        assertTrue(body.contains("RootTransparentForegroundService.ACTION_STOP"))
+        assertTrue(body.contains("RootTransparentForegroundService.ACTION_FORCE_STOP"))
     }
 
     @Test

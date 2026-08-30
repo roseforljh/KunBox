@@ -71,8 +71,6 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         internal const val START_STOPPED_CONFIRM_MS = 5_000L
         internal const val START_MONITOR_TIMEOUT_MS = 60_000L
         private const val START_REBIND_INTERVAL_MS = 2_000L
-        internal const val STOP_CONFIRM_TIMEOUT_MS = 8_000L
-        internal const val FORCE_STOP_CONFIRM_TIMEOUT_MS = 2_000L
 
         internal fun shouldReportStartError(currentError: String?): Boolean {
             return !currentError.isNullOrBlank()
@@ -220,7 +218,6 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
 
     internal var pingTestJob: Job? = null
     internal var startMonitorJob: Job? = null
-    internal var stopConfirmJob: Job? = null
 
     // Active profile and node from ConfigRepository
     val activeProfileId: StateFlow<String?> = configRepository.activeProfileId
@@ -362,7 +359,6 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                 }
         }
     }
-
     /**
      * 2025-fix-v12: 启动状态监听器
      * 确保只在 IPC 绑定完成后调用一次
@@ -373,7 +369,8 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
     internal var startGraceUntilElapsedMs: Long? = null
     private var refreshStateJob: Job? = null
     internal var startCoreJob: Job? = null
-
+    internal var startServiceDispatched = false
+    internal var stopRequestedByUser = false
     /**
      * 启动状态收集器（幂等方法）
      * 2025-fix-v12: 确保只启动一次，但保证在 init 和 refreshState 中都会被调用
@@ -385,22 +382,23 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
             Log.d(TAG, "startStateCollector: already started, skipping")
             return
         }
-
         synchronized(this) {
             if (stateCollectorStarted) return
             stateCollectorStarted = true
         }
-
         // 收集器: 监听 SingBoxService 状态变化
         val stateFlow = SingBoxRemote.state
         viewModelScope.launch {
             stateFlow.collect { state ->
+                if (stopRequestedByUser && state != ServiceState.STOPPED) return@collect
                 when (resolveDashboardConnectionState(state)) {
                     ConnectionState.Connected -> {
+                        if (stopRequestedByUser) return@collect
                         systemVpnDetectedOnBoot = false
                         setConnectionState(ConnectionState.Connected)
                     }
                     ConnectionState.Connecting -> {
+                        if (stopRequestedByUser) return@collect
                         systemVpnDetectedOnBoot = false
                         setConnectionState(ConnectionState.Connecting)
                     }
@@ -417,7 +415,10 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         }
         viewModelScope.launch {
             SingBoxRemote.readiness.collect {
-                setConnectionState(resolveDashboardConnectionState(SingBoxRemote.state.value))
+                val state = SingBoxRemote.state.value
+                if (!stopRequestedByUser || state == ServiceState.STOPPED) {
+                    setConnectionState(resolveDashboardConnectionState(state))
+                }
             }
         }
 
@@ -519,8 +520,8 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
             }
         }
     }
-
     internal fun performDisconnect() {
+        stopRequestedByUser = false
         if (_connectionState.value != ConnectionState.Idle) {
             _connectionState.value = ConnectionState.Idle
             _connectedAtElapsedMs.value = null
@@ -529,7 +530,6 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
             _statsBase.value = ConnectionStats(0, 0, 0, 0, 0)
         }
     }
-
     /**
      * 刷新 VPN 状态。
      *
@@ -616,7 +616,9 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
             val configResult = withContext(Dispatchers.IO) {
                 val settingsRepository = SettingsRepository.getInstance(context)
                 settingsRepository.checkAndMigrateRuleSets()
-                configRepository.generateConfigFile()
+                configRepository.generateConfigFile(
+                    candidateRequestId = VpnServiceManager.newCandidateRequestId(captureMode).orEmpty()
+                )
             }
 
             if (configResult == null) {
@@ -668,7 +670,13 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                 }
             }
 
-            performRestart(context, configResult.path, captureMode, requiresFullRestart)
+            performRestart(
+                context,
+                configResult.path,
+                configResult.requestId,
+                captureMode,
+                requiresFullRestart
+            )
         }
     }
 
@@ -715,6 +723,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
     private suspend fun performRestart(
         context: Context,
         configPath: String,
+        requestId: String,
         captureMode: TrafficCaptureMode,
         requiresFullRestart: Boolean
     ) {
@@ -727,6 +736,10 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                     putExtra(
                         com.kunk.singbox.service.root.RootTransparentForegroundService.EXTRA_CONFIG_PATH,
                         configPath
+                    )
+                    putExtra(
+                        com.kunk.singbox.service.root.RootTransparentForegroundService.EXTRA_APP_ROUTE_REQUEST_ID,
+                        requestId
                     )
                 }
             )
@@ -784,13 +797,12 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
             context.startService(intent)
         }
     }
-
     private fun startCore() {
         startCoreJob?.cancel()
         startCoreJob = viewModelScope.launch {
+            startServiceDispatched = false
+            stopRequestedByUser = false
             val context = getApplication<Application>()
-            stopConfirmJob?.cancel()
-            stopConfirmJob = null
 
             val settings = runCatching {
                 SettingsRepository.getInstance(context).settings.first()
@@ -850,7 +862,9 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                 val configResult = withContext(Dispatchers.IO) {
                     val settingsRepository = com.kunk.singbox.repository.SettingsRepository.getInstance(context)
                     settingsRepository.checkAndMigrateRuleSets()
-                    configRepository.generateConfigFile()
+                    configRepository.generateConfigFile(
+                        candidateRequestId = VpnServiceManager.newCandidateRequestId(captureMode).orEmpty()
+                    )
                 }
                 if (configResult == null) {
                     _connectionState.value = ConnectionState.Error
@@ -865,8 +879,10 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                     context = context,
                     mode = captureMode,
                     configPath = configResult.path,
+                    requestId = configResult.requestId,
                     cleanCache = true
                 ).getOrThrow()
+                startServiceDispatched = true
 
                 // 2) 后续只在服务端明确失败（lastErrorFlow）或服务异常退出时才置 Error
                 startMonitorJob?.cancel()
@@ -955,7 +971,6 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
             }
         }
     }
-
     private fun stopVpn() = stopVpnRuntime()
 
     private fun startPingTest() = startPingTestRuntime()
@@ -989,8 +1004,6 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
     override fun onCleared() {
         startMonitorJob?.cancel()
         startMonitorJob = null
-        stopConfirmJob?.cancel()
-        stopConfirmJob = null
         stopTrafficMonitor()
         stopPingTest()
     }

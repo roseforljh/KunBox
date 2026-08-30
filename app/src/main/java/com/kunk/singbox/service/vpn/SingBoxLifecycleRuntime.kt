@@ -160,6 +160,10 @@ internal fun SingBoxService.onStartCommandRuntime(intent: Intent?, flags: Int, s
     }
     when (intent.action) {
         SingBoxService.ACTION_START -> {
+            if (VpnStateStore.getPending() == "stopping") {
+                Log.w(SingBoxService.TAG, "Ignoring START while VPN stop is still in progress")
+                return START_NOT_STICKY
+            }
             // 恢复 START 幂等：核心已在跑/正在起时只刷新状态，禁止 clean restart
             val isRecoveryStart = intent.getBooleanExtra(SingBoxService.EXTRA_RECOVERY, false)
             if (isRecoveryStart &&
@@ -198,7 +202,8 @@ internal fun SingBoxService.onStartCommandRuntime(intent: Intent?, flags: Int, s
             // P0 Optimization: If config path is missing (Shortcut/Headless), generate it inside Service
             if (configPath == null) {
                 Log.i(SingBoxService.TAG, "SingBoxService.ACTION_START received without config path, generating config...")
-                serviceScope.launch {
+                startVpnJob?.cancel()
+                startVpnJob = serviceScope.launch {
                     try {
                         val repo = ConfigRepository.getInstance(applicationContext)
                         val result = repo.generateConfigFile()
@@ -230,6 +235,8 @@ internal fun SingBoxService.onStartCommandRuntime(intent: Intent?, flags: Int, s
                                 }
                             }
                         }
+                    } catch (_: CancellationException) {
+                        Log.i(SingBoxService.TAG, "Config generation cancelled by stop request")
                     } catch (e: Exception) {
                         Log.e(SingBoxService.TAG, "Error generating config in Service", e)
                         withContext(Dispatchers.Main) {
@@ -239,6 +246,11 @@ internal fun SingBoxService.onStartCommandRuntime(intent: Intent?, flags: Int, s
                             ) {
                                 stopSelf()
                             }
+                        }
+                    } finally {
+                        val runningJob = currentCoroutineContext()[Job]
+                        synchronized(this@onStartCommandRuntime) {
+                            if (startVpnJob === runningJob) startVpnJob = null
                         }
                     }
                 }
@@ -321,6 +333,7 @@ internal fun SingBoxService.onStartCommandRuntime(intent: Intent?, flags: Int, s
             }
         }
         SingBoxService.ACTION_STOP -> {
+            VpnStateStore.setStopOwnerMode(VpnStateStore.CoreMode.VPN)
             if (ServiceStateHolder.shouldIgnoreDuplicateHardStop(isStopping, stopSelfRequested)) {
                 Log.i(SingBoxService.TAG, "Ignoring duplicate ACTION_STOP while cleanup is already running")
                 return START_NOT_STICKY
@@ -616,6 +629,9 @@ internal fun SingBoxService.clearStartCommandFailureState(
         VpnStateStore.clearRuntimeState(preserveLastError = true)
     } else {
         VpnStateStore.setMode(VpnStateStore.CoreMode.NONE)
+        if (VpnStateStore.getStopOwnerMode() == VpnStateStore.CoreMode.VPN) {
+            VpnStateStore.clearStopOwnerMode()
+        }
     }
     VpnTileService.persistVpnPending("")
     // 启动失败立即释放恢复互斥，让后续触发源按当时意图重新判定，而不是干等窗口过期

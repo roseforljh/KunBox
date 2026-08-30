@@ -101,6 +101,9 @@ internal fun SingBoxService.forceStopProcess(reason: String) {
         VpnStateStore.clearRuntimeState(preserveLastError = manuallyStopped)
         if (manuallyStopped) {
             VpnStateStore.setMode(VpnStateStore.CoreMode.NONE)
+            if (VpnStateStore.getStopOwnerMode() == VpnStateStore.CoreMode.VPN) {
+                VpnStateStore.clearStopOwnerMode()
+            }
             VpnStateStore.clearRecoveryClaim()
         }
         VpnTileService.persistVpnPending("")

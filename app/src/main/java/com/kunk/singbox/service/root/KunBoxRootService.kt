@@ -30,6 +30,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
 
 internal data class RootStartRequest(
     val configPath: String,
@@ -71,6 +72,8 @@ class KunBoxRootService : RootService() {
     companion object {
         internal const val TAG = "KunBoxRootService"
         internal const val UID_REFRESH_INTERVAL_MS = 30_000L
+        private const val UID_PREWARM_MAX_AGE_MS = 60_000L
+        private const val UID_PREWARM_WAIT_MS = 1_500L
 
         init {
             if (Process.myUid() == 0) {
@@ -119,6 +122,13 @@ class KunBoxRootService : RootService() {
     internal var activeStartRequest: RootStartRequest? = null
     internal var uidMonitorJob: Job? = null
     internal val startupTimings = linkedMapOf<String, Long>()
+
+    @Volatile
+    private var prewarmedUidSnapshot: RootUidSnapshot? = null
+
+    @Volatile
+    private var prewarmedUidSnapshotAt = 0L
+    private val uidPrewarmReady = CountDownLatch(1)
 
     internal val runtimeTransactions = AtomicInteger(0)
     internal val stopRequestedSession = AtomicReference("")
@@ -229,6 +239,7 @@ class KunBoxRootService : RootService() {
         override fun requestStop(runtimeSessionId: String?) {
             enforceCaller()
             runtimeSessionId.orEmpty().takeIf(String::isNotBlank)?.let(stopRequestedSession::set)
+            rootCommandExecutor.cancelActiveCommands()
         }
 
         override fun stop(runtimeSessionId: String?): Bundle {
@@ -268,6 +279,17 @@ class KunBoxRootService : RootService() {
             tproxyIpv4 = capabilityReport.tproxyIpv4,
             tproxyIpv6 = capabilityReport.tproxyIpv6
         )
+        serviceScope.launch(Dispatchers.IO) {
+            runCatching { RootUidResolver().captureSnapshot() }
+                .onSuccess { uidSnapshot ->
+                    if (snapshot.phase == RootRuntimePhase.STOPPED && commandServer == null) {
+                        prewarmedUidSnapshot = uidSnapshot
+                        prewarmedUidSnapshotAt = android.os.SystemClock.elapsedRealtime()
+                    }
+                }
+                .onFailure { error -> Log.w(TAG, "Root UID prewarm failed", error) }
+                .also { uidPrewarmReady.countDown() }
+        }
     }
 
     override fun onBind(intent: Intent): IBinder = binder
@@ -362,8 +384,14 @@ class KunBoxRootService : RootService() {
             activeRoutingArtifacts = artifacts
             activeStartRequest = request
             val resolver = RootUidResolver()
+            val uidSnapshot = takePrewarmedUidSnapshot() ?: resolver.captureSnapshot()
             updateSnapshot(phase = RootRuntimePhase.UID_SNAPSHOT_1)
-            val firstResolved = resolver.resolveRouting(artifacts.plan, request.selfPackage, request.appUid)
+            val firstResolved = resolver.resolveRouting(
+                artifacts.plan,
+                request.selfPackage,
+                request.appUid,
+                uidSnapshot
+            )
             throwIfStopRequested(request.runtimeSessionId)
             activeResolvedRouting = firstResolved
             netfilterManager.beginOwnership(
@@ -386,17 +414,12 @@ class KunBoxRootService : RootService() {
                 ipv6 = netfilterConfig.proxyIpv6 || netfilterConfig.blockIpv6
             )
             startWatchdog(request)
-            val guardResult = netfilterManager.installGuard(guardConfig)
-            logStartPhase("guard_ms", phaseStartedAt)
-            phaseStartedAt = android.os.SystemClock.elapsedRealtime()
-            guardResult.getOrThrow()
-            throwIfStopRequested(request.runtimeSessionId)
-            updateSnapshot(phase = RootRuntimePhase.FAIL_CLOSED, watchdogReady = true, rulesInstalled = true)
-            val candidateResult = netfilterManager.stage(netfilterConfig)
-            logStartPhase("rules_staging_ms", phaseStartedAt)
+            val candidateResult = netfilterManager.installGuardAndStage(guardConfig, netfilterConfig)
+            logStartPhase("guard_and_stage_ms", phaseStartedAt)
             phaseStartedAt = android.os.SystemClock.elapsedRealtime()
             val candidatePlan = candidateResult.getOrThrow()
             throwIfStopRequested(request.runtimeSessionId)
+            updateSnapshot(phase = RootRuntimePhase.FAIL_CLOSED, watchdogReady = true, rulesInstalled = true)
             activeNetfilterPlan = candidatePlan
             updateSnapshot(phase = RootRuntimePhase.RULES_STAGING, watchdogReady = true, rulesInstalled = true)
             updateSnapshot(phase = RootRuntimePhase.CORE_STARTING)
@@ -411,10 +434,17 @@ class KunBoxRootService : RootService() {
             logStartPhase("core_verify", phaseStartedAt)
             phaseStartedAt = android.os.SystemClock.elapsedRealtime()
             updateSnapshot(phase = RootRuntimePhase.UID_SNAPSHOT_2)
-            val secondResolved = resolver.resolveRouting(artifacts.plan, request.selfPackage, request.appUid)
+            val secondResolved = resolver.resolveRouting(
+                artifacts.plan,
+                request.selfPackage,
+                request.appUid,
+                uidSnapshot
+            )
             check(firstResolved.resolvedPlanSha256 == secondResolved.resolvedPlanSha256) {
                 "Root UID snapshot changed during startup"
             }
+            logStartPhase("uid_snapshot_2", phaseStartedAt)
+            phaseStartedAt = android.os.SystemClock.elapsedRealtime()
             throwIfStopRequested(request.runtimeSessionId)
             activeResolvedRouting = secondResolved
             logResolvedRouting(artifacts.plan, secondResolved)
@@ -423,10 +453,9 @@ class KunBoxRootService : RootService() {
                 resolvedPlanSha256 = secondResolved.resolvedPlanSha256,
                 resolvedUidCount = secondResolved.routes.size
             )
-            netfilterManager.activate(candidatePlan).getOrThrow()
+            netfilterManager.activateAndRemoveGuard(candidatePlan).getOrThrow()
             throwIfStopRequested(request.runtimeSessionId)
-            netfilterManager.removeGuard().getOrThrow()
-            throwIfStopRequested(request.runtimeSessionId)
+            logStartPhase("rules_activation", phaseStartedAt)
             netfilterOwned = true
             logStartPhase("total_ms", startedAt)
             val runningSnapshot = updateSnapshot(
@@ -480,6 +509,17 @@ class KunBoxRootService : RootService() {
         }
     }
 
+    private fun takePrewarmedUidSnapshot(): RootUidSnapshot? {
+        if (prewarmedUidSnapshot == null && uidPrewarmReady.count > 0L) {
+            uidPrewarmReady.await(UID_PREWARM_WAIT_MS, TimeUnit.MILLISECONDS)
+        }
+        val age = android.os.SystemClock.elapsedRealtime() - prewarmedUidSnapshotAt
+        return prewarmedUidSnapshot.takeIf { age in 0..UID_PREWARM_MAX_AGE_MS }.also {
+            prewarmedUidSnapshot = null
+            prewarmedUidSnapshotAt = 0L
+        }
+    }
+
     internal fun resolveAllowedIpVersionModes(request: RootStartRequest): Set<String> = when {
         request.proxyIpv6 && !request.proxyIpv4 -> setOf("IPV6_ONLY")
         request.proxyIpv4 && !request.proxyIpv6 -> setOf("IPV4_ONLY")
@@ -500,6 +540,11 @@ class KunBoxRootService : RootService() {
         val server = Libbox.newCommandServer(createServerHandler(), platformInterface)
         server.start()
         commandServer = server
+        server.startOrReloadService(artifacts.configContent, OverrideOptions().apply { autoRedirect = false })
+    }
+
+    internal fun reloadCommandServer(artifacts: RootRoutingArtifacts) {
+        val server = commandServer ?: error("Root CommandServer is not active")
         server.startOrReloadService(artifacts.configContent, OverrideOptions().apply { autoRedirect = false })
     }
 
@@ -725,9 +770,7 @@ class KunBoxRootService : RootService() {
             }
             throwIfStopRequested(runtimeSessionId)
             updateSnapshot(phase = RootRuntimePhase.RULES_ACTIVATING)
-            netfilterManager.activate(candidatePlan).getOrThrow()
-            throwIfStopRequested(runtimeSessionId)
-            netfilterManager.removeGuard().getOrThrow()
+            netfilterManager.activateAndRemoveGuard(candidatePlan).getOrThrow()
             throwIfStopRequested(runtimeSessionId)
             activeResolvedRouting = secondResolved
             netfilterOwned = true

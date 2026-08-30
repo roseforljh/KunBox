@@ -436,7 +436,8 @@ class VpnTileService : TileService() {
                 val configRepository = ConfigRepository.getInstance(applicationContext)
                 val configResult = configRepository.generateConfigFile(
                     selectedProfileId = VpnStateStore.getSelectedProfileId(),
-                    selectedNodeId = VpnStateStore.getSelectedNodeId()
+                    selectedNodeId = VpnStateStore.getSelectedNodeId(),
+                    candidateRequestId = VpnServiceManager.newCandidateRequestId(captureMode).orEmpty()
                 )
 
                 if (configResult != null) {
@@ -444,6 +445,7 @@ class VpnTileService : TileService() {
                         context = this@VpnTileService,
                         mode = captureMode,
                         configPath = configResult.path,
+                        requestId = configResult.requestId,
                         cleanCache = true,
                         pendingNodeName = configResult.activeNodeName
                     ).getOrThrow()

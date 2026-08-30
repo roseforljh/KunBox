@@ -172,22 +172,43 @@ class RootNetfilterPlanTest {
         assertTrue(script.contains("ip6tables-restore -w 2 --noflush"))
         assertTrue(script.contains(":KBX_OUT4 - [0:0]"))
         assertTrue(script.contains("-A KBX_OUT4 -m owner --uid-owner 10123 -p udp"))
-        assertTrue(
-            script.indexOf("'ip' 'rule' 'add'") <
-                script.indexOf("'iptables' '-w' '2' '-t' 'mangle' '-I' 'PREROUTING'")
-        )
+        assertTrue(script.contains("ip -batch - <<'KBX_IP_4'"))
+        assertTrue(script.contains("ip -6 -batch - <<'KBX_IP_6'"))
+        assertTrue(script.contains("__KBX_ROOT_STATE_iptables4__"))
+        assertTrue(script.contains("__KBX_ROOT_STATE_iptables6__"))
+        assertTrue(script.contains("'iptables-save'"))
+        assertTrue(script.contains("'ip6tables-save'"))
+        assertTrue(script.contains("rule add"))
+        assertTrue(script.indexOf("ip -batch -") < script.indexOf("'iptables' '-w' '2'"))
+        assertFalse(script.contains("'ip' 'rule' 'add'"))
         assertEquals(1, script.split("iptables-restore -w 2 --noflush").size - 1)
         assertEquals(1, script.split("ip6tables-restore -w 2 --noflush").size - 1)
     }
 
     @Test
     fun successfulFastSetupStillPerformsReadOnlyVerification() {
-        var legacyCalls = 0
+        val config = RootNetfilterConfig(
+            capturedUids = listOf(10123),
+            capturedUidRanges = emptyList(),
+            excludedUids = emptyList(),
+            appUid = 10234,
+            proxyIpv4 = true,
+            proxyIpv6 = false,
+            blockIpv4 = false,
+            blockIpv6 = false,
+            redirectPortIpv4 = 1536,
+            redirectPortIpv6 = 1537,
+            tproxyPortIpv4 = 1538,
+            tproxyPortIpv6 = 1539
+        )
+        val plan = RootNetfilterPlanner.build(config)
+        val executeCalls = mutableListOf<List<String>>()
         var fastCalls = 0
         val executor = object : RootCommandExecutor {
             override fun execute(arguments: List<String>): RootCommandResult {
-                legacyCalls++
+                executeCalls += arguments
                 val output = when {
+                    arguments == listOf("iptables-save") -> saveSnapshot(plan.setupCommands, "iptables")
                     arguments == listOf("ip", "rule", "show") ->
                         "12031: from all fwmark 0x2331/0xffffffff lookup 20231 protocol 233"
                     arguments == listOf("ip", "route", "show", "table", "20231") ->
@@ -202,29 +223,15 @@ class RootNetfilterPlanTest {
 
             override fun executeFastNetfilterPlan(commands: List<List<String>>): RootCommandResult {
                 fastCalls++
-                return RootCommandResult(0, "")
+                return RootCommandResult(0, rootStateSnapshot(plan.setupCommands, ipv6 = false))
             }
         }
-        val result = RootNetfilterManager(executor).apply(
-            RootNetfilterConfig(
-                capturedUids = listOf(10123),
-                capturedUidRanges = emptyList(),
-                excludedUids = emptyList(),
-                appUid = 10234,
-                proxyIpv4 = true,
-                proxyIpv6 = false,
-                blockIpv4 = false,
-                blockIpv6 = false,
-                redirectPortIpv4 = 1536,
-                redirectPortIpv6 = 1537,
-                tproxyPortIpv4 = 1538,
-                tproxyPortIpv6 = 1539
-            )
-        )
+        val result = RootNetfilterManager(executor).apply(config)
 
         assertTrue(result.isSuccess)
         assertEquals(1, fastCalls)
-        assertTrue(legacyCalls > 0)
+        assertTrue(executeCalls.isEmpty())
+        assertFalse(executeCalls.any { "-C" in it })
     }
 
     @Test
@@ -270,6 +277,10 @@ class RootNetfilterPlanTest {
 
         assertTrue(trafficAffectingKunBoxNftReferences(metadataOnly).isEmpty())
         assertTrue(trafficAffectingKunBoxNftReferences(hooked).single().contains("chain=OUTPUT"))
+        assertTrue(trafficAffectingKunBoxNftReferences(hooked, allowGuard = true).isEmpty())
+
+        val wrongHook = hooked.replace("chain OUTPUT", "chain INPUT")
+        assertTrue(trafficAffectingKunBoxNftReferences(wrongHook, allowGuard = true).isNotEmpty())
     }
 
     @Test
@@ -277,6 +288,8 @@ class RootNetfilterPlanTest {
         assertTrue(isTrafficAffectingKunBoxIptablesReference("-A oem_out -j KBX_OUT4"))
         assertFalse(isTrafficAffectingKunBoxIptablesReference("-A KBX_OUT4 -j KBX_GUARD4"))
         assertFalse(isTrafficAffectingKunBoxIptablesReference("-N KBX_OUT4"))
+        assertFalse(isTrafficAffectingKunBoxIptablesReference("-A OUTPUT -j KBX_GUARD4", allowGuard = true))
+        assertTrue(isTrafficAffectingKunBoxIptablesReference("-A PREROUTING -j KBX_GUARD4", allowGuard = true))
     }
 
     @Test
@@ -613,4 +626,35 @@ class RootNetfilterPlanTest {
         priorityIpv4 = RootRoutingConstants.priorityIpv4(slot),
         priorityIpv6 = RootRoutingConstants.priorityIpv6(slot)
     )
+
+    private fun saveSnapshot(commands: List<List<String>>, binary: String): String = buildString {
+        commands.filter { it.firstOrNull() == binary }.forEach { command ->
+            val tableIndex = command.indexOf("-t")
+            val operationIndex = tableIndex + 2
+            when (command.getOrNull(operationIndex)) {
+                "-N" -> append(':').append(command[operationIndex + 1]).append(" - [0:0]\n")
+                "-A" -> append(command.drop(operationIndex).joinToString(" ")).append('\n')
+                "-I" -> {
+                    val chain = command[operationIndex + 1]
+                    val jump = command.indexOf("-j")
+                    append("-A ").append(chain).append(" -j ").append(command[jump + 1]).append('\n')
+                }
+            }
+        }
+    }
+
+    private fun rootStateSnapshot(commands: List<List<String>>, ipv6: Boolean): String = buildString {
+        append("__KBX_ROOT_STATE_iptables4__\n")
+        append(saveSnapshot(commands, "iptables"))
+        if (ipv6) {
+            append("__KBX_ROOT_STATE_iptables6__\n")
+            append(saveSnapshot(commands, "ip6tables"))
+        }
+        append("__KBX_ROOT_STATE_rule4__\n")
+        append("12031: from all fwmark 0x2331/0xffffffff lookup 20231\n")
+        append("__KBX_ROOT_STATE_rule6__\n")
+        append("__KBX_ROOT_STATE_route4__\n")
+        append("local 0.0.0.0/0 dev lo table 20231\n")
+        append("__KBX_ROOT_STATE_route6__\n")
+    }
 }

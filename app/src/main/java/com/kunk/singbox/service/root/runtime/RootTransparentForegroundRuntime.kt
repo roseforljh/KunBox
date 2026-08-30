@@ -87,7 +87,11 @@ internal suspend fun RootTransparentForegroundService.reloadRuntimeLocked(
         val settingsRepository = SettingsRepository.getInstance(this)
         settingsRepository.reloadFromStorage()
         val settings = settingsRepository.settings.value
-        val candidateRequestId = requestId.ifBlank { UUID.randomUUID().toString() }
+        val candidateRequestId = resolveRootCandidateRequestId(
+            configPathOverride = configPathOverride,
+            requestId = requestId,
+            generatedId = UUID.randomUUID().toString()
+        )
         val candidate = configPathOverride?.takeIf(String::isNotBlank)?.let { path ->
             loadRootGenerationResult(
                 path,
@@ -190,6 +194,7 @@ internal suspend fun RootTransparentForegroundService.restoreReloadedPreviousRun
     check(transitionLifecycle(token, RootLifecycleState.RUNNING, "reload_rolled_back")) {
         "Root rollback generation became stale"
     }
+    VpnStateStore.setStopOwnerMode(VpnStateStore.CoreMode.ROOT)
     VpnStateStore.setMode(VpnStateStore.CoreMode.ROOT)
     VpnStateStore.setActive(true)
     VpnStateStore.setPending("")
@@ -229,7 +234,10 @@ internal fun RootTransparentForegroundService.scheduleUidRefresh(reason: String)
     if (!uidRefreshScheduled.compareAndSet(false, true)) return
     val before = lifecycle.snapshot()
     lifecycleStartedAtMs = android.os.SystemClock.elapsedRealtime()
-    val token = lifecycle.requestRunning(reload = true)
+    val token = lifecycle.requestRunning(reload = true) ?: run {
+        uidRefreshScheduled.set(false)
+        return
+    }
     syncLifecycleFlags()
     logLifecycle("uid_refresh_requested", token, reason, before.state)
     uidRefreshJob?.cancel()
@@ -299,6 +307,7 @@ internal suspend fun RootTransparentForegroundService.refreshUidRoutingLocked(re
         check(transitionLifecycle(token, RootLifecycleState.RUNNING, "uid_refresh_ready")) {
             "Root UID refresh generation became stale"
         }
+        VpnStateStore.setStopOwnerMode(VpnStateStore.CoreMode.ROOT)
         VpnStateStore.setMode(VpnStateStore.CoreMode.ROOT)
         VpnStateStore.setActive(true)
         VpnStateStore.setPending("")
@@ -459,7 +468,8 @@ internal fun RootTransparentForegroundService.onRootServiceDisconnected() {
 internal suspend fun RootTransparentForegroundService.switchNode(
     outboundTag: String,
     nodeName: String,
-    fallbackConfigPath: String?
+    fallbackConfigPath: String?,
+    fallbackRequestId: String
 ) = lifecycleMutex.withLock {
     if (outboundTag.isBlank()) return@withLock
     when (SelectorManager.switchNode(outboundTag)) {
@@ -474,7 +484,7 @@ internal suspend fun RootTransparentForegroundService.switchNode(
         }
         is SelectorManager.SwitchResult.NeedRestart -> {
             requestRunningRuntime(reload = true) { token ->
-                restartRuntime(fallbackConfigPath, token = token)
+                restartRuntime(fallbackConfigPath, fallbackRequestId, token)
             }
         }
     }

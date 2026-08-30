@@ -44,7 +44,7 @@ interface IRootSingBoxService {
         long routingGeneration
     );
 
-    void requestStop(String runtimeSessionId);
+    oneway void requestStop(String runtimeSessionId);
 
     Bundle stop(String runtimeSessionId);
 

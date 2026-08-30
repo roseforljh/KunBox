@@ -11,10 +11,12 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 class RootServiceConnection(
     private val context: Context,
-    private val onDisconnected: () -> Unit
+    onDisconnected: () -> Unit
 ) : ServiceConnection {
     companion object {
         private const val BIND_TIMEOUT_MS = 15_000L
@@ -22,6 +24,9 @@ class RootServiceConnection(
 
     @Volatile
     private var bound = false
+
+    @Volatile
+    private var disconnectedCallback = onDisconnected
 
     @Volatile
     var service: IRootSingBoxService? = null
@@ -52,6 +57,11 @@ class RootServiceConnection(
         unbind()
     }
 
+    internal fun transferDisconnectedCallback(callback: () -> Unit): RootServiceConnection {
+        disconnectedCallback = callback
+        return this
+    }
+
     override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
         val rootService = IRootSingBoxService.Stub.asInterface(binder)
         service = rootService
@@ -61,7 +71,7 @@ class RootServiceConnection(
     override fun onServiceDisconnected(name: ComponentName?) {
         service = null
         bound = false
-        onDisconnected()
+        disconnectedCallback()
     }
 
     override fun onBindingDied(name: ComponentName?) {
@@ -74,6 +84,35 @@ class RootServiceConnection(
         if (!pending.isCompleted) {
             pending.completeExceptionally(IllegalStateException("RootService returned null binder"))
         }
-        onDisconnected()
+        disconnectedCallback()
+    }
+}
+
+object RootServicePrewarmer {
+    private val mutex = Mutex()
+
+    @Volatile
+    private var connection: RootServiceConnection? = null
+
+    suspend fun prewarm(context: Context): Result<Unit> = mutex.withLock {
+        connection?.service?.let { return@withLock Result.success(Unit) }
+        lateinit var next: RootServiceConnection
+        next = RootServiceConnection(context.applicationContext) {
+            if (connection === next) connection = null
+        }
+        connection = next
+        runCatching {
+            next.bind().capabilityReport
+            Unit
+        }.onFailure {
+            next.unbind()
+            if (connection === next) connection = null
+        }
+    }
+
+    fun acquire(onDisconnected: () -> Unit): RootServiceConnection? {
+        val next = connection ?: return null
+        connection = null
+        return next.transferDisconnectedCallback(onDisconnected)
     }
 }

@@ -14,6 +14,7 @@ import com.kunk.singbox.service.ServiceState
 import com.kunk.singbox.service.SingBoxService
 import com.kunk.singbox.service.root.RootTransparentForegroundService
 import java.io.File
+import java.util.UUID
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 
@@ -193,7 +194,11 @@ internal suspend fun ConfigRepository.enableAutoSelectionWithResult(profileId: S
             return@run ConfigRepository.NodeSwitchResult.NotRunning
         }
 
-        val generationResult = generateConfigFile()
+        val generationResult = generateConfigFile(
+            candidateRequestId = UUID.randomUUID().toString().takeIf {
+                VpnStateStore.getMode() == VpnStateStore.CoreMode.ROOT
+            }
+        )
         if (generationResult == null) {
             restoreAutoSelectionState(
                 profileId,
@@ -260,6 +265,7 @@ internal fun ConfigRepository.requestRuntimeConfigReload(
         Intent(context, RootTransparentForegroundService::class.java).apply {
             action = RootTransparentForegroundService.ACTION_RESTART
             putExtra(RootTransparentForegroundService.EXTRA_CONFIG_PATH, result.path)
+            putExtra(RootTransparentForegroundService.EXTRA_APP_ROUTE_REQUEST_ID, result.requestId)
         }
     } else {
         Intent(context, SingBoxService::class.java).apply {
@@ -370,7 +376,7 @@ internal suspend fun ConfigRepository.restorePreviousRuntimeConfig(
         VpnStateStore.setMode(previousCoreMode)
         val previousGeneration = VpnStateStore.getRuntimeStateSnapshot().generation
         val restoreResult = if (previousCoreMode == VpnStateStore.CoreMode.ROOT) {
-            generateConfigFile()
+            generateConfigFile(candidateRequestId = UUID.randomUUID().toString())
         } else {
             ConfigRepository.ConfigGenerationResult(
                 path = runningConfigFile.absolutePath,
@@ -536,7 +542,10 @@ internal suspend fun ConfigRepository.setActiveNodeWithResult(nodeId: String): C
                 val generationResult = generateConfigFile(
                     selectedProfileId = targetProfileId,
                     selectedNodeId = nodeId,
-                    forceManualSelection = true
+                    forceManualSelection = true,
+                    candidateRequestId = UUID.randomUUID().toString().takeIf {
+                        VpnStateStore.getMode() == VpnStateStore.CoreMode.ROOT
+                    }
                 )
                 if (generationResult == null) {
                     val msg = lastConfigGenerationError
@@ -638,6 +647,10 @@ internal suspend fun ConfigRepository.setActiveNodeWithResult(nodeId: String): C
                             RootTransparentForegroundService.ACTION_SWITCH_NODE
                         }
                         putExtra(RootTransparentForegroundService.EXTRA_CONFIG_PATH, generationResult.path)
+                        putExtra(
+                            RootTransparentForegroundService.EXTRA_APP_ROUTE_REQUEST_ID,
+                            generationResult.requestId
+                        )
                         putExtra(
                             RootTransparentForegroundService.EXTRA_OUTBOUND_TAG,
                             generationResult.activeNodeTag

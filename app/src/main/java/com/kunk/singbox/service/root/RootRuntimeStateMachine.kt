@@ -49,12 +49,11 @@ internal class RootLifecycleCoordinator {
     private var generation = 0L
 
     @Synchronized
-    fun requestRunning(reload: Boolean): Long {
+    fun requestRunning(reload: Boolean): Long? {
+        if (state == RootLifecycleState.STOPPING) return null
         desiredState = RootDesiredState.RUNNING
         generation += 1
-        if (state != RootLifecycleState.STOPPING) {
-            state = if (reload) RootLifecycleState.RELOADING else RootLifecycleState.STARTING
-        }
+        state = if (reload) RootLifecycleState.RELOADING else RootLifecycleState.STARTING
         return generation
     }
 

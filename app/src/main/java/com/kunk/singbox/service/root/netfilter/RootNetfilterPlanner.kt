@@ -118,7 +118,12 @@ internal fun compactRootUids(uids: Collection<Int>): List<RootUidRange> {
 
 internal fun rootMark(value: Int): String = "0x${value.toString(16)}"
 
-internal fun isTrafficAffectingKunBoxIptablesReference(line: String): Boolean {
+private val ROOT_GUARD_CHAINS = setOf("KBX_GUARD4", "KBX_GUARD6")
+
+internal fun isTrafficAffectingKunBoxIptablesReference(line: String): Boolean =
+    isTrafficAffectingKunBoxIptablesReference(line, allowGuard = false)
+
+internal fun isTrafficAffectingKunBoxIptablesReference(line: String, allowGuard: Boolean): Boolean {
     val fields = line.trim().split(' ').filter(String::isNotBlank)
     val jumpIndex = fields.indexOf("-j")
     val parent = fields.getOrNull(1).orEmpty()
@@ -126,11 +131,16 @@ internal fun isTrafficAffectingKunBoxIptablesReference(line: String): Boolean {
     return fields.firstOrNull() == "-A" &&
         parent.isNotBlank() &&
         !parent.startsWith("KBX_") &&
-        target.startsWith("KBX_")
+        target.startsWith("KBX_") &&
+        !(allowGuard && parent == "OUTPUT" && target in setOf("KBX_GUARD4", "KBX_GUARD6"))
 }
 
 @Suppress("CognitiveComplexMethod")
-internal fun trafficAffectingKunBoxNftReferences(output: String): List<String> {
+internal fun trafficAffectingKunBoxNftReferences(output: String): List<String> =
+    trafficAffectingKunBoxNftReferences(output, allowGuard = false)
+
+@Suppress("CognitiveComplexMethod")
+internal fun trafficAffectingKunBoxNftReferences(output: String, allowGuard: Boolean): List<String> {
     var depth = 0
     var table = "<unknown>"
     var chain = "<unknown>"
@@ -145,7 +155,10 @@ internal fun trafficAffectingKunBoxNftReferences(output: String): List<String> {
                 chain = line.removePrefix("chain ").removeSuffix("{").trim()
                 chainDepth = depth + 1
             }
-            if (("jump KBX_" in line || "goto KBX_" in line) && !chain.startsWith("KBX_")) {
+            val isGuardHook = isAllowedKunBoxNftGuardHook(line, chain, allowGuard)
+            val hasKunBoxJump = "jump KBX_" in line || "goto KBX_" in line
+            val isExternalChain = !chain.startsWith("KBX_")
+            if (hasKunBoxJump && isExternalChain && !isGuardHook) {
                 add("$table chain=$chain rule=$line")
             }
             depth += line.count { it == '{' } - line.count { it == '}' }
@@ -156,6 +169,11 @@ internal fun trafficAffectingKunBoxNftReferences(output: String): List<String> {
         }
     }
 }
+
+private fun isAllowedKunBoxNftGuardHook(line: String, chain: String, allowGuard: Boolean): Boolean =
+    allowGuard && chain == "OUTPUT" && ROOT_GUARD_CHAINS.any { target ->
+        line.contains("jump $target") || line.contains("goto $target")
+    }
 
 private data class TransparentFamily(
     val binary: String,

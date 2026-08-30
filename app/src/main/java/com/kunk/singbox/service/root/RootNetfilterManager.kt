@@ -15,6 +15,7 @@ class RootNetfilterManager internal constructor(
     private var activePlan: RootNetfilterPlan? = null
     private var guardPlan: RootGuardPlan? = null
     private var ownershipContext: RootNetfilterOwnerContext? = null
+    private val verifier = RootNetfilterVerifier(executor)
 
     internal fun beginOwnership(context: RootNetfilterOwnerContext): Result<Unit> = runCatching {
         ownershipContext = context
@@ -33,14 +34,11 @@ class RootNetfilterManager internal constructor(
         if (currentOwner != null && currentOwner.context.sessionId != expectedSession) {
             error("Reserved Root policy routing is owned by another session")
         }
-        val rules4 = executeRequiredResult(listOf("ip", "rule", "show")).output
-        val rules6 = executeRequiredResult(listOf("ip", "-6", "rule", "show")).output
-        val routes4 = executeRequiredResult(
-            listOf("ip", "route", "show", "table", RootNetfilterPlanner.ROUTE_TABLE)
-        ).output
-        val routes6 = executeRequiredResult(
-            listOf("ip", "-6", "route", "show", "table", RootNetfilterPlanner.ROUTE_TABLE)
-        ).output
+        val snapshot = verifier.captureState()
+        val rules4 = snapshot.getValue(ROOT_STATE_RULE4)
+        val rules6 = snapshot.getValue(ROOT_STATE_RULE6)
+        val routes4 = snapshot.getValue(ROOT_STATE_ROUTE4)
+        val routes6 = snapshot.getValue(ROOT_STATE_ROUTE6)
         checkNoForeignReservedPolicy(rules4, ipv6 = false)
         checkNoForeignReservedPolicy(rules6, ipv6 = true)
         checkNoForeignReservedRoute(routes4, ipv6 = false)
@@ -52,16 +50,21 @@ class RootNetfilterManager internal constructor(
         if (ownership != null) {
             if (ownership.hasOwner()) {
                 ownership.cleanupAnyOwnerForStartup().getOrThrow()
-            } else if (hasPotentialLegacyState()) {
-                ownership.cleanupLegacyForStartup().getOrThrow()
+                checkNoResidualNftState()
+                ownership.markLegacyScanCompleted()
+            } else if (!ownership.hasCompletedLegacyScan()) {
+                if (hasPotentialLegacyState()) {
+                    ownership.cleanupLegacyForStartup().getOrThrow()
+                    checkNoResidualNftState()
+                }
+                ownership.markLegacyScanCompleted()
             } else {
                 Log.i(
                     TAG,
-                    "[ROOT_NET] event=legacy_cleanup_skipped reason=no_harmful_owned_state " +
+                    "[ROOT_NET] event=legacy_cleanup_skipped reason=completed_migration_scan " +
                         "staleRuntimePresent=$staleRuntimePresent"
                 )
             }
-            checkNoResidualNftState()
         } else {
             cleanup(RootNetfilterPlanner.cleanupCommands())
             checkNoResidualState()
@@ -76,27 +79,22 @@ class RootNetfilterManager internal constructor(
      * normal clean-start path and can block Root startup for tens of seconds.
      */
     private fun hasPotentialLegacyState(): Boolean {
-        val tableState = tableProbeCommands().any { command ->
-            val result = executor.execute(command)
-            !result.success || result.output.lineSequence().any(::isTrafficAffectingKunBoxIptablesReference)
-        }
-        if (tableState) return true
-        val policyState = listOf(
+        val probes = tableProbeCommands() + listOf(
             listOf("ip", "rule", "show"),
             listOf("ip", "-6", "rule", "show"),
-            listOf("ip", "route", "show", "table", RootNetfilterPlanner.ROUTE_TABLE),
-            listOf("ip", "-6", "route", "show", "table", RootNetfilterPlanner.ROUTE_TABLE)
-        ).any { command ->
-            val result = executor.execute(command)
-            !result.success ||
-                result.output.lineSequence().any { line ->
+            listOf("ip", "route", "show", "table", "all"),
+            listOf("ip", "-6", "route", "show", "table", "all"),
+            listOf("/system/bin/sh", "-c", "command -v nft >/dev/null 2>&1 && nft -a list ruleset || true")
+        )
+        val result = executor.executeBatch(probes)
+        if (!result.success) return true
+        return trafficAffectingKunBoxNftReferences(result.output).isNotEmpty() ||
+            result.output.lineSequence().any { line ->
+                isTrafficAffectingKunBoxIptablesReference(line) ||
                     RootNetfilterOwnership.isReservedPolicyLine(line) ||
-                        "KBX_" in line ||
-                        (RootNetfilterPlanner.ROUTE_TABLE in line &&
-                            (line.contains("local default") || line.contains("local ::/0")))
-                }
-        }
-        return policyState
+                    (RootNetfilterPlanner.ROUTE_TABLE in line &&
+                        (line.contains("local default") || line.contains("local ::/0")))
+            }
     }
 
     fun apply(config: RootNetfilterConfig): Result<Unit> = runCatching {
@@ -104,8 +102,11 @@ class RootNetfilterManager internal constructor(
         try {
             persistExpectedOwnership(plan = plan)
             val fastResult = executor.executeFastNetfilterPlan(plan.setupCommands)
+            val snapshot = fastResult?.takeIf(RootCommandResult::success)?.output
+                ?.let(::parseRootStateSnapshot)
             if (fastResult?.success == true) {
-                Log.i(TAG, "Fast netfilter restore applied")
+                Log.i(TAG, "Fast netfilter restore applied commands=${plan.setupCommands.size}")
+                verifier.verifyRules(plan.setupCommands, plan.verifyCommands, snapshot = snapshot)
             } else {
                 if (fastResult != null) {
                     Log.w(
@@ -115,13 +116,15 @@ class RootNetfilterManager internal constructor(
                     )
                     cleanup(plan.cleanupCommands)
                     checkNoResidualState()
+                } else {
+                    Log.w(TAG, "Fast netfilter restore serializer unavailable; using compatible setup")
                 }
                 executeRequired(plan.setupCommands)
+                executeRequired(plan.verifyCommands)
             }
-            executeRequired(plan.verifyCommands)
-            verifyPolicyRouting(config)
+            verifier.verifyPolicyRouting(config, snapshot)
             activePlan = plan
-            persistOwnership(active = true)
+            persistOwnership(active = true, chainSnapshot = snapshot)
         } catch (error: Exception) {
             cleanup(plan.cleanupCommands)
             activePlan = null
@@ -148,13 +151,17 @@ class RootNetfilterManager internal constructor(
         try {
             persistExpectedOwnership(guard = plan)
             val fastResult = executor.executeFastNetfilterPlan(plan.setupCommands)
-            if (fastResult?.success != true) {
+            val snapshot = fastResult?.takeIf(RootCommandResult::success)?.output
+                ?.let(::parseRootStateSnapshot)
+            if (fastResult?.success == true) {
+                verifier.verifyRules(plan.setupCommands, plan.verifyCommands, snapshot = snapshot)
+            } else {
                 if (fastResult != null) cleanup(plan.cleanupCommands)
                 executeRequired(plan.setupCommands)
+                executeRequired(plan.verifyCommands)
             }
-            executeRequired(plan.verifyCommands)
             guardPlan = plan
-            persistOwnership(active = false)
+            persistOwnership(active = false, chainSnapshot = snapshot)
         } catch (error: Exception) {
             runCatching { cleanup(plan.cleanupCommands) }
             guardPlan = null
@@ -163,6 +170,41 @@ class RootNetfilterManager internal constructor(
             } else {
                 runCatching { persistOwnership(active = previousGuard == null) }
             }
+            throw error
+        }
+    }
+
+    fun installGuardAndStage(
+        guardConfig: RootFailClosedConfig,
+        config: RootNetfilterConfig
+    ): Result<RootNetfilterPlan> = runCatching {
+        check(guardPlan == null && activePlan == null) { "Root guard or plan is already active" }
+        val guard = RootNetfilterPlanner.buildGuard(guardConfig)
+        val plan = RootNetfilterPlanner.build(config)
+        val setup = guard.setupCommands + plan.stageCommands
+        val verify = guard.verifyCommands + plan.verifyCommands.filterNot(::isActivationVerification)
+        try {
+            persistExpectedOwnership(guard = guard, plan = plan)
+            val fastResult = executor.executeFastNetfilterPlan(setup)
+            val snapshot = fastResult?.takeIf(RootCommandResult::success)?.output
+                ?.let(::parseRootStateSnapshot)
+            if (fastResult?.success == true) {
+                verifier.verifyRules(setup, verify, snapshot = snapshot)
+            } else {
+                if (fastResult != null) cleanup(guard.cleanupCommands + plan.cleanupCommands)
+                executeRequired(setup)
+                executeRequired(verify)
+            }
+            verifier.verifyPolicyRouting(config, snapshot)
+            guardPlan = guard
+            activePlan = plan
+            persistOwnership(active = false, chainSnapshot = snapshot)
+            plan
+        } catch (error: Exception) {
+            runCatching { cleanup(guard.cleanupCommands + plan.cleanupCommands) }
+            guardPlan = null
+            activePlan = null
+            ownership?.clearStaging()
             throw error
         }
     }
@@ -180,17 +222,22 @@ class RootNetfilterManager internal constructor(
         try {
             persistExpectedOwnership(plan = plan)
             val fastResult = executor.executeFastNetfilterPlan(plan.stageCommands)
-            if (fastResult?.success != true) {
+            val snapshot = fastResult?.takeIf(RootCommandResult::success)?.output
+                ?.let(::parseRootStateSnapshot)
+            val stagedVerifyCommands = plan.verifyCommands.filterNot(::isActivationVerification)
+            if (fastResult?.success == true) {
+                verifier.verifyRules(plan.stageCommands, stagedVerifyCommands, snapshot = snapshot)
+            } else {
                 if (fastResult != null) {
                     cleanup(plan.cleanupCommands)
                     checkNoResidualState(allowGuard = guardPlan != null)
                 }
                 executeRequired(plan.stageCommands)
+                executeRequired(stagedVerifyCommands)
             }
-            executeRequired(plan.verifyCommands.filterNot(::isActivationVerification))
-            verifyPolicyRouting(config)
+            verifier.verifyPolicyRouting(config, snapshot)
             activePlan = plan
-            persistOwnership(active = false)
+            persistOwnership(active = false, chainSnapshot = snapshot)
             plan
         } catch (error: Exception) {
             runCatching { cleanup(plan.cleanupCommands) }
@@ -204,11 +251,33 @@ class RootNetfilterManager internal constructor(
         }
     }
 
-    fun activate(plan: RootNetfilterPlan): Result<Unit> = runCatching {
-        executeRequired(plan.activationCommands)
-        executeRequired(plan.verifyCommands.filter(::isActivationVerification))
+    fun activateAndRemoveGuard(plan: RootNetfilterPlan): Result<Unit> = runCatching {
+        val guard = guardPlan ?: error("Root fail-closed guard is unavailable")
+        val transitionCommands = plan.activationCommands + guard.cleanupCommands
+        val binaries = plan.activationCommands.mapNotNull(List<String>::firstOrNull)
+            .filter { it == "iptables" || it == "ip6tables" }
+            .distinct()
+        val transitionResult = executor.executeBatch(transitionCommands + rootStateSnapshotCommands(binaries))
+        val snapshot = transitionResult.takeIf(RootCommandResult::success)?.output
+            ?.let(::parseRootStateSnapshot)
+        if (!transitionResult.success || snapshot == null) {
+            executeRequired(plan.verifyCommands.filter(::isActivationVerification))
+            checkGuardAbsent()
+        }
+        verifier.verifyRules(
+            plan.activationCommands,
+            plan.verifyCommands.filter(::isActivationVerification),
+            snapshot = snapshot,
+            forbiddenChains = setOf(
+                RootNetfilterPlanner.CHAIN_GUARD4,
+                RootNetfilterPlanner.CHAIN_GUARD6
+            )
+        )
+        guardPlan = null
         activePlan = plan
-        persistOwnership(active = true)
+        ownership?.promoteStagingExcludingChains(
+            setOf(RootNetfilterPlanner.CHAIN_GUARD4, RootNetfilterPlanner.CHAIN_GUARD6)
+        ) ?: persistOwnership(active = true)
     }
 
     fun discard(plan: RootNetfilterPlan): Result<Unit> = runCatching {
@@ -309,9 +378,9 @@ class RootNetfilterManager internal constructor(
         }
         val remainingHooks = tableRules.lineSequence()
             .map(String::trim)
-            .filter(::isTrafficAffectingKunBoxIptablesReference)
+            .filter { line -> isTrafficAffectingKunBoxIptablesReference(line, allowGuard) }
             .toList()
-        val remainingNftHooks = trafficAffectingKunBoxNftReferences(nftRules)
+        val remainingNftHooks = trafficAffectingKunBoxNftReferences(nftRules, allowGuard)
         val remainingMetadata = (tableRules.lineSequence() + nftRules.lineSequence())
             .map(String::trim)
             .filter { line ->
@@ -358,47 +427,6 @@ class RootNetfilterManager internal constructor(
             "KunBox fail-closed guard remains after cleanup"
         }
     }
-
-    private fun verifyPolicyRouting(config: RootNetfilterConfig) {
-        if (config.proxyIpv4) {
-            val rules = executeRequiredResult(listOf("ip", "rule", "show")).output
-            val routes = executeRequiredResult(
-                listOf("ip", "route", "show", "table", RootNetfilterPlanner.ROUTE_TABLE)
-            ).output
-            check(RootNetfilterPlanner.IPV4_MARK in rules && RootNetfilterPlanner.ROUTE_TABLE in rules)
-            config.lanes.forEach { lane ->
-                check(rootMark(lane.markIpv4) in rules && lane.priorityIpv4.toString() in rules) {
-                    "IPv4 lane policy rule is missing: ${lane.laneId}"
-                }
-            }
-            check(routes.isNotBlank()) { "IPv4 local policy route is missing" }
-        }
-        if (config.proxyIpv6) {
-            val rules = executeRequiredResult(listOf("ip", "-6", "rule", "show")).output
-            val routes = executeRequiredResult(
-                listOf("ip", "-6", "route", "show", "table", RootNetfilterPlanner.ROUTE_TABLE)
-            ).output
-            check(RootNetfilterPlanner.IPV6_MARK in rules && RootNetfilterPlanner.ROUTE_TABLE in rules)
-            config.lanes.forEach { lane ->
-                check(rootMark(lane.markIpv6) in rules && lane.priorityIpv6.toString() in rules) {
-                    "IPv6 lane policy rule is missing: ${lane.laneId}"
-                }
-            }
-            check(routes.isNotBlank()) { "IPv6 local policy route is missing" }
-        }
-    }
-
-    private fun executeRequiredResult(command: List<String>): RootCommandResult =
-        executor.execute(command).also { result ->
-            check(result.success) {
-                val category = if (isXtablesLockContention(result)) {
-                    "NETFILTER_VERIFICATION_FAILED query_failed=xtables_lock"
-                } else {
-                    "probe_failed"
-                }
-                "Root $category (${result.exitCode}): ${command.joinToString(" ")} ${result.diagnosticOutput}"
-            }
-        }
 
     private fun executeRequiredBatchResult(commands: List<List<String>>): RootCommandResult =
         executor.executeBatch(commands).also { result ->
@@ -450,8 +478,8 @@ class RootNetfilterManager internal constructor(
         listOf("ip6tables", "-t", "filter", "-S")
     )
 
-    private fun persistOwnership(active: Boolean) {
-        persistOwnership(active, refreshChainFingerprints = true)
+    private fun persistOwnership(active: Boolean, chainSnapshot: Map<String, String>? = null) {
+        persistOwnership(active, refreshChainFingerprints = true, chainSnapshot = chainSnapshot)
     }
 
     private fun persistExpectedOwnership(
@@ -477,7 +505,11 @@ class RootNetfilterManager internal constructor(
         )
     }
 
-    private fun persistOwnership(active: Boolean, refreshChainFingerprints: Boolean) {
+    private fun persistOwnership(
+        active: Boolean,
+        refreshChainFingerprints: Boolean,
+        chainSnapshot: Map<String, String>? = null
+    ) {
         val owner = ownership ?: return
         val context = ownershipContext ?: return
         val commands = buildList {
@@ -489,7 +521,7 @@ class RootNetfilterManager internal constructor(
             return
         }
         val manifest = RootNetfilterOwnership.fromCommands(context, commands)
-        owner.persist(manifest, active, refreshChainFingerprints)
+        owner.persist(manifest, active, refreshChainFingerprints, chainSnapshot)
     }
 
     private fun checkNoForeignReservedPolicy(output: String, ipv6: Boolean) {
