@@ -22,7 +22,8 @@ data class RootInstalledPackage(
 data class RootUidSelection(
     val capturedUids: List<Int>,
     val capturedRanges: List<RootUidRange>,
-    val excludedUids: List<Int>
+    val excludedUids: List<Int>,
+    val applicationUidRanges: List<RootUidRange> = emptyList()
 )
 
 internal data class RootUidSnapshot(
@@ -177,7 +178,8 @@ class RootUidResolver(
             VpnAppMode.ALL -> RootUidSelection(
                 capturedUids = packagesByUid.keys.filter { it in 1..9_999 },
                 capturedRanges = applicationRanges,
-                excludedUids = selfUids.sorted()
+                excludedUids = selfUids.sorted(),
+                applicationUidRanges = applicationRanges
             )
             VpnAppMode.ALLOWLIST -> packagesByUid.filterValues { refs ->
                 refs.any { it.packageName in allowlist }
@@ -185,13 +187,15 @@ class RootUidResolver(
                 RootUidSelection(
                     capturedUids = selectedUids.filter { it > 0 && it !in selfUids }.sorted(),
                     capturedRanges = emptyList(),
-                    excludedUids = selfUids.sorted()
+                    excludedUids = selfUids.sorted(),
+                    applicationUidRanges = applicationRanges
                 )
             }
             VpnAppMode.BLOCKLIST -> RootUidSelection(
                 capturedUids = packagesByUid.keys.filter { it in 1..9_999 && it !in blockedUids },
                 capturedRanges = applicationRanges,
-                excludedUids = (blockedUids + selfUids).sorted()
+                excludedUids = (blockedUids + selfUids).sorted(),
+                applicationUidRanges = applicationRanges
             )
         }
     }

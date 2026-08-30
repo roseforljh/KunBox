@@ -31,6 +31,11 @@ internal fun CommandManager.createLogClientHandler(
     override fun connected() = Unit
 
     override fun disconnected(message: String?) {
+        Log.w(
+            CommandManager.TAG,
+            "[COMMAND_DIAG] channel=LOG event=disconnected generation=$generation token=$token " +
+                "message=${message.orEmpty()} thread=${Thread.currentThread().name}"
+        )
         if (acceptsCommandLogCallback(generation, token)) signals.disconnected.complete(message)
     }
 
@@ -48,6 +53,14 @@ internal fun CommandManager.createLogClientHandler(
 
     override fun writeLogs(messageList: LogIterator?) {
         if (!acceptsCommandLogCallback(generation, token)) return
+        val heartbeatAt = SystemClock.uptimeMillis()
+        synchronized(runtimeAccess) {
+            if (generation == activeCommandSessionGeneration &&
+                (token == activeCommandLogClientToken || token == pendingCommandLogClientToken)
+            ) {
+                commandLogHeartbeatAtMs = heartbeatAt
+            }
+        }
         signals.heartbeat.trySend(Unit)
         consumeCommandLogMessages(
             messageList,
@@ -99,7 +112,14 @@ internal suspend fun CommandManager.awaitCommandLogStream(
                 heartbeat.onReceive { false to null }
                 disconnected.onAwait { true to it }
             }
-        } ?: error("Command log heartbeat timeout")
+        } ?: run {
+            val diagnostic = controlChannelDiagnosticSnapshot(generation)
+            Log.e(CommandManager.TAG, "[COMMAND_DIAG] event=heartbeat_timeout $diagnostic")
+            LogRepository.getInstance().addAlwaysLog(
+                "ERROR [COMMAND_DIAG] event=heartbeat_timeout $diagnostic"
+            )
+            error("Command log heartbeat timeout")
+        }
         if (result.first) return result.second
         requireBaseCommandHeartbeats(generation)
     }
@@ -125,9 +145,30 @@ internal fun CommandManager.requireBaseCommandHeartbeats(generation: Long) {
             }
         }
     }
-    check(staleChannels.isEmpty()) {
-        "Base command heartbeat timeout: ${staleChannels.joinToString()}"
+    if (staleChannels.isNotEmpty()) {
+        val diagnostic = controlChannelDiagnosticSnapshot(generation)
+        Log.e(
+            CommandManager.TAG,
+            "[COMMAND_DIAG] event=base_heartbeat_timeout stale=${staleChannels.joinToString()} $diagnostic"
+        )
+        LogRepository.getInstance().addAlwaysLog(
+            "ERROR [COMMAND_DIAG] event=base_heartbeat_timeout " +
+                "stale=${staleChannels.joinToString()} $diagnostic"
+        )
     }
+    check(staleChannels.isEmpty()) { "Base command heartbeat timeout: ${staleChannels.joinToString()}" }
+}
+
+internal fun CommandManager.controlChannelDiagnosticSnapshot(generation: Long): String = synchronized(runtimeAccess) {
+    val now = SystemClock.uptimeMillis()
+    val ages = CommandManager.BaseCommandChannel.entries.joinToString(",") { channel ->
+        val heartbeat = baseCommandHeartbeatAtMs[channel]
+        "${channel.name.lowercase()}=${heartbeat?.let { (now - it).coerceAtLeast(0L) } ?: "never"}ms"
+    }
+    val logAge = commandLogHeartbeatAtMs.takeIf { it > 0L }?.let { (now - it).coerceAtLeast(0L) } ?: "never"
+    "generation=$generation activeGeneration=$activeCommandSessionGeneration " +
+        "baseHealthy=$commandBaseHealthy logHealthy=$commandLogHealthy " +
+        "baseAges={$ages} logAge=${logAge}ms thread=${Thread.currentThread().name}"
 }
 
 internal fun CommandManager.markCommandLogHealth(generation: Long, ready: Boolean) {
@@ -200,6 +241,11 @@ internal fun CommandManager.createClientHandler(
     override fun connected() = Unit
 
     override fun disconnected(message: String?) {
+        Log.w(
+            CommandManager.TAG,
+            "[COMMAND_DIAG] channel=${channel?.name ?: "UNKNOWN"} event=disconnected " +
+                "generation=$generation message=${message.orEmpty()} thread=${Thread.currentThread().name}"
+        )
         channel?.let { markBaseCommandHealth(generation, it, ready = false) }
         Log.w(CommandManager.TAG, "CommandClient disconnected: $message")
     }

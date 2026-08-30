@@ -40,6 +40,31 @@ class RootRuntimeStateMachineTest {
     }
 
     @Test
+    fun verifiedForegroundStopRecyclesConnectedRootService() {
+        assertTrue(
+            shouldRecycleRootServiceAfterStop(
+                cleanupConfirmed = true,
+                appForeground = true,
+                serviceConnected = true
+            )
+        )
+        assertFalse(
+            shouldRecycleRootServiceAfterStop(
+                cleanupConfirmed = true,
+                appForeground = false,
+                serviceConnected = true
+            )
+        )
+        assertFalse(
+            shouldRecycleRootServiceAfterStop(
+                cleanupConfirmed = false,
+                appForeground = true,
+                serviceConnected = true
+            )
+        )
+    }
+
+    @Test
     fun coldRootStartDispatchesBindBeforeRuntimeWork() {
         val source = File("src/main/java/com/kunk/singbox/service/root/RootTransparentForegroundService.kt")
             .readText(Charsets.UTF_8)
@@ -274,6 +299,21 @@ class RootRuntimeStateMachineTest {
             .readText(Charsets.UTF_8)
         assertTrue(aidl.contains("oneway void requestStop"))
         assertTrue(rootService.contains("rootCommandExecutor.cancelActiveCommands()"))
+    }
+
+    @Test
+    fun controlHeartbeatRecoveryKeepsRootDataPlaneAndRetriesControlClients() {
+        val source = File(
+            "src/main/java/com/kunk/singbox/service/root/runtime/RootTransparentForegroundRuntime.kt"
+        ).readText(Charsets.UTF_8)
+        val recovery = source
+            .substringAfter("internal fun RootTransparentForegroundService.scheduleControlChannelRecovery")
+            .substringBefore("internal fun RootTransparentForegroundService.recordSelector")
+
+        assertTrue(recovery.contains("reconnectControlClientsWithFd"))
+        assertTrue(recovery.contains("repeat(3)"))
+        assertFalse(recovery.contains("restartRuntime(configPathOverride"))
+        assertFalse(recovery.contains("requestStopRuntime"))
     }
 
     @Test

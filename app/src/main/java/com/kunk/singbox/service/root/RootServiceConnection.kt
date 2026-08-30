@@ -131,6 +131,12 @@ internal fun shouldPrewarmRootService(
 ): Boolean = captureMode == TrafficCaptureMode.ROOT_TRANSPARENT &&
     !active && pending.isBlank() && !running && !starting
 
+internal fun shouldRecycleRootServiceAfterStop(
+    cleanupConfirmed: Boolean,
+    appForeground: Boolean,
+    serviceConnected: Boolean
+): Boolean = cleanupConfirmed && appForeground && serviceConnected
+
 object RootServicePrewarmer {
     private val mutex = Mutex()
 
@@ -154,12 +160,14 @@ object RootServicePrewarmer {
     }
 
     private suspend fun prewarmLocked(context: Context): Result<Unit> {
-        connection?.service?.let { return Result.success(Unit) }
+        synchronized(this) { connection }?.service?.let { return Result.success(Unit) }
         lateinit var next: RootServiceConnection
         next = RootServiceConnection(context) {
-            if (connection === next) connection = null
+            synchronized(this) {
+                if (connection === next) connection = null
+            }
         }
-        connection = next
+        synchronized(this) { connection = next }
         val startedAt = android.os.SystemClock.elapsedRealtime()
         Log.i(TAG, "[ROOT_PREWARM] event=started")
         return runCatching {
@@ -172,18 +180,62 @@ object RootServicePrewarmer {
             Unit
         }.onFailure { error ->
             Log.w(TAG, "[ROOT_PREWARM] event=failed", error)
-            if (connection === next) {
+            val stillOwned = synchronized(this) {
+                if (connection === next) {
+                    connection = null
+                    true
+                } else {
+                    false
+                }
+            }
+            if (stillOwned) {
                 next.unbind()
-                connection = null
             }
         }
     }
 
     fun acquire(onDisconnected: () -> Unit): RootServiceConnection? {
-        val next = connection ?: return null
-        connection = null
+        val next = synchronized(this) {
+            connection?.also { connection = null }
+        } ?: return null
         Log.i(TAG, "[ROOT_PREWARM] event=acquired ready=${next.service != null}")
         return next.transferDisconnectedCallback(onDisconnected)
+    }
+
+    fun recycleAfterVerifiedStop(
+        next: RootServiceConnection,
+        appForeground: Boolean
+    ): Boolean {
+        if (!shouldRecycleRootServiceAfterStop(
+                cleanupConfirmed = true,
+                appForeground = appForeground,
+                serviceConnected = next.service != null
+            )
+        ) {
+            return false
+        }
+        val accepted = synchronized(this) {
+            if (connection != null && connection !== next) {
+                false
+            } else {
+                connection = next.transferDisconnectedCallback {
+                    synchronized(this) {
+                        if (connection === next) connection = null
+                    }
+                }
+                true
+            }
+        }
+        if (accepted) Log.i(TAG, "[ROOT_PREWARM] event=recycled_after_stop")
+        return accepted
+    }
+
+    fun stopIdle() {
+        val idle = synchronized(this) {
+            connection?.also { connection = null }
+        } ?: return
+        idle.stopRootService()
+        Log.i(TAG, "[ROOT_PREWARM] event=stopped_background")
     }
 
     private const val TAG = "RootServicePrewarmer"

@@ -186,6 +186,7 @@ object SingBoxIpcHub {
 
     private val lastStateUpdateAtMs = AtomicLong(0L)
     private val lastBackgroundAtMs = AtomicLong(0L)
+    private val appForeground = AtomicBoolean(false)
 
     fun setPowerManager(manager: BackgroundPowerManager?) {
         powerManager = manager
@@ -332,6 +333,7 @@ object SingBoxIpcHub {
     }
 
     fun onAppLifecycle(isForeground: Boolean) {
+        appForeground.set(isForeground)
         val vpnState = stateNames.getOrNull(stateSnapshot.stateOrdinal) ?: "UNKNOWN"
         log("onAppLifecycle: isForeground=$isForeground, vpnState=$vpnState")
 
@@ -386,6 +388,8 @@ object SingBoxIpcHub {
             reconciled
         }
     }
+
+    fun isAppForeground(): Boolean = appForeground.get()
 
     private fun VpnStateStore.RuntimeStateSnapshot.toBundle(): Bundle {
         return Bundle().apply {

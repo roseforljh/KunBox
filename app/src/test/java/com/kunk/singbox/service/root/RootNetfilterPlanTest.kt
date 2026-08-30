@@ -9,6 +9,7 @@ import org.junit.Test
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
+@Suppress("LargeClass")
 class RootNetfilterPlanTest {
     @Test
     fun everySerializedXtablesCommandGetsBoundedWaitAndRetry() {
@@ -586,6 +587,38 @@ class RootNetfilterPlanTest {
         assertTrue(commands.any { "ip6tables -t filter -A KBX_BLOCK6" in it && "--uid-owner 10123" in it })
         assertFalse(commands.any { "ip6tables -t mangle -A KBX_PRE6" in it })
         assertEquals(commands.last(), "ip6tables -t filter -I OUTPUT 1 -j KBX_BLOCK6")
+    }
+
+    @Test
+    fun ipv6PrivacyBlocksPhysicalAppTrafficButAllowsProxyMarkedTraffic() {
+        val plan = RootNetfilterPlanner.build(
+            RootNetfilterConfig(
+                capturedUids = listOf(10123),
+                capturedUidRanges = emptyList(),
+                excludedUids = emptyList(),
+                appUid = 10234,
+                proxyIpv4 = true,
+                proxyIpv6 = true,
+                blockIpv4 = false,
+                blockIpv6 = false,
+                redirectPortIpv4 = 1536,
+                redirectPortIpv6 = 1537,
+                tproxyPortIpv4 = 1538,
+                tproxyPortIpv6 = 1539,
+                protectIpv6 = true,
+                applicationUidRanges = listOf(RootUidRange(10000, 99999))
+            )
+        )
+        val commands = plan.setupCommands.map { it.joinToString(" ") }
+
+        assertTrue(commands.any {
+            "ip6tables -t filter -A KBX_PRIV6 -m owner --uid-owner 10000-99999 -j REJECT" in it
+        })
+        assertTrue(commands.any {
+            "KBX_PRIV6 -m mark --mark ${RootNetfilterPlanner.IPV6_MARK}/0xffffffff -j RETURN" in it
+        })
+        assertTrue(commands.any { "ip6tables -t filter -I OUTPUT 1 -j KBX_PRIV6" == it })
+        assertTrue(plan.cleanupCommands.any { it.lastOrNull() == RootNetfilterPlanner.CHAIN_PRIVACY6 })
     }
 
     @Test

@@ -181,6 +181,7 @@ class CommandManager(
     internal val baseCommandHeartbeatAtMs = mutableMapOf<BaseCommandChannel, Long>()
     internal var commandBaseHealthy = false
     internal var commandLogHealthy = false
+    internal var commandLogHeartbeatAtMs = 0L
     internal var lastPublishedControlHealth: Boolean? = null
 
     internal val trafficStatusGate = TrafficStatusGate()
@@ -328,25 +329,63 @@ class CommandManager(
 
     fun startClients(): Result<Unit> = startClients(null)
 
-    suspend fun startClientsWithFd(fdProvider: () -> ParcelFileDescriptor?): Result<Unit> {
-        val started = startClients(fdProvider)
+    suspend fun startClientsWithFd(
+        fdProvider: () -> ParcelFileDescriptor?,
+        preserveServerOnFailure: Boolean = false
+    ): Result<Unit> {
+        val started = startClients(fdProvider, preserveServerOnFailure)
         if (started.isFailure) return started
         val generation = currentRuntimeGeneration()
         return runCatching { awaitCommandLogReady(generation) }.onFailure {
-            if (isCommandSessionActive(generation)) stop()
+            if (isCommandSessionActive(generation)) stop(closeServer = !preserveServerOnFailure)
         }
     }
 
-    internal fun startClients(fdProvider: (() -> ParcelFileDescriptor?)?): Result<Unit> =
+    internal fun startClients(
+        fdProvider: (() -> ParcelFileDescriptor?)?,
+        preserveServerOnFailure: Boolean = false
+    ): Result<Unit> =
         runCatching { beginCommandRuntime(fdProvider) }.fold(
-            onSuccess = { generation -> startCommandClients(generation, fdProvider) },
+            onSuccess = { generation ->
+                startCommandClients(generation, fdProvider, preserveServerOnFailure)
+            },
             onFailure = Result.Companion::failure
         )
+
+    suspend fun reconnectControlClientsWithFd(
+        fdProvider: () -> ParcelFileDescriptor?
+    ): Result<Unit> = runCatching {
+        val detached = detachCommandRuntime()
+            ?: error("Control runtime is not active")
+        val handle = detached.handle
+            ?: error("Command runtime handle is unavailable")
+        val server = handle.server
+            ?: error("Command server is unavailable")
+        detached.logSupervisor?.cancel()
+        detached.logReady?.cancel()
+        stopTrafficUpdatesAndWait()
+        handle.statusClient?.disconnect()
+        handle.groupClient?.disconnect()
+        handle.logClient?.disconnect()
+        handle.connectionsClient?.disconnect()
+        connectionsSnapshot = null
+        synchronized(runtimeAccess) { commandServer = server }
+        runCatching {
+            startClientsWithFd(fdProvider, preserveServerOnFailure = true).getOrThrow()
+        }.onFailure {
+            synchronized(runtimeAccess) {
+                if (commandServer == null) commandServer = server
+            }
+            throw it
+        }
+        Log.i(TAG, "Control clients reconnected without restarting CommandServer")
+    }
 
     @Suppress("LongMethod")
     internal fun startCommandClients(
         generation: Long,
-        fdProvider: (() -> ParcelFileDescriptor?)?
+        fdProvider: (() -> ParcelFileDescriptor?)?,
+        preserveServerOnFailure: Boolean = false
     ): Result<Unit> = runCatching {
         trafficMonitor.reset()
         connectionStormGuard.clear()
@@ -413,7 +452,7 @@ class CommandManager(
         val stillOwnsStartup = synchronized(runtimeAccess) {
             generation == activeCommandSessionGeneration
         }
-        if (stillOwnsStartup) stop()
+        if (stillOwnsStartup) stop(closeServer = !preserveServerOnFailure)
     }
 
     @Suppress("CognitiveComplexMethod", "CyclomaticComplexMethod", "LongMethod")
@@ -486,7 +525,7 @@ class CommandManager(
         }
     }
 
-    fun stop(): Result<Unit> = runCatching {
+    fun stop(closeServer: Boolean = true): Result<Unit> = runCatching {
         val detached = requireNotNull(detachCommandRuntime())
         val capturedHandle = detached.handle
         detached.logSupervisor?.cancel()
@@ -497,15 +536,16 @@ class CommandManager(
         capturedHandle?.logClient?.disconnect()
         capturedHandle?.connectionsClient?.disconnect()
 
-        BoxWrapperManager.release()
+        if (closeServer) BoxWrapperManager.release()
         connectionsSnapshot = null
         connectionTrafficAttributor.clear()
         connectionStormGuard.clear()
 
-        runCatching { capturedHandle?.server?.closeService() }
-            .onFailure { Log.w(TAG, "CommandServer.closeService failed: ${it.message}") }
-
-        capturedHandle?.server?.close()
+        if (closeServer) {
+            runCatching { capturedHandle?.server?.closeService() }
+                .onFailure { Log.w(TAG, "CommandServer.closeService failed: ${it.message}") }
+            capturedHandle?.server?.close()
+        }
         Log.i(TAG, "Command Server/Client stopped")
     }
 
@@ -629,6 +669,7 @@ class CommandManager(
             baseCommandHeartbeatAtMs.clear()
             commandBaseHealthy = false
             commandLogHealthy = false
+            commandLogHeartbeatAtMs = 0L
             lastPublishedControlHealth = null
             commandClientLogs = null
             groupSelectedOutbounds.clear()
@@ -670,6 +711,7 @@ class CommandManager(
             baseCommandHeartbeatAtMs.clear()
             commandBaseHealthy = false
             commandLogHealthy = false
+            commandLogHeartbeatAtMs = 0L
             lastPublishedControlHealth = null
             commandFdProvider = null
             runtimeHandle = null

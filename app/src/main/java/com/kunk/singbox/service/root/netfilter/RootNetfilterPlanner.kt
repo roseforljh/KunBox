@@ -18,7 +18,9 @@ data class RootNetfilterConfig(
     val redirectPortIpv6: Int,
     val tproxyPortIpv4: Int,
     val tproxyPortIpv6: Int,
-    val lanes: List<RootNetfilterLane> = emptyList()
+    val lanes: List<RootNetfilterLane> = emptyList(),
+    val protectIpv6: Boolean = false,
+    val applicationUidRanges: List<RootUidRange> = emptyList()
 ) {
     init {
         require(appUid > 0)
@@ -34,6 +36,7 @@ data class RootNetfilterConfig(
         require(lanes.map(RootNetfilterLane::slot).distinct().size == lanes.size)
         require(lanes.flatMap(RootNetfilterLane::uids).distinct().size == lanes.sumOf { it.uids.distinct().size })
         require(lanes.flatMap(RootNetfilterLane::uids).none { it in excludedUids })
+        require(applicationUidRanges.all { it.first > 0 && it.last >= it.first })
     }
 }
 
@@ -213,6 +216,7 @@ object RootNetfilterPlanner {
     const val CHAIN_BLOCK6 = "KBX_BLOCK6"
     const val CHAIN_QUIC4 = "KBX_QUIC4"
     const val CHAIN_QUIC6 = "KBX_QUIC6"
+    const val CHAIN_PRIVACY6 = "KBX_PRIV6"
     const val CHAIN_GUARD4 = "KBX_GUARD4"
     const val CHAIN_GUARD6 = "KBX_GUARD6"
 
@@ -294,6 +298,11 @@ object RootNetfilterPlanner {
             appendBlockFamily(setup, "ip6tables", CHAIN_BLOCK6, config)
             verify += listOf("ip6tables", "-t", "filter", "-S", CHAIN_BLOCK6)
         }
+        if (config.protectIpv6) {
+            appendIpv6PrivacyProtection(setup, config)
+            verify += listOf("ip6tables", "-t", "filter", "-S", CHAIN_PRIVACY6)
+            verify += listOf("ip6tables", "-t", "filter", "-C", "OUTPUT", "-j", CHAIN_PRIVACY6)
+        }
         setup.filter { "-A" in it }.forEach { command ->
             verify += command.map { argument -> if (argument == "-A") "-C" else argument }
         }
@@ -365,7 +374,8 @@ object RootNetfilterPlanner {
                 listOf("iptables", "-t", "filter", "-D", "OUTPUT", "-j", CHAIN_BLOCK4),
                 listOf("ip6tables", "-t", "filter", "-D", "OUTPUT", "-j", CHAIN_BLOCK6),
                 listOf("iptables", "-t", "filter", "-D", "OUTPUT", "-j", CHAIN_QUIC4),
-                listOf("ip6tables", "-t", "filter", "-D", "OUTPUT", "-j", CHAIN_QUIC6)
+                listOf("ip6tables", "-t", "filter", "-D", "OUTPUT", "-j", CHAIN_QUIC6),
+                listOf("ip6tables", "-t", "filter", "-D", "OUTPUT", "-j", CHAIN_PRIVACY6)
             )
         )
         if (config == null) {
@@ -417,7 +427,8 @@ object RootNetfilterPlanner {
             Triple("iptables", "filter", CHAIN_BLOCK4),
             Triple("ip6tables", "filter", CHAIN_BLOCK6),
             Triple("iptables", "filter", CHAIN_QUIC4),
-            Triple("ip6tables", "filter", CHAIN_QUIC6)
+            Triple("ip6tables", "filter", CHAIN_QUIC6),
+            Triple("ip6tables", "filter", CHAIN_PRIVACY6)
         ).forEach { (binary, table, chain) -> addAll(deleteChainCommands(binary, table, chain)) }
         if (config == null) {
             addAll(deleteChainCommands("iptables", "filter", CHAIN_GUARD4))
@@ -674,6 +685,47 @@ object RootNetfilterPlanner {
             )
         }
         destination += listOf(binary, "-t", "filter", "-I", "OUTPUT", "1", "-j", chain)
+    }
+
+    private fun appendIpv6PrivacyProtection(
+        destination: MutableList<List<String>>,
+        config: RootNetfilterConfig
+    ) {
+        val binary = "ip6tables"
+        val table = "filter"
+        val chain = CHAIN_PRIVACY6
+        destination += listOf(binary, "-t", table, "-N", chain)
+        destination += listOf(binary, "-t", table, "-A", chain, "-m", "owner", "--uid-owner", "0", "-j", "RETURN")
+        destination += listOf(
+            binary, "-t", table, "-A", chain,
+            "-m", "owner", "--uid-owner", config.appUid.toString(), "-j", "RETURN"
+        )
+        destination += listOf(binary, "-t", table, "-A", chain, "-d", "::1/128", "-j", "RETURN")
+        destination += listOf(
+            binary, "-t", table, "-A", chain,
+            "-d", "ff02::fb", "-p", "udp", "--dport", "5353", "-j", "RETURN"
+        )
+        destination += listOf(
+            binary, "-t", table, "-A", chain,
+            "-m", "mark", "--mark", CORE_BYPASS_MARK_MATCH, "-j", "RETURN"
+        )
+        val marks = buildList {
+            add(IPV6_MARK)
+            config.lanes.sortedBy(RootNetfilterLane::slot).forEach { add(rootMark(it.markIpv6)) }
+        }.distinct()
+        marks.forEach { mark ->
+            destination += listOf(
+                binary, "-t", table, "-A", chain,
+                "-m", "mark", "--mark", "$mark/0xffffffff", "-j", "RETURN"
+            )
+        }
+        config.applicationUidRanges.distinct().forEach { range ->
+            destination += listOf(
+                binary, "-t", table, "-A", chain,
+                "-m", "owner", "--uid-owner", range.ownerValue, "-j", "REJECT"
+            )
+        }
+        destination += listOf(binary, "-t", table, "-I", "OUTPUT", "1", "-j", chain)
     }
 
     private fun appendQuicBlockFamily(

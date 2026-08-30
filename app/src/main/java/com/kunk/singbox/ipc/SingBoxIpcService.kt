@@ -33,7 +33,11 @@ class SingBoxIpcService : Service() {
 
         override fun notifyAppLifecycle(isForeground: Boolean) {
             SingBoxIpcHub.onAppLifecycle(isForeground)
-            if (isForeground) scheduleRootPrewarm()
+            if (isForeground) {
+                scheduleRootPrewarm()
+            } else {
+                serviceScope.launch { RootServicePrewarmer.stopIdle() }
+            }
         }
 
         override fun hotReloadConfig(configContent: String?): Int {

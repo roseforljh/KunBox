@@ -356,7 +356,7 @@ class KunBoxRootService : RootService() {
         }
     }
 
-    @Suppress("ReturnCount", "LongMethod", "CyclomaticComplexMethod")
+    @Suppress("ReturnCount", "LongMethod", "CyclomaticComplexMethod", "CognitiveComplexMethod")
     internal fun startLocked(request: RootStartRequest): RootRuntimeSnapshot {
         val startedAt = android.os.SystemClock.elapsedRealtime()
         var phaseStartedAt = startedAt
@@ -375,6 +375,11 @@ class KunBoxRootService : RootService() {
         cleanupSupport.installScripts().getOrElse { error ->
             Log.e(TAG, "[ROOT_BOOT] stage=watchdog_install_failed", error)
             return failUnprotected(error.message ?: "Cannot install Root cleanup support")
+        }
+        val legacyIpv6RestoreError = ipv6PrivacyGuard.restore().exceptionOrNull()
+        if (legacyIpv6RestoreError != null) {
+            Log.e(TAG, "[ROOT_BOOT] stage=legacy_ipv6_privacy_restore_failed", legacyIpv6RestoreError)
+            return failUnprotected(legacyIpv6RestoreError.message ?: "Cannot restore legacy IPv6 state")
         }
         val staleRuntimePresent = File("/data/adb/kunbox/session").exists()
         val prepareError = netfilterManager.prepareForStart(staleRuntimePresent).exceptionOrNull()
@@ -493,8 +498,6 @@ class KunBoxRootService : RootService() {
             logStartPhase("rules_activation", phaseStartedAt)
             netfilterOwned = true
             phaseStartedAt = android.os.SystemClock.elapsedRealtime()
-            ipv6PrivacyGuard.activate(request.runtimeSessionId).getOrThrow()
-            logStartPhase("ipv6_privacy", phaseStartedAt)
             logStartPhase("total_ms", startedAt)
             val runningSnapshot = updateSnapshot(
                 phase = RootRuntimePhase.RUNNING,
@@ -680,7 +683,9 @@ class KunBoxRootService : RootService() {
             redirectPortIpv6 = InboundBuilder.ROOT_REDIRECT_PORT_IPV6,
             tproxyPortIpv4 = InboundBuilder.ROOT_TPROXY_PORT_IPV4,
             tproxyPortIpv6 = InboundBuilder.ROOT_TPROXY_PORT_IPV6,
-            lanes = lanes
+            lanes = lanes,
+            protectIpv6 = true,
+            applicationUidRanges = resolved.selection.applicationUidRanges
         )
     }
 

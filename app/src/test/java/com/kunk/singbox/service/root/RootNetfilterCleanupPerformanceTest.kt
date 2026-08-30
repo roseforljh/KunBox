@@ -8,6 +8,36 @@ import org.junit.Test
 
 class RootNetfilterCleanupPerformanceTest {
     @Test
+    fun activationAndGuardRemovalUseOrderedRestoreBatches() {
+        val plan = RootNetfilterPlanner.build(config(proxyIpv6 = true))
+        val guard = RootNetfilterPlanner.buildGuard(
+            RootFailClosedConfig(
+                capturedUids = listOf(10123),
+                capturedUidRanges = emptyList(),
+                excludedUids = emptyList(),
+                appUid = 10234,
+                ipv4 = true,
+                ipv6 = true
+            )
+        )
+
+        val script = requireNotNull(
+            buildRootNetfilterTransitionScript(plan.activationCommands + guard.cleanupCommands)
+        )
+
+        assertEquals(2, script.split("iptables-restore -w 2 --noflush").size - 1)
+        assertEquals(2, script.split("ip6tables-restore -w 2 --noflush").size - 1)
+        assertTrue(script.contains("-I OUTPUT 1 -j KBX_OUT4"))
+        assertTrue(script.contains("-D OUTPUT -j KBX_GUARD4"))
+        assertTrue(script.contains("-X KBX_GUARD4"))
+        assertTrue(
+            script.indexOf("-I OUTPUT 1 -j KBX_OUT4") <
+                script.indexOf("-D OUTPUT -j KBX_GUARD4")
+        )
+        assertFalse(script.contains("'iptables' '-w' '2'"))
+    }
+
+    @Test
     fun fastCleanupUsesRestoreAndIpBatchForOnlyInstalledState() {
         val plan = RootNetfilterPlanner.build(config())
         val cleanup = cleanupCommandsForInstalledSetup(plan.setupCommands)
@@ -61,13 +91,13 @@ class RootNetfilterCleanupPerformanceTest {
         }
     }
 
-    private fun config(): RootNetfilterConfig = RootNetfilterConfig(
+    private fun config(proxyIpv6: Boolean = false): RootNetfilterConfig = RootNetfilterConfig(
         capturedUids = listOf(10123),
         capturedUidRanges = emptyList(),
         excludedUids = emptyList(),
         appUid = 10234,
         proxyIpv4 = true,
-        proxyIpv6 = false,
+        proxyIpv6 = proxyIpv6,
         blockIpv4 = false,
         blockIpv6 = false,
         redirectPortIpv4 = 1536,

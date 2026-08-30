@@ -257,9 +257,10 @@ class RootNetfilterManager internal constructor(
         val binaries = plan.activationCommands.mapNotNull(List<String>::firstOrNull)
             .filter { it == "iptables" || it == "ip6tables" }
             .distinct()
-        val transitionResult = executor.executeBatch(
-            transitionCommands + rootStateSnapshotCommands(binaries, includePolicyRouting = false)
-        )
+        val transitionResult = executor.executeFastNetfilterTransitionPlan(transitionCommands)
+            ?: executor.executeBatch(
+                transitionCommands + rootStateSnapshotCommands(binaries, includePolicyRouting = false)
+            )
         val snapshot = transitionResult.takeIf(RootCommandResult::success)?.output
             ?.let(::parseRootStateSnapshot)
         if (!transitionResult.success || snapshot == null) {
@@ -417,7 +418,8 @@ class RootNetfilterManager internal constructor(
                 RootNetfilterPlanner.CHAIN_BLOCK4,
                 RootNetfilterPlanner.CHAIN_BLOCK6,
                 RootNetfilterPlanner.CHAIN_QUIC4,
-                RootNetfilterPlanner.CHAIN_QUIC6
+                RootNetfilterPlanner.CHAIN_QUIC6,
+                RootNetfilterPlanner.CHAIN_PRIVACY6
             ))
             if (!allowGuard) {
                 add(RootNetfilterPlanner.CHAIN_GUARD4)

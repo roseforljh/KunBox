@@ -137,6 +137,8 @@ fun interface RootCommandExecutor {
 
     fun executeFastNetfilterPlan(commands: List<List<String>>): RootCommandResult? = null
 
+    fun executeFastNetfilterTransitionPlan(commands: List<List<String>>): RootCommandResult? = null
+
     fun executeFastNetfilterCleanupPlan(commands: List<List<String>>): RootCommandResult? = null
 
     fun executeBatch(commands: List<List<String>>): RootCommandResult {
@@ -221,6 +223,11 @@ class ProcessRootCommandExecutor internal constructor(
     override fun executeFastNetfilterPlan(commands: List<List<String>>): RootCommandResult? =
         withSerializedRootCommand {
             buildRootNetfilterRestoreScript(commands)?.let(::executeScript)
+        }
+
+    override fun executeFastNetfilterTransitionPlan(commands: List<List<String>>): RootCommandResult? =
+        withSerializedRootCommand {
+            buildRootNetfilterTransitionScript(commands)?.let(::executeScript)
         }
 
     override fun executeFastNetfilterCleanupPlan(commands: List<List<String>>): RootCommandResult? =
@@ -408,42 +415,68 @@ internal fun buildRootNetfilterRestoreScript(commands: List<List<String>>): Stri
     }
 }
 
-internal fun buildRootNetfilterCleanupScript(commands: List<List<String>>): String? {
-    val restores = linkedMapOf<String, LinkedHashMap<String, MutableList<String>>>()
+internal fun buildRootNetfilterTransitionScript(commands: List<List<String>>): String? =
+    buildRootNetfilterMutationScript(commands, setOf("-I", "-D", "-F", "-X"), "TRANSITION")
+
+internal fun buildRootNetfilterCleanupScript(commands: List<List<String>>): String? =
+    buildRootNetfilterMutationScript(commands, setOf("-D", "-F", "-X"), "CLEANUP")
+
+@Suppress("CognitiveComplexMethod")
+private fun buildRootNetfilterMutationScript(
+    commands: List<List<String>>,
+    allowedOperations: Set<String>,
+    marker: String
+): String? {
     val policyCommands = commands.filter { it.firstOrNull() == "ip" }
     val xtablesCommands = commands.filter { it.firstOrNull() != "ip" }
-    val parsedCommands = xtablesCommands.mapNotNull(::parseRootCleanupCommand)
+    val parsedCommands = xtablesCommands.mapNotNull { parseRootMutationCommand(it, allowedOperations) }
     if (policyCommands.size + xtablesCommands.size != commands.size || parsedCommands.size != xtablesCommands.size) {
         return null
     }
-    parsedCommands.forEach { (binary, table, arguments) ->
-        restores.getOrPut(binary) { linkedMapOf() }.getOrPut(table) { mutableListOf() }.add(arguments)
+    if (parsedCommands.isEmpty()) return null
+    val phases = if ("-I" in allowedOperations) {
+        listOf(
+            "${marker}_ACTIVATE" to parsedCommands.filter { it.third.startsWith("-I ") },
+            "${marker}_CLEANUP" to parsedCommands.filterNot { it.third.startsWith("-I ") }
+        ).filter { it.second.isNotEmpty() }
+    } else {
+        listOf(marker to parsedCommands)
     }
-    if (restores.isEmpty()) return null
 
     return buildString {
         append(xtablesRetryShellFunction())
-        restores.forEach { (binary, tables) ->
-            val suffix = if (binary == "iptables") "4" else "6"
-            val restoreBinary = if (binary == "iptables") "iptables-restore" else "ip6tables-restore"
-            append("command -v ").append(restoreBinary).append(" >/dev/null 2>&1 || exit 127\n")
-            append("kb_run_xtables ").append(shellQuote(restoreBinary)).append(' ')
-                .append(restoreBinary).append(" -w ").append(XTABLES_WAIT_SECONDS)
-                .append(" --noflush <<'KBX_CLEANUP_").append(suffix).append("'\n")
-            tables.forEach { (table, operations) ->
-                append('*').append(table).append('\n')
-                operations.forEach { append(it).append('\n') }
-                append("COMMIT\n")
+        phases.forEach { (phaseMarker, phaseCommands) ->
+            val restores = linkedMapOf<String, LinkedHashMap<String, MutableList<String>>>()
+            phaseCommands.forEach { (binary, table, arguments) ->
+                restores.getOrPut(binary) { linkedMapOf() }
+                    .getOrPut(table) { mutableListOf() }
+                    .add(arguments)
             }
-            append("KBX_CLEANUP_").append(suffix).append('\n')
-            append("kb_status=${'$'}?\nif [ \"${'$'}kb_status\" -ne 0 ]; then exit \"${'$'}kb_status\"; fi\n")
+            restores.forEach { (binary, tables) ->
+                val suffix = if (binary == "iptables") "4" else "6"
+                val restoreBinary = if (binary == "iptables") "iptables-restore" else "ip6tables-restore"
+                append("command -v ").append(restoreBinary).append(" >/dev/null 2>&1 || exit 127\n")
+                append("kb_run_xtables ").append(shellQuote(restoreBinary)).append(' ')
+                    .append(restoreBinary).append(" -w ").append(XTABLES_WAIT_SECONDS)
+                    .append(" --noflush <<'KBX_").append(phaseMarker).append('_').append(suffix).append("'\n")
+                tables.forEach { (table, operations) ->
+                    append('*').append(table).append('\n')
+                    operations.forEach { append(it).append('\n') }
+                    append("COMMIT\n")
+                }
+                append("KBX_").append(phaseMarker).append('_').append(suffix).append('\n')
+                append("kb_status=${'$'}?\nif [ \"${'$'}kb_status\" -ne 0 ]; then exit \"${'$'}kb_status\"; fi\n")
+            }
         }
         append(buildRootIpBatchScript(policyCommands))
-        append(buildRootCommandBatchScript(rootStateSnapshotCommands(listOf("iptables", "ip6tables"))))
+        append(buildRootCommandBatchScript(rootStateSnapshotCommands(parsedCommands.map { it.first }.distinct())))
     }
 }
 
-private fun parseRootCleanupCommand(command: List<String>): Triple<String, String, String>? {
+private fun parseRootMutationCommand(
+    command: List<String>,
+    allowedOperations: Set<String>
+): Triple<String, String, String>? {
     val binary = command.firstOrNull()
     val tableIndex = command.indexOf("-t")
     val table = command.getOrNull(tableIndex + 1)
@@ -451,7 +484,7 @@ private fun parseRootCleanupCommand(command: List<String>): Triple<String, Strin
     val operation = command.getOrNull(operationIndex)
     val arguments = command.drop(operationIndex.coerceIn(0, command.size))
     val headerValid = binary in setOf("iptables", "ip6tables") && table != null
-    val operationValid = operation in setOf("-D", "-F", "-X")
+    val operationValid = operation in allowedOperations
     val argumentsValid = arguments.isNotEmpty() && arguments.all(::isSafeRestoreToken)
     return if (headerValid && operationValid && argumentsValid) {
         Triple(requireNotNull(binary), table, arguments.joinToString(" "))

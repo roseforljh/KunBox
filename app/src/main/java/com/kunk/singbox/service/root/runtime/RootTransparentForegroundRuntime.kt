@@ -23,6 +23,7 @@ import com.kunk.singbox.repository.NodeProtectionStore
 import com.kunk.singbox.repository.RootGenerationStore
 import com.kunk.singbox.repository.SettingsRepository
 import com.kunk.singbox.service.ServiceState
+import com.kunk.singbox.service.manager.controlChannelDiagnosticSnapshot
 import com.kunk.singbox.service.VpnTileService
 import com.kunk.singbox.service.resolveNotificationNodeLabel
 import com.kunk.singbox.service.notification.VpnNotificationManager
@@ -189,7 +190,7 @@ internal suspend fun RootTransparentForegroundService.restoreReloadedPreviousRun
     token: Long
 ) {
     ensureRunningRequest(token)
-    commandManager.startClientsWithFd { rootService.openCommandConnection() }.getOrThrow()
+    commandManager.startClientsWithFd(fdProvider = { rootService.openCommandConnection() }).getOrThrow()
     SelectorManager.updateCommandClient(commandManager.getCommandClient())
     check(transitionLifecycle(token, RootLifecycleState.RUNNING, "reload_rolled_back")) {
         "Root rollback generation became stale"
@@ -293,7 +294,7 @@ internal suspend fun RootTransparentForegroundService.refreshUidRoutingLocked(re
                 tproxyIpv6 = settings.ipVersionMode != IpVersionMode.IPV4_ONLY
             )
         )?.let(::error)
-        commandManager.startClientsWithFd { rootService.openCommandConnection() }.getOrThrow()
+        commandManager.startClientsWithFd(fdProvider = { rootService.openCommandConnection() }).getOrThrow()
         SelectorManager.updateCommandClient(commandManager.getCommandClient())
         val applied = VpnStateStore.getAppliedPerAppPolicy()
         check(VpnStateStore.commitAppliedPerAppPolicy(
@@ -398,9 +399,51 @@ internal fun RootTransparentForegroundService.scheduleControlChannelRecovery(rea
     if (!controlRecoveryScheduled.compareAndSet(false, true)) return
     serviceScope.launch {
         try {
-            Log.w(RootTransparentForegroundService.TAG, "Root command channel unhealthy, restarting runtime: $reason")
-            requestRunningRuntime(reload = true) { token ->
-                restartRuntime(configPathOverride = null, token = token)
+            val diagnostic = commandManager.controlChannelDiagnosticSnapshot(
+                lifecycle.snapshot().generation
+            )
+            Log.w(
+                RootTransparentForegroundService.TAG,
+                "[ROOT_CONTROL] event=recovery_requested reason=$reason $diagnostic"
+            )
+            LogRepository.getInstance().addAlwaysLog(
+                "WARN [ROOT_CONTROL] event=recovery_requested reason=$reason $diagnostic"
+            )
+            var recovered = false
+            repeat(3) { attempt ->
+                if (recovered) return@repeat
+                if (attempt > 0) delay(500L * attempt)
+                val recovery = commandManager.reconnectControlClientsWithFd {
+                    rootConnection.service?.openCommandConnection()
+                }
+                recovery.onSuccess {
+                    recovered = true
+                    SingBoxIpcHub.updateReadiness { it.copy(selectorReady = true) }
+                    LogRepository.getInstance().addAlwaysLog(
+                        "INFO [ROOT_CONTROL] event=recovery_succeeded mode=control_only attempt=${attempt + 1}"
+                    )
+                }.onFailure { error ->
+                    Log.w(
+                        RootTransparentForegroundService.TAG,
+                        "[ROOT_CONTROL] event=recovery_failed mode=control_only attempt=${attempt + 1}",
+                        error
+                    )
+                    LogRepository.getInstance().addAlwaysLog(
+                        "WARN [ROOT_CONTROL] event=recovery_failed mode=control_only " +
+                            "attempt=${attempt + 1} error=${error.message.orEmpty()}"
+                    )
+                }
+            }
+            if (!recovered) {
+                val rootSnapshot = runCatching {
+                    RootRuntimeSnapshot.fromBundle(rootConnection.service?.snapshot)
+                }.getOrNull()
+                LogRepository.getInstance().addAlwaysLog(
+                    "ERROR [ROOT_CONTROL] event=recovery_exhausted " +
+                        "rootPhase=${rootSnapshot?.phase ?: "unreadable"} " +
+                        "rootPid=${rootSnapshot?.rootPid ?: 0} " +
+                        "rootFd=${rootSnapshot?.rootFdCount ?: -1}"
+                )
             }
         } finally {
             controlRecoveryScheduled.set(false)
@@ -459,6 +502,11 @@ internal fun RootTransparentForegroundService.startMonitor() {
 
 internal fun RootTransparentForegroundService.onRootServiceDisconnected() {
     if (!RootTransparentForegroundService.isRunning && !RootTransparentForegroundService.isStarting) return
+    val diagnostic = commandManager.controlChannelDiagnosticSnapshot(lifecycle.snapshot().generation)
+    Log.e(RootTransparentForegroundService.TAG, "[ROOT_CONTROL] event=root_service_disconnected $diagnostic")
+    LogRepository.getInstance().addAlwaysLog(
+        "ERROR [ROOT_CONTROL] event=root_service_disconnected $diagnostic"
+    )
     serviceScope.launch {
         SingBoxIpcHub.update(
             lastError = "RootService disconnected",

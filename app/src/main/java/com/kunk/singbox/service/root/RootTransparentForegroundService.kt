@@ -28,6 +28,7 @@ import com.kunk.singbox.service.SingBoxService
 import com.kunk.singbox.service.ServiceState
 import com.kunk.singbox.service.VpnTileService
 import com.kunk.singbox.service.manager.CommandManager
+import com.kunk.singbox.service.manager.controlChannelDiagnosticSnapshot
 import com.kunk.singbox.service.manager.VpnStopInitiator
 import com.kunk.singbox.service.network.TrafficMonitor
 import com.kunk.singbox.service.notification.NotificationActionConfig
@@ -94,6 +95,7 @@ class RootTransparentForegroundService : Service() {
     internal val lifecycleMutex = Mutex()
     internal val lifecycle = RootLifecycleCoordinator()
     internal lateinit var rootConnection: RootServiceConnection
+    internal var rootConnectionRecycled = false
     internal lateinit var commandManager: CommandManager
     internal lateinit var autoFailover: RootAutoFailoverController
     internal lateinit var rootNotificationManager: VpnNotificationManager
@@ -289,10 +291,12 @@ class RootTransparentForegroundService : Service() {
         unregisterUidRefreshReceivers()
         autoFailover.stop()
         commandManager.stop()
-        // RootService is a separate process. Unbinding alone can leave its
-        // netfilter rules and watchdog alive when destruction races startup.
-        runCatching { rootConnection.stopRootService() }
-            .onFailure { error -> Log.e(TAG, "Could not stop RootService during foreground destroy", error) }
+        if (!rootConnectionRecycled) {
+            // RootService is a separate process. Unbinding alone can leave its
+            // netfilter rules and watchdog alive when destruction races startup.
+            runCatching { rootConnection.stopRootService() }
+                .onFailure { error -> Log.e(TAG, "Could not stop RootService during foreground destroy", error) }
+        }
         serviceScope.cancel()
         super.onDestroy()
     }
@@ -374,6 +378,17 @@ class RootTransparentForegroundService : Service() {
         val token = lifecycle.requestStopped()
         syncLifecycleFlags()
         logLifecycle("stop_requested", token, reason, before.state)
+        val diagnostic = commandManager.controlChannelDiagnosticSnapshot(token)
+        Log.w(
+            TAG,
+            "[ROOT_STOP] event=requested reason=$reason state=${before.state} " +
+                "rootPhase=${lastRootSnapshot.phase} $diagnostic"
+        )
+        LogRepository.getInstance().addAlwaysLog(
+            "WARN [ROOT_STOP] event=requested reason=$reason state=${before.state} " +
+                "rootPhase=${lastRootSnapshot.phase} rootPid=${lastRootSnapshot.rootPid} " +
+                "rootFd=${lastRootSnapshot.rootFdCount} $diagnostic"
+        )
         lifecycleJob?.cancel()
         uidRefreshJob?.cancel()
         uidRefreshJob = null
@@ -622,7 +637,7 @@ class RootTransparentForegroundService : Service() {
         )?.let(::error)
         val configContent = File(generation.path).readText(Charsets.UTF_8)
         SingBoxCore.ensureLibboxSetup(this)
-        commandManager.startClientsWithFd { rootService.openCommandConnection() }.getOrThrow()
+        commandManager.startClientsWithFd(fdProvider = { rootService.openCommandConnection() }).getOrThrow()
         ensureRunningRequest(token)
         SelectorManager.updateCommandClient(commandManager.getCommandClient())
         recordSelector(generation.path)
@@ -845,8 +860,14 @@ class RootTransparentForegroundService : Service() {
                 }
                 transitionLifecycle(token, RootLifecycleState.STOPPED, "cleanup_verified")
             }
+            if (cleanupConfirmed && stopSelfAfter) {
+                rootConnectionRecycled = RootServicePrewarmer.recycleAfterVerifiedStop(
+                    rootConnection,
+                    appForeground = SingBoxIpcHub.isAppForeground()
+                )
+                if (!rootConnectionRecycled) rootConnection.stopRootService()
+            }
             if (cleanupConfirmed) {
-                rootConnection.stopRootService()
                 runtimeSessionId = ""
                 VpnStateStore.clearStopOwnerMode()
                 VpnStateStore.setMode(VpnStateStore.CoreMode.NONE)
