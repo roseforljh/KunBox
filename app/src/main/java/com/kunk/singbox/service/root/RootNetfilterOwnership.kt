@@ -42,6 +42,17 @@ internal sealed interface RootNetfilterOwnerRecord {
         override val sortKey: String = "ROUTE|$family|$prefix|$table"
     }
 
+    data class UidRule(
+        val family: String,
+        val uidRange: String,
+        val priority: Int,
+        val table: Int,
+        val protocol: Int,
+        val commandSha256: String
+    ) : RootNetfilterOwnerRecord {
+        override val sortKey: String = "UID_RULE|$family|$priority|$uidRange"
+    }
+
     data class Chain(
         val family: String,
         val table: String,
@@ -203,12 +214,8 @@ internal object RootNetfilterOwnership {
         }
     }
 
-    fun isReservedPolicyLine(line: String): Boolean = reservedPolicyTuples().any { (mark, priority) ->
-        line.trimStart().startsWith("$priority:") &&
-            line.contains("fwmark ${rootMark(mark)}") &&
-            (line.contains("lookup ${RootRoutingConstants.ROUTE_TABLE}") ||
-                line.contains("table ${RootRoutingConstants.ROUTE_TABLE}"))
-    }
+    fun isReservedPolicyLine(line: String): Boolean =
+        isReservedMarkPolicyLine(line) || isReservedUidPolicyLine(line)
 
     fun sha256(value: String): String = sha256(value.toByteArray(Charsets.UTF_8))
 
@@ -266,6 +273,8 @@ internal object RootNetfilterOwnership {
             "RULE|$family|$mark|$mask|$priority|$table|$protocol|$commandSha256"
         is RootNetfilterOwnerRecord.Route ->
             "ROUTE|$family|$prefix|$device|$table|$protocol|$commandSha256"
+        is RootNetfilterOwnerRecord.UidRule ->
+            "UID_RULE|$family|$uidRange|$priority|$table|$protocol|$commandSha256"
         is RootNetfilterOwnerRecord.Chain ->
             "CHAIN|$family|$table|$chain|$hook|$rulesSha256"
     }
@@ -287,6 +296,13 @@ internal object RootNetfilterOwnership {
                     family = fields[1], prefix = fields[2], device = fields[3],
                     table = fields[4].toInt(), protocol = fields[5].toInt(), commandSha256 = fields[6]
                 ).also(::validateRoute)
+            }
+            "UID_RULE" -> {
+                check(fields.size == 7)
+                RootNetfilterOwnerRecord.UidRule(
+                    family = fields[1], uidRange = fields[2], priority = fields[3].toInt(),
+                    table = fields[4].toInt(), protocol = fields[5].toInt(), commandSha256 = fields[6]
+                ).also(::validateUidRule)
             }
             "CHAIN" -> {
                 check(fields.size == 6)
@@ -342,6 +358,19 @@ internal object RootNetfilterOwnership {
     @Suppress("CyclomaticComplexMethod")
     private fun parseIpCommand(command: List<String>): RootNetfilterOwnerRecord? {
         if ("rule" in command && "add" in command) {
+            command.valueAfter("uidrange")?.let { uidRange ->
+                val table = (command.valueAfter("table") ?: return null).toIntOrNull() ?: return null
+                val priority = (command.valueAfter("pref") ?: return null).toIntOrNull() ?: return null
+                val protocol = command.valueAfter("protocol")?.toIntOrNull() ?: 0
+                return RootNetfilterOwnerRecord.UidRule(
+                    family = if ("-6" in command) "6" else "4",
+                    uidRange = uidRange,
+                    priority = priority,
+                    table = table,
+                    protocol = protocol,
+                    commandSha256 = sha256(command.joinToString(" "))
+                ).also(::validateUidRule)
+            }
             val mark = command.valueAfter("fwmark") ?: return null
             val (markValue, mask) = mark.split('/', limit = 2).let { it[0] to it.getOrElse(1) { "0xffffffff" } }
             val table = (command.valueAfter("table") ?: return null).toIntOrNull() ?: return null
@@ -388,6 +417,46 @@ internal object RootNetfilterOwnership {
         check(record.protocol == 0 || record.protocol == RootRoutingConstants.ROUTE_PROTOCOL)
         check(record.prefix == "0.0.0.0/0" || record.prefix == "::/0")
         check(isRootSha256(record.commandSha256))
+    }
+
+    private fun validateUidRule(record: RootNetfilterOwnerRecord.UidRule) {
+        check(record.family == "6")
+        check(parseUidRange(record.uidRange) != null)
+        check(
+            record.priority in RootNetfilterPlanner.IPV6_UID_RULE_PRIORITY_BASE until
+                RootNetfilterPlanner.IPV6_UID_RULE_PRIORITY_BASE + RootNetfilterPlanner.MAX_IPV6_UID_RULES
+        )
+        check(record.table == RootRoutingConstants.ROUTE_TABLE)
+        check(record.protocol == 0 || record.protocol == RootRoutingConstants.ROUTE_PROTOCOL)
+        check(isRootSha256(record.commandSha256))
+    }
+
+    private fun isReservedMarkPolicyLine(line: String): Boolean = reservedPolicyTuples().any { (mark, priority) ->
+        line.trimStart().startsWith("$priority:") &&
+            line.contains("fwmark ${rootMark(mark)}") &&
+            (line.contains("lookup ${RootRoutingConstants.ROUTE_TABLE}") ||
+                line.contains("table ${RootRoutingConstants.ROUTE_TABLE}"))
+    }
+
+    private fun isReservedUidPolicyLine(line: String): Boolean {
+        val trimmed = line.trim()
+        val priority = trimmed.substringBefore(':').toIntOrNull() ?: return false
+        val fields = trimmed.split(' ').filter(String::isNotBlank)
+        val uidRangeIndex = fields.indexOf("uidrange")
+        val uidRange = fields.getOrNull(uidRangeIndex + 1) ?: return false
+        val priorityReserved = priority in RootNetfilterPlanner.IPV6_UID_RULE_PRIORITY_BASE until
+            RootNetfilterPlanner.IPV6_UID_RULE_PRIORITY_BASE + RootNetfilterPlanner.MAX_IPV6_UID_RULES
+        return priorityReserved && parseUidRange(uidRange) != null &&
+            (line.contains("lookup ${RootRoutingConstants.ROUTE_TABLE}") ||
+                line.contains("table ${RootRoutingConstants.ROUTE_TABLE}"))
+    }
+
+    private fun parseUidRange(value: String): Pair<Int, Int>? {
+        val fields = value.split('-', limit = 2)
+        val first = fields.getOrNull(0)?.toIntOrNull()
+        val last = fields.getOrNull(1)?.toIntOrNull()
+        if (first == null || last == null) return null
+        return (first to last).takeIf { first > 0 && last >= first }
     }
 
     private fun validateChain(record: RootNetfilterOwnerRecord.Chain) {

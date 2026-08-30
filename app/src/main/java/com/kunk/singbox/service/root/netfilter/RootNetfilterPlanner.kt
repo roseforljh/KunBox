@@ -196,6 +196,58 @@ private data class TransparentFamily(
     val ipv6: Boolean get() = familyFlag != null
 }
 
+private fun appendLocalBypassReturn(
+    destination: MutableList<List<String>>,
+    family: TransparentFamily,
+    table: String,
+    chain: String
+) {
+    destination += listOf(
+        family.binary, "-t", table, "-A", chain,
+        "-d", family.localBypass, "-j", "RETURN"
+    )
+}
+
+private fun appendDnsRedirectRules(
+    destination: MutableList<List<String>>,
+    family: TransparentFamily,
+    config: RootNetfilterConfig
+) {
+    fun append(uidRange: RootUidRange, protocol: String, port: Int) {
+        destination += listOf(
+            family.binary, "-t", "nat", "-A", family.redirectChain,
+            "-m", "owner", "--uid-owner", uidRange.ownerValue,
+            "-p", protocol, "--dport", "53", "-j", "REDIRECT", "--to-ports", port.toString()
+        )
+    }
+
+    config.lanes.sortedBy(RootNetfilterLane::slot).forEach { lane ->
+        compactRootUids(lane.uids).forEach { uidRange ->
+            append(uidRange, "udp", if (family.ipv6) lane.tproxyPortIpv6 else lane.tproxyPortIpv4)
+            append(uidRange, "tcp", if (family.ipv6) lane.redirectPortIpv6 else lane.redirectPortIpv4)
+        }
+    }
+    (compactRootUids(config.capturedUids) + config.capturedUidRanges).distinct().forEach { uidRange ->
+        append(uidRange, "udp", family.tproxyPort)
+        append(uidRange, "tcp", family.redirectPort)
+    }
+}
+
+private fun ipv6UidPolicyRules(operation: String, config: RootNetfilterConfig): List<List<String>> {
+    require(operation == "add" || operation == "del")
+    val ranges = (compactRootUids(config.capturedUids) + config.capturedUidRanges).distinct()
+    require(ranges.size <= RootNetfilterPlanner.MAX_IPV6_UID_RULES) {
+        "Too many Root IPv6 UID ranges: ${ranges.size}"
+    }
+    return ranges.mapIndexed { index, range ->
+        listOf(
+            "ip", "-6", "rule", operation, "uidrange", "${range.first}-${range.last}",
+            "table", RootNetfilterPlanner.ROUTE_TABLE,
+            "pref", (RootNetfilterPlanner.IPV6_UID_RULE_PRIORITY_BASE + index).toString()
+        )
+    }
+}
+
 object RootNetfilterPlanner {
     val IPV4_MARK = rootMark(RootRoutingConstants.GENERIC_MARK_IPV4)
     val IPV6_MARK = rootMark(RootRoutingConstants.GENERIC_MARK_IPV6)
@@ -219,6 +271,8 @@ object RootNetfilterPlanner {
     const val CHAIN_PRIVACY6 = "KBX_PRIV6"
     const val CHAIN_GUARD4 = "KBX_GUARD4"
     const val CHAIN_GUARD6 = "KBX_GUARD6"
+    const val IPV6_UID_RULE_PRIORITY_BASE = 12_450
+    const val MAX_IPV6_UID_RULES = 256
 
     internal fun withCoreBypassMark(mark: Int): Int {
         require(mark and CORE_BYPASS_MARK_MASK == 0) { "Core bypass mark bit is already in use" }
@@ -276,6 +330,7 @@ object RootNetfilterPlanner {
                 redirectPort = config.redirectPortIpv6,
                 tproxyPort = config.tproxyPortIpv6
             ), config)
+            setup += ipv6UidPolicyRules("add", config)
             if (config.blockQuic) {
                 appendQuicBlockFamily(setup, "ip6tables", CHAIN_QUIC6, config)
                 verify += listOf("ip6tables", "-t", "filter", "-S", CHAIN_QUIC6)
@@ -378,6 +433,7 @@ object RootNetfilterPlanner {
                 listOf("ip6tables", "-t", "filter", "-D", "OUTPUT", "-j", CHAIN_PRIVACY6)
             )
         )
+        if (config != null) addAll(ipv6UidPolicyRules("del", config))
         if (config == null) {
             add(listOf("iptables", "-t", "filter", "-D", "OUTPUT", "-j", CHAIN_GUARD4))
             add(listOf("ip6tables", "-t", "filter", "-D", "OUTPUT", "-j", CHAIN_GUARD6))
@@ -521,8 +577,18 @@ object RootNetfilterPlanner {
         family: TransparentFamily,
         config: RootNetfilterConfig
     ) {
-        appendEarlyOutputReturns(destination, family, "nat", family.redirectChain, config)
+        appendEarlyOutputReturns(
+            destination,
+            family,
+            "nat",
+            family.redirectChain,
+            config,
+            includeLocalBypass = false
+        )
         appendMdnsReturn(destination, family, "nat", family.redirectChain)
+        appendExcludedUidReturns(destination, family.binary, "nat", family.redirectChain, config)
+        appendDnsRedirectRules(destination, family, config)
+        appendLocalBypassReturn(destination, family, "nat", family.redirectChain)
         config.lanes.sortedBy(RootNetfilterLane::slot).forEach { lane ->
             compactRootUids(lane.uids).forEach { uidRange ->
                 destination += listOf(
@@ -532,7 +598,6 @@ object RootNetfilterPlanner {
                 )
             }
         }
-        appendExcludedUidReturns(destination, family.binary, "nat", family.redirectChain, config)
         capturedUidRanges(config).forEach { uidRange ->
             destination += listOf(
                 family.binary, "-t", "nat", "-A", family.redirectChain,
@@ -547,7 +612,8 @@ object RootNetfilterPlanner {
         family: TransparentFamily,
         table: String,
         chain: String,
-        config: RootNetfilterConfig
+        config: RootNetfilterConfig,
+        includeLocalBypass: Boolean = true
     ) {
         val binary = family.binary
         destination += listOf(
@@ -559,7 +625,7 @@ object RootNetfilterPlanner {
             "-m", "owner", "--uid-owner", config.appUid.toString(), "-j", "RETURN"
         )
         appendRootUidReturn(destination, binary, table, chain)
-        destination += listOf(binary, "-t", table, "-A", chain, "-d", family.localBypass, "-j", "RETURN")
+        if (includeLocalBypass) appendLocalBypassReturn(destination, family, table, chain)
     }
 
     private fun appendMdnsReturn(

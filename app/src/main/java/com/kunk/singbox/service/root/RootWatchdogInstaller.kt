@@ -21,7 +21,6 @@ class RootWatchdogInstaller(
         private const val RUNTIME_DIR = "/data/adb/kunbox"
         private const val WATCHDOG_PATH = "$RUNTIME_DIR/watchdog.sh"
         private const val CLEANUP_PATH = "$RUNTIME_DIR/cleanup-owned.sh"
-        private const val LEASE_TIMEOUT_SECONDS = 3
         private const val ACK_TIMEOUT_SECONDS = 2
         private const val STOP_WAIT_MS = 750L
         private const val PROCESS_REAP_WAIT_MS = 100L
@@ -29,7 +28,6 @@ class RootWatchdogInstaller(
     }
 
     private val scheduler: ScheduledExecutorService = Executors.newSingleThreadScheduledExecutor()
-    private var leaseTask: ScheduledFuture<*>? = null
     private var ackTask: ScheduledFuture<*>? = null
     private var watchdogProcess: java.lang.Process? = null
     private var activeSessionId: String = ""
@@ -45,9 +43,7 @@ class RootWatchdogInstaller(
     ): Result<Unit> = runCatching {
         require(runtimeSessionId.isNotBlank())
         require(apkPath.isNotBlank())
-        leaseTask?.cancel(true)
         ackTask?.cancel(true)
-        leaseTask = null
         ackTask = null
         ackHealthy = false
         stopWatchdogProcess()
@@ -59,7 +55,6 @@ class RootWatchdogInstaller(
         // is ready to take ownership.
         stopExistingWatchdog()
         writeAtomically(File(RUNTIME_DIR, "session"), runtimeSessionId)
-        writeLease()
         val process = ProcessBuilder(
             "/system/bin/sh",
             WATCHDOG_PATH,
@@ -67,13 +62,11 @@ class RootWatchdogInstaller(
             apkPath,
             Process.myPid().toString(),
             runtimeSessionId,
-            LEASE_TIMEOUT_SECONDS.toString(),
             requireCurrentProcessStartTime()
         ).start()
         check(process.isAlive) { "Root watchdog exited during startup" }
         watchdogProcess = process
         activeSessionId = runtimeSessionId
-        leaseTask = scheduler.scheduleAtFixedRate(::writeLease, 0, 1, TimeUnit.SECONDS)
         ackTask = scheduler.scheduleAtFixedRate(
             { checkAck(runtimeSessionId, onWatchdogLost) },
             1,
@@ -105,9 +98,7 @@ class RootWatchdogInstaller(
             // parent.  The ownership cleanup script is the stable entrypoint.
             cleanupOwnedRules(sessionId).getOrThrow()
         }
-        leaseTask?.cancel(true)
         ackTask?.cancel(true)
-        leaseTask = null
         ackTask = null
         ackHealthy = false
         stopWatchdogProcess()
@@ -237,11 +228,6 @@ class RootWatchdogInstaller(
             ?: error("Cannot read Root process start time")
     }
 
-    private fun writeLease() {
-        val nowSeconds = TimeUnit.MILLISECONDS.toSeconds(System.currentTimeMillis())
-        writeAtomically(File(RUNTIME_DIR, "lease"), nowSeconds.toString())
-    }
-
     private fun checkAck(runtimeSessionId: String, onWatchdogLost: () -> Unit) {
         val parts = runCatching { File(RUNTIME_DIR, "watchdog_ack").readText().trim().split(':') }
             .getOrDefault(emptyList())
@@ -253,7 +239,11 @@ class RootWatchdogInstaller(
         val wasHealthy = ackHealthy
         ackHealthy = healthy
         if (healthy) readyLatch.countDown()
-        if (wasHealthy && !healthy) onWatchdogLost()
+        val watchdogAlive = watchdogProcess?.isAlive == true
+        if (wasHealthy && !healthy && watchdogAlive) {
+            Log.w(TAG, "[ROOT_WATCHDOG] stale ack ignored while watchdog process is alive")
+        }
+        if (shouldReportWatchdogLost(wasHealthy, healthy, watchdogAlive)) onWatchdogLost()
     }
 
     private fun writeAtomically(target: File, content: String) {
@@ -293,3 +283,9 @@ class RootWatchdogInstaller(
 
 internal fun rootScriptContentMatches(installed: String?, bundled: String): Boolean =
     installed != null && installed == bundled
+
+internal fun shouldReportWatchdogLost(
+    wasHealthy: Boolean,
+    ackHealthy: Boolean,
+    watchdogProcessAlive: Boolean
+): Boolean = wasHealthy && !ackHealthy && !watchdogProcessAlive
