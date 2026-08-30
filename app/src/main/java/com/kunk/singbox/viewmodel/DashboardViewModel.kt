@@ -1,3 +1,5 @@
+@file:Suppress("TooManyFunctions", "Indentation", "InvalidPackageDeclaration", "MaxLineLength", "LoopWithTooManyJumpStatements", "LongMethod", "CognitiveComplexMethod", "ComplexCondition", "CyclomaticComplexMethod", "EmptyCatchBlock", "NestedBlockDepth", "ReturnCount", "SwallowedException", "TooGenericExceptionThrown", "UnusedParameter", "UnusedPrivateProperty", "VariableNaming", "NoUnusedImports", "MayBeConst")
+
 package com.kunk.singbox.viewmodel
 
 import com.kunk.singbox.R
@@ -15,6 +17,7 @@ import androidx.lifecycle.viewModelScope
 import com.kunk.singbox.model.ConnectionState
 import com.kunk.singbox.model.ConnectionStats
 import com.kunk.singbox.model.AppSettings
+import com.kunk.singbox.model.TrafficCaptureMode
 import com.kunk.singbox.model.NodeUi
 import com.kunk.singbox.model.ProfileUi
 import com.kunk.singbox.manager.VpnServiceManager
@@ -25,9 +28,10 @@ import com.kunk.singbox.service.SingBoxService
 import com.kunk.singbox.service.ServiceState
 import com.kunk.singbox.service.ProxyOnlyService
 import com.kunk.singbox.service.VpnTileService
+import com.kunk.singbox.service.manager.VpnStopInitiator
 import com.kunk.singbox.core.SingBoxCore
 import com.kunk.singbox.utils.perf.PerfTracer
-import com.kunk.singbox.repository.ConfigRepository
+import com.kunk.singbox.repository.*
 import com.kunk.singbox.viewmodel.shared.NodeDisplaySettings
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.Dispatchers
@@ -53,6 +57,7 @@ import kotlinx.coroutines.flow.onCompletion
 import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.withContext
@@ -62,7 +67,7 @@ import kotlinx.coroutines.withTimeout
 class DashboardViewModel(application: Application) : AndroidViewModel(application) {
 
     companion object {
-        private const val TAG = "DashboardViewModel"
+        internal const val TAG = "DashboardViewModel"
         internal const val START_STOPPED_CONFIRM_MS = 5_000L
         internal const val START_MONITOR_TIMEOUT_MS = 60_000L
         private const val START_REBIND_INTERVAL_MS = 2_000L
@@ -97,9 +102,14 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         ): Boolean {
             return perAppSettingsChanged || tunSettingsChanged || routingModeChanged
         }
+
+        internal fun shouldStopOppositeService(
+            desiredMode: VpnStateStore.CoreMode,
+            activeMode: VpnStateStore.CoreMode
+        ): Boolean = activeMode != VpnStateStore.CoreMode.NONE && activeMode != desiredMode
     }
 
-    private val configRepository = ConfigRepository.getInstance(application)
+    internal val configRepository = ConfigRepository.getInstance(application)
     private val settingsRepository = SettingsRepository.getInstance(application)
     private val singBoxCore = SingBoxCore.getInstance(application)
 
@@ -107,14 +117,15 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
     private val displaySettings = NodeDisplaySettings.getInstance(application)
 
     // Connection state
-    private val _connectionState = MutableStateFlow(ConnectionState.Idle)
+    internal val _connectionState = MutableStateFlow(ConnectionState.Idle)
     val connectionState: StateFlow<ConnectionState> = _connectionState.asStateFlow()
+    val dataPlaneReadiness: StateFlow<com.kunk.singbox.ipc.DataPlaneReadinessSnapshot> = SingBoxRemote.readiness
 
     // Stats
-    private val _statsBase = MutableStateFlow(ConnectionStats(0, 0, 0, 0, 0))
-    private val _connectedAtElapsedMs = MutableStateFlow<Long?>(null)
-    @Volatile private var statsUiActive = false
-    private val trafficMonitor = DashboardTrafficMonitor(viewModelScope) { snapshot ->
+    internal val _statsBase = MutableStateFlow(ConnectionStats(0, 0, 0, 0, 0))
+    internal val _connectedAtElapsedMs = MutableStateFlow<Long?>(null)
+    @Volatile internal var statsUiActive = false
+    internal val trafficMonitor = DashboardTrafficMonitor(viewModelScope) { snapshot ->
         _statsBase.update { current ->
             current.copy(
                 uploadSpeed = snapshot.uploadSpeed,
@@ -202,12 +213,11 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
     )
 
     // Ping 测试状态：true = 正在测试中
-    private val _isPingTesting = MutableStateFlow(false)
+    internal val _isPingTesting = MutableStateFlow(false)
     val isPingTesting: StateFlow<Boolean> = _isPingTesting.asStateFlow()
 
-    private var pingTestJob: Job? = null
-    private var startMonitorJob: Job? = null
-    private var stopConfirmJob: Job? = null
+    internal var pingTestJob: Job? = null
+    internal var startMonitorJob: Job? = null
 
     // Active profile and node from ConfigRepository
     val activeProfileId: StateFlow<String?> = configRepository.activeProfileId
@@ -249,12 +259,12 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
     private val _toastEvents = MutableSharedFlow<String>(extraBufferCapacity = 8)
     val toastEvents: SharedFlow<String> = _toastEvents.asSharedFlow()
 
-    private fun emitToast(message: String) {
+    internal fun emitToast(message: String) {
         _toastEvents.tryEmit(message)
     }
 
     // VPN 权限请求结果
-    private val _vpnPermissionNeeded = MutableStateFlow(false)
+    internal val _vpnPermissionNeeded = MutableStateFlow(false)
     val vpnPermissionNeeded: StateFlow<Boolean> = _vpnPermissionNeeded.asStateFlow()
 
     // 2025-fix-v12: 用于确保状态监听器只启动一次
@@ -310,7 +320,11 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
 
                 val trustedInitialState = resolveTrustedDashboardConnectionState(
                     serviceState = SingBoxRemote.state.value,
-                    ipcBound = SingBoxRemote.isBound()
+                    ipcBound = SingBoxRemote.isBound(),
+                    readiness = SingBoxRemote.readiness.value,
+                    mode = VpnStateStore.getMode(),
+                    apiLevel = Build.VERSION.SDK_INT,
+                    nowElapsedMs = SystemClock.elapsedRealtime()
                 )
                 if (trustedInitialState == ConnectionState.Connected) {
                     _connectionState.value = ConnectionState.Connected
@@ -345,7 +359,6 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                 }
         }
     }
-
     /**
      * 2025-fix-v12: 启动状态监听器
      * 确保只在 IPC 绑定完成后调用一次
@@ -353,9 +366,11 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
      */
     // 2025-fix: 用于处理连接状态变更的防抖 Job
     private var pendingIdleJob: Job? = null
-    private var startGraceUntilElapsedMs: Long? = null
+    internal var startGraceUntilElapsedMs: Long? = null
     private var refreshStateJob: Job? = null
-
+    internal var startCoreJob: Job? = null
+    internal var startServiceDispatched = false
+    internal var stopRequestedByUser = false
     /**
      * 启动状态收集器（幂等方法）
      * 2025-fix-v12: 确保只启动一次，但保证在 init 和 refreshState 中都会被调用
@@ -367,22 +382,23 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
             Log.d(TAG, "startStateCollector: already started, skipping")
             return
         }
-
         synchronized(this) {
             if (stateCollectorStarted) return
             stateCollectorStarted = true
         }
-
         // 收集器: 监听 SingBoxService 状态变化
         val stateFlow = SingBoxRemote.state
         viewModelScope.launch {
             stateFlow.collect { state ->
-                when (resolveTrustedDashboardConnectionState(state, SingBoxRemote.isBound())) {
+                if (stopRequestedByUser && state != ServiceState.STOPPED) return@collect
+                when (resolveDashboardConnectionState(state)) {
                     ConnectionState.Connected -> {
+                        if (stopRequestedByUser) return@collect
                         systemVpnDetectedOnBoot = false
                         setConnectionState(ConnectionState.Connected)
                     }
                     ConnectionState.Connecting -> {
+                        if (stopRequestedByUser) return@collect
                         systemVpnDetectedOnBoot = false
                         setConnectionState(ConnectionState.Connecting)
                     }
@@ -397,13 +413,32 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                 }
             }
         }
+        viewModelScope.launch {
+            SingBoxRemote.readiness.collect {
+                val state = SingBoxRemote.state.value
+                if (!stopRequestedByUser || state == ServiceState.STOPPED) {
+                    setConnectionState(resolveDashboardConnectionState(state))
+                }
+            }
+        }
 
         // 运行态 activeLabel 只用于展示，不写回用户手选节点（auto-failover 不得持久化选择）
 
         Log.i(TAG, "startStateCollector: collectors launched")
     }
 
-    private fun setConnectionState(newState: ConnectionState) {
+    private fun resolveDashboardConnectionState(state: ServiceState): ConnectionState {
+        return resolveTrustedDashboardConnectionState(
+            serviceState = state,
+            ipcBound = SingBoxRemote.isBound(),
+            readiness = SingBoxRemote.readiness.value,
+            mode = VpnStateStore.getMode(),
+            apiLevel = Build.VERSION.SDK_INT,
+            nowElapsedMs = SystemClock.elapsedRealtime()
+        )
+    }
+
+    internal fun setConnectionState(newState: ConnectionState) {
         if (newState == ConnectionState.Disconnecting && _connectionState.value == ConnectionState.Connecting) {
             val graceUntil = startGraceUntilElapsedMs
             if (graceUntil != null && SystemClock.elapsedRealtime() < graceUntil) {
@@ -475,7 +510,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                 // 其他状态（Connecting/Disconnecting/Error）直接更新
                 pendingIdleJob?.cancel()
                 if (newState == ConnectionState.Connecting) {
-                    startGraceUntilElapsedMs = SystemClock.elapsedRealtime() + 800L
+                    startGraceUntilElapsedMs = SystemClock.elapsedRealtime() + START_MONITOR_TIMEOUT_MS
                 } else {
                     startGraceUntilElapsedMs = null
                 }
@@ -485,8 +520,8 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
             }
         }
     }
-
-    private fun performDisconnect() {
+    internal fun performDisconnect() {
+        stopRequestedByUser = false
         if (_connectionState.value != ConnectionState.Idle) {
             _connectionState.value = ConnectionState.Idle
             _connectedAtElapsedMs.value = null
@@ -495,7 +530,6 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
             _statsBase.value = ConnectionStats(0, 0, 0, 0, 0)
         }
     }
-
     /**
      * 刷新 VPN 状态。
      *
@@ -515,10 +549,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
             // 避免产生重复的前台通知导致网络恢复抖动
 
             // 只信任已绑定 IPC 的实时状态，避免清后台后的过期 MMKV active/pending 造成假启动态
-            val phase1State = resolveTrustedDashboardConnectionState(
-                serviceState = SingBoxRemote.state.value,
-                ipcBound = SingBoxRemote.isBound()
-            )
+            val phase1State = resolveDashboardConnectionState(SingBoxRemote.state.value)
             setConnectionState(phase1State)
 
             startStateCollector()
@@ -533,7 +564,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
             if (SingBoxRemote.isBound()) {
                 val state = SingBoxRemote.state.value
                 Log.i(TAG, "refreshState Phase 2: state=$state, bound=true, retries=$retries")
-                setConnectionState(resolveTrustedDashboardConnectionState(state, ipcBound = true))
+                setConnectionState(resolveDashboardConnectionState(state))
             } else {
                 Log.w(TAG, "refreshState Phase 2: IPC not bound, showing idle until real service state arrives")
                 setConnectionState(ConnectionState.Idle)
@@ -546,7 +577,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
             when (_connectionState.value) {
                 ConnectionState.Idle, ConnectionState.Error -> {
                     // P0 Optimization: Optimistic UI
-                    startGraceUntilElapsedMs = SystemClock.elapsedRealtime() + 800L
+                    startGraceUntilElapsedMs = SystemClock.elapsedRealtime() + START_MONITOR_TIMEOUT_MS
                     _connectionState.value = ConnectionState.Connecting
                     startCore()
                 }
@@ -556,12 +587,13 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                     _connectionState.value = ConnectionState.Disconnecting
                     stopVpn()
                 }
-                ConnectionState.Connected, ConnectionState.Disconnecting -> {
+                ConnectionState.Connected -> {
                     // P0 Optimization: Optimistic UI
                     startGraceUntilElapsedMs = null
                     _connectionState.value = ConnectionState.Disconnecting
                     stopVpn()
                 }
+                ConnectionState.Disconnecting -> Unit
             }
         }
     }
@@ -572,7 +604,8 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
             val context = getApplication<Application>()
 
             val settings = SettingsRepository.getInstance(context).settings.first()
-            if (settings.tunEnabled) {
+            val captureMode = settings.resolvedTrafficCaptureMode()
+            if (captureMode == TrafficCaptureMode.VPN) {
                 val prepareIntent = VpnService.prepare(context)
                 if (prepareIntent != null) {
                     _vpnPermissionNeeded.value = true
@@ -583,7 +616,9 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
             val configResult = withContext(Dispatchers.IO) {
                 val settingsRepository = SettingsRepository.getInstance(context)
                 settingsRepository.checkAndMigrateRuleSets()
-                configRepository.generateConfigFile()
+                configRepository.generateConfigFile(
+                    candidateRequestId = VpnServiceManager.newCandidateRequestId(captureMode).orEmpty()
+                )
             }
 
             if (configResult == null) {
@@ -594,7 +629,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                 return@launch
             }
 
-            val useTun = settings.tunEnabled
+            val useTun = captureMode == TrafficCaptureMode.VPN
             val perAppSettingsChanged = VpnStateStore.hasPerAppVpnSettingsChanged(
                 appMode = settings.vpnAppMode.name,
                 allowlist = settings.vpnAllowlist,
@@ -635,14 +670,20 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                 }
             }
 
-            performRestart(context, configResult.path, useTun, requiresFullRestart)
+            performRestart(
+                context,
+                configResult.path,
+                configResult.requestId,
+                captureMode,
+                requiresFullRestart
+            )
         }
     }
 
     private fun logRestartDebugInfo(settings: AppSettings) {
         Log.d(
             TAG,
-            "restartVpn: useTun=${settings.tunEnabled}, isRunning=${SingBoxRemote.isRunning.value}"
+            "restartVpn: mode=${settings.resolvedTrafficCaptureMode()}, isRunning=${SingBoxRemote.isRunning.value}"
         )
         Log.d(
             TAG,
@@ -682,9 +723,28 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
     private suspend fun performRestart(
         context: Context,
         configPath: String,
-        useTun: Boolean,
+        requestId: String,
+        captureMode: TrafficCaptureMode,
         requiresFullRestart: Boolean
     ) {
+        val useTun = captureMode == TrafficCaptureMode.VPN
+        if (captureMode == TrafficCaptureMode.ROOT_TRANSPARENT) {
+            startServiceCompat(
+                context,
+                Intent(context, com.kunk.singbox.service.root.RootTransparentForegroundService::class.java).apply {
+                    action = com.kunk.singbox.service.root.RootTransparentForegroundService.ACTION_RESTART
+                    putExtra(
+                        com.kunk.singbox.service.root.RootTransparentForegroundService.EXTRA_CONFIG_PATH,
+                        configPath
+                    )
+                    putExtra(
+                        com.kunk.singbox.service.root.RootTransparentForegroundService.EXTRA_APP_ROUTE_REQUEST_ID,
+                        requestId
+                    )
+                }
+            )
+            return
+        }
         if (requiresFullRestart && useTun && SingBoxRemote.isRunning.value) {
             Log.i(TAG, "Runtime settings changed, using full restart to rebuild core")
             val intent = Intent(context, SingBoxService::class.java).apply {
@@ -737,24 +797,25 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
             context.startService(intent)
         }
     }
-
     private fun startCore() {
-        viewModelScope.launch {
+        startCoreJob?.cancel()
+        startCoreJob = viewModelScope.launch {
+            startServiceDispatched = false
+            stopRequestedByUser = false
             val context = getApplication<Application>()
-            stopConfirmJob?.cancel()
-            stopConfirmJob = null
 
             val settings = runCatching {
                 SettingsRepository.getInstance(context).settings.first()
             }.getOrNull()
 
-            val desiredMode = if (settings?.tunEnabled == true) {
-                VpnStateStore.CoreMode.VPN
-            } else {
-                VpnStateStore.CoreMode.PROXY
+            val captureMode = settings?.resolvedTrafficCaptureMode() ?: TrafficCaptureMode.VPN
+            val desiredMode = when (captureMode) {
+                TrafficCaptureMode.VPN -> VpnStateStore.CoreMode.VPN
+                TrafficCaptureMode.ROOT_TRANSPARENT -> VpnStateStore.CoreMode.ROOT
+                TrafficCaptureMode.PROXY_ONLY -> VpnStateStore.CoreMode.PROXY
             }
 
-            if (settings?.tunEnabled == true) {
+            if (captureMode == TrafficCaptureMode.VPN) {
                 val prepareIntent = VpnService.prepare(context)
                 if (prepareIntent != null) {
                     _vpnPermissionNeeded.value = true
@@ -763,28 +824,15 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
             }
 
             SingBoxRemote.clearLastErrorForNewStart()
+            withContext(Dispatchers.IO) { VpnStateStore.setLastError("") }
             _connectionState.value = ConnectionState.Connecting
 
-            // Ensure only one core instance is running at a time to avoid local port conflicts.
-            // Do not rely on VpnStateStore here (multi-process timing); just stop the opposite service.
-            val needToStopOpposite = when (desiredMode) {
-                VpnStateStore.CoreMode.VPN -> {
-                    runCatching {
-                        context.startService(Intent(context, ProxyOnlyService::class.java).apply {
-                            action = ProxyOnlyService.ACTION_STOP
-                        })
-                    }
-                    true
-                }
-                VpnStateStore.CoreMode.PROXY -> {
-                    runCatching {
-                        context.startService(Intent(context, SingBoxService::class.java).apply {
-                            action = SingBoxService.ACTION_STOP
-                        })
-                    }
-                    true
-                }
-                else -> false
+            // Only stop an actually active opposite core. Starting an idle service just to stop it
+            // creates unnecessary service lifecycle churn and can race the requested startup.
+            val activeMode = VpnStateStore.getMode()
+            val needToStopOpposite = DashboardViewModel.shouldStopOppositeService(desiredMode, activeMode)
+            if (needToStopOpposite) {
+                VpnServiceManager.stopVpn(context, VpnStopInitiator.MODE_SWITCH)
             }
 
             // 如果需要停止对立服务，等待其完全停止
@@ -814,7 +862,9 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                 val configResult = withContext(Dispatchers.IO) {
                     val settingsRepository = com.kunk.singbox.repository.SettingsRepository.getInstance(context)
                     settingsRepository.checkAndMigrateRuleSets()
-                    configRepository.generateConfigFile()
+                    configRepository.generateConfigFile(
+                        candidateRequestId = VpnServiceManager.newCandidateRequestId(captureMode).orEmpty()
+                    )
                 }
                 if (configResult == null) {
                     _connectionState.value = ConnectionState.Error
@@ -825,28 +875,14 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                     return@launch
                 }
 
-                val useTun = desiredMode == VpnStateStore.CoreMode.VPN
-                val intent = if (useTun) {
-                    Intent(context, SingBoxService::class.java).apply {
-                        action = SingBoxService.ACTION_START
-                        putExtra(SingBoxService.EXTRA_CONFIG_PATH, configResult.path)
-                        // 从停止状态启动时，强制清理缓存，确保使用配置文件中选中的节点
-                        // 修 bug: App 更新后 cache.db 保留了旧的选中节点，导致 UI 上选中的新节点无效
-                        putExtra(SingBoxService.EXTRA_CLEAN_CACHE, true)
-                    }
-                } else {
-                    Intent(context, ProxyOnlyService::class.java).apply {
-                        action = ProxyOnlyService.ACTION_START
-                        putExtra(ProxyOnlyService.EXTRA_CONFIG_PATH, configResult.path)
-                        // 同理，Proxy 模式也需要清理缓存
-                        putExtra(SingBoxService.EXTRA_CLEAN_CACHE, true)
-                    }
-                }
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    context.startForegroundService(intent)
-                } else {
-                    context.startService(intent)
-                }
+                VpnServiceManager.startVpn(
+                    context = context,
+                    mode = captureMode,
+                    configPath = configResult.path,
+                    requestId = configResult.requestId,
+                    cleanCache = true
+                ).getOrThrow()
+                startServiceDispatched = true
 
                 // 2) 后续只在服务端明确失败（lastErrorFlow）或服务异常退出时才置 Error
                 startMonitorJob?.cancel()
@@ -865,7 +901,14 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                             observedActiveState = true
                         }
 
-                        if (SingBoxRemote.isRunning.value || serviceState == ServiceState.RUNNING) {
+                        if (SingBoxRemote.readiness.value.isReady(
+                                serviceState = serviceState,
+                                mode = VpnStateStore.getMode(),
+                                ipcBound = ipcBound,
+                                apiLevel = Build.VERSION.SDK_INT,
+                                nowElapsedMs = SystemClock.elapsedRealtime()
+                            )
+                        ) {
                             _connectionState.value = ConnectionState.Connected
                             startTrafficMonitor()
                             return@launch
@@ -909,7 +952,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                     }
 
                     VpnTileService.persistVpnPending("")
-                    VpnServiceManager.stopVpn(context).onFailure { error ->
+                    VpnServiceManager.stopVpn(context, VpnStopInitiator.START_TIMEOUT).onFailure { error ->
                         Log.e(TAG, "Failed to stop timed-out VPN start", error)
                     }
                     _connectionState.value = ConnectionState.Error
@@ -920,127 +963,29 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                         )
                     )
                 }
+            } catch (_: CancellationException) {
+                return@launch
             } catch (e: Exception) {
                 _connectionState.value = ConnectionState.Error
                 emitToast(getApplication<Application>().getString(R.string.node_start_failed, e.message ?: ""))
             }
         }
     }
+    private fun stopVpn() = stopVpnRuntime()
 
-    private fun stopVpn() {
-        val context = getApplication<Application>()
-        startMonitorJob?.cancel()
-        startMonitorJob = null
-        stopTrafficMonitor()
-        stopPingTest()
-        _connectionState.value = ConnectionState.Disconnecting
-        _connectedAtElapsedMs.value = null
-        _statsBase.value = ConnectionStats(0, 0, 0, 0, 0)
-        VpnTileService.persistVpnPending("stopping")
+    private fun startPingTest() = startPingTestRuntime()
 
-        val stopResult = VpnServiceManager.stopVpn(context)
-        if (stopResult.isFailure) {
-            _connectionState.value = ConnectionState.Error
-            return
-        }
-
-        context.startService(Intent(context, VpnTileService::class.java).apply {
-            action = VpnTileService.ACTION_REFRESH_TILE
-        })
-        waitForStopConfirmation(context)
-    }
-
-    private fun waitForStopConfirmation(context: Context) {
-        stopConfirmJob?.cancel()
-        stopConfirmJob = viewModelScope.launch {
-            try {
-                if (SingBoxRemote.state.value != ServiceState.STOPPED) {
-                    withTimeout(8000L) {
-                        SingBoxRemote.state.first { it == ServiceState.STOPPED }
-                    }
-                }
-            } catch (e: TimeoutCancellationException) {
-                Log.w(TAG, "Timeout waiting for service stop confirmation", e)
-                SingBoxRemote.ensureBound(context)
-                delay(300)
-            }
-
-            if (SingBoxRemote.state.value == ServiceState.STOPPED) {
-                VpnTileService.persistVpnPending("")
-                performDisconnect()
-            } else {
-                setConnectionState(ConnectionState.Disconnecting)
-            }
-            stopConfirmJob = null
-        }
-    }
-
-    private fun startPingTest() {
-        if (_connectionState.value != ConnectionState.Connected) return
-        if (_isPingTesting.value) return
-
-        val targetNodeId = activeNodeId.value
-        if (targetNodeId.isNullOrBlank()) {
-            Log.w(TAG, "No active node to test ping")
-            return
-        }
-
-        stopPingTest()
-        pingTestJob = viewModelScope.launch {
-            _isPingTesting.value = true
-            try {
-                configRepository.testNodeLatency(targetNodeId)
-            } catch (e: Exception) {
-                Log.e(TAG, "Error during ping test", e)
-            } finally {
-                _isPingTesting.value = false
-            }
-        }
-    }
-
-    private fun stopPingTest() {
-        pingTestJob?.cancel()
-        pingTestJob = null
-        _isPingTesting.value = false
-    }
+    private fun stopPingTest() = stopPingTestRuntime()
 
     fun retestCurrentNodePing() {
         startPingTest()
     }
 
-    fun onVpnPermissionResult(granted: Boolean) {
-        _vpnPermissionNeeded.value = false
-        if (!granted) {
-            startGraceUntilElapsedMs = null
-            startMonitorJob?.cancel()
-            startMonitorJob = null
-            _connectionState.value = ConnectionState.Idle
-            return
-        }
-        if (granted) {
-            startCore()
-        }
-    }
+    fun onVpnPermissionResult(granted: Boolean) = onVpnPermissionResultRuntime(granted) { startCore() }
 
-    fun updateAllSubscriptions() {
-        viewModelScope.launch {
-            emitToast(getApplication<Application>().getString(R.string.common_loading))
+    fun updateAllSubscriptions() = updateAllSubscriptionsRuntime()
 
-            val result = configRepository.updateAllProfiles()
-
-            emitToast(result.toDisplayMessage(getApplication()))
-        }
-    }
-
-    fun testAllNodesLatency() {
-        viewModelScope.launch {
-            val targetNodeIds = configRepository.nodes.value.map { it.id }
-            if (targetNodeIds.isEmpty()) return@launch
-            emitToast(getApplication<Application>().getString(R.string.common_loading))
-            configRepository.testAllNodesLatency(targetNodeIds = targetNodeIds)
-            emitToast(getApplication<Application>().getString(R.string.dashboard_test_complete))
-        }
-    }
+    fun testAllNodesLatency() = testAllNodesLatencyRuntime()
 
     private fun startTrafficMonitor() {
         if (statsUiActive && _connectionState.value == ConnectionState.Connected) {
@@ -1052,25 +997,13 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         trafficMonitor.stop()
     }
 
-    fun getActiveProfileName(): String? =
-        activeProfileId.value?.let { activeId -> profiles.value.find { it.id == activeId }?.name }
+    fun getActiveProfileName(): String? = getActiveProfileNameRuntime()
 
-    fun getActiveNodeName(): String? {
-        val selectedName = activeNodeId.value?.let { activeId ->
-            configRepository.getNodeById(activeId)?.displayName
-        }
-        return resolveDashboardDisplayedNodeName(
-            connectionState = _connectionState.value,
-            runtimeLabel = SingBoxRemote.activeLabel.value,
-            selectedNodeDisplayName = selectedName
-        )
-    }
+    fun getActiveNodeName(): String? = getActiveNodeNameRuntime()
 
     override fun onCleared() {
         startMonitorJob?.cancel()
         startMonitorJob = null
-        stopConfirmJob?.cancel()
-        stopConfirmJob = null
         stopTrafficMonitor()
         stopPingTest()
     }

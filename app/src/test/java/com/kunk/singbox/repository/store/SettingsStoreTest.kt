@@ -8,6 +8,7 @@ import com.kunk.singbox.model.AppGroup
 import com.kunk.singbox.model.AppInfo
 import com.kunk.singbox.model.AppRule
 import com.kunk.singbox.model.RuleSetOutboundMode
+import com.kunk.singbox.model.TrafficCaptureMode
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -15,6 +16,37 @@ import org.junit.Test
 import java.io.File
 
 class SettingsStoreTest {
+
+    @Test
+    fun testMigrateSettingsMapsLegacyTunModesToTrafficCaptureMode() {
+        val vpn = SettingsStore.migrateSettings(
+            version = 12,
+            settings = AppSettings(tunEnabled = true, trafficCaptureMode = null)
+        )
+        val proxy = SettingsStore.migrateSettings(
+            version = 12,
+            settings = AppSettings(tunEnabled = false, trafficCaptureMode = null)
+        )
+
+        assertEquals(TrafficCaptureMode.VPN, vpn.trafficCaptureMode)
+        assertEquals(TrafficCaptureMode.PROXY_ONLY, proxy.trafficCaptureMode)
+        assertTrue(vpn.tunEnabled)
+        assertFalse(proxy.tunEnabled)
+    }
+
+    @Test
+    fun testMigrateSettingsKeepsExplicitRootTrafficCaptureMode() {
+        val migrated = SettingsStore.migrateSettings(
+            version = SettingsEntity.CURRENT_VERSION,
+            settings = AppSettings(
+                tunEnabled = true,
+                trafficCaptureMode = TrafficCaptureMode.ROOT_TRANSPARENT
+            )
+        )
+
+        assertEquals(TrafficCaptureMode.ROOT_TRANSPARENT, migrated.trafficCaptureMode)
+        assertFalse(migrated.tunEnabled)
+    }
 
     @Test
     fun testMigrateSettingsReplacesLegacyLocalDnsAtVersionFour() {
@@ -79,8 +111,49 @@ class SettingsStoreTest {
             )
         )
 
-        assertEquals(RuleSetOutboundMode.PROXY, migrated.appRules.single().outboundMode)
-        assertEquals(RuleSetOutboundMode.PROXY, migrated.appGroups.single().outboundMode)
+        assertTrue(migrated.appRules.isEmpty())
+        assertEquals(2, migrated.appGroups.size)
+        assertTrue(migrated.appGroups.all { it.outboundMode == RuleSetOutboundMode.PROXY })
+    }
+
+    @Test
+    fun testMigrateSettingsConvertsLegacyAppRulesToGroups() {
+        val migrated = SettingsStore.migrateSettings(
+            version = 10,
+            settings = AppSettings(
+                appRules = listOf(
+                    AppRule(
+                        id = "old",
+                        packageName = "com.example.duplicate",
+                        appName = "Old",
+                        outboundMode = RuleSetOutboundMode.DIRECT
+                    ),
+                    AppRule(
+                        id = "latest",
+                        packageName = " com.example.duplicate ",
+                        appName = "Latest",
+                        outboundMode = RuleSetOutboundMode.PROXY
+                    ),
+                    AppRule(
+                        id = "grouped",
+                        packageName = "com.example.grouped",
+                        appName = "Hidden"
+                    )
+                ),
+                appGroups = listOf(
+                    AppGroup(
+                        id = "existing",
+                        name = "Existing",
+                        apps = listOf(AppInfo("com.example.grouped", "Grouped"))
+                    )
+                )
+            )
+        )
+
+        assertTrue(migrated.appRules.isEmpty())
+        assertEquals(listOf("legacy-rule-latest", "existing"), migrated.appGroups.map { it.id })
+        assertEquals("Latest", migrated.appGroups.first().name)
+        assertEquals("com.example.duplicate", migrated.appGroups.first().apps.single().packageName)
     }
 
     @Test

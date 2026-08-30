@@ -139,22 +139,20 @@ class SettingsRepositoryTest {
             source.indexOf("suspend fun removePackageFromPerAppSettings", start)
         )
 
-        assertTrue(body.contains("return persisted && changed"))
+        assertTrue(body.contains("updatePerAppPolicy"))
         assertFalse(body.contains("notifyRestartRequired()"))
     }
 
     @Test
-    fun appRoutingWritesUseExclusiveAtomicUpserts() {
+    fun appRoutingWritesUseGroupAtomicUpserts() {
         val repository = File("src/main/java/com/kunk/singbox/repository/SettingsRepository.kt")
             .readText(Charsets.UTF_8)
         val viewModel = File("src/main/java/com/kunk/singbox/viewmodel/SettingsViewModel.kt")
             .readText(Charsets.UTF_8)
 
-        assertTrue(repository.contains("updateSettingsAndNotifyRestart { upsertExclusiveAppRule(it, value) }"))
+        assertFalse(repository.contains("upsertExclusiveAppRule"))
         assertTrue(repository.contains("updateSettingsAndNotifyRestart { upsertExclusiveAppGroup(it, value) }"))
-        assertEquals(2, viewModel.windowed("repository.upsertAppRule(rule)".length).count {
-            it == "repository.upsertAppRule(rule)"
-        })
+        assertFalse(viewModel.contains("repository.upsertAppRule"))
         assertEquals(2, viewModel.windowed("repository.upsertAppGroup(group)".length).count {
             it == "repository.upsertAppGroup(group)"
         })
@@ -170,7 +168,7 @@ class SettingsRepositoryTest {
                 "VpnServiceManager.applyPerAppRuleChangeIfRunning(getApplication())"
             )
         )
-        assertEquals(8, viewModel.windowed("applyAppRoutingChange {".length).count {
+        assertEquals(4, viewModel.windowed("applyAppRoutingChange {".length).count {
             it == "applyAppRoutingChange {"
         })
     }

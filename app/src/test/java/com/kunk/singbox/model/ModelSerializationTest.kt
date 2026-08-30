@@ -16,6 +16,16 @@ class ModelSerializationTest {
     private val gson = Gson()
 
     @Test
+    fun trafficCaptureModeRoundTripsAndLegacyTunFallbackRemainsStable() {
+        val root = AppSettings(trafficCaptureMode = TrafficCaptureMode.ROOT_TRANSPARENT)
+        val decoded = gson.fromJson(gson.toJson(root), AppSettings::class.java)
+        val legacyProxy = gson.fromJson("""{"tunEnabled":false}""", AppSettings::class.java)
+
+        assertEquals(TrafficCaptureMode.ROOT_TRANSPARENT, decoded.resolvedTrafficCaptureMode())
+        assertEquals(TrafficCaptureMode.PROXY_ONLY, legacyProxy.resolvedTrafficCaptureMode())
+    }
+
+    @Test
     fun perAppNewInstallSwitchDefaultsOffAndRoundTrips() {
         val legacy = gson.fromJson("{}", AppSettings::class.java)
         val enabled = AppSettings(autoIncludeNewAppsInPerAppRules = true)
@@ -58,7 +68,8 @@ class ModelSerializationTest {
             protocol = "vmess",
             group = "Default",
             latencyMs = 120,
-            sourceProfileId = "profile-1"
+            sourceProfileId = "profile-1",
+            hasDetour = true
         )
 
         val json = gson.toJson(node)
@@ -67,6 +78,7 @@ class ModelSerializationTest {
         assertEquals(node.id, decoded.id)
         assertEquals(node.name, decoded.name)
         assertEquals(node.latencyMs, decoded.latencyMs)
+        assertEquals(node.hasDetour, decoded.hasDetour)
     }
 
     @Test

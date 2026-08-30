@@ -25,6 +25,16 @@ internal data class ConnectionIncidentSnapshot(
     val protocolCounts: Map<String, Int>
 )
 
+private fun ConnectionIncidentSnapshot.normalized(): ConnectionIncidentSnapshot = copy(
+    mode = mode.orEmpty(),
+    reason = reason.orEmpty(),
+    closeReason = closeReason.orEmpty(),
+    packageNames = packageNames.orEmpty(),
+    outboundCounts = outboundCounts.orEmpty(),
+    chainCounts = chainCounts.orEmpty(),
+    protocolCounts = protocolCounts.orEmpty()
+)
+
 internal fun ConnectionStormDecision.toIncidentSnapshot(
     mode: String,
     closeReason: String,
@@ -122,7 +132,9 @@ internal class ConnectionIncidentHistory(
         return historyFile.useLines(Charsets.UTF_8) { lines ->
             lines.filter(String::isNotBlank)
                 .mapNotNull { line ->
-                    runCatching { gson.fromJson(line, ConnectionIncidentSnapshot::class.java) }.getOrNull()
+                    runCatching {
+                        gson.fromJson(line, ConnectionIncidentSnapshot::class.java)?.normalized()
+                    }.getOrNull()
                 }
                 .toList()
         }

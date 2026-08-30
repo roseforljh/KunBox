@@ -7,12 +7,12 @@ import com.kunk.singbox.model.CustomRule
 import com.kunk.singbox.model.DefaultRule
 import com.kunk.singbox.model.DnsStrategy
 import com.kunk.singbox.model.RoutingMode
-import com.kunk.singbox.model.AppRule
 import com.kunk.singbox.model.AppGroup
 import com.kunk.singbox.model.RuleSet
 import com.kunk.singbox.model.RuleSetOutboundMode
 import com.kunk.singbox.model.RuleSetType
 import com.kunk.singbox.model.TunStack
+import com.kunk.singbox.model.TrafficCaptureMode
 import com.kunk.singbox.model.LatencyTestMethod
 import com.kunk.singbox.model.VpnAppMode
 import com.kunk.singbox.model.VpnRouteMode
@@ -24,6 +24,7 @@ import com.kunk.singbox.model.AppLanguage
 import com.kunk.singbox.model.NodeSortType
 import com.kunk.singbox.model.NodeFilter
 import com.kunk.singbox.model.BackgroundPowerSavingDelay
+import com.kunk.singbox.model.PerAppVpnPolicy
 import com.kunk.singbox.repository.store.SettingsStore
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -31,6 +32,12 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.StateFlow
+
+data class PerAppPolicyUpdateResult(
+    val changed: Boolean,
+    val runtimeChanged: Boolean,
+    val revision: Long
+)
 
 class SettingsRepository(private val context: Context) {
 
@@ -133,7 +140,16 @@ class SettingsRepository(private val context: Context) {
     }
 
     suspend fun setTunEnabled(value: Boolean) {
-        updateSettingsAndNotifyRestart { it.copy(tunEnabled = value) }
+        setTrafficCaptureMode(if (value) TrafficCaptureMode.VPN else TrafficCaptureMode.PROXY_ONLY)
+    }
+
+    suspend fun setTrafficCaptureMode(value: TrafficCaptureMode) {
+        updateSettingsAndNotifyRestart {
+            it.copy(
+                trafficCaptureMode = value,
+                tunEnabled = value == TrafficCaptureMode.VPN
+            )
+        }
     }
 
     suspend fun setTunStack(value: TunStack) {
@@ -168,35 +184,68 @@ class SettingsRepository(private val context: Context) {
         updateSettingsAndNotifyRestart { it.copy(vpnRouteIncludeCidrs = value) }
     }
 
-    suspend fun setVpnAppMode(value: VpnAppMode) {
-        updateSettingsAndNotifyRestart { it.copy(vpnAppMode = value) }
+    suspend fun setVpnAppMode(value: VpnAppMode): Result<PerAppPolicyUpdateResult> =
+        updatePerAppPolicy { current ->
+            current.copy(vpnAppMode = value) to (current.vpnAppMode != value)
+        }
+
+    suspend fun setVpnAllowlist(value: String): Result<PerAppPolicyUpdateResult> {
+        val normalized = PerAppVpnPolicy.parsePackageNames(value).joinToString("\n")
+        return updatePerAppPolicy { current ->
+            val changed = PerAppVpnPolicy.parsePackageNames(current.vpnAllowlist) !=
+                PerAppVpnPolicy.parsePackageNames(normalized)
+            current.copy(vpnAllowlist = normalized) to
+                (changed && current.vpnAppMode == VpnAppMode.ALLOWLIST)
+        }
     }
 
-    suspend fun setVpnAllowlist(value: String) {
-        updateSettingsAndNotifyRestart { it.copy(vpnAllowlist = value) }
-    }
-
-    suspend fun setVpnBlocklist(value: String) {
-        updateSettingsAndNotifyRestart { it.copy(vpnBlocklist = value) }
+    suspend fun setVpnBlocklist(value: String): Result<PerAppPolicyUpdateResult> {
+        val normalized = PerAppVpnPolicy.parsePackageNames(value).joinToString("\n")
+        return updatePerAppPolicy { current ->
+            val changed = PerAppVpnPolicy.parsePackageNames(current.vpnBlocklist) !=
+                PerAppVpnPolicy.parsePackageNames(normalized)
+            current.copy(vpnBlocklist = normalized) to
+                (changed && current.vpnAppMode == VpnAppMode.BLOCKLIST)
+        }
     }
 
     suspend fun setAutoIncludeNewAppsInPerAppRules(value: Boolean) {
         settingsStore.updateSettingsAndWait { it.copy(autoIncludeNewAppsInPerAppRules = value) }
     }
 
-    suspend fun addPackageToCurrentPerAppRule(packageName: String): Boolean {
-        var changed = false
-        val persisted = settingsStore.updateSettingsAndWait { settings ->
-            addPackageToCurrentPerAppRule(settings, packageName).also { updated ->
-                changed = updated != settings
-            }
+    suspend fun addPackageToCurrentPerAppRule(packageName: String): Result<PerAppPolicyUpdateResult> =
+        updatePerAppPolicy { current ->
+            val updated = addPackageToCurrentPerAppRule(current, packageName)
+            updated to (updated != current)
         }
-        return persisted && changed
-    }
 
-    suspend fun removePackageFromPerAppSettings(packageName: String) {
-        updateSettingsAndNotifyRestart { settings ->
-            removePackageFromPerAppSettings(settings, packageName)
+    suspend fun removePackageFromPerAppSettings(packageName: String): Result<PerAppPolicyUpdateResult> =
+        updatePerAppPolicy { current ->
+            val updated = removePackageFromPerAppSettings(current, packageName)
+            val activeListChanged = when (current.vpnAppMode) {
+                VpnAppMode.ALL -> false
+                VpnAppMode.ALLOWLIST -> current.vpnAllowlist != updated.vpnAllowlist
+                VpnAppMode.BLOCKLIST -> current.vpnBlocklist != updated.vpnBlocklist
+            }
+            updated to activeListChanged
+        }
+
+    suspend fun removeUninstalledPerAppPackages(
+        installedPackages: Set<String>
+    ): Result<PerAppPolicyUpdateResult> {
+        val current = settings.value
+        val updated = removeUninstalledPackagesFromPerAppSettings(current, installedPackages)
+        if (updated == current) {
+            return Result.success(
+                PerAppPolicyUpdateResult(
+                    changed = false,
+                    runtimeChanged = false,
+                    revision = current.perAppPolicyRevision
+                )
+            )
+        }
+        return updatePerAppPolicy { latest ->
+            removeUninstalledPackagesFromPerAppSettings(latest, installedPackages) to false
         }
     }
 
@@ -303,6 +352,84 @@ class SettingsRepository(private val context: Context) {
         updateSettingsAndNotifyRestart { it.copy(customRules = value) }
     }
 
+    suspend fun removeDeletedRoutingReferences(
+        deletedProfileId: String? = null,
+        deletedNodeIds: Set<String> = emptySet(),
+        deletedNodeReferences: Set<String> = emptySet()
+    ): Boolean {
+        var changed = false
+        val persisted = settingsStore.updateSettingsAndWait { current ->
+            val updated = com.kunk.singbox.repository.removeDeletedRoutingReferences(
+                settings = current,
+                deletedProfileId = deletedProfileId,
+                deletedNodeIds = deletedNodeIds,
+                deletedNodeReferences = deletedNodeReferences
+            )
+            changed = updated != current
+            updated
+        }
+        if (persisted && changed) notifyRestartRequired()
+        return persisted
+    }
+
+    @Suppress("LongParameterList")
+    suspend fun migrateNodeRoutingReferences(
+        oldNodeId: String,
+        newNodeId: String,
+        oldQualifiedReference: String,
+        newQualifiedReference: String,
+        oldBareReference: String,
+        newBareReference: String,
+        oldBareNameIsUnique: Boolean,
+        newBareNameIsUnique: Boolean,
+        notify: Boolean = true
+    ): Boolean {
+        var changed = false
+        val persisted = settingsStore.updateSettingsAndWait { current ->
+            val updated = com.kunk.singbox.repository.migrateNodeRoutingReferences(
+                settings = current,
+                oldNodeId = oldNodeId,
+                newNodeId = newNodeId,
+                oldQualifiedReference = oldQualifiedReference,
+                newQualifiedReference = newQualifiedReference,
+                oldBareReference = oldBareReference,
+                newBareReference = newBareReference,
+                oldBareNameIsUnique = oldBareNameIsUnique,
+                newBareNameIsUnique = newBareNameIsUnique
+            )
+            changed = updated != current
+            updated
+        }
+        if (persisted && changed && notify) notifyRestartRequired()
+        return persisted
+    }
+
+    suspend fun removeInvalidRoutingReferences(
+        validProfileIds: Set<String>,
+        validNodeIds: Set<String>,
+        validQualifiedNodeReferences: Set<String>,
+        validBareNodeNames: Set<String>
+    ): Boolean {
+        var removed = 0
+        val persisted = settingsStore.updateSettingsAndWait { current ->
+            val updated = com.kunk.singbox.repository.removeInvalidRoutingReferences(
+                settings = current,
+                validProfileIds = validProfileIds,
+                validNodeIds = validNodeIds,
+                validQualifiedNodeReferences = validQualifiedNodeReferences,
+                validBareNodeNames = validBareNodeNames
+            )
+            removed = current.appRules.size + current.appGroups.size + current.customRules.size +
+                current.ruleSets.size - updated.appRules.size - updated.appGroups.size -
+                updated.customRules.size - updated.ruleSets.size
+            updated
+        }
+        if (persisted && removed > 0) {
+            Log.w("SettingsRepository", "Removed $removed invalid routing reference(s)")
+        }
+        return persisted
+    }
+
     suspend fun setRuleSets(value: List<RuleSet>, notify: Boolean = true) {
         val persisted = settingsStore.updateSettingsAndWait { it.copy(ruleSets = value) }
         if (persisted && notify) {
@@ -314,14 +441,8 @@ class SettingsRepository(private val context: Context) {
         return settings.value.ruleSets
     }
 
-    suspend fun setAppRules(value: List<AppRule>): Boolean =
-        updateSettingsAndNotifyRestart { it.copy(appRules = value) }
-
     suspend fun setAppGroups(value: List<AppGroup>): Boolean =
         updateSettingsAndNotifyRestart { it.copy(appGroups = value) }
-
-    suspend fun upsertAppRule(value: AppRule): Boolean =
-        updateSettingsAndNotifyRestart { upsertExclusiveAppRule(it, value) }
 
     suspend fun upsertAppGroup(value: AppGroup): Boolean =
         updateSettingsAndNotifyRestart { upsertExclusiveAppGroup(it, value) }
@@ -510,6 +631,32 @@ class SettingsRepository(private val context: Context) {
         _restartRequiredEvents.tryEmit(Unit)
     }
 
+    private suspend fun updatePerAppPolicy(
+        update: (AppSettings) -> Pair<AppSettings, Boolean>
+    ): Result<PerAppPolicyUpdateResult> {
+        var outcome = PerAppPolicyUpdateResult(
+            changed = false,
+            runtimeChanged = false,
+            revision = settings.value.perAppPolicyRevision
+        )
+        val persisted = settingsStore.updateSettingsAndWait { current ->
+            val (candidate, runtimeChanged) = update(current)
+            val changed = candidate != current
+            val revision = if (runtimeChanged) {
+                PerAppVpnPolicy.nextRevision(current.perAppPolicyRevision)
+            } else {
+                current.perAppPolicyRevision
+            }
+            outcome = PerAppPolicyUpdateResult(changed, runtimeChanged, revision)
+            if (changed) candidate.copy(perAppPolicyRevision = revision) else current
+        }
+        if (!persisted) {
+            return Result.failure(IllegalStateException("Failed to persist per-app VPN policy"))
+        }
+        if (outcome.runtimeChanged) notifyRestartRequired()
+        return Result.success(outcome)
+    }
+
     companion object {
         private const val MIN_PROXY_PORT = 1
         private const val MAX_PROXY_PORT = 65535
@@ -538,13 +685,26 @@ class SettingsRepository(private val context: Context) {
                     imported.ruleSetAutoUpdateInterval
                 )
             val normalized = imported.copy(
+                trafficCaptureMode = imported.resolvedTrafficCaptureMode(),
+                tunEnabled = imported.resolvedTrafficCaptureMode() == TrafficCaptureMode.VPN,
                 appThemeStyle = normalizeAppThemeStyle(imported),
                 fakeIpRange = normalizeFakeIpRange(imported),
                 proxyPort = sanitizeProxyPort(imported.proxyPort),
                 latencyTestUrl = AppSettings.validateLatencyTestUrl(imported.latencyTestUrl)
                     ?: current.latencyTestUrl,
                 latencyTestConcurrency = sanitizeLatencyTestConcurrency(imported.latencyTestConcurrency),
-                ruleSetAutoUpdateInterval = normalizedRuleSetAutoUpdateInterval
+                ruleSetAutoUpdateInterval = normalizedRuleSetAutoUpdateInterval,
+                perAppPolicyRevision = if (
+                    imported.vpnAppMode != current.vpnAppMode ||
+                    PerAppVpnPolicy.parsePackageNames(imported.vpnAllowlist) !=
+                    PerAppVpnPolicy.parsePackageNames(current.vpnAllowlist) ||
+                    PerAppVpnPolicy.parsePackageNames(imported.vpnBlocklist) !=
+                    PerAppVpnPolicy.parsePackageNames(current.vpnBlocklist)
+                ) {
+                    PerAppVpnPolicy.nextRevision(current.perAppPolicyRevision)
+                } else {
+                    current.perAppPolicyRevision
+                }
             )
 
             return if (importRules) {
@@ -555,6 +715,7 @@ class SettingsRepository(private val context: Context) {
                     ruleSets = current.ruleSets,
                     appRules = current.appRules,
                     appGroups = current.appGroups,
+                    perAppPolicyRevision = current.perAppPolicyRevision,
                     ruleSetAutoUpdateEnabled = current.ruleSetAutoUpdateEnabled,
                     ruleSetAutoUpdateInterval = current.ruleSetAutoUpdateInterval
                 )

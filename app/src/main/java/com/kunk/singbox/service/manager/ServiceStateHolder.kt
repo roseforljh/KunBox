@@ -14,15 +14,43 @@ class RecoveryIntentLease internal constructor(
     internal val allowsResourceClaim: Boolean
 )
 
+enum class VpnStopInitiator(
+    val wireValue: String,
+    val isManualStop: Boolean
+) {
+    USER_UI("user_ui", true),
+    QUICK_SETTINGS("quick_settings", true),
+    NOTIFICATION("notification", true),
+    TRUSTED_WIFI("trusted_wifi", false),
+    METERED_PROTECTION("metered_protection", false),
+    MODE_SWITCH("mode_switch", false),
+    START_TIMEOUT("start_timeout", false),
+    RESTART("restart", false),
+    SYSTEM_REVOKE("system_revoke", false),
+    UNKNOWN("unknown", false);
+
+    companion object {
+        fun fromWireValue(value: String?): VpnStopInitiator {
+            return entries.firstOrNull { it.wireValue == value } ?: UNKNOWN
+        }
+    }
+}
+
 @Suppress("TooManyFunctions")
 object ServiceStateHolder {
 
     const val ACTION_START = "com.kunk.singbox.START"
     const val ACTION_STOP = "com.kunk.singbox.STOP"
+    const val ACTION_FORCE_STOP = "com.kunk.singbox.FORCE_STOP"
     const val ACTION_SWITCH_NODE = "com.kunk.singbox.SWITCH_NODE"
     const val ACTION_SERVICE = "com.kunk.singbox.SERVICE"
     const val ACTION_UPDATE_SETTING = "com.kunk.singbox.UPDATE_SETTING"
     const val ACTION_RESET_CONNECTIONS = "com.kunk.singbox.RESET_CONNECTIONS"
+
+    internal fun shouldIgnoreDuplicateHardStop(
+        isStopping: Boolean,
+        stopSelfRequested: Boolean
+    ): Boolean = isStopping && stopSelfRequested
 
     // Pre-cleanup: close connections before VPN restart to avoid app timeout on old connections
     const val ACTION_PREPARE_RESTART = "com.kunk.singbox.PREPARE_RESTART"
@@ -36,8 +64,13 @@ object ServiceStateHolder {
     const val EXTRA_CLEAN_CACHE = "clean_cache"
     // 仅标记由按应用规则变更触发的完整重启
     const val EXTRA_PER_APP_RULE_RESTART = "per_app_rule_restart"
+    const val EXTRA_PER_APP_POLICY_REVISION = "per_app_policy_revision"
+    const val EXTRA_APP_ROUTE_REQUEST_ID = "app_route_request_id"
+    const val EXTRA_CONFIG_DIGEST = "config_digest"
+    const val EXTRA_APP_ROUTING_DIGEST = "app_routing_digest"
     const val EXTRA_SETTING_KEY = "setting_key"
     const val EXTRA_SETTING_VALUE_BOOL = "setting_value_bool"
+    const val EXTRA_STOP_INITIATOR = "stop_initiator"
 
     const val EXTRA_PREPARE_RESTART_REASON = "prepare_restart_reason"
 

@@ -1,6 +1,9 @@
 package com.kunk.singbox.ui.screens
 
 import android.text.format.Formatter
+import android.content.Intent
+import android.provider.Settings
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -54,7 +57,7 @@ import com.kunk.singbox.ipc.SingBoxRemote
 import com.kunk.singbox.model.ConnectionState
 import com.kunk.singbox.model.PingDisplayText
 import com.kunk.singbox.model.RoutingMode
-import com.kunk.singbox.ui.navigation.Screen
+import com.kunk.singbox.ui.navigation.Screen as AppScreen
 import com.kunk.singbox.viewmodel.DashboardViewModel
 import com.kunk.singbox.viewmodel.SettingsViewModel
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -100,6 +103,7 @@ fun DashboardScreen(
     val scope = rememberCoroutineScope()
 
     val connectionState by viewModel.connectionState.collectAsStateWithLifecycle()
+    val dataPlaneReadiness by viewModel.dataPlaneReadiness.collectAsStateWithLifecycle()
     val stats by viewModel.stats.collectAsStateWithLifecycle()
     val profiles by viewModel.profiles.collectAsStateWithLifecycle()
     val activeProfileId by viewModel.activeProfileId.collectAsStateWithLifecycle()
@@ -402,8 +406,23 @@ fun DashboardScreen(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
+                    val safetyStatusLabel = when {
+                        dataPlaneReadiness.status == com.kunk.singbox.ipc.DataPlaneStatus.BLOCKING &&
+                            connectionState == ConnectionState.Connecting ->
+                            stringResource(R.string.dashboard_status_protecting)
+                        dataPlaneReadiness.status == com.kunk.singbox.ipc.DataPlaneStatus.RECOVERING &&
+                            connectionState == ConnectionState.Connecting ->
+                            stringResource(R.string.dashboard_status_recovering)
+                        dataPlaneReadiness.status == com.kunk.singbox.ipc.DataPlaneStatus.FAILED_BLOCKED &&
+                            connectionState == ConnectionState.Error ->
+                            stringResource(R.string.dashboard_status_blocked)
+                        dataPlaneReadiness.status == com.kunk.singbox.ipc.DataPlaneStatus.FAILED_UNPROTECTED &&
+                            connectionState == ConnectionState.Error ->
+                            stringResource(R.string.connection_idle)
+                        else -> stringResource(connectionState.displayNameRes)
+                    }
                     StatusChip(
-                        label = stringResource(connectionState.displayNameRes),
+                        label = safetyStatusLabel,
                         isActive = connectionState == ConnectionState.Connected
                     )
 
@@ -417,6 +436,34 @@ fun DashboardScreen(
                         mode = currentMode,
                         indicatorColor = indicatorColor
                     ) { showModeDialog = true }
+                }
+
+                val browserExcluded = connectionState == ConnectionState.Connected &&
+                    dataPlaneReadiness.routingScope.contains("browser=excluded")
+                val failedUnprotected =
+                    connectionState == ConnectionState.Error &&
+                        dataPlaneReadiness.status == com.kunk.singbox.ipc.DataPlaneStatus.FAILED_UNPROTECTED
+                val protectionWarning = when {
+                    browserExcluded ->
+                        stringResource(R.string.vpn_browser_not_covered)
+                    failedUnprotected -> stringResource(R.string.vpn_status_failed_unprotected)
+                    else -> null
+                }
+                if (protectionWarning != null) {
+                    Text(
+                        text = protectionWarning,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = if (browserExcluded || failedUnprotected) {
+                            MaterialTheme.colorScheme.error
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                runCatching { context.startActivity(Intent(Settings.ACTION_VPN_SETTINGS)) }
+                            }
+                    )
                 }
 
                 val noProfileMsg = stringResource(R.string.dashboard_no_profiles_available)
@@ -529,13 +576,13 @@ fun DashboardScreen(
                             Icons.Rounded.Terminal,
                             stringResource(R.string.dashboard_logs)
                         ) {
-                            navController.navigate(Screen.Logs.route)
+                            navController.navigate(AppScreen.Logs.route)
                         }
                         QuickActionButton(
                             Icons.Rounded.BugReport,
                             stringResource(R.string.dashboard_diagnostics)
                         ) {
-                            navController.navigate(Screen.Diagnostics.route)
+                            navController.navigate(AppScreen.Diagnostics.route)
                         }
                     }
                 }

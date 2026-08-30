@@ -1,7 +1,9 @@
 ﻿package com.kunk.singbox.service.tun
 
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
@@ -10,10 +12,10 @@ import android.net.VpnService
 import android.os.Build
 import android.os.ParcelFileDescriptor
 import android.os.SystemClock
-import android.provider.Settings
 import android.util.Log
 import com.kunk.singbox.ipc.VpnStateStore
 import com.kunk.singbox.model.AppSettings
+import com.kunk.singbox.model.PerAppVpnPolicy
 import com.kunk.singbox.model.IpVersionMode
 import com.kunk.singbox.model.TunStack
 import com.kunk.singbox.model.VpnAppMode
@@ -24,8 +26,42 @@ import io.nekohasekai.libbox.RoutePrefixIterator
 import io.nekohasekai.libbox.TunOptions
 import java.net.InetAddress
 import java.net.Inet6Address
+import java.util.concurrent.CancellationException
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
+
+@Suppress("LongParameterList", "CognitiveComplexMethod", "ThrowsCount")
+internal fun <A, T> retryVpnInterfaceEstablishment(
+    backoffMs: LongArray,
+    isStopping: () -> Boolean,
+    sleep: (Long) -> Unit,
+    createAttempt: (Int) -> A,
+    establish: (A) -> T?,
+    isValid: (T) -> Boolean,
+    closeInvalid: (T) -> Unit,
+    onInvalid: (Int) -> Unit = {},
+    onFailure: (Int, Exception) -> Unit = { _, _ -> }
+): T? {
+    for ((index, delayMs) in backoffMs.withIndex()) {
+        if (isStopping()) throw CancellationException("TUN establishment cancelled by stop request")
+        if (delayMs > 0L) sleep(delayMs)
+        if (isStopping()) throw CancellationException("TUN establishment cancelled by stop request")
+
+        val attempt = createAttempt(index)
+        val vpnInterface = try {
+            establish(attempt)
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            onFailure(index, error)
+            null
+        }
+        if (vpnInterface != null && isValid(vpnInterface)) return vpnInterface
+        if (vpnInterface != null) closeInvalid(vpnInterface)
+        onInvalid(index)
+    }
+    return null
+}
 
 class VpnTunManager(
     private val context: Context,
@@ -235,10 +271,10 @@ class VpnTunManager(
         )
 
         internal fun resolvePerAppVpnPlan(settings: AppSettings?, selfPackage: String): PerAppVpnPlan {
-            val appMode = settings?.vpnAppMode ?: VpnAppMode.ALL
-            val allowPkgs = parsePackageList(settings?.vpnAllowlist.orEmpty()).filterNot { it == selfPackage }
-            val blockPkgs = parsePackageList(settings?.vpnBlocklist.orEmpty()).filterNot { it == selfPackage }
-            return when (appMode) {
+            val policy = PerAppVpnPolicy.from(settings)
+            val allowPkgs = policy.allowlist.filterNot { it == selfPackage }
+            val blockPkgs = policy.blocklist.filterNot { it == selfPackage }
+            return when (policy.mode) {
                 VpnAppMode.ALL -> PerAppVpnPlan(
                     allowedPackages = emptyList(),
                     disallowedPackages = listOf(selfPackage)
@@ -254,14 +290,6 @@ class VpnTunManager(
             }
         }
 
-        private fun parsePackageList(raw: String): List<String> {
-            return raw
-                .split("\n", "\r", ",", ";", " ", "\t")
-                .map { it.trim() }
-                .filter { it.isNotEmpty() }
-                .distinct()
-        }
-
         internal fun shouldAppendHttpProxy(settings: AppSettings?): Boolean {
             return settings?.appendHttpProxy == true && settings.proxyPort > 0 && !settings.tunEnabled
         }
@@ -269,6 +297,25 @@ class VpnTunManager(
         internal fun hasUsablePerAppAllowlist(settings: AppSettings?, addedAllowedCount: Int): Boolean {
             return settings?.vpnAppMode != VpnAppMode.ALLOWLIST || addedAllowedCount > 0
         }
+
+        internal data class AppliedPerAppVpnPlan(
+            val mode: String,
+            val revision: Long = 0L,
+            val policyDigest: String = "",
+            val rawAllowlist: List<String> = emptyList(),
+            val rawBlocklist: List<String> = emptyList(),
+            val requestedAllowedPackages: List<String>,
+            val requestedDisallowedPackages: List<String>,
+            val appliedAllowedPackages: List<String>,
+            val appliedDisallowedPackages: List<String>,
+            val skippedPackages: List<String>,
+            val tunAddresses: List<String> = emptyList(),
+            val routes: List<String> = emptyList(),
+            val dnsServers: List<String> = emptyList(),
+            val mtu: Int = 0,
+            val defaultBrowserPackage: String? = null,
+            val browserCoverage: String = "unknown"
+        )
 
         internal fun addAllowedApplicationsFailClosed(
             packages: List<String>,
@@ -289,9 +336,6 @@ class VpnTunManager(
         }
     }
 
-    @Volatile
-    private var preallocatedBuilder: VpnService.Builder? = null
-
     val isConnecting = AtomicBoolean(false)
 
     // Avoid spamming logs if Builder is recreated multiple times.
@@ -299,25 +343,19 @@ class VpnTunManager(
     @Volatile private var lastLoggedMtu: Int = -1
     private val mtuLogDebounceMs: Long = 10_000L
 
-    fun preallocateBuilder() {
-        if (preallocatedBuilder != null) return
-        try {
-            preallocatedBuilder = vpnService.Builder()
-                .setSession(context.packageName)
-                .setMtu(9000)
-            Log.d(TAG, "TUN builder preallocated")
-        } catch (e: Exception) {
-            Log.w(TAG, "Failed to preallocate TUN builder", e)
-            preallocatedBuilder = null
-        }
-    }
+    @Volatile
+    internal var appliedPerAppVpnPlan = AppliedPerAppVpnPlan(
+        mode = VpnAppMode.ALL.name,
+        requestedAllowedPackages = emptyList(),
+        requestedDisallowedPackages = emptyList(),
+        appliedAllowedPackages = emptyList(),
+        appliedDisallowedPackages = emptyList(),
+        skippedPackages = emptyList()
+    )
+        private set
 
-    fun consumePreallocatedBuilder(): VpnService.Builder? {
-        return preallocatedBuilder?.also {
-            preallocatedBuilder = null
-            Log.d(TAG, "Using preallocated TUN builder")
-        }
-    }
+    @Volatile
+    private var configuredPerAppVpnPlan: AppliedPerAppVpnPlan? = null
 
     /**
      * @param builder VpnService.Builder
@@ -329,6 +367,7 @@ class VpnTunManager(
         options: TunOptions?,
         settings: AppSettings?
     ) {
+        configuredPerAppVpnPlan = null
         val effectiveMtu = resolveEffectiveMtu(options, settings)
         logEffectiveMtuIfNeeded(options, settings, effectiveMtu)
         val tunPlan = VpnTunAddressPlanner.build(settings?.ipVersionMode ?: IpVersionMode.DUAL_STACK)
@@ -349,20 +388,6 @@ class VpnTunManager(
 
         configurePerAppVpn(builder, settings)
 
-        val appModeName = (settings?.vpnAppMode ?: VpnAppMode.ALL).name
-        val allowlist = settings?.vpnAllowlist
-        val blocklist = settings?.vpnBlocklist
-        Log.d(
-            TAG,
-            "Saving per-app settings: mode=$appModeName, " +
-                "allowHash=${allowlist?.hashCode() ?: 0}, blockHash=${blocklist?.hashCode() ?: 0}"
-        )
-        VpnStateStore.savePerAppVpnSettings(
-            appMode = appModeName,
-            allowlist = allowlist,
-            blocklist = blocklist
-        )
-
         VpnStateStore.saveRoutingMode(
             mode = (settings?.routingMode ?: com.kunk.singbox.model.RoutingMode.RULE).name
         )
@@ -380,6 +405,17 @@ class VpnTunManager(
             builder.setMetered(false)
             configureHttpProxy(builder, settings)
         }
+        val dnsAddress = runCatching { options?.getDNSServerAddress()?.getValue() }.getOrNull()
+        val browserPackage = resolveDefaultBrowserPackage()
+        configuredPerAppVpnPlan = configuredPerAppVpnPlan?.copy(
+            tunAddresses = tunAddresses.map { (address, prefix) -> "$address/$prefix" },
+            routes = resolveVpnRoutes(settings, tunPlan).map { (address, prefix) -> "$address/$prefix" },
+            dnsServers = resolveVpnDnsServers(settings, dnsAddress, tunPlan),
+            mtu = effectiveMtu,
+            defaultBrowserPackage = browserPackage,
+            browserCoverage = configuredPerAppVpnPlan?.let { resolveBrowserCoverage(browserPackage, it) }
+                ?: "unknown"
+        )
     }
 
     private fun logEffectiveMtuIfNeeded(options: TunOptions?, settings: AppSettings?, effectiveMtu: Int) {
@@ -489,10 +525,14 @@ class VpnTunManager(
 
     private fun configurePerAppVpn(builder: VpnService.Builder, settings: AppSettings?) {
         val plan = resolvePerAppVpnPlan(settings, context.packageName)
+        val appliedAllowed = mutableListOf<String>()
+        val appliedDisallowed = mutableListOf<String>()
+        val skipped = mutableListOf<String>()
 
         val addedAllowedCount = try {
             addAllowedApplicationsFailClosed(plan.allowedPackages) { packageName ->
                 builder.addAllowedApplication(packageName)
+                appliedAllowed += packageName
             }
         } catch (e: IllegalStateException) {
             Log.w(TAG, "Failed to apply VPN allowlist", e)
@@ -505,11 +545,126 @@ class VpnTunManager(
         plan.disallowedPackages.forEach { pkg ->
             try {
                 builder.addDisallowedApplication(pkg)
+                appliedDisallowed += pkg
             } catch (e: PackageManager.NameNotFoundException) {
                 Log.w(TAG, "Disallowed app not found: $pkg")
+                skipped += pkg
             } catch (e: Exception) {
                 Log.w(TAG, "Failed to disallow app: $pkg", e)
+                skipped += pkg
             }
+        }
+        skipped += plan.allowedPackages.filterNot(appliedAllowed::contains)
+        val policy = PerAppVpnPolicy.from(settings)
+        configuredPerAppVpnPlan = AppliedPerAppVpnPlan(
+            mode = policy.mode.name,
+            revision = policy.revision,
+            policyDigest = policy.digest(),
+            rawAllowlist = policy.allowlist.toList(),
+            rawBlocklist = policy.blocklist.toList(),
+            requestedAllowedPackages = plan.allowedPackages,
+            requestedDisallowedPackages = plan.disallowedPackages,
+            appliedAllowedPackages = appliedAllowed,
+            appliedDisallowedPackages = appliedDisallowed,
+            skippedPackages = skipped.distinct()
+        )
+    }
+
+    fun commitConfiguredPerAppVpnPlan(
+        serviceInstanceId: String,
+        runtimeGeneration: Long,
+        expectedRevision: Long = 0L,
+        requestId: String = "",
+        configDigest: String = "",
+        appRoutingDigest: String = ""
+    ): Boolean {
+        val configured = configuredPerAppVpnPlan ?: run {
+            Log.e(TAG, "Applied per-app VPN policy commit failed: no configured plan")
+            return false
+        }
+        if (expectedRevision > 0L && configured.revision != expectedRevision) {
+            Log.e(
+                TAG,
+                "Applied per-app VPN policy commit failed: expectedRevision=$expectedRevision, " +
+                    "configuredRevision=${configured.revision}, serviceInstanceId=$serviceInstanceId, " +
+                    "runtimeGeneration=$runtimeGeneration"
+            )
+            return false
+        }
+        val capturedCount = if (configured.mode == VpnAppMode.ALLOWLIST.name) {
+            configured.appliedAllowedPackages.size
+        } else {
+            0
+        }
+        val excludedCount = if (configured.mode == VpnAppMode.BLOCKLIST.name) {
+            configured.appliedDisallowedPackages.size
+        } else {
+            0
+        }
+        val committed = VpnStateStore.commitAppliedPerAppPolicy(
+            VpnStateStore.AppliedPerAppPolicySnapshot(
+                revision = configured.revision,
+                mode = configured.mode,
+                digest = configured.policyDigest,
+                capturedCount = capturedCount,
+                excludedCount = excludedCount,
+                appliedAtElapsedMs = SystemClock.elapsedRealtime(),
+                serviceInstanceId = serviceInstanceId,
+                runtimeGeneration = runtimeGeneration,
+                requestId = requestId,
+                configDigest = configDigest,
+                appRoutingDigest = appRoutingDigest
+            )
+        )
+        if (!committed) {
+            Log.e(
+                TAG,
+                "Applied per-app VPN policy commit failed: configuredRevision=${configured.revision}, " +
+                    "serviceInstanceId=$serviceInstanceId, runtimeGeneration=$runtimeGeneration"
+            )
+        } else {
+            appliedPerAppVpnPlan = configured
+            configuredPerAppVpnPlan = null
+            VpnStateStore.savePerAppVpnSettings(
+                appMode = configured.mode,
+                allowlist = configured.rawAllowlist.joinToString("\n"),
+                blocklist = configured.rawBlocklist.joinToString("\n")
+            )
+            persistAppliedVpnPlan()
+        }
+        return committed
+    }
+
+    fun discardConfiguredPerAppVpnPlan() {
+        configuredPerAppVpnPlan = null
+    }
+
+    private fun resolveDefaultBrowserPackage(): String? {
+        val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://example.com"))
+        return context.packageManager.resolveActivity(intent, PackageManager.MATCH_DEFAULT_ONLY)
+            ?.activityInfo
+            ?.packageName
+            ?.takeUnless { it == "android" }
+    }
+
+    private fun resolveBrowserCoverage(browserPackage: String?, plan: AppliedPerAppVpnPlan): String {
+        browserPackage ?: return "unknown"
+        val covered = when (plan.mode) {
+            VpnAppMode.ALL.name -> browserPackage !in plan.appliedDisallowedPackages
+            VpnAppMode.ALLOWLIST.name -> browserPackage in plan.appliedAllowedPackages
+            VpnAppMode.BLOCKLIST.name -> browserPackage !in plan.appliedDisallowedPackages
+            else -> return "unknown"
+        }
+        return if (covered) "covered" else "excluded"
+    }
+
+    private fun persistAppliedVpnPlan() {
+        runCatching {
+            val file = java.io.File(context.filesDir, "diagnostics/per_app_vpn_plan.json")
+            check(file.parentFile?.let { it.exists() || it.mkdirs() } == true)
+            file.writeText(com.google.gson.Gson().toJson(appliedPerAppVpnPlan), Charsets.UTF_8)
+        }.onFailure { error ->
+            Log.w(TAG, "Failed to persist applied per-app VPN plan", error)
         }
     }
 
@@ -544,25 +699,10 @@ class VpnTunManager(
     }
 
     fun checkAlwaysOnVpn(): Pair<String?, Boolean> {
-        val alwaysOnPkg = runCatching {
-            Settings.Secure.getString(context.contentResolver, "always_on_vpn_app")
-        }.getOrNull() ?: runCatching {
-            Settings.Global.getString(context.contentResolver, "always_on_vpn_app")
-        }.getOrNull()
-
-        val lockdownValueSecure = runCatching {
-            Settings.Secure.getInt(context.contentResolver, "always_on_vpn_lockdown", 0)
-        }.getOrDefault(0)
-        val lockdownValueGlobal = runCatching {
-            Settings.Global.getInt(context.contentResolver, "always_on_vpn_lockdown", 0)
-        }.getOrDefault(0)
-        val lockdown = lockdownValueSecure != 0 || lockdownValueGlobal != 0
-
-        if (!alwaysOnPkg.isNullOrBlank() || lockdown) {
-            Log.i(TAG, "Always-on VPN status: pkg=$alwaysOnPkg lockdown=$lockdown")
-        }
-
-        return Pair(alwaysOnPkg, lockdown)
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return null to false
+        val alwaysOn = runCatching { vpnService.isAlwaysOn }.getOrNull() ?: return null to false
+        val lockdown = runCatching { vpnService.isLockdownEnabled }.getOrDefault(false)
+        return (context.packageName.takeIf { alwaysOn }) to lockdown
     }
 
     fun isOtherVpnActive(connectivityManager: ConnectivityManager?): Boolean {
@@ -577,37 +717,49 @@ class VpnTunManager(
     }
 
     fun establishWithRetry(
-        builder: VpnService.Builder,
+        builderFactory: () -> VpnService.Builder,
         isStopping: () -> Boolean
     ): ParcelFileDescriptor? {
         val backoffMs = longArrayOf(0L, 250L, 250L, 500L, 500L, 1000L, 1000L, 2000L, 2000L, 2000L)
-
-        for (sleepMs in backoffMs) {
-            if (isStopping()) {
-                return null
+        var lastEstablishError: Exception? = null
+        val result = retryVpnInterfaceEstablishment(
+            backoffMs = backoffMs,
+            isStopping = isStopping,
+            sleep = SystemClock::sleep,
+            createAttempt = { builderFactory() },
+            establish = VpnService.Builder::establish,
+            isValid = { it.fd >= 0 },
+            closeInvalid = { vpnInterface ->
+                try {
+                    vpnInterface.close()
+                } catch (e: Exception) {
+                    Log.w(TAG, "Failed to close invalid VPN interface", e)
+                }
+            },
+            onInvalid = { index ->
+                Log.w(TAG, "TUN establish returned no valid interface, attempt=${index + 1}/${backoffMs.size}")
+            },
+            onFailure = { index, error ->
+                lastEstablishError = error
+                val reason = error.message.orEmpty().lineSequence().firstOrNull().orEmpty()
+                val message = "WARN [VPN] TUN establish threw ${error.javaClass.simpleName}, " +
+                    "attempt=${index + 1}/${backoffMs.size}, reason=$reason"
+                Log.w(TAG, message, error)
+                runCatching { LogRepository.getInstance().addAlwaysLog(message) }
             }
-            if (sleepMs > 0) {
-                SystemClock.sleep(sleepMs)
-            }
-
-            val vpnInterface = builder.establish()
-            val fd = vpnInterface?.fd ?: -1
-            if (vpnInterface != null && fd >= 0) {
-                return vpnInterface
-            }
-
-            try {
-                vpnInterface?.close()
-            } catch (e: Exception) {
-                Log.w(TAG, "Failed to close invalid VPN interface", e)
-            }
+        )
+        val lastError = lastEstablishError
+        if (result == null && lastError != null) {
+            throw IllegalStateException(
+                "TUN interface establish failed after ${backoffMs.size} attempts: " +
+                    "${lastError.javaClass.simpleName}: ${lastError.message.orEmpty()}",
+                lastError
+            )
         }
-
-        return null
+        return result
     }
 
     fun cleanup() {
-        preallocatedBuilder = null
         isConnecting.set(false)
     }
 }

@@ -1,6 +1,7 @@
 package com.kunk.singbox.repository
 
 import com.kunk.singbox.model.AppGroup
+import com.kunk.singbox.model.AppInfo
 import com.kunk.singbox.model.AppRule
 import com.kunk.singbox.model.AppSettings
 import com.kunk.singbox.model.DnsConfig
@@ -186,6 +187,42 @@ class MeteredNodeConfigGuardTest {
     }
 
     @Test
+    fun dormantAppGroupDoesNotAuthorizeProtectedProfile() {
+        val protectedNode = NodeUi(
+            id = "metered-id",
+            name = "New-HTTP",
+            protocol = "http",
+            group = "Default",
+            sourceProfileId = "profile-a",
+            meteredProtected = true
+        )
+        val settings = AppSettings(
+            appGroups = listOf(
+                AppGroup(
+                    name = "Dormant",
+                    apps = listOf(AppInfo("com.dormant", "Dormant")),
+                    outboundMode = RuleSetOutboundMode.PROFILE,
+                    outboundValue = "profile-a"
+                )
+            )
+        )
+
+        val dormant = MeteredNodeConfigGuard.findSettingsViolations(
+            settings,
+            listOf(protectedNode),
+            isPackageCaptured = { false }
+        )
+        val active = MeteredNodeConfigGuard.findSettingsViolations(
+            settings,
+            listOf(protectedNode),
+            isPackageCaptured = { true }
+        )
+
+        assertTrue(dormant.isEmpty())
+        assertEquals(1, active.size)
+    }
+
+    @Test
     fun explicitRouteAuthorizationRejectsSelectorAndDnsReferences() {
         val config = SingBoxConfig(
             outbounds = listOf(
@@ -242,6 +279,40 @@ class MeteredNodeConfigGuardTest {
         val violations = MeteredNodeConfigGuard.findExplicitRouteScopeViolations(config, setOf(protectedTag))
 
         assertTrue(violations.isEmpty())
+    }
+
+    @Test
+    fun protectedNodeCannotEnterAnySelectorEvenWhenRouteIsExplicit() {
+        val protectedTag = "metered"
+        val config = SingBoxConfig(
+            outbounds = listOf(
+                Outbound(type = "http", tag = protectedTag),
+                Outbound(type = "http", tag = "safe"),
+                Outbound(
+                    type = "selector",
+                    tag = "explicit-selector",
+                    outbounds = listOf(protectedTag, "safe"),
+                    default = protectedTag
+                )
+            ),
+            route = RouteConfig(
+                finalOutbound = "safe",
+                rules = listOf(RouteRule(packageName = listOf("com.example.app"), outbound = "explicit-selector"))
+            ),
+            dns = DnsConfig(
+                servers = listOf(
+                    DnsServer(
+                        tag = ConfigRepository.buildDynamicDnsServerTag("explicit-selector"),
+                        address = "https://dns.example",
+                        detour = "explicit-selector"
+                    )
+                )
+            )
+        )
+
+        val violations = MeteredNodeConfigGuard.findExplicitRouteScopeViolations(config, setOf(protectedTag))
+
+        assertTrue(violations.any { it.contains("selector") })
     }
 
     @Test

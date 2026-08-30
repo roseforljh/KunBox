@@ -1,6 +1,7 @@
 package com.kunk.singbox.service.manager
 
 import com.kunk.singbox.model.AppGroup
+import com.kunk.singbox.model.AppInfo
 import com.kunk.singbox.model.AppRule
 import com.kunk.singbox.model.AppSettings
 import com.kunk.singbox.model.RoutingMode
@@ -114,6 +115,43 @@ class PlatformInterfaceImplTest {
 
         assertEquals(PlatformInterfaceImpl.ProcFsUidLookupStatus.NOT_FOUND, result.status)
         assertEquals(0, result.uid)
+    }
+
+    @Test
+    fun rootRedirectProcFsLookupUsesUniqueSourceOwnerAfterNatRewrite() {
+        val source = "0200000A:3039"
+        val result = PlatformInterfaceImpl.resolveProcFsUidFromLines(
+            lines = sequenceOf(PROC_FS_HEADER, procFsRow(source, "7F000001:0600", uid = 10_123)),
+            sourceEndpoint = source,
+            destinationEndpoint = "01010101:01BB",
+            allowSourceEndpointFallback = true
+        )
+
+        assertEquals(PlatformInterfaceImpl.ProcFsUidLookupStatus.RESOLVED, result.status)
+        assertEquals(10_123, result.uid)
+    }
+
+    @Test
+    fun rootRedirectSourceFallbackRejectsCompetingOwners() {
+        val source = "0200000A:3039"
+        val result = PlatformInterfaceImpl.resolveProcFsUidFromLines(
+            lines = sequenceOf(
+                PROC_FS_HEADER,
+                procFsRow(source, "7F000001:0600", uid = 10_123),
+                procFsRow(source, "08080808:01BB", uid = 10_124)
+            ),
+            sourceEndpoint = source,
+            destinationEndpoint = "01010101:01BB",
+            allowSourceEndpointFallback = true
+        )
+
+        assertEquals(PlatformInterfaceImpl.ProcFsUidLookupStatus.AMBIGUOUS, result.status)
+        assertEquals(0, result.uid)
+    }
+
+    @Test
+    fun unknownConnectionOwnerUsesNativeUnknownUid() {
+        assertEquals(-1, PlatformInterfaceImpl.UNKNOWN_CONNECTION_OWNER_UID)
     }
 
     @Test
@@ -302,7 +340,9 @@ class PlatformInterfaceImplTest {
     fun testShouldExposeProcFsToLibboxDisabledWhenRuleModeHasAppGroups() {
         val settings = AppSettings(
             routingMode = RoutingMode.RULE,
-            appGroups = listOf(AppGroup(name = "social"))
+            appGroups = listOf(
+                AppGroup(name = "social", apps = listOf(AppInfo("com.social", "Social")))
+            )
         )
 
         val result = PlatformInterfaceImpl.shouldExposeProcFsToLibbox(
@@ -321,6 +361,33 @@ class PlatformInterfaceImplTest {
         )
 
         assertTrue(result)
+    }
+
+    @Test
+    fun nullOwnerRoutingOverrideUsesVpnApplicationRules() {
+        val settings = AppSettings(
+            routingMode = RoutingMode.RULE,
+            appGroups = listOf(
+                AppGroup(name = "Telegram", apps = listOf(AppInfo("org.telegram.messenger", "Telegram")))
+            )
+        )
+
+        assertTrue(PlatformInterfaceImpl.resolveForceConnectionOwnerRouting(null, settings))
+        assertFalse(PlatformInterfaceImpl.resolveForceConnectionOwnerRouting(false, settings))
+    }
+
+    @Test
+    fun testForcedConnectionOwnerRoutingPrefersOriginalProcFsTuple() {
+        val source = File("src/main/java/com/kunk/singbox/service/manager/PlatformInterfaceImpl.kt").readText()
+        val method = source.substringAfter("override fun findConnectionOwner(")
+            .substringBefore("override fun startDefaultInterfaceMonitor")
+
+        assertTrue(method.contains("if (forceConnectionOwnerRouting)"))
+        assertTrue(method.contains("resolveForceConnectionOwnerRouting"))
+        assertTrue(method.contains("resolveFromProcFs(\"forced\")"))
+        assertTrue(method.contains("preferConnectivityOwnerRouting"))
+        assertTrue(method.contains("unknownConnectionOwner()"))
+        assertTrue(method.contains("allowSourceEndpointFallback = forceConnectionOwnerRouting"))
     }
 
     @Test

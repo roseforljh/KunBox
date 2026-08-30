@@ -18,6 +18,8 @@ class InstalledAppsViewModel(application: Application) : AndroidViewModel(applic
 
     val appItems: StateFlow<List<InstalledAppUi>> = repository.appItems
 
+    val installedPackageNames: StateFlow<Set<String>> = repository.installedPackageNames
+
     fun loadAppsIfNeeded() {
         if (repository.needsLoading()) {
             viewModelScope.launch {
@@ -33,4 +35,6 @@ class InstalledAppsViewModel(application: Application) : AndroidViewModel(applic
     }
 
     suspend fun loadIcon(packageName: String): Bitmap? = repository.loadIcon(packageName)
+
+    suspend fun loadIcons(packageNames: Collection<String>): Map<String, Bitmap> = repository.loadIcons(packageNames)
 }

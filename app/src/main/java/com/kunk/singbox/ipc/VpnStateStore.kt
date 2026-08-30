@@ -8,6 +8,7 @@ import com.google.gson.Gson
 import com.google.gson.JsonParser
 import com.google.gson.annotations.SerializedName
 import com.kunk.singbox.service.ServiceState
+import com.kunk.singbox.model.VpnAppMode
 import com.tencent.mmkv.MMKV
 import java.io.File
 import java.io.RandomAccessFile
@@ -49,7 +50,7 @@ private const val MAX_RESOURCE_ERROR_CAUSE_DEPTH = 16
  * MMKV 浼樺娍:
  *
  */
-@Suppress("TooManyFunctions")
+@Suppress("TooManyFunctions", "LargeClass")
 object VpnStateStore {
     private const val TAG = "VpnStateStore"
     private const val MMKV_ID = "vpn_state"
@@ -68,10 +69,13 @@ object VpnStateStore {
     private const val SNAPSHOT_JSON_ACTIVE_LABEL = "activeLabel"
     private const val SNAPSHOT_JSON_LAST_ERROR = "lastError"
     private const val SNAPSHOT_JSON_MANUALLY_STOPPED = "manuallyStopped"
+    private const val SNAPSHOT_JSON_READINESS = "readiness"
     private const val KEY_CORE_MODE = "core_mode"
+    private const val KEY_STOP_OWNER_MODE = "stop_owner_mode"
     private const val KEY_LAST_APP_MODE = "last_app_mode"
     private const val KEY_LAST_ALLOWLIST_HASH = "last_allowlist_hash"
     private const val KEY_LAST_BLOCKLIST_HASH = "last_blocklist_hash"
+    private const val KEY_APPLIED_PER_APP_POLICY = "applied_per_app_policy"
     private const val KEY_LAST_TUN_SETTINGS_HASH = "last_tun_settings_hash"
     private const val KEY_LAST_ROUTING_MODE = "last_routing_mode"
 
@@ -86,7 +90,7 @@ object VpnStateStore {
     private const val KEY_RESOURCE_CORE_RESTART_COUNT = "resource_core_restart_count"
     private const val KEY_RESOURCE_PROCESS_RECLAIM_COUNT = "resource_process_reclaim_count"
     internal const val RESOURCE_RECOVERY_WINDOW_MS = 60 * 60_000L
-    internal const val RESOURCE_CORE_RESTART_LIMIT = 2
+    internal const val RESOURCE_CORE_RESTART_LIMIT = 1
     internal const val RESOURCE_PROCESS_RECLAIM_LIMIT = 1
     private const val KEY_TRAFFIC_CLEAR_TIMESTAMP = "traffic_clear_timestamp"
     private const val KEY_LOG_CLEAR_GENERATION = "log_clear_generation"
@@ -99,7 +103,8 @@ object VpnStateStore {
     enum class CoreMode {
         NONE,
         VPN,
-        PROXY
+        PROXY,
+        ROOT
     }
 
     enum class ResourceRecoveryAction {
@@ -118,6 +123,25 @@ object VpnStateStore {
         val consumed: Boolean
     )
 
+    data class AppliedPerAppPolicySnapshot(
+        val revision: Long = 0L,
+        val mode: String = "",
+        val digest: String = "",
+        val capturedCount: Int = 0,
+        val excludedCount: Int = 0,
+        val appliedAtElapsedMs: Long = 0L,
+        val serviceInstanceId: String = "",
+        val runtimeGeneration: Long = 0L,
+        val requestId: String = "",
+        val configDigest: String = "",
+        val appRoutingDigest: String = "",
+        val sidecarFileSha256: String = "",
+        val staticPlanSha256: String = "",
+        val rootRoutingAppSha256: String = "",
+        val resolvedPlanSha256: String = "",
+        val rootRuntimeSessionId: String = ""
+    )
+
     internal data class RuntimeStateSnapshot(
         @field:SerializedName(SNAPSHOT_JSON_GENERATION)
         val generation: Long = 0L,
@@ -128,7 +152,9 @@ object VpnStateStore {
         @field:SerializedName(SNAPSHOT_JSON_LAST_ERROR)
         val lastError: String = "",
         @field:SerializedName(SNAPSHOT_JSON_MANUALLY_STOPPED)
-        val manuallyStopped: Boolean = false
+        val manuallyStopped: Boolean = false,
+        @field:SerializedName(SNAPSHOT_JSON_READINESS)
+        val readiness: DataPlaneReadinessSnapshot = DataPlaneReadinessSnapshot.stopped()
     )
 
     private val mmkv: MMKV by lazy {
@@ -211,14 +237,16 @@ object VpnStateStore {
         state: ServiceState? = null,
         activeLabel: String? = null,
         lastError: String? = null,
-        manuallyStopped: Boolean? = null
+        manuallyStopped: Boolean? = null,
+        readiness: DataPlaneReadinessSnapshot? = null
     ): RuntimeStateSnapshot {
         return transformRuntimeStateSnapshot { current ->
             current.copy(
                 stateOrdinal = state?.ordinal ?: current.stateOrdinal,
                 activeLabel = activeLabel ?: current.activeLabel,
                 lastError = lastError ?: current.lastError,
-                manuallyStopped = manuallyStopped ?: current.manuallyStopped
+                manuallyStopped = manuallyStopped ?: current.manuallyStopped,
+                readiness = readiness ?: current.readiness
             )
         }
     }
@@ -233,8 +261,8 @@ object VpnStateStore {
         } catch (error: Exception) {
             if (!isFileDescriptorExhaustion(error)) throw error
             val current = readRuntimeStateSnapshot() ?: readLegacyRuntimeStateSnapshot()
-            Log.e(TAG, "FD exhausted while locking runtime state; preserving current snapshot", error)
-            current
+            Log.e(TAG, "FD exhausted while locking runtime state; returning in-memory update", error)
+            buildNextRuntimeStateSnapshot(current, transform = transform)
         }
     }
 
@@ -242,10 +270,34 @@ object VpnStateStore {
         transform: (RuntimeStateSnapshot) -> RuntimeStateSnapshot
     ): RuntimeStateSnapshot {
         val current = readRuntimeStateSnapshot() ?: readLegacyRuntimeStateSnapshot()
-        val updated = transform(current).copy(
-            generation = nextRuntimeGeneration(current.generation, SystemClock.elapsedRealtimeNanos())
-        )
+        val updated = buildNextRuntimeStateSnapshot(current, transform = transform)
         return persistRuntimeStateSnapshot(updated, previous = current)
+    }
+
+    internal fun buildNextRuntimeStateSnapshot(
+        current: RuntimeStateSnapshot,
+        monotonicCandidate: Long = SystemClock.elapsedRealtimeNanos(),
+        transform: (RuntimeStateSnapshot) -> RuntimeStateSnapshot
+    ): RuntimeStateSnapshot {
+        val generation = nextRuntimeGeneration(current.generation, monotonicCandidate)
+        return normalizeRuntimeStateSnapshot(
+            transform(current).copy(generation = generation)
+        ).let { updated ->
+            updated.copy(readiness = updated.readiness.copy(generation = generation))
+        }
+    }
+
+    internal fun persistRuntimeStateSnapshotBestEffort(snapshot: RuntimeStateSnapshot): Boolean {
+        return runCatching {
+            runtimeStateFileLock.withLock {
+                val current = readRuntimeStateSnapshot() ?: readLegacyRuntimeStateSnapshot()
+                if (current.generation > snapshot.generation) return@withLock false
+                persistRuntimeStateSnapshot(snapshot, previous = current)
+                true
+            }
+        }.onFailure { error ->
+            Log.e(TAG, "Failed to persist runtime state snapshot generation=${snapshot.generation}", error)
+        }.getOrDefault(false)
     }
 
     private fun persistRuntimeStateSnapshot(
@@ -259,6 +311,9 @@ object VpnStateStore {
         mmkv.encode(KEY_VPN_MANUALLY_STOPPED, snapshot.manuallyStopped)
         if (snapshot.manuallyStopped && !previous.manuallyStopped) {
             mmkv.encode(KEY_LAST_MANUAL_STOP_AT_MS, System.currentTimeMillis())
+        }
+        if (shouldResetResourceRecoveryBudget(previous.manuallyStopped, snapshot.manuallyStopped)) {
+            resetResourceRecoveryBudgetLocked()
         }
         return snapshot
     }
@@ -288,6 +343,7 @@ object VpnStateStore {
         return gson.toJson(snapshot)
     }
 
+    @Suppress("CyclomaticComplexMethod")
     internal fun decodeRuntimeStateSnapshot(raw: String): RuntimeStateSnapshot? {
         if (raw.isBlank()) return null
         return runCatching {
@@ -316,13 +372,18 @@ object VpnStateStore {
                 ?.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isBoolean }
                 ?.asBoolean
                 ?: return@runCatching null
+            val readinessValue = snapshot.get(SNAPSHOT_JSON_READINESS)
+                ?.takeIf { it.isJsonObject }
+                ?.let { gson.fromJson(it, DataPlaneReadinessSnapshot::class.java) }
+                ?: DataPlaneReadinessSnapshot.stopped()
             normalizeRuntimeStateSnapshot(
                 RuntimeStateSnapshot(
                     generation = generationValue,
                     stateOrdinal = stateOrdinalValue,
                     activeLabel = activeLabelValue,
                     lastError = lastErrorValue,
-                    manuallyStopped = manuallyStoppedValue
+                    manuallyStopped = manuallyStoppedValue,
+                    readiness = readinessValue
                 )
             )
         }.onFailure { error ->
@@ -331,12 +392,14 @@ object VpnStateStore {
     }
 
     internal fun normalizeRuntimeStateSnapshot(snapshot: RuntimeStateSnapshot): RuntimeStateSnapshot {
+        val generation = snapshot.generation.coerceAtLeast(0L)
         return snapshot.copy(
-            generation = snapshot.generation.coerceAtLeast(0L),
+            generation = generation,
             stateOrdinal = ServiceState.values().getOrNull(snapshot.stateOrdinal)?.ordinal
                 ?: ServiceState.STOPPED.ordinal,
             activeLabel = snapshot.activeLabel.orEmpty(),
-            lastError = snapshot.lastError.orEmpty()
+            lastError = snapshot.lastError.orEmpty(),
+            readiness = snapshot.readiness.normalized().copy(generation = generation)
         )
     }
 
@@ -354,6 +417,23 @@ object VpnStateStore {
 
     fun setMode(mode: CoreMode) {
         mmkv.encode(KEY_CORE_MODE, mode.name)
+    }
+
+    fun getStopOwnerMode(): CoreMode? {
+        val raw = mmkv.decodeString(KEY_STOP_OWNER_MODE, null).orEmpty()
+        if (raw.isBlank()) return null
+        return runCatching { CoreMode.valueOf(raw) }
+            .getOrNull()
+            ?.takeUnless { it == CoreMode.NONE }
+    }
+
+    fun setStopOwnerMode(mode: CoreMode) {
+        if (mode == CoreMode.NONE) return
+        mmkv.encode(KEY_STOP_OWNER_MODE, mode.name)
+    }
+
+    fun clearStopOwnerMode() {
+        mmkv.removeValueForKey(KEY_STOP_OWNER_MODE)
     }
 
     fun getLastAppMode(): String = mmkv.decodeString(KEY_LAST_APP_MODE, "") ?: ""
@@ -394,7 +474,11 @@ object VpnStateStore {
         val currentAllowHash = allowlist?.hashCode() ?: 0
         val currentBlockHash = blocklist?.hashCode() ?: 0
 
-        val changed = lastMode != appMode || lastAllowHash != currentAllowHash || lastBlockHash != currentBlockHash
+        val changed = lastMode != appMode || when (appMode) {
+            VpnAppMode.ALLOWLIST.name -> lastAllowHash != currentAllowHash
+            VpnAppMode.BLOCKLIST.name -> lastBlockHash != currentBlockHash
+            else -> false
+        }
         Log.d(
             "VpnStateStore",
             "hasPerAppVpnSettingsChanged: lastMode=$lastMode, appMode=$appMode, " +
@@ -548,6 +632,79 @@ object VpnStateStore {
         runtimeStateFileLock.withLock { mmkv.clearAll() }
     }
 
+    fun getAppliedPerAppPolicy(): AppliedPerAppPolicySnapshot = runCatching {
+        mmkv.decodeString(KEY_APPLIED_PER_APP_POLICY, "")
+            ?.takeIf(String::isNotBlank)
+            ?.let { gson.fromJson(it, AppliedPerAppPolicySnapshot::class.java) }
+    }.getOrNull() ?: AppliedPerAppPolicySnapshot()
+
+    fun commitAppliedPerAppPolicy(snapshot: AppliedPerAppPolicySnapshot): Boolean {
+        if (snapshot.revision < 0L || snapshot.serviceInstanceId.isBlank() || snapshot.digest.isBlank()) {
+            Log.e(
+                TAG,
+                "Applied per-app policy commit rejected: invalid snapshot " +
+                    "revision=${snapshot.revision}, serviceInstanceId=${snapshot.serviceInstanceId}, " +
+                    "digestBlank=${snapshot.digest.isBlank()}"
+            )
+            return false
+        }
+        return runCatching {
+            runtimeStateFileLock.withLock {
+                val runtime = readRuntimeStateSnapshot() ?: readLegacyRuntimeStateSnapshot()
+                val current = getAppliedPerAppPolicy()
+                if (!canCommitAppliedPerAppPolicy(
+                        current,
+                        snapshot,
+                        runtime.readiness.serviceInstanceId,
+                        runtime.stateOrdinal == ServiceState.RUNNING.ordinal
+                    )
+                ) {
+                    Log.e(
+                        TAG,
+                        "Applied per-app policy commit rejected: runtimeState=${runtime.stateOrdinal}, " +
+                            "activeServiceInstanceId=${runtime.readiness.serviceInstanceId}, " +
+                            "currentServiceInstanceId=${current.serviceInstanceId}, " +
+                            "currentRevision=${current.revision}, " +
+                            "incomingServiceInstanceId=${snapshot.serviceInstanceId}, " +
+                            "incomingRevision=${snapshot.revision}, runtimeGeneration=${runtime.generation}, " +
+                            "incomingRuntimeGeneration=${snapshot.runtimeGeneration}"
+                    )
+                    return@withLock false
+                }
+                mmkv.encode(KEY_APPLIED_PER_APP_POLICY, gson.toJson(snapshot)).also { committed ->
+                    if (!committed) Log.e(TAG, "Failed to persist applied per-app VPN policy")
+                }
+            }
+        }.onFailure { error ->
+            Log.e(TAG, "Applied per-app policy commit failed", error)
+        }.getOrDefault(false)
+    }
+
+    @Suppress("ReturnCount")
+    internal fun canCommitAppliedPerAppPolicy(
+        current: AppliedPerAppPolicySnapshot,
+        incoming: AppliedPerAppPolicySnapshot,
+        activeServiceInstanceId: String,
+        activeServiceRunning: Boolean
+    ): Boolean {
+        if (activeServiceRunning) {
+            if (activeServiceInstanceId.isNotBlank() && incoming.serviceInstanceId != activeServiceInstanceId) {
+                return false
+            }
+            if (activeServiceInstanceId.isBlank() && current.serviceInstanceId.isNotBlank() &&
+                current.serviceInstanceId != incoming.serviceInstanceId
+            ) {
+                return false
+            }
+        }
+        if (current.serviceInstanceId == incoming.serviceInstanceId &&
+            incoming.runtimeGeneration < current.runtimeGeneration
+        ) {
+            return false
+        }
+        return current.serviceInstanceId != incoming.serviceInstanceId || current.revision <= incoming.revision
+    }
+
     fun tryConsumeResourceRecovery(
         action: ResourceRecoveryAction,
         nowMs: Long = System.currentTimeMillis()
@@ -563,6 +720,21 @@ object VpnStateStore {
             mmkv.encode(KEY_RESOURCE_CORE_RESTART_COUNT, result.state.coreRestartCount) &&
             mmkv.encode(KEY_RESOURCE_PROCESS_RECLAIM_COUNT, result.state.processReclaimCount)
         saved
+    }
+
+    fun resetResourceRecoveryBudget() {
+        runtimeStateFileLock.withLock { resetResourceRecoveryBudgetLocked() }
+    }
+
+    internal fun shouldResetResourceRecoveryBudget(
+        previousManuallyStopped: Boolean,
+        manuallyStopped: Boolean
+    ): Boolean = previousManuallyStopped && !manuallyStopped
+
+    private fun resetResourceRecoveryBudgetLocked() {
+        mmkv.removeValueForKey(KEY_RESOURCE_RECOVERY_WINDOW_START_AT_MS)
+        mmkv.removeValueForKey(KEY_RESOURCE_CORE_RESTART_COUNT)
+        mmkv.removeValueForKey(KEY_RESOURCE_PROCESS_RECLAIM_COUNT)
     }
 
     internal fun consumeResourceRecoveryBudget(
@@ -609,9 +781,11 @@ object VpnStateStore {
             mmkv.removeValueForKey(KEY_VPN_LAST_ERROR)
             mmkv.removeValueForKey(KEY_VPN_MANUALLY_STOPPED)
             mmkv.removeValueForKey(KEY_CORE_MODE)
+            mmkv.removeValueForKey(KEY_STOP_OWNER_MODE)
             mmkv.removeValueForKey(KEY_LAST_APP_MODE)
             mmkv.removeValueForKey(KEY_LAST_ALLOWLIST_HASH)
             mmkv.removeValueForKey(KEY_LAST_BLOCKLIST_HASH)
+            mmkv.removeValueForKey(KEY_APPLIED_PER_APP_POLICY)
             mmkv.removeValueForKey(KEY_LAST_TUN_SETTINGS_HASH)
             mmkv.removeValueForKey(KEY_LAST_ROUTING_MODE)
             mmkv.removeValueForKey(KEY_LAST_MANUAL_STOP_AT_MS)
@@ -628,11 +802,13 @@ object VpnStateStore {
         Log.i(TAG, "Clearing transient runtime state")
         runtimeStateFileLock.withLock {
             mmkv.removeValueForKey(KEY_VPN_PENDING)
+            mmkv.removeValueForKey(KEY_APPLIED_PER_APP_POLICY)
             transformRuntimeStateSnapshotLocked { current ->
                 current.copy(
                     stateOrdinal = ServiceState.STOPPED.ordinal,
                     activeLabel = "",
-                    lastError = if (preserveLastError) current.lastError else ""
+                    lastError = if (preserveLastError) current.lastError else "",
+                    readiness = DataPlaneReadinessSnapshot.stopped(current.readiness.serviceInstanceId)
                 )
             }
         }

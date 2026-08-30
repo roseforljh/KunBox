@@ -185,6 +185,47 @@ class SingBoxRemoteStateTest {
     }
 
     @Test
+    fun `temporary ipc loss keeps a live data plane in recovering state`() {
+        val source = File("src/main/java/com/kunk/singbox/ipc/SingBoxRemote.kt").readText(Charsets.UTF_8)
+        val disconnectedBody = source
+            .substringAfter("override fun onServiceDisconnected")
+            .substringBefore("private fun unregisterCallback")
+
+        assertTrue(disconnectedBody.contains("markReadinessRecovering"))
+        assertFalse(disconnectedBody.contains("markReadinessUnavailable(\"service_disconnected\")"))
+
+        val callbackBody = source
+            .substringAfter("override fun onStateChanged(")
+            .substringBefore("override fun onUrlTestNodeDelayResult")
+        assertTrue(callbackBody.contains("markReadinessRecovering(\"callback_snapshot_failed\")"))
+        assertTrue(callbackBody.contains("let(::rebind)"))
+    }
+
+    @Test
+    fun `normal ipc disconnect resets readiness without terminal failure`() {
+        val source = File("src/main/java/com/kunk/singbox/ipc/SingBoxRemote.kt")
+            .readText(Charsets.UTF_8)
+        val disconnectedBody = source
+            .substringAfter("private fun syncStoppedStateAfterDisconnect()")
+            .substringBefore("internal fun resolveLocalStateSnapshot")
+
+        assertTrue(disconnectedBody.contains("markReadinessStopped"))
+        assertFalse(disconnectedBody.contains("markReadinessUnavailable"))
+    }
+
+    @Test
+    fun `new start clears readiness failure state`() {
+        val source = File("src/main/java/com/kunk/singbox/ipc/SingBoxRemote.kt")
+            .readText(Charsets.UTF_8)
+        val body = source
+            .substringAfter("fun clearLastErrorForNewStart()")
+            .substringBefore("private fun syncStateFromStore()")
+
+        assertTrue(body.contains("DataPlaneStatus.STARTING"))
+        assertTrue(body.contains("lastReadinessReason = \"new_start\""))
+    }
+
+    @Test
     fun `ensure bound rebinds stale live reference`() {
         val result = resolveSingBoxEnsureBoundAction(
             connectionActive = true,

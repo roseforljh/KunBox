@@ -38,25 +38,41 @@ class ProxyOnlyServiceStateTest {
     }
 
     @Test
-    fun taskRemovalStopMarksProxyAsManuallyStopped() {
+    fun explicitStopUsesItsInitiatorForProxyManualStopSemantics() {
         val source = File("src/main/java/com/kunk/singbox/service/ProxyOnlyService.kt")
             .readText(Charsets.UTF_8)
         val stopBranch = source
             .substringAfter("ACTION_STOP ->")
             .substringBefore("ACTION_SWITCH_NODE ->")
 
-        assertTrue(stopBranch.contains("VpnStateStore.setManuallyStopped(true)"))
+        assertTrue(stopBranch.contains("VpnStopInitiator.fromWireValue"))
+        assertTrue(stopBranch.contains("VpnStateStore.setManuallyStopped(stopInitiator.isManualStop)"))
+        assertTrue(stopBranch.contains("lastStopInitiator = stopInitiator"))
         assertTrue(stopBranch.contains("notifyRemoteState(state = ServiceState.STOPPING)"))
         assertTrue(stopBranch.contains("stopCore(stopService = true, recoveryIntentLease = recoveryIntentLease)"))
     }
 
     @Test
-    fun successfulProxyStartClearsManualStopMarker() {
+    fun duplicateStopActionIsIgnoredBeforeReplacingRecoveryLease() {
         val source = File("src/main/java/com/kunk/singbox/service/ProxyOnlyService.kt")
             .readText(Charsets.UTF_8)
+        val stopBranch = source
+            .substringAfter("ACTION_STOP ->")
+            .substringBefore("ACTION_FORCE_STOP ->")
+
+        val guardIndex = stopBranch.indexOf("shouldIgnoreDuplicateHardStop")
+        val leaseIndex = stopBranch.indexOf("setNonResourceRecoveryIntent(false)")
+        assertTrue(guardIndex >= 0)
+        assertTrue(leaseIndex > guardIndex)
+    }
+
+    @Test
+    fun successfulProxyStartClearsManualStopMarker() {
+        val source = File("src/main/java/com/kunk/singbox/service/proxy/ProxyCoreRuntime.kt")
+            .readText(Charsets.UTF_8)
         val startBody = source
-            .substringAfter("private fun startCore(")
-            .substringBefore("private fun restrictLocalNetworkListenIfNeeded")
+            .substringAfter("internal fun ProxyOnlyService.startCore(")
+            .substringBefore("internal fun ProxyOnlyService.restrictLocalNetworkListenIfNeeded")
 
         assertTrue(startBody.contains("VpnStateStore.setManuallyStopped(false)"))
     }
@@ -92,7 +108,7 @@ class ProxyOnlyServiceStateTest {
         assertTrue(source.contains("mode == VpnStateStore.CoreMode.PROXY"))
         // 意外路径不得 setMode(NONE)
         val preserveBody = source
-            .substringAfter("private fun preserveRecoveryIntentOnUnexpectedDestroy()")
+            .substringAfter("internal fun preserveRecoveryIntentOnUnexpectedDestroy()")
             .substringBefore("override fun onTaskRemoved")
         assertFalse(preserveBody.contains("setMode(VpnStateStore.CoreMode.NONE)"))
         assertFalse(preserveBody.contains("clearRuntimeState()"))
@@ -173,16 +189,20 @@ class ProxyOnlyServiceStateTest {
 
     @Test
     fun `proxy only service does not kill process when port remains unavailable`() {
-        val source = File("src/main/java/com/kunk/singbox/service/ProxyOnlyService.kt").readText()
+        val coreSource = File("src/main/java/com/kunk/singbox/service/proxy/ProxyCoreRuntime.kt").readText()
+        val serviceSource = File("src/main/java/com/kunk/singbox/service/ProxyOnlyService.kt").readText()
+        val stopCore = coreSource.substringAfter("internal fun ProxyOnlyService.stopCore(")
 
-        assertFalse(source.contains("killProcess("))
+        assertFalse(stopCore.contains("killProcess("))
+        assertTrue(serviceSource.contains("internal fun forceStopProcess(reason: String)"))
     }
 
     @Test
     fun `proxy only service blocks local network settings before core start`() {
-        val source = File("src/main/java/com/kunk/singbox/service/ProxyOnlyService.kt").readText(Charsets.UTF_8)
+        val source = File("src/main/java/com/kunk/singbox/service/proxy/ProxyCoreRuntime.kt")
+            .readText(Charsets.UTF_8)
 
-        assertTrue(source.contains("if (!LocalNetworkPermission.canApplySettings(this@ProxyOnlyService, settings))"))
+        assertTrue(source.contains("if (!LocalNetworkPermission.canApplySettings(this@startCore, settings))"))
         assertTrue(source.contains("val reason = LocalNetworkPermission.MISSING_PERMISSION_ERROR"))
         assertTrue(source.contains("setLastErrorIfCurrent(recoveryIntentLease, reason)"))
         assertTrue(source.contains("return@launch"))
@@ -190,9 +210,14 @@ class ProxyOnlyServiceStateTest {
 
     @Test
     fun `proxy only service restricts wildcard listeners when local network permission is missing`() {
-        val source = File("src/main/java/com/kunk/singbox/service/ProxyOnlyService.kt").readText(Charsets.UTF_8)
+        val source = File("src/main/java/com/kunk/singbox/service/proxy/ProxyCoreRuntime.kt")
+            .readText(Charsets.UTF_8)
 
-        assertTrue(source.contains("private fun restrictLocalNetworkListenIfNeeded(configContent: String): String"))
+        assertTrue(
+            source.contains(
+                "internal fun ProxyOnlyService.restrictLocalNetworkListenIfNeeded(configContent: String): String"
+            )
+        )
         assertTrue(source.contains("if (!LocalNetworkPermission.shouldRestrictLanListen(this)) return configContent"))
         assertTrue(source.contains("LocalNetworkPermission.restrictInboundListen(inbound)"))
     }
@@ -213,20 +238,23 @@ class ProxyOnlyServiceStateTest {
     fun `proxy only notification uses core status speed and shared setting`() {
         val serviceSource = File("src/main/java/com/kunk/singbox/service/ProxyOnlyService.kt")
             .readText(Charsets.UTF_8)
+        val healthSource = File("src/main/java/com/kunk/singbox/service/proxy/ProxyHealthRuntime.kt")
+            .readText(Charsets.UTF_8)
         val notificationSource = File("src/main/java/com/kunk/singbox/service/ProxyOnlyNotification.kt")
             .readText(Charsets.UTF_8)
 
-        assertTrue(serviceSource.contains("addCommand(Libbox.CommandStatus)"))
-        assertTrue(serviceSource.contains("trafficMonitor.updateTotals("))
+        assertTrue(healthSource.contains("addCommand(Libbox.CommandStatus)"))
+        assertTrue(healthSource.contains("trafficMonitor.updateTotals("))
         assertTrue(serviceSource.contains("it.showNotificationSpeed"))
         assertTrue(notificationSource.contains("R.string.notification_speed_format"))
     }
 
     @Test
     fun `lazy start job is registered before execution`() {
-        val source = File("src/main/java/com/kunk/singbox/service/ProxyOnlyService.kt").readText(Charsets.UTF_8)
-        val startBody = source.substringAfter("private fun startCore(")
-            .substringBefore("private fun restrictLocalNetworkListenIfNeeded")
+        val source = File("src/main/java/com/kunk/singbox/service/proxy/ProxyCoreRuntime.kt")
+            .readText(Charsets.UTF_8)
+        val startBody = source.substringAfter("internal fun ProxyOnlyService.startCore(")
+            .substringBefore("internal fun ProxyOnlyService.restrictLocalNetworkListenIfNeeded")
         val declaration = startBody.indexOf("serviceScope.launch(start = CoroutineStart.LAZY)")
         val registration = startBody.indexOf("startJob = nextStartJob")
         val execution = startBody.indexOf("nextStartJob.start()")
@@ -238,14 +266,15 @@ class ProxyOnlyServiceStateTest {
 
     @Test
     fun `command server and running state share exact lease gates`() {
-        val source = File("src/main/java/com/kunk/singbox/service/ProxyOnlyService.kt").readText(Charsets.UTF_8)
-        val startBody = source.substringAfter("private fun startCore(")
-            .substringBefore("private fun restrictLocalNetworkListenIfNeeded")
-        val serverGate = startBody.indexOf("val server = synchronized(this@ProxyOnlyService)")
+        val source = File("src/main/java/com/kunk/singbox/service/proxy/ProxyCoreRuntime.kt")
+            .readText(Charsets.UTF_8)
+        val startBody = source.substringAfter("internal fun ProxyOnlyService.startCore(")
+            .substringBefore("internal fun ProxyOnlyService.restrictLocalNetworkListenIfNeeded")
+        val serverGate = startBody.indexOf("val server = synchronized(this@startCore)")
         val serverCreation = startBody.indexOf("Libbox.newCommandServer", serverGate)
-        val serverStart = startBody.indexOf("createdServer.start()", serverCreation)
-        val serviceStart = startBody.indexOf("createdServer.startOrReloadService", serverStart)
-        val runningGate = startBody.indexOf("val baselineLease = synchronized(this@ProxyOnlyService)")
+        val serverStart = startBody.indexOf("server.start()", serverCreation)
+        val serviceStart = startBody.indexOf("server.startOrReloadService", serverStart)
+        val runningGate = startBody.indexOf("val baselineLease = synchronized(this@startCore)")
         val runningPublish = startBody.indexOf("isRunning = true", runningGate)
 
         assertTrue(serverGate >= 0)
@@ -260,12 +289,11 @@ class ProxyOnlyServiceStateTest {
 
     @Test
     fun `hard stop consumes its queued exact lease after startup exits`() {
-        val source = File("src/main/java/com/kunk/singbox/service/ProxyOnlyService.kt").readText(Charsets.UTF_8)
-        val stopBody = source.substringAfter("private fun stopCore(")
-            .substringBefore("private fun startRuntimeCommandClient")
+        val source = File("src/main/java/com/kunk/singbox/service/proxy/ProxyCoreRuntime.kt")
+            .readText(Charsets.UTF_8)
+        val stopBody = source.substringAfter("internal fun ProxyOnlyService.stopCore(")
         val hardStopBody = stopBody.substringAfter("hardStopLease != null ->")
             .substringBefore("ServiceStateHolder.isRecoveryIntentCurrent(recoveryIntentLease) ->")
-        val join = stopBody.indexOf("jobToJoin?.join()")
         val release = stopBody.indexOf("BoxWrapperManager.release()")
         val close = stopBody.indexOf("serverToClose.closeService()")
 
@@ -274,14 +302,28 @@ class ProxyOnlyServiceStateTest {
         assertTrue(hardStopBody.contains("consumeRecoveryIntentOnFailure("))
         assertTrue(hardStopBody.contains("hardStopLease"))
         assertFalse(hardStopBody.contains("consumeRecoveryIntentOnFailure(recoveryIntentLease)"))
-        assertTrue(join >= 0)
-        assertTrue(release > join)
+        assertFalse(stopBody.contains("jobToJoin?.join()"))
+        assertTrue(release >= 0)
         assertTrue(close > release)
+    }
+
+    @Test
+    fun `proxy native start does not hold service monitor against stop`() {
+        val source = File("src/main/java/com/kunk/singbox/service/proxy/ProxyCoreRuntime.kt")
+            .readText(Charsets.UTF_8)
+        val creation = source.substringAfter("val server = synchronized(this@startCore)")
+            .substringBefore("val baselineLease")
+
+        assertFalse(creation.substringBefore("if (server == null)").contains("startOrReloadService"))
+        assertTrue(creation.contains("currentCoroutineContext().ensureActive()"))
+        assertTrue(creation.contains("server.startOrReloadService(configContent, overrideOptions)"))
     }
 
     @Test
     fun `destroy invalidates startup before closing native resources`() {
         val source = File("src/main/java/com/kunk/singbox/service/ProxyOnlyService.kt").readText(Charsets.UTF_8)
+        val cleanupSource = File("src/main/java/com/kunk/singbox/service/proxy/ProxyCoreRuntime.kt")
+            .readText(Charsets.UTF_8)
         val destroyBody = source.substringAfter("override fun onDestroy()")
         val invalidation = destroyBody.indexOf("activeStartRecoveryIntentLease = null")
         val cancellation = destroyBody.indexOf("startJobToCancel?.cancel()")
@@ -292,9 +334,9 @@ class ProxyOnlyServiceStateTest {
         assertTrue(cancellation > invalidation)
         assertTrue(close > cancellation)
         assertTrue(release > close)
-        assertTrue(source.contains("if (!cleanupSupervisorJob.isActive)"))
-        assertTrue(source.contains("cleanupScope.launch(start = CoroutineStart.ATOMIC)"))
-        assertTrue(source.contains("withContext(NonCancellable)"))
+        assertTrue(cleanupSource.contains("if (!cleanupSupervisorJob.isActive)"))
+        assertTrue(cleanupSource.contains("cleanupScope.launch(start = CoroutineStart.ATOMIC)"))
+        assertTrue(cleanupSource.contains("withContext(NonCancellable)"))
     }
 
     @OptIn(DelicateCoroutinesApi::class)
@@ -314,9 +356,10 @@ class ProxyOnlyServiceStateTest {
 
     @Test
     fun `runtime command client is owned before connect can fail`() {
-        val source = File("src/main/java/com/kunk/singbox/service/ProxyOnlyService.kt").readText(Charsets.UTF_8)
-        val clientBody = source.substringAfter("private fun startRuntimeCommandClient()")
-            .substringBefore("private fun createRuntimeCommandOptions")
+        val source = File("src/main/java/com/kunk/singbox/service/proxy/ProxyHealthRuntime.kt")
+            .readText(Charsets.UTF_8)
+        val clientBody = source.substringAfter("internal fun ProxyOnlyService.startRuntimeCommandClient()")
+            .substringBefore("internal fun ProxyOnlyService.createRuntimeCommandOptions")
         val creation = clientBody.indexOf("val client = Libbox.newCommandClient")
         val ownership = clientBody.indexOf("runtimeCommandClient = client")
         val connect = clientBody.indexOf("client.connect()")

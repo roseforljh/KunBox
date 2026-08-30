@@ -225,7 +225,8 @@ class NodeAutoFailoverPolicyTest {
         )
 
         assertEquals(1, cleaned.size)
-        assertEquals(" node-a ", cleaned.first().tag)
+        assertEquals("node-a", cleaned.first().tag)
+        assertEquals(300L, cleaned.first().expiresAtMs)
     }
 
     @Test

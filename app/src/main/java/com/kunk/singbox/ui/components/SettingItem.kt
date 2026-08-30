@@ -184,17 +184,20 @@ fun SettingSwitchItem(
     subtitle: String? = null,
     icon: ImageVector? = null,
     checked: Boolean,
+    enabled: Boolean = true,
     onCheckedChange: (Boolean) -> Unit
 ) {
     SettingItem(
         title = title,
         subtitle = subtitle,
         icon = icon,
-        onClick = { onCheckedChange(!checked) },
+        enabled = enabled,
+        onClick = { if (enabled) onCheckedChange(!checked) },
         trailing = {
             Switch(
                 checked = checked,
-                onCheckedChange = onCheckedChange,
+                enabled = enabled,
+                onCheckedChange = { if (enabled) onCheckedChange(it) },
                 colors = liquidGlassSwitchColors(
                     checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
                     checkedTrackColor = MaterialTheme.colorScheme.primary,

@@ -28,6 +28,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import com.kunk.singbox.model.IpVersionMode
 import com.kunk.singbox.model.TunStack
+import com.kunk.singbox.model.TrafficCaptureMode
 import com.kunk.singbox.model.VpnAppMode
 import com.kunk.singbox.model.VpnRouteMode
 import com.kunk.singbox.ui.components.AppMultiSelectDialog
@@ -39,6 +40,7 @@ import com.kunk.singbox.ui.components.SingleSelectDialog
 import com.kunk.singbox.ui.components.StandardCard
 import com.kunk.singbox.repository.InstalledAppsRepository
 import com.kunk.singbox.viewmodel.SettingsViewModel
+import com.kunk.singbox.viewmodel.PerAppPolicyApplyState
 import com.kunk.singbox.ui.theme.liquidGlassTopAppBarContainerColor
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -50,6 +52,9 @@ fun TunSettingsScreen(
 ) {
     val scrollState = rememberScrollState()
     val settings by settingsViewModel.settings.collectAsStateWithLifecycle()
+    val perAppApplyState by settingsViewModel.perAppPolicyApplyState.collectAsStateWithLifecycle()
+    val rootCapabilityError by settingsViewModel.rootCapabilityError.collectAsStateWithLifecycle()
+    val perAppApplying = perAppApplyState is PerAppPolicyApplyState.Applying
 
     val context = LocalContext.current
     val installedAppsRepo = remember { InstalledAppsRepository.getInstance(context) }
@@ -67,6 +72,7 @@ fun TunSettingsScreen(
 
     // Dialog States
     var showStackDialog by remember { mutableStateOf(false) }
+    var showCaptureModeDialog by remember { mutableStateOf(false) }
     var showIpVersionDialog by remember { mutableStateOf(false) }
     var showMtuDialog by remember { mutableStateOf(false) }
     var showRouteModeDialog by remember { mutableStateOf(false) }
@@ -74,6 +80,22 @@ fun TunSettingsScreen(
     var showAppModeDialog by remember { mutableStateOf(false) }
     var showAllowlistDialog by remember { mutableStateOf(false) }
     var showBlocklistDialog by remember { mutableStateOf(false) }
+
+    if (showCaptureModeDialog) {
+        val options = TrafficCaptureMode.entries.map { stringResource(it.displayNameRes) }
+        SingleSelectDialog(
+            title = stringResource(R.string.tun_settings_capture_mode),
+            options = options,
+            selectedIndex = TrafficCaptureMode.entries
+                .indexOf(settings.resolvedTrafficCaptureMode())
+                .coerceAtLeast(0),
+            onSelect = { index ->
+                settingsViewModel.setTrafficCaptureMode(TrafficCaptureMode.entries[index])
+                showCaptureModeDialog = false
+            },
+            onDismiss = { showCaptureModeDialog = false }
+        )
+    }
 
     if (showStackDialog) {
         val options = TunStack.entries.map { stringResource(it.displayNameRes) }
@@ -167,7 +189,7 @@ fun TunSettingsScreen(
             .toSet()
 
         AppMultiSelectDialog(
-            title = stringResource(R.string.tun_settings_select_vpn_apps),
+            title = stringResource(R.string.tun_settings_select_allowlist_apps),
             selectedPackages = selected,
             enableQuickSelectCommonApps = true,
             onConfirm = { packages ->
@@ -186,7 +208,7 @@ fun TunSettingsScreen(
             .toSet()
 
         AppMultiSelectDialog(
-            title = stringResource(R.string.tun_settings_select_vpn_apps),
+            title = stringResource(R.string.tun_settings_select_blocklist_apps),
             selectedPackages = selected,
             enableQuickSelectCommonApps = true,
             quickSelectExcludeCommonApps = true,
@@ -220,12 +242,23 @@ fun TunSettingsScreen(
                     .navigationBarsPadding()
             ) {
                 StandardCard {
-                    SettingSwitchItem(
-                        title = stringResource(R.string.tun_settings_enable),
-                        subtitle = stringResource(R.string.tun_settings_enable_subtitle),
-                        checked = settings.tunEnabled,
-                        onCheckedChange = { settingsViewModel.setTunEnabled(it) }
+                    SettingItem(
+                        title = stringResource(R.string.tun_settings_capture_mode),
+                        value = stringResource(settings.resolvedTrafficCaptureMode().displayNameRes),
+                        onClick = { showCaptureModeDialog = true }
                     )
+                    if (settings.resolvedTrafficCaptureMode() == TrafficCaptureMode.ROOT_TRANSPARENT) {
+                        SettingItem(
+                            title = stringResource(R.string.root_mode_dns_title),
+                            value = stringResource(R.string.root_mode_dns_subtitle)
+                        )
+                    }
+                    if (rootCapabilityError.isNotBlank()) {
+                        SettingItem(
+                            title = stringResource(R.string.root_mode_capability_failed),
+                            value = rootCapabilityError
+                        )
+                    }
                 }
 
                 Spacer(modifier = Modifier.height(16.dp))
@@ -309,32 +342,57 @@ fun TunSettingsScreen(
                     SettingItem(
                         title = stringResource(R.string.tun_settings_app_mode),
                         value = stringResource(settings.vpnAppMode.displayNameRes),
+                        enabled = !perAppApplying,
                         onClick = { showAppModeDialog = true }
                     )
-                    SettingSwitchItem(
-                        title = stringResource(R.string.tun_settings_follow_new_apps),
-                        subtitle = stringResource(R.string.tun_settings_follow_new_apps_subtitle),
-                        checked = settings.autoIncludeNewAppsInPerAppRules,
-                        onCheckedChange = settingsViewModel::setAutoIncludeNewAppsInPerAppRules
-                    )
-                    SettingItem(
-                        title = stringResource(R.string.tun_settings_allowlist),
-                        value = if (settings.vpnAppMode == VpnAppMode.ALLOWLIST) {
-                            stringResource(R.string.tun_settings_allowlist_configured, allowCount)
-                        } else {
-                            "-"
-                        },
-                        onClick = { if (settings.vpnAppMode == VpnAppMode.ALLOWLIST) showAllowlistDialog = true }
-                    )
-                    SettingItem(
-                        title = stringResource(R.string.tun_settings_blocklist),
-                        value = if (settings.vpnAppMode == VpnAppMode.BLOCKLIST) {
-                            stringResource(R.string.tun_settings_blocklist_configured, blockCount)
-                        } else {
-                            "-"
-                        },
-                        onClick = { if (settings.vpnAppMode == VpnAppMode.BLOCKLIST) showBlocklistDialog = true }
-                    )
+                    when (settings.vpnAppMode) {
+                        VpnAppMode.ALL -> SettingItem(
+                            title = stringResource(R.string.tun_settings_effective_scope),
+                            value = stringResource(R.string.tun_settings_all_apps_captured)
+                        )
+                        VpnAppMode.ALLOWLIST -> {
+                            SettingSwitchItem(
+                                title = stringResource(R.string.tun_settings_follow_new_apps),
+                                subtitle = stringResource(R.string.tun_settings_follow_allowlist_subtitle),
+                                checked = settings.autoIncludeNewAppsInPerAppRules,
+                                enabled = !perAppApplying,
+                                onCheckedChange = settingsViewModel::setAutoIncludeNewAppsInPerAppRules
+                            )
+                            SettingItem(
+                                title = stringResource(R.string.tun_settings_allowlist),
+                                value = stringResource(R.string.tun_settings_allowlist_configured, allowCount),
+                                enabled = !perAppApplying,
+                                onClick = { showAllowlistDialog = true }
+                            )
+                        }
+                        VpnAppMode.BLOCKLIST -> {
+                            SettingSwitchItem(
+                                title = stringResource(R.string.tun_settings_follow_new_apps),
+                                subtitle = stringResource(R.string.tun_settings_follow_blocklist_subtitle),
+                                checked = settings.autoIncludeNewAppsInPerAppRules,
+                                enabled = !perAppApplying,
+                                onCheckedChange = settingsViewModel::setAutoIncludeNewAppsInPerAppRules
+                            )
+                            SettingItem(
+                                title = stringResource(R.string.tun_settings_blocklist),
+                                value = stringResource(R.string.tun_settings_blocklist_configured, blockCount),
+                                enabled = !perAppApplying,
+                                onClick = { showBlocklistDialog = true }
+                            )
+                        }
+                    }
+                    when (perAppApplyState) {
+                        is PerAppPolicyApplyState.Applying -> SettingItem(
+                            title = stringResource(R.string.tun_settings_effective_scope),
+                            value = stringResource(R.string.tun_settings_policy_applying)
+                        )
+                        is PerAppPolicyApplyState.Failed -> SettingItem(
+                            title = stringResource(R.string.tun_settings_effective_scope),
+                            value = stringResource(R.string.tun_settings_policy_apply_failed),
+                            onClick = settingsViewModel::retryPerAppPolicyApply
+                        )
+                        PerAppPolicyApplyState.Idle -> Unit
+                    }
                 }
             }
         }

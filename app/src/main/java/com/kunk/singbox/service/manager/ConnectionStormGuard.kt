@@ -25,6 +25,14 @@ internal data class ConnectionSourceIdentity(
     }
 }
 
+internal data class ConnectionAttributionSnapshot(
+    val activeConnections: Int,
+    val outboundCounts: Map<String, Int>,
+    val chainCounts: Map<String, Int>,
+    val protocolCounts: Map<String, Int>,
+    val applicationCounts: Map<String, Int>
+)
+
 internal data class ConnectionStormDecision(
     val reason: ConnectionStormReason,
     val offender: ConnectionSourceIdentity?,
@@ -38,6 +46,12 @@ internal data class ConnectionStormDecision(
     val protocolCounts: Map<String, Int> = emptyMap()
 )
 
+internal fun ConnectionStormDecision.incidentCloseReason(): String = when {
+    closeAll -> "close_all"
+    reason == ConnectionStormReason.OUTBOUND_FAILURE_BURST -> "close_failed_outbound"
+    else -> "close_quarantined_source"
+}
+
 internal class ConnectionStormGuard(
     private val sourceCreationLimit: Int = DEFAULT_SOURCE_CREATION_LIMIT,
     private val globalCreationLimit: Int = DEFAULT_GLOBAL_CREATION_LIMIT,
@@ -49,7 +63,8 @@ internal class ConnectionStormGuard(
 ) {
     private data class TrackedConnection(
         val source: ConnectionSourceIdentity,
-        val event: ConnectionTrafficEventData
+        val event: ConnectionTrafficEventData,
+        val routingTags: Set<String>
     )
 
     private data class Creation(
@@ -61,6 +76,7 @@ internal class ConnectionStormGuard(
     private val activeConnections = mutableMapOf<String, TrackedConnection>()
     private val recentCreations = ArrayDeque<Creation>()
     private val quarantinedUntilMs = mutableMapOf<String, Long>()
+    private var hasObservedSnapshot = false
 
     init {
         require(sourceCreationLimit > 0)
@@ -73,21 +89,41 @@ internal class ConnectionStormGuard(
     }
 
     @Synchronized
+    fun activeConnectionIdsForOutbound(outboundTag: String): Set<String> {
+        val normalizedTag = outboundTag.trim()
+        if (normalizedTag.isEmpty()) return emptySet()
+        return activeConnections
+            .filterValues { tracked -> tracked.usesOutbound(normalizedTag) }
+            .keys
+            .toSet()
+    }
+
+    @Synchronized
+    fun acknowledgeClosedConnectionIds(connectionIds: Set<String>) {
+        if (connectionIds.isEmpty()) return
+        activeConnections.keys.removeAll(connectionIds)
+        recentCreations.removeAll { it.connectionId in connectionIds }
+    }
+
+    @Synchronized
     fun observe(
         reset: Boolean,
         events: List<ConnectionTrafficEventData>,
         nowMs: Long
     ): ConnectionStormDecision? {
+        val previousConnectionIds = if (reset && hasObservedSnapshot) activeConnections.keys.toSet() else emptySet()
         if (reset) {
             activeConnections.clear()
-            recentCreations.clear()
+            if (!hasObservedSnapshot) recentCreations.clear()
         }
         trim(nowMs)
 
         val quarantinedConnectionIds = mutableSetOf<String>()
         events.forEach { event ->
-            observeEvent(event, reset, nowMs)?.let(quarantinedConnectionIds::add)
+            val countAsCreation = !reset || hasObservedSnapshot && event.id !in previousConnectionIds
+            observeEvent(event, countAsCreation, nowMs)?.let(quarantinedConnectionIds::add)
         }
+        hasObservedSnapshot = true
         trim(nowMs)
 
         if (quarantinedConnectionIds.isNotEmpty()) {
@@ -130,13 +166,18 @@ internal class ConnectionStormGuard(
         val quarantineKey = "outbound:$normalizedTag"
         if (quarantinedUntilMs[quarantineKey]?.let { it > nowMs } == true) return null
         quarantinedUntilMs[quarantineKey] = nowMs + quarantineMs
+        val matchingConnectionIds = activeConnections
+            .filterValues { tracked -> tracked.usesOutbound(normalizedTag) }
+            .keys
+            .toSet()
         return ConnectionStormDecision(
             reason = ConnectionStormReason.OUTBOUND_FAILURE_BURST,
             offender = null,
             activeConnections = activeConnections.size,
             newConnectionsInWindow = failureCount,
             creationRatePerSecond = failureCount * 1_000.0 / windowMs,
-            closeAll = true,
+            closeAll = false,
+            connectionIds = matchingConnectionIds,
             outboundCounts = mapOf(normalizedTag to failureCount)
         )
     }
@@ -153,10 +194,14 @@ internal class ConnectionStormGuard(
     }
 
     @Synchronized
+    fun snapshot(): ConnectionAttributionSnapshot = buildAttributionSnapshot()
+
+    @Synchronized
     fun clear() {
         activeConnections.clear()
         recentCreations.clear()
         quarantinedUntilMs.clear()
+        hasObservedSnapshot = false
     }
 
     private fun decision(
@@ -164,14 +209,24 @@ internal class ConnectionStormGuard(
         offender: ConnectionSourceIdentity?,
         closeAll: Boolean,
         connectionIds: Set<String> = emptySet()
-    ): ConnectionStormDecision = ConnectionStormDecision(
-        reason = reason,
-        offender = offender,
+    ): ConnectionStormDecision {
+        val snapshot = buildAttributionSnapshot()
+        return ConnectionStormDecision(
+            reason = reason,
+            offender = offender,
+            activeConnections = snapshot.activeConnections,
+            newConnectionsInWindow = recentCreations.size,
+            creationRatePerSecond = recentCreations.size * 1_000.0 / windowMs,
+            closeAll = closeAll,
+            connectionIds = connectionIds,
+            outboundCounts = snapshot.outboundCounts,
+            chainCounts = snapshot.chainCounts,
+            protocolCounts = snapshot.protocolCounts
+        )
+    }
+
+    private fun buildAttributionSnapshot(): ConnectionAttributionSnapshot = ConnectionAttributionSnapshot(
         activeConnections = activeConnections.size,
-        newConnectionsInWindow = recentCreations.size,
-        creationRatePerSecond = recentCreations.size * 1_000.0 / windowMs,
-        closeAll = closeAll,
-        connectionIds = connectionIds,
         outboundCounts = activeConnections.values
             .mapNotNull { it.event.outbound ?: it.event.tags.lastOrNull() }
             .countTopValues(),
@@ -185,6 +240,13 @@ internal class ConnectionStormGuard(
                 listOfNotNull(tracked.event.network, tracked.event.protocol)
                     .takeIf(List<String>::isNotEmpty)
                     ?.joinToString("/")
+            }
+            .countTopValues(),
+        applicationCounts = activeConnections.values
+            .map { tracked ->
+                tracked.source.packageNames.takeIf(List<String>::isNotEmpty)?.joinToString("|")
+                    ?: tracked.source.uid?.let { "uid:$it" }
+                    ?: "unknown"
             }
             .countTopValues()
     )
@@ -202,17 +264,32 @@ internal class ConnectionStormGuard(
             ?: recentCreations.firstOrNull { it.source.key == key }?.source
     }
 
-    private fun observeEvent(event: ConnectionTrafficEventData, reset: Boolean, nowMs: Long): String? {
+    private fun TrackedConnection.usesOutbound(outboundTag: String): Boolean {
+        return outboundTag in routingTags
+    }
+
+    private fun observeEvent(event: ConnectionTrafficEventData, countAsCreation: Boolean, nowMs: Long): String? {
         when (event.type) {
             ConnectionTrafficAttributor.EVENT_CLOSED -> activeConnections.remove(event.id)
             ConnectionTrafficAttributor.EVENT_NEW -> {
                 val source = event.sourceIdentity()
-                val previous = activeConnections.put(event.id, TrackedConnection(source, event))
-                if (!reset && previous == null) recentCreations.addLast(Creation(event.id, source, nowMs))
+                val existing = activeConnections[event.id]
+                val previous = activeConnections.put(
+                    event.id,
+                    TrackedConnection(
+                        source = source,
+                        event = event,
+                        routingTags = event.routingTags().ifEmpty { existing?.routingTags.orEmpty() }
+                    )
+                )
+                if (countAsCreation && previous == null) recentCreations.addLast(Creation(event.id, source, nowMs))
                 if (quarantinedUntilMs[source.key]?.let { it > nowMs } == true) return event.id
             }
             else -> activeConnections[event.id]?.let { tracked ->
-                activeConnections[event.id] = tracked.copy(event = event)
+                activeConnections[event.id] = tracked.copy(
+                    event = event,
+                    routingTags = event.routingTags().ifEmpty { tracked.routingTags }
+                )
             }
         }
         return null
@@ -231,6 +308,14 @@ internal class ConnectionStormGuard(
         inbound = inbound,
         source = source
     )
+
+    private fun ConnectionTrafficEventData.routingTags(): Set<String> {
+        return buildSet {
+            outbound?.trim()?.takeIf(String::isNotBlank)?.let(::add)
+            tags.map(String::trim).filter(String::isNotBlank).forEach(::add)
+            chain.map(String::trim).filter(String::isNotBlank).forEach(::add)
+        }
+    }
 
     private companion object {
         const val DEFAULT_SOURCE_CREATION_LIMIT = 256

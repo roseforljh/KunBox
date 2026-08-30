@@ -14,13 +14,73 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class VpnStateStoreTest {
+    @Test
+    fun `applied per-app policy rejects stale revision and old service`() {
+        val current = VpnStateStore.AppliedPerAppPolicySnapshot(
+            revision = 8L,
+            serviceInstanceId = "new"
+        )
+
+        assertFalse(
+            VpnStateStore.canCommitAppliedPerAppPolicy(
+                current,
+                current.copy(revision = 7L),
+                "new",
+                activeServiceRunning = true
+            )
+        )
+        assertFalse(
+            VpnStateStore.canCommitAppliedPerAppPolicy(
+                current,
+                current.copy(serviceInstanceId = "old", revision = 9L),
+                "new",
+                activeServiceRunning = true
+            )
+        )
+        assertTrue(
+            VpnStateStore.canCommitAppliedPerAppPolicy(
+                current,
+                current.copy(revision = 9L),
+                "new",
+                activeServiceRunning = true
+            )
+        )
+        assertFalse(
+            VpnStateStore.canCommitAppliedPerAppPolicy(
+                current.copy(runtimeGeneration = 20L),
+                current.copy(revision = 9L, runtimeGeneration = 19L),
+                "new",
+                activeServiceRunning = true
+            )
+        )
+    }
+
+    @Test
+    fun `applied per-app policy permits a new service while runtime is not running`() {
+        val current = VpnStateStore.AppliedPerAppPolicySnapshot(
+            revision = 8L,
+            serviceInstanceId = "old"
+        )
+
+        listOf("", "old").forEach { staleRuntimeOwner ->
+            assertTrue(
+                VpnStateStore.canCommitAppliedPerAppPolicy(
+                    current,
+                    current.copy(revision = 9L, serviceInstanceId = "new"),
+                    activeServiceInstanceId = staleRuntimeOwner,
+                    activeServiceRunning = false
+                )
+            )
+        }
+    }
 
     @Test
     fun testCoreModeEnumValues() {
-        assertEquals(3, VpnStateStore.CoreMode.values().size)
+        assertEquals(4, VpnStateStore.CoreMode.values().size)
         assertEquals("NONE", VpnStateStore.CoreMode.NONE.name)
         assertEquals("VPN", VpnStateStore.CoreMode.VPN.name)
         assertEquals("PROXY", VpnStateStore.CoreMode.PROXY.name)
+        assertEquals("ROOT", VpnStateStore.CoreMode.ROOT.name)
     }
 
     @Test
@@ -28,6 +88,7 @@ class VpnStateStoreTest {
         assertEquals(VpnStateStore.CoreMode.NONE, VpnStateStore.CoreMode.valueOf("NONE"))
         assertEquals(VpnStateStore.CoreMode.VPN, VpnStateStore.CoreMode.valueOf("VPN"))
         assertEquals(VpnStateStore.CoreMode.PROXY, VpnStateStore.CoreMode.valueOf("PROXY"))
+        assertEquals(VpnStateStore.CoreMode.ROOT, VpnStateStore.CoreMode.valueOf("ROOT"))
     }
 
     @Test
@@ -35,6 +96,7 @@ class VpnStateStoreTest {
         assertEquals(0, VpnStateStore.CoreMode.NONE.ordinal)
         assertEquals(1, VpnStateStore.CoreMode.VPN.ordinal)
         assertEquals(2, VpnStateStore.CoreMode.PROXY.ordinal)
+        assertEquals(3, VpnStateStore.CoreMode.ROOT.ordinal)
     }
 
     @Test
@@ -61,7 +123,8 @@ class VpnStateStoreTest {
             stateOrdinal = ServiceState.RUNNING.ordinal,
             activeLabel = "节点 A",
             lastError = "",
-            manuallyStopped = false
+            manuallyStopped = false,
+            readiness = DataPlaneReadinessSnapshot.stopped().copy(generation = 42L)
         )
 
         assertEquals(
@@ -87,7 +150,7 @@ class VpnStateStoreTest {
         val keys = JsonParser.parseString(encoded).asJsonObject.keySet()
 
         assertEquals(
-            setOf("generation", "stateOrdinal", "activeLabel", "lastError", "manuallyStopped"),
+            setOf("generation", "stateOrdinal", "activeLabel", "lastError", "manuallyStopped", "readiness"),
             keys
         )
         assertNull(VpnStateStore.decodeRuntimeStateSnapshot("{}"))
@@ -129,15 +192,13 @@ class VpnStateStoreTest {
     @Test
     fun resourceRecoveryBudgetLimitsActionsAndResetsAfterOneHour() {
         var state = VpnStateStore.ResourceRecoveryBudgetState()
-        repeat(2) {
-            val result = VpnStateStore.consumeResourceRecoveryBudget(
-                state,
-                VpnStateStore.ResourceRecoveryAction.CORE_RESTART,
-                nowMs = 1_000L
-            )
-            assertTrue(result.consumed)
-            state = result.state
-        }
+        val firstRestart = VpnStateStore.consumeResourceRecoveryBudget(
+            state,
+            VpnStateStore.ResourceRecoveryAction.CORE_RESTART,
+            nowMs = 1_000L
+        )
+        assertTrue(firstRestart.consumed)
+        state = firstRestart.state
         assertFalse(
             VpnStateStore.consumeResourceRecoveryBudget(
                 state,
@@ -168,6 +229,14 @@ class VpnStateStoreTest {
         assertTrue(reset.consumed)
         assertEquals(1, reset.state.coreRestartCount)
         assertEquals(0, reset.state.processReclaimCount)
+    }
+
+    @Test
+    fun onlyManualStopToStartTransitionResetsResourceRecoveryBudget() {
+        assertTrue(VpnStateStore.shouldResetResourceRecoveryBudget(true, false))
+        assertFalse(VpnStateStore.shouldResetResourceRecoveryBudget(false, false))
+        assertFalse(VpnStateStore.shouldResetResourceRecoveryBudget(true, true))
+        assertFalse(VpnStateStore.shouldResetResourceRecoveryBudget(false, true))
     }
 
     @Test

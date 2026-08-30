@@ -20,11 +20,11 @@ import com.kunk.singbox.model.ImportOptions
 import com.kunk.singbox.model.ImportResult
 import com.kunk.singbox.model.IpVersionMode
 import com.kunk.singbox.model.RoutingMode
-import com.kunk.singbox.model.AppRule
 import com.kunk.singbox.model.AppGroup
 import com.kunk.singbox.model.RuleSet
 import com.kunk.singbox.model.RuleSetType
 import com.kunk.singbox.model.TunStack
+import com.kunk.singbox.model.TrafficCaptureMode
 import com.kunk.singbox.model.LatencyTestMethod
 import com.kunk.singbox.model.VpnAppMode
 import com.kunk.singbox.model.VpnRouteMode
@@ -33,7 +33,10 @@ import com.kunk.singbox.model.BackgroundPowerSavingDelay
 import com.kunk.singbox.repository.DataExportRepository
 import com.kunk.singbox.repository.RuleSetRepository
 import com.kunk.singbox.repository.SettingsRepository
+import com.kunk.singbox.repository.PerAppPolicyUpdateResult
 import com.kunk.singbox.service.RuleSetAutoUpdateWorker
+import com.kunk.singbox.service.root.RootCapabilityReport
+import com.kunk.singbox.service.root.RootServiceConnection
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.ensureActive
@@ -52,6 +55,13 @@ data class DefaultRuleSetDownloadState(
     val cancelled: Boolean = false
 )
 
+sealed interface PerAppPolicyApplyState {
+    data object Idle : PerAppPolicyApplyState
+    data class Applying(val revision: Long) : PerAppPolicyApplyState
+    data class Failed(val revision: Long, val message: String) : PerAppPolicyApplyState
+}
+
+@Suppress("LargeClass")
 class SettingsViewModel(application: Application) : AndroidViewModel(application) {
 
     private val repository = SettingsRepository.getInstance(application)
@@ -74,6 +84,10 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     val importState: StateFlow<ImportState> = _importState.asStateFlow()
 
     val settings: StateFlow<AppSettings> = repository.settings
+    private val _perAppPolicyApplyState = MutableStateFlow<PerAppPolicyApplyState>(PerAppPolicyApplyState.Idle)
+    val perAppPolicyApplyState: StateFlow<PerAppPolicyApplyState> = _perAppPolicyApplyState.asStateFlow()
+    private val _rootCapabilityError = MutableStateFlow("")
+    val rootCapabilityError: StateFlow<String> = _rootCapabilityError.asStateFlow()
 
     fun ensureDefaultRuleSetsReady() {
         viewModelScope.launch {
@@ -245,6 +259,39 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         viewModelScope.launch { repository.setTunEnabled(value) }
     }
 
+    fun setTrafficCaptureMode(value: TrafficCaptureMode) {
+        viewModelScope.launch {
+            if (value == TrafficCaptureMode.ROOT_TRANSPARENT) {
+                val error = checkRootCapability()
+                if (error != null) {
+                    _rootCapabilityError.value = error
+                    return@launch
+                }
+            }
+            _rootCapabilityError.value = ""
+            repository.setTrafficCaptureMode(value)
+            VpnServiceManager.refreshTunSetting(getApplication())
+        }
+    }
+
+    private suspend fun checkRootCapability(): String? {
+        val connection = RootServiceConnection(getApplication()) { }
+        return try {
+            val report = RootCapabilityReport.fromBundle(connection.bind().capabilityReport)
+            when {
+                !report.supported -> report.error.ifBlank { "Root TPROXY is unavailable" }
+                settings.value.ipVersionMode == IpVersionMode.IPV6_ONLY &&
+                    (!report.tproxyIpv6 || !report.redirectIpv6) ->
+                    "Complete IPv6 transparent proxy support is unavailable on this device"
+                else -> null
+            }
+        } catch (error: Exception) {
+            error.message ?: "Root capability check failed"
+        } finally {
+            connection.unbind()
+        }
+    }
+
     fun setTunStack(value: TunStack) {
         viewModelScope.launch { repository.setTunStack(value) }
     }
@@ -278,19 +325,57 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun setVpnAppMode(value: VpnAppMode) {
-        viewModelScope.launch { repository.setVpnAppMode(value) }
+        viewModelScope.launch { applyPerAppPolicyUpdate(repository.setVpnAppMode(value)) }
     }
 
     fun setVpnAllowlist(value: String) {
-        viewModelScope.launch { repository.setVpnAllowlist(value) }
+        viewModelScope.launch { applyPerAppPolicyUpdate(repository.setVpnAllowlist(value)) }
     }
 
     fun setVpnBlocklist(value: String) {
-        viewModelScope.launch { repository.setVpnBlocklist(value) }
+        viewModelScope.launch { applyPerAppPolicyUpdate(repository.setVpnBlocklist(value)) }
     }
 
     fun setAutoIncludeNewAppsInPerAppRules(value: Boolean) {
         viewModelScope.launch { repository.setAutoIncludeNewAppsInPerAppRules(value) }
+    }
+
+    fun retryPerAppPolicyApply() {
+        viewModelScope.launch {
+            val revision = settings.value.perAppPolicyRevision
+            _perAppPolicyApplyState.value = PerAppPolicyApplyState.Applying(revision)
+            VpnServiceManager.applyPerAppRuleChangeIfRunning(getApplication(), revision)
+                .onSuccess { _perAppPolicyApplyState.value = PerAppPolicyApplyState.Idle }
+                .onFailure { error ->
+                    _perAppPolicyApplyState.value = PerAppPolicyApplyState.Failed(
+                        revision,
+                        error.message ?: "Per-app VPN policy apply failed"
+                    )
+                }
+        }
+    }
+
+    private suspend fun applyPerAppPolicyUpdate(result: Result<PerAppPolicyUpdateResult>) {
+        val update = result.getOrElse { error ->
+            _perAppPolicyApplyState.value = PerAppPolicyApplyState.Failed(
+                settings.value.perAppPolicyRevision,
+                error.message ?: "Per-app VPN policy persistence failed"
+            )
+            return
+        }
+        if (!update.runtimeChanged) {
+            _perAppPolicyApplyState.value = PerAppPolicyApplyState.Idle
+            return
+        }
+        _perAppPolicyApplyState.value = PerAppPolicyApplyState.Applying(update.revision)
+        VpnServiceManager.applyPerAppRuleChangeIfRunning(getApplication(), update.revision)
+            .onSuccess { _perAppPolicyApplyState.value = PerAppPolicyApplyState.Idle }
+            .onFailure { error ->
+                _perAppPolicyApplyState.value = PerAppPolicyApplyState.Failed(
+                    update.revision,
+                    error.message ?: "Per-app VPN policy apply failed"
+                )
+            }
     }
 
     fun setLocalDns(value: String) {
@@ -585,38 +670,6 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
-    fun addAppRule(rule: AppRule) {
-        viewModelScope.launch {
-            applyAppRoutingChange { repository.upsertAppRule(rule) }
-        }
-    }
-
-    fun updateAppRule(rule: AppRule) {
-        viewModelScope.launch {
-            applyAppRoutingChange { repository.upsertAppRule(rule) }
-        }
-    }
-
-    fun deleteAppRule(ruleId: String) {
-        viewModelScope.launch {
-            val currentRules = settings.value.appRules.toMutableList()
-            currentRules.removeAll { it.id == ruleId }
-            applyAppRoutingChange { repository.setAppRules(currentRules) }
-        }
-    }
-
-    fun toggleAppRuleEnabled(ruleId: String) {
-        viewModelScope.launch {
-            val currentRules = settings.value.appRules.toMutableList()
-            val index = currentRules.indexOfFirst { it.id == ruleId }
-            if (index != -1) {
-                val rule = currentRules[index]
-                currentRules[index] = rule.copy(enabled = !rule.enabled)
-                applyAppRoutingChange { repository.setAppRules(currentRules) }
-            }
-        }
-    }
-
     fun addAppGroup(group: AppGroup) {
         viewModelScope.launch {
             applyAppRoutingChange { repository.upsertAppGroup(group) }
@@ -651,8 +704,17 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 
     private suspend fun applyAppRoutingChange(update: suspend () -> Boolean) {
         if (!update()) return
+        val revision = settings.value.perAppPolicyRevision
+        _perAppPolicyApplyState.value = PerAppPolicyApplyState.Applying(revision)
         VpnServiceManager.applyPerAppRuleChangeIfRunning(getApplication())
-            .onFailure { error -> Log.e("SettingsViewModel", "自动应用应用分流配置失败", error) }
+            .onSuccess { _perAppPolicyApplyState.value = PerAppPolicyApplyState.Idle }
+            .onFailure { error ->
+                Log.e("SettingsViewModel", "自动应用应用分流配置失败", error)
+                _perAppPolicyApplyState.value = PerAppPolicyApplyState.Failed(
+                    revision,
+                    error.message ?: "应用分流配置应用失败"
+                )
+            }
     }
 
     fun exportData(uri: Uri) {

@@ -159,7 +159,7 @@ class UiCleanupStructureTest {
     }
 
     @Test
-    fun topSearchControlsOnlyAppearAtTheAbsoluteListTop() {
+    fun topSearchControlsStayVisibleWhileSearching() {
         val nodes = mainSource("ui/screens/NodesScreen.kt").readNormalizedText()
         val nodeSearch = nodes.extractFunctionBody("NodeSearchBar")
         val appSelector = mainSource("ui/components/AppMultiSelectDialog.kt").readNormalizedText()
@@ -176,8 +176,11 @@ class UiCleanupStructureTest {
         assertTrue(nodes.contains("TopOnlySupportingContent(visible = showTopControls)"))
         assertTrue(nodeSearch.contains("ExpandableSearchBar("))
 
-        assertTrue(appSelector.contains("derivedStateOf { !listState.canScrollBackward }"))
-        assertTrue(appSelector.contains("TopOnlySupportingContent(visible = showTopControls)"))
+        assertTrue(appSelector.contains("LaunchedEffect(query) { listState.scrollToItem(0) }"))
+        assertFalse(appSelector.contains("canScrollBackward"))
+        assertFalse(appSelector.contains("LaunchedEffect(showTopControls)"))
+        assertFalse(appSelector.contains("TopOnlySupportingContent("))
+        assertTrue(appSelector.contains("supportingContent = {"))
         assertTrue(appSelector.contains("supportingContentHeight = 92.dp"))
         assertTrue(appControls.contains("ExpandableSearchBar("))
         assertTrue(appControls.countOccurrences("LiquidGlassFilterChip(") >= 3)
@@ -186,8 +189,11 @@ class UiCleanupStructureTest {
         assertFalse(appSelector.contains("OutlinedTextField("))
         assertFalse(appSelector.contains("appSelectFilterPanel("))
 
-        assertTrue(routingAppSelector.contains("derivedStateOf { !listState.canScrollBackward }"))
-        assertTrue(routingAppSelector.contains("TopOnlySupportingContent(visible = showTopControls)"))
+        assertTrue(routingAppSelector.contains("LaunchedEffect(searchQuery) { listState.scrollToItem(0) }"))
+        assertFalse(routingAppSelector.contains("canScrollBackward"))
+        assertFalse(routingAppSelector.contains("LaunchedEffect(showTopControls)"))
+        assertFalse(routingAppSelector.contains("TopOnlySupportingContent("))
+        assertTrue(routingAppSelector.contains("supportingContent = {"))
         assertTrue(routingAppSelector.contains("supportingContentHeight = 64.dp"))
         assertTrue(routingAppSelector.contains("ExpandableSearchBar("))
         assertTrue(routingAppSelector.contains("LiquidGlassFilterChip("))
@@ -400,7 +406,6 @@ class UiCleanupStructureTest {
 
         val appRouting = mainSource("ui/screens/AppRoutingScreen.kt").readNormalizedText()
         assertTrue(appRouting.contains("showDeleteGroupConfirm"))
-        assertTrue(appRouting.contains("showDeleteRuleConfirm"))
     }
 
     @Test
@@ -438,7 +443,9 @@ class UiCleanupStructureTest {
         assertTrue(launcherQuery.contains("queryIntentActivities"))
 
         val iconLoad = repository.extractFunctionBody("loadIcon")
-        assertTrue("图标加载必须切换到 IO 调度器", iconLoad.contains("withContext(Dispatchers.IO)"))
+        val usesIoDispatcher = iconLoad.contains("withContext(Dispatchers.IO)") ||
+            iconLoad.contains("withContext(iconLoadDispatcher)")
+        assertTrue("图标加载必须切换到 IO 调度器", usesIoDispatcher)
         assertTrue("图标应通过 PackageManager 按需读取", iconLoad.contains("getApplicationIcon"))
         assertTrue("图标解码应位于按需加载入口", iconLoad.contains("toBitmap"))
         assertTrue("图标缓存必须有容量上限", repository.contains("LruCache<String, Bitmap>(ICON_CACHE_MAX_KB)"))

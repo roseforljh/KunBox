@@ -18,10 +18,10 @@ class CoreManagerLockPolicyTest {
 
     @Test
     fun unifiedShutdownReleasesLocksBeforePublishingStopped() {
-        val source = File("src/main/java/com/kunk/singbox/service/SingBoxService.kt").readText(Charsets.UTF_8)
+        val source = File("src/main/java/com/kunk/singbox/service/vpn/SingBoxControlRuntime.kt")
+            .readText(Charsets.UTF_8)
         val onDestroy = source
-            .substringAfter("override fun onDestroy() {")
-            .substringBefore("override fun onRevoke()")
+            .substringAfter("internal fun SingBoxService.onDestroyRuntime()")
 
         assertTrue(onDestroy.contains("stopVpn(stopService = false)"))
         assertFalse(onDestroy.contains("coreManager.releaseLocks()"))
@@ -72,6 +72,43 @@ class CoreManagerLockPolicyTest {
     }
 
     @Test
+    fun hardStopHasAProcessWatchdogWhenCleanupHangs() {
+        val shutdownSource = File(
+            "src/main/java/com/kunk/singbox/service/manager/ShutdownManager.kt"
+        ).readText(Charsets.UTF_8)
+
+        assertTrue(shutdownSource.contains("STOP_WATCHDOG_TIMEOUT_MS"))
+        assertTrue(shutdownSource.contains("withTimeout(STOP_WATCHDOG_TIMEOUT_MS)"))
+        assertTrue(shutdownSource.contains("callbacks.forceStopProcess(\"shutdown_timeout\")"))
+    }
+
+    @Test
+    fun finalStopCancelsStartupWithoutWaitingForCancelledJobs() {
+        val shutdownSource = File(
+            "src/main/java/com/kunk/singbox/service/manager/ShutdownManager.kt"
+        ).readText(Charsets.UTF_8)
+        val stopBody = shutdownSource.substringAfter("fun stopVpn(")
+            .substringBefore("private fun completeEscalatedFinalResources")
+
+        assertTrue(stopBody.contains("callbacks.cancelStartVpnJob()"))
+        assertFalse(stopBody.contains("jobsToJoin"))
+    }
+
+    @Test
+    fun duplicateVpnStopIsIgnoredBeforeReplacingRecoveryLease() {
+        val source = File("src/main/java/com/kunk/singbox/service/vpn/SingBoxLifecycleRuntime.kt")
+            .readText(Charsets.UTF_8)
+        val stopBranch = source
+            .substringAfter("SingBoxService.ACTION_STOP ->")
+            .substringBefore("SingBoxService.ACTION_FORCE_STOP ->")
+
+        val guardIndex = stopBranch.indexOf("shouldIgnoreDuplicateHardStop")
+        val leaseIndex = stopBranch.indexOf("setNonResourceRecoveryIntent(false)")
+        assertTrue(guardIndex >= 0)
+        assertTrue(leaseIndex > guardIndex)
+    }
+
+    @Test
     fun lifecycleTokenRejectsStoppingAndStaleStarts() {
         assertTrue(
             CoreManager.isStartTokenCurrent(
@@ -94,6 +131,25 @@ class CoreManagerLockPolicyTest {
                 stopping = true
             )
         )
+    }
+
+    @Test
+    fun tunRetryUsesFreshBuildersAndTreatsStopAsCancellation() {
+        val coreSource = File(
+            "src/main/java/com/kunk/singbox/service/manager/CoreManager.kt"
+        ).readText(Charsets.UTF_8)
+        val tunSource = File(
+            "src/main/java/com/kunk/singbox/service/tun/VpnTunManager.kt"
+        ).readText(Charsets.UTF_8)
+        val serviceSource = File(
+            "src/main/java/com/kunk/singbox/service/SingBoxService.kt"
+        ).readText(Charsets.UTF_8)
+
+        assertFalse(coreSource.contains("preallocateTunBuilder"))
+        assertFalse(coreSource.contains("consumePreallocatedBuilder"))
+        assertFalse(serviceSource.contains("preallocateTunBuilder"))
+        assertTrue(coreSource.contains("builderFactory ="))
+        assertTrue(tunSource.contains("throw CancellationException"))
     }
 
     @Test

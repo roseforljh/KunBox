@@ -3,7 +3,10 @@ package com.kunk.singbox.repository.config
 import com.google.gson.Gson
 import com.kunk.singbox.model.AppSettings
 import com.kunk.singbox.model.IpVersionMode
+import com.kunk.singbox.model.RootAppRoutingAssignment
+import com.kunk.singbox.model.RootAppRoutingPlanCompiler
 import com.kunk.singbox.model.TunStack
+import com.kunk.singbox.model.TrafficCaptureMode
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -131,5 +134,66 @@ class InboundBuilderTest {
 
         assertEquals(true, inbound.autoRoute)
         assertEquals(true, inbound.strictRoute)
+    }
+
+    @Test
+    fun buildRootTransparentInboundUsesRedirectForTcpAndTproxyForUdp() {
+        val inbounds = InboundBuilder.build(
+            settings = AppSettings(
+                trafficCaptureMode = TrafficCaptureMode.ROOT_TRANSPARENT,
+                proxyPort = 7890,
+                ipVersionMode = IpVersionMode.DUAL_STACK
+            ),
+            effectiveTunStack = TunStack.SYSTEM
+        )
+
+        assertEquals(
+            listOf("redirect-in-v4", "tproxy-in-v4", "redirect-in-v6", "tproxy-in-v6"),
+            inbounds.mapNotNull { it.tag }
+        )
+        val rootInbounds = inbounds
+        assertEquals(listOf("redirect", "tproxy", "redirect", "tproxy"), rootInbounds.map { it.type })
+        assertEquals(listOf(null, "udp", null, "udp"), rootInbounds.map { it.network })
+        assertEquals(listOf(null, "5m", null, "5m"), rootInbounds.map { it.udpTimeout })
+        assertEquals(listOf("0.0.0.0", "0.0.0.0", "::", "::"), rootInbounds.map { it.listen })
+        assertTrue(rootInbounds.all { it.address == null })
+    }
+
+    @Test
+    fun buildRootTransparentInboundAddsDeterministicLaneListeners() {
+        val settings = AppSettings(
+            trafficCaptureMode = TrafficCaptureMode.ROOT_TRANSPARENT,
+            proxyPort = 0,
+            ipVersionMode = IpVersionMode.DUAL_STACK
+        )
+        val plan = RootAppRoutingPlanCompiler.compile(
+            settings = settings,
+            assignments = listOf(
+                RootAppRoutingAssignment(
+                    packageNames = listOf("org.telegram.messenger"),
+                    targetKind = "OUTBOUND",
+                    outboundTag = "germany",
+                    sourceLabel = "Telegram"
+                )
+            ),
+            generation = 1L
+        )
+
+        val inbounds = InboundBuilder.build(settings, TunStack.SYSTEM, plan)
+        val lane = plan.lanes.single()
+
+        assertEquals(
+            listOf(
+                lane.tcpInboundIpv4,
+                lane.udpInboundIpv4,
+                lane.tcpInboundIpv6,
+                lane.udpInboundIpv6
+            ),
+            inbounds.drop(4).mapNotNull { it.tag }
+        )
+        assertEquals(
+            listOf(lane.tcpPortIpv4, lane.udpPortIpv4, lane.tcpPortIpv6, lane.udpPortIpv6),
+            inbounds.drop(4).mapNotNull { it.listenPort }
+        )
     }
 }

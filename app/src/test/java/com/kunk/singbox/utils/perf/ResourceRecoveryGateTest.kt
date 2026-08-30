@@ -9,6 +9,57 @@ import java.io.File
 
 class ResourceRecoveryGateTest {
     @Test
+    fun `budget exhaustion notice is emitted once until resources recover`() {
+        val gate = ResourceRecoveryNoticeGate()
+
+        assertTrue(gate.claim())
+        assertFalse(gate.claim())
+        assertTrue(gate.clear())
+        assertFalse(gate.clear())
+        assertTrue(gate.claim())
+    }
+
+    @Test
+    fun `only resource budget errors qualify for healthy clearing`() {
+        assertTrue(
+            isResourceRecoveryBudgetError("Resource recovery budget exhausted: process_reclaim:fd_emergency")
+        )
+        assertFalse(isResourceRecoveryBudgetError("Failed to start VPN"))
+        assertFalse(isResourceRecoveryBudgetError(null))
+    }
+
+    @Test
+    fun `large native socket surplus is marked as pre connect gap`() {
+        assertEquals("proc_unavailable", classifySocketAttribution(null, 10))
+        assertEquals("attributed", classifySocketAttribution(80, 60))
+        assertEquals("native_preconnect_gap", classifySocketAttribution(900, 24))
+    }
+
+    @Test
+    fun `fd recovery never amplifies pressure with global close or network reset`() {
+        val source = File("src/main/java/com/kunk/singbox/utils/perf/DiagnosticResourceSampler.kt")
+            .readText(Charsets.UTF_8)
+        val recoverBody = source.substringAfter("private suspend fun recover(")
+            .substringBefore("private fun recycleProcessIfAllowed(")
+
+        assertFalse(recoverBody.contains("closeConnections()"))
+        assertFalse(recoverBody.contains("resetNetwork()"))
+        assertTrue(recoverBody.contains("ResourceRecoveryAction.CORE_RESTART"))
+        assertTrue(recoverBody.contains("recycleProcessIfAllowed"))
+    }
+
+    @Test
+    fun `successful core restart defers process reclaim until pressure recurs`() {
+        val source = File("src/main/java/com/kunk/singbox/utils/perf/DiagnosticResourceSampler.kt")
+            .readText(Charsets.UTF_8)
+        val insufficientBody = source.substringAfter("if (!isFdRecoverySufficient(")
+            .substringBefore("} else {")
+
+        assertFalse(insufficientBody.contains("recycleProcessIfAllowed"))
+        assertTrue(insufficientBody.contains("deferred_to_next_pressure"))
+    }
+
+    @Test
     fun `guard monitor contains only state transitions and reference snapshots`() {
         val source = File("src/main/java/com/kunk/singbox/utils/perf/DiagnosticResourceSampler.kt")
             .readText(Charsets.UTF_8)

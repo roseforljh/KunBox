@@ -104,6 +104,17 @@
         </service>
 
         <service
+            android:name=".service.root.RootTransparentForegroundService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse"
+            android:process=":bg"
+            android:stopWithTask="false">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="root_transparent_proxy" />
+        </service>
+
+        <service
             android:name=".ipc.SingBoxIpcService"
             android:exported="false"
             android:process=":bg" />

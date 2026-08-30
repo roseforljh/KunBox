@@ -34,7 +34,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -61,6 +60,8 @@ import com.kunk.singbox.ui.theme.liquidGlassPanel
 import com.kunk.singbox.ui.theme.liquidGlassPressFeedback
 import com.kunk.singbox.ui.theme.liquidGlassProgressColor
 import com.kunk.singbox.ui.theme.liquidGlassProgressTrackColor
+
+private const val INITIAL_ICON_BATCH_SIZE = 32
 
 internal fun toggleQuickSelectionPreset(
     currentSelection: Set<String>,
@@ -300,13 +301,17 @@ fun AppMultiSelectDialog(
 
     val isLoading = loadingState is InstalledAppsRepository.LoadingState.Loading
     val listState = rememberLazyListState()
-    val showTopControls by remember {
-        derivedStateOf { !listState.canScrollBackward }
+    LaunchedEffect(query) { listState.scrollToItem(0) }
+    val initialIconPackages = remember(filteredApps) {
+        filteredApps.take(INITIAL_ICON_BATCH_SIZE).map(InstalledAppUi::packageName)
     }
-    LaunchedEffect(showTopControls) {
-        if (!showTopControls) {
-            isSearchExpanded = false
-        }
+    val initialIconPackageSet = remember(initialIconPackages) { initialIconPackages.toSet() }
+    var initialIcons by remember { mutableStateOf<Map<String, Bitmap>>(emptyMap()) }
+    var completedIconBatch by remember { mutableStateOf<Set<String>>(emptySet()) }
+    LaunchedEffect(initialIconPackages, installedAppsViewModel) {
+        completedIconBatch = emptySet()
+        initialIcons = installedAppsViewModel.loadIcons(initialIconPackages)
+        completedIconBatch = initialIconPackageSet
     }
     val quickSelectApps = {
         val (selection, previousSelection) = toggleQuickSelectionPreset(
@@ -351,24 +356,22 @@ fun AppMultiSelectDialog(
         },
         supportingContentHeight = 92.dp,
         supportingContent = {
-            TopOnlySupportingContent(visible = showTopControls) {
-                AppSelectorTopControls(
-                    query = query,
-                    onQueryChange = { query = it },
-                    isSearchExpanded = isSearchExpanded,
-                    onSearchToggle = { isSearchExpanded = !isSearchExpanded },
-                    selectedCount = tempSelected.size,
-                    showSystemApps = showSystemApps,
-                    onSystemAppsToggle = { showSystemApps = !showSystemApps },
-                    showNoLauncherApps = showNoLauncherApps,
-                    onNoLauncherAppsToggle = { showNoLauncherApps = !showNoLauncherApps },
-                    enableQuickSelectCommonApps = enableQuickSelectCommonApps,
-                    quickSelectSelected = quickSelectSelected,
-                    onQuickSelect = quickSelectApps,
-                    isLoading = isLoading,
-                    onRefresh = installedAppsViewModel::reloadApps
-                )
-            }
+            AppSelectorTopControls(
+                query = query,
+                onQueryChange = { query = it },
+                isSearchExpanded = isSearchExpanded,
+                onSearchToggle = { isSearchExpanded = !isSearchExpanded },
+                selectedCount = tempSelected.size,
+                showSystemApps = showSystemApps,
+                onSystemAppsToggle = { showSystemApps = !showSystemApps },
+                showNoLauncherApps = showNoLauncherApps,
+                onNoLauncherAppsToggle = { showNoLauncherApps = !showNoLauncherApps },
+                enableQuickSelectCommonApps = enableQuickSelectCommonApps,
+                quickSelectSelected = quickSelectSelected,
+                onQuickSelect = quickSelectApps,
+                isLoading = isLoading,
+                onRefresh = installedAppsViewModel::reloadApps
+            )
         }
     ) { headerPadding ->
         LazyColumn(
@@ -428,10 +431,16 @@ fun AppMultiSelectDialog(
             items(filteredApps, key = { it.packageName }) { app ->
                 val checked = tempSelected.contains(app.packageName)
                 val iconSize = 40.dp
-                var icon by remember(app.packageName) { mutableStateOf<Bitmap?>(null) }
-                LaunchedEffect(app.packageName) {
-                    icon = installedAppsViewModel.loadIcon(app.packageName)
+                val preloadedIcon = initialIcons[app.packageName]
+                val loadOnDemand = app.packageName !in initialIconPackageSet ||
+                    (app.packageName in completedIconBatch && preloadedIcon == null)
+                var onDemandIcon by remember(app.packageName) { mutableStateOf<Bitmap?>(null) }
+                LaunchedEffect(app.packageName, loadOnDemand) {
+                    if (loadOnDemand) {
+                        onDemandIcon = installedAppsViewModel.loadIcon(app.packageName)
+                    }
                 }
+                val icon = preloadedIcon ?: onDemandIcon
                 val iconBitmap = remember(icon) { icon?.asImageBitmap() }
                 Row(
                     modifier = Modifier

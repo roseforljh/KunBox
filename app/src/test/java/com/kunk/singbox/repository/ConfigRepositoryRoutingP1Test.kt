@@ -4,6 +4,7 @@ import com.kunk.singbox.database.entity.ProfileEntity
 import com.kunk.singbox.model.AppSettings
 import com.kunk.singbox.model.Outbound
 import com.kunk.singbox.model.ProfileType
+import com.kunk.singbox.model.RootAppRoutingPlanCompiler
 import com.kunk.singbox.model.RoutingMode
 import com.kunk.singbox.model.RuleSet
 import com.kunk.singbox.model.RuleSetConfig
@@ -12,11 +13,40 @@ import com.kunk.singbox.model.RuleSetType
 import com.kunk.singbox.model.RouteRule
 import com.kunk.singbox.model.RuleType
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ConfigRepositoryRoutingP1Test {
+
+    @Test
+    fun explicitNodeRootLaneAlwaysUsesThePhysicalOutbound() {
+        val semantic = ConfigRepository.resolveAppOutboundSemanticStrict(
+            mode = RuleSetOutboundMode.NODE,
+            value = "node-id-1",
+            context = ConfigRepositoryOutboundSemanticContext(
+                selectorTag = "PROXY",
+                outbounds = listOf(
+                    Outbound(type = "selector", tag = "PROXY", outbounds = listOf("physical-node")),
+                    Outbound(type = "socks", tag = "physical-node")
+                ),
+                profiles = emptyList(),
+                nodeTagResolver = { id -> if (id == "node-id-1") "physical-node" else null }
+            ),
+            label = "应用「Telegram」"
+        )
+        val assignment = ConfigRepository.toRootAppRoutingAssignment(
+            packageNames = listOf("org.telegram.messenger"),
+            semantic = semantic,
+            selectorTag = "PROXY",
+            sourceLabel = "Telegram"
+        )
+        val lane = RootAppRoutingPlanCompiler.compile(AppSettings(), listOf(assignment), 1L).lanes.single()
+
+        assertEquals("physical-node", lane.outboundTag)
+        assertFalse(lane.outboundTag == "PROXY" || lane.outboundTag.startsWith("F:"))
+    }
 
     @Test
     fun profileRouteTagsAreStableUniqueAndReadableForDuplicateNames() {
@@ -195,11 +225,57 @@ class ConfigRepositoryRoutingP1Test {
             defaultRuleCatchAll = fallback
         )
 
-        assertEquals(base + bypass + custom + app + ruleSet + fallback, rules)
+        assertEquals(base + bypass + app + custom + ruleSet + fallback, rules)
         val fallbackIndex = rules.indexOf(fallback.single())
         assertTrue(rules.indexOf(custom.single()) < fallbackIndex)
         assertTrue(rules.indexOf(app.single()) < fallbackIndex)
         assertTrue(rules.indexOf(ruleSet.single()) < fallbackIndex)
+    }
+
+    @Test
+    fun appNodeTargetDoesNotSilentlyFallbackToGlobalProxy() {
+        val failure = runCatching {
+            ConfigRepository.resolveAppOutboundSemanticStrict(
+                mode = RuleSetOutboundMode.NODE,
+                value = "profile::missing-node",
+                context = ConfigRepositoryOutboundSemanticContext(
+                    selectorTag = "PROXY",
+                    outbounds = listOf(Outbound(type = "selector", tag = "PROXY")),
+                    profiles = emptyList(),
+                    nodeTagResolver = { null }
+                ),
+                label = "应用分组「Telegram」"
+            )
+        }.exceptionOrNull()
+
+        assertTrue(failure is IllegalArgumentException)
+        assertTrue(failure?.message.orEmpty().contains("已阻止回退到全局代理"))
+    }
+
+    @Test
+    fun finalApplicationRouteRejectsMissingOrConflictingTargets() {
+        val missingTarget = runCatching {
+            ConfigRepository.requireValidApplicationRoutes(
+                route = com.kunk.singbox.model.RouteConfig(
+                    rules = listOf(RouteRule(packageName = listOf("org.telegram.messenger"), outbound = "missing"))
+                ),
+                availableTags = setOf("PROXY", "germany")
+            )
+        }
+        assertTrue(missingTarget.isFailure)
+
+        val conflicting = runCatching {
+            ConfigRepository.requireValidApplicationRoutes(
+                route = com.kunk.singbox.model.RouteConfig(
+                    rules = listOf(
+                        RouteRule(packageName = listOf("org.telegram.messenger"), outbound = "germany"),
+                        RouteRule(packageName = listOf("org.telegram.messenger"), outbound = "PROXY")
+                    )
+                ),
+                availableTags = setOf("PROXY", "germany")
+            )
+        }
+        assertTrue(conflicting.isFailure)
     }
 
     @Test
@@ -240,15 +316,18 @@ class ConfigRepositoryRoutingP1Test {
             validRuleSets = emptyList()
         )
 
-        assertEquals(listOf("tun-in"), rules[0].inbound)
-        assertEquals(listOf(53), rules[0].port)
-        assertEquals("hijack-dns", rules[0].action)
-        assertEquals(listOf("tun-in", "mixed-in"), rules[1].inbound)
-        assertEquals("sniff", rules[1].action)
-        assertEquals(listOf("dns"), rules[2].protocol)
-        assertEquals("hijack-dns", rules[2].action)
-        assertEquals(listOf(853), rules[3].port)
-        assertEquals("reject", rules[3].action)
+        val tunDnsIndex = rules.indexOfFirst { it.inbound == listOf("tun-in") && it.port == listOf(53) }
+        val sniffIndex = rules.indexOfFirst { it.inbound == listOf("tun-in", "mixed-in") && it.action == "sniff" }
+        val protocolDnsIndex = rules.indexOfFirst { it.protocol == listOf("dns") && it.action == "hijack-dns" }
+        val dotIndex = rules.indexOfFirst { it.port == listOf(853) && it.action == "reject" }
+        val stunIndex = rules.indexOfFirst { it.protocol == listOf("stun") && it.action == "reject" }
+
+        assertTrue(tunDnsIndex >= 0)
+        assertEquals(tunDnsIndex + 1, sniffIndex)
+        assertEquals(sniffIndex + 1, protocolDnsIndex)
+        assertEquals(protocolDnsIndex + 1, dotIndex)
+        assertEquals(dotIndex + 1, stunIndex)
+        assertTrue(rules.take(tunDnsIndex).all { !it.ipCidr.isNullOrEmpty() })
     }
 
     private fun profile(id: String, name: String): ProfileEntity {

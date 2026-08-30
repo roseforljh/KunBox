@@ -19,6 +19,7 @@ import com.kunk.singbox.model.SingBoxConfig
 import com.kunk.singbox.model.ProfileType
 import com.kunk.singbox.model.RoutingMode
 import com.kunk.singbox.model.TlsConfig
+import com.kunk.singbox.model.TrafficCaptureMode
 import com.kunk.singbox.model.resolveDnsStrategy
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -506,6 +507,31 @@ abstract class ConfigRepositoryTestPart8 : ConfigRepositoryTestPart7() {
         assertEquals("hijack-dns", rules[2].action)
         assertEquals(listOf(853), rules[3].port)
         assertEquals("reject", rules[3].action)
+    }
+
+    @Test
+    fun testRootCaptureRulesUseTproxyInbound() {
+        val settings = AppSettings(trafficCaptureMode = TrafficCaptureMode.ROOT_TRANSPARENT)
+        val routeRules = ConfigRepository.buildHijackDnsRulesStatic(settings)
+        val dnsRules = ConfigRepository.buildTunFakeIpDnsRulesStatic(true, settings)
+
+        val rootTags = listOf("redirect-in-v4", "tproxy-in-v4", "redirect-in-v6", "tproxy-in-v6")
+        assertEquals(rootTags, routeRules[0].inbound)
+        assertEquals(rootTags, routeRules[1].inbound)
+        assertEquals(rootTags, dnsRules.single().inbound)
+    }
+
+    @Test
+    fun testRuntimeRouteBuilderPassesCaptureModeToDnsRules() {
+        val source = java.io.File(
+            "src/main/java/com/kunk/singbox/repository/ConfigRepository.kt"
+        ).readText()
+
+        assertTrue(
+            source.contains(
+                "val hijackDnsRule = ConfigRepository.buildHijackDnsRulesStatic(settings, rootRoutingPlan)"
+            )
+        )
     }
 
     @Test

@@ -107,7 +107,8 @@ data class NodeUi(
     @SerializedName("tags") val tags: List<String> = emptyList(),
     @SerializedName("trafficUsed") val trafficUsed: Long = 0,
     @SerializedName("autoSelectionEligible") val autoSelectionEligible: Boolean = true,
-    @SerializedName("meteredProtected") val meteredProtected: Boolean = false
+    @SerializedName("meteredProtected") val meteredProtected: Boolean = false,
+    @SerializedName("hasDetour") val hasDetour: Boolean = false
 ) {
     val displayName: String
         get() = name
@@ -142,7 +143,8 @@ data class InstalledAppUi(
     val packageName: String,
     val appName: String,
     val isSystemApp: Boolean,
-    val hasLauncher: Boolean
+    val hasLauncher: Boolean,
+    val uid: Int = -1
 )
 
 enum class ConnectionState(@StringRes val displayNameRes: Int) {

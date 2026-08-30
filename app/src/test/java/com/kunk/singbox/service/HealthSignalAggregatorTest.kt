@@ -8,6 +8,37 @@ import org.junit.Test
 class HealthSignalAggregatorTest {
 
     @Test
+    fun remoteHttpsRecordTimeoutsContributeToDnsFailureSignal() {
+        val aggregator = HealthSignalAggregator(minDnsFailures = 3, minDnsQueryIds = 2)
+        listOf("11", "12", "13").forEachIndexed { index, queryId ->
+            aggregator.observeKernelLog(
+                "DEBUG [$queryId 0ms] dns: match[1] => route(dns-remote-test)",
+                nowMs = 1_000L + index
+            )
+        }
+
+        assertNull(
+            aggregator.observeKernelLog(
+                "ERROR [11 10s] dns: exchange failed for a.example. IN HTTPS: context deadline exceeded",
+                nowMs = 2_000L
+            )
+        )
+        assertNull(
+            aggregator.observeKernelLog(
+                "ERROR [12 10s] dns: exchange failed for b.example. IN HTTPS: context deadline exceeded",
+                nowMs = 2_001L
+            )
+        )
+        val signal = aggregator.observeKernelLog(
+            "ERROR [13 10s] dns: exchange failed for c.example. IN HTTPS: context deadline exceeded",
+            nowMs = 2_002L
+        )
+
+        assertEquals(HealthSignalKind.REMOTE_DNS_TIMEOUT, signal?.kind)
+        assertEquals("dns-remote-test", signal?.dnsServerTag)
+    }
+
+    @Test
     fun recentRemoteDnsFailureCountSurvivesSignalEmissionAndClear() {
         val aggregator = HealthSignalAggregator(
             dnsWindowMs = 7_000L,

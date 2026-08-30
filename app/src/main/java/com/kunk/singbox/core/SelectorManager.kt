@@ -121,8 +121,15 @@ object SelectorManager {
     suspend fun switchNode(
         nodeTag: String,
         confirmationTimeoutMs: Long = SELECTION_CONFIRMATION_TIMEOUT_MS
+    ): SwitchResult = switchNode(PROXY_SELECTOR_TAG, nodeTag, currentOutboundTags, confirmationTimeoutMs)
+
+    suspend fun switchNode(
+        groupTag: String,
+        nodeTag: String,
+        allowedOutboundTags: Collection<String>,
+        confirmationTimeoutMs: Long = SELECTION_CONFIRMATION_TIMEOUT_MS
     ): SwitchResult = selectionMutex.withLock {
-        if (!hasSelector() || !currentOutboundTags.contains(nodeTag)) {
+        if (groupTag.isBlank() || nodeTag !in allowedOutboundTags) {
             return@withLock SwitchResult.NeedRestart("Node not in current selector")
         }
 
@@ -131,16 +138,16 @@ object SelectorManager {
         val beforeRevision = kernelSelectionTracker.currentRevision()
         pendingSelectionTarget = nodeTag
         try {
-            client.selectOutbound(PROXY_SELECTOR_TAG, nodeTag)
+            client.selectOutbound(groupTag, nodeTag)
             val actual = kernelSelectionTracker.awaitSelection(
-                groupTag = PROXY_SELECTOR_TAG,
+                groupTag = groupTag,
                 expectedTag = nodeTag,
                 afterRevision = beforeRevision,
                 timeoutMs = confirmationTimeoutMs
             )
             when (actual) {
                 nodeTag -> {
-                    Log.i(TAG, "Hot switch confirmed by kernel: $PROXY_SELECTOR_TAG -> $nodeTag")
+                    Log.i(TAG, "Hot switch confirmed by kernel: $groupTag -> $nodeTag")
                     SwitchResult.Success("CommandClient+KernelAck")
                 }
                 null -> {

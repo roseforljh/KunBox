@@ -6,8 +6,17 @@ import android.os.Bundle
 import android.os.IBinder
 import com.kunk.singbox.aidl.ISingBoxService
 import com.kunk.singbox.aidl.ISingBoxServiceCallback
+import com.kunk.singbox.service.root.RootTransparentForegroundService
+import com.kunk.singbox.service.root.RootServicePrewarmer
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 
 class SingBoxIpcService : Service() {
+
+    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     private val binder = object : ISingBoxService.Stub() {
         override fun getStateSnapshot(): Bundle = SingBoxIpcHub.getStateSnapshotBundle()
@@ -24,6 +33,11 @@ class SingBoxIpcService : Service() {
 
         override fun notifyAppLifecycle(isForeground: Boolean) {
             SingBoxIpcHub.onAppLifecycle(isForeground)
+            if (isForeground) {
+                scheduleRootPrewarm()
+            } else {
+                serviceScope.launch { RootServicePrewarmer.stopIdle() }
+            }
         }
 
         override fun hotReloadConfig(configContent: String?): Int {
@@ -44,13 +58,31 @@ class SingBoxIpcService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        if (
+            VpnStateStore.getMode() == VpnStateStore.CoreMode.ROOT &&
+            !RootTransparentForegroundService.isRunning &&
+            !RootTransparentForegroundService.isStarting
+        ) {
+            VpnStateStore.setActive(false)
+            VpnStateStore.setPending("")
+            VpnStateStore.setMode(VpnStateStore.CoreMode.NONE)
+        }
         SingBoxIpcHub.registerService(this)
+        scheduleRootPrewarm()
     }
 
     override fun onDestroy() {
+        serviceScope.cancel()
         SingBoxIpcHub.unregisterService()
         super.onDestroy()
     }
 
-    override fun onBind(intent: Intent?): IBinder = binder
+    override fun onBind(intent: Intent?): IBinder {
+        scheduleRootPrewarm()
+        return binder
+    }
+
+    private fun scheduleRootPrewarm() {
+        serviceScope.launch { RootServicePrewarmer.prewarmIfIdle(this@SingBoxIpcService) }
+    }
 }

@@ -15,7 +15,13 @@ internal data class ConnectionTrafficEventData(
     val protocol: String? = null,
     val source: String? = null,
     val outbound: String? = null,
-    val chain: List<String> = emptyList()
+    val fromOutbound: String? = null,
+    val chain: List<String> = emptyList(),
+    val routeRule: String? = null,
+    val destination: String? = null,
+    val domain: String? = null,
+    val routeRuleSemantic: String = "unknown",
+    val attributionStatus: String = "unknown"
 )
 
 internal data class AttributedConnectionTraffic(
@@ -25,6 +31,7 @@ internal data class AttributedConnectionTraffic(
 )
 
 internal object ConnectionTrafficEventReader {
+    @Suppress("CognitiveComplexMethod")
     fun read(events: io.nekohasekai.libbox.ConnectionEvents): List<ConnectionTrafficEventData> {
         val iterator = events.iterator()
         return buildList {
@@ -40,6 +47,7 @@ internal object ConnectionTrafficEventReader {
                         val fromOutbound = runCatching { connection?.fromOutbound }.getOrNull()
                             ?.takeIf(String::isNotBlank)
                         val processInfo = runCatching { connection?.processInfo }.getOrNull()
+                        val routeRule = runCatching { connection?.rule }.getOrNull()?.takeIf(String::isNotBlank)
                         add(
                             ConnectionTrafficEventData(
                                 type = event.type,
@@ -64,7 +72,14 @@ internal object ConnectionTrafficEventReader {
                                 source = runCatching { connection?.source }.getOrNull()
                                     ?.takeIf(String::isNotBlank),
                                 outbound = outbound,
-                                chain = chain
+                                fromOutbound = fromOutbound,
+                                chain = chain,
+                                routeRule = routeRule,
+                                destination = runCatching { connection?.destination }.getOrNull()
+                                    ?.takeIf(String::isNotBlank),
+                                domain = runCatching { connection?.domain }.getOrNull()?.takeIf(String::isNotBlank),
+                                routeRuleSemantic = classifyRouteRuleSemantic(routeRule),
+                                attributionStatus = if (processInfo != null) "attributed" else "unknown"
                             )
                         )
                     }
@@ -80,6 +95,19 @@ internal object ConnectionTrafficEventReader {
                 iterator.next()?.takeIf(String::isNotBlank)?.let(::add)
             }
         }.distinct()
+    }
+
+    internal fun classifyRouteRuleSemantic(rule: String?): String {
+        val value = rule?.lowercase().orEmpty()
+        return when {
+            value.isBlank() -> "unknown"
+            "package_name" in value || "process_name" in value || "user_id" in value -> "user_app_rule"
+            "rule_set" in value -> "user_rule_set"
+            "ip_is_private" in value || "private" in value -> "private_network"
+            "icmp" in value -> "icmp"
+            "final" in value -> "fallback_final"
+            else -> "unknown"
+        }
     }
 }
 

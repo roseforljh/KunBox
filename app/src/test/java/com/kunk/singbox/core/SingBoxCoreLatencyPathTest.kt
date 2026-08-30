@@ -8,7 +8,7 @@ import com.kunk.singbox.model.DomainResolveConfig
 import com.kunk.singbox.model.Outbound
 import com.kunk.singbox.model.RoutingMode
 import com.kunk.singbox.model.WireGuardPeer
-import com.kunk.singbox.repository.ConfigRepository
+import com.kunk.singbox.repository.*
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull

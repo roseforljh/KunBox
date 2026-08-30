@@ -8,11 +8,16 @@ import com.kunk.singbox.model.DnsServer
 import com.kunk.singbox.model.DomainResolveConfig
 import com.kunk.singbox.model.Endpoint
 import com.kunk.singbox.model.Outbound
+import com.kunk.singbox.model.RootAppRoutingAssignment
+import com.kunk.singbox.model.RootAppRoutingPlanCompiler
 import com.kunk.singbox.model.RouteRule
 import com.kunk.singbox.model.RoutingMode
 import com.kunk.singbox.model.RuleType
 import com.kunk.singbox.model.SingBoxConfig
+import com.kunk.singbox.model.TrafficCaptureMode
+import com.kunk.singbox.model.TunStack
 import com.kunk.singbox.model.WireGuardPeer
+import com.kunk.singbox.repository.config.InboundBuilder
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -20,6 +25,118 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ConfigRepositoryRoutingDnsPolicyTest {
+
+    @Test
+    @Suppress("LongMethod")
+    fun rootLaneValidationRequiresEveryTcpUdpAndDnsInbound() {
+        val settings = AppSettings(
+            trafficCaptureMode = TrafficCaptureMode.ROOT_TRANSPARENT,
+            routingMode = RoutingMode.RULE
+        )
+        val plan = RootAppRoutingPlanCompiler.compile(
+            settings,
+            listOf(
+                RootAppRoutingAssignment(
+                    packageNames = listOf("org.telegram.messenger"),
+                    targetKind = "OUTBOUND",
+                    outboundTag = "🇺🇸 VL | 美国 \"1.1\" \\ residential",
+                    sourceLabel = "Telegram"
+                )
+            ),
+            generation = 1L
+        )
+        val lane = plan.lanes.single()
+        val laneInbounds = lane.inboundTags(plan.proxyIpv4, plan.proxyIpv6)
+        val dnsTag = ConfigRepository.buildDynamicDnsServerTag(lane.outboundTag)
+        val valid = SingBoxConfig(
+            inbounds = InboundBuilder.build(settings, TunStack.SYSTEM, plan),
+            outbounds = listOf(
+                Outbound(type = "socks", tag = lane.outboundTag),
+                Outbound(type = "direct", tag = "direct")
+            ),
+            route = com.kunk.singbox.model.RouteConfig(
+                rules = listOf(RouteRule(inbound = laneInbounds, action = "route", outbound = lane.outboundTag))
+            ),
+            dns = DnsConfig(
+                servers = listOf(DnsServer(type = "udp", tag = dnsTag, server = "1.1.1.1")),
+                rules = listOf(DnsRule(inbound = laneInbounds, action = "route", server = dnsTag))
+            )
+        )
+
+        ConfigRepository.requireValidRootApplicationRoutes(valid, plan)
+
+        assertTrue(runCatching {
+            ConfigRepository.requireValidRootApplicationRoutes(
+                valid.copy(
+                    route = valid.route?.copy(
+                        rules = listOf(
+                            RouteRule(
+                                inbound = laneInbounds.dropLast(1),
+                                action = "route",
+                                outbound = lane.outboundTag
+                            )
+                        )
+                    )
+                ),
+                plan
+            )
+        }.isFailure)
+        assertTrue(runCatching {
+            ConfigRepository.requireValidRootApplicationRoutes(
+                valid.copy(
+                    dns = valid.dns?.copy(
+                        rules = listOf(DnsRule(inbound = laneInbounds.drop(1), action = "route", server = dnsTag))
+                    )
+                ),
+                plan
+            )
+        }.isFailure)
+        assertTrue(runCatching {
+            ConfigRepository.requireValidRootApplicationRoutes(
+                valid.copy(
+                    route = valid.route?.copy(
+                        rules = listOf(
+                            RouteRule(inbound = laneInbounds, action = "resolve", outbound = lane.outboundTag)
+                        )
+                    )
+                ),
+                plan
+            )
+        }.isFailure)
+        assertTrue(runCatching {
+            ConfigRepository.requireValidRootApplicationRoutes(
+                valid.copy(
+                    dns = valid.dns?.copy(
+                        rules = listOf(
+                            DnsRule(
+                                inbound = laneInbounds,
+                                action = "route",
+                                server = dnsTag,
+                                sourcePort = listOf(53)
+                            )
+                        )
+                    )
+                ),
+                plan
+            )
+        }.isFailure)
+    }
+
+    @Test
+    fun rootLaneDnsRuleAddsAddressQueriesWhenFakeDnsIsEnabled() {
+        val laneInbounds = listOf("root-lane-000-tcp-v4", "root-lane-000-udp-v4")
+        val rules = ConfigRepository.buildOrderedDnsRules(
+            entries = listOf(
+                DnsRule(inbound = laneInbounds) to
+                    ConfigRepository.OutboundSemantic.RouteTag("PROXY")
+            ),
+            fakeDnsEnabled = true,
+            directServerTag = "local",
+            proxyServerTag = ConfigRepository.buildDynamicDnsServerTag("PROXY")
+        )
+
+        assertEquals(listOf("A", "AAAA"), rules.single().queryType)
+    }
 
     @Test
     fun sharedUidExpansionKeepsCompletePackageSet() {
@@ -30,6 +147,20 @@ class ConfigRepositoryRoutingDnsPolicyTest {
         )
 
         assertEquals(listOf("com.example.one", "com.example.two"), packages)
+    }
+
+    @Test
+    fun capturedPackageFilteringFollowsActualCaptureMode() {
+        assertTrue(
+            ConfigRepository.shouldFilterCapturedPackages(
+                AppSettings(tunEnabled = false, trafficCaptureMode = TrafficCaptureMode.ROOT_TRANSPARENT)
+            )
+        )
+        assertFalse(
+            ConfigRepository.shouldFilterCapturedPackages(
+                AppSettings(tunEnabled = false, trafficCaptureMode = TrafficCaptureMode.PROXY_ONLY)
+            )
+        )
     }
 
     @Test
@@ -107,9 +238,27 @@ class ConfigRepositoryRoutingDnsPolicyTest {
         val app = DnsRule(packageName = listOf("com.example"))
         val ruleSet = DnsRule(ruleSet = listOf("geosite-cn"))
         assertEquals(
-            listOf(domain, app, ruleSet),
+            listOf(app, domain, ruleSet),
             ConfigRepository.mergeUserDnsRules(listOf(domain), listOf(app), listOf(ruleSet))
         )
+    }
+
+    @Test
+    fun rootRuleSetTunAliasExpandsToTransparentCaptureInbounds() {
+        assertEquals(
+            listOf("redirect-in-v4", "tproxy-in-v4", "redirect-in-v6", "tproxy-in-v6"),
+            ConfigRepository.normalizeRuleSetInboundTags(
+                listOf("tun-in"),
+                AppSettings(trafficCaptureMode = com.kunk.singbox.model.TrafficCaptureMode.ROOT_TRANSPARENT)
+            )
+        )
+    }
+
+    @Test
+    fun rootRuntimeKeepsDebugRoutingSignalsWhileOtherModesStayInfo() {
+        assertEquals("debug", ConfigRepository.resolveRunLogLevel(TrafficCaptureMode.ROOT_TRANSPARENT))
+        assertEquals("info", ConfigRepository.resolveRunLogLevel(TrafficCaptureMode.VPN))
+        assertEquals("info", ConfigRepository.resolveRunLogLevel(TrafficCaptureMode.PROXY_ONLY))
     }
 
     @Test

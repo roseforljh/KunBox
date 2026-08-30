@@ -125,14 +125,13 @@ object NetworkAutoSwitchManager {
 
         setStoppedByTrustedWifi(context, true)
         Log.i(TAG, "Stopping VPN for trusted WiFi: ${ssid.orEmpty()}")
-        VpnServiceManager.stopVpn(context)
+        VpnServiceManager.stopVpn(context, VpnStopInitiator.TRUSTED_WIFI)
     }
 
     private fun startForCellular(context: Context) {
         if (!claimActionSlot()) return
 
         Log.i(TAG, "Starting VPN after switching to cellular")
-        VpnStateStore.setManuallyStopped(false)
         VpnServiceManager.startVpn(context)
             .onSuccess {
                 setStoppedByTrustedWifi(context, false)

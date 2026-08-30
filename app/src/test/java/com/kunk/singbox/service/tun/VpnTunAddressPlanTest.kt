@@ -6,8 +6,98 @@ import com.kunk.singbox.model.AppSettings
 import com.kunk.singbox.model.IpVersionMode
 import com.kunk.singbox.model.VpnRouteMode
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertThrows
+import java.util.concurrent.CancellationException
 
 class VpnTunAddressPlanTest {
+
+    @org.junit.Test
+    fun tunRetryCreatesANewAttemptAfterAnInvalidInterface() {
+        val attempts = mutableListOf<Int>()
+        val waits = mutableListOf<Long>()
+
+        val result = retryVpnInterfaceEstablishment(
+            backoffMs = longArrayOf(0L, 25L),
+            isStopping = { false },
+            sleep = waits::add,
+            createAttempt = { it },
+            establish = { attempt ->
+                attempts += attempt
+                if (attempt == 0) null else 42
+            },
+            isValid = { it > 0 },
+            closeInvalid = {}
+        )
+
+        assertEquals(42, result)
+        assertEquals(listOf(0, 1), attempts)
+        assertEquals(listOf(25L), waits)
+    }
+
+    @org.junit.Test
+    fun tunRetryContinuesAfterATransientEstablishException() {
+        val attempts = mutableListOf<Int>()
+
+        val result = retryVpnInterfaceEstablishment(
+            backoffMs = longArrayOf(0L, 25L),
+            isStopping = { false },
+            sleep = {},
+            createAttempt = { it },
+            establish = { attempt ->
+                attempts += attempt
+                if (attempt == 0) throw IllegalStateException("system VPN is still releasing")
+                42
+            },
+            isValid = { it > 0 },
+            closeInvalid = {}
+        )
+
+        assertEquals(42, result)
+        assertEquals(listOf(0, 1), attempts)
+    }
+
+    @org.junit.Test
+    fun tunRetryDoesNotHideDeterministicBuilderConfigurationErrors() {
+        var createCalls = 0
+
+        assertThrows(IllegalArgumentException::class.java) {
+            retryVpnInterfaceEstablishment(
+                backoffMs = longArrayOf(0L, 25L),
+                isStopping = { false },
+                sleep = {},
+                createAttempt = {
+                    createCalls++
+                    throw IllegalArgumentException("invalid route")
+                },
+                establish = { 42 },
+                isValid = { true },
+                closeInvalid = {}
+            )
+        }
+        assertEquals(1, createCalls)
+    }
+
+    @org.junit.Test
+    fun tunRetryStopsAsCancellationBeforeCreatingAnotherInterface() {
+        var stoppingChecks = 0
+        var establishCalls = 0
+
+        assertThrows(CancellationException::class.java) {
+            retryVpnInterfaceEstablishment(
+                backoffMs = longArrayOf(25L),
+                isStopping = { ++stoppingChecks > 1 },
+                sleep = {},
+                createAttempt = {
+                    establishCalls++
+                    it
+                },
+                establish = { 42 },
+                isValid = { true },
+                closeInvalid = {}
+            )
+        }
+        assertEquals(0, establishCalls)
+    }
 
     @org.junit.Test
     fun plannerUsesOnlyIpv4WhenIpv4Only() {

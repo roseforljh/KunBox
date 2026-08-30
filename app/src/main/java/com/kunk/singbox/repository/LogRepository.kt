@@ -160,6 +160,20 @@ internal fun writeLogBatchIfCurrent(
     return true
 }
 
+internal fun rebaseStaleDiagnosticBatch(
+    batch: LogPersistenceBatch,
+    currentGeneration: Long
+): LogPersistenceBatch? {
+    if (batch.generation == currentGeneration) return batch
+    val preserved = batch.lines.filter(LogRepository::isPreservedDiagnosticLine)
+    if (preserved.isEmpty()) return null
+    return batch.copy(
+        lines = preserved,
+        rewriteAll = false,
+        generation = currentGeneration
+    )
+}
+
 private fun fileHasGenerationMarker(file: File, generation: Long): Boolean {
     if (!file.exists()) return false
     return file.bufferedReader(Charsets.UTF_8).use { reader ->
@@ -600,6 +614,7 @@ class LogRepository private constructor() {
                 line.contains("[CONNECTION_STORM]") ||
                 line.contains("[HOT_SWITCH]") ||
                 line.contains("[HotReload]") ||
+                line.contains("[COMMAND_LOG]") ||
                 line.contains(" resource_fd ") ||
                 line.contains(" resource_fd_breakdown ") ||
                 line.contains(" resource_exhausted ") ||
@@ -650,8 +665,8 @@ class LogRepository private constructor() {
             withLogFileLock { file, generationFile ->
                 val currentGeneration = readLogGeneration(generationFile)
                 knownFileGeneration.set(currentGeneration)
-                writeLogBatchIfCurrent(file, currentGeneration, batch, maxLogSize)
-                true
+                val currentBatch = rebaseStaleDiagnosticBatch(batch, currentGeneration)
+                currentBatch == null || writeLogBatchIfCurrent(file, currentGeneration, currentBatch, maxLogSize)
             } ?: true
         } catch (e: CancellationException) {
             throw e

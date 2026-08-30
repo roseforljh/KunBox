@@ -12,6 +12,7 @@ import android.util.Log
 import com.kunk.singbox.core.LibboxCompat
 import com.kunk.singbox.core.StringIteratorImpl
 import com.kunk.singbox.model.AppSettings
+import com.kunk.singbox.model.PerAppVpnPolicy
 import com.kunk.singbox.model.RoutingMode
 import com.kunk.singbox.utils.DefaultNetworkListener
 import io.nekohasekai.libbox.ConnectionOwner
@@ -64,9 +65,14 @@ class PlatformInterfaceImpl(
         private const val IP_PROTOCOL_UDP = 17
         private val PROC_FS_WHITESPACE = Regex("\\s+")
         internal const val UID_PACKAGE_CACHE_TTL_MS = 5 * 60 * 1000L
+        internal const val UNKNOWN_CONNECTION_OWNER_UID = -1
 
         internal fun ensureSocketProtected(protected: Boolean, fd: Int) {
             if (!protected) throw IOException("VpnService.protect($fd) failed")
+        }
+
+        internal fun unknownConnectionOwner(): ConnectionOwner = ConnectionOwner().apply {
+            userId = UNKNOWN_CONNECTION_OWNER_UID
         }
 
         internal fun isUidPackageCacheFresh(cachedAtMs: Long, nowMs: Long): Boolean {
@@ -75,8 +81,17 @@ class PlatformInterfaceImpl(
 
         internal fun shouldForceConnectionOwnerRouting(settings: AppSettings?): Boolean {
             if (settings?.routingMode != RoutingMode.RULE) return false
-            return settings.appRules.any { it.enabled } || settings.appGroups.any { it.enabled }
+            val policy = PerAppVpnPolicy.from(settings)
+            return settings.appRules.any { it.enabled && policy.captures(it.packageName, "") } ||
+                settings.appGroups.any { group ->
+                    group.enabled && group.apps.any { policy.captures(it.packageName, "") }
+                }
         }
+
+        internal fun resolveForceConnectionOwnerRouting(
+            override: Boolean?,
+            settings: AppSettings?
+        ): Boolean = override ?: shouldForceConnectionOwnerRouting(settings)
 
         internal fun shouldExposeProcFsToLibbox(procFsReadable: Boolean, settings: AppSettings?): Boolean {
             if (!procFsReadable) return false
@@ -182,7 +197,8 @@ class PlatformInterfaceImpl(
 
         private fun resolveProcFsUidCandidates(
             candidates: List<ProcFsOwnerCandidate>,
-            allowUdpWildcardFallback: Boolean
+            allowUdpWildcardFallback: Boolean,
+            allowSourceEndpointFallback: Boolean
         ): ProcFsUidLookupResult {
             val fullTupleUids = candidates.filter(ProcFsOwnerCandidate::matchesFullTuple)
                 .mapNotNull(ProcFsOwnerCandidate::uid)
@@ -198,7 +214,8 @@ class PlatformInterfaceImpl(
                 fullTupleUids.size == 1 -> {
                     ProcFsUidLookupResult(ProcFsUidLookupStatus.RESOLVED, fullTupleUids.first())
                 }
-                !allowUdpWildcardFallback || candidates.none(ProcFsOwnerCandidate::isWildcardRemote) -> {
+                !allowSourceEndpointFallback &&
+                    (!allowUdpWildcardFallback || candidates.none(ProcFsOwnerCandidate::isWildcardRemote)) -> {
                     ProcFsUidLookupResult(ProcFsUidLookupStatus.NOT_FOUND)
                 }
                 sourceEndpointUids.size > 1 || (sourceEndpointUids.isNotEmpty() && hasInvalidSourceOwner) -> {
@@ -215,7 +232,8 @@ class PlatformInterfaceImpl(
             lines: Sequence<String>,
             sourceEndpoint: String,
             destinationEndpoint: String,
-            allowUdpWildcardFallback: Boolean = false
+            allowUdpWildcardFallback: Boolean = false,
+            allowSourceEndpointFallback: Boolean = false
         ): ProcFsUidLookupResult {
             val iterator = lines.iterator()
             val headerIsValid = iterator.hasNext() && iterator.next().let { header ->
@@ -228,7 +246,11 @@ class PlatformInterfaceImpl(
             val candidates = iterator.asSequence()
                 .mapNotNull { line -> parseProcFsOwnerCandidate(line, sourceEndpoint, destinationEndpoint) }
                 .toList()
-            return resolveProcFsUidCandidates(candidates, allowUdpWildcardFallback)
+            return resolveProcFsUidCandidates(
+                candidates,
+                allowUdpWildcardFallback,
+                allowSourceEndpointFallback
+            )
         }
 
         internal fun networkInterfaceTypeForName(name: String): Int {
@@ -294,6 +316,10 @@ class PlatformInterfaceImpl(
 
         fun getCurrentSettings(): com.kunk.singbox.model.AppSettings?
 
+        fun forceConnectionOwnerRouting(): Boolean? = null
+
+        fun preferConnectivityOwnerRouting(): Boolean = false
+
         fun incrementConnectionOwnerCalls()
         fun incrementConnectionOwnerInvalidArgs()
         fun incrementConnectionOwnerUidResolved()
@@ -318,6 +344,7 @@ class PlatformInterfaceImpl(
 
     // ProcFS readability cache (avoid repeated /proc reads)
     private val lastProcFsCheckAtMs = AtomicLong(0L)
+    private val lastOwnerTraceAtMs = AtomicLong(0L)
     @Volatile private var cachedProcFsReadable: Boolean? = null
     private val procFsCheckIntervalMs: Long = 5 * 60_000L
 
@@ -420,8 +447,12 @@ class PlatformInterfaceImpl(
     override fun useProcFS(): Boolean {
         val procFsReadable = getProcFsReadable()
         val settings = callbacks.getCurrentSettings()
-        val exposeProcFs = shouldExposeProcFsToLibbox(procFsReadable, settings)
-        if (!exposeProcFs && procFsReadable && shouldForceConnectionOwnerRouting(settings)) {
+        val forceOwnerRouting = resolveForceConnectionOwnerRouting(
+            callbacks.forceConnectionOwnerRouting(),
+            settings
+        )
+        val exposeProcFs = procFsReadable && !forceOwnerRouting
+        if (!exposeProcFs && procFsReadable && forceOwnerRouting) {
             callbacks.setConnectionOwnerLastEvent("app_routing_force_findConnectionOwner")
         }
         return exposeProcFs
@@ -439,9 +470,13 @@ class PlatformInterfaceImpl(
 
         // Avoid expensive /proc scanning when it's known to be unreadable.
         val procFsUsable = runCatching { getProcFsReadable() }.getOrDefault(false)
+        val forceConnectionOwnerRouting = resolveForceConnectionOwnerRouting(
+            callbacks.forceConnectionOwnerRouting(),
+            callbacks.getCurrentSettings()
+        )
 
         fun toConnectionOwner(uid: Int): ConnectionOwner {
-            if (uid <= 0) return ConnectionOwner()
+            if (uid <= 0) return unknownConnectionOwner()
             val cachedPackageName = callbacks.getUidFromCache(uid)
             val packageNames = PlatformInterfaceImpl.resolvePackageNames(uid, cachedPackageName) {
                 context.packageManager.getPackagesForUid(uid)?.toList()
@@ -450,6 +485,15 @@ class PlatformInterfaceImpl(
             val primaryPackageName = packageNames.firstOrNull().orEmpty()
             if (primaryPackageName.isNotBlank() && primaryPackageName != cachedPackageName) {
                 callbacks.cacheUidToPackage(uid, primaryPackageName)
+            }
+            val telegramUid = runCatching {
+                context.packageManager.getApplicationInfo("org.telegram.messenger", 0).uid
+            }.getOrNull()
+            if (uid == telegramUid || "org.telegram.messenger" in packageNames) {
+                Log.i(
+                    TAG,
+                    "[APP_ROUTE_TRACE] owner_resolved uid=$uid packages=${packageNames.joinToString("|")}"
+                )
             }
             return ConnectionOwner().apply {
                 userId = uid
@@ -482,8 +526,11 @@ class PlatformInterfaceImpl(
             callbacks.setConnectionOwnerLastEvent(
                 "invalid_args src=$sourceAddress:$sourcePort dst=$destinationAddress:$destinationPort proto=$ipProtocol"
             )
-            return ConnectionOwner()
+            return unknownConnectionOwner()
         }
+
+        val ownerSourceIp = sourceIp
+        val ownerDestinationIp = destinationIp
 
         fun findUidFromProcFsByConnection(): ProcFsUidLookupResult {
             if (!procFsUsable) return ProcFsUidLookupResult(ProcFsUidLookupStatus.UNAVAILABLE)
@@ -508,7 +555,8 @@ class PlatformInterfaceImpl(
                         lines = lines,
                         sourceEndpoint = sourceEndpoint,
                         destinationEndpoint = destinationEndpoint,
-                        allowUdpWildcardFallback = protocol == IP_PROTOCOL_UDP
+                        allowUdpWildcardFallback = protocol == IP_PROTOCOL_UDP,
+                        allowSourceEndpointFallback = forceConnectionOwnerRouting && protocol == IP_PROTOCOL_TCP
                     )
                 }
             } catch (e: Exception) {
@@ -544,47 +592,80 @@ class PlatformInterfaceImpl(
             return toConnectionOwner(uid)
         }
 
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
-            return resolveFromProcFs("legacy_api_${Build.VERSION.SDK_INT}") ?: ConnectionOwner()
+        fun resolveFromConnectivityManager(): ConnectionOwner? {
+            val cm = callbacks.getConnectivityManager() ?: return null
+            return try {
+                val uid = cm.getConnectionOwnerUid(
+                    protocol,
+                    InetSocketAddress(ownerSourceIp, sourcePort),
+                    InetSocketAddress(ownerDestinationIp, destinationPort)
+                )
+                if (uid > 0) {
+                    callbacks.incrementConnectionOwnerUidResolved()
+                    callbacks.setConnectionOwnerLastUid(uid)
+                    callbacks.setConnectionOwnerLastEvent(
+                        "resolved uid=$uid proto=$protocol $sourceIp:$sourcePort->$destinationIp:$destinationPort"
+                    )
+                    toConnectionOwner(uid)
+                } else {
+                    traceConnectionOwner("owner_unresolved uid=$uid proto=$protocol")
+                    callbacks.setConnectionOwnerLastEvent(
+                        "unresolved uid=$uid proto=$protocol $sourceIp:$sourcePort->$destinationIp:$destinationPort"
+                    )
+                    null
+                }
+            } catch (e: SecurityException) {
+                callbacks.incrementConnectionOwnerSecurityDenied()
+                traceConnectionOwner("owner_security_denied proto=$protocol error=${e.javaClass.simpleName}")
+                callbacks.setConnectionOwnerLastEvent(
+                    "SecurityException findConnectionOwner proto=$protocol " +
+                        "$sourceIp:$sourcePort->$destinationIp:$destinationPort"
+                )
+                if (!forceConnectionOwnerRouting && !callbacks.isConnectionOwnerPermissionDeniedLogged()) {
+                    callbacks.setConnectionOwnerPermissionDeniedLogged(true)
+                    Log.w(TAG, "findConnectionOwner permission denied; app routing may not work on this ROM", e)
+                    com.kunk.singbox.repository.LogRepository.getInstance()
+                        .addLog("WARN: findConnectionOwner permission denied; per-app routing disabled on this ROM")
+                }
+                null
+            } catch (e: Exception) {
+                callbacks.incrementConnectionOwnerOtherException()
+                traceConnectionOwner("owner_exception proto=$protocol error=${e.javaClass.simpleName}")
+                callbacks.setConnectionOwnerLastEvent("Exception ${e.javaClass.simpleName}: ${e.message}")
+                null
+            }
         }
 
-        return try {
-            val cm = callbacks.getConnectivityManager() ?: return ConnectionOwner()
-            val uid = cm.getConnectionOwnerUid(
-                protocol,
-                InetSocketAddress(sourceIp, sourcePort),
-                InetSocketAddress(destinationIp, destinationPort)
-            )
-            if (uid > 0) {
-                callbacks.incrementConnectionOwnerUidResolved()
-                callbacks.setConnectionOwnerLastUid(uid)
-                callbacks.setConnectionOwnerLastEvent(
-                    "resolved uid=$uid proto=$protocol $sourceIp:$sourcePort->$destinationIp:$destinationPort"
-                )
-                toConnectionOwner(uid)
+        if (forceConnectionOwnerRouting) {
+            val owner = if (callbacks.preferConnectivityOwnerRouting()) {
+                // Root TProxy 的重定向 socket 可能在 ProcFS 中显示为 Root UID，优先查原始五元组。
+                resolveFromConnectivityManager() ?: resolveFromProcFs("forced_fallback")
             } else {
-                callbacks.setConnectionOwnerLastEvent(
-                    "unresolved uid=$uid proto=$protocol $sourceIp:$sourcePort->$destinationIp:$destinationPort"
+                // VPN/TUN 下 ProcFS 保留应用真实 socket，优先使用它；系统接口常看不到 TUN 五元组。
+                resolveFromProcFs("forced") ?: resolveFromConnectivityManager()
+            }
+            return owner ?: unknownConnectionOwner().also {
+                traceConnectionOwner(
+                    "owner_unknown_after_fallback src=$sourceAddress:$sourcePort " +
+                        "dst=$destinationAddress:$destinationPort proto=$protocol"
                 )
-                ConnectionOwner()
             }
-        } catch (e: SecurityException) {
-            callbacks.incrementConnectionOwnerSecurityDenied()
-            callbacks.setConnectionOwnerLastEvent(
-                "SecurityException findConnectionOwner proto=$protocol " +
-                    "$sourceIp:$sourcePort->$destinationIp:$destinationPort"
-            )
-            if (!callbacks.isConnectionOwnerPermissionDeniedLogged()) {
-                callbacks.setConnectionOwnerPermissionDeniedLogged(true)
-                Log.w(TAG, "findConnectionOwner permission denied; app routing may not work on this ROM", e)
-                com.kunk.singbox.repository.LogRepository.getInstance()
-                    .addLog("WARN: findConnectionOwner permission denied; per-app routing disabled on this ROM")
-            }
-            resolveFromProcFs("security_denied") ?: ConnectionOwner()
-        } catch (e: Exception) {
-            callbacks.incrementConnectionOwnerOtherException()
-            callbacks.setConnectionOwnerLastEvent("Exception ${e.javaClass.simpleName}: ${e.message}")
-            resolveFromProcFs("exception_${e.javaClass.simpleName}") ?: ConnectionOwner()
+        }
+
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+            return resolveFromProcFs("legacy_api_${Build.VERSION.SDK_INT}") ?: unknownConnectionOwner()
+        }
+
+        return resolveFromConnectivityManager()
+            ?: resolveFromProcFs("connection_owner_fallback")
+            ?: unknownConnectionOwner()
+    }
+
+    private fun traceConnectionOwner(message: String) {
+        val now = SystemClock.elapsedRealtime()
+        val previous = lastOwnerTraceAtMs.get()
+        if (now - previous >= 1_000L && lastOwnerTraceAtMs.compareAndSet(previous, now)) {
+            Log.i(TAG, "[APP_ROUTE_TRACE] $message")
         }
     }
 
