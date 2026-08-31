@@ -287,7 +287,7 @@ internal fun KunBoxRootService.hotReloadLocked(
         }
     } catch (error: Exception) {
         Log.e(KunBoxRootService.TAG, "Root cold reload failed", error)
-        if (error is RootStopRequestedException) {
+        if (stopWasRequested(runtimeSessionId, error)) {
             val cleanupError = rollbackLocked()
             if (cleanupError == null) markStopped() else failCleanup(
                 cleanupError,

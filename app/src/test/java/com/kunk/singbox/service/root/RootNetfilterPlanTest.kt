@@ -8,6 +8,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicReference
 
 @Suppress("LargeClass")
 class RootNetfilterPlanTest {
@@ -698,6 +699,30 @@ class RootNetfilterPlanTest {
         val durationMs = (System.nanoTime() - startedAt) / 1_000_000L
         assertEquals(124, result.exitCode)
         assertTrue("Timed out Root command took ${durationMs}ms", durationMs < 1_500L)
+    }
+
+    @Test
+    fun stopCancelsCommandsStartedByEveryRootExecutor() {
+        val command = if (System.getProperty("os.name").orEmpty().startsWith("Windows", ignoreCase = true)) {
+            listOf("powershell.exe", "-NoProfile", "-NonInteractive", "-Command", "Start-Sleep -Seconds 5")
+        } else {
+            listOf("sh", "-c", "sleep 5")
+        }
+        val started = CountDownLatch(1)
+        val result = AtomicReference<RootCommandResult>()
+        val worker = Thread {
+            started.countDown()
+            result.set(ProcessRootCommandExecutor(timeoutMs = 10_000L).execute(command))
+        }
+        worker.start()
+        assertTrue(started.await(1, TimeUnit.SECONDS))
+        CountDownLatch(1).await(150, TimeUnit.MILLISECONDS)
+
+        ProcessRootCommandExecutor().cancelActiveCommands()
+        worker.join(1_500L)
+
+        assertFalse("Root command from another executor was not cancelled", worker.isAlive)
+        assertFalse(result.get().success)
     }
 
     private fun lane(slot: Int, uid: Int): RootNetfilterLane = RootNetfilterLane(

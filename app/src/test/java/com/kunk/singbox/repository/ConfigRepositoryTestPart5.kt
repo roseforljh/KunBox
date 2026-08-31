@@ -17,6 +17,7 @@ import com.kunk.singbox.model.BatchUpdateResult
 import com.kunk.singbox.model.RoutingMode
 import com.kunk.singbox.model.SubscriptionUpdateStage
 import com.kunk.singbox.model.SubscriptionUpdateResult
+import com.kunk.singbox.service.ServiceState
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
@@ -595,5 +596,30 @@ abstract class ConfigRepositoryTestPart5 : ConfigRepositoryTestPart4() {
         assertEquals(listOf("dns.google", "dns.alidns.com"), rules[0].domain)
         assertEquals(listOf("dns.google", "dns.alidns.com"), rules[1].domain)
         assertEquals(listOf("dns.google", "dns.alidns.com"), rules[2].domain)
+    }
+
+    @Test
+    fun configGenerationWaitsForAnActiveStopButAllowsACompletedStop() {
+        assertTrue(
+            configGenerationBlockedByStop(
+                pending = "stopping",
+                active = false,
+                runtimeStateOrdinal = ServiceState.STOPPING.ordinal
+            )
+        )
+        assertTrue(
+            configGenerationBlockedByStop(
+                pending = "stopping",
+                active = true,
+                runtimeStateOrdinal = ServiceState.STOPPED.ordinal
+            )
+        )
+        assertFalse(
+            configGenerationBlockedByStop(
+                pending = "stopping",
+                active = false,
+                runtimeStateOrdinal = ServiceState.STOPPED.ordinal
+            )
+        )
     }
 }
