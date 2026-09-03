@@ -1,5 +1,16 @@
 # Changelog
 
+## [2.24.1](https://github.com/roseforljh/KunBox/compare/v2.24.0...v2.24.1) (2026-09-03)
+
+
+### Bug Fixes
+
+* 优化 Root 模式停止流程与配置生成状态检查 ([fa8dcf1](https://github.com/roseforljh/KunBox/commit/fa8dcf1facffd8dcf8f419607770946e4a3c4b36))
+* 升级内核同步配置与 libbox.aar 二进制依赖 ([98df8cb](https://github.com/roseforljh/KunBox/commit/98df8cb39cae38f75da8973ec9aee0db743b881f))
+* 完善后台服务平台接口实现与 Root 应急清理流程 ([93c12ed](https://github.com/roseforljh/KunBox/commit/93c12ed8691caadcf7f58adfeb465dee419f9e3c))
+* 适配新版 PlatformInterface 接口与延迟探测运行时 ([720e4b6](https://github.com/roseforljh/KunBox/commit/720e4b626a198272a846b4e21a64b420915a061b))
+* 重构配置生成规则、Endpoint 转换与运行时 DNS 规范化 ([13f5a6c](https://github.com/roseforljh/KunBox/commit/13f5a6c2f94b74375a7e25d5abfbc9e7e1142482))
+
 ## [2.24.0](https://github.com/roseforljh/KunBox/compare/v2.23.1...v2.24.0) (2026-08-30)
 
 
