@@ -15,6 +15,7 @@ $trustedTagCommits = @{
     'v1.13.16' = '17ec3c71af8ca946dc50bf0d927c39fc77322aec'
     'v1.13.18' = '45ca32dcb966f07f97fc888fe8586e359dbe8405'
     'v1.13.19' = 'b5ebaa1fc0f2b94256180b95468e73ef53caa27d'
+    'v1.14.0' = '0b8995879f29a9b98ee027bc17b75e101445b238'
 }
 $trustedPatchHashes = @{
     'v1.13.14' = '4C89FE3A078F5DC68DA351BF04B1B9536D048925266E15332E5D6F2BFAB2ECE2'
@@ -22,6 +23,7 @@ $trustedPatchHashes = @{
     'v1.13.16' = '7C8318A5C9B77BF0BF623FA4D8610FF4190B188B9BD4D6149E0D9BF51E1B0172'
     'v1.13.18' = '660D190181ED104119A812B7ADC64E5E5C845E08AF8EAEB98860B9714A0EC10F'
     'v1.13.19' = '5C8F54ECC49D6BC112098EAFBE5E0A604621B24828584AFF3A10C5A07AB2355A'
+    'v1.14.0' = '9FB5E960C0C3350192A7A6744140C7AC4B2C6850BC85A7CF1D89CF4AE51A5D32'
 }
 $requiredKunBoxNativeMarkers = @{
     'v1.13.18' = @(
@@ -34,6 +36,12 @@ $requiredKunBoxNativeMarkers = @{
         'kunbox_physical_dial_gate_v1',
         'kunbox_wireguard_physical_gate_v1',
         'kunbox root override destination:'
+    )
+    'v1.14.0' = @(
+        'pre-handshake connection rejected: reason=',
+        'kunbox_physical_dial_gate_v1',
+        'kunbox_wireguard_physical_gate_v1',
+        'kunbox override destination:'
     )
 }
 $trustedPatchFiles = @{
@@ -83,6 +91,31 @@ $trustedPatchFiles = @{
         'common/dialer/physical_budget_test.go',
         'constant/proxy.go',
         'daemon/started_service.go',
+        'protocol/direct/outbound.go',
+        'protocol/direct/outbound_physical_budget_test.go',
+        'protocol/group/kunbox_selector_test.go',
+        'protocol/group/selector.go',
+        'protocol/group/urltest.go',
+        'protocol/vless/outbound.go',
+        'protocol/vless/outbound_test.go',
+        'route/conn.go',
+        'route/conn_packet_lifecycle_test.go',
+        'route/kunbox_root_destination_test.go',
+        'transport/wireguard/endpoint.go',
+        'transport/wireguard/endpoint_physical_budget_test.go'
+    )
+    'v1.14.0' = @(
+        'cmd/internal/build_libbox/main.go',
+        'common/dialer/default.go',
+        'common/dialer/default_parallel_interface.go',
+        'common/dialer/physical_budget.go',
+        'common/dialer/physical_budget_android.go',
+        'common/dialer/physical_budget_other.go',
+        'common/dialer/physical_budget_test.go',
+        'constant/proxy.go',
+        'daemon/started_service.go',
+        'experimental/libbox/native_shell_session.go',
+        'experimental/libbox/native_shell_session_stub.go',
         'protocol/direct/outbound.go',
         'protocol/direct/outbound_physical_budget_test.go',
         'protocol/group/kunbox_selector_test.go',
@@ -152,6 +185,22 @@ $trustedDependencyPatches = @{
             'stack_system.go',
             'stack_system_accept_test.go',
             'stack_system_nat.go'
+        )
+    }
+    'v1.14.0' = [pscustomobject]@{
+        ModulePath = 'github.com/sagernet/sing-tun'
+        Version = 'v0.9.0-beta.4'
+        FileName = 'sing-tun-v0.9.0-beta.4.patch'
+        Hash = '440DFB5F154F1FAFF43EBC88C73482AC658EA71C9221E3BF72B1A78FA72B4E77'
+        RequiredNativeMarker = 'system TCP connection limit reached: active='
+        Files = @(
+            'ping/destination.go',
+            'ping/destination_lifecycle_test.go',
+            'ping/port.go',
+            'stack_mixed.go',
+            'stack_mixed_test.go',
+            'stack_system.go',
+            'stack_system_accept_test.go'
         )
     }
 }
@@ -600,7 +649,7 @@ function Resolve-GoPath {
         Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } |
         Select-Object -First 1
     if ($null -eq $bundledGo) {
-        Fail 'go not found. Install Go 1.24+ or provide a bundled toolchain under .kernel-sync-local/tools.'
+        Fail 'go not found. Install Go 1.25+ or provide a bundled toolchain under .kernel-sync-local/tools.'
     }
     return $bundledGo
 }
@@ -962,8 +1011,19 @@ function Assert-NoUnbudgetedPhysicalDialSites {
     Assert-LiteralOccurrence 'common/dialer/default_parallel_interface.go' 'listenPhysicalPacket(ctx' 2
     Assert-LiteralOccurrence 'protocol/direct/outbound.go' 'dialer.AcquirePhysicalDial(ctx)' 1
     Assert-LiteralOccurrence 'protocol/direct/outbound.go' 'ping.ConnectDestination(' 1
-    Assert-LiteralOccurrence 'transport/wireguard/endpoint.go' `
-        'newBudgetedWireGuardBind(conn.NewStdNetBind(wgListener.WireGuardControl()))' 1
+    if ($resolvedTag -eq 'v1.14.0') {
+        Assert-LiteralOccurrence 'protocol/direct/outbound.go' 'ping.NewPortWithDestinationConnector(' 1
+        Assert-LiteralOccurrence 'experimental/libbox/native_shell_session.go' `
+            '//go:build with_tailscale && (linux || android || darwin || ios)' 1
+        Assert-LiteralOccurrence 'experimental/libbox/native_shell_session_stub.go' `
+            '//go:build !with_tailscale || (!linux && !android && !darwin && !ios)' 1
+    }
+    $wireGuardBindNeedle = if ($resolvedTag -eq 'v1.14.0') {
+        'newBudgetedWireGuardBind(standardBind)'
+    } else {
+        'newBudgetedWireGuardBind(conn.NewStdNetBind(wgListener.WireGuardControl()))'
+    }
+    Assert-LiteralOccurrence 'transport/wireguard/endpoint.go' $wireGuardBindNeedle 1
     Assert-LiteralOccurrence 'common/dialer/physical_budget.go' 'kunbox_physical_dial_gate_v1' 1
     Assert-LiteralOccurrence 'transport/wireguard/endpoint.go' 'kunbox_wireguard_physical_gate_v1' 1
     Assert-LiteralOccurrence 'route/conn.go' 'kunbox_physical_budget_v1 ' 1
@@ -972,8 +1032,17 @@ function Assert-NoUnbudgetedPhysicalDialSites {
 
     $directPath = Join-Path $upstreamDir 'protocol/direct/outbound.go'
     $directText = [System.IO.File]::ReadAllText($directPath)
+    $helperName = if ($resolvedTag -eq 'v1.14.0') {
+        'func acquireBudgetedPingDestination'
+    } else {
+        'func acquireBudgetedDirectRouteDestination('
+    }
+    $helperStart = $directText.IndexOf($helperName, [System.StringComparison]::Ordinal)
+    if ($helperStart -lt 0) {
+        Fail "ICMP budget helper is missing from protocol/direct/outbound.go: $helperName"
+    }
     $helperText = $directText.Substring(
-        $directText.IndexOf('func acquireBudgetedDirectRouteDestination(', [System.StringComparison]::Ordinal)
+        $helperStart
     )
     $acquireIndex = $helperText.IndexOf('dialer.AcquirePhysicalDial(ctx)', [System.StringComparison]::Ordinal)
     $connectIndex = $helperText.IndexOf('connect(dialContext)', [System.StringComparison]::Ordinal)
@@ -1095,7 +1164,10 @@ function Run-GoValidation([string] $goBinary) {
     )
     Invoke-External -FilePath $goBinary -Arguments (@('test') + $packages) -WorkingDirectory $upstreamDir -FailureMessage 'Patched Go package tests failed'
     Invoke-External -FilePath $goBinary -Arguments (@('test', '-race') + $packages) -WorkingDirectory $upstreamDir -FailureMessage 'Patched Go race tests failed'
-    Invoke-External -FilePath $goBinary -Arguments (@('vet') + $packages) -WorkingDirectory $upstreamDir -FailureMessage 'Patched Go vet failed'
+    $vetPackages = @($packages | Where-Object { $_ -ne './daemon' })
+    Invoke-External -FilePath $goBinary -Arguments (@('vet') + $vetPackages) -WorkingDirectory $upstreamDir -FailureMessage 'Patched Go vet failed'
+    # Go 1.26 flags an unchanged upstream unsafe.Pointer conversion in daemon/managed_service.go.
+    Invoke-External -FilePath $goBinary -Arguments @('vet', '-unsafeptr=false', './daemon') -WorkingDirectory $upstreamDir -FailureMessage 'Patched daemon vet failed'
 
     if ($null -ne $dependencyPatch) {
         $patchedDependencyDir = Join-Path $tempDir 'patched-sing-tun'
@@ -1105,12 +1177,20 @@ function Run-GoValidation([string] $goBinary) {
         Assert-GoTestsDiscovered -goBinary $goBinary -WorkingDirectory $patchedDependencyDir
         Assert-GoTestsDiscovered -goBinary $goBinary -WorkingDirectory $patchedDependencyDir `
             -BuildTags @('with_gvisor')
+        $patchedPingDir = Join-Path $patchedDependencyDir 'ping'
+        if (-not (Test-Path -LiteralPath $patchedPingDir -PathType Container)) {
+            Fail "Patched sing-tun ping package directory not found: $patchedPingDir"
+        }
+        Assert-GoTestsDiscovered -goBinary $goBinary -WorkingDirectory $patchedPingDir
         Invoke-External -FilePath $goBinary -Arguments @('test', '.') -WorkingDirectory $patchedDependencyDir -FailureMessage 'Patched sing-tun tests failed'
         Invoke-External -FilePath $goBinary -Arguments @('test', '-race', '.') -WorkingDirectory $patchedDependencyDir -FailureMessage 'Patched sing-tun race tests failed'
         Invoke-External -FilePath $goBinary -Arguments @('vet', '.') -WorkingDirectory $patchedDependencyDir -FailureMessage 'Patched sing-tun vet failed'
         Invoke-External -FilePath $goBinary -Arguments @('test', '-tags', 'with_gvisor', '.') -WorkingDirectory $patchedDependencyDir -FailureMessage 'Patched sing-tun gVisor tests failed'
         Invoke-External -FilePath $goBinary -Arguments @('test', '-race', '-tags', 'with_gvisor', '.') -WorkingDirectory $patchedDependencyDir -FailureMessage 'Patched sing-tun gVisor race tests failed'
         Invoke-External -FilePath $goBinary -Arguments @('vet', '-tags', 'with_gvisor', '.') -WorkingDirectory $patchedDependencyDir -FailureMessage 'Patched sing-tun gVisor vet failed'
+        Invoke-External -FilePath $goBinary -Arguments @('test', './ping') -WorkingDirectory $patchedDependencyDir -FailureMessage 'Patched sing-tun ping tests failed'
+        Invoke-External -FilePath $goBinary -Arguments @('test', '-race', './ping') -WorkingDirectory $patchedDependencyDir -FailureMessage 'Patched sing-tun ping race tests failed'
+        Invoke-External -FilePath $goBinary -Arguments @('vet', './ping') -WorkingDirectory $patchedDependencyDir -FailureMessage 'Patched sing-tun ping vet failed'
     }
 }
 
