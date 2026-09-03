@@ -596,7 +596,6 @@ internal fun ConfigRepository.Companion.buildOutboundDomainResolverDnsRules(outb
             queryType = IP_DNS_QUERY_TYPES,
             action = "route",
             server = resolver.server,
-            strategy = resolver.strategy,
             disableCache = resolver.disableCache,
             rewriteTtl = resolver.rewriteTtl,
             clientSubnet = resolver.clientSubnet
@@ -610,19 +609,20 @@ internal fun ConfigRepository.Companion.applyDefaultOutboundDomainResolver(
     defaultResolverStrategy: String? = null): List<Outbound> {
     return outbounds.map { outbound ->
         val server = outbound.server?.trim().orEmpty()
-        if (server.isBlank() || isIpAddressValue(server)) return@map outbound
-
         val existing = outbound.domainResolver
-        val existingServer = existing?.server
-        if (!existingServer.isNullOrBlank() && existingServer != DEFAULT_ROUTE_DOMAIN_RESOLVER_TAG) {
-            return@map outbound
-        }
-
-        outbound.copy(
-            domainResolver = (existing ?: DomainResolveConfig()).copy(
-                server = defaultResolverTag,
-                strategy = existing?.strategy ?: defaultResolverStrategy
+        val existingServer = existing?.server?.trim()?.takeIf(String::isNotBlank)
+        val needsDefaultResolver = server.isNotBlank() && !isIpAddressValue(server) ||
+            !outbound.domainStrategy.isNullOrBlank()
+        val resolverServer = existingServer ?: defaultResolverTag.takeIf { needsDefaultResolver }
+        val resolver = resolverServer?.let {
+            (existing ?: DomainResolveConfig()).copy(
+                server = it,
+                strategy = existing?.strategy ?: outbound.domainStrategy ?: defaultResolverStrategy
             )
+        }
+        outbound.copy(
+            domainResolver = resolver,
+            domainStrategy = null
         )
     }
 }
@@ -772,32 +772,77 @@ internal fun ConfigRepository.Companion.sanitizeInjectedDnsServerForRuntime(
 }
 
 internal fun ConfigRepository.Companion.normalizeInjectedDnsServer(server: DnsServer): DnsServer {
-    val tag = server.tag?.trim().orEmpty()
-    val address = server.address?.trim().orEmpty()
-    val hasNewEndpoint = !server.type.isNullOrBlank() || !server.server.isNullOrBlank()
-    if (tag.isBlank() || address.isBlank() || hasNewEndpoint) {
-        return server
+    val tag = server.tag?.trim()?.takeIf(String::isNotBlank)
+    val legacyAddress = server.address?.trim()?.takeIf(String::isNotBlank)
+    require(!legacyAddress.orEmpty().startsWith("rcode://", ignoreCase = true)) {
+        "rcode DNS server must be migrated to a predefined DNS rule"
     }
 
-    val domainResolver = server.domainResolver ?: server.addressResolver
+    val declaredType = server.type?.trim()?.lowercase()?.takeIf {
+        it.isNotBlank() && it != "legacy"
+    }
+    val converted = legacyAddress?.let { address ->
+        buildDnsServer(
+            address = address,
+            tag = tag.orEmpty(),
+            detour = server.detour,
+            domainStrategy = server.addressStrategy ?: server.domainStrategy,
+            domainResolver = server.domainResolver ?: server.addressResolver
+                ?.trim()
+                ?.takeIf(String::isNotBlank)
+                ?.let { DomainResolveConfig(server = it) }
+        )
+    }
+    val type = declaredType ?: converted?.type ?: "udp".takeIf { !server.server.isNullOrBlank() }
+        ?: throw IllegalArgumentException("DNS server ${tag.orEmpty()} has no type or legacy address")
+    val remoteServer = server.server?.trim()?.takeIf(String::isNotBlank) ?: converted?.server
+    val resolverInput = server.domainResolver ?: converted?.domainResolver ?: server.addressResolver
         ?.trim()
-        ?.takeIf { it.isNotBlank() }
+        ?.takeIf(String::isNotBlank)
         ?.let { DomainResolveConfig(server = it) }
-    return buildDnsServer(
-        address = address,
+    val resolverServer = resolverInput?.server?.trim()?.takeIf(String::isNotBlank)
+        ?: DEFAULT_ROUTE_DOMAIN_RESOLVER_TAG.takeIf {
+            !remoteServer.isNullOrBlank() && !isIpAddressValue(remoteServer) &&
+                tag != DEFAULT_ROUTE_DOMAIN_RESOLVER_TAG
+        }
+    val resolver = resolverServer?.let {
+        (resolverInput ?: DomainResolveConfig()).copy(
+            server = it,
+            strategy = resolverInput?.strategy ?: server.addressStrategy ?: server.domainStrategy
+        )
+    }
+    val normalizedServer = server.copy(
         tag = tag,
-        detour = server.detour,
-        domainStrategy = server.domainStrategy ?: server.strategy,
-        domainResolver = domainResolver
-    ).copy(
-        udpFragment = server.udpFragment,
-        networkStrategy = server.networkStrategy,
-        networkType = server.networkType,
-        fallbackNetworkType = server.fallbackNetworkType,
-        fallbackDelay = server.fallbackDelay,
-        inet4Range = server.inet4Range,
-        inet6Range = server.inet6Range,
-        headers = server.headers,
-        tls = server.tls
+        type = type,
+        server = remoteServer,
+        serverPort = server.serverPort ?: converted?.serverPort,
+        pathRaw = server.pathRaw ?: converted?.pathRaw,
+        domainResolver = resolver,
+        domainStrategy = null,
+        fallbackDelay = server.fallbackDelay ?: server.addressFallbackDelay ?: converted?.fallbackDelay,
+        interfaceName = server.interfaceName ?: converted?.interfaceName,
+        address = null,
+        addressResolver = null,
+        addressStrategy = null,
+        addressFallbackDelay = null,
+        clientSubnet = null,
+        strategy = null
     )
+    return when (type) {
+        "local" -> normalizedServer.copy(server = null, serverPort = null, pathRaw = null)
+        "fakeip" -> normalizedServer.copy(
+            server = null,
+            serverPort = null,
+            pathRaw = null,
+            domainResolver = null,
+            detour = null
+        )
+        "dhcp" -> normalizedServer.copy(
+            server = null,
+            serverPort = null,
+            pathRaw = null,
+            interfaceName = normalizedServer.interfaceName?.takeUnless { it.equals("auto", ignoreCase = true) }
+        )
+        else -> normalizedServer
+    }
 }

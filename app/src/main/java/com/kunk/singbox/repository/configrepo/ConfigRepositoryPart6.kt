@@ -40,9 +40,32 @@ internal fun ConfigRepository.loadConfigWithLegacyEchRepair(profile: ProfileUi?,
 }
 
 internal fun ConfigRepository.stripInternalMetadata(config: SingBoxConfig): SingBoxConfig {
+    val runtimeOutbounds = ConfigRepository.applyDefaultOutboundDomainResolver(
+        config.outbounds.orEmpty().map { stripInternalMetadata(it) },
+        ConfigRepository.DEFAULT_ROUTE_DOMAIN_RESOLVER_TAG
+    )
+    val runtimeDnsServers = config.dns?.servers.orEmpty().mapNotNull { server ->
+        runCatching { ConfigRepository.normalizeInjectedDnsServer(server) }.getOrNull()
+    }
+    val runtimeDns = config.dns?.copy(
+        servers = runtimeDnsServers,
+        rules = ConfigRepository.sanitizeDnsRulesForRuntime(
+            config.dns.rules.orEmpty(),
+            runtimeDnsServers.mapNotNullTo(mutableSetOf()) { it.tag }
+        ),
+        independentCache = null,
+        fakeip = null
+    )
     return config.copy(
-        outbounds = config.outbounds?.map { stripInternalMetadata(it) },
-        proxies = config.proxies?.map { stripInternalMetadata(it) }
+        dns = runtimeDns,
+        outbounds = runtimeOutbounds,
+        endpoints = config.endpoints?.map(ConfigRepository::normalizeEndpointDomainResolverForRuntime),
+        proxies = config.proxies?.let { proxies ->
+            ConfigRepository.applyDefaultOutboundDomainResolver(
+                proxies.map { stripInternalMetadata(it) },
+                ConfigRepository.DEFAULT_ROUTE_DOMAIN_RESOLVER_TAG
+            )
+        }
     )
 }
 

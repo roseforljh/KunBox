@@ -271,12 +271,13 @@ abstract class ConfigRepositoryTestPart2 : ConfigRepositoryTestPart1() {
         assertEquals("223.5.5.5", localDns.server)
         assertEquals("/dns-query", localDns.path)
         assertEquals("bestvmr-dns", outbounds.first().domainResolver?.server)
+        assertEquals("prefer_ipv4", outbounds.first().domainResolver?.strategy)
         assertEquals("udp", privateDns?.type)
         assertEquals("47.110.75.65", privateDns?.server)
         assertEquals(8053, privateDns?.serverPort)
         assertNull(privateDns?.detour)
         assertNotNull(nodeRule)
-        assertEquals("prefer_ipv4", nodeRule?.strategy)
+        assertNull(nodeRule?.strategy)
     }
 
     @Test
@@ -331,7 +332,7 @@ abstract class ConfigRepositoryTestPart2 : ConfigRepositoryTestPart1() {
         assertEquals(listOf("fly-nnca.bestvmr.com"), rules.first().domain)
         assertEquals(listOf("A", "AAAA"), rules.first().queryType)
         assertEquals("airport-dns", rules.first().server)
-        assertEquals("prefer_ipv4", rules.first().strategy)
+        assertNull(rules.first().strategy)
         assertEquals(true, rules.first().disableCache)
     }
 

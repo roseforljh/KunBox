@@ -347,7 +347,7 @@ abstract class ConfigRepositoryTestPart3 : ConfigRepositoryTestPart2() {
 
         assertEquals(1, rules.size)
         assertEquals(proxyServerTag, rules[0].server)
-        assertEquals(null, rules[0].queryType)
+        assertEquals(listOf("A", "AAAA"), rules[0].queryType)
     }
 
     @Test
@@ -361,7 +361,7 @@ abstract class ConfigRepositoryTestPart3 : ConfigRepositoryTestPart2() {
 
         assertEquals(1, rules.size)
         assertEquals(proxyServerTag, rules[0].server)
-        assertEquals(null, rules[0].queryType)
+        assertEquals(listOf("A", "AAAA"), rules[0].queryType)
     }
 
     @Test
@@ -375,7 +375,7 @@ abstract class ConfigRepositoryTestPart3 : ConfigRepositoryTestPart2() {
 
         assertEquals(1, rules.size)
         assertEquals(serverTag, rules[0].server)
-        assertEquals(null, rules[0].queryType)
+        assertEquals(listOf("A", "AAAA"), rules[0].queryType)
     }
 
     @Test

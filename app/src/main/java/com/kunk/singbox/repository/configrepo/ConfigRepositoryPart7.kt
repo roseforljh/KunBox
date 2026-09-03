@@ -235,6 +235,14 @@ internal fun ConfigRepository.buildRunDns(
         )
     }
     val validRuleSetTags = validRuleSets.mapNotNull { it.tag }.toSet()
+    val ipOnlyRuleSetTags = validRuleSets.mapNotNull { ruleSet ->
+        val tag = ruleSet.tag ?: return@mapNotNull null
+        val path = ruleSet.path ?: return@mapNotNull null
+        tag.takeIf {
+            ConfigRepository.detectRuleSetRuleTypeStatic(File(path), tag) ==
+                ConfigRepository.RuleSetRuleType.IP
+        }
+    }.toSet()
     val orderedRuleSetRules = mutableListOf<Pair<DnsRule, ConfigRepository.OutboundSemantic>>()
     val ruleSetSemantics = mutableListOf<ConfigRepository.OutboundSemantic>()
 
@@ -412,7 +420,9 @@ internal fun ConfigRepository.buildRunDns(
         null
     }
 
-    val directOverrideDnsServerTags = ConfigRepository.resolveDnsOverrideDirectDnsServerTags(outboundsContext.outbounds, dnsOverride)
+    val directOverrideDnsServerTags =
+        ConfigRepository.resolveDnsOverrideDirectDnsServerTags(outboundsContext.outbounds, originalDns) +
+            ConfigRepository.resolveDnsOverrideDirectDnsServerTags(outboundsContext.outbounds, dnsOverride)
 
     fun sanitizeDnsServer(server: DnsServer): DnsServer {
         return ConfigRepository.sanitizeInjectedDnsServerForRuntime(
@@ -427,7 +437,10 @@ internal fun ConfigRepository.buildRunDns(
     if (originalDns != null) {
         originalDns.servers?.forEach { server ->
             if (server.tag != null && dnsServers.none { it.tag == server.tag }) {
-                dnsServers.add(sanitizeDnsServer(server))
+                runCatching { sanitizeDnsServer(server) }
+                    .getOrNull()
+                    ?.takeIf(ConfigRepository::isDnsServerValidForRuntime)
+                    ?.let(dnsServers::add)
             }
         }
         originalDns.rules?.forEach { rule ->
@@ -451,11 +464,10 @@ internal fun ConfigRepository.buildRunDns(
         finalServer = finalServer,
         strategy = resolveDnsStrategy(settings.dnsStrategy, settings.ipVersionMode),
         disableCache = !settings.dnsCacheEnabled,
-        independentCache = false,
         fakeip = fakeIpConfig
     )
 
-    return if (dnsOverride != null) {
+    val runtimeDns = if (dnsOverride != null) {
         ConfigRepository.applyDnsOverride(
             baseDnsConfig,
             dnsOverride.copy(
@@ -468,4 +480,16 @@ internal fun ConfigRepository.buildRunDns(
     } else {
         baseDnsConfig
     }
+    val runtimeServerTags = runtimeDns.servers.orEmpty().mapNotNullTo(mutableSetOf()) { it.tag }
+    return runtimeDns.copy(
+        // sing-box 1.14 removed these legacy top-level DNS options. Keep them in
+        // the import model, but never emit them into the runtime configuration.
+        rules = ConfigRepository.sanitizeDnsRulesForRuntime(
+            runtimeDns.rules.orEmpty(),
+            runtimeServerTags,
+            ipOnlyRuleSetTags
+        ),
+        independentCache = null,
+        fakeip = null
+    )
 }

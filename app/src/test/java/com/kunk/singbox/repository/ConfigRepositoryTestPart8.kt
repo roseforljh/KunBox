@@ -524,7 +524,7 @@ abstract class ConfigRepositoryTestPart8 : ConfigRepositoryTestPart7() {
     @Test
     fun testRuntimeRouteBuilderPassesCaptureModeToDnsRules() {
         val source = java.io.File(
-            "src/main/java/com/kunk/singbox/repository/ConfigRepository.kt"
+            "src/main/java/com/kunk/singbox/repository/configrepo/ConfigRepositoryPart8.kt"
         ).readText()
 
         assertTrue(

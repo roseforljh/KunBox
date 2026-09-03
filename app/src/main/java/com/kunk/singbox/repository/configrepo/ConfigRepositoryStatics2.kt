@@ -31,6 +31,20 @@ internal fun ConfigRepository.Companion.convertWireGuardOutboundToEndpoint(
     runtimeTag: String = outbound.tag
 ): Endpoint? {
     if (!outbound.type.equals("wireguard", ignoreCase = true)) return null
+    val usesDomainPeer = outbound.peers.orEmpty().any { peer ->
+        peer.server?.trim()?.takeIf(String::isNotEmpty)?.let { !isIpAddressValue(it) } == true
+    }
+    val existingResolver = outbound.domainResolver
+    val resolverServer = existingResolver?.server?.trim()?.takeIf(String::isNotBlank)
+        ?: DEFAULT_ROUTE_DOMAIN_RESOLVER_TAG.takeIf {
+            usesDomainPeer || !outbound.domainStrategy.isNullOrBlank()
+        }
+    val domainResolver = resolverServer?.let {
+        (existingResolver ?: DomainResolveConfig()).copy(
+            server = it,
+            strategy = existingResolver?.strategy ?: outbound.domainStrategy
+        )
+    }
     return Endpoint(
         type = "wireguard",
         tag = runtimeTag,
@@ -63,9 +77,28 @@ internal fun ConfigRepository.Companion.convertWireGuardOutboundToEndpoint(
         networkType = outbound.networkType,
         fallbackNetworkType = outbound.fallbackNetworkType,
         fallbackDelay = outbound.fallbackDelay,
-        domainStrategy = outbound.domainStrategy,
-        domainResolver = outbound.domainResolver
+        domainStrategy = null,
+        domainResolver = domainResolver
     )
+}
+
+internal fun ConfigRepository.Companion.normalizeEndpointDomainResolverForRuntime(endpoint: Endpoint): Endpoint {
+    val existingResolver = endpoint.domainResolver
+    val existingServer = existingResolver?.server?.trim()?.takeIf(String::isNotBlank)
+    val usesDomainPeer = endpoint.type.equals("wireguard", ignoreCase = true) &&
+        endpoint.peers.orEmpty().any { peer ->
+            peer.server?.trim()?.takeIf(String::isNotEmpty)?.let { !isIpAddressValue(it) } == true
+        }
+    val resolverServer = existingServer ?: DEFAULT_ROUTE_DOMAIN_RESOLVER_TAG.takeIf {
+        usesDomainPeer || !endpoint.domainStrategy.isNullOrBlank()
+    }
+    val resolver = resolverServer?.let {
+        (existingResolver ?: DomainResolveConfig()).copy(
+            server = it,
+            strategy = existingResolver?.strategy ?: endpoint.domainStrategy
+        )
+    }
+    return endpoint.copy(domainResolver = resolver, domainStrategy = null)
 }
 
 internal fun ConfigRepository.Companion.convertWireGuardEndpointToOutbound(endpoint: Endpoint): Outbound? {
@@ -136,7 +169,7 @@ internal fun ConfigRepository.Companion.mergeRuntimeEndpoints(
     val byTag = linkedMapOf<String, Endpoint>()
     convertedEndpoints.filter { it.tag.isNotBlank() }.forEach { byTag[it.tag] = it }
     existingEndpoints.filter { it.tag.isNotBlank() }.forEach { byTag[it.tag] = it }
-    return byTag.values.toList()
+    return byTag.values.map(::normalizeEndpointDomainResolverForRuntime)
 }
 
 internal fun ConfigRepository.Companion.normalizeRuleSetInboundTags(

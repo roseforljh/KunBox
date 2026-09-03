@@ -8,7 +8,6 @@ import com.kunk.singbox.database.entity.ProfileEntity
 import com.kunk.singbox.ipc.VpnStateStore
 import com.kunk.singbox.model.*
 import com.kunk.singbox.model.PingResultCode
-import com.kunk.singbox.service.ServiceState
 import java.io.File
 import java.nio.file.Files
 import java.util.concurrent.ConcurrentHashMap
@@ -583,12 +582,6 @@ internal suspend fun ConfigRepository.generateConfigFile(
 ): ConfigRepository.ConfigGenerationResult? = withContext(Dispatchers.IO) {
     lastConfigGenerationError = null
     try {
-        val runtime = VpnStateStore.getRuntimeStateSnapshot()
-        check(!configGenerationBlockedByStop(
-            pending = VpnStateStore.getPending(),
-            active = VpnStateStore.getActive(),
-            runtimeStateOrdinal = runtime.stateOrdinal
-        )) { "VPN stop is still in progress" }
         settingsRepository.reloadFromStorage()
         awaitInitialProfilesLoaded()
         val activeId = selectedProfileId?.takeIf { it.isNotBlank() }
@@ -680,11 +673,14 @@ internal suspend fun ConfigRepository.generateConfigFile(
             ConfigRepository.DEFAULT_ROUTE_DOMAIN_RESOLVER_TAG,
             serverAddressStrategy
         )
+        val profileResolverOutbounds = config.dns?.let { profileDns ->
+            ConfigRepository.applyDnsOverrideDomainResolvers(defaultResolverOutbounds, profileDns)
+        } ?: defaultResolverOutbounds
         val outboundsContext = rawOutboundsContext.copy(
             outbounds = if (dnsOverrideConfig != null) {
-                ConfigRepository.applyDnsOverrideDomainResolvers(defaultResolverOutbounds, dnsOverrideConfig)
+                ConfigRepository.applyDnsOverrideDomainResolvers(profileResolverOutbounds, dnsOverrideConfig)
             } else {
-                defaultResolverOutbounds
+                profileResolverOutbounds
             }
         )
         val rootRoutingPlan = if (rootTransparent) {
@@ -914,13 +910,6 @@ internal suspend fun ConfigRepository.generateConfigFile(
         null
     }
 }
-
-internal fun configGenerationBlockedByStop(
-    pending: String,
-    active: Boolean,
-    runtimeStateOrdinal: Int
-): Boolean = pending == "stopping" &&
-    (active || runtimeStateOrdinal != ServiceState.STOPPED.ordinal)
 
 @Suppress("LongParameterList")
 internal fun ConfigRepository.buildRuntimeNodeMappings(

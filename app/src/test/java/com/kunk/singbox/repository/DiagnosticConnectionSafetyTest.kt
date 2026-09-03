@@ -165,7 +165,7 @@ class DiagnosticConnectionSafetyTest {
     @Test
     fun fdRecoveryStartsBeforeAnyFullSocketBreakdownScan() {
         val source = java.io.File(
-            "src/main/java/com/kunk/singbox/utils/perf/DiagnosticResourceSampler.kt"
+            "src/main/java/com/kunk/singbox/utils/perf/DiagnosticResourceGuard.kt"
         ).readText()
         val monitorBody = source.substringAfter("private suspend fun monitor(")
             .substringBefore("private fun requestRecovery(")
@@ -182,12 +182,17 @@ class DiagnosticConnectionSafetyTest {
 
     @Test
     fun resourceExhaustionFallbackRegistersTheGuardWithoutClosingGlobalConnections() {
-        val vpnSource = java.io.File("src/main/java/com/kunk/singbox/service/SingBoxService.kt").readText()
-        val vpnBody = vpnSource.substringAfter("protected fun handleResourceExhaustionSignal(")
-            .substringBefore("private fun notifySingleNodeRouteFailureIfNeeded(")
-        val proxySource = java.io.File("src/main/java/com/kunk/singbox/service/ProxyOnlyService.kt").readText()
-        val proxyBody = proxySource.substringAfter("private fun handleKernelLogForSameNodeRecovery(")
-            .substringBefore("private fun submitSameNodeRecovery(")
+        val vpnSource = java.io.File(
+            "src/main/java/com/kunk/singbox/service/vpn/SingBoxStartupRuntime.kt"
+        ).readText()
+        val vpnBody = vpnSource.substringAfter("internal fun SingBoxService.handleResourceExhaustionSignal(")
+            .substringBefore("internal fun SingBoxService.submitSameNodeRecovery(")
+        val proxySource = java.io.File(
+            "src/main/java/com/kunk/singbox/service/proxy/ProxyHealthRuntime.kt"
+        ).readText()
+        val proxyBody = proxySource.substringAfter(
+            "internal fun ProxyOnlyService.handleKernelLogForSameNodeRecovery("
+        ).substringBefore("internal fun ProxyOnlyService.submitSameNodeRecovery(")
 
         listOf(vpnBody, proxyBody).forEach { body ->
             assertTrue(body.contains("startResourceGuard()"))

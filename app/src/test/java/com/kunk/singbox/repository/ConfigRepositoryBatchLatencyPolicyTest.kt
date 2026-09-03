@@ -61,7 +61,7 @@ class ConfigRepositoryBatchLatencyPolicyTest {
     @Test
     fun displayedLatencyIsKeptUntilUserClearsOrRetests() {
         val source = File(
-            "src/main/java/com/kunk/singbox/repository/ConfigRepository.kt"
+            "src/main/java/com/kunk/singbox/repository/configrepo/ConfigRepositoryPart3.kt"
         ).readText()
 
         assertTrue(source.contains("latencyMs = savedLatencyMs(id)"))
@@ -72,7 +72,7 @@ class ConfigRepositoryBatchLatencyPolicyTest {
     @Test
     fun clearingAllLatenciesAlsoClearsRoomPersistence() {
         val repositorySource = File(
-            "src/main/java/com/kunk/singbox/repository/ConfigRepository.kt"
+            "src/main/java/com/kunk/singbox/repository/configrepo/ConfigRepositoryPart5.kt"
         ).readText()
         val daoSource = File(
             "src/main/java/com/kunk/singbox/database/dao/NodeLatencyDao.kt"
@@ -84,15 +84,16 @@ class ConfigRepositoryBatchLatencyPolicyTest {
 
     @Test
     fun batchLatencyPersistenceIsNotRepeatedByProfileSave() {
-        val source = File(
-            "src/main/java/com/kunk/singbox/repository/ConfigRepository.kt"
+        val saveProfilesBody = File(
+            "src/main/java/com/kunk/singbox/repository/configrepo/ConfigRepositoryPart1.kt"
         ).readText()
-        val saveProfilesBody = source
-            .substringAfter("protected suspend fun saveProfilesInternal()")
-            .substringBefore("protected fun writeConfigFileOrThrow")
-        val batchLatencyBody = source
-            .substringAfter("suspend fun testAllNodesLatency(")
-            .substringBefore("suspend fun updateAllProfiles()")
+            .substringAfter("internal suspend fun ConfigRepository.saveProfilesInternal()")
+            .substringBefore("internal fun ConfigRepository.writeConfigFileOrThrow")
+        val batchLatencyBody = File(
+            "src/main/java/com/kunk/singbox/repository/configrepo/ConfigRepositoryPart5.kt"
+        ).readText()
+            .substringAfter("internal suspend fun ConfigRepository.testAllNodesLatency(")
+            .substringBefore("internal suspend fun ConfigRepository.updateAllProfiles()")
 
         assertFalse(saveProfilesBody.contains("nodeLatencyDao.insertAll"))
         assertFalse(batchLatencyBody.contains("saveProfiles()"))
@@ -196,11 +197,13 @@ class ConfigRepositoryBatchLatencyPolicyTest {
 
     @Test
     fun runConfigDoesNotSilentlyRemoveMissingDetour() {
-        val source = File("src/main/java/com/kunk/singbox/repository/ConfigRepository.kt")
+        val source = File(
+            "src/main/java/com/kunk/singbox/repository/configrepo/ConfigRepositoryPart8.kt"
+        )
             .readText(Charsets.UTF_8)
         val runOutboundsBody = source
-            .substringAfter("protected fun buildRunOutbounds(")
-            .substringBefore("protected fun applySelectorSafeOutbounds(")
+            .substringAfter("internal fun ConfigRepository.buildRunOutbounds(")
+            .substringBefore("internal fun ConfigRepository.applySelectorSafeOutbounds(")
 
         assertTrue(runOutboundsBody.contains("resolveRuntimeOutboundDependencies("))
         assertTrue(runOutboundsBody.contains("前置代理「\$detourTag」不存在或形成自引用"))
@@ -295,11 +298,11 @@ class ConfigRepositoryBatchLatencyPolicyTest {
     @Test
     fun latencyCancellationIsPropagatedBySharedTest() {
         val source = File(
-            "src/main/java/com/kunk/singbox/repository/ConfigRepository.kt"
+            "src/main/java/com/kunk/singbox/repository/configrepo/ConfigRepositoryPart5.kt"
         ).readText()
         val singleLatencyBody = source
-            .substringAfter("suspend fun testNodeLatency(nodeId: String): Long")
-            .substringBefore("suspend fun clearAllNodesLatency()")
+            .substringAfter("internal suspend fun ConfigRepository.testNodeLatency(nodeId: String): Long")
+            .substringBefore("internal suspend fun ConfigRepository.clearAllNodesLatency()")
 
         assertTrue(singleLatencyBody.contains("catch (e: CancellationException)"))
         assertTrue(singleLatencyBody.contains("deferred.cancel(e)"))
@@ -332,7 +335,7 @@ class ConfigRepositoryBatchLatencyPolicyTest {
     @Test
     fun deletingNodesRemovesPersistedLatencies() {
         val repositorySource = File(
-            "src/main/java/com/kunk/singbox/repository/ConfigRepository.kt"
+            "src/main/java/com/kunk/singbox/repository/configrepo/ConfigRepositoryPart9.kt"
         ).readText()
         val daoSource = File(
             "src/main/java/com/kunk/singbox/database/dao/NodeLatencyDao.kt"
@@ -345,7 +348,7 @@ class ConfigRepositoryBatchLatencyPolicyTest {
     @Test
     fun configCacheCleanupUsesRepositoryCoroutineScope() {
         val source = File(
-            "src/main/java/com/kunk/singbox/repository/ConfigRepository.kt"
+            "src/main/java/com/kunk/singbox/repository/configrepo/ConfigRepositoryPart1.kt"
         ).readText()
 
         assertFalse(source.contains("newSingleThreadScheduledExecutor"))
@@ -355,11 +358,10 @@ class ConfigRepositoryBatchLatencyPolicyTest {
     @Test
     fun rebuiltNodesRestorePersistedLatenciesAtCreation() {
         val source = File(
-            "src/main/java/com/kunk/singbox/repository/ConfigRepository.kt"
+            "src/main/java/com/kunk/singbox/repository/configrepo/ConfigRepositoryPart3.kt"
         ).readText()
         val body = source
-            .substringAfter("protected fun createNodeUi(")
-            .substringBefore("suspend fun setActiveProfileAndWait")
+            .substringAfter("internal fun ConfigRepository.createNodeUi(")
 
         assertTrue(body.contains("latencyMs = savedLatencyMs(id)"))
     }
@@ -367,11 +369,11 @@ class ConfigRepositoryBatchLatencyPolicyTest {
     @Test
     fun subscriptionRefreshUsesSharedActiveNodeResolution() {
         val source = File(
-            "src/main/java/com/kunk/singbox/repository/ConfigRepository.kt"
+            "src/main/java/com/kunk/singbox/repository/configrepo/ConfigRepositoryPart5.kt"
         ).readText()
         val body = source
-            .substringAfter("protected suspend fun importFromSubscriptionUpdate(")
-            .substringBefore("protected fun buildSubscriptionUpdateSuccessResult")
+            .substringAfter("internal suspend fun ConfigRepository.importFromSubscriptionUpdate(")
+            .substringBefore("internal fun ConfigRepository.buildSubscriptionUpdateSuccessResult")
 
         assertTrue(body.contains("applyActiveProfileNodes(profile.id, newNodes)"))
         assertFalse(body.contains("_nodes.value = newNodes"))

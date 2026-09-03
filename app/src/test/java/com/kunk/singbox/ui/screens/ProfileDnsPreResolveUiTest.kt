@@ -8,7 +8,7 @@ class ProfileDnsPreResolveUiTest {
 
     @Test
     fun subscriptionDialogAndEditorExposeDnsPreResolve() {
-        val dialogSource = File("src/main/java/com/kunk/singbox/ui/screens/ProfilesScreenDialogs.kt")
+        val dialogSource = File("src/main/java/com/kunk/singbox/ui/screens/ProfileImportDialogs.kt")
             .readText(Charsets.UTF_8)
         val screenSource = File("src/main/java/com/kunk/singbox/ui/screens/ProfilesScreen.kt")
             .readText(Charsets.UTF_8)
