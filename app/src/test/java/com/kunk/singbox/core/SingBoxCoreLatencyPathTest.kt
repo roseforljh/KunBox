@@ -125,7 +125,8 @@ class SingBoxCoreLatencyPathTest {
         assertTrue(nodeRuleIndex >= 0)
         assertTrue(localFallbackIndex >= 0)
         assertTrue(nodeRuleIndex < localFallbackIndex)
-        assertEquals("prefer_ipv4", config.rules?.get(nodeRuleIndex)?.strategy)
+        assertNull(config.rules?.get(nodeRuleIndex)?.strategy)
+        assertEquals("prefer_ipv4", outbounds.first().domainResolver?.strategy)
     }
 
     @Test
