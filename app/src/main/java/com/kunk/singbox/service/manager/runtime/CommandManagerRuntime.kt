@@ -298,6 +298,8 @@ internal fun CommandManager.createClientHandler(
         }
     }
 
+    override fun writeOutbounds(message: OutboundGroupItemIterator?) = Unit
+
     override fun initializeClashMode(modeList: StringIterator?, currentMode: String?) {}
     override fun updateClashMode(newMode: String?) {}
 

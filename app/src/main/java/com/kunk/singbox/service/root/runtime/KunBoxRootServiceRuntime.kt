@@ -683,6 +683,10 @@ internal fun KunBoxRootService.createServerHandler(): CommandServerHandler = obj
 
     override fun setSystemProxyEnabled(isEnabled: Boolean) = Unit
 
+    override fun triggerNativeCrash() = Unit
+
+    override fun connectSSHAgent(): Int = -1
+
     override fun writeDebugMessage(message: String?) {
         if (!message.isNullOrBlank()) Log.d(KunBoxRootService.TAG, message)
     }

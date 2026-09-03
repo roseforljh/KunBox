@@ -9,8 +9,8 @@ class MeteredRuntimePolicyTest {
     fun proxyModeAlwaysSubscribesToGroupsConnectionsAndLogs() {
         val source = proxySource()
         val body = source
-            .substringAfter("private fun createRuntimeCommandOptions()")
-            .substringBefore("private fun handleRuntimeLogs(")
+            .substringAfter("internal fun ProxyOnlyService.createRuntimeCommandOptions()")
+            .substringBefore("internal fun ProxyOnlyService.handleRuntimeLogs(")
 
         assertTrue(body.contains("addCommand(Libbox.CommandGroup)"))
         assertTrue(body.contains("addCommand(Libbox.CommandConnections)"))
@@ -21,8 +21,8 @@ class MeteredRuntimePolicyTest {
     fun proxyModeImplementsAllSameNodeRecoveryStages() {
         val source = proxySource()
         val body = source
-            .substringAfter("private fun createSameNodeRecoveryCoordinator(")
-            .substringBefore("private fun handleRuntimeGroups(")
+            .substringAfter("internal fun ProxyOnlyService.createSameNodeRecoveryCoordinator(")
+            .substringBefore("internal fun ProxyOnlyService.handleRuntimeGroups(")
 
         assertTrue(body.contains("closeRuntimeConnections()"))
         assertTrue(body.contains("BoxWrapperManager.resetNetwork()"))
@@ -34,12 +34,12 @@ class MeteredRuntimePolicyTest {
     @Test
     fun hotSwitchClosesConnectionsBeforePublishingRuntimeSelection() {
         val proxyBody = proxySource()
-            .substringAfter("private suspend fun performHotSwitch(")
-            .substringBefore("private fun initializeRuntimeSelector(")
-        val vpnBody = File("src/main/java/com/kunk/singbox/service/SingBoxService.kt")
+            .substringAfter("internal suspend fun ProxyOnlyService.performHotSwitch(")
+            .substringBefore("internal fun ProxyOnlyService.initializeRuntimeSelector(")
+        val vpnBody = File("src/main/java/com/kunk/singbox/service/vpn/SingBoxStartupRuntime.kt")
             .readText(Charsets.UTF_8)
-            .substringAfter("    suspend fun hotSwitchNode(nodeTag: String): Boolean {")
-            .substringBefore("private fun cacheUidToPackage")
+            .substringAfter("internal suspend fun SingBoxService.hotSwitchNode(nodeTag: String): Boolean {")
+            .substringBefore("internal fun SingBoxService.cacheUidToPackage")
         val proxyCloseIndex = proxyBody.indexOf("closeRuntimeConnections()")
         val proxyPublishIndex = proxyBody.indexOf("VpnStateStore.setActiveLabel")
         val vpnCloseIndex = vpnBody.indexOf("commandManager.closeConnections()")
@@ -67,14 +67,16 @@ class MeteredRuntimePolicyTest {
 
     @Test
     fun enablingProtectionReloadsCrossProfileRuntimeAndFailsClosed() {
-        val source = File("src/main/java/com/kunk/singbox/repository/ConfigRepository.kt")
+        val source = File(
+            "src/main/java/com/kunk/singbox/repository/configrepo/ConfigRepositoryPart9.kt"
+        )
             .readText(Charsets.UTF_8)
         val updateBody = source
-            .substringAfter("private suspend fun applyNodeAutoSelectionEligibilityChange(")
-            .substringBefore("private fun resetRuntimeConnectionsForMeteredProtection()")
+            .substringAfter("internal suspend fun ConfigRepository.applyNodeAutoSelectionEligibilityChange(")
+            .substringBefore("internal fun ConfigRepository.resetRuntimeConnectionsForMeteredProtection()")
         val reloadGate = source
-            .substringAfter("private fun shouldReloadNodeSettingsChange()")
-            .substringBefore("protected suspend fun refreshNodesAfterNodeMutation(")
+            .substringAfter("internal fun ConfigRepository.shouldReloadNodeSettingsChange()")
+            .substringBefore("internal suspend fun ConfigRepository.refreshNodesAfterNodeMutation(")
 
         assertTrue(updateBody.contains("if (protectionEnabled)"))
         assertTrue(updateBody.contains("resetRuntimeConnectionsForMeteredProtection()"))
@@ -84,7 +86,9 @@ class MeteredRuntimePolicyTest {
     }
 
     private fun proxySource(): String {
-        return File("src/main/java/com/kunk/singbox/service/ProxyOnlyService.kt")
-            .readText(Charsets.UTF_8)
+        return listOf(
+            "src/main/java/com/kunk/singbox/service/proxy/ProxyHealthRuntime.kt",
+            "src/main/java/com/kunk/singbox/service/proxy/ProxyCoreRuntime.kt"
+        ).joinToString("\n") { File(it).readText(Charsets.UTF_8) }
     }
 }

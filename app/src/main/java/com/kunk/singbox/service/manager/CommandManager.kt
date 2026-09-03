@@ -261,6 +261,10 @@ class CommandManager(
 
             override fun setSystemProxyEnabled(isEnabled: Boolean) {}
 
+            override fun triggerNativeCrash() = Unit
+
+            override fun connectSSHAgent(): Int = -1
+
             override fun writeDebugMessage(message: String?) {
                 if (!message.isNullOrBlank()) {
                     Log.d(TAG, message)

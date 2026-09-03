@@ -318,6 +318,18 @@ class VpnTunAddressPlanTest {
     }
 
     @org.junit.Test
+    fun vpnDnsResolverUsesAllTrustedInternalAddressesFromLibbox() {
+        val settings = AppSettings(ipVersionMode = IpVersionMode.DUAL_STACK)
+
+        val dnsServers = VpnTunManager.resolveVpnDnsServers(
+            settings = settings,
+            dnsServerAddresses = listOf("172.19.0.2", "fd00::2")
+        )
+
+        assertEquals(listOf("172.19.0.2", "fd00::2"), dnsServers)
+    }
+
+    @org.junit.Test
     fun vpnDnsResolverFallsBackToDefaultDnsServersWhenNoLibboxAddress() {
         val settings = AppSettings(ipVersionMode = IpVersionMode.DUAL_STACK)
 

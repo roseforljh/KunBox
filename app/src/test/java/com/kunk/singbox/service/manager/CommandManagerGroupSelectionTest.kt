@@ -54,7 +54,7 @@ class CommandManagerGroupSelectionTest {
             "src/main/java/com/kunk/singbox/service/manager/runtime/CommandManagerRuntime.kt"
         ).readText()
         val serviceSource = File(
-            "src/main/java/com/kunk/singbox/service/SingBoxService.kt"
+            "src/main/java/com/kunk/singbox/service/vpn/SingBoxCommandRuntime.kt"
         ).readText()
 
         assertTrue(managerSource.contains("callbacks?.onRuntimeNodeChanged(selected)"))

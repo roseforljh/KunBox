@@ -26,11 +26,11 @@ class NodeSwitchManagerNotificationTest {
 
     @Test
     fun proxyOnlyHotSwitchFailureAlsoKeepsCurrentRuntime() {
-        val source = File("src/main/java/com/kunk/singbox/service/ProxyOnlyService.kt")
+        val source = File("src/main/java/com/kunk/singbox/service/proxy/ProxyCoreRuntime.kt")
             .readText(Charsets.UTF_8)
         val failureBody = source
             .substringAfter("if (failure == null) return")
-            .substringBefore("private fun initializeRuntimeSelector(configContent: String)")
+            .substringBefore("internal fun ProxyOnlyService.initializeRuntimeSelector(configContent: String)")
 
         assertFalse(failureBody.contains("queueCoreRestart"))
     }

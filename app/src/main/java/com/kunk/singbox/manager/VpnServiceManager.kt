@@ -88,8 +88,11 @@ object VpnServiceManager {
         val pending = VpnStateStore.getPending()
         if (pending != "stopping") return false
         val runtime = VpnStateStore.getRuntimeStateSnapshot()
-        val recover = mode == TrafficCaptureMode.ROOT_TRANSPARENT &&
-            isTerminalStoppingState(pending, VpnStateStore.getActive(), runtime.stateOrdinal)
+        val recover = shouldRecoverInactiveRootStop(
+            mode = mode,
+            pending = pending,
+            active = VpnStateStore.getActive()
+        )
         if (!recover) {
             Log.e(
                 TAG,
@@ -109,6 +112,12 @@ object VpnServiceManager {
         VpnStateStore.setPending("starting")
         return true
     }
+
+    internal fun shouldRecoverInactiveRootStop(
+        mode: TrafficCaptureMode,
+        pending: String,
+        active: Boolean
+    ): Boolean = mode == TrafficCaptureMode.ROOT_TRANSPARENT && pending == "stopping" && !active
 
     fun isStarting(): Boolean {
         return SingBoxRemote.isStarting.value

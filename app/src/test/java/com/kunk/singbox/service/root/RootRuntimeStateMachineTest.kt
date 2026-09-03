@@ -7,6 +7,7 @@ import java.util.concurrent.TimeUnit
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -321,6 +322,20 @@ class RootRuntimeStateMachineTest {
         val durationMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt)
         assertNull(result)
         assertTrue("Root stop deadline took ${durationMs}ms", durationMs < 1_000L)
+    }
+
+    @Test
+    fun emergencyRootCleanupWaitsForTheOldProcessBeforeCleaningOwnedRules() {
+        val sessionId = "0d833321-aaf8-4b3f-b91c-295b1d8b3133"
+
+        val command = buildEmergencyRootCleanupCommand(sessionId, 31536)
+
+        assertTrue(command.contains("[ ! -d /proc/31536 ] || exit 75"))
+        assertTrue(command.contains("/data/adb/kunbox/watchdog.sh"))
+        assertTrue(command.contains("cleanup '$sessionId'"))
+        assertThrows(IllegalArgumentException::class.java) {
+            buildEmergencyRootCleanupCommand("bad-session", 31536)
+        }
     }
 
     @Test
