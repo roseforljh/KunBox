@@ -99,6 +99,7 @@ internal class TemporaryProbeTrafficRecorder(
     override fun updateClashMode(newMode: String?) = Unit
     override fun writeConnectionEvents(events: ConnectionEvents?) = Unit
     override fun writeGroups(groups: OutboundGroupIterator?) = Unit
+    override fun writeOutbounds(message: OutboundGroupItemIterator?) = Unit
 
     override fun writeStatus(message: StatusMessage?) {
         message ?: return
@@ -188,15 +189,19 @@ class SingBoxCore private constructor(internal val context: Context) {
                 dnsOverride?.rules.orEmpty().map { normalizeLatencyDnsRule(it) }.forEach { add(it) }
                 addAll(ConfigRepository.buildOutboundDomainResolverDnsRules(outbounds))
             }
+            val serverTags = servers.mapNotNullTo(mutableSetOf()) { it.tag }
+            val runtimeRules = ConfigRepository.sanitizeDnsRulesForRuntime(
+                specificRules + DnsRule(
+                    queryType = listOf("A", "AAAA"),
+                    action = "route",
+                    server = LATENCY_LOCAL_DNS_TAG
+                ),
+                serverTags
+            )
 
             return DnsConfig(
                 servers = servers,
-                rules = specificRules + listOf(
-                    DnsRule(
-                        queryType = listOf("A", "AAAA"),
-                        server = LATENCY_LOCAL_DNS_TAG
-                    )
-                ),
+                rules = runtimeRules,
                 finalServer = LATENCY_LOCAL_DNS_TAG,
                 strategy = "prefer_ipv4"
             )
@@ -210,22 +215,10 @@ class SingBoxCore private constructor(internal val context: Context) {
         }
 
         internal fun applyLatencyBootstrapDomainResolver(outbound: Outbound): Outbound {
-            val server = outbound.server?.trim().orEmpty()
-            if (server.isBlank() || isIpLiteral(server)) return outbound
-
-            val existingResolver = outbound.domainResolver
-            val existingResolverServer = existingResolver?.server?.trim().orEmpty()
-            if (
-                existingResolverServer.isNotBlank() &&
-                existingResolverServer != ConfigRepository.DEFAULT_ROUTE_DOMAIN_RESOLVER_TAG
-            ) {
-                return outbound
-            }
-            return outbound.copy(
-                domainResolver = (existingResolver ?: DomainResolveConfig()).copy(
-                    server = ConfigRepository.DEFAULT_ROUTE_DOMAIN_RESOLVER_TAG
-                )
-            )
+            return ConfigRepository.applyDefaultOutboundDomainResolver(
+                listOf(outbound),
+                ConfigRepository.DEFAULT_ROUTE_DOMAIN_RESOLVER_TAG
+            ).single()
         }
 
         internal fun isWireGuardOutbound(outbound: Outbound): Boolean {
@@ -241,19 +234,20 @@ class SingBoxCore private constructor(internal val context: Context) {
                 val host = peer.server?.trim().orEmpty()
                 host.isNotBlank() && !isIpLiteral(host)
             }
-            if (!needsResolver) return withPeers
             val existing = withPeers.domainResolver
-            val existingServer = existing?.server?.trim().orEmpty()
-            if (
-                existingServer.isNotBlank() &&
-                existingServer != ConfigRepository.DEFAULT_ROUTE_DOMAIN_RESOLVER_TAG
-            ) {
-                return withPeers
+            val resolverServer = existing?.server?.trim()?.takeIf(String::isNotBlank)
+                ?: ConfigRepository.DEFAULT_ROUTE_DOMAIN_RESOLVER_TAG.takeIf {
+                    needsResolver || !withPeers.domainStrategy.isNullOrBlank()
+                }
+            val resolver = resolverServer?.let {
+                (existing ?: DomainResolveConfig()).copy(
+                    server = it,
+                    strategy = existing?.strategy ?: withPeers.domainStrategy
+                )
             }
             return withPeers.copy(
-                domainResolver = (existing ?: DomainResolveConfig()).copy(
-                    server = ConfigRepository.DEFAULT_ROUTE_DOMAIN_RESOLVER_TAG
-                )
+                domainResolver = resolver,
+                domainStrategy = null
             )
         }
 

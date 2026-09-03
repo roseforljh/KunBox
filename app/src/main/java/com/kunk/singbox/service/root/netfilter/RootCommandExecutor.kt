@@ -180,7 +180,6 @@ class ProcessRootCommandExecutor internal constructor(
     private val timeoutMs: Long = DEFAULT_COMMAND_TIMEOUT_MS
 ) : RootCommandExecutor {
     private val xtablesWaitMs = AtomicLong(0L)
-    private val activeProcesses = Collections.synchronizedSet(mutableSetOf<Process>())
 
     init {
         require(timeoutMs > 0L)
@@ -269,10 +268,24 @@ class ProcessRootCommandExecutor internal constructor(
     }
 
     internal fun cancelActiveCommands() {
-        val processes = synchronized(activeProcesses) { activeProcesses.filter(Process::isAlive) }
-        processes.forEach { process ->
-            runCatching { process.destroyForcibly() }
+        cancelAllActiveCommands()
+    }
+
+    private companion object {
+        val activeProcesses = Collections.synchronizedSet(mutableSetOf<Process>())
+
+        internal fun cancelAllActiveCommands() {
+            val processes = synchronized(activeProcesses) { activeProcesses.filter(Process::isAlive) }
+            processes.forEach { process ->
+                runCatching { process.destroyForcibly() }
+            }
         }
+
+        const val DEFAULT_COMMAND_TIMEOUT_MS = 15_000L
+        const val PROCESS_DESTROY_GRACE_MS = 250L
+        const val PROCESS_READER_JOIN_MS = 1_000L
+        const val COMMAND_TIMEOUT_EXIT_CODE = 124
+        const val TAG = "RootCommandExecutor"
     }
 
     private fun startProcess(command: List<String>): Process = ProcessBuilder(command)
@@ -337,14 +350,6 @@ class ProcessRootCommandExecutor internal constructor(
         errorReadError.get()?.let { throw IllegalStateException("Cannot read Root command stderr", it) }
         activeProcesses.remove(process)
         return RootCommandResult(process.exitValue(), output.toString().trim(), errorOutput.toString().trim())
-    }
-
-    private companion object {
-        const val DEFAULT_COMMAND_TIMEOUT_MS = 15_000L
-        const val PROCESS_DESTROY_GRACE_MS = 250L
-        const val PROCESS_READER_JOIN_MS = 1_000L
-        const val COMMAND_TIMEOUT_EXIT_CODE = 124
-        const val TAG = "RootCommandExecutor"
     }
 }
 

@@ -287,7 +287,7 @@ internal fun KunBoxRootService.hotReloadLocked(
         }
     } catch (error: Exception) {
         Log.e(KunBoxRootService.TAG, "Root cold reload failed", error)
-        if (error is RootStopRequestedException) {
+        if (stopWasRequested(runtimeSessionId, error)) {
             val cleanupError = rollbackLocked()
             if (cleanupError == null) markStopped() else failCleanup(
                 cleanupError,
@@ -682,6 +682,10 @@ internal fun KunBoxRootService.createServerHandler(): CommandServerHandler = obj
     override fun getSystemProxyStatus(): SystemProxyStatus? = null
 
     override fun setSystemProxyEnabled(isEnabled: Boolean) = Unit
+
+    override fun triggerNativeCrash() = Unit
+
+    override fun connectSSHAgent(): Int = -1
 
     override fun writeDebugMessage(message: String?) {
         if (!message.isNullOrBlank()) Log.d(KunBoxRootService.TAG, message)

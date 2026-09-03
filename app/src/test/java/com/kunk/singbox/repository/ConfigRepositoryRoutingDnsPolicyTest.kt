@@ -175,6 +175,16 @@ class ConfigRepositoryRoutingDnsPolicyTest {
     }
 
     @Test
+    fun modernHostsDnsServerMayUsePlatformDefaults() {
+        val server = ConfigRepository.normalizeInjectedDnsServer(
+            DnsServer(type = "hosts", tag = "hosts")
+        )
+
+        assertEquals("hosts", server.type)
+        assertEquals("hosts", server.tag)
+    }
+
+    @Test
     fun bootstrapUsesConfiguredNumericDnsOrSystemResolverWithoutHardcodedFallback() {
         val numeric = ConfigRepository.buildBootstrapDnsServer(
             localDnsAddress = "udp://9.9.9.9",
@@ -404,7 +414,11 @@ class ConfigRepositoryRoutingDnsPolicyTest {
         val outbound = ConfigRepository.convertWireGuardEndpointToOutbound(endpoint)
         val roundTrip = outbound?.let(ConfigRepository::convertWireGuardOutboundToEndpoint)
 
-        assertEquals(endpoint, roundTrip)
+        val expected = endpoint.copy(
+            domainStrategy = null,
+            domainResolver = endpoint.domainResolver?.copy(strategy = endpoint.domainStrategy)
+        )
+        assertEquals(expected, roundTrip)
     }
 
     @Test
@@ -430,6 +444,25 @@ class ConfigRepositoryRoutingDnsPolicyTest {
             endpoint?.peers?.single()?.allowedIps
         )
         assertEquals("2a02:6ea0:d802:5519::10", endpoint?.peers?.single()?.server)
+    }
+
+    @Test
+    fun wireGuardDomainPeerUsesTheRuntimeBootstrapResolver() {
+        val outbound = Outbound(
+            type = "wireguard",
+            tag = "wg-domain",
+            peers = listOf(
+                WireGuardPeer(
+                    server = "wg.example.com",
+                    serverPort = 51820,
+                    publicKey = "public"
+                )
+            )
+        )
+
+        val endpoint = ConfigRepository.convertWireGuardOutboundToEndpoint(outbound)
+
+        assertEquals(ConfigRepository.DEFAULT_ROUTE_DOMAIN_RESOLVER_TAG, endpoint?.domainResolver?.server)
     }
 
     @Test

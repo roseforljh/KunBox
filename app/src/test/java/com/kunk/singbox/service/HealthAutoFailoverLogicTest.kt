@@ -62,9 +62,11 @@ class HealthAutoFailoverLogicTest {
 
     @Test
     fun fastPathClosesConnectionsAfterSwitch() {
-        val source = File("src/main/java/com/kunk/singbox/service/SingBoxService.kt").readText()
-        val start = source.indexOf("protected suspend fun performAutoFailoverSwitch")
-        val end = source.indexOf("protected fun loadActiveAutoFailoverQuarantine", start)
+        val source = File(
+            "src/main/java/com/kunk/singbox/service/vpn/SingBoxFailoverRuntime.kt"
+        ).readText()
+        val start = source.indexOf("internal suspend fun SingBoxService.performAutoFailoverSwitch")
+        val end = source.indexOf("internal fun SingBoxService.loadActiveAutoFailoverQuarantine", start)
         val body = source.substring(start, end)
 
         assertTrue(body.contains("commandManager.closeConnections()"))
@@ -162,12 +164,17 @@ class HealthAutoFailoverLogicTest {
 
     @Test
     fun dnsFastPathSwitchesOnFirstProbeWithoutSecondRound() {
-        val source = File("src/main/java/com/kunk/singbox/service/SingBoxService.kt").readText()
-        val bodyStart = source.indexOf("private suspend fun runAutoFailoverProbeSequenceBody")
-        val bodyEnd = source.indexOf("protected suspend fun handleSecondAutoFailoverProbe", bodyStart)
+        val source = File(
+            "src/main/java/com/kunk/singbox/service/vpn/SingBoxFailoverRuntime.kt"
+        ).readText()
+        val bodyStart = source.indexOf("internal suspend fun SingBoxService.runAutoFailoverProbeSequenceBody")
+        val bodyEnd = source.indexOf("internal suspend fun SingBoxService.handleSecondAutoFailoverProbe", bodyStart)
         val body = source.substring(bodyStart, bodyEnd)
-        val roundStart = source.indexOf("protected suspend fun runAutoFailoverProbeRound")
-        val roundEnd = source.indexOf("protected suspend fun testGroupCandidatesLatency(groupTag: String)", roundStart)
+        val roundStart = source.indexOf("internal suspend fun SingBoxService.runAutoFailoverProbeRound")
+        val roundEnd = source.indexOf(
+            "internal suspend fun SingBoxService.testGroupCandidatesLatency(groupTag: String)",
+            roundStart
+        )
         val roundBody = source.substring(roundStart, roundEnd)
 
         assertTrue(body.contains("isHealthFastPathTrigger(trigger)"))
@@ -298,9 +305,11 @@ class HealthAutoFailoverLogicTest {
 
     @Test
     fun appRouteTransportFailureNeverResetsTheGlobalVpnNetwork() {
-        val source = File("src/main/java/com/kunk/singbox/service/SingBoxService.kt").readText()
-        val start = source.indexOf("private fun handleActiveOutboundFailure")
-        val end = source.indexOf("protected fun handleResourceExhaustionSignal", start)
+        val source = File(
+            "src/main/java/com/kunk/singbox/service/vpn/SingBoxStartupRuntime.kt"
+        ).readText()
+        val start = source.indexOf("internal fun SingBoxService.handleActiveOutboundFailure")
+        val end = source.indexOf("internal fun SingBoxService.handleResourceExhaustionSignal", start)
         val body = source.substring(start, end)
 
         assertTrue(body.contains("commandManager.handleOutboundFailureBurst"))

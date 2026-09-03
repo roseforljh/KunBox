@@ -10,14 +10,16 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ManualSelectionTransactionPolicyTest {
-    private val source = File("src/main/java/com/kunk/singbox/repository/ConfigRepository.kt")
+    private val source = File(
+        "src/main/java/com/kunk/singbox/repository/configrepo/ConfigRepositoryPart4.kt"
+    )
         .readText(Charsets.UTF_8)
 
     @Test
     fun runningSelectionPublishesOnlyAfterKernelConfirmation() {
         val body = source
-            .substringAfter("suspend fun setActiveNodeWithResult(nodeId: String)")
-            .substringBefore("private fun commitManualSelectionState(")
+            .substringAfter("internal suspend fun ConfigRepository.setActiveNodeWithResult(nodeId: String)")
+            .substringBefore("internal fun ConfigRepository.commitManualSelectionState(")
         val runningBody = body.substring(body.lastIndexOf("withContext(Dispatchers.IO) {"))
         val awaitIndex = runningBody.indexOf("awaitRuntimeSelectionAfter(")
         val commitIndex = runningBody.indexOf("commitManualSelectionState(")
@@ -32,8 +34,8 @@ class ManualSelectionTransactionPolicyTest {
     @Test
     fun runningMeteredSelectionIsRejectedBeforeManualAuthorization() {
         val body = source
-            .substringAfter("suspend fun setActiveNodeWithResult(nodeId: String)")
-            .substringBefore("private fun commitManualSelectionState(")
+            .substringAfter("internal suspend fun ConfigRepository.setActiveNodeWithResult(nodeId: String)")
+            .substringBefore("internal fun ConfigRepository.commitManualSelectionState(")
         val rejectionIndex = body.indexOf("if (remoteRunning && targetNode.meteredProtected)")
         val authorizationIndex = body.indexOf("NodeProtectionStore.beginManualSelection(nodeId)")
 
@@ -60,9 +62,11 @@ class ManualSelectionTransactionPolicyTest {
 
     @Test
     fun unauthorizedMeteredLatencyExplainsThatTheNodeMustBeSelected() {
-        val latencyBody = source
-            .substringAfter("suspend fun testNodeLatency(nodeId: String): Long")
-            .substringBefore("suspend fun clearAllNodesLatency()")
+        val latencyBody = File(
+            "src/main/java/com/kunk/singbox/repository/configrepo/ConfigRepositoryPart5.kt"
+        ).readText(Charsets.UTF_8)
+            .substringAfter("internal suspend fun ConfigRepository.testNodeLatency(nodeId: String): Long")
+            .substringBefore("internal suspend fun ConfigRepository.clearAllNodesLatency()")
         val nodes = File("src/main/java/com/kunk/singbox/viewmodel/NodesViewModel.kt")
             .readText(Charsets.UTF_8)
         val strings = File("src/main/res/values/strings.xml").readText(Charsets.UTF_8)
@@ -76,7 +80,7 @@ class ManualSelectionTransactionPolicyTest {
     @Test
     fun profileSelectionUsesGuardedManualTargetResolution() {
         val body = source
-            .substringAfter("suspend fun setActiveProfileWithResult(profileId: String)")
+            .substringAfter("internal suspend fun ConfigRepository.setActiveProfileWithResult(profileId: String)")
             .substringBefore("@Suppress(\"LongMethod\", \"CognitiveComplexMethod\")")
 
         assertTrue(body.contains("resolveManualProfileTarget("))
@@ -151,8 +155,8 @@ class ManualSelectionTransactionPolicyTest {
     @Test
     fun rollbackRestoresConfigFingerprintTogetherWithFile() {
         val body = source
-            .substringAfter("private fun restoreRunningConfigSnapshot(configContent: String)")
-            .substringBefore("private fun restoreAutoSelectionState(")
+            .substringAfter("internal fun ConfigRepository.restoreRunningConfigSnapshot(configContent: String)")
+            .substringBefore("internal fun ConfigRepository.restoreAutoSelectionState(")
 
         assertTrue(body.contains("writeTextFileAtomically"))
         assertTrue(body.contains("NodeProtectionStore.replaceRuntimeMappings(emptyMap(), configContent)"))
@@ -161,8 +165,8 @@ class ManualSelectionTransactionPolicyTest {
     @Test
     fun runningSelectionUsesCrossProcessRuntimeStateWhenIpcFlowIsUnavailable() {
         val body = source
-            .substringAfter("suspend fun setActiveNodeWithResult(nodeId: String)")
-            .substringBefore("private fun commitManualSelectionState(")
+            .substringAfter("internal suspend fun ConfigRepository.setActiveNodeWithResult(nodeId: String)")
+            .substringBefore("internal fun ConfigRepository.commitManualSelectionState(")
 
         assertTrue(body.contains("VpnStateStore.getActive()"))
     }
@@ -170,8 +174,8 @@ class ManualSelectionTransactionPolicyTest {
     @Test
     fun firstRunningSwitchRecoversItsBaselineInsteadOfForcingRestart() {
         val body = source
-            .substringAfter("suspend fun setActiveNodeWithResult(nodeId: String)")
-            .substringBefore("private fun commitManualSelectionState(")
+            .substringAfter("internal suspend fun ConfigRepository.setActiveNodeWithResult(nodeId: String)")
+            .substringBefore("internal fun ConfigRepository.commitManualSelectionState(")
 
         assertTrue(body.contains("resolveRunningOutboundTags(previousRunningConfig)"))
         assertTrue(body.contains("VpnStateStore.getSelectedProfileId()"))
@@ -181,8 +185,8 @@ class ManualSelectionTransactionPolicyTest {
     @Test
     fun selectionConfirmationWaitStopsOnManualStopOrNewRuntimeError() {
         val body = source
-            .substringAfter("private suspend fun awaitRuntimeSelectionAfter(")
-            .substringBefore("private suspend fun awaitConcreteRuntimeLabel()")
+            .substringAfter("internal suspend fun ConfigRepository.awaitRuntimeSelectionAfter(")
+            .substringBefore("internal fun ConfigRepository.resolveRunningOutboundTags(")
 
         assertTrue(body.contains("snapshot.manuallyStopped"))
         assertTrue(body.contains("snapshot.lastError.isNotBlank()"))
@@ -191,8 +195,8 @@ class ManualSelectionTransactionPolicyTest {
     @Test
     fun selectionDeadlinePerformsFinalCrossProcessStateRead() {
         val body = source
-            .substringAfter("private suspend fun awaitRuntimeSelectionAfter(")
-            .substringBefore("private fun resolveRunningOutboundTags(")
+            .substringAfter("internal suspend fun ConfigRepository.awaitRuntimeSelectionAfter(")
+            .substringBefore("internal fun ConfigRepository.resolveRunningOutboundTags(")
 
         assertTrue(body.contains("confirmed ?: isRuntimeSelectionConfirmed("))
     }
@@ -246,16 +250,21 @@ class ManualSelectionTransactionPolicyTest {
     fun manualHotSwitchDoesNotOutliveThreeSecondUiDeadline() {
         val selectorSource = File("src/main/java/com/kunk/singbox/core/SelectorManager.kt")
             .readText(Charsets.UTF_8)
+        val constantsSource = File(
+            "src/main/java/com/kunk/singbox/repository/configrepo/ConfigRepositoryStatics1.kt"
+        ).readText(Charsets.UTF_8)
 
-        assertTrue(source.contains("MANUAL_HOT_SWITCH_CONFIRMATION_TIMEOUT_MS = 3_000L"))
+        assertTrue(constantsSource.contains("MANUAL_HOT_SWITCH_CONFIRMATION_TIMEOUT_MS = 3_000L"))
         assertTrue(selectorSource.contains("SELECTION_CONFIRMATION_TIMEOUT_MS = 2_500L"))
     }
 
     @Test
     fun crossProfileDetourIsCheckedBeforeTheOutboundEntersRuntimeConfig() {
-        val body = source
-            .substringAfter("protected fun buildRunOutbounds(")
-            .substringBefore("protected fun applySelectorSafeOutbounds(")
+        val body = File(
+            "src/main/java/com/kunk/singbox/repository/configrepo/ConfigRepositoryPart8.kt"
+        ).readText(Charsets.UTF_8)
+            .substringAfter("internal fun ConfigRepository.buildRunOutbounds(")
+            .substringBefore("internal fun ConfigRepository.applySelectorSafeOutbounds(")
         val rootGuardIndex = body.indexOf("config = SingBoxConfig(outbounds = listOf(sourceOutbound))")
         val resolverIndex = body.indexOf("resolveRuntimeOutboundDependencies(")
         val dependencyGuardIndex = body.indexOf("isProtectedReference = { sourceProfileId, reference ->")

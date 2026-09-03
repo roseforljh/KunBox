@@ -91,15 +91,18 @@ class VpnTunManager(
             settings: AppSettings?,
             dnsServerAddress: String? = null,
             tunPlan: VpnTunAddressPlan = VpnTunAddressPlanner.build(settings?.ipVersionMode ?: IpVersionMode.DUAL_STACK)
+        ): List<String> = resolveVpnDnsServers(settings, listOfNotNull(dnsServerAddress), tunPlan)
+
+        internal fun resolveVpnDnsServers(
+            settings: AppSettings?,
+            dnsServerAddresses: List<String>,
+            tunPlan: VpnTunAddressPlan = VpnTunAddressPlanner.build(settings?.ipVersionMode ?: IpVersionMode.DUAL_STACK)
         ): List<String> {
-            val explicitDns = dnsServerAddress?.trim().orEmpty()
-            if (explicitDns in tunPlan.defaultDnsServers) {
-                return listOf(explicitDns)
+            val explicitDnsServers = dnsServerAddresses.map(String::trim).filter(String::isNotEmpty).distinct()
+            explicitDnsServers.filterNot(tunPlan.defaultDnsServers::contains).forEach { dns ->
+                Log.w(TAG, "Ignoring DNS server outside the active TUN prefix: $dns")
             }
-            if (explicitDns.isNotEmpty()) {
-                Log.w(TAG, "Ignoring DNS server outside the active TUN prefix: $explicitDns")
-            }
-            return tunPlan.defaultDnsServers
+            return explicitDnsServers.filter(tunPlan.defaultDnsServers::contains).ifEmpty { tunPlan.defaultDnsServers }
         }
 
         internal fun addVpnRoutesFailClosed(
@@ -405,12 +408,12 @@ class VpnTunManager(
             builder.setMetered(false)
             configureHttpProxy(builder, settings)
         }
-        val dnsAddress = runCatching { options?.getDNSServerAddress()?.getValue() }.getOrNull()
+        val dnsAddresses = readKernelDnsServerAddresses(options)
         val browserPackage = resolveDefaultBrowserPackage()
         configuredPerAppVpnPlan = configuredPerAppVpnPlan?.copy(
             tunAddresses = tunAddresses.map { (address, prefix) -> "$address/$prefix" },
             routes = resolveVpnRoutes(settings, tunPlan).map { (address, prefix) -> "$address/$prefix" },
-            dnsServers = resolveVpnDnsServers(settings, dnsAddress, tunPlan),
+            dnsServers = resolveVpnDnsServers(settings, dnsAddresses, tunPlan),
             mtu = effectiveMtu,
             defaultBrowserPackage = browserPackage,
             browserCoverage = configuredPerAppVpnPlan?.let { resolveBrowserCoverage(browserPackage, it) }
@@ -506,8 +509,8 @@ class VpnTunManager(
         options: TunOptions?,
         tunPlan: VpnTunAddressPlan
     ) {
-        val dnsServerAddress = runCatching { options?.getDNSServerAddress()?.getValue() }.getOrNull()
-        val dnsServers = resolveVpnDnsServers(settings, dnsServerAddress, tunPlan)
+        val dnsServerAddresses = readKernelDnsServerAddresses(options)
+        val dnsServers = resolveVpnDnsServers(settings, dnsServerAddresses, tunPlan)
 
         addVpnDnsServersFailClosed(
             dnsServers = dnsServers,
@@ -521,6 +524,21 @@ class VpnTunManager(
                 false
             }
         }
+    }
+
+    private fun readKernelDnsServerAddresses(options: TunOptions?): List<String> {
+        val iterator = runCatching { options?.getDNSServerAddress() }
+            .onFailure { error -> Log.w(TAG, "Failed to read DNS servers from libbox", error) }
+            .getOrNull() ?: return emptyList()
+        return runCatching {
+            buildList {
+                while (iterator.hasNext()) {
+                    iterator.next()?.trim()?.takeIf(String::isNotEmpty)?.let(::add)
+                }
+            }.distinct()
+        }.onFailure { error ->
+            Log.w(TAG, "Failed to iterate DNS servers from libbox", error)
+        }.getOrDefault(emptyList())
     }
 
     private fun configurePerAppVpn(builder: VpnService.Builder, settings: AppSettings?) {

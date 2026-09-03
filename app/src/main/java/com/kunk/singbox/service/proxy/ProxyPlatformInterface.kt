@@ -12,10 +12,14 @@ import com.kunk.singbox.core.LibboxCompat
 import com.kunk.singbox.core.StringIteratorImpl
 import com.kunk.singbox.repository.*
 import io.nekohasekai.libbox.ConnectionOwner
+import io.nekohasekai.libbox.BridgeOptions
+import io.nekohasekai.libbox.BridgeSession
 import io.nekohasekai.libbox.InterfaceUpdateListener
+import io.nekohasekai.libbox.NeighborUpdateListener
 import io.nekohasekai.libbox.NetworkInterfaceIterator
+import io.nekohasekai.libbox.PlatformUser
 import io.nekohasekai.libbox.PlatformInterface
-import io.nekohasekai.libbox.StringIterator
+import io.nekohasekai.libbox.ShellSession
 import io.nekohasekai.libbox.TunOptions
 import io.nekohasekai.libbox.WIFIState
 import java.io.File
@@ -235,5 +239,45 @@ internal fun ProxyOnlyService.createProxyOnlyPlatformInterface(): PlatformInterf
     override fun sendNotification(notification: io.nekohasekai.libbox.Notification?) {
     }
 
-    override fun systemCertificates(): StringIterator? = null
+    override fun cancelNotification(identifier: String?, typeID: Int) {
+    }
+
+    override fun startNeighborMonitor(listener: NeighborUpdateListener?) =
+        throw UnsupportedOperationException("Platform neighbor monitor is unavailable")
+
+    override fun closeNeighborMonitor(listener: NeighborUpdateListener?) {
+    }
+
+    override fun registerMyInterface(name: String?) {
+    }
+
+    override fun usePlatformShell(): Boolean = false
+
+    override fun checkPlatformShell() =
+        throw UnsupportedOperationException("Platform shell is unavailable")
+
+    override fun openShellSession(
+        user: PlatformUser?,
+        command: String?,
+        environ: io.nekohasekai.libbox.StringIterator?,
+        term: String?,
+        rows: Int,
+        cols: Int
+    ): ShellSession = throw UnsupportedOperationException("Platform shell is unavailable")
+
+    override fun lookupUser(username: String?): PlatformUser =
+        throw UnsupportedOperationException("Platform user lookup is unavailable")
+
+    override fun lookupSFTPServer(): String =
+        throw UnsupportedOperationException("Platform SFTP is unavailable")
+
+    override fun readSystemSSHHostKey(): String =
+        throw UnsupportedOperationException("Platform SSH host key is unavailable")
+
+    override fun tailscaleHostname(): String = ""
+
+    override fun usePlatformBridge(): Boolean = false
+
+    override fun createBridge(options: BridgeOptions?): BridgeSession =
+        throw UnsupportedOperationException("Platform bridge is unavailable")
 }

@@ -30,6 +30,8 @@ internal val TAILSCALE_UNSUPPORTED_MESSAGE =
 internal val TOR_UNSUPPORTED_MESSAGE =
     "Tor 不受支持：当前 Android 内核未包含嵌入式 Tor，应用也未打包 Tor 可执行文件，" +
         "请移除 Tor outbound 后重试"
+internal val NEIGHBOR_RULE_UNSUPPORTED_MESSAGE =
+    "source_mac_address/source_hostname 规则不受支持：Android 未提供邻居表监听接口，请移除后重试"
 
 internal fun ConfigRepository.Companion.findUnsupportedAndroidCapability(config: SingBoxConfig): String? {
     val configuredTypes = buildList {
@@ -43,8 +45,21 @@ internal fun ConfigRepository.Companion.findUnsupportedAndroidCapability(config:
 
 internal fun ConfigRepository.Companion.findUnsupportedAndroidCapabilityInJson(content: String): String? {
     val root = runCatching { JsonParser.parseString(content) }.getOrNull() ?: return null
+    if (root.containsJsonKey("source_mac_address") || root.containsJsonKey("source_hostname")) {
+        return NEIGHBOR_RULE_UNSUPPORTED_MESSAGE
+    }
     val configuredTypes = jsonConfigObjects(root).flatMap { it.configuredTypes() }
     return unsupportedAndroidCapabilityMessage(configuredTypes)
+}
+
+internal fun com.google.gson.JsonElement.containsJsonKey(key: String): Boolean {
+    return when {
+        isJsonObject -> asJsonObject.entrySet().any { (name, value) ->
+            name == key || value.containsJsonKey(key)
+        }
+        isJsonArray -> asJsonArray.any { it.containsJsonKey(key) }
+        else -> false
+    }
 }
 
 internal fun ConfigRepository.Companion.unsupportedAndroidCapabilityMessage(configuredTypes: Iterable<String?>): String? {

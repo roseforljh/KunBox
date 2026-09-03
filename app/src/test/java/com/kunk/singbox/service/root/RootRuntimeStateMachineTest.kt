@@ -2,8 +2,12 @@ package com.kunk.singbox.service.root
 
 import com.kunk.singbox.model.TrafficCaptureMode
 import java.io.File
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -272,7 +276,8 @@ class RootRuntimeStateMachineTest {
     fun startingRootStopUsesPreemptionSignalThenVerifiedCleanup() {
         val source = listOf(
             "src/main/java/com/kunk/singbox/service/root/RootTransparentForegroundService.kt",
-            "src/main/java/com/kunk/singbox/service/root/runtime/RootTransparentForegroundRuntime.kt"
+            "src/main/java/com/kunk/singbox/service/root/runtime/RootTransparentForegroundRuntime.kt",
+            "src/main/java/com/kunk/singbox/service/root/runtime/RootStopRuntime.kt"
         ).joinToString("\n") { File(it).readText(Charsets.UTF_8) }
         val stopBranch = source.substringAfter("ACTION_STOP ->")
             .substringBefore("ACTION_RESTART ->")
@@ -285,7 +290,9 @@ class RootRuntimeStateMachineTest {
             stopRuntime.indexOf("stopped.phase == RootRuntimePhase.STOPPED") <
                 stopRuntime.indexOf("rootConnection.stopRootService()")
         )
-        assertFalse(source.contains("ROOT_STOP_OPERATION_TIMEOUT_MS"))
+        assertTrue(source.contains("ROOT_STOP_CALL_TIMEOUT_MS"))
+        assertTrue(source.contains("rootConnection.stopRootService()"))
+        assertTrue(source.contains("rootConnection.bind()"))
         assertTrue(source.contains("stopRemoteRuntime()"))
         assertTrue(source.contains("val rootService = rootConnection.service ?: return if"))
         assertTrue(!stopRuntime.contains("rootConnection.service ?: rootConnection.bind()"))
@@ -299,6 +306,36 @@ class RootRuntimeStateMachineTest {
             .readText(Charsets.UTF_8)
         assertTrue(aidl.contains("oneway void requestStop"))
         assertTrue(rootService.contains("rootCommandExecutor.cancelActiveCommands()"))
+    }
+
+    @Test
+    fun rootStopBinderCallHasAHardDeadline() {
+        val blocker = CountDownLatch(1)
+        val startedAt = System.nanoTime()
+
+        val result = runRootStopCall(50L) {
+            blocker.await()
+            true
+        }
+        blocker.countDown()
+
+        val durationMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt)
+        assertNull(result)
+        assertTrue("Root stop deadline took ${durationMs}ms", durationMs < 1_000L)
+    }
+
+    @Test
+    fun emergencyRootCleanupWaitsForTheOldProcessBeforeCleaningOwnedRules() {
+        val sessionId = "0d833321-aaf8-4b3f-b91c-295b1d8b3133"
+
+        val command = buildEmergencyRootCleanupCommand(sessionId, 31536)
+
+        assertTrue(command.contains("[ ! -d /proc/31536 ] || exit 75"))
+        assertTrue(command.contains("/data/adb/kunbox/watchdog.sh"))
+        assertTrue(command.contains("cleanup '$sessionId'"))
+        assertThrows(IllegalArgumentException::class.java) {
+            buildEmergencyRootCleanupCommand("bad-session", 31536)
+        }
     }
 
     @Test

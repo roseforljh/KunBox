@@ -673,11 +673,14 @@ internal suspend fun ConfigRepository.generateConfigFile(
             ConfigRepository.DEFAULT_ROUTE_DOMAIN_RESOLVER_TAG,
             serverAddressStrategy
         )
+        val profileResolverOutbounds = config.dns?.let { profileDns ->
+            ConfigRepository.applyDnsOverrideDomainResolvers(defaultResolverOutbounds, profileDns)
+        } ?: defaultResolverOutbounds
         val outboundsContext = rawOutboundsContext.copy(
             outbounds = if (dnsOverrideConfig != null) {
-                ConfigRepository.applyDnsOverrideDomainResolvers(defaultResolverOutbounds, dnsOverrideConfig)
+                ConfigRepository.applyDnsOverrideDomainResolvers(profileResolverOutbounds, dnsOverrideConfig)
             } else {
-                defaultResolverOutbounds
+                profileResolverOutbounds
             }
         )
         val rootRoutingPlan = if (rootTransparent) {

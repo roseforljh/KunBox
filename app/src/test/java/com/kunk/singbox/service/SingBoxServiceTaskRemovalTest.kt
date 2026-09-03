@@ -72,7 +72,7 @@ class SingBoxServiceTaskRemovalTest {
 
     @Test
     fun explicitStopUsesItsInitiatorForManualStopSemantics() {
-        val source = File("src/main/java/com/kunk/singbox/service/SingBoxService.kt")
+        val source = File("src/main/java/com/kunk/singbox/service/vpn/SingBoxLifecycleRuntime.kt")
             .readText(Charsets.UTF_8)
         val stopBranch = source
             .substringAfter("SingBoxService.ACTION_STOP ->")
@@ -88,7 +88,7 @@ class SingBoxServiceTaskRemovalTest {
 
     @Test
     fun ineligibleStickyRestartStopsTheIdleService() {
-        val source = File("src/main/java/com/kunk/singbox/service/SingBoxService.kt")
+        val source = File("src/main/java/com/kunk/singbox/service/vpn/SingBoxLifecycleRuntime.kt")
             .readText(Charsets.UTF_8)
         val nullIntentBranch = source
             .substringAfter("if (intent?.action == null)")

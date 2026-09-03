@@ -15,14 +15,16 @@ class ConfigRepositoryNodeAddPolicyTest {
 
     @Test
     fun manualNodeAddPathsUseCreatedNodeActivationPolicy() {
-        val source = File("src/main/java/com/kunk/singbox/repository/ConfigRepository.kt").readText()
+        val source = File(
+            "src/main/java/com/kunk/singbox/repository/configrepo/ConfigRepositoryPart9.kt"
+        ).readText()
         val createNodeBody = source.substring(
-            source.indexOf("fun createNode("),
-            source.indexOf("protected fun removeOutboundFromConfig")
+            source.indexOf("fun ConfigRepository.createNode("),
+            source.indexOf("suspend fun ConfigRepository.deleteNode(")
         )
         val addSingleNodeBody = source.substring(
-            source.indexOf("suspend fun addSingleNode("),
-            source.indexOf("suspend fun exportNode(")
+            source.indexOf("suspend fun ConfigRepository.addSingleNode("),
+            source.indexOf("suspend fun ConfigRepository.updateNode(")
         )
 
         assertTrue(createNodeBody.contains("shouldActivateCreatedNode"))

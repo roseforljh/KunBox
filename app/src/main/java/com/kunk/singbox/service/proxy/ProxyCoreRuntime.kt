@@ -215,6 +215,8 @@ internal fun ProxyOnlyService.startCore(configPath: String, recoveryIntentLease:
                 }
                 override fun getSystemProxyStatus(): io.nekohasekai.libbox.SystemProxyStatus? = null
                 override fun setSystemProxyEnabled(isEnabled: Boolean) {}
+                override fun triggerNativeCrash() = Unit
+                override fun connectSSHAgent(): Int = -1
                 override fun writeDebugMessage(message: String?) {
                     if (!message.isNullOrBlank()) {
                         Log.d(TAG, message)

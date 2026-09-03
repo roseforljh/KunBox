@@ -52,6 +52,7 @@ import io.nekohasekai.libbox.CommandClientOptions
 import io.nekohasekai.libbox.ConnectionEvents
 import io.nekohasekai.libbox.OverrideOptions
 import io.nekohasekai.libbox.OutboundGroupIterator
+import io.nekohasekai.libbox.OutboundGroupItemIterator
 import io.nekohasekai.libbox.LogIterator
 import io.nekohasekai.libbox.StatusMessage
 import io.nekohasekai.libbox.StringIterator
@@ -102,6 +103,7 @@ internal fun ProxyOnlyService.startRuntimeCommandClient() {
         override fun updateClashMode(newMode: String?) = Unit
         override fun writeConnectionEvents(events: ConnectionEvents?) = handleRuntimeConnectionEvents(events)
         override fun writeGroups(groups: OutboundGroupIterator?) = handleRuntimeGroups(groups)
+        override fun writeOutbounds(message: OutboundGroupItemIterator?) = Unit
     }, options)
     runtimeCommandClient = client
     SelectorManager.updateCommandClient(client)

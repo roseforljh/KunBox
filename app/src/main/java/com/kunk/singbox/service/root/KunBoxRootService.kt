@@ -31,6 +31,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 internal data class RootStartRequest(
@@ -75,6 +76,7 @@ class KunBoxRootService : RootService() {
         internal const val UID_REFRESH_INTERVAL_MS = 30_000L
         private const val UID_PREWARM_MAX_AGE_MS = 60_000L
         private const val UID_PREWARM_WAIT_MS = 1_500L
+        private const val FORCED_STOP_GRACE_MS = 1_500L
 
         init {
             if (Process.myUid() == 0) {
@@ -113,6 +115,7 @@ class KunBoxRootService : RootService() {
         error = "Root service not initialized"
     )
 
+    @Volatile
     internal var commandServer: CommandServer? = null
     internal var watchdog: RootWatchdogInstaller? = null
     internal var resourceGuard: RootResourceGuard? = null
@@ -252,8 +255,7 @@ class KunBoxRootService : RootService() {
 
         override fun requestStop(runtimeSessionId: String?) {
             enforceCaller()
-            runtimeSessionId.orEmpty().takeIf(String::isNotBlank)?.let(stopRequestedSession::set)
-            rootCommandExecutor.cancelActiveCommands()
+            preemptRuntimeForStop(runtimeSessionId.orEmpty())
         }
 
         override fun stop(runtimeSessionId: String?): Bundle {
@@ -516,7 +518,7 @@ class KunBoxRootService : RootService() {
             Log.e(TAG, "Root runtime start failed", error)
             val cleanupError = rollbackLocked()
             if ("total_ms" !in startupTimings) logStartPhase("total_ms", startedAt)
-            if (error is RootStopRequestedException && cleanupError == null) {
+            if (stopWasRequested(request.runtimeSessionId, error) && cleanupError == null) {
                 markStopped()
             } else if (cleanupError == null) {
                 failUnprotected(error.message ?: "Root runtime start failed")
@@ -549,6 +551,36 @@ class KunBoxRootService : RootService() {
     internal fun throwIfStopRequested(runtimeSessionId: String) {
         if (runtimeSessionId.isNotBlank() && stopRequestedSession.get() == runtimeSessionId) {
             throw RootStopRequestedException()
+        }
+    }
+
+    internal fun stopWasRequested(runtimeSessionId: String, error: Throwable? = null): Boolean =
+        error is RootStopRequestedException ||
+            (runtimeSessionId.isNotBlank() && stopRequestedSession.get() == runtimeSessionId)
+
+    private fun preemptRuntimeForStop(requestedSessionId: String) {
+        val sessionId = requestedSessionId.ifBlank { snapshot.runtimeSessionId }
+        sessionId.takeIf(String::isNotBlank)?.let(stopRequestedSession::set)
+        stopUidMonitor()
+        rootCommandExecutor.cancelActiveCommands()
+        scheduleForcedProcessExit(sessionId)
+    }
+
+    private fun scheduleForcedProcessExit(runtimeSessionId: String) {
+        if (runtimeSessionId.isBlank()) return
+        serviceScope.launch {
+            delay(FORCED_STOP_GRACE_MS)
+            if (stopRequestedSession.get() != runtimeSessionId ||
+                snapshot.phase == RootRuntimePhase.STOPPED
+            ) {
+                return@launch
+            }
+            Log.e(
+                TAG,
+                "[ROOT_STOP] event=forced_process_exit session=$runtimeSessionId " +
+                    "phase=${snapshot.phase} transactions=${runtimeTransactions.get()}"
+            )
+            Process.killProcess(Process.myPid())
         }
     }
 
@@ -835,7 +867,7 @@ class KunBoxRootService : RootService() {
         } catch (error: Exception) {
             Log.e(TAG, "Root UID routing refresh failed", error)
             val cleanupError = rollbackLocked()
-            if (error is RootStopRequestedException && cleanupError == null) {
+            if (stopWasRequested(runtimeSessionId, error) && cleanupError == null) {
                 markStopped()
             } else if (cleanupError == null) {
                 failUnprotected(error.message ?: "Root UID routing refresh failed")

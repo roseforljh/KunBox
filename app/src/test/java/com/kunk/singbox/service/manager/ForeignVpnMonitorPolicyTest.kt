@@ -121,11 +121,11 @@ class ForeignVpnMonitorPolicyTest {
 
     @Test
     fun serviceDestroyInvalidatesTheVpnNetworkMonitor() {
-        val source = File("src/main/java/com/kunk/singbox/service/SingBoxService.kt")
+        val source = File("src/main/java/com/kunk/singbox/service/vpn/SingBoxControlRuntime.kt")
             .readText(Charsets.UTF_8)
         val destroyBody = source
-            .substringAfter("override fun onDestroy()")
-            .substringBefore("override fun onRevoke()")
+            .substringAfter("fun SingBoxService.onDestroyRuntime()")
+            .substringBefore("fun SingBoxService.onRevokeRuntime()")
 
         assertTrue(destroyBody.contains("foreignVpnMonitor.cleanup()"))
     }

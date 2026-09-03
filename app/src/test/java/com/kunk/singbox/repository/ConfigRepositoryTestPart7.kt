@@ -209,7 +209,7 @@ abstract class ConfigRepositoryTestPart7 : ConfigRepositoryTestPart6() {
 
         val json = Gson().toJson(server)
         assertTrue(json.contains("\"domain_resolver\""))
-        assertTrue(json.contains("\"domain_resolver\":\"dns-bootstrap\""))
+        assertTrue(json.contains("\"server\":\"dns-bootstrap\""))
     }
 
     @Test
@@ -392,7 +392,7 @@ abstract class ConfigRepositoryTestPart7 : ConfigRepositoryTestPart6() {
 
         assertEquals(1, rules.size)
         assertEquals(proxyServerTag, rules[0].server)
-        assertNull(rules[0].queryType)
+        assertEquals(listOf("A", "AAAA"), rules[0].queryType)
     }
 
     @Test
@@ -406,7 +406,7 @@ abstract class ConfigRepositoryTestPart7 : ConfigRepositoryTestPart6() {
 
         assertEquals(1, rules.size)
         assertEquals(proxyServerTag, rules[0].server)
-        assertNull(rules[0].queryType)
+        assertEquals(listOf("A", "AAAA"), rules[0].queryType)
     }
 
     @Test
@@ -420,7 +420,7 @@ abstract class ConfigRepositoryTestPart7 : ConfigRepositoryTestPart6() {
 
         assertEquals(1, rules.size)
         assertEquals(serverTag, rules[0].server)
-        assertNull(rules[0].queryType)
+        assertEquals(listOf("A", "AAAA"), rules[0].queryType)
     }
 
     @Test

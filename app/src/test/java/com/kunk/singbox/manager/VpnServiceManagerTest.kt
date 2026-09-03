@@ -78,6 +78,31 @@ class VpnServiceManagerTest {
     }
 
     @Test
+    fun inactiveFailedRootStopCanRecoverOnTheNextStart() {
+        assertTrue(
+            VpnServiceManager.shouldRecoverInactiveRootStop(
+                mode = TrafficCaptureMode.ROOT_TRANSPARENT,
+                pending = "stopping",
+                active = false
+            )
+        )
+        assertFalse(
+            VpnServiceManager.shouldRecoverInactiveRootStop(
+                mode = TrafficCaptureMode.ROOT_TRANSPARENT,
+                pending = "stopping",
+                active = true
+            )
+        )
+        assertFalse(
+            VpnServiceManager.shouldRecoverInactiveRootStop(
+                mode = TrafficCaptureMode.VPN,
+                pending = "stopping",
+                active = false
+            )
+        )
+    }
+
+    @Test
     fun runtimeStateDoesNotReadLegacyVpnPreferences() {
         val source = File("src/main/java/com/kunk/singbox/manager/VpnServiceManager.kt").readText()
 

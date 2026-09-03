@@ -50,8 +50,6 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import kotlinx.coroutines.withContext
-import kotlinx.coroutines.NonCancellable
 
 internal fun resolveRootCandidateRequestId(
     configPathOverride: String?,
@@ -928,34 +926,6 @@ class RootTransparentForegroundService : Service() {
             updateNotification()
             if (stopSelfAfter && lifecycle.snapshot().desiredState == RootDesiredState.STOPPED) {
                 Log.w(TAG, "Root stop verification failed; keeping service alive for cleanup retry")
-            }
-        }
-    }
-
-    private suspend fun stopRemoteRuntime(): RootRuntimeSnapshot {
-        val rootService = rootConnection.service ?: return if (
-            runtimeSessionId.isBlank() && lastRootSnapshot.phase == RootRuntimePhase.STOPPED
-        ) {
-            RootRuntimeSnapshot(phase = RootRuntimePhase.STOPPED)
-        } else {
-            RootRuntimeSnapshot(
-                phase = RootRuntimePhase.FAILED_VERIFICATION,
-                runtimeSessionId = runtimeSessionId,
-                rulesInstalled = lastRootSnapshot.rulesInstalled,
-                error = "Root service disconnected before cleanup could be verified"
-            )
-        }
-        return withContext(NonCancellable + Dispatchers.IO) {
-            runCatching {
-                runtimeSessionId.takeIf(String::isNotBlank)?.let(rootService::requestStop)
-                RootRuntimeSnapshot.fromBundle(rootService.stop(runtimeSessionId))
-            }.getOrElse { error ->
-                RootRuntimeSnapshot(
-                    phase = RootRuntimePhase.FAILED_VERIFICATION,
-                    runtimeSessionId = runtimeSessionId,
-                    rulesInstalled = false,
-                    error = error.message ?: "Root cleanup could not be confirmed"
-                )
             }
         }
     }

@@ -141,10 +141,33 @@ internal class TestPlatformInterface(private val context: Context) : PlatformInt
     override fun readWIFIState(): WIFIState? = null
     override fun clearDNSCache() {}
     override fun sendNotification(p0: io.nekohasekai.libbox.Notification?) {}
+    override fun cancelNotification(identifier: String?, typeID: Int) {}
+    override fun startNeighborMonitor(listener: NeighborUpdateListener?) =
+        throw UnsupportedOperationException("Platform neighbor monitor is unavailable")
+    override fun closeNeighborMonitor(listener: NeighborUpdateListener?) {}
+    override fun registerMyInterface(name: String?) {}
+    override fun usePlatformShell(): Boolean = false
+    override fun checkPlatformShell() = throw UnsupportedOperationException("Platform shell is unavailable")
+    override fun openShellSession(
+        user: PlatformUser?,
+        command: String?,
+        environ: StringIterator?,
+        term: String?,
+        rows: Int,
+        cols: Int
+    ): ShellSession = throw UnsupportedOperationException("Platform shell is unavailable")
+    override fun lookupUser(username: String?): PlatformUser =
+        throw UnsupportedOperationException("Platform user lookup is unavailable")
+    override fun lookupSFTPServer(): String = throw UnsupportedOperationException("Platform SFTP is unavailable")
+    override fun readSystemSSHHostKey(): String =
+        throw UnsupportedOperationException("Platform SSH host key is unavailable")
+    override fun tailscaleHostname(): String = ""
+    override fun usePlatformBridge(): Boolean = false
+    override fun createBridge(options: BridgeOptions?): BridgeSession =
+        throw UnsupportedOperationException("Platform bridge is unavailable")
     override fun localDNSTransport(): io.nekohasekai.libbox.LocalDNSTransport {
         return com.kunk.singbox.core.LocalResolverImpl
     }
-    override fun systemCertificates(): StringIterator? = null
 }
 
 internal class TestCommandServerHandler : io.nekohasekai.libbox.CommandServerHandler {
@@ -152,5 +175,7 @@ internal class TestCommandServerHandler : io.nekohasekai.libbox.CommandServerHan
     override fun serviceReload() {}
     override fun getSystemProxyStatus(): io.nekohasekai.libbox.SystemProxyStatus? = null
     override fun setSystemProxyEnabled(isEnabled: Boolean) {}
+    override fun triggerNativeCrash() = Unit
+    override fun connectSSHAgent(): Int = -1
     override fun writeDebugMessage(message: String?) {}
 }

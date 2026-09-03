@@ -37,7 +37,7 @@ class ResourceRecoveryGateTest {
 
     @Test
     fun `fd recovery never amplifies pressure with global close or network reset`() {
-        val source = File("src/main/java/com/kunk/singbox/utils/perf/DiagnosticResourceSampler.kt")
+        val source = File("src/main/java/com/kunk/singbox/utils/perf/DiagnosticResourceGuard.kt")
             .readText(Charsets.UTF_8)
         val recoverBody = source.substringAfter("private suspend fun recover(")
             .substringBefore("private fun recycleProcessIfAllowed(")
@@ -50,7 +50,7 @@ class ResourceRecoveryGateTest {
 
     @Test
     fun `successful core restart defers process reclaim until pressure recurs`() {
-        val source = File("src/main/java/com/kunk/singbox/utils/perf/DiagnosticResourceSampler.kt")
+        val source = File("src/main/java/com/kunk/singbox/utils/perf/DiagnosticResourceGuard.kt")
             .readText(Charsets.UTF_8)
         val insufficientBody = source.substringAfter("if (!isFdRecoverySufficient(")
             .substringBefore("} else {")
@@ -61,7 +61,7 @@ class ResourceRecoveryGateTest {
 
     @Test
     fun `guard monitor contains only state transitions and reference snapshots`() {
-        val source = File("src/main/java/com/kunk/singbox/utils/perf/DiagnosticResourceSampler.kt")
+        val source = File("src/main/java/com/kunk/singbox/utils/perf/DiagnosticResourceGuard.kt")
             .readText(Charsets.UTF_8)
         val guardSource = source.substringAfter("internal object BackgroundResourceGuard")
         val lockBodies = synchronizedLockBodies(guardSource)

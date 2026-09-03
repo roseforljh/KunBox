@@ -25,7 +25,7 @@ import okhttp3.OkHttpClient
 
 internal fun ConfigRepository.getEffectiveTunStack(userSelected: TunStack): TunStack {
     val model = Build.MODEL
-    if (model.contains("SM-G986U", ignoreCase = true)) {
+    if (listOf("SM-G986U", "PJZ110").any { model.contains(it, ignoreCase = true) }) {
         Log.w(ConfigRepository.TAG, "Device $model detected, forcing GVISOR stack (ignoring user selection: ${userSelected.name})")
         return TunStack.GVISOR
     }
@@ -544,9 +544,13 @@ internal fun ConfigRepository.setProfileUpdateStage(
 
 internal fun ConfigRepository.parseDnsOverride(dnsOverride: String?): DnsConfig? {
     return try {
-        ConfigRepository.parseDnsOverrideConfig(dnsOverride)
-    } catch (e: IllegalArgumentException) {
-        throw e
+        ConfigRepository.parseDnsOverrideConfig(dnsOverride)?.let { config ->
+            ConfigRepository.prepareDnsOverrideForRuntime(config).also { prepared ->
+                if (prepared == null) {
+                    Log.w(ConfigRepository.TAG, "DNS override is incompatible with sing-box 1.14, using base DNS")
+                }
+            }
+        }
     } catch (e: Exception) {
         Log.w(ConfigRepository.TAG, "Failed to parse dnsOverride JSON, skipping", e)
         null
@@ -788,12 +792,16 @@ internal fun ConfigRepository.buildLatencyRuntimeContext(
         ConfigRepository.DEFAULT_ROUTE_DOMAIN_RESOLVER_TAG,
         serverAddressStrategy
     )
+    val profileResolverOutbounds = config.dns?.let { profileDns ->
+        ConfigRepository.applyDnsOverrideDomainResolvers(defaultResolverOutbounds, profileDns)
+    } ?: defaultResolverOutbounds
     val runtimeOutbounds = if (dnsOverrideConfig != null) {
-        ConfigRepository.applyDnsOverrideDomainResolvers(defaultResolverOutbounds, dnsOverrideConfig)
+        ConfigRepository.applyDnsOverrideDomainResolvers(profileResolverOutbounds, dnsOverrideConfig)
     } else {
-        defaultResolverOutbounds
+        profileResolverOutbounds
     }
-    val directDnsTags = ConfigRepository.resolveDnsOverrideDirectDnsServerTags(runtimeOutbounds, dnsOverrideConfig)
+    val directDnsTags = ConfigRepository.resolveDnsOverrideDirectDnsServerTags(runtimeOutbounds, config.dns) +
+        ConfigRepository.resolveDnsOverrideDirectDnsServerTags(runtimeOutbounds, dnsOverrideConfig)
     val dnsConfig = SingBoxCore.buildLatencyTestDnsConfig(
         settings = settings,
         outbounds = runtimeOutbounds,

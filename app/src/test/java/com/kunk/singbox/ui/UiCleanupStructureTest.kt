@@ -327,16 +327,17 @@ class UiCleanupStructureTest {
         assertTrue(viewModel.contains("customDraftOutbounds"))
         assertTrue(viewModel.contains("R.string.custom_profile_name_required"))
 
-        val repository = mainSource("repository/ConfigRepository.kt")
+        val repository = mainSource("repository/configrepo/ConfigRepositoryPart2.kt")
             .readNormalizedText()
             .extractFunctionBody("createCustomProfile")
         assertFalse(repository.contains("createEmptyProfile"))
         assertTrue(repository.contains("additionalOutbounds"))
         assertTrue(repository.contains("if (nodes.isEmpty())"))
 
-        val repositorySource = mainSource("repository/ConfigRepository.kt").readNormalizedText()
-        val outboundResolver = repositorySource.extractFunctionBody("resolveCustomProfileOutbounds")
+        val repositoryPart2 = mainSource("repository/configrepo/ConfigRepositoryPart2.kt").readNormalizedText()
+        val outboundResolver = repositoryPart2.extractFunctionBody("resolveCustomProfileOutbounds")
         assertTrue(outboundResolver.contains("additionalOutbounds"))
+        val repositorySource = mainSource("repository/ConfigRepository.kt").readNormalizedText()
         val outboundCombiner = repositorySource.extractFunctionBody("combineCustomProfileOutbounds")
         assertTrue(outboundCombiner.contains("Outbound(type = \"direct\", tag = \"direct\")"))
 
@@ -366,7 +367,7 @@ class UiCleanupStructureTest {
 
     @Test
     fun profileImportOptionsUseUniformCompactCards() {
-        val dialogs = mainSource("ui/screens/ProfilesScreenDialogs.kt").readNormalizedText()
+        val dialogs = mainSource("ui/screens/ProfileImportDialogs.kt").readNormalizedText()
         val importOptionCard = dialogs.extractFunctionBody("ImportOptionCard")
 
         assertTrue(importOptionCard.contains(".height(88.dp)"))
@@ -684,7 +685,11 @@ private fun File.readNormalizedText(): String = readText().replace("\r\n", "\n")
 private fun String.countOccurrences(token: String): Int = windowed(token.length).count { it == token }
 
 private fun String.extractFunctionBody(functionName: String): String {
-    val functionStart = listOf("fun $functionName", "fun Modifier.$functionName")
+    val functionStart = listOf(
+        "fun $functionName",
+        "fun Modifier.$functionName",
+        "fun ConfigRepository.$functionName"
+    )
         .map(::indexOf)
         .firstOrNull { it >= 0 }
         ?: -1

@@ -306,12 +306,118 @@ internal fun ConfigRepository.Companion.dnsRuleMatcherKeys(): Set<String> {
 internal fun ConfigRepository.Companion.parseDnsOverrideConfig(dnsOverride: String?): DnsConfig? {
     val trimmed = dnsOverride?.trim().orEmpty()
     if (trimmed.isBlank()) return null
+    findUnsupportedAndroidCapabilityInJson(trimmed)?.let { message ->
+        throw IllegalArgumentException(message)
+    }
     val config = Gson().fromJson(extractDnsOverrideJsonObject(trimmed), DnsConfig::class.java)
         ?: return null
     findUnsupportedAndroidCapability(SingBoxConfig(dns = config))?.let { message ->
         throw IllegalArgumentException(message)
     }
     return config
+}
+
+internal fun ConfigRepository.Companion.prepareDnsOverrideForRuntime(config: DnsConfig): DnsConfig? {
+    if (config.fakeip != null) return null
+    if (config.servers.orEmpty().any { server ->
+            !server.strategy.isNullOrBlank() || !server.clientSubnet.isNullOrBlank()
+        }
+    ) {
+        return null
+    }
+    val servers = runCatching {
+        config.servers.orEmpty().map(::normalizeInjectedDnsServer)
+    }.getOrNull() ?: return null
+    if (servers.any { !isDnsServerValidForRuntime(it, requireTag = true) }) return null
+
+    val availableServerTags = knownDnsServerTags() + servers.mapNotNull { it.tag }
+    val rules = config.rules.orEmpty().map(::normalizeDnsOverrideRule)
+    if (rules.any { rule ->
+            if (dnsRuleOutboundValues(rule).isNotEmpty()) {
+                rule.server.isNullOrBlank() || rule.server !in availableServerTags
+            } else {
+                !isDnsRuleValidForModernRuntime(rule, availableServerTags)
+            }
+        }
+    ) {
+        return null
+    }
+    val finalServer = config.finalServer?.trim()?.takeIf(String::isNotBlank)
+    if (finalServer != null && finalServer !in availableServerTags) return null
+    return config.copy(
+        servers = servers,
+        rules = rules,
+        finalServer = finalServer,
+        independentCache = null,
+        fakeip = null
+    )
+}
+
+internal fun ConfigRepository.Companion.isDnsServerValidForRuntime(
+    server: DnsServer,
+    requireTag: Boolean = false
+): Boolean {
+    if (requireTag && server.tag.isNullOrBlank()) return false
+    return when (server.type?.trim()?.lowercase()) {
+        "udp", "tcp", "tls", "quic", "https", "h3" -> !server.server.isNullOrBlank()
+        "hosts" -> true
+        "resolved" -> !server.service.isNullOrBlank()
+        "local", "fakeip", "dhcp", "mdns" -> true
+        else -> false
+    }
+}
+
+internal fun ConfigRepository.Companion.isDnsRuleValidForModernRuntime(
+    rule: DnsRule,
+    availableServerTags: Set<String>,
+    ipOnlyRuleSetTags: Set<String> = emptySet(),
+    nested: Boolean = false
+): Boolean {
+    if (dnsRuleOutboundValues(rule).isNotEmpty()) return false
+    if (!rule.strategy.isNullOrBlank() ||
+        !rule.geosite.isNullOrEmpty() ||
+        !rule.sourceGeoip.isNullOrEmpty() ||
+        !rule.geoip.isNullOrEmpty() ||
+        !rule.client.isNullOrEmpty() ||
+        !rule.ipCidr.isNullOrEmpty() ||
+        rule.ipIsPrivate != null ||
+        rule.ipAcceptAny != null ||
+        rule.ruleSetIpCidrAcceptEmpty != null ||
+        rule.ruleSet.orEmpty().any(ipOnlyRuleSetTags::contains)
+    ) {
+        return false
+    }
+    if (rule.type.equals("logical", ignoreCase = true)) {
+        val nestedRules = rule.rules.orEmpty()
+        return !nested && nestedRules.isNotEmpty() && nestedRules.all {
+            isDnsRuleValidForModernRuntime(it, availableServerTags, ipOnlyRuleSetTags, nested = true)
+        } && isDnsRuleActionValidForRuntime(rule, availableServerTags)
+    }
+    if (nested) {
+        return rule.action.isNullOrBlank() && rule.server.isNullOrBlank()
+    }
+    return isDnsRuleActionValidForRuntime(rule, availableServerTags)
+}
+
+internal fun ConfigRepository.Companion.isDnsRuleActionValidForRuntime(
+    rule: DnsRule,
+    availableServerTags: Set<String>
+): Boolean {
+    return when (rule.action?.trim()?.lowercase()) {
+        "route" -> !rule.server.isNullOrBlank() && rule.server in availableServerTags
+        "reject", "predefined" -> rule.server.isNullOrBlank()
+        else -> false
+    }
+}
+
+internal fun ConfigRepository.Companion.sanitizeDnsRulesForRuntime(
+    rules: List<DnsRule>,
+    availableServerTags: Set<String>,
+    ipOnlyRuleSetTags: Set<String> = emptySet()
+): List<DnsRule> {
+    return rules.map(::normalizeDnsOverrideRule).filter { rule ->
+        isDnsRuleValidForModernRuntime(rule, availableServerTags, ipOnlyRuleSetTags)
+    }
 }
 
 internal fun ConfigRepository.Companion.applyDnsOverride(
@@ -334,7 +440,11 @@ internal fun ConfigRepository.Companion.applyDnsOverride(
     }
 
     val rules = baseConfig.rules.orEmpty().toMutableList()
-    val overrideRules = overrideConfig.rules.orEmpty().map { normalizeDnsOverrideRule(it) }
+    val availableServerTags = servers.mapNotNullTo(mutableSetOf()) { it.tag }
+    val overrideRules = sanitizeDnsRulesForRuntime(
+        overrideConfig.rules.orEmpty(),
+        availableServerTags
+    )
     if (overrideRules.isNotEmpty()) {
         rules.addAll(0, overrideRules)
     }
@@ -626,11 +736,15 @@ internal fun ConfigRepository.Companion.buildSpecialDnsServerOrNull(
         else -> null
     }
     return type?.let {
+        val resolver = domainResolver
+            ?.takeIf { resolverConfig -> !resolverConfig.server.isNullOrBlank() }
+            ?.let { resolverConfig ->
+                resolverConfig.copy(strategy = resolverConfig.strategy ?: domainStrategy)
+            }
         DnsServer(
             tag = tag,
             type = it,
-            domainResolver = domainResolver,
-            domainStrategy = domainStrategy,
+            domainResolver = resolver,
             detour = detour
         )
     }
@@ -665,14 +779,38 @@ internal fun ConfigRepository.Companion.buildDnsServer(
         return it
     }
 
+    if (trimmed.startsWith("dhcp://", ignoreCase = true)) {
+        val interfaceName = trimmed.substringAfter("://").trim()
+            .takeIf { it.isNotBlank() && !it.equals("auto", ignoreCase = true) }
+        return DnsServer(
+            tag = tag,
+            type = "dhcp",
+            interfaceName = interfaceName,
+            detour = detour
+        )
+    }
+
+    fun runtimeDomainResolver(host: String): DomainResolveConfig? {
+        val existing = domainResolver?.takeIf { !it.server.isNullOrBlank() }
+        val resolverServer = existing?.server?.trim()?.takeIf(String::isNotBlank)
+            ?: DEFAULT_ROUTE_DOMAIN_RESOLVER_TAG.takeIf {
+                !isIpAddressValue(host) && tag != DEFAULT_ROUTE_DOMAIN_RESOLVER_TAG
+            }
+        return resolverServer?.let {
+            (existing ?: DomainResolveConfig()).copy(
+                server = it,
+                strategy = existing?.strategy ?: domainStrategy
+            )
+        }
+    }
+
     parseBareDnsEndpoint(trimmed)?.let { (host, port) ->
         return DnsServer(
             tag = tag,
             type = "udp",
             server = host,
             serverPort = port,
-            domainResolver = domainResolver,
-            domainStrategy = domainStrategy,
+            domainResolver = runtimeDomainResolver(host),
             detour = detour
         )
     }
@@ -697,8 +835,7 @@ internal fun ConfigRepository.Companion.buildDnsServer(
         server = server,
         serverPort = port,
         pathRaw = path,
-        domainResolver = domainResolver,
-        domainStrategy = domainStrategy,
+        domainResolver = runtimeDomainResolver(host),
         detour = detour
     )
 }
