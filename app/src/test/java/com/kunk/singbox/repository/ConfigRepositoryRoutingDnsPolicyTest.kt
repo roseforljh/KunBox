@@ -198,6 +198,7 @@ class ConfigRepositoryRoutingDnsPolicyTest {
         )
 
         assertEquals("9.9.9.9", numeric.server)
+        assertNull(numeric.detour)
         assertEquals("local", system.type)
         assertNull(system.server)
     }
