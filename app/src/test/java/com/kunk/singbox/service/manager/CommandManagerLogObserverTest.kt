@@ -7,6 +7,21 @@ import org.junit.Test
 class CommandManagerLogObserverTest {
 
     @Test
+    fun establishedChannelsStillExpireWithoutHeartbeats() {
+        val startedAt = 1_000L
+        val now = 61_000L
+        assertTrue(CommandManager.isBaseCommandChannelStale(1_100L, startedAt, now))
+        assertEquals(false, CommandManager.isBaseCommandChannelStale(60_000L, startedAt, now))
+    }
+
+    @Test
+    fun initialLogReplayDoesNotDeclarePendingBaseSubscriptionsDead() {
+        assertEquals(false, CommandManager.isBaseCommandChannelStale(null, 1_000L, 1_001L))
+        assertEquals(false, CommandManager.isBaseCommandChannelStale(null, 1_000L, 16_000L))
+        assertTrue(CommandManager.isBaseCommandChannelStale(null, 1_000L, 16_001L))
+    }
+
+    @Test
     fun dispatchesObserverWhenUiLogsAreDisabled() {
         val observed = mutableListOf<String>()
         val stored = mutableListOf<String>()

@@ -132,7 +132,9 @@ internal fun CommandManager.requireBaseCommandHeartbeats(generation: Long) {
         }
         val now = SystemClock.uptimeMillis()
         CommandManager.BaseCommandChannel.entries.filter { channel ->
-            CommandManager.isCommandHeartbeatStale(baseCommandHeartbeatAtMs[channel], now)
+            CommandManager.isBaseCommandChannelStale(
+                baseCommandHeartbeatAtMs[channel], commandSessionStartedAtMs, now
+            )
         }.also { stale ->
             if (stale.isNotEmpty()) {
                 readyBaseCommandChannels.removeAll(stale.toSet())
@@ -194,6 +196,12 @@ internal fun CommandManager.notifyCombinedCommandHealthLocked() {
 internal fun CommandManager.markBaseCommandHealth(generation: Long, channel: CommandManager.BaseCommandChannel, ready: Boolean) {
     synchronized(runtimeAccess) {
         if (generation != activeCommandSessionGeneration) return
+        if ((channel in readyBaseCommandChannels) != ready) {
+            LogRepository.getInstance().addAlwaysLog(
+                "INFO [Startup] command_channel=$channel ready=$ready generation=$generation elapsed_ms=" +
+                    (SystemClock.uptimeMillis() - commandSessionStartedAtMs)
+            )
+        }
         if (ready) readyBaseCommandChannels += channel else readyBaseCommandChannels -= channel
         if (ready) baseCommandHeartbeatAtMs[channel] = SystemClock.uptimeMillis()
         else baseCommandHeartbeatAtMs.remove(channel)

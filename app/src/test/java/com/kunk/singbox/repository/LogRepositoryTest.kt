@@ -77,6 +77,22 @@ class LogRepositoryTest {
     }
 
     @Test
+    fun startupAndControlDiagnosticsSurviveReplayWithDebugDisabled() {
+        repository.setEnabled(false)
+        repository.clearLogs()
+        val messages = listOf(
+            "INFO [Startup] config_generation_begin",
+            "INFO [Startup] readiness=BLOCKING reason=command_channel_lost",
+            "ERROR [COMMAND_DIAG] event=base_heartbeat_timeout stale=STATUS"
+        )
+        messages.forEach(repository::addAlwaysLog)
+        repeat(2) { repository.clearLogs(preserveRecoveryDiagnostics = true) }
+        messages.forEach { assertTrue(repository.getLogsAsText().contains(it)) }
+        repository.clearLogs()
+        messages.forEach { assertFalse(repository.getLogsAsText().contains(it)) }
+    }
+
+    @Test
     fun persistedLogTimestampContainsDateAndMilliseconds() {
         assertEquals("yyyy-MM-dd HH:mm:ss.SSS", LOG_TIMESTAMP_PATTERN)
     }

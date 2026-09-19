@@ -614,7 +614,7 @@ class LogRepository private constructor() {
                 line.contains("[CONNECTION_STORM]") ||
                 line.contains("[HOT_SWITCH]") ||
                 line.contains("[HotReload]") ||
-                line.contains("[COMMAND_LOG]") ||
+                listOf("[COMMAND_LOG]", "[COMMAND_DIAG]", "[Startup]").any(line::contains) ||
                 line.contains(" resource_fd ") ||
                 line.contains(" resource_fd_breakdown ") ||
                 line.contains(" resource_exhausted ") ||

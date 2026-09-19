@@ -475,9 +475,21 @@ object SingBoxIpcHub {
     fun updateReadiness(transform: (DataPlaneReadinessSnapshot) -> DataPlaneReadinessSnapshot) {
         val updatedSnapshot = synchronized(stateLock) {
             val current = stateSnapshot
+            val readiness = transform(current.readiness)
+            val controlChanged = readiness.coreReady != current.readiness.coreReady ||
+                readiness.selectorReady != current.readiness.selectorReady
+            if (controlChanged || readiness.status != current.readiness.status ||
+                readiness.lastReadinessReason != current.readiness.lastReadinessReason) {
+                LogRepository.getInstance().addAlwaysLog(
+                    "INFO [Startup] readiness=${readiness.status} reason=${readiness.lastReadinessReason} " +
+                        "core=${readiness.coreReady} selector=${readiness.selectorReady} " +
+                        "tun=${readiness.tunEstablished} owner=${readiness.systemVpnOwnerStatus} " +
+                        "recovery=${readiness.recoveryActive}"
+                )
+            }
             VpnStateStore.buildNextRuntimeStateSnapshot(current) { snapshot ->
                 snapshot.copy(
-                    readiness = transform(snapshot.readiness).copy(
+                    readiness = readiness.copy(
                         serviceInstanceId = serviceInstanceId,
                         updatedAtElapsedMs = SystemClock.elapsedRealtime()
                     )

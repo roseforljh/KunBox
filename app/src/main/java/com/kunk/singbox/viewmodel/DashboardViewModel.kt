@@ -800,6 +800,9 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
     private fun startCore() {
         startCoreJob?.cancel()
         startCoreJob = viewModelScope.launch {
+            com.kunk.singbox.repository.LogRepository.getInstance().addAlwaysLog(
+                "INFO [Startup] ui_start_request"
+            )
             startServiceDispatched = false
             stopRequestedByUser = false
             val context = getApplication<Application>()
@@ -909,6 +912,9 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                                 nowElapsedMs = SystemClock.elapsedRealtime()
                             )
                         ) {
+                            com.kunk.singbox.repository.LogRepository.getInstance().addAlwaysLog(
+                                "INFO [Startup] ui_ready service_wait_ms=$elapsed"
+                            )
                             _connectionState.value = ConnectionState.Connected
                             startTrafficMonitor()
                             return@launch

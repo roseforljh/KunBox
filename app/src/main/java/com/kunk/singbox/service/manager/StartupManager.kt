@@ -46,7 +46,7 @@ class StartupManager(
 
     private fun log(msg: String) {
         Log.i(TAG, msg)
-        logRepo.addLog("INFO [Startup] $msg")
+        logRepo.addAlwaysLog("INFO [Startup] $msg")
     }
 
     private fun isPortAvailable(port: Int): Boolean {

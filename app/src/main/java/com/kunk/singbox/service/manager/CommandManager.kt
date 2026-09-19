@@ -86,6 +86,12 @@ class CommandManager(
             timeoutMs: Long = BASE_COMMAND_HEARTBEAT_TIMEOUT_MS
         ): Boolean = lastHeartbeatMs == null || nowMs < lastHeartbeatMs || nowMs - lastHeartbeatMs > timeoutMs
 
+        internal fun isBaseCommandChannelStale(
+            lastHeartbeatMs: Long?,
+            sessionStartedAtMs: Long,
+            nowMs: Long
+        ): Boolean = isCommandHeartbeatStale(lastHeartbeatMs ?: sessionStartedAtMs, nowMs)
+
         internal fun dispatchKernelLog(
             message: String,
             uiLogsEnabled: Boolean,
@@ -173,6 +179,7 @@ class CommandManager(
     internal var commandLogReconnectJob: Job? = null
 
     internal var activeCommandSessionGeneration = 0L
+    internal var commandSessionStartedAtMs = 0L
     internal var activeCommandLogClientToken = 0L
     internal var pendingCommandLogClientToken = 0L
     internal val commandLogClientTokenSequence = AtomicLong(0L)
@@ -663,6 +670,7 @@ class CommandManager(
             commandLogReconnectJob?.cancel()
             val generation = runtimeGeneration.incrementAndGet()
             activeCommandSessionGeneration = generation
+            commandSessionStartedAtMs = SystemClock.uptimeMillis()
             commandFdProvider = fdProvider
             commandLogReconnectEnabled = true
             commandLogReconnectJob = null
