@@ -14,31 +14,6 @@ import kotlinx.coroutines.flow.*
 internal fun ConfigRepository.buildOutboundForRuntime(outbound: Outbound): Outbound? =
     OutboundFixer.buildForRuntime(context, outbound)
 
-internal fun ConfigRepository.loadConfigWithLegacyEchRepair(profile: ProfileUi?, profileId: String): SingBoxConfig? {
-    val config = loadConfig(profileId) ?: return null
-    val subscriptionUrl = profile?.url?.takeIf { it.isNotBlank() } ?: return config
-    if (!ConfigRepository.needsLegacyEchDnsRepair(config)) return config
-
-    val repairedConfig = fetchAndParseSubscription(subscriptionUrl)?.config ?: return config
-    val deduplicatedConfig = deduplicateTags(repairedConfig)
-    if (ConfigRepository.needsLegacyEchDnsRepair(deduplicatedConfig)) return config
-
-    runCatching {
-        writeConfigFileOrThrow(profileId, deduplicatedConfig)
-        cacheConfig(profileId, deduplicatedConfig)
-        val repairedNodes = extractNodesFromConfigSync(deduplicatedConfig, profileId)
-        profileNodes[profileId] = repairedNodes
-        updateAllNodesAndGroups()
-        if (_activeProfileId.value == profileId) {
-            _nodes.value = repairedNodes
-        }
-        Log.i(ConfigRepository.TAG, "Repaired legacy ECH subscription config for profile: ${profile.name}")
-    }.onFailure { e ->
-        Log.w(ConfigRepository.TAG, "Failed to persist repaired ECH subscription config for profile: $profileId", e)
-    }
-    return deduplicatedConfig
-}
-
 internal fun ConfigRepository.stripInternalMetadata(config: SingBoxConfig): SingBoxConfig {
     val runtimeOutbounds = ConfigRepository.applyDefaultOutboundDomainResolver(
         config.outbounds.orEmpty().map { stripInternalMetadata(it) },

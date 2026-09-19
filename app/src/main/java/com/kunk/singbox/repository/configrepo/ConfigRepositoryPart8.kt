@@ -186,7 +186,7 @@ internal fun ConfigRepository.buildRunOutbounds(
         Log.w(ConfigRepository.TAG, "No outbounds found in base config, adding defaults")
     }
 
-    val fixedOutbounds = rawOutbounds?.mapNotNull { outbound ->
+    val processedOutbounds = rawOutbounds.orEmpty().mapNotNull { outbound ->
         var processed = buildOutboundForRuntime(outbound) ?: return@mapNotNull null
         val server = processed.server?.trim().orEmpty()
         if (dnsPreResolve && ConfigRepository.shouldApplyDnsPreResolveToDomain(
@@ -197,13 +197,11 @@ internal fun ConfigRepository.buildRunOutbounds(
         ) {
             processed = applyDnsResolveToOutbound(activeProfileId, processed)
         }
-        if (singBoxCore.validateOutbound(stripInternalMetadata(processed))) {
-            processed
-        } else {
-            Log.w(ConfigRepository.TAG, "Skipping invalid outbound: ${outbound.tag} (type=${outbound.type})")
-            null
-        }
-    }?.toMutableList() ?: mutableListOf()
+        processed
+    }
+    val validTags = singBoxCore.filterValidOutbounds(processedOutbounds.map { stripInternalMetadata(it) })
+        .mapTo(mutableSetOf()) { it.tag }
+    val fixedOutbounds = processedOutbounds.filter { it.tag in validTags }.toMutableList()
 
     if (fixedOutbounds.none { it.tag == "direct" }) {
         fixedOutbounds.add(Outbound(type = "direct", tag = "direct"))
@@ -362,12 +360,14 @@ internal fun ConfigRepository.buildRunOutbounds(
                 val sourceConfig = sourceConfigCache.getOrPut(sourceProfileId) {
                     loadConfig(sourceProfileId)
                 } ?: return@getOrPut null
-                ConfigRepository.buildLatencyRuntimeOutbounds(sourceConfig) { outbound ->
+                val runtimeOutbounds = ConfigRepository.buildLatencyRuntimeOutbounds(sourceConfig) { outbound ->
                     buildOutboundForRuntime(outbound)
-                }.filter { outbound ->
-                    outbound.type.equals("wireguard", ignoreCase = true) ||
-                        singBoxCore.validateOutbound(stripInternalMetadata(outbound))
                 }
+                val validRuntimeTags = singBoxCore.filterValidOutbounds(
+                    runtimeOutbounds.filterNot { it.type.equals("wireguard", ignoreCase = true) }
+                        .map { stripInternalMetadata(it) }
+                ).mapTo(mutableSetOf()) { it.tag }
+                runtimeOutbounds.filter { it.type.equals("wireguard", ignoreCase = true) || it.tag in validRuntimeTags }
             }
         }
         val missingStrictNodes = crossProfileRoots.filter { (nodeId, rootReference) ->

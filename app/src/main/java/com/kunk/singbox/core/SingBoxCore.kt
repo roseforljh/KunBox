@@ -45,6 +45,17 @@ internal data class LatencyProbeParts(
     val endpoints: List<Endpoint>
 )
 
+internal fun filterRuntimeOutbounds(
+    outbounds: List<Outbound>,
+    validate: (List<Outbound>) -> Boolean
+): List<Outbound> {
+    val uncheckedTypes = setOf("direct", "block", "dns", "selector", "urltest", "url-test")
+    val candidates = outbounds.filterNot { it.type in uncheckedTypes }
+    // ponytail: 正常订阅只做一次批量校验；有坏节点时才回退到逐个过滤。
+    if (candidates.isEmpty() || validate(candidates)) return outbounds
+    return outbounds.filter { it.type in uncheckedTypes || validate(listOf(it)) }
+}
+
 enum class LatencyProbeTrafficKind {
     BACKGROUND_PROBE,
     HEALTH_CHECK
@@ -700,24 +711,19 @@ class SingBoxCore private constructor(internal val context: Context) {
             Result.failure(e)
         }
     }
-    fun validateOutbound(outbound: Outbound): Boolean {
+    fun filterValidOutbounds(outbounds: List<Outbound>): List<Outbound> =
+        filterRuntimeOutbounds(outbounds, ::validateOutbounds)
+
+    private fun validateOutbounds(outbounds: List<Outbound>): Boolean {
         if (!libboxAvailable) {
             return true
         }
 
-        if (outbound.type in listOf("direct", "block", "dns", "selector", "urltest", "url-test")) {
-            return true
-        }
-
-        val resolverServerTag = outbound.domainResolver?.server?.takeIf { it.isNotBlank() }
-        val validationDns = resolverServerTag?.let { tag ->
+        val resolverServerTags = outbounds.mapNotNull { it.domainResolver?.server?.takeIf(String::isNotBlank) }
+            .distinct()
+        val validationDns = resolverServerTags.takeIf { it.isNotEmpty() }?.let { tags ->
             DnsConfig(
-                servers = listOf(
-                    DnsServer(
-                        tag = tag,
-                        type = "local"
-                    )
-                )
+                servers = tags.map { tag -> DnsServer(tag = tag, type = "local") }
             )
         }
 
@@ -725,9 +731,8 @@ class SingBoxCore private constructor(internal val context: Context) {
             log = null,
             dns = validationDns,
             inbounds = null,
-            outbounds = listOf(
-                outbound,
-                Outbound(type = "direct", tag = "direct")
+            outbounds = outbounds + listOfNotNull(
+                Outbound(type = "direct", tag = "direct").takeUnless { outbounds.any { it.tag == "direct" } }
             ),
             route = null,
             experimental = null
@@ -738,7 +743,7 @@ class SingBoxCore private constructor(internal val context: Context) {
             Libbox.checkConfig(configJson)
             true
         } catch (e: Exception) {
-            Log.w(TAG, "Outbound validation failed for '${outbound.tag}': ${e.message}")
+            Log.w(TAG, "Outbound validation failed (count=${outbounds.size}): ${e.message}")
             false
         }
     }

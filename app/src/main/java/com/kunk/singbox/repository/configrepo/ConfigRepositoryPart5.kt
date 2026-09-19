@@ -580,16 +580,29 @@ internal suspend fun ConfigRepository.generateConfigFile(
     forceManualSelection: Boolean = false,
     candidateRequestId: String? = null
 ): ConfigRepository.ConfigGenerationResult? = withContext(Dispatchers.IO) {
+    val generationStartedAtMs = android.os.SystemClock.elapsedRealtime()
+    var stageStartedAtMs = generationStartedAtMs
+    fun recordStage(stage: String) {
+        val now = android.os.SystemClock.elapsedRealtime()
+        LogRepository.getInstance().addAlwaysLog(
+            "INFO [Startup] config_stage=$stage elapsed_ms=${now - stageStartedAtMs}"
+        )
+        stageStartedAtMs = now
+    }
+    LogRepository.getInstance().addAlwaysLog("INFO [Startup] config_generation_begin")
     lastConfigGenerationError = null
     try {
         settingsRepository.reloadFromStorage()
         awaitInitialProfilesLoaded()
+        recordStage("load_settings")
         val activeId = selectedProfileId?.takeIf { it.isNotBlank() }
             ?: _activeProfileId.value
             ?: activeStateDao.get()?.activeProfileId
             ?: return@withContext null
         val activeProfile = _profiles.value.find { it.id == activeId }
-        val config = loadConfigWithLegacyEchRepair(activeProfile, activeId) ?: return@withContext null
+        // ponytail: 连接只使用本地配置；订阅内容修复由已有的订阅更新流程处理。
+        val config = loadConfig(activeId) ?: return@withContext null
+        recordStage("load_profile")
         ConfigRepository.findUnsupportedAndroidCapability(config)?.let { message ->
             throw IllegalArgumentException(message)
         }
@@ -643,6 +656,7 @@ internal suspend fun ConfigRepository.generateConfigFile(
         val customRuleSets = buildCustomRuleSets(sanitizedSettings)
 
         val dnsOverrideConfig = parseDnsOverride(activeProfile?.dnsOverride)
+        recordStage("prepare_rules")
         val rawOutboundsContext = buildRunOutbounds(
             config,
             activeId,
@@ -653,6 +667,7 @@ internal suspend fun ConfigRepository.generateConfigFile(
             dnsOverrideConfig,
             activeProfileAutoSelectionEnabled
         )
+        recordStage("build_outbounds")
         val rootTransparent = sanitizedSettings.resolvedTrafficCaptureMode() == TrafficCaptureMode.ROOT_TRANSPARENT
         val serverAddressStrategy = if (rootTransparent) {
             "ipv4_only"
@@ -778,7 +793,9 @@ internal suspend fun ConfigRepository.generateConfigFile(
         )
         rootRoutingPlan?.let { ConfigRepository.requireValidRootApplicationRoutes(runConfig, it) }
 
+        recordStage("build_routes_dns")
         val validation = singBoxCore.validateConfig(stripInternalMetadata(runConfig))
+        recordStage("validate_config")
         validation.exceptionOrNull()?.let { e ->
             val msg = e.cause?.message ?: e.message ?: "unknown error"
             Log.e(ConfigRepository.TAG, "Config pre-validation failed: $msg", e)
@@ -908,6 +925,11 @@ internal suspend fun ConfigRepository.generateConfigFile(
             "ERROR [CFG] ${lastConfigGenerationError.orEmpty()}"
         )
         null
+    } finally {
+        LogRepository.getInstance().addAlwaysLog(
+            "INFO [Startup] config_generation_end elapsed_ms=" +
+                (android.os.SystemClock.elapsedRealtime() - generationStartedAtMs)
+        )
     }
 }
 
