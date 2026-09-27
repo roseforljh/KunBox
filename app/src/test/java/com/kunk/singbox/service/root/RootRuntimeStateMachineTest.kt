@@ -220,6 +220,50 @@ class RootRuntimeStateMachineTest {
     }
 
     @Test
+    fun stopCanBeRetriedWhileCleanupIsAlreadyStopping() {
+        val lifecycle = RootLifecycleCoordinator()
+        lifecycle.requestRunning(reload = false)
+        val firstStop = lifecycle.requestStopped()
+        val retryStop = lifecycle.requestStopped()
+
+        assertTrue(retryStop > firstStop)
+        assertEquals(RootLifecycleState.STOPPING, lifecycle.snapshot().state)
+        assertEquals(RootDesiredState.STOPPED, lifecycle.snapshot().desiredState)
+        assertTrue(lifecycle.transition(retryStop, RootLifecycleState.STOPPED))
+    }
+
+    @Test
+    fun blockedRootNotificationRequestsCleanupRetryWhenRuntimeIsNotRunning() {
+        val source = File(
+            "src/main/java/com/kunk/singbox/service/root/runtime/RootTransparentForegroundRuntime.kt"
+        ).readText(Charsets.UTF_8)
+        val reset = source.substringAfter(
+            "internal fun RootTransparentForegroundService.resetConnectionsFromNotification()"
+        )
+        assertTrue(reset.contains("notification_reset_cleanup_retry"))
+        assertTrue(reset.contains("lastRootSnapshot.rulesInstalled"))
+        assertTrue(
+            source.substringAfter("internal fun RootTransparentForegroundService.publishUidRefreshBlocked")
+                .substringBefore("@Suppress(\"DEPRECATION\")")
+                .contains("root_uid_refresh_blocked")
+        )
+    }
+
+    @Test
+    fun disconnectedRootServiceStillAttemptsEmergencyCleanup() {
+        val source = File(
+            "src/main/java/com/kunk/singbox/service/root/runtime/RootStopRuntime.kt"
+        ).readText(Charsets.UTF_8)
+        assertTrue(source.contains("service_unavailable_using_emergency_cleanup"))
+        assertTrue(source.contains("runEmergencyRootCleanup(sessionId, rootPid)"))
+        assertFalse(
+            source.contains(
+                "return failedRootStop(\"Root service disconnected before cleanup could be verified\")"
+            )
+        )
+    }
+
+    @Test
     fun settingsPageConstructionCannotRestartVpn() {
         val source = File("src/main/java/com/kunk/singbox/viewmodel/SettingsViewModel.kt")
             .readText(Charsets.UTF_8)
@@ -316,7 +360,7 @@ class RootRuntimeStateMachineTest {
         assertTrue(source.contains("rootConnection.stopRootService()"))
         assertTrue(source.contains("rootConnection.bind()"))
         assertTrue(source.contains("stopRemoteRuntime()"))
-        assertTrue(source.contains("val rootService = rootConnection.service ?: return if"))
+        assertTrue(source.contains("val rootService = rootConnection.service"))
         assertTrue(!stopRuntime.contains("rootConnection.service ?: rootConnection.bind()"))
         val stopEntry = source.substringAfter("suspend fun stopRuntime(stopSelfAfter: Boolean, token: Long)")
             .substringBefore("suspend fun stopRuntimeLocked")

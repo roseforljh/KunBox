@@ -54,7 +54,7 @@ internal suspend fun RootTransparentForegroundService.restartRuntime(
         )
         return@withLock
     }
-    stopRuntimeLocked(stopSelfAfter = false, token = token)
+    stopRuntime(stopSelfAfter = false, token = token)
     ensureRunningRequest(token)
 // A blocked cleanup is retried by startRuntimeLocked. The Root
 // process checks ownership and listener absence before accepting the
@@ -346,7 +346,7 @@ internal suspend fun RootTransparentForegroundService.refreshUidRoutingLocked(re
                 token
             )
         } else {
-            stopRuntimeLocked(stopSelfAfter = true, token = token)
+            stopRuntime(stopSelfAfter = true, token = token)
         }
     }
 }
@@ -366,6 +366,7 @@ internal fun RootTransparentForegroundService.publishUidRefreshBlocked(snapshot:
         readiness = rootReadiness(DataPlaneStatus.FAILED_BLOCKED, "root_uid_refresh_blocked")
     )
     updateNotification()
+    requestStopRuntime(stopSelfAfter = true, reason = "root_uid_refresh_blocked")
 }
 
 @Suppress("DEPRECATION")
@@ -632,7 +633,14 @@ internal suspend fun RootTransparentForegroundService.switchNextNodeFromNotifica
 }
 
 internal fun RootTransparentForegroundService.resetConnectionsFromNotification() {
-    if (!RootTransparentForegroundService.isRunning) return
+    if (!RootTransparentForegroundService.isRunning) {
+        val blocked = lastRootSnapshot.phase == RootRuntimePhase.FAILED_BLOCKED ||
+            lastRootSnapshot.rulesInstalled || VpnStateStore.getPending() == "stopping"
+        if (blocked) {
+            requestStopRuntime(stopSelfAfter = true, reason = "notification_reset_cleanup_retry")
+        }
+        return
+    }
     val closed = commandManager.closeConnections()
     val reset = rootConnection.service?.resetNetwork() == true
     LogRepository.getInstance().addLog(
