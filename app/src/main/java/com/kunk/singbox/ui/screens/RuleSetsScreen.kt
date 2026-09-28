@@ -662,12 +662,8 @@ fun RuleSetsScreen(
                                             settlingItemId = settledRuleSetId
                                             suppressPlacementAnimation = true
 
-                                            val absScrollBefore = if (itemHeightPx > 0f) {
-                                                listState.firstVisibleItemIndex * itemHeightPx +
-                                                    listState.firstVisibleItemScrollOffset
-                                            } else {
-                                                null
-                                            }
+                                            val firstVisibleIndex = listState.firstVisibleItemIndex
+                                            val firstVisibleOffset = listState.firstVisibleItemScrollOffset
 
                                             if (startIdx != endIdx) {
                                                 val item = ruleSets.removeAt(startIdx)
@@ -675,15 +671,9 @@ fun RuleSetsScreen(
                                                 settingsViewModel.reorderRuleSets(ruleSets.toList())
                                             }
 
-                                            val abs = absScrollBefore
-                                            if (abs != null && itemHeightPx > 0f) {
-                                                val targetIndex = (abs / itemHeightPx).toInt()
-                                                    .coerceIn(0, ruleSets.lastIndex)
-                                                val targetOffset = (abs - targetIndex * itemHeightPx)
-                                                    .toInt()
-                                                    .coerceAtLeast(0)
+                                            if (startIdx != endIdx) {
                                                 scope.launch {
-                                                    listState.scrollToItem(targetIndex, targetOffset)
+                                                    listState.scrollToItem(firstVisibleIndex, firstVisibleOffset)
                                                 }
                                             }
 
@@ -755,3 +745,4 @@ fun RuleSetsScreen(
         }
     }
 }
+
