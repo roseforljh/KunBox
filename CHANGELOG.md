@@ -1,5 +1,25 @@
 # Changelog
 
+## [2.24.2](https://github.com/roseforljh/KunBox/compare/v2.24.1...v2.24.2) (2026-09-28)
+
+
+### Bug Fixes
+
+* correct imported language cache and rule set scroll anchor ([38dbd93](https://github.com/roseforljh/KunBox/commit/38dbd93c8ecabb671a431db47b3026f3f78d936b))
+* correct imported language cache and rule set scroll anchor ([d4f575b](https://github.com/roseforljh/KunBox/commit/d4f575ba55eb67017da3803f3c8592ead397c25c))
+* correct imported language cache and rule set scroll anchor ([620e311](https://github.com/roseforljh/KunBox/commit/620e31196aeedbdc168d63ad670499e6d3b3ce2c))
+* 优化规则集与配置拖拽交互，修复中文语言回退与磁贴状态脱节问题 ([8f5b2be](https://github.com/roseforljh/KunBox/commit/8f5b2be557351666eb882f9f3825f30b69275267))
+* 优化规则集列表间距与代理回退请求处理 ([4c6e8d4](https://github.com/roseforljh/KunBox/commit/4c6e8d4dfadc71de2b6cc323e2efd7b3e958e6c5))
+* 优化配置生成与出站节点批量校验逻辑 ([d893fb6](https://github.com/roseforljh/KunBox/commit/d893fb69be547cb5798bb23e85228228c59d3eab))
+* 出站节点过滤回退时保留前置 detour 依赖链 ([d6ca677](https://github.com/roseforljh/KunBox/commit/d6ca677516987f977ba6da1252e025ba78c46be1))
+* 完善 Root 运行失败与清理过程的状态同步及所有权管理 ([dab4241](https://github.com/roseforljh/KunBox/commit/dab4241d156d7f743ae05e654a26e63b0e98a4f1))
+* 完善 Root 运行期停止重试与断连应急清理逻辑 ([bf6465a](https://github.com/roseforljh/KunBox/commit/bf6465a552aa8923be67a94e322f82d7ac2c3821))
+* 完善启动期基础命令通道与就绪状态诊断 ([4a36b7e](https://github.com/roseforljh/KunBox/commit/4a36b7e03cf2dc0da295d1b54239d3e95bb797e3))
+* 完善规则集来源校验、缓存就绪机制与配置生成防御 ([70b3b28](https://github.com/roseforljh/KunBox/commit/70b3b28719bb50e3dbfdabb5e6a7c0a60a6f3246))
+* 将 VPN 停止分发及磁贴刷新切至 IO 调度 ([7fad5e6](https://github.com/roseforljh/KunBox/commit/7fad5e64b21cecf6b8fea9f5f7bb4c2f9e96f6e1))
+* 还原长按 1:1 双向位移交互，修正规则集过半换位阈值与重排视窗锚定 ([fcb1e78](https://github.com/roseforljh/KunBox/commit/fcb1e785f3268ade1096cee192374763dc31f04e))
+* 重构 Root 分流运行期绑定与 DNS Fake IP 防护校验 ([2e69207](https://github.com/roseforljh/KunBox/commit/2e69207e1ace6d7fd2d9306e0ce720fdd916491f))
+
 ## [2.24.1](https://github.com/roseforljh/KunBox/compare/v2.24.0...v2.24.1) (2026-09-03)
 
 
