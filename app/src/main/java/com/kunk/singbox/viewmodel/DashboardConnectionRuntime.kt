@@ -14,9 +14,11 @@ import com.kunk.singbox.model.ConnectionStats
 import com.kunk.singbox.ipc.SingBoxRemote
 import com.kunk.singbox.service.VpnTileService
 import com.kunk.singbox.service.manager.VpnStopInitiator
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
-internal fun DashboardViewModel.stopVpnRuntime() {
+internal suspend fun DashboardViewModel.stopVpnRuntime() {
     val context = getApplication<Application>()
     val startWasNotDispatched = _connectionState.value == ConnectionState.Connecting &&
         startCoreJob?.isActive == true &&
@@ -31,29 +33,37 @@ internal fun DashboardViewModel.stopVpnRuntime() {
     _connectionState.value = ConnectionState.Disconnecting
     _connectedAtElapsedMs.value = null
     _statsBase.value = ConnectionStats(0, 0, 0, 0, 0)
-    VpnTileService.persistVpnPending("stopping")
-
-    if (startWasNotDispatched) {
-        // 配置尚未提交给服务端时，不要为了停止而创建三个服务实例。
-        VpnTileService.persistVpnPending("")
-        startServiceDispatched = false
-        performDisconnect()
-        return
+    val stopResult = withContext(Dispatchers.IO) {
+        runCatching {
+            VpnTileService.persistVpnPending("stopping")
+            if (startWasNotDispatched) {
+                // 配置尚未提交给服务端时，不要为了停止而创建服务实例。
+                VpnTileService.persistVpnPending("")
+                Result.success(Unit)
+            } else {
+                VpnServiceManager.stopVpn(context, VpnStopInitiator.USER_UI)
+            }
+        }.getOrElse { Result.failure(it) }
     }
-
-    val stopResult = VpnServiceManager.stopVpn(context, VpnStopInitiator.USER_UI)
     if (stopResult.isFailure) {
+        Log.e(DashboardViewModel.TAG, "Failed to dispatch VPN stop", stopResult.exceptionOrNull())
         stopRequestedByUser = false
         _connectionState.value = ConnectionState.Error
         return
     }
 
-    context.startService(Intent(context, VpnTileService::class.java).apply {
-        action = VpnTileService.ACTION_REFRESH_TILE
-    })
     startServiceDispatched = false
     _connectionState.value = ConnectionState.Idle
     _connectedAtElapsedMs.value = null
+    if (!startWasNotDispatched) {
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching {
+                context.startService(Intent(context, VpnTileService::class.java).apply {
+                    action = VpnTileService.ACTION_REFRESH_TILE
+                })
+            }.onFailure { Log.w(DashboardViewModel.TAG, "Failed to refresh VPN tile after stop", it) }
+        }
+    }
 }
 
 internal fun DashboardViewModel.startPingTestRuntime() {

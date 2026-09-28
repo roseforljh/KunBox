@@ -10,7 +10,7 @@ class DashboardViewModelStopTileStateTest {
     fun stopVpnReturnsToIdleImmediatelyAfterDispatch() {
         val source = File("src/main/java/com/kunk/singbox/viewmodel/DashboardConnectionRuntime.kt").readText()
         val body = source.substring(
-            source.indexOf("internal fun DashboardViewModel.stopVpnRuntime()"),
+            source.indexOf("internal suspend fun DashboardViewModel.stopVpnRuntime()"),
             source.indexOf("internal fun DashboardViewModel.startPingTestRuntime()")
         )
 
@@ -24,6 +24,8 @@ class DashboardViewModelStopTileStateTest {
         assertTrue(refreshIndex >= 0)
         assertTrue(body.contains("ConnectionState.Disconnecting"))
         assertTrue(body.contains("ConnectionState.Idle"))
+        assertTrue(body.indexOf("withContext(Dispatchers.IO)") < stopIndex)
+        assertTrue(body.indexOf("_connectionState.value = ConnectionState.Idle") < refreshIndex)
         assertTrue(!body.contains("VpnServiceManager.forceStop(context)"))
         assertTrue(!body.contains("VpnTileService.persistVpnState(false)"))
     }

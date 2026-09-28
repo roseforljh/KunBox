@@ -977,7 +977,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
             }
         }
     }
-    private fun stopVpn() = stopVpnRuntime()
+    private suspend fun stopVpn() = stopVpnRuntime()
 
     private fun startPingTest() = startPingTestRuntime()
 
