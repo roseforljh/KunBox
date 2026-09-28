@@ -137,6 +137,7 @@ class SettingsRepository(private val context: Context) {
         if (!persisted) {
             throw IllegalStateException("Failed to persist imported settings")
         }
+        LocaleHelper.saveLanguageCache(context, safeImported.appLanguage)
         notifyRestartRequired()
     }
 
@@ -171,8 +172,9 @@ class SettingsRepository(private val context: Context) {
     }
 
     suspend fun setAppLanguage(value: AppLanguage) {
-        LocaleHelper.saveLanguageCache(context, value)
-        settingsStore.updateSettingsAndWait { it.copy(appLanguage = value) }
+        if (settingsStore.updateSettingsAndWait { it.copy(appLanguage = value) }) {
+            LocaleHelper.saveLanguageCache(context, value)
+        }
     }
 
     suspend fun setShowNotificationSpeed(value: Boolean) {
@@ -796,3 +798,4 @@ class SettingsRepository(private val context: Context) {
         }
     }
 }
+
