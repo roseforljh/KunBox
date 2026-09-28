@@ -21,20 +21,31 @@ private const val ROOT_RECOVERY_BIND_TIMEOUT_MS = 3_000L
 private const val ROOT_RECOVERY_STOP_TIMEOUT_MS = 3_000L
 private const val ROOT_WATCHDOG_SCRIPT = "/data/adb/kunbox/watchdog.sh"
 
+@Suppress("LongMethod", "CyclomaticComplexMethod")
 internal suspend fun RootTransparentForegroundService.stopRemoteRuntime(): RootRuntimeSnapshot {
-    val rootService = rootConnection.service ?: return if (
-        runtimeSessionId.isBlank() && lastRootSnapshot.phase == RootRuntimePhase.STOPPED
-    ) {
-        RootRuntimeSnapshot(phase = RootRuntimePhase.STOPPED)
-    } else {
-        failedRootStop("Root service disconnected before cleanup could be verified")
+    val sessionId = runtimeSessionId.ifBlank { lastRootSnapshot.runtimeSessionId }
+    val rootPid = lastRootSnapshot.rootPid
+    val rootService = rootConnection.service
+    if (rootService == null && sessionId.isBlank() && lastRootSnapshot.phase == RootRuntimePhase.STOPPED) {
+        return RootRuntimeSnapshot(phase = RootRuntimePhase.STOPPED)
     }
     return withContext(NonCancellable) {
-        val sessionId = runtimeSessionId
-        sessionId.takeIf(String::isNotBlank)?.let { runCatching { rootService.requestStop(it) } }
-        val graceful = withContext(Dispatchers.IO) {
-            runRootStopCall(ROOT_STOP_CALL_TIMEOUT_MS) {
-                RootRuntimeSnapshot.fromBundle(rootService.stop(sessionId))
+        if (rootService != null) {
+            sessionId.takeIf(String::isNotBlank)?.let { runCatching { rootService.requestStop(it) } }
+        } else {
+            Log.w(
+                RootTransparentForegroundService.TAG,
+                "[ROOT_STOP] event=service_unavailable_using_emergency_cleanup " +
+                    "session=$sessionId rootPid=$rootPid"
+            )
+        }
+        val graceful = if (rootService == null) {
+            null
+        } else {
+            withContext(Dispatchers.IO) {
+                runRootStopCall(ROOT_STOP_CALL_TIMEOUT_MS) {
+                    RootRuntimeSnapshot.fromBundle(rootService.stop(sessionId))
+                }
             }
         }
         graceful?.getOrNull()?.takeIf(::rootCleanupConfirmed)?.let { return@withContext it }
@@ -42,7 +53,7 @@ internal suspend fun RootTransparentForegroundService.stopRemoteRuntime(): RootR
         val gracefulError = graceful?.exceptionOrNull()?.message ?: "timeout"
         Log.e(RootTransparentForegroundService.TAG, "[ROOT_STOP] event=graceful_stop_failed reason=$gracefulError")
         rootConnection.stopRootService()
-        val emergency = runEmergencyRootCleanup(sessionId, lastRootSnapshot.rootPid)
+        val emergency = runEmergencyRootCleanup(sessionId, rootPid)
         emergency?.getOrNull()?.takeIf { it.isSuccess }?.let { result ->
             Log.i(
                 RootTransparentForegroundService.TAG,

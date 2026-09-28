@@ -93,6 +93,7 @@ class RootTransparentForegroundService : Service() {
 
     internal val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     internal val lifecycleMutex = Mutex()
+    internal val cleanupMutex = Mutex()
     internal val lifecycle = RootLifecycleCoordinator()
     internal lateinit var rootConnection: RootServiceConnection
     internal var rootConnectionRecycled = false
@@ -373,7 +374,10 @@ class RootTransparentForegroundService : Service() {
     internal fun requestStopRuntime(stopSelfAfter: Boolean, reason: String) {
         val before = lifecycle.snapshot()
         if (before.state == RootLifecycleState.STOPPING && before.desiredState == RootDesiredState.STOPPED) {
-            return
+            Log.w(
+                TAG,
+                "[ROOT_STOP] event=retry_requested reason=$reason generation=${before.generation}"
+            )
         }
         lifecycleStartedAtMs = android.os.SystemClock.elapsedRealtime()
         val token = lifecycle.requestStopped()
@@ -837,7 +841,9 @@ class RootTransparentForegroundService : Service() {
 
     @Suppress("LongMethod")
     internal suspend fun stopRuntime(stopSelfAfter: Boolean, token: Long) {
-        stopRuntimeLocked(stopSelfAfter, token)
+        cleanupMutex.withLock {
+            stopRuntimeLocked(stopSelfAfter, token)
+        }
     }
 
     @Suppress("LongMethod", "CognitiveComplexMethod", "CyclomaticComplexMethod")
@@ -913,10 +919,15 @@ class RootTransparentForegroundService : Service() {
             }
         } catch (error: Exception) {
             Log.e(TAG, "Root transparent stop failed", error)
+            val rootSnapshot = runCatching {
+                RootRuntimeSnapshot.fromBundle(rootConnection.service?.snapshot)
+            }.getOrNull()
+            val preservedSnapshot = rootSnapshot ?: lastRootSnapshot
             lastRootSnapshot = RootRuntimeSnapshot(
                 phase = RootRuntimePhase.FAILED_VERIFICATION,
                 runtimeSessionId = runtimeSessionId,
-                rulesInstalled = false,
+                rootPid = preservedSnapshot.rootPid,
+                rulesInstalled = preservedSnapshot.rulesInstalled,
                 error = error.message ?: "Root cleanup could not be confirmed"
             )
             transitionLifecycle(token, RootLifecycleState.FAILED, "cleanup_exception")

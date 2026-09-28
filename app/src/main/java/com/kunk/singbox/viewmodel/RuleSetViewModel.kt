@@ -52,7 +52,7 @@ class RuleSetViewModel(application: Application) : AndroidViewModel(application)
 
     init {
         viewModelScope.launch {
-            if (!SingBoxRemote.isRunning.value) {
+            if (!VpnStateStore.getActive()) {
                 fetchRuleSets()
             }
 
@@ -264,20 +264,18 @@ class RuleSetViewModel(application: Application) : AndroidViewModel(application)
     ): okhttp3.Response? {
         val proxyClient = getProxyClient(settings)
         if (proxyClient != null) {
-            return try {
+            try {
                 val response = proxyClient.newCall(request).execute()
                 if (response.isSuccessful) {
                     Log.d(TAG, "Proxy request succeeded")
-                    response
-                } else {
-                    response.close()
-                    Log.w(TAG, "Proxy request failed with ${response.code}")
-                    null
+                    return response
                 }
+                Log.w(TAG, "Proxy request failed with ${response.code}")
+                response.close()
             } catch (e: Exception) {
                 Log.w(TAG, "Proxy request failed: ${e.message}")
-                null
             }
+            Log.w(TAG, "Trying direct request after proxy failure")
         }
 
         return try {

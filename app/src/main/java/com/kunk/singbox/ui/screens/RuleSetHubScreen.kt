@@ -479,6 +479,8 @@ private fun HubRuleSetItemActions(
             )
         }
 
+        Spacer(modifier = Modifier.width(8.dp))
+
         TextButton(
             modifier = Modifier.liquidGlassTextButtonPanel(),
             colors = liquidGlassTextButtonColors(

@@ -17,7 +17,7 @@ class DashboardViewModelStateResolutionTest {
     fun stopCancelsPendingCoreStartBeforeItCanDispatchService() {
         val source = File("src/main/java/com/kunk/singbox/viewmodel/DashboardConnectionRuntime.kt")
             .readText(Charsets.UTF_8)
-        val stopBody = source.substringAfter("internal fun DashboardViewModel.stopVpnRuntime()")
+        val stopBody = source.substringAfter("internal suspend fun DashboardViewModel.stopVpnRuntime()")
             .substringBefore("internal fun DashboardViewModel.startPingTestRuntime")
         assertTrue(stopBody.contains("startCoreJob?.cancel()"))
         val dashboardSource = File("src/main/java/com/kunk/singbox/viewmodel/DashboardViewModel.kt")
