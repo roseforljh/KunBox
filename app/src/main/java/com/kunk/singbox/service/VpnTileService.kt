@@ -1,4 +1,4 @@
-﻿package com.kunk.singbox.service
+package com.kunk.singbox.service
 
 import android.annotation.SuppressLint
 import android.app.NotificationManager
@@ -38,6 +38,7 @@ import com.kunk.singbox.service.root.RootTransparentForegroundService
 import com.kunk.singbox.service.manager.ServiceStateHolder
 import com.kunk.singbox.service.manager.VpnStopInitiator
 import com.kunk.singbox.service.notification.VpnNotificationManager
+import com.kunk.singbox.utils.LocaleHelper
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -49,6 +50,10 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 class VpnTileService : TileService() {
+    override fun attachBaseContext(newBase: Context) {
+        super.attachBaseContext(LocaleHelper.wrapFromCache(newBase))
+    }
+
     private val serviceScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private var bindTimeoutJob: Job? = null
     @Volatile private var lastServiceState: ServiceState = ServiceState.STOPPED
@@ -288,11 +293,17 @@ class VpnTileService : TileService() {
     private fun updateTile(activeLabelOverride: String? = null) {
         val runtimeSnapshot = VpnStateStore.getRuntimeStateSnapshot()
         applyRemoteStateSnapshot(runtimeSnapshot)
-        val persistedActive = runtimeSnapshot.stateOrdinal == ServiceState.RUNNING.ordinal
+        var persistedActive = runtimeSnapshot.stateOrdinal == ServiceState.RUNNING.ordinal
         val pending = VpnStateStore.getPending()
         if (shouldClearStartingSequenceOnListen(isStartingSequence, pending)) {
             isStartingSequence = false
             startSequenceId = 0L
+        }
+
+        val isServiceDisconnected = !serviceBound || remoteService == null
+        val isZombieCandidate = !isStartingSequence && isServiceDisconnected && pending.isEmpty()
+        if (isZombieCandidate && reconcileStaleStateIfNeeded(runtimeSnapshot, persistedActive)) {
+            persistedActive = false
         }
         val effectiveState = if (isStartingSequence) {
             ServiceState.STARTING
@@ -354,6 +365,30 @@ class VpnTileService : TileService() {
             ServiceStateHolder.instance != null ||
             ServiceStateHolder.isRunning ||
             ServiceStateHolder.isStarting
+    }
+
+    private fun reconcileStaleStateIfNeeded(
+        runtimeSnapshot: VpnStateStore.RuntimeStateSnapshot,
+        persistedActive: Boolean
+    ): Boolean {
+        if (!persistedActive) return false
+        val serviceActuallyRunning = isCoreServiceAvailable()
+        val hasVpnTransport = hasSystemVpnTransport()
+        if (!serviceActuallyRunning && !hasVpnTransport) {
+            Log.w(TAG, "Detected stale active state in updateTile, reconciling to STOPPED")
+            persistVpnState(false)
+            persistVpnPending("")
+            VpnStateStore.buildNextRuntimeStateSnapshot(runtimeSnapshot) {
+                it.copy(
+                    stateOrdinal = ServiceState.STOPPED.ordinal,
+                    readiness = com.kunk.singbox.ipc.DataPlaneReadinessSnapshot.stopped("tile_zombie_reconcile")
+                )
+            }.also { VpnStateStore.persistRuntimeStateSnapshotBestEffort(it) }
+            lastServiceState = ServiceState.STOPPED
+            lastReadiness = com.kunk.singbox.ipc.DataPlaneReadinessSnapshot.stopped()
+            return true
+        }
+        return false
     }
 
     private fun executeStopVpn() {

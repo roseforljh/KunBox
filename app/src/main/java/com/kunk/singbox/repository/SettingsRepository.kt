@@ -26,6 +26,7 @@ import com.kunk.singbox.model.NodeFilter
 import com.kunk.singbox.model.BackgroundPowerSavingDelay
 import com.kunk.singbox.model.PerAppVpnPolicy
 import com.kunk.singbox.repository.store.SettingsStore
+import com.kunk.singbox.utils.LocaleHelper
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -170,6 +171,7 @@ class SettingsRepository(private val context: Context) {
     }
 
     suspend fun setAppLanguage(value: AppLanguage) {
+        LocaleHelper.saveLanguageCache(context, value)
         settingsStore.updateSettingsAndWait { it.copy(appLanguage = value) }
     }
 

@@ -1,4 +1,4 @@
-﻿package com.kunk.singbox.ipc
+package com.kunk.singbox.ipc
 
 import android.os.Bundle
 import android.os.Handler
@@ -207,6 +207,11 @@ object SingBoxIpcHub {
                 serviceInstanceId = serviceInstanceId,
                 nowElapsedMs = SystemClock.elapsedRealtime()
             )
+            if (currentLiveCoreState() == null && stateSnapshot.stateOrdinal == ServiceState.STOPPED.ordinal) {
+                VpnStateStore.setActive(false)
+                VpnStateStore.setPending("")
+                VpnStateStore.persistRuntimeStateSnapshotBestEffort(stateSnapshot)
+            }
         }
         log("SingBoxIpcService registered")
         startReadinessHeartbeat()

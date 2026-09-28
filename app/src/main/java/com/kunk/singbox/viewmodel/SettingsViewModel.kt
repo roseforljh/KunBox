@@ -1,4 +1,4 @@
-﻿package com.kunk.singbox.viewmodel
+package com.kunk.singbox.viewmodel
 
 import com.kunk.singbox.R
 import android.app.Application
@@ -287,7 +287,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                 else -> null
             }
         } catch (error: Exception) {
-            error.message ?: "Root capability check failed"
+            error.message ?: getApplication<Application>().getString(R.string.settings_root_check_failed)
         } finally {
             connection.unbind()
         }
@@ -350,7 +350,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                 .onFailure { error ->
                     _perAppPolicyApplyState.value = PerAppPolicyApplyState.Failed(
                         revision,
-                        error.message ?: "Per-app VPN policy apply failed"
+                        error.message ?: getApplication<Application>().getString(R.string.settings_per_app_apply_failed)
                     )
                 }
         }
@@ -360,7 +360,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         val update = result.getOrElse { error ->
             _perAppPolicyApplyState.value = PerAppPolicyApplyState.Failed(
                 settings.value.perAppPolicyRevision,
-                error.message ?: "Per-app VPN policy persistence failed"
+                error.message ?: getApplication<Application>().getString(R.string.settings_per_app_persist_failed)
             )
             return
         }
@@ -374,7 +374,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             .onFailure { error ->
                 _perAppPolicyApplyState.value = PerAppPolicyApplyState.Failed(
                     update.revision,
-                    error.message ?: "Per-app VPN policy apply failed"
+                    error.message ?: getApplication<Application>().getString(R.string.settings_per_app_apply_failed)
                 )
             }
     }
@@ -747,7 +747,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                 Log.e("SettingsViewModel", "自动应用应用分流配置失败", error)
                 _perAppPolicyApplyState.value = PerAppPolicyApplyState.Failed(
                     revision,
-                    error.message ?: "应用分流配置应用失败"
+                    error.message ?: getApplication<Application>().getString(R.string.settings_per_app_apply_failed)
                 )
             }
     }

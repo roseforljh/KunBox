@@ -652,12 +652,7 @@ fun RuleSetsScreen(
                                     onDragEnd = {
                                         draggingItemIndex?.let { startIdx ->
                                             val dist = if (itemHeightPx > 0f) {
-                                                val progress = draggingItemOffset / itemHeightPx
-                                                when {
-                                                    progress > 0f -> kotlin.math.ceil(progress).toInt()
-                                                    progress < 0f -> kotlin.math.floor(progress).toInt()
-                                                    else -> 0
-                                                }
+                                                kotlin.math.round(draggingItemOffset / itemHeightPx).toInt()
                                             } else {
                                                 0
                                             }
@@ -667,10 +662,29 @@ fun RuleSetsScreen(
                                             settlingItemId = settledRuleSetId
                                             suppressPlacementAnimation = true
 
+                                            val absScrollBefore = if (itemHeightPx > 0f) {
+                                                listState.firstVisibleItemIndex * itemHeightPx +
+                                                    listState.firstVisibleItemScrollOffset
+                                            } else {
+                                                null
+                                            }
+
                                             if (startIdx != endIdx) {
                                                 val item = ruleSets.removeAt(startIdx)
                                                 ruleSets.add(endIdx, item)
                                                 settingsViewModel.reorderRuleSets(ruleSets.toList())
+                                            }
+
+                                            val abs = absScrollBefore
+                                            if (abs != null && itemHeightPx > 0f) {
+                                                val targetIndex = (abs / itemHeightPx).toInt()
+                                                    .coerceIn(0, ruleSets.lastIndex)
+                                                val targetOffset = (abs - targetIndex * itemHeightPx)
+                                                    .toInt()
+                                                    .coerceAtLeast(0)
+                                                scope.launch {
+                                                    listState.scrollToItem(targetIndex, targetOffset)
+                                                }
                                             }
 
                                             draggingItemIndex = null

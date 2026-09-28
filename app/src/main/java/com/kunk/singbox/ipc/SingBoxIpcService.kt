@@ -1,13 +1,18 @@
 package com.kunk.singbox.ipc
 
 import android.app.Service
+import android.content.Context
 import android.content.Intent
 import android.os.Bundle
 import android.os.IBinder
 import com.kunk.singbox.aidl.ISingBoxService
 import com.kunk.singbox.aidl.ISingBoxServiceCallback
+import com.kunk.singbox.service.ProxyOnlyService
+import com.kunk.singbox.service.ServiceState
+import com.kunk.singbox.service.manager.ServiceStateHolder
 import com.kunk.singbox.service.root.RootTransparentForegroundService
 import com.kunk.singbox.service.root.RootServicePrewarmer
+import com.kunk.singbox.utils.LocaleHelper
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -56,16 +61,32 @@ class SingBoxIpcService : Service() {
         }
     }
 
+    override fun attachBaseContext(newBase: Context) {
+        super.attachBaseContext(LocaleHelper.wrapFromCache(newBase))
+    }
+
     override fun onCreate() {
         super.onCreate()
-        if (
-            VpnStateStore.getMode() == VpnStateStore.CoreMode.ROOT &&
+        val isRootZombie = VpnStateStore.getMode() == VpnStateStore.CoreMode.ROOT &&
             !RootTransparentForegroundService.isRunning &&
             !RootTransparentForegroundService.isStarting
-        ) {
+        val isVpnOrProxyZombie = (VpnStateStore.getMode() == VpnStateStore.CoreMode.VPN ||
+            VpnStateStore.getMode() == VpnStateStore.CoreMode.PROXY) &&
+            !ServiceStateHolder.isRunning &&
+            !ServiceStateHolder.isStarting &&
+            !ProxyOnlyService.isRunning &&
+            !ProxyOnlyService.isStarting
+        if (isRootZombie || isVpnOrProxyZombie) {
             VpnStateStore.setActive(false)
             VpnStateStore.setPending("")
             VpnStateStore.setMode(VpnStateStore.CoreMode.NONE)
+            val currentSnapshot = VpnStateStore.getRuntimeStateSnapshot()
+            VpnStateStore.buildNextRuntimeStateSnapshot(currentSnapshot) {
+                it.copy(
+                    stateOrdinal = ServiceState.STOPPED.ordinal,
+                    readiness = DataPlaneReadinessSnapshot.stopped("SingBoxIpcService_reconcile")
+                )
+            }.also { VpnStateStore.persistRuntimeStateSnapshotBestEffort(it) }
         }
         SingBoxIpcHub.registerService(this)
         scheduleRootPrewarm()
