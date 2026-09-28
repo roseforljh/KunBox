@@ -4,7 +4,6 @@ import android.content.Context
 import android.content.res.Configuration
 import android.os.LocaleList
 import com.kunk.singbox.model.AppLanguage
-import com.tencent.mmkv.MMKV
 import java.util.Locale
 
 object LocaleHelper {
@@ -13,9 +12,6 @@ object LocaleHelper {
     private const val LANGUAGE_CACHE_KEY = "app_language_cache"
 
     fun saveLanguageCache(context: Context, language: AppLanguage) {
-        runCatching {
-            MMKV.defaultMMKV()?.encode(LANGUAGE_CACHE_KEY, language.name)
-        }
         runCatching {
             context.getSharedPreferences(SETTINGS_PREFS, Context.MODE_PRIVATE)
                 .edit()
@@ -26,8 +22,6 @@ object LocaleHelper {
 
     fun wrapFromCache(context: Context): Context {
         val languageName = runCatching {
-            MMKV.defaultMMKV()?.decodeString(LANGUAGE_CACHE_KEY, null)
-        }.getOrNull() ?: runCatching {
             context.getSharedPreferences(SETTINGS_PREFS, Context.MODE_PRIVATE)
                 .getString(LANGUAGE_CACHE_KEY, null)
         }.getOrNull()
@@ -82,3 +76,4 @@ object LocaleHelper {
         return setLocale(context, language)
     }
 }
+
