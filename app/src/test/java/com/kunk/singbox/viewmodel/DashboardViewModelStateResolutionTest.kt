@@ -14,6 +14,51 @@ import java.io.File
 
 class DashboardViewModelStateResolutionTest {
     @Test
+    fun repeatedStartingHeartbeatsDoNotRenewGraceOrHideStopping() {
+        val source = File("src/main/java/com/kunk/singbox/viewmodel/DashboardViewModel.kt")
+            .readText(Charsets.UTF_8)
+        val stateSetter = source.substringAfter("internal fun setConnectionState(newState: ConnectionState)")
+            .substringBefore("internal fun performDisconnect()")
+        val connectingBranch = stateSetter.substringAfter("if (newState == ConnectionState.Connecting)")
+            .substringBefore("if (_connectionState.value != newState)")
+        assertTrue(connectingBranch.contains("if (_connectionState.value != ConnectionState.Connecting)"))
+        assertFalse(stateSetter.contains("if (newState == ConnectionState.Disconnecting"))
+        val readyBranch = source.substringAfter("INFO [Startup] ui_ready service_wait_ms=")
+            .substringBefore("val err = SingBoxRemote.lastError.value")
+        assertTrue(readyBranch.contains("setConnectionState(ConnectionState.Connected)"))
+    }
+
+    @Test
+    fun everyServiceSyncEntryRespectsUserStopIncludingResumeRefresh() {
+        assertFalse(DashboardViewModel.shouldApplyConnectionState(ConnectionState.Connecting, stopRequested = true))
+        assertFalse(DashboardViewModel.shouldApplyConnectionState(ConnectionState.Connected, stopRequested = true))
+        assertTrue(DashboardViewModel.shouldApplyConnectionState(ConnectionState.Disconnecting, stopRequested = true))
+        assertTrue(DashboardViewModel.shouldApplyConnectionState(ConnectionState.Idle, stopRequested = true))
+        assertTrue(DashboardViewModel.shouldApplyConnectionState(ConnectionState.Error, stopRequested = true))
+        assertTrue(DashboardViewModel.shouldApplyConnectionState(ConnectionState.Connecting, stopRequested = false))
+        assertTrue(DashboardViewModel.shouldApplyConnectionState(ConnectionState.Connected, stopRequested = false))
+
+        val source = File("src/main/java/com/kunk/singbox/viewmodel/DashboardViewModel.kt").readText(Charsets.UTF_8)
+        val setter = source.substringAfter("internal fun setConnectionState(newState: ConnectionState)")
+            .substringBefore("internal fun performDisconnect()")
+        assertTrue(setter.indexOf("shouldApplyConnectionState") in 0 until setter.indexOf("when (newState)"))
+        val initialSync = source.substringAfter("val trustedInitialState =")
+            .substringBefore("// 第三阶段")
+        assertTrue(initialSync.contains("setConnectionState(trustedInitialState)"))
+    }
+
+    @Test
+    fun rootLifecycleTransitionsRemainInDiagnosticsWithDebugLogsDisabled() {
+        val source = File("src/main/java/com/kunk/singbox/service/root/RootTransparentForegroundService.kt")
+            .readText(Charsets.UTF_8)
+        val lifecycleLog = source.substringAfter("internal fun logLifecycle(")
+            .substringBefore("internal fun loadRootGenerationResult(")
+        assertTrue(lifecycleLog.contains("addAlwaysLog(\"INFO [Lifecycle] service=root"))
+        assertTrue(lifecycleLog.contains("rootPhase="))
+        assertTrue(lifecycleLog.contains("rootError="))
+    }
+
+    @Test
     fun stopCancelsPendingCoreStartBeforeItCanDispatchService() {
         val source = File("src/main/java/com/kunk/singbox/viewmodel/DashboardConnectionRuntime.kt")
             .readText(Charsets.UTF_8)
@@ -257,6 +302,17 @@ class DashboardViewModelStateResolutionTest {
     }
 
     @Test
+    fun errorStateRetriesCleanupWhenServiceIsStillStopping() {
+        val source = File("src/main/java/com/kunk/singbox/viewmodel/DashboardViewModel.kt")
+            .readText(Charsets.UTF_8)
+        val toggle = source.substringAfter("fun toggleConnection()")
+            .substringBefore("@Suppress(\"LongMethod\"")
+        assertTrue(toggle.contains("ConnectionState.Error"))
+        assertTrue(toggle.contains("SingBoxRemote.state.value == ServiceState.STOPPING"))
+        assertTrue(toggle.contains("stopVpn()"))
+    }
+
+    @Test
     fun oldFailureDoesNotOverrideLifecycleStates() {
         val failed = DataPlaneReadinessSnapshot(status = DataPlaneStatus.FAILED_UNPROTECTED)
         assertEquals(
@@ -269,7 +325,7 @@ class DashboardViewModelStateResolutionTest {
             )
         )
         assertEquals(
-            ConnectionState.Disconnecting,
+            ConnectionState.Error,
             resolveTrustedDashboardConnectionState(
                 serviceState = ServiceState.STOPPING,
                 ipcBound = true,

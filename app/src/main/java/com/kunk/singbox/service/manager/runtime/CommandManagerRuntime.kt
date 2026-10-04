@@ -112,15 +112,29 @@ internal suspend fun CommandManager.awaitCommandLogStream(
                 heartbeat.onReceive { false to null }
                 disconnected.onAwait { true to it }
             }
-        } ?: run {
-            val diagnostic = controlChannelDiagnosticSnapshot(generation)
-            Log.e(CommandManager.TAG, "[COMMAND_DIAG] event=heartbeat_timeout $diagnostic")
-            LogRepository.getInstance().addAlwaysLog(
-                "ERROR [COMMAND_DIAG] event=heartbeat_timeout $diagnostic"
-            )
-            error("Command log heartbeat timeout")
         }
-        if (result.first) return result.second
+        if (result == null) {
+            val stale = synchronized(runtimeAccess) {
+                if (!isCommandLogSessionActiveLocked(generation)) {
+                    throw CancellationException("Command runtime changed")
+                }
+                // Suspend/resume can expire the coroutine timer before queued heartbeats are consumed.
+                CommandManager.isCommandHeartbeatStale(
+                    commandLogHeartbeatAtMs.takeIf { it > 0L } ?: commandSessionStartedAtMs,
+                    SystemClock.uptimeMillis(),
+                    CommandManager.COMMAND_LOG_HEARTBEAT_TIMEOUT_MS
+                )
+            }
+            if (stale) {
+                val diagnostic = controlChannelDiagnosticSnapshot(generation)
+                Log.e(CommandManager.TAG, "[COMMAND_DIAG] event=heartbeat_timeout $diagnostic")
+                LogRepository.getInstance().addAlwaysLog(
+                    "ERROR [COMMAND_DIAG] event=heartbeat_timeout $diagnostic"
+                )
+                error("Command log heartbeat timeout")
+            }
+        }
+        if (result?.first == true) return result.second
         requireBaseCommandHeartbeats(generation)
     }
 }

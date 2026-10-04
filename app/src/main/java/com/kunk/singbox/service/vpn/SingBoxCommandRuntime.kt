@@ -375,12 +375,21 @@ internal suspend fun SingBoxService.applyPreferredProxySelection(preferredTag: S
         return
     }
 
-    val currentSelectedTag = commandManager.getSelectedOutbound("PROXY")
-    if (currentSelectedTag.isNullOrBlank()) {
-        Log.w(SingBoxService.TAG, "Waiting for initial PROXY selection callback: $preferredTag")
-        return
+    val currentSelectedTag = withTimeoutOrNull<String>(SelectorManager.SELECTION_CONFIRMATION_TIMEOUT_MS) {
+        var selectedTag: String? = null
+        while (selectedTag.isNullOrBlank()) {
+            selectedTag = commandManager.getSelectedOutbound("PROXY")
+            if (selectedTag.isNullOrBlank()) delay(50L)
+        }
+        selectedTag.orEmpty()
     }
-    val result = if (currentSelectedTag.equals(preferredTag, ignoreCase = true)) {
+    if (currentSelectedTag.isNullOrBlank()) {
+        Log.w(
+            SingBoxService.TAG,
+            "Initial PROXY selection callback not observed; attempting preferred selection: $preferredTag"
+        )
+    }
+    val result = if (currentSelectedTag?.equals(preferredTag, ignoreCase = true) == true) {
         SelectorManager.SwitchResult.Success("AlreadySelected")
     } else {
         SelectorManager.switchNode(preferredTag)

@@ -91,6 +91,9 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                 (observedActiveState || elapsedMs >= START_STOPPED_CONFIRM_MS)
         }
 
+        internal fun shouldApplyConnectionState(newState: ConnectionState, stopRequested: Boolean): Boolean =
+            !stopRequested || newState !in setOf(ConnectionState.Connecting, ConnectionState.Connected)
+
         internal fun hasStartMonitorTimedOut(elapsedMs: Long): Boolean {
             return elapsedMs >= START_MONITOR_TIMEOUT_MS
         }
@@ -326,12 +329,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                     apiLevel = Build.VERSION.SDK_INT,
                     nowElapsedMs = SystemClock.elapsedRealtime()
                 )
-                if (trustedInitialState == ConnectionState.Connected) {
-                    _connectionState.value = ConnectionState.Connected
-                    _connectedAtElapsedMs.value = SystemClock.elapsedRealtime()
-                } else {
-                    _connectionState.value = trustedInitialState
-                }
+                setConnectionState(trustedInitialState)
             }
 
             // 第三阶段：确保状态收集器启动（关键修复）
@@ -390,15 +388,12 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         val stateFlow = SingBoxRemote.state
         viewModelScope.launch {
             stateFlow.collect { state ->
-                if (stopRequestedByUser && state != ServiceState.STOPPED) return@collect
                 when (resolveDashboardConnectionState(state)) {
                     ConnectionState.Connected -> {
-                        if (stopRequestedByUser) return@collect
                         systemVpnDetectedOnBoot = false
                         setConnectionState(ConnectionState.Connected)
                     }
                     ConnectionState.Connecting -> {
-                        if (stopRequestedByUser) return@collect
                         systemVpnDetectedOnBoot = false
                         setConnectionState(ConnectionState.Connecting)
                     }
@@ -416,9 +411,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         viewModelScope.launch {
             SingBoxRemote.readiness.collect {
                 val state = SingBoxRemote.state.value
-                if (!stopRequestedByUser || state == ServiceState.STOPPED) {
-                    setConnectionState(resolveDashboardConnectionState(state))
-                }
+                setConnectionState(resolveDashboardConnectionState(state))
             }
         }
 
@@ -439,11 +432,14 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     internal fun setConnectionState(newState: ConnectionState) {
-        if (newState == ConnectionState.Disconnecting && _connectionState.value == ConnectionState.Connecting) {
-            val graceUntil = startGraceUntilElapsedMs
-            if (graceUntil != null && SystemClock.elapsedRealtime() < graceUntil) {
-                return
-            }
+        // 所有服务同步入口（含 refreshState 和冷启动）都必须尊重用户的停止请求。
+        if (!shouldApplyConnectionState(newState, stopRequestedByUser)) return
+        if (_connectionState.value != newState) {
+            LogRepository.getInstance().addAlwaysLog(
+                "INFO [Dashboard] state=${_connectionState.value} requested=$newState " +
+                    "service=${SingBoxRemote.state.value} readiness=${SingBoxRemote.readiness.value.status} " +
+                    "reason=${SingBoxRemote.readiness.value.lastReadinessReason} stopRequested=$stopRequestedByUser"
+            )
         }
         when (newState) {
             ConnectionState.Connected -> {
@@ -510,7 +506,9 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                 // 其他状态（Connecting/Disconnecting/Error）直接更新
                 pendingIdleJob?.cancel()
                 if (newState == ConnectionState.Connecting) {
-                    startGraceUntilElapsedMs = SystemClock.elapsedRealtime() + START_MONITOR_TIMEOUT_MS
+                    if (_connectionState.value != ConnectionState.Connecting) {
+                        startGraceUntilElapsedMs = SystemClock.elapsedRealtime() + START_MONITOR_TIMEOUT_MS
+                    }
                 } else {
                     startGraceUntilElapsedMs = null
                 }
@@ -575,11 +573,23 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
     fun toggleConnection() {
         viewModelScope.launch {
             when (_connectionState.value) {
-                ConnectionState.Idle, ConnectionState.Error -> {
+                ConnectionState.Idle -> {
                     // P0 Optimization: Optimistic UI
                     startGraceUntilElapsedMs = SystemClock.elapsedRealtime() + START_MONITOR_TIMEOUT_MS
                     _connectionState.value = ConnectionState.Connecting
                     startCore()
+                }
+                ConnectionState.Error -> {
+                    if (SingBoxRemote.state.value == ServiceState.STOPPING) {
+                        startGraceUntilElapsedMs = null
+                        _connectionState.value = ConnectionState.Disconnecting
+                        stopVpn()
+                    } else {
+                        // P0 Optimization: Optimistic UI
+                        startGraceUntilElapsedMs = SystemClock.elapsedRealtime() + START_MONITOR_TIMEOUT_MS
+                        _connectionState.value = ConnectionState.Connecting
+                        startCore()
+                    }
                 }
                 ConnectionState.Connecting -> {
                     // P0 Optimization: Optimistic UI
@@ -915,8 +925,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                             com.kunk.singbox.repository.LogRepository.getInstance().addAlwaysLog(
                                 "INFO [Startup] ui_ready service_wait_ms=$elapsed"
                             )
-                            _connectionState.value = ConnectionState.Connected
-                            startTrafficMonitor()
+                            setConnectionState(ConnectionState.Connected)
                             return@launch
                         }
 

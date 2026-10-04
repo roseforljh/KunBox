@@ -3,8 +3,26 @@ package com.kunk.singbox.service.manager
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.File
 
 class CommandManagerLogObserverTest {
+
+    @Test
+    fun delayedTimeoutDoesNotExpireFreshOrSuspendedHeartbeats() {
+        assertEquals(false, CommandManager.isCommandHeartbeatStale(60_999L, 61_000L))
+        assertEquals(false, CommandManager.isCommandHeartbeatStale(1_000L, 1_001L))
+        assertTrue(CommandManager.isCommandHeartbeatStale(1_000L, 16_001L))
+
+        val source = File("src/main/java/com/kunk/singbox/service/manager/runtime/CommandManagerRuntime.kt")
+            .readText(Charsets.UTF_8)
+        val stream = source.substringAfter("internal suspend fun CommandManager.awaitCommandLogStream(")
+            .substringBefore("internal fun CommandManager.requireBaseCommandHeartbeats")
+        val timeout = stream.substringAfter("if (result == null)")
+        assertTrue(timeout.contains("CommandManager.isCommandHeartbeatStale("))
+        assertTrue(timeout.contains("SystemClock.uptimeMillis()"))
+        assertTrue(timeout.contains("if (stale)"))
+        assertTrue(stream.contains("requireBaseCommandHeartbeats(generation)"))
+    }
 
     @Test
     fun establishedChannelsStillExpireWithoutHeartbeats() {
