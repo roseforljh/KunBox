@@ -265,7 +265,7 @@ class RootNetfilterManager internal constructor(
             ?.let(::parseRootStateSnapshot)
         if (!transitionResult.success || snapshot == null) {
             executeRequired(plan.verifyCommands.filter(::isActivationVerification))
-            checkGuardAbsent()
+            checkGuardAbsent(guard.setupCommands.mapNotNull(List<String>::firstOrNull).distinct())
         }
         verifier.verifyRules(
             plan.activationCommands,
@@ -276,6 +276,8 @@ class RootNetfilterManager internal constructor(
                 RootNetfilterPlanner.CHAIN_GUARD6
             )
         )
+        // Targeted snapshots do not include deleted guard chains; verify their absence explicitly.
+        checkGuardAbsent(guard.setupCommands.mapNotNull(List<String>::firstOrNull).distinct())
         guardPlan = null
         activePlan = plan
         ownership?.promoteStagingExcludingChains(
@@ -290,11 +292,13 @@ class RootNetfilterManager internal constructor(
         persistOwnership(active = false)
     }
 
-    fun cleanup(): Result<Unit> = runCatching {
-        ownership?.let(::cleanupOwnedState) ?: cleanupUnownedState()
-        activePlan = null
-        guardPlan = null
-        ownershipContext = null
+    fun cleanup(): Result<Unit> = ProcessRootCommandExecutor.withCleanupCommands {
+        runCatching {
+            ownership?.let(::cleanupOwnedState) ?: cleanupUnownedState()
+            activePlan = null
+            guardPlan = null
+            ownershipContext = null
+        }
     }
 
     private fun cleanupOwnedState(owner: RootNetfilterOwnershipStore) {
@@ -303,9 +307,10 @@ class RootNetfilterManager internal constructor(
             guardPlan?.setupCommands?.let(::addAll)
             activePlan?.setupCommands?.let(::addAll)
         }
+        val ownerManifest = owner.readAnyOwner()
         when {
             owner.hasOwner() && installedCommands.isNotEmpty() -> cleanupKnownOwner(owner, installedCommands)
-            owner.hasOwner() -> cleanupRecovery(owner, "recovery")
+            ownerManifest != null -> cleanupKnownOwner(owner, ownerManifest)
             else -> cleanupRecovery(owner, "legacy")
         }
         check(!hadPlan || !owner.hasOwner()) {
@@ -316,10 +321,19 @@ class RootNetfilterManager internal constructor(
     private fun cleanupKnownOwner(
         owner: RootNetfilterOwnershipStore,
         installedCommands: List<List<String>>
+    ) = cleanupKnownOwnerWithCommands(owner, cleanupCommandsForInstalledSetup(installedCommands))
+
+    private fun cleanupKnownOwner(
+        owner: RootNetfilterOwnershipStore,
+        manifest: RootNetfilterOwnerManifest
+    ) = cleanupKnownOwnerWithCommands(owner, RootNetfilterOwnership.cleanupCommands(manifest))
+
+    private fun cleanupKnownOwnerWithCommands(
+        owner: RootNetfilterOwnershipStore,
+        cleanupCommands: List<List<String>>
     ) {
         val startedAt = System.nanoTime()
         val fastError = runCatching {
-            val cleanupCommands = cleanupCommandsForInstalledSetup(installedCommands)
             val result = executor.executeFastNetfilterCleanupPlan(cleanupCommands)
                 ?: error("Fast netfilter cleanup serializer is unavailable")
             check(result.success) { result.diagnosticOutput.ifBlank { "Fast netfilter cleanup failed" } }
@@ -489,14 +503,14 @@ class RootNetfilterManager internal constructor(
         }
     }
 
-    private fun checkGuardAbsent() {
+    private fun checkGuardAbsent(binaries: Collection<String> = listOf("iptables", "ip6tables")) {
         val output = executeRequiredBatchResult(
-            listOf(
-                listOf("iptables", "-t", "filter", "-S"),
-                listOf("ip6tables", "-t", "filter", "-S")
-            )
+            binaries.distinct().map { binary -> listOf(binary, "-t", "filter", "-S") }
         ).output
-        check(RootNetfilterPlanner.CHAIN_GUARD4 !in output && RootNetfilterPlanner.CHAIN_GUARD6 !in output) {
+        check(
+            ("iptables" !in binaries || RootNetfilterPlanner.CHAIN_GUARD4 !in output) &&
+                ("ip6tables" !in binaries || RootNetfilterPlanner.CHAIN_GUARD6 !in output)
+        ) {
             "KunBox fail-closed guard remains after cleanup"
         }
     }

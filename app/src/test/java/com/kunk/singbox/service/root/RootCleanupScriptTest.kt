@@ -120,12 +120,63 @@ class RootCleanupScriptTest {
         assertTrue(saveCommands.isEmpty())
     }
 
+    @Test
+    fun concurrentCleanupWaitsForItsOwnerAndBothVerifySuccessfully() {
+        val result = runCleanup(
+            mode = "dirty",
+            ipv6NatRules = "-N KBX_RED6\n-A OUTPUT -j KBX_RED6\n",
+            expectedSession = "session-old",
+            competingCleanup = true
+        )
+
+        assertEquals(result.output, 0, result.exitCode)
+        assertTrue(result.output, result.output.contains("competing_cleanup_exit=0"))
+        assertTrue(result.output, result.output.contains("cleanup_lock=waiting"))
+        assertFalse(result.output.contains("netfilter_serialization_timeout"))
+        assertEquals(1, result.commands.lineSequence().count { " -D OUTPUT -j KBX_RED6" in it })
+        assertFalse(result.finalIpv6NatRules.contains("KBX_RED6"))
+    }
+
+    @Test
+    fun cleanupRechecksSessionAfterWaitingAndLeavesNewRulesIntact() {
+        val rules = "-N KBX_RED6\n-A OUTPUT -j KBX_RED6\n"
+        val result = runCleanup(
+            mode = "dirty",
+            ipv6NatRules = rules,
+            expectedSession = "session-old",
+            competingCleanup = true,
+            replacementSession = "session-new"
+        )
+
+        assertEquals(result.output, 0, result.exitCode)
+        assertTrue(result.output, result.output.contains("cleanup_lock=waiting"))
+        assertEquals(rules, result.finalIpv6NatRules)
+        assertFalse(result.commands.lineSequence().any { " -D " in it || " -F " in it || " -X " in it })
+    }
+
+    @Test
+    fun missingOwnerStillCleansAndVerifiesResidualRulesForExpectedSession() {
+        val result = runCleanup(
+            mode = "dirty",
+            ipv6NatRules = "-N KBX_RED6\n-A OUTPUT -j KBX_RED6\n",
+            expectedSession = "session-old"
+        )
+
+        assertEquals(result.output, 0, result.exitCode)
+        assertFalse(result.finalIpv6NatRules.contains("KBX_RED6"))
+        assertTrue(result.output.contains("[ROOT_NET_CLEANUP]"))
+    }
+
+    @Suppress("LongMethod")
     private fun runCleanup(
         mode: String,
         ipv6NatRules: String = "",
-        ipv6FilterRules: String = ""
+        ipv6FilterRules: String = "",
+        expectedSession: String = "",
+        competingCleanup: Boolean = false,
+        replacementSession: String = ""
     ): CleanupResult {
-        cachedResult(mode, ipv6NatRules, ipv6FilterRules)?.let { return it }
+        if (expectedSession.isBlank()) cachedResult(mode, ipv6NatRules, ipv6FilterRules)?.let { return it }
         val root = Files.createTempDirectory("kunbox-root-cleanup-test").toFile()
         val result = try {
             val runtime = root.resolve("runtime").apply { mkdirs() }
@@ -135,13 +186,23 @@ class RootCleanupScriptTest {
             val outputLog = root.resolve("output.log")
             val source = File("src/main/assets/root/kunbox-root-cleanup-owned.sh").readText()
             val script = root.resolve("cleanup.sh")
+            if (competingCleanup) runtime.resolve("netfilter-owner").writeText("session=$expectedSession\n")
             script.writeText(
                 source.replace(
                     "RUNTIME_DIR=\"/data/adb/kunbox\"",
                     "RUNTIME_DIR=\"${runtime.posixPath()}\""
                 ).replace(
-                    "trap 'cleanup_temp_files' EXIT HUP INT TERM",
-                    "trap ':' EXIT HUP INT TERM"
+                    "acquire_lock || exit ${'$'}?",
+                    """
+                    acquire_lock || exit ${'$'}?
+                    if [ "${'$'}MOCK_HOLD_CLEANUP_LOCK" = 1 ]; then
+                        touch '${root.resolve("lock-ready").posixPath()}'
+                        sleep 2.3
+                        if [ -n "${'$'}MOCK_REPLACEMENT_SESSION" ]; then
+                            printf 'session=%s\n' "${'$'}MOCK_REPLACEMENT_SESSION" > "${'$'}OWNER_FILE"
+                        fi
+                    fi
+                    """.trimIndent()
                 )
             )
             val mock = File("src/test/resources/root/mock-netfilter.sh").readText()
@@ -152,8 +213,26 @@ class RootCleanupScriptTest {
                 }
             }
             writeMockRules(state, ipv6NatRules, ipv6FilterRules)
-            val shellCommand = "PATH=${bin.posixPath().shellQuote()}:/usr/bin:/bin; export PATH; " +
-                "exec /usr/bin/sh ${script.posixPath().shellQuote()} legacy-cleanup"
+            val invocation = "/usr/bin/sh ${script.posixPath().shellQuote()} cleanup ${expectedSession.shellQuote()}"
+            val competition = if (competingCleanup) {
+                """
+                MOCK_HOLD_CLEANUP_LOCK=1 $invocation > '${root.resolve("first-output").posixPath()}' 2>&1 &
+                first_pid=${'$'}!
+                while [ ! -f '${root.resolve("lock-ready").posixPath()}' ]; do
+                    kill -0 "${'$'}first_pid" 2>/dev/null || exit 1
+                    sleep 0.025
+                done
+                $invocation
+                status=${'$'}?
+                wait "${'$'}first_pid"
+                printf 'competing_cleanup_exit=%s\n' "${'$'}?"
+                cat '${root.resolve("first-output").posixPath()}'
+                exit "${'$'}status"
+                """.trimIndent()
+            } else {
+                "exec $invocation"
+            }
+            val shellCommand = "PATH=${bin.posixPath().shellQuote()}:/usr/bin:/bin; export PATH; $competition"
             val process = ProcessBuilder(findShell(), "-c", shellCommand)
                 .redirectErrorStream(true)
                 .redirectOutput(outputLog)
@@ -161,6 +240,7 @@ class RootCleanupScriptTest {
                     environment()["MOCK_MODE"] = mode
                     environment()["MOCK_STATE_DIR"] = state.posixPath()
                     environment()["MOCK_COMMAND_LOG"] = commandLog.posixPath()
+                    environment()["MOCK_REPLACEMENT_SESSION"] = replacementSession
                 }
                 .start()
             val startedAt = System.nanoTime()
@@ -179,7 +259,7 @@ class RootCleanupScriptTest {
         } finally {
             root.deleteRecursively()
         }
-        cacheResult(result, mode, ipv6NatRules, ipv6FilterRules)
+        if (expectedSession.isBlank()) cacheResult(result, mode, ipv6NatRules, ipv6FilterRules)
         return result
     }
 

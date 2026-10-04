@@ -34,7 +34,8 @@ class RootNetfilterCleanupPerformanceTest {
             script.indexOf("-I OUTPUT 1 -j KBX_OUT4") <
                 script.indexOf("-D OUTPUT -j KBX_GUARD4")
         )
-        assertFalse(script.contains("'iptables' '-w' '2'"))
+        assertTrue(script.contains("'-t' 'filter' '-S'"))
+        assertFalse(script.contains("'iptables-save'"))
     }
 
     @Test
@@ -82,6 +83,44 @@ class RootNetfilterCleanupPerformanceTest {
 
             assertTrue(store.hasOwner())
             manager.cleanup().getOrThrow()
+
+            assertEquals(1, fastCleanupCalls)
+            assertEquals(0, recoveryCalls)
+            assertFalse(store.hasOwner())
+        } finally {
+            directory.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun recoveryServiceReusesPersistedOwnershipForFastCleanup() {
+        val directory = Files.createTempDirectory("root-fast-recovery-test").toFile()
+        val plan = RootNetfilterPlanner.build(config())
+        var fastCleanupCalls = 0
+        var recoveryCalls = 0
+        val executor = object : RootCommandExecutor {
+            override fun execute(arguments: List<String>): RootCommandResult {
+                if (arguments.firstOrNull() == "/system/bin/sh") recoveryCalls++
+                return RootCommandResult(0, "")
+            }
+
+            override fun executeFastNetfilterPlan(commands: List<List<String>>): RootCommandResult =
+                RootCommandResult(0, runningRootStateSnapshot(plan.setupCommands))
+
+            override fun executeFastNetfilterCleanupPlan(commands: List<List<String>>): RootCommandResult {
+                fastCleanupCalls++
+                return RootCommandResult(0, cleanRootStateSnapshot())
+            }
+        }
+        val store = RootNetfilterOwnershipStore(executor, directory)
+        try {
+            val ownerContext = RootNetfilterOwnership.context("fast-recovery", 1L, "a".repeat(64))
+            val initialManager = RootNetfilterManager(executor, store)
+            initialManager.beginOwnership(ownerContext).getOrThrow()
+            initialManager.apply(config()).getOrThrow()
+            RootNetfilterManager(executor, RootNetfilterOwnershipStore(executor, directory))
+                .cleanup()
+                .getOrThrow()
 
             assertEquals(1, fastCleanupCalls)
             assertEquals(0, recoveryCalls)

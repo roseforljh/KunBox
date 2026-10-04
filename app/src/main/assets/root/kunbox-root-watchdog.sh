@@ -41,26 +41,28 @@ restore_ipv6_privacy() {
 }
 
 cleanup_runtime() {
+    [ "$(cat "$SESSION_FILE" 2>/dev/null)" = "$1" ] || return 0
     rm -f "$LEASE_FILE" "$ACK_FILE" "$SESSION_FILE" "$RUNTIME_DIR/watchdog.pid"
-    rm -f "$RUNTIME_DIR/watchdog.sh"
+    # Keep this complete cleanup entrypoint available after watchdog-owned cleanup.
     rmdir "$RUNTIME_DIR" 2>/dev/null
 }
 
 cleanup_owned() {
     EXPECTED_SESSION="$1"
-    [ -x "$CLEANUP_SCRIPT" ] || return 75
-    "$CLEANUP_SCRIPT" cleanup "$EXPECTED_SESSION"
+    [ -f "$CLEANUP_SCRIPT" ] || return 75
+    /system/bin/sh "$CLEANUP_SCRIPT" cleanup "$EXPECTED_SESSION"
 }
 
 if [ "$1" = "cleanup" ]; then
     EXPECTED_SESSION="$2"
     CURRENT_SESSION="$(cat "$SESSION_FILE" 2>/dev/null)"
-    if [ -n "$EXPECTED_SESSION" ] && [ "$CURRENT_SESSION" != "$EXPECTED_SESSION" ]; then
+    if [ -n "$EXPECTED_SESSION" ] && [ -n "$CURRENT_SESSION" ] && \
+        [ "$CURRENT_SESSION" != "$EXPECTED_SESSION" ]; then
         exit 0
     fi
     cleanup_owned "$EXPECTED_SESSION" || exit $?
     restore_ipv6_privacy "$EXPECTED_SESSION" || exit $?
-    cleanup_runtime
+    cleanup_runtime "$EXPECTED_SESSION"
     exit 0
 fi
 
@@ -105,8 +107,11 @@ while :; do
                 printf '%s\n' "watchdog_privacy_restore:$PRIVACY_STATUS" > "$RUNTIME_DIR/cleanup_conflict"
                 exit "$PRIVACY_STATUS"
             fi
-            kill "$ROOT_PID" 2>/dev/null
-            cleanup_runtime
+            FINAL_ROOT_START_TIME="$(sed 's/.*) //' "/proc/$ROOT_PID/stat" 2>/dev/null | awk '{print $20}')"
+            if [ "$FINAL_ROOT_START_TIME" = "$ROOT_START_TIME" ]; then
+                kill "$ROOT_PID" 2>/dev/null
+            fi
+            cleanup_runtime "$SESSION_ID"
         fi
         exit 0
     fi

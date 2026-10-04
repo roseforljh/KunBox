@@ -23,15 +23,18 @@ import io.nekohasekai.libbox.OverrideOptions
 import java.io.File
 import java.util.UUID
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
+import java.util.concurrent.ScheduledExecutorService
+import java.util.concurrent.ScheduledFuture
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 internal data class RootStartRequest(
@@ -76,7 +79,7 @@ class KunBoxRootService : RootService() {
         internal const val UID_REFRESH_INTERVAL_MS = 30_000L
         private const val UID_PREWARM_MAX_AGE_MS = 60_000L
         private const val UID_PREWARM_WAIT_MS = 1_500L
-        private const val FORCED_STOP_GRACE_MS = 1_500L
+        private const val FORCED_STOP_GRACE_MS = 3_500L
 
         init {
             if (Process.myUid() == 0) {
@@ -95,7 +98,10 @@ class KunBoxRootService : RootService() {
     internal val artifactSnapshotStore = RootArtifactSnapshotStore()
 
     @Volatile
-    internal var snapshot = RootRuntimeSnapshot(rootPid = Process.myPid())
+    internal var snapshot = RootRuntimeSnapshot(
+        rootPid = Process.myPid(),
+        rootStartTime = currentRootProcessStartTime()
+    )
 
     @Volatile
     internal var capabilityReport = RootCapabilityReport(
@@ -134,6 +140,13 @@ class KunBoxRootService : RootService() {
     @Volatile
     private var prewarmedUidSnapshotAt = 0L
     private val uidPrewarmReady = CountDownLatch(1)
+    private val forcedStopExecutor: ScheduledExecutorService =
+        Executors.newSingleThreadScheduledExecutor { runnable ->
+            Thread(runnable, "kunbox-root-forced-exit").apply { isDaemon = true }
+        }
+    @Volatile
+    private var forcedStopFuture: ScheduledFuture<*>? = null
+    private val nativeOperationSequence = AtomicLong()
 
     internal val runtimeTransactions = AtomicInteger(0)
     internal val stopRequestedSession = AtomicReference("")
@@ -186,7 +199,6 @@ class KunBoxRootService : RootService() {
         ): Bundle {
             enforceCaller()
             require(appUid == applicationInfo.uid) { "Unexpected KunBox UID" }
-            clearStopRequestForNewSession(runtimeSessionId.orEmpty())
             val request = RootStartRequest(
                 configPath = configPath.orEmpty(),
                 runtimeSessionId = runtimeSessionId.orEmpty(),
@@ -217,7 +229,10 @@ class KunBoxRootService : RootService() {
                     "ipv4=${request.proxyIpv4} ipv6=${request.proxyIpv6} " +
                     "configExists=${File(request.configPath).isFile}"
             )
-            val result = runRuntimeTransaction { startLocked(request) }
+            val result = runRuntimeTransaction {
+                clearStopRequestForNewSession(request.runtimeSessionId)
+                startLocked(request)
+            }
             Log.i(
                 TAG,
                 "[ROOT_BOOT] stage=root_start_returned session=${request.runtimeSessionId} " +
@@ -238,7 +253,6 @@ class KunBoxRootService : RootService() {
             routingGeneration: Long
         ): Bundle {
             enforceCaller()
-            clearStopRequestForNewSession(runtimeSessionId.orEmpty())
             return runRuntimeTransaction {
                 hotReloadLocked(
                     configPath = configPath.orEmpty(),
@@ -260,7 +274,7 @@ class KunBoxRootService : RootService() {
 
         override fun stop(runtimeSessionId: String?): Bundle {
             enforceCaller()
-            runtimeSessionId.orEmpty().takeIf(String::isNotBlank)?.let(stopRequestedSession::set)
+            preemptRuntimeForStop(runtimeSessionId.orEmpty())
             return runRuntimeTransaction {
                 stopLocked(runtimeSessionId.orEmpty()).toBundle()
             }
@@ -282,21 +296,50 @@ class KunBoxRootService : RootService() {
         }
     }
 
+    @Suppress("LongMethod")
     override fun onCreate() {
         val startedAt = android.os.SystemClock.elapsedRealtime()
         super.onCreate()
         Log.i(TAG, "[ROOT_BOOT] stage=root_process_create_begin pid=${Process.myPid()} uid=${Process.myUid()}")
         check(Process.myUid() == 0) { "KunBoxRootService is not running as root" }
         serviceScope.launch(Dispatchers.IO) {
+            val prewarmStartedAt = SystemClock.elapsedRealtime()
+            Log.i(
+                TAG,
+                "[ROOT_UID_PREWARM] event=capture_started pid=${Process.myPid()} " +
+                    "phase=${snapshot.phase}"
+            )
             runCatching { RootUidResolver().captureSnapshot() }
                 .onSuccess { uidSnapshot ->
-                    if (snapshot.phase == RootRuntimePhase.STOPPED && commandServer == null) {
+                    val publishable = snapshot.phase == RootRuntimePhase.STOPPED && commandServer == null
+                    if (publishable) {
                         prewarmedUidSnapshot = uidSnapshot
-                        prewarmedUidSnapshotAt = android.os.SystemClock.elapsedRealtime()
+                        prewarmedUidSnapshotAt = SystemClock.elapsedRealtime()
                     }
+                    Log.i(
+                        TAG,
+                        "[ROOT_UID_PREWARM] event=capture_completed " +
+                            "duration_ms=${SystemClock.elapsedRealtime() - prewarmStartedAt} " +
+                            "users=${uidSnapshot.users.size} packages=${uidSnapshot.packages.size} " +
+                            "published=$publishable phase=${snapshot.phase} commandServer=${commandServer != null}"
+                    )
                 }
-                .onFailure { error -> Log.w(TAG, "Root UID prewarm failed", error) }
-                .also { uidPrewarmReady.countDown() }
+                .onFailure { error ->
+                    Log.w(
+                        TAG,
+                        "[ROOT_UID_PREWARM] event=capture_failed " +
+                            "duration_ms=${SystemClock.elapsedRealtime() - prewarmStartedAt}",
+                        error
+                    )
+                }
+                .also {
+                    uidPrewarmReady.countDown()
+                    Log.i(
+                        TAG,
+                        "[ROOT_UID_PREWARM] event=ready " +
+                            "duration_ms=${SystemClock.elapsedRealtime() - prewarmStartedAt}"
+                    )
+                }
         }
         SingBoxCore.ensureLibboxSetup(this)
         capabilityReport = RootCapabilityProbe().probe()
@@ -342,6 +385,15 @@ class KunBoxRootService : RootService() {
         if (snapshot.phase != RootRuntimePhase.FAILED_BLOCKED) watchdog = null
         resourceGuard?.close()
         resourceGuard = null
+        if (!shouldForceRootProcessExit(
+                stopRequestedSession = stopRequestedSession.get(),
+                runtimeSessionId = snapshot.runtimeSessionId,
+                phase = snapshot.phase
+            )
+        ) {
+            forcedStopFuture?.cancel(false)
+            forcedStopExecutor.shutdownNow()
+        }
         serviceScope.cancel()
         super.onDestroy()
     }
@@ -426,7 +478,9 @@ class KunBoxRootService : RootService() {
             activeRoutingArtifacts = artifacts
             activeStartRequest = request
             val resolver = RootUidResolver()
+            val inventoryStartedAt = SystemClock.elapsedRealtime()
             val uidSnapshot = takePrewarmedUidSnapshot() ?: resolver.captureSnapshot()
+            logStartPhase("uid_inventory", inventoryStartedAt)
             updateSnapshot(phase = RootRuntimePhase.UID_SNAPSHOT_1)
             val firstResolved = resolver.resolveRouting(
                 artifacts.plan,
@@ -443,7 +497,9 @@ class KunBoxRootService : RootService() {
                     firstResolved.resolvedPlanSha256
                 )
             ).getOrThrow()
+            val reservedStateStartedAt = SystemClock.elapsedRealtime()
             netfilterManager.checkReservedStateAvailable().getOrThrow()
+            logStartPhase("reserved_state_check", reservedStateStartedAt)
             logStartPhase("uid_snapshot_1", phaseStartedAt)
             phaseStartedAt = android.os.SystemClock.elapsedRealtime()
             val netfilterConfig = buildNetfilterConfig(request, firstResolved)
@@ -543,7 +599,9 @@ class KunBoxRootService : RootService() {
 
     internal fun clearStopRequestForNewSession(runtimeSessionId: String) {
         val stoppedSession = stopRequestedSession.get()
-        if (stoppedSession.isNotBlank() && stoppedSession != runtimeSessionId) {
+        if (snapshot.phase == RootRuntimePhase.STOPPED &&
+            stoppedSession.isNotBlank() && stoppedSession != runtimeSessionId
+        ) {
             stopRequestedSession.compareAndSet(stoppedSession, "")
         }
     }
@@ -559,40 +617,76 @@ class KunBoxRootService : RootService() {
             (runtimeSessionId.isNotBlank() && stopRequestedSession.get() == runtimeSessionId)
 
     private fun preemptRuntimeForStop(requestedSessionId: String) {
-        val sessionId = requestedSessionId.ifBlank { snapshot.runtimeSessionId }
-        sessionId.takeIf(String::isNotBlank)?.let(stopRequestedSession::set)
+        val current = snapshot
+        val sessionId = requestedSessionId.ifBlank { current.runtimeSessionId }
+        val wrongSession = current.runtimeSessionId.isNotBlank() && current.runtimeSessionId != sessionId
+        val idle = current.phase == RootRuntimePhase.STOPPED && runtimeTransactions.get() == 0
+        if (sessionId.isBlank() || wrongSession || idle) return
+        // Capture cancellable commands before publishing stop; cleanup may start as soon as it is observed.
+        val claimed = rootCommandExecutor.cancelActiveCommands {
+            stopRequestedSession.compareAndSet("", sessionId)
+        }
+        if (!claimed) return
         stopUidMonitor()
-        rootCommandExecutor.cancelActiveCommands()
         scheduleForcedProcessExit(sessionId)
     }
 
     private fun scheduleForcedProcessExit(runtimeSessionId: String) {
         if (runtimeSessionId.isBlank()) return
-        serviceScope.launch {
-            delay(FORCED_STOP_GRACE_MS)
-            if (stopRequestedSession.get() != runtimeSessionId ||
-                snapshot.phase == RootRuntimePhase.STOPPED
+        forcedStopFuture?.cancel(false)
+        forcedStopFuture = forcedStopExecutor.schedule({
+            if (shouldForceRootProcessExit(
+                    stopRequestedSession = stopRequestedSession.get(),
+                    runtimeSessionId = runtimeSessionId,
+                    phase = snapshot.phase
+                )
             ) {
-                return@launch
+                Log.e(
+                    TAG,
+                    "[ROOT_STOP] event=forced_process_exit session=$runtimeSessionId " +
+                        "phase=${snapshot.phase} transactions=${runtimeTransactions.get()}"
+                )
+                Process.killProcess(Process.myPid())
+            } else {
+                Log.i(
+                    TAG,
+                    "[ROOT_STOP] event=forced_process_exit_skipped session=$runtimeSessionId " +
+                        "phase=${snapshot.phase} stopSession=${stopRequestedSession.get()}"
+                )
             }
-            Log.e(
-                TAG,
-                "[ROOT_STOP] event=forced_process_exit session=$runtimeSessionId " +
-                    "phase=${snapshot.phase} transactions=${runtimeTransactions.get()}"
-            )
-            Process.killProcess(Process.myPid())
-        }
+        }, FORCED_STOP_GRACE_MS, TimeUnit.MILLISECONDS)
     }
 
     private fun takePrewarmedUidSnapshot(): RootUidSnapshot? {
-        if (prewarmedUidSnapshot == null && uidPrewarmReady.count > 0L) {
+        val consumeStartedAt = SystemClock.elapsedRealtime()
+        val shouldWait = prewarmedUidSnapshot == null && uidPrewarmReady.count > 0L
+        if (shouldWait) {
+            Log.i(
+                TAG,
+                "[ROOT_UID_PREWARM] event=consume_wait timeout_ms=$UID_PREWARM_WAIT_MS " +
+                    "phase=${snapshot.phase}"
+            )
             uidPrewarmReady.await(UID_PREWARM_WAIT_MS, TimeUnit.MILLISECONDS)
         }
-        val age = android.os.SystemClock.elapsedRealtime() - prewarmedUidSnapshotAt
-        return prewarmedUidSnapshot.takeIf { age in 0..UID_PREWARM_MAX_AGE_MS }.also {
+        val candidate = prewarmedUidSnapshot
+        val age = if (candidate == null) -1L else SystemClock.elapsedRealtime() - prewarmedUidSnapshotAt
+        val valid = candidate != null && age in 0..UID_PREWARM_MAX_AGE_MS
+        val result = when {
+            valid -> "hit"
+            candidate == null -> "missing"
+            else -> "expired"
+        }
+        Log.i(
+            TAG,
+            "[ROOT_UID_PREWARM] event=consume result=$result age_ms=$age " +
+                "waited_ms=${SystemClock.elapsedRealtime() - consumeStartedAt} " +
+                "users=${candidate?.users?.size ?: 0} packages=${candidate?.packages?.size ?: 0}"
+        )
+        if (!valid) {
             prewarmedUidSnapshot = null
             prewarmedUidSnapshotAt = 0L
         }
+        return candidate.takeIf { valid }
     }
 
     internal fun resolveAllowedIpVersionModes(request: RootStartRequest): Set<String> = when {
@@ -601,42 +695,162 @@ class KunBoxRootService : RootService() {
         else -> setOf("DUAL_STACK", "PREFER_IPV6")
     }
 
+    @Suppress("LongMethod")
     internal fun startCommandServer(
         request: RootStartRequest,
         artifacts: RootRoutingArtifacts
     ) {
         check(commandServer == null) { "Root CommandServer is already active" }
-        val platformInterface = RootPlatformInterface(
-            context = this,
-            serviceScope = serviceScope,
-            forceConnectionOwnerRouting = request.forceConnectionOwnerRouting,
-            serverProvider = { commandServer }
-        ).delegate
-        val server = Libbox.newCommandServer(createServerHandler(), platformInterface)
-        server.start()
-        commandServer = server
-        server.startOrReloadService(artifacts.configContent, OverrideOptions().apply { autoRedirect = false })
+        val operationId = nextNativeOperationId("start")
+        val operationStartedAt = SystemClock.elapsedRealtime()
+        var stage = "new_command_server"
+        try {
+            val platformInterface = RootPlatformInterface(
+                context = this,
+                serviceScope = serviceScope,
+                forceConnectionOwnerRouting = request.forceConnectionOwnerRouting,
+                serverProvider = { commandServer }
+            ).delegate
+            Log.i(
+                TAG,
+                "[ROOT_NATIVE] op=$operationId stage=new_command_server_begin " +
+                    "session=${request.runtimeSessionId} generation=${artifacts.plan.generation}"
+            )
+            val server = Libbox.newCommandServer(createServerHandler(), platformInterface)
+            Log.i(
+                TAG,
+                "[ROOT_NATIVE] op=$operationId stage=new_command_server_returned " +
+                    "duration_ms=${SystemClock.elapsedRealtime() - operationStartedAt}"
+            )
+            stage = "command_server_start"
+            val startStartedAt = SystemClock.elapsedRealtime()
+            Log.i(TAG, "[ROOT_NATIVE] op=$operationId stage=command_server_start_begin")
+            server.start()
+            Log.i(
+                TAG,
+                "[ROOT_NATIVE] op=$operationId stage=command_server_start_returned " +
+                    "duration_ms=${SystemClock.elapsedRealtime() - startStartedAt}"
+            )
+            commandServer = server
+            stage = "start_or_reload_service"
+            val serviceStartedAt = SystemClock.elapsedRealtime()
+            Log.i(
+                TAG,
+                "[ROOT_NATIVE] op=$operationId stage=start_or_reload_service_begin " +
+                    "session=${request.runtimeSessionId} generation=${artifacts.plan.generation}"
+            )
+            server.startOrReloadService(artifacts.configContent, OverrideOptions().apply { autoRedirect = false })
+            Log.i(
+                TAG,
+                "[ROOT_NATIVE] op=$operationId stage=start_or_reload_service_returned " +
+                    "duration_ms=${SystemClock.elapsedRealtime() - serviceStartedAt}"
+            )
+            Log.i(
+                TAG,
+                "[ROOT_NATIVE] op=$operationId stage=start_complete " +
+                    "duration_ms=${SystemClock.elapsedRealtime() - operationStartedAt}"
+            )
+        } catch (error: Exception) {
+            Log.e(
+                TAG,
+                "[ROOT_NATIVE] op=$operationId stage=${stage}_failed " +
+                    "duration_ms=${SystemClock.elapsedRealtime() - operationStartedAt}",
+                error
+            )
+            throw error
+        }
     }
 
-    internal fun reloadCommandServer(artifacts: RootRoutingArtifacts) {
+    internal fun reloadCommandServer(
+        artifacts: RootRoutingArtifacts,
+        runtimeSessionId: String = snapshot.runtimeSessionId
+    ) {
         val server = commandServer ?: error("Root CommandServer is not active")
-        server.startOrReloadService(artifacts.configContent, OverrideOptions().apply { autoRedirect = false })
+        val operationId = nextNativeOperationId("reload")
+        val startedAt = SystemClock.elapsedRealtime()
+        Log.i(
+            TAG,
+            "[ROOT_NATIVE] op=$operationId stage=start_or_reload_service_begin " +
+                "session=$runtimeSessionId generation=${artifacts.plan.generation}"
+        )
+        runCatching {
+            server.startOrReloadService(artifacts.configContent, OverrideOptions().apply { autoRedirect = false })
+        }.onSuccess {
+            Log.i(
+                TAG,
+                "[ROOT_NATIVE] op=$operationId stage=start_or_reload_service_returned " +
+                    "session=$runtimeSessionId generation=${artifacts.plan.generation} " +
+                    "duration_ms=${SystemClock.elapsedRealtime() - startedAt}"
+            )
+        }.onFailure { error ->
+            Log.e(
+                TAG,
+                "[ROOT_NATIVE] op=$operationId stage=start_or_reload_service_failed " +
+                    "session=$runtimeSessionId generation=${artifacts.plan.generation} " +
+                    "duration_ms=${SystemClock.elapsedRealtime() - startedAt}",
+                error
+            )
+            throw error
+        }
     }
 
-    internal fun closeCommandServer(plan: RootAppRoutingPlan?) {
+    internal fun closeCommandServer(
+        plan: RootAppRoutingPlan?,
+        runtimeSessionId: String = snapshot.runtimeSessionId
+    ) {
         val startedAt = SystemClock.elapsedRealtime()
         val server = commandServer
+        val operationId = nextNativeOperationId("close")
         if (server != null) {
+            val closeServiceStartedAt = SystemClock.elapsedRealtime()
+            Log.i(
+                TAG,
+                "[ROOT_NATIVE] op=$operationId stage=close_service_begin " +
+                    "session=$runtimeSessionId generation=${plan?.generation ?: snapshot.generation}"
+            )
             runCatching { server.closeService() }
-                .onFailure { Log.w(TAG, "Root core service close reported an error", it) }
+                .onSuccess {
+                    Log.i(
+                        TAG,
+                        "[ROOT_NATIVE] op=$operationId stage=close_service_returned " +
+                            "duration_ms=${SystemClock.elapsedRealtime() - closeServiceStartedAt}"
+                    )
+                }
+                .onFailure {
+                    Log.e(
+                        TAG,
+                        "[ROOT_NATIVE] op=$operationId stage=close_service_failed " +
+                            "duration_ms=${SystemClock.elapsedRealtime() - closeServiceStartedAt}",
+                        it
+                    )
+                }
+            val closeServerStartedAt = SystemClock.elapsedRealtime()
+            Log.i(TAG, "[ROOT_NATIVE] op=$operationId stage=command_server_close_begin")
             runCatching { server.close() }
-                .onFailure { Log.w(TAG, "Root CommandServer close reported an error", it) }
+                .onSuccess {
+                    Log.i(
+                        TAG,
+                        "[ROOT_NATIVE] op=$operationId stage=command_server_close_returned " +
+                            "duration_ms=${SystemClock.elapsedRealtime() - closeServerStartedAt}"
+                    )
+                }
+                .onFailure {
+                    Log.e(
+                        TAG,
+                        "[ROOT_NATIVE] op=$operationId stage=command_server_close_failed " +
+                            "duration_ms=${SystemClock.elapsedRealtime() - closeServerStartedAt}",
+                        it
+                    )
+                }
             commandServer = null
         }
         plan?.let(::awaitListenersAbsent)
         awaitCommandSocketAbsent()
         Log.i(TAG, "[ROOT_STOP] phase=core_and_socket duration_ms=${SystemClock.elapsedRealtime() - startedAt}")
     }
+
+    private fun nextNativeOperationId(kind: String): String =
+        "$kind-${nativeOperationSequence.incrementAndGet()}"
 
     internal fun awaitListenersAbsent(plan: RootAppRoutingPlan, timeoutMs: Long = 1_000L) {
         val expectation = listenerExpectation(plan)

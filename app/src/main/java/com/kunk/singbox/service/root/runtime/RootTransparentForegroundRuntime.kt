@@ -139,7 +139,13 @@ internal suspend fun RootTransparentForegroundService.reloadRuntimeLocked(
             if (rootSnapshot.phase == RootRuntimePhase.RUNNING &&
                 rootSnapshot.routingGeneration == previousMarker?.generation
             ) {
-                restoreReloadedPreviousRuntime(rootService, rootSnapshot, snapshotError, token)
+                restoreReloadedPreviousRuntime(
+                    rootService,
+                    rootSnapshot,
+                    snapshotError,
+                    token,
+                    RootGenerationStore.configFile(filesDir, checkNotNull(previousMarker)).absolutePath
+                )
             } else {
                 publishReloadFailure(rootSnapshot, snapshotError, token)
             }
@@ -176,7 +182,13 @@ internal suspend fun RootTransparentForegroundService.reloadRuntimeLocked(
         if (rootService != null && snapshot.phase == RootRuntimePhase.RUNNING &&
             snapshot.routingGeneration == previousMarker?.generation
         ) {
-            restoreReloadedPreviousRuntime(rootService, snapshot, error.message ?: "Root reload failed", token)
+            restoreReloadedPreviousRuntime(
+                rootService,
+                snapshot,
+                error.message ?: "Root reload failed",
+                token,
+                RootGenerationStore.configFile(filesDir, checkNotNull(previousMarker)).absolutePath
+            )
         } else {
             publishReloadFailure(snapshot, error.message ?: "Root reload failed", token)
         }
@@ -187,11 +199,14 @@ internal suspend fun RootTransparentForegroundService.restoreReloadedPreviousRun
     rootService: IRootSingBoxService,
     snapshot: RootRuntimeSnapshot,
     reason: String,
-    token: Long
+    token: Long,
+    previousConfigPath: String
 ) {
     ensureRunningRequest(token)
     commandManager.startClientsWithFd(fdProvider = { rootService.openCommandConnection() }).getOrThrow()
+    ensureRunningRequest(token)
     SelectorManager.updateCommandClient(commandManager.getCommandClient())
+    recordSelector(previousConfigPath)
     check(transitionLifecycle(token, RootLifecycleState.RUNNING, "reload_rolled_back")) {
         "Root rollback generation became stale"
     }
@@ -250,6 +265,7 @@ internal fun RootTransparentForegroundService.scheduleUidRefresh(reason: String)
     syncLifecycleFlags()
     logLifecycle("uid_refresh_requested", token, reason, before.state)
     uidRefreshJob?.cancel()
+    val wakeLock = acquireUidRefreshWakeLock()
     uidRefreshJob = serviceScope.launch {
         try {
             lifecycleMutex.withLock {
@@ -259,6 +275,7 @@ internal fun RootTransparentForegroundService.scheduleUidRefresh(reason: String)
         } catch (_: CancellationException) {
             Log.i(RootTransparentForegroundService.TAG, "Root UID refresh superseded generation=$token")
         } finally {
+            releaseUidRefreshWakeLock(wakeLock)
             uidRefreshScheduled.set(false)
         }
     }
@@ -303,7 +320,9 @@ internal suspend fun RootTransparentForegroundService.refreshUidRoutingLocked(re
             )
         )?.let(::error)
         commandManager.startClientsWithFd(fdProvider = { rootService.openCommandConnection() }).getOrThrow()
+        ensureRunningRequest(token)
         SelectorManager.updateCommandClient(commandManager.getCommandClient())
+        recordSelector(RootGenerationStore.configFile(filesDir, marker).absolutePath)
         val applied = VpnStateStore.getAppliedPerAppPolicy()
         check(VpnStateStore.commitAppliedPerAppPolicy(
             applied.copy(
@@ -407,44 +426,45 @@ internal fun RootTransparentForegroundService.scheduleControlChannelRecovery(rea
         VpnStateStore.isManuallyStopped()
     ) return
     if (!controlRecoveryScheduled.compareAndSet(false, true)) return
+    val token = lifecycle.snapshot().generation
     serviceScope.launch {
         try {
-            val diagnostic = commandManager.controlChannelDiagnosticSnapshot(
-                lifecycle.snapshot().generation
-            )
-            Log.w(
-                RootTransparentForegroundService.TAG,
-                "[ROOT_CONTROL] event=recovery_requested reason=$reason $diagnostic"
-            )
-            LogRepository.getInstance().addAlwaysLog(
-                "WARN [ROOT_CONTROL] event=recovery_requested reason=$reason $diagnostic"
-            )
-            var recovered = false
-            repeat(3) { attempt ->
-                if (recovered) return@repeat
-                if (attempt > 0) delay(500L * attempt)
-                val recovery = commandManager.reconnectControlClientsWithFd {
-                    rootConnection.service?.openCommandConnection()
+            lifecycleMutex.withLock {
+                ensureRunningRequest(token)
+                val diagnostic = commandManager.controlChannelDiagnosticSnapshot(token)
+                Log.w(
+                    RootTransparentForegroundService.TAG,
+                    "[ROOT_CONTROL] event=recovery_requested reason=$reason $diagnostic"
+                )
+                LogRepository.getInstance().addAlwaysLog(
+                    "WARN [ROOT_CONTROL] event=recovery_requested reason=$reason $diagnostic"
+                )
+                repeat(3) { attempt ->
+                    if (attempt > 0) delay(500L * attempt)
+                    ensureRunningRequest(token)
+                    val recovery = commandManager.reconnectControlClientsWithFd {
+                        rootConnection.service?.openCommandConnection()
+                    }
+                    ensureRunningRequest(token)
+                    recovery.onSuccess {
+                        SelectorManager.updateCommandClient(commandManager.getCommandClient())
+                        // readiness 由 CommandManager 的实际通道健康回调发布，不能强行设为 ready。
+                        LogRepository.getInstance().addAlwaysLog(
+                            "INFO [ROOT_CONTROL] event=recovery_succeeded mode=control_only attempt=${attempt + 1}"
+                        )
+                        return@withLock
+                    }.onFailure { error ->
+                        Log.w(
+                            RootTransparentForegroundService.TAG,
+                            "[ROOT_CONTROL] event=recovery_failed mode=control_only attempt=${attempt + 1}",
+                            error
+                        )
+                        LogRepository.getInstance().addAlwaysLog(
+                            "WARN [ROOT_CONTROL] event=recovery_failed mode=control_only " +
+                                "attempt=${attempt + 1} error=${error.message.orEmpty()}"
+                        )
+                    }
                 }
-                recovery.onSuccess {
-                    recovered = true
-                    SingBoxIpcHub.updateReadiness { it.copy(selectorReady = true) }
-                    LogRepository.getInstance().addAlwaysLog(
-                        "INFO [ROOT_CONTROL] event=recovery_succeeded mode=control_only attempt=${attempt + 1}"
-                    )
-                }.onFailure { error ->
-                    Log.w(
-                        RootTransparentForegroundService.TAG,
-                        "[ROOT_CONTROL] event=recovery_failed mode=control_only attempt=${attempt + 1}",
-                        error
-                    )
-                    LogRepository.getInstance().addAlwaysLog(
-                        "WARN [ROOT_CONTROL] event=recovery_failed mode=control_only " +
-                            "attempt=${attempt + 1} error=${error.message.orEmpty()}"
-                    )
-                }
-            }
-            if (!recovered) {
                 val rootSnapshot = runCatching {
                     RootRuntimeSnapshot.fromBundle(rootConnection.service?.snapshot)
                 }.getOrNull()
@@ -530,13 +550,18 @@ internal suspend fun RootTransparentForegroundService.switchNode(
     outboundTag: String,
     nodeName: String,
     fallbackConfigPath: String?,
-    fallbackRequestId: String
+    fallbackRequestId: String,
+    token: Long
 ) = lifecycleMutex.withLock {
-    if (outboundTag.isBlank()) return@withLock
-    when (SelectorManager.switchNode(outboundTag)) {
+    ensureRunningRequest(token)
+    if (outboundTag.isBlank() || !RootTransparentForegroundService.isRunning) return@withLock
+    val result = SelectorManager.switchNode(outboundTag)
+    ensureRunningRequest(token)
+    when (result) {
         is SelectorManager.SwitchResult.Success -> {
             commandManager.closeConnections()
             rootConnection.service?.resetNetwork()
+            ensureRunningRequest(token)
             if (nodeName.isNotBlank()) {
                 VpnStateStore.setActiveLabel(nodeName)
                 SingBoxIpcHub.update(activeLabel = nodeName)
@@ -544,8 +569,8 @@ internal suspend fun RootTransparentForegroundService.switchNode(
             updateNotification()
         }
         is SelectorManager.SwitchResult.NeedRestart -> {
-            requestRunningRuntime(reload = true) { token ->
-                restartRuntime(fallbackConfigPath, fallbackRequestId, token)
+            requestRunningRuntime(reload = true) { reloadToken ->
+                restartRuntime(fallbackConfigPath, fallbackRequestId, reloadToken)
             }
         }
     }

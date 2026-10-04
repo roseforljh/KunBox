@@ -1,7 +1,9 @@
 package com.kunk.singbox.service.root
 
 import android.os.Bundle
+import android.os.Process
 import com.kunk.singbox.model.isRootSha256
+import java.io.File
 
 enum class RootRuntimePhase {
     STOPPED,
@@ -61,7 +63,8 @@ internal class RootLifecycleCoordinator {
     fun requestStopped(): Long {
         desiredState = RootDesiredState.STOPPED
         generation += 1
-        state = RootLifecycleState.STOPPING
+        // 销毁已清理的服务只使旧请求失效，不能重新打开全局 stopping 状态。
+        if (state != RootLifecycleState.STOPPED) state = RootLifecycleState.STOPPING
         return generation
     }
 
@@ -100,6 +103,7 @@ data class RootRuntimeSnapshot(
     val routingGeneration: Long = 0L,
     val ruleRevision: Long = 0L,
     val rootPid: Int = 0,
+    val rootStartTime: String = "",
     val rootFdCount: Int = 0,
     val configFileSha256: String = "",
     val sidecarFileSha256: String = "",
@@ -121,6 +125,7 @@ data class RootRuntimeSnapshot(
         putLong(KEY_ROUTING_GENERATION, routingGeneration)
         putLong(KEY_RULE_REVISION, ruleRevision)
         putInt(KEY_ROOT_PID, rootPid)
+        putString(KEY_ROOT_START_TIME, rootStartTime)
         putInt(KEY_ROOT_FD_COUNT, rootFdCount)
         putString(KEY_CONFIG_SHA256, configFileSha256)
         putString(KEY_SIDECAR_SHA256, sidecarFileSha256)
@@ -143,6 +148,7 @@ data class RootRuntimeSnapshot(
         private const val KEY_ROUTING_GENERATION = "routing_generation"
         private const val KEY_RULE_REVISION = "rule_revision"
         private const val KEY_ROOT_PID = "root_pid"
+        private const val KEY_ROOT_START_TIME = "root_start_time"
         private const val KEY_ROOT_FD_COUNT = "root_fd_count"
         private const val KEY_CONFIG_SHA256 = "config_file_sha256"
         private const val KEY_SIDECAR_SHA256 = "sidecar_file_sha256"
@@ -176,6 +182,7 @@ data class RootRuntimeSnapshot(
                 routingGeneration = bundle.getLong(KEY_ROUTING_GENERATION),
                 ruleRevision = bundle.getLong(KEY_RULE_REVISION),
                 rootPid = bundle.getInt(KEY_ROOT_PID),
+                rootStartTime = bundle.getString(KEY_ROOT_START_TIME).orEmpty(),
                 rootFdCount = bundle.getInt(KEY_ROOT_FD_COUNT),
                 configFileSha256 = bundle.getString(KEY_CONFIG_SHA256).orEmpty(),
                 sidecarFileSha256 = bundle.getString(KEY_SIDECAR_SHA256).orEmpty(),
@@ -192,6 +199,18 @@ data class RootRuntimeSnapshot(
             )
         }
     }
+}
+
+internal fun currentRootProcessStartTime(pid: Int = Process.myPid()): String {
+    require(pid > 1) { "Invalid Root process ID" }
+    val stat = File("/proc/$pid/stat").readText()
+    return stat.substringAfterLast(") ", "")
+        .trim()
+        .split(' ')
+        .filter(String::isNotBlank)
+        .getOrNull(19)
+        ?.takeIf { it.all(Char::isDigit) }
+        ?: error("Cannot read Root process start time")
 }
 
 data class RootRuntimeExpectation(
@@ -243,6 +262,14 @@ internal fun rootDestroyRequiresCleanup(snapshot: RootRuntimeSnapshot, activeTra
         RootRuntimePhase.FAILED_RULES_PRESENT,
         RootRuntimePhase.FAILED_BLOCKED
     )
+
+internal fun shouldForceRootProcessExit(
+    stopRequestedSession: String,
+    runtimeSessionId: String,
+    phase: RootRuntimePhase
+): Boolean = runtimeSessionId.isNotBlank() &&
+    stopRequestedSession == runtimeSessionId &&
+    phase != RootRuntimePhase.STOPPED
 
 internal fun rootRunningSnapshotError(
     snapshot: RootRuntimeSnapshot,

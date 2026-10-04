@@ -6,6 +6,12 @@ import com.kunk.singbox.model.RootAppRoutingPlan
 import com.kunk.singbox.model.RootResolvedUidRoute
 import com.kunk.singbox.model.compareRootUtf8
 import com.kunk.singbox.model.requireValidRootPackageName
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.runBlocking
+
+private val rootPackageInventoryDispatcher = Dispatchers.IO.limitedParallelism(4)
 
 data class RootInstalledPackage(
     val userId: Int,
@@ -50,9 +56,10 @@ class RootUidResolver(
         selfPackage: String,
         selfUid: Int
     ): RootUidSelection {
-        val users = listUsers()
-        val packages = users.flatMap(::listPackages)
-        return resolveCapturedUids(mode, allowlist, blocklist, selfPackage, selfUid, users, packages)
+        val snapshot = captureSnapshot()
+        return resolveCapturedUids(
+            mode, allowlist, blocklist, selfPackage, selfUid, snapshot.users, snapshot.packages
+        )
     }
 
     @Suppress("LongMethod", "CyclomaticComplexMethod")
@@ -64,7 +71,16 @@ class RootUidResolver(
 
     internal fun captureSnapshot(): RootUidSnapshot {
         val users = listUsers()
-        val packages = users.flatMap(::listPackages)
+        // ponytail: keep the synchronous Root/Binder contract; at most four read-only queries run together.
+        val packages = if (users.size == 1) {
+            listPackages(users.single())
+        } else {
+            runBlocking {
+                users.map { userId ->
+                    async(rootPackageInventoryDispatcher) { listPackages(userId) }
+                }.awaitAll().flatten()
+            }
+        }
         check(packages.isNotEmpty()) { "Root package UID enumeration returned no applications" }
         return RootUidSnapshot(users, packages)
     }

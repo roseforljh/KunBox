@@ -7,6 +7,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.os.IBinder
+import android.os.PowerManager
 import android.util.Log
 import com.kunk.singbox.R
 import com.kunk.singbox.aidl.IRootSingBoxService
@@ -34,10 +35,12 @@ import com.kunk.singbox.service.network.TrafficMonitor
 import com.kunk.singbox.service.notification.NotificationActionConfig
 import com.kunk.singbox.service.notification.VpnNotificationManager
 import com.kunk.singbox.utils.NetworkClient
+import com.topjohnwu.superuser.Shell
 import java.io.File
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -82,6 +85,7 @@ class RootTransparentForegroundService : Service() {
         const val EXTRA_NODE_NAME = "node_name"
         const val EXTRA_APP_ROUTE_REQUEST_ID = "app_route_request_id"
         const val ACTION_FORCE_STOP = "com.kunk.singbox.action.ROOT_FORCE_STOP"
+        internal const val UID_REFRESH_WAKE_LOCK_TIMEOUT_MS = 30_000L
 
         @Volatile var isRunning: Boolean = false
             internal set
@@ -107,6 +111,7 @@ class RootTransparentForegroundService : Service() {
     internal val notificationNodeSwitchInFlight = AtomicBoolean(false)
     internal val uidRefreshScheduled = AtomicBoolean(false)
     internal var runtimeSessionId: String = ""
+    internal var emergencyCleanup: Pair<String, CompletableDeferred<Result<Shell.Result>>>? = null
     @Volatile internal var lifecycleStartedAtMs = 0L
     @Volatile internal var lastRootSnapshot = RootRuntimeSnapshot()
     @Volatile internal var showNotificationSpeed = true
@@ -117,6 +122,27 @@ class RootTransparentForegroundService : Service() {
             scheduleUidRefresh(intent?.action.orEmpty())
         }
     }
+
+    internal fun acquireUidRefreshWakeLock(): PowerManager.WakeLock? = runCatching {
+        val powerManager = getSystemService(Context.POWER_SERVICE) as? PowerManager
+            ?: return@runCatching null
+        powerManager.newWakeLock(
+            PowerManager.PARTIAL_WAKE_LOCK,
+            "$TAG:UidRefresh"
+        ).apply {
+            setReferenceCounted(false)
+            acquire(UID_REFRESH_WAKE_LOCK_TIMEOUT_MS)
+        }
+    }.onFailure { error ->
+        Log.w(TAG, "Cannot acquire Root UID refresh WakeLock", error)
+    }.getOrNull()
+
+    internal fun releaseUidRefreshWakeLock(wakeLock: PowerManager.WakeLock?) {
+        if (wakeLock?.isHeld != true) return
+        runCatching { wakeLock.release() }
+            .onFailure { error -> Log.w(TAG, "Cannot release Root UID refresh WakeLock", error) }
+    }
+
     internal val userChangeReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             scheduleUidRefresh(intent?.action.orEmpty())
@@ -245,7 +271,8 @@ class RootTransparentForegroundService : Service() {
                         outboundTag,
                         intent.getStringExtra(EXTRA_NODE_NAME).orEmpty(),
                         intent.getStringExtra(EXTRA_CONFIG_PATH),
-                        intent.getStringExtra(EXTRA_APP_ROUTE_REQUEST_ID).orEmpty()
+                        intent.getStringExtra(EXTRA_APP_ROUTE_REQUEST_ID).orEmpty(),
+                        token = lifecycleState.generation
                     )
                 }
             }
@@ -285,8 +312,10 @@ class RootTransparentForegroundService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
-        lifecycle.requestStopped()
+        val before = lifecycle.snapshot()
+        val token = lifecycle.requestStopped()
         syncLifecycleFlags()
+        logLifecycle("destroy", token, "service_destroyed", before.state)
         lifecycleJob?.cancel()
         uidRefreshJob?.cancel()
         monitorJob?.cancel()
@@ -296,7 +325,7 @@ class RootTransparentForegroundService : Service() {
         if (!rootConnectionRecycled) {
             // RootService is a separate process. Unbinding alone can leave its
             // netfilter rules and watchdog alive when destruction races startup.
-            runCatching { rootConnection.stopRootService() }
+            runCatching { rootConnection.stopRootServiceOnMainThread() }
                 .onFailure { error -> Log.e(TAG, "Could not stop RootService during foreground destroy", error) }
         }
         serviceScope.cancel()
@@ -804,13 +833,13 @@ class RootTransparentForegroundService : Service() {
         from: RootLifecycleState
     ) {
         val current = lifecycle.snapshot()
-        Log.i(
-            TAG,
-            "[ROOT_LIFECYCLE] event=$event from=$from to=${current.state} " +
-                "desiredState=${current.desiredState} generation=$generation reason=$reason " +
-                "caller=RootTransparentForegroundService thread=${Thread.currentThread().name} " +
-                "elapsed_ms=${android.os.SystemClock.elapsedRealtime() - lifecycleStartedAtMs}"
-        )
+        val message = "[ROOT_LIFECYCLE] event=$event from=$from to=${current.state} " +
+            "desiredState=${current.desiredState} generation=$generation reason=$reason " +
+            "caller=RootTransparentForegroundService thread=${Thread.currentThread().name} " +
+            "elapsed_ms=${android.os.SystemClock.elapsedRealtime() - lifecycleStartedAtMs} " +
+            "rootPhase=${lastRootSnapshot.phase} rootError=${lastRootSnapshot.error}"
+        Log.i(TAG, message)
+        LogRepository.getInstance().addAlwaysLog("INFO [Lifecycle] service=root $message")
     }
 
     internal fun loadRootGenerationResult(
@@ -883,6 +912,7 @@ class RootTransparentForegroundService : Service() {
                 if (!rootConnectionRecycled) rootConnection.stopRootService()
             }
             if (cleanupConfirmed) {
+                emergencyCleanup = null
                 runtimeSessionId = ""
                 VpnStateStore.clearStopOwnerMode()
                 VpnStateStore.setMode(VpnStateStore.CoreMode.NONE)
@@ -919,15 +949,13 @@ class RootTransparentForegroundService : Service() {
             }
         } catch (error: Exception) {
             Log.e(TAG, "Root transparent stop failed", error)
-            val rootSnapshot = runCatching {
-                RootRuntimeSnapshot.fromBundle(rootConnection.service?.snapshot)
-            }.getOrNull()
+            val rootSnapshot = rootConnection.service?.let { service ->
+                runCatching { RootRuntimeSnapshot.fromBundle(service.snapshot) }.getOrNull()
+            }
             val preservedSnapshot = rootSnapshot ?: lastRootSnapshot
-            lastRootSnapshot = RootRuntimeSnapshot(
+            lastRootSnapshot = preservedSnapshot.copy(
                 phase = RootRuntimePhase.FAILED_VERIFICATION,
-                runtimeSessionId = runtimeSessionId,
-                rootPid = preservedSnapshot.rootPid,
-                rulesInstalled = preservedSnapshot.rulesInstalled,
+                runtimeSessionId = runtimeSessionId.ifBlank { preservedSnapshot.runtimeSessionId },
                 error = error.message ?: "Root cleanup could not be confirmed"
             )
             transitionLifecycle(token, RootLifecycleState.FAILED, "cleanup_exception")

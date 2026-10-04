@@ -94,8 +94,6 @@ class RootWatchdogInstaller(
     fun stop(cleanupRules: Boolean): Result<Unit> = runCatching {
         val sessionId = activeSessionId
         if (cleanupRules && sessionId.isNotBlank()) {
-            // The watchdog can delete its own launcher after detecting a stale
-            // parent.  The ownership cleanup script is the stable entrypoint.
             cleanupOwnedRules(sessionId).getOrThrow()
         }
         ackTask?.cancel(true)
@@ -118,7 +116,9 @@ class RootWatchdogInstaller(
 
     internal fun cleanupOwnedRules(sessionId: String = activeSessionId): Result<Unit> = runCatching {
         if (sessionId.isBlank()) return@runCatching
-        val result = executor.execute(listOf("/system/bin/sh", CLEANUP_PATH, "cleanup", sessionId))
+        val result = ProcessRootCommandExecutor.withCleanupCommands {
+            executor.execute(listOf("/system/bin/sh", CLEANUP_PATH, "cleanup", sessionId))
+        }
         check(result.success) { "Root watchdog cleanup failed: ${result.diagnosticOutput}" }
     }
 
@@ -168,7 +168,8 @@ class RootWatchdogInstaller(
         val sessionFile = File(runtimeDir, "session")
         if (!sessionFile.isFile || Files.isSymbolicLink(sessionFile.toPath())) return
         if (sessionFile.readText().trim() != sessionId) return
-        listOf("lease", "watchdog_ack", "watchdog.pid", "watchdog.sh").forEach { name ->
+        // Keep both cleanup entrypoints available for a stop racing the external watchdog.
+        listOf("lease", "watchdog_ack", "watchdog.pid").forEach { name ->
             val file = File(runtimeDir, name)
             check(!Files.isSymbolicLink(file.toPath())) { "Root watchdog runtime file is a symbolic link: $name" }
             check(!file.exists() || file.delete()) { "Cannot remove Root watchdog runtime file: $name" }

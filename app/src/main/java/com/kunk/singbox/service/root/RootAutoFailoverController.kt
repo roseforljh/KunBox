@@ -87,10 +87,11 @@ internal enum class RootFailoverGroupRuntimeState {
 
 internal fun classifyRootFailoverGroupRuntime(
     currentResolvedTag: String?,
-    failedTag: String
+    failedTag: String,
+    dependsOnFailed: Boolean = currentResolvedTag.equals(failedTag, ignoreCase = true)
 ): RootFailoverGroupRuntimeState = when {
     currentResolvedTag.isNullOrBlank() -> RootFailoverGroupRuntimeState.UNAVAILABLE
-    currentResolvedTag.equals(failedTag, ignoreCase = true) -> RootFailoverGroupRuntimeState.NEEDS_SWITCH
+    dependsOnFailed -> RootFailoverGroupRuntimeState.NEEDS_SWITCH
     else -> RootFailoverGroupRuntimeState.HEALED
 }
 
@@ -323,8 +324,19 @@ internal object RootFailoverGroups {
                     ?: return@mapNotNull null
                 val currentResolved = resolvedTag(group.tag)?.takeIf(String::isNotBlank)
                     ?: currentSelection
-                if (!currentResolved.equals(failedTag, ignoreCase = true)) return@mapNotNull null
                 val selectableTags = group.outbounds.orEmpty().distinct()
+                val currentDependsOnFailed = dependencyContains(
+                    tag = currentSelection,
+                    failedTag = failedTag,
+                    byTag = byTag,
+                    resolvedTag = resolvedTag
+                ) || dependencyContains(
+                    tag = currentResolved,
+                    failedTag = failedTag,
+                    byTag = byTag,
+                    resolvedTag = resolvedTag
+                )
+                if (!currentDependsOnFailed) return@mapNotNull null
                 val candidates = selectableTags.asSequence()
                     .filter { it != currentSelection }
                     .mapNotNull { childTag ->
@@ -370,8 +382,35 @@ internal object RootFailoverGroups {
         val probeType = probeTag?.let(byTag::get)?.type?.trim()?.lowercase().orEmpty()
         return probeTag
             ?.takeUnless { it.equals(failedTag, ignoreCase = true) }
+            ?.takeUnless {
+                dependencyContains(
+                    tag = selectTag,
+                    failedTag = failedTag,
+                    byTag = byTag,
+                    resolvedTag = resolvedTag
+                )
+            }
             ?.takeIf { isSupportedProbeType(probeType) }
             ?.let { RootFailoverCandidate(selectTag = selectTag, probeTag = it) }
+    }
+
+    fun dependencyContains(
+        tag: String,
+        failedTag: String,
+        byTag: Map<String, Outbound>,
+        resolvedTag: (String) -> String?,
+        visited: Set<String> = emptySet()
+    ): Boolean {
+        if (tag.equals(failedTag, ignoreCase = true)) return true
+        if (tag in visited) return false
+        val outbound = byTag[tag] ?: return false
+        val next = buildList<String> {
+            outbound.detour?.trim()?.takeIf(String::isNotBlank)?.let(::add)
+            if (isGroupType(outbound.type.trim().lowercase())) {
+                resolvedTag(tag)?.trim()?.takeIf(String::isNotBlank)?.let(::add)
+            }
+        }
+        return next.any { dependencyContains(it, failedTag, byTag, resolvedTag, visited + tag) }
     }
 
     private fun isGroupType(type: String): Boolean {
@@ -579,7 +618,17 @@ internal class RootAutoFailoverController(
         groups.forEach { group ->
             if (!isRuntimeCurrent(incident)) return fail(incident, "stale_generation")
             val currentResolved = commandManager.getResolvedSelectedOutbound(group.tag)
-            when (classifyRootFailoverGroupRuntime(currentResolved, incident.target.outboundTag)) {
+            val runtimeState = classifyRootFailoverGroupRuntime(
+                currentResolvedTag = currentResolved,
+                failedTag = incident.target.outboundTag,
+                dependsOnFailed = RootFailoverGroups.dependencyContains(
+                    tag = commandManager.getSelectedOutbound(group.tag) ?: currentResolved.orEmpty(),
+                    failedTag = incident.target.outboundTag,
+                    byTag = byTag,
+                    resolvedTag = commandManager::getResolvedSelectedOutbound
+                )
+            )
+            when (runtimeState) {
                 RootFailoverGroupRuntimeState.HEALED -> {
                     healedGroups += group.tag
                     return@forEach

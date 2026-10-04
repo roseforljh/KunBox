@@ -118,6 +118,95 @@ class RootNetfilterPlanTest {
     }
 
     @Test
+    fun ownedChainSnapshotQueriesEachTableOnce() {
+        val commands = rootStateSnapshotCommands(
+            netfilterBinaries = listOf("iptables"),
+            includePolicyRouting = false,
+            chainQueries = mapOf(
+                "iptables" to listOf(
+                    "filter" to "KBX_GUARD4",
+                    "filter" to "KBX_OUT4",
+                    "nat" to "KBX_RED4"
+                )
+            )
+        )
+
+        val tableQueries = commands.filter {
+            it == listOf("iptables", "-t", "filter", "-S") ||
+                it == listOf("iptables", "-t", "nat", "-S")
+        }
+        assertEquals(2, tableQueries.size)
+        assertFalse(commands.any { it == listOf("iptables", "-t", "filter", "-S", "KBX_GUARD4") })
+    }
+
+    @Test
+    fun fastActivationSnapshotDoesNotRequeryUnchangedPolicyRouting() {
+        val script = requireNotNull(
+            buildRootNetfilterTransitionScript(
+                listOf(
+                    listOf("iptables", "-t", "nat", "-I", "OUTPUT", "1", "-j", "KBX_RED4"),
+                    listOf("iptables", "-t", "filter", "-D", "OUTPUT", "-j", "KBX_GUARD4"),
+                    listOf("iptables", "-t", "filter", "-F", "KBX_GUARD4"),
+                    listOf("iptables", "-t", "filter", "-X", "KBX_GUARD4")
+                )
+            )
+        )
+
+        assertTrue(script.contains("'-t' 'filter' '-S'"))
+        assertTrue(script.contains("'-t' 'nat' '-S'"))
+        assertFalse(script.contains("'iptables-save'"))
+        assertFalse(script.contains("__KBX_ROOT_STATE_rule"))
+        assertFalse(script.contains("__KBX_ROOT_STATE_route"))
+    }
+
+    @Test
+    fun fastCleanupWithoutPolicyMutationsStillChecksForResidualRoutes() {
+        val script = requireNotNull(
+            buildRootNetfilterCleanupScript(
+                listOf(listOf("iptables", "-t", "nat", "-D", "OUTPUT", "-j", "KBX_RED4"))
+            )
+        )
+
+        listOf("rule4", "rule6", "route4", "route6").forEach { section ->
+            assertTrue(script.contains("__KBX_ROOT_STATE_${section}__"))
+        }
+    }
+
+    @Test
+    fun fastTransitionWithPolicyMutationsStillChecksRoutes() {
+        val script = requireNotNull(
+            buildRootNetfilterTransitionScript(
+                listOf(
+                    listOf("iptables", "-t", "nat", "-I", "OUTPUT", "1", "-j", "KBX_RED4"),
+                    listOf("ip", "rule", "add", "pref", "12031", "table", "20231")
+                )
+            )
+        )
+
+        listOf("rule4", "rule6", "route4", "route6").forEach { section ->
+            assertTrue(script.contains("__KBX_ROOT_STATE_${section}__"))
+        }
+    }
+
+    @Test
+    fun fastCleanupSnapshotStillVerifiesChangedPolicyRouting() {
+        val script = requireNotNull(
+            buildRootNetfilterCleanupScript(
+                listOf(
+                    listOf("iptables", "-t", "nat", "-D", "OUTPUT", "-j", "KBX_RED4"),
+                    listOf("ip", "rule", "del", "pref", "12031")
+                )
+            )
+        )
+
+        assertTrue(script.contains("'-t' 'nat' '-S'"))
+        assertFalse(script.contains("'iptables-save'"))
+        listOf("rule4", "rule6", "route4", "route6").forEach { section ->
+            assertTrue(script.contains("__KBX_ROOT_STATE_${section}__"))
+        }
+    }
+
+    @Test
     fun twoLanesBindUidTcpUdpAndInputToTheirOwnPortsAndMarks() {
         val lanes = listOf(lane(0, 10123), lane(1, 10124))
         val plan = RootNetfilterPlanner.build(
@@ -204,8 +293,10 @@ class RootNetfilterPlanTest {
         assertTrue(script.contains("ip -6 -batch - <<'KBX_IP_6'"))
         assertTrue(script.contains("__KBX_ROOT_STATE_iptables4__"))
         assertTrue(script.contains("__KBX_ROOT_STATE_iptables6__"))
-        assertTrue(script.contains("'iptables-save'"))
-        assertTrue(script.contains("'ip6tables-save'"))
+        assertTrue(script.contains("'iptables' '-w' '2' '-t' 'mangle' '-S'"))
+        assertTrue(script.contains("'ip6tables' '-w' '2' '-t' 'mangle' '-S'"))
+        assertFalse(script.contains("'iptables-save'"))
+        assertFalse(script.contains("'ip6tables-save'"))
         assertTrue(script.contains("rule add"))
         assertTrue(script.indexOf("ip -batch -") < script.indexOf("'iptables' '-w' '2'"))
         assertFalse(script.contains("'ip' 'rule' 'add'"))

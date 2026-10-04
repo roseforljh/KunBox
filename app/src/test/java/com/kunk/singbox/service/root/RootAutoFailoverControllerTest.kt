@@ -164,6 +164,91 @@ class RootAutoFailoverControllerTest {
     }
 
     @Test
+    fun detourDependencyFailureAffectsSelectorSelectingTheFrontedNode() {
+        val outbounds = listOf(
+            Outbound(type = "selector", tag = "PROXY", outbounds = listOf("fronted", "backup")),
+            Outbound(type = "socks", tag = "fronted", detour = "front"),
+            Outbound(type = "vless", tag = "front"),
+            Outbound(type = "vless", tag = "backup")
+        )
+        val selected = mapOf("PROXY" to "fronted")
+
+        val group = requireNotNull(
+            RootFailoverGroups.resolveAll(
+                outbounds = outbounds,
+                failedTag = "front",
+                selectedTag = selected::get,
+                resolvedTag = selected::get
+            ).singleOrNull()
+        )
+
+        assertEquals("PROXY", group.tag)
+        assertEquals("fronted", group.currentSelectionTag)
+        assertEquals(listOf(RootFailoverCandidate("backup", "backup")), group.candidates)
+    }
+
+    @Test
+    fun detourDependencyFailureRejectsCandidateUsingTheFailedFrontNode() {
+        val outbounds = listOf(
+            Outbound(type = "selector", tag = "PROXY", outbounds = listOf("front", "fronted", "backup")),
+            Outbound(type = "vless", tag = "front"),
+            Outbound(type = "socks", tag = "fronted", detour = "front"),
+            Outbound(type = "vless", tag = "backup")
+        )
+        val selected = mapOf("PROXY" to "front")
+
+        val group = requireNotNull(
+            RootFailoverGroups.resolveAll(
+                outbounds = outbounds,
+                failedTag = "front",
+                selectedTag = selected::get,
+                resolvedTag = selected::get
+            ).singleOrNull()
+        )
+
+        assertEquals(listOf(RootFailoverCandidate("backup", "backup")), group.candidates)
+    }
+
+    @Test
+    fun detourFailureRemainsUnhealedUntilSelectionMovesToIndependentNode() {
+        val outbounds = listOf(
+            Outbound(type = "socks", tag = "fronted", detour = "front"),
+            Outbound(type = "vless", tag = "front"),
+            Outbound(type = "vless", tag = "backup")
+        ).associateBy(Outbound::tag)
+        fun classify(tag: String?) = classifyRootFailoverGroupRuntime(
+            currentResolvedTag = tag,
+            failedTag = "front",
+            dependsOnFailed = RootFailoverGroups.dependencyContains(
+                tag = tag.orEmpty(),
+                failedTag = "front",
+                byTag = outbounds,
+                resolvedTag = { null }
+            )
+        )
+
+        assertEquals(RootFailoverGroupRuntimeState.NEEDS_SWITCH, classify("fronted"))
+        assertEquals(RootFailoverGroupRuntimeState.HEALED, classify("backup"))
+        assertEquals(RootFailoverGroupRuntimeState.UNAVAILABLE, classify(null))
+    }
+
+    @Test
+    fun detourTraversalFollowsResolvedGroupsAndTerminatesOnCycles() {
+        val outbounds = listOf(
+            Outbound(type = "socks", tag = "fronted", detour = "auto"),
+            Outbound(type = "urltest", tag = "auto", outbounds = listOf("middle", "unused")),
+            Outbound(type = "socks", tag = "middle", detour = "front"),
+            Outbound(type = "vless", tag = "front", detour = "fronted"),
+            Outbound(type = "vless", tag = "unused")
+        ).associateBy(Outbound::tag)
+        val selected = mapOf("auto" to "middle")
+
+        assertTrue(RootFailoverGroups.dependencyContains("fronted", "front", outbounds, selected::get))
+        assertFalse(RootFailoverGroups.dependencyContains("fronted", "unused", outbounds, selected::get))
+        assertFalse(RootFailoverGroups.dependencyContains("fronted", "missing", outbounds, selected::get))
+    }
+
+    @Test
     fun nestedSelectorUsesDirectSelectTagAndResolvedProbeTag() {
         val outbounds = listOf(
             Outbound(type = "selector", tag = "PROXY", outbounds = listOf("P:鹰", "main")),

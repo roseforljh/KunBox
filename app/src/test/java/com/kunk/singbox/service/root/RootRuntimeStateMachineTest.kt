@@ -193,6 +193,106 @@ class RootRuntimeStateMachineTest {
     }
 
     @Test
+    fun forcedRootExitOnlyAppliesToTheRequestedLiveSession() {
+        assertTrue(
+            shouldForceRootProcessExit(
+                stopRequestedSession = "session-1",
+                runtimeSessionId = "session-1",
+                phase = RootRuntimePhase.CORE_STARTING
+            )
+        )
+        assertFalse(
+            shouldForceRootProcessExit(
+                stopRequestedSession = "session-1",
+                runtimeSessionId = "session-2",
+                phase = RootRuntimePhase.CORE_STARTING
+            )
+        )
+        assertFalse(
+            shouldForceRootProcessExit(
+                stopRequestedSession = "session-1",
+                runtimeSessionId = "session-1",
+                phase = RootRuntimePhase.STOPPED
+            )
+        )
+    }
+
+    @Test
+    fun hotSwitchChecksCommandGenerationBeforeSelectionAndBeforePublishingResult() {
+        val service = File("src/main/java/com/kunk/singbox/service/root/RootTransparentForegroundService.kt")
+            .readText(Charsets.UTF_8)
+        val command = service.substringAfter("ACTION_SWITCH_NODE ->")
+            .substringBefore("ACTION_RESET_CONNECTIONS ->")
+        val runtime = File(
+            "src/main/java/com/kunk/singbox/service/root/runtime/RootTransparentForegroundRuntime.kt"
+        ).readText(Charsets.UTF_8)
+        val switch = runtime.substringAfter("internal suspend fun RootTransparentForegroundService.switchNode(")
+            .substringBefore("internal fun RootTransparentForegroundService.rootReadiness(")
+        val selectionIndex = switch.indexOf("SelectorManager.switchNode(outboundTag)")
+        val firstCheck = switch.indexOf("ensureRunningRequest(token)")
+        val finalCheck = switch.indexOf("ensureRunningRequest(token)", selectionIndex)
+
+        assertTrue(command.contains("token = lifecycleState.generation"))
+        assertTrue(firstCheck in 0 until selectionIndex)
+        assertTrue(finalCheck > selectionIndex)
+        assertTrue(finalCheck < switch.indexOf("when (result)"))
+    }
+
+    @Test
+    fun rootRecoverySerializesWithSwitchAndReplacesSelectorClientAfterGenerationCheck() {
+        val runtime = File(
+            "src/main/java/com/kunk/singbox/service/root/runtime/RootTransparentForegroundRuntime.kt"
+        ).readText(Charsets.UTF_8)
+        val recovery = runtime.substringAfter(
+            "internal fun RootTransparentForegroundService.scheduleControlChannelRecovery("
+        ).substringBefore("internal fun RootTransparentForegroundService.recordSelector(")
+        val reconnectIndex = recovery.indexOf("commandManager.reconnectControlClientsWithFd")
+        val updateIndex = recovery.indexOf("SelectorManager.updateCommandClient(commandManager.getCommandClient())")
+
+        assertTrue(recovery.contains("val token = lifecycle.snapshot().generation"))
+        assertTrue(recovery.indexOf("lifecycleMutex.withLock") in 0 until reconnectIndex)
+        assertTrue(updateIndex > reconnectIndex)
+        assertTrue(recovery.substring(reconnectIndex, updateIndex).contains("ensureRunningRequest(token)"))
+        assertFalse(recovery.contains("it.copy(selectorReady = true)"))
+    }
+
+    @Test
+    fun rollbackAndUidRefreshRestoreSelectorBeforePublishingRunning() {
+        val runtime = File(
+            "src/main/java/com/kunk/singbox/service/root/runtime/RootTransparentForegroundRuntime.kt"
+        ).readText(Charsets.UTF_8)
+        val rollback = runtime.substringAfter(
+            "internal suspend fun RootTransparentForegroundService.restoreReloadedPreviousRuntime("
+        ).substringBefore("internal fun RootTransparentForegroundService.publishReloadFailure(")
+        val refresh = runtime.substringAfter(
+            "internal suspend fun RootTransparentForegroundService.refreshUidRoutingLocked("
+        ).substringBefore("internal fun RootTransparentForegroundService.publishUidRefreshBlocked(")
+        val rollbackRecord = rollback.indexOf("recordSelector(previousConfigPath)")
+        val refreshRecord = refresh.indexOf(
+            "recordSelector(RootGenerationStore.configFile(filesDir, marker).absolutePath)"
+        )
+
+        assertTrue(rollbackRecord > rollback.indexOf("SelectorManager.updateCommandClient"))
+        assertTrue(rollbackRecord < rollback.indexOf("transitionLifecycle(token, RootLifecycleState.RUNNING"))
+        assertTrue(refreshRecord > refresh.indexOf("SelectorManager.updateCommandClient"))
+        assertTrue(refreshRecord < refresh.indexOf("transitionLifecycle(token, RootLifecycleState.RUNNING"))
+    }
+
+    @Test
+    fun selectionAckFromBeforeReloadOrStopIsNotCurrent() {
+        val lifecycle = RootLifecycleCoordinator()
+        val start = lifecycle.requestRunning(reload = false) ?: error("start rejected")
+        assertTrue(lifecycle.transition(start, RootLifecycleState.RUNNING))
+        val switchToken = lifecycle.snapshot().generation
+        val reload = lifecycle.requestRunning(reload = true) ?: error("reload rejected")
+
+        assertFalse(lifecycle.isCurrentRunningRequest(switchToken))
+        assertTrue(lifecycle.transition(reload, RootLifecycleState.RUNNING))
+        lifecycle.requestStopped()
+        assertFalse(lifecycle.isCurrentRunningRequest(reload))
+    }
+
+    @Test
     fun stopInvalidatesEveryOlderStartOrReloadGeneration() {
         val lifecycle = RootLifecycleCoordinator()
         val start = lifecycle.requestRunning(reload = false) ?: error("start request rejected")
@@ -203,6 +303,36 @@ class RootRuntimeStateMachineTest {
         assertFalse(lifecycle.transition(reload, RootLifecycleState.RUNNING))
         assertTrue(lifecycle.transition(stop, RootLifecycleState.STOPPED))
         assertEquals(RootDesiredState.STOPPED, lifecycle.snapshot().desiredState)
+    }
+
+    @Test
+    fun destroyAfterVerifiedStopDoesNotReopenStopping() {
+        val lifecycle = RootLifecycleCoordinator()
+        val start = lifecycle.requestRunning(reload = false) ?: error("start request rejected")
+        assertTrue(lifecycle.transition(start, RootLifecycleState.RUNNING))
+        val stop = lifecycle.requestStopped()
+        assertTrue(lifecycle.transition(stop, RootLifecycleState.STOPPED))
+
+        val destroy = lifecycle.requestStopped()
+
+        assertTrue(destroy > stop)
+        assertEquals(RootLifecycleState.STOPPED, lifecycle.snapshot().state)
+        assertEquals(RootDesiredState.STOPPED, lifecycle.snapshot().desiredState)
+        assertFalse(lifecycle.isCurrentRunningRequest(start))
+        assertFalse(lifecycle.transition(start, RootLifecycleState.RUNNING))
+        assertTrue(lifecycle.requestRunning(reload = false) != null)
+    }
+
+    @Test
+    fun destroyingActiveRuntimeStillRequiresCleanup() {
+        val lifecycle = RootLifecycleCoordinator()
+        val start = lifecycle.requestRunning(reload = false) ?: error("start request rejected")
+        assertTrue(lifecycle.transition(start, RootLifecycleState.RUNNING))
+
+        lifecycle.requestStopped()
+
+        assertEquals(RootLifecycleState.STOPPING, lifecycle.snapshot().state)
+        assertNull(lifecycle.requestRunning(reload = false))
     }
 
     @Test
@@ -255,7 +385,7 @@ class RootRuntimeStateMachineTest {
             "src/main/java/com/kunk/singbox/service/root/runtime/RootStopRuntime.kt"
         ).readText(Charsets.UTF_8)
         assertTrue(source.contains("service_unavailable_using_emergency_cleanup"))
-        assertTrue(source.contains("runEmergencyRootCleanup(sessionId, rootPid)"))
+        assertTrue(source.contains("runEmergencyRootCleanup(sessionId, rootPid, rootStartTime)"))
         assertFalse(
             source.contains(
                 "return failedRootStop(\"Root service disconnected before cleanup could be verified\")"
@@ -371,7 +501,8 @@ class RootRuntimeStateMachineTest {
         val rootService = File("src/main/java/com/kunk/singbox/service/root/KunBoxRootService.kt")
             .readText(Charsets.UTF_8)
         assertTrue(aidl.contains("oneway void requestStop"))
-        assertTrue(rootService.contains("rootCommandExecutor.cancelActiveCommands()"))
+        assertTrue(rootService.contains("rootCommandExecutor.cancelActiveCommands {"))
+        assertTrue(rootService.contains("stopRequestedSession.compareAndSet(\"\", sessionId)"))
     }
 
     @Test
@@ -391,16 +522,21 @@ class RootRuntimeStateMachineTest {
     }
 
     @Test
-    fun emergencyRootCleanupWaitsForTheOldProcessBeforeCleaningOwnedRules() {
+    fun emergencyRootCleanupForceKillsOnlyTheVerifiedRootProcess() {
         val sessionId = "0d833321-aaf8-4b3f-b91c-295b1d8b3133"
 
-        val command = buildEmergencyRootCleanupCommand(sessionId, 31536)
+        val command = buildEmergencyRootCleanupCommand(sessionId, 31536, "123456")
 
-        assertTrue(command.contains("[ ! -d /proc/31536 ] || exit 75"))
+        assertTrue(command.contains("/proc/31536/stat"))
+        assertTrue(command.contains("kill -TERM 31536"))
+        assertTrue(command.contains("kill -KILL 31536"))
         assertTrue(command.contains("/data/adb/kunbox/watchdog.sh"))
         assertTrue(command.contains("cleanup '$sessionId'"))
         assertThrows(IllegalArgumentException::class.java) {
-            buildEmergencyRootCleanupCommand("bad-session", 31536)
+            buildEmergencyRootCleanupCommand("bad-session", 31536, "123456")
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            buildEmergencyRootCleanupCommand(sessionId, 31536, "not-a-start-time")
         }
     }
 
