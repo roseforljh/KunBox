@@ -16,6 +16,38 @@ class ManualSelectionTransactionPolicyTest {
         .readText(Charsets.UTF_8)
 
     @Test
+    fun offlineManualSelectionClearsGlobalSelectorCacheBeforePublishingState() {
+        val commitBody = source
+            .substringAfter("internal fun ConfigRepository.commitManualSelectionState(")
+            .substringBefore("@Suppress(\"LongParameterList\")")
+
+        val clearIndex = commitBody.indexOf("clearSingBoxRuntimeCache()")
+        val persistIndex = commitBody.indexOf("saveProfileAutoSelection(targetProfileId, false)")
+        assertTrue(clearIndex >= 0)
+        assertTrue(persistIndex >= 0)
+        assertTrue(persistIndex < clearIndex)
+        assertTrue(source.contains("File(File(context.filesDir, \"singbox_data\"), \"cache.db\")"))
+    }
+
+    @Test
+    fun runConfigScopesCacheAndActiveNodeToTheSelectedProfile() {
+        val experimental = File(
+            "src/main/java/com/kunk/singbox/repository/configrepo/ConfigRepositoryPart7.kt"
+        ).readText(Charsets.UTF_8)
+        val generation = File(
+            "src/main/java/com/kunk/singbox/repository/configrepo/ConfigRepositoryPart5.kt"
+        ).readText(Charsets.UTF_8)
+        val outbounds = File(
+            "src/main/java/com/kunk/singbox/repository/configrepo/ConfigRepositoryPart8.kt"
+        ).readText(Charsets.UTF_8)
+
+        assertTrue(experimental.contains("cacheId = activeProfileId"))
+        assertTrue(generation.contains("it.sourceProfileId == activeId"))
+        assertTrue(outbounds.contains("val sourceConfigCache = mutableMapOf<String, SingBoxConfig?>()"))
+        assertTrue(outbounds.contains("val selectedNodeTag = activeNode?.let { nodeTagMap[it.id] ?: it.name }"))
+    }
+
+    @Test
     fun runningSelectionPublishesOnlyAfterKernelConfirmation() {
         val body = source
             .substringAfter("internal suspend fun ConfigRepository.setActiveNodeWithResult(nodeId: String)")
@@ -256,6 +288,19 @@ class ManualSelectionTransactionPolicyTest {
 
         assertTrue(constantsSource.contains("MANUAL_HOT_SWITCH_CONFIRMATION_TIMEOUT_MS = 3_000L"))
         assertTrue(selectorSource.contains("SELECTION_CONFIRMATION_TIMEOUT_MS = 2_500L"))
+    }
+
+    @Test
+    fun selectedNodeIsNotRemovedFromProxySelectorOrSilentlyReplaced() {
+        val body = File(
+            "src/main/java/com/kunk/singbox/repository/configrepo/ConfigRepositoryPart8.kt"
+        ).readText(Charsets.UTF_8)
+            .substringAfter("internal fun ConfigRepository.buildRunOutbounds(")
+            .substringBefore("internal fun ConfigRepository.applySelectorSafeOutbounds(")
+
+        assertFalse(body.contains("crossProfileRuntimeTags"))
+        assertTrue(body.contains("check(selectedNodeTag in proxyTags)"))
+        assertTrue(body.contains("Selected node is not available in PROXY selector"))
     }
 
     @Test

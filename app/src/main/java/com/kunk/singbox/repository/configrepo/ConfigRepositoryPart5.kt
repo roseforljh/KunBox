@@ -613,8 +613,11 @@ internal suspend fun ConfigRepository.generateConfigFile(
             !forceManualSelection && isProfileAutoSelectionEnabled(activeId)
 
         val allNodesSnapshot = _allNodes.value.takeIf { it.isNotEmpty() } ?: loadAllNodesSnapshot()
-        val activeNode = _nodes.value.find { it.id == activeNodeId }
-            ?: allNodesSnapshot.find { it.id == activeNodeId }
+        val activeNode = _nodes.value.find {
+            it.id == activeNodeId && it.sourceProfileId == activeId
+        } ?: allNodesSnapshot.find {
+            it.id == activeNodeId && it.sourceProfileId == activeId
+        }
         check(
             settingsRepository.removeInvalidRoutingReferences(
                 validProfileIds = _profiles.value.mapTo(mutableSetOf(), ProfileUi::id),
@@ -652,7 +655,7 @@ internal suspend fun ConfigRepository.generateConfigFile(
             )
         }
         val log = buildRunLogConfig(sanitizedSettings)
-        val experimental = buildRunExperimentalConfig(sanitizedSettings)
+        val experimental = buildRunExperimentalConfig(sanitizedSettings, activeId)
         val customRuleSets = buildCustomRuleSets(sanitizedSettings)
 
         val dnsOverrideConfig = parseDnsOverride(activeProfile?.dnsOverride)

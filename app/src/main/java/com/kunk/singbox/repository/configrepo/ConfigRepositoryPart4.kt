@@ -564,10 +564,7 @@ internal suspend fun ConfigRepository.setActiveNodeWithResult(nodeId: String): C
                     return@withContext ConfigRepository.NodeSwitchResult.Failed(msg)
                 }
 
-                runCatching {
-                    val oldCacheDb = File(File(context.filesDir, "singbox_data"), "cache.db")
-                    if (oldCacheDb.exists()) oldCacheDb.delete()
-                }
+                clearSingBoxRuntimeCache()
                 val currentTags = generationResult.outboundTags
                 val currentProfileId = targetProfileId
                 val baselineTags = lastRunOutboundTags
@@ -736,6 +733,17 @@ internal suspend fun ConfigRepository.setActiveNodeWithResult(nodeId: String): C
     }
 }
 
+internal fun ConfigRepository.clearSingBoxRuntimeCache() {
+    runCatching {
+        val cacheFile = File(File(context.filesDir, "singbox_data"), "cache.db")
+        if (cacheFile.exists() && !cacheFile.delete()) {
+            Log.w(ConfigRepository.TAG, "Failed to clear sing-box runtime cache: ${cacheFile.absolutePath}")
+        }
+    }.onFailure { error ->
+        Log.w(ConfigRepository.TAG, "Failed to clear sing-box runtime cache", error)
+    }
+}
+
 internal fun ConfigRepository.commitManualSelectionState(
     targetNode: NodeUi,
     allNodesSnapshot: List<NodeUi>,
@@ -768,6 +776,7 @@ internal fun ConfigRepository.commitManualSelectionState(
     saveProfileNodeMemory(targetProfileId, targetNode.id)
     VpnStateStore.setSelectedNodeLabel(targetNode.name)
     saveProfilesImmediate()
+    clearSingBoxRuntimeCache()
 }
 
 @Suppress("LongParameterList")

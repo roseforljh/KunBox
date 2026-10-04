@@ -2,6 +2,9 @@ package com.kunk.singbox.core
 
 import android.util.Log
 import io.nekohasekai.libbox.CommandClient
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -128,23 +131,41 @@ object SelectorManager {
         nodeTag: String,
         allowedOutboundTags: Collection<String>,
         confirmationTimeoutMs: Long = SELECTION_CONFIRMATION_TIMEOUT_MS
+    ): SwitchResult = switchNodeWithCommand(
+        groupTag,
+        nodeTag,
+        allowedOutboundTags,
+        confirmationTimeoutMs,
+        { commandClient?.let { it::selectOutbound } }
+    )
+
+    // ponytail: 只隔离 JNI 调用以便本地回归测试，不引入 native mocking 依赖。
+    internal suspend fun switchNodeWithCommand(
+        groupTag: String,
+        nodeTag: String,
+        allowedOutboundTags: Collection<String>,
+        confirmationTimeoutMs: Long,
+        commandProvider: () -> ((String, String) -> Unit)?
     ): SwitchResult = selectionMutex.withLock {
+        currentCoroutineContext().ensureActive()
         if (groupTag.isBlank() || nodeTag !in allowedOutboundTags) {
             return@withLock SwitchResult.NeedRestart("Node not in current selector")
         }
 
-        val client = commandClient
+        val command = commandProvider()
             ?: return@withLock SwitchResult.NeedRestart("CommandClient hot switch unavailable")
         val beforeRevision = kernelSelectionTracker.currentRevision()
         pendingSelectionTarget = nodeTag
         try {
-            client.selectOutbound(groupTag, nodeTag)
+            command(groupTag, nodeTag)
+            currentCoroutineContext().ensureActive()
             val actual = kernelSelectionTracker.awaitSelection(
                 groupTag = groupTag,
                 expectedTag = nodeTag,
                 afterRevision = beforeRevision,
                 timeoutMs = confirmationTimeoutMs
             )
+            currentCoroutineContext().ensureActive()
             when (actual) {
                 nodeTag -> {
                     Log.i(TAG, "Hot switch confirmed by kernel: $groupTag -> $nodeTag")
@@ -161,6 +182,8 @@ object SelectorManager {
                     )
                 }
             }
+        } catch (error: CancellationException) {
+            throw error
         } catch (e: Exception) {
             Log.e(TAG, "Hot switch via CommandClient failed: ${e.message}")
             SwitchResult.NeedRestart("CommandClient hot switch unavailable")
