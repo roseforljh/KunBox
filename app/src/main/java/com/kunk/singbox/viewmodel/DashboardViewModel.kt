@@ -59,9 +59,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.withTimeout
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class DashboardViewModel(application: Application) : AndroidViewModel(application) {
@@ -848,24 +846,21 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                 VpnServiceManager.stopVpn(context, VpnStopInitiator.MODE_SWITCH)
             }
 
-            // 如果需要停止对立服务，等待其完全停止
+            // 如果需要停止对立服务，等待服务自身完成异步清理；IPC 的 STOPPED 可能提前发布。
             if (needToStopOpposite) {
-                // 先检查对立服务是否正在运行
-                val oppositeWasRunning = SingBoxRemote.isRunning.value || SingBoxRemote.isStarting.value
-                if (oppositeWasRunning) {
-                    try {
-                        // 增加超时时间：BoxService.close() 可能需要较长时间释放端口
-                        withTimeout(8000L) {
-                            // 使用 drop(1) 跳过当前值，等待真正的状态变化
-                            SingBoxRemote.state
-                                .drop(1)
-                                .first { it == ServiceState.STOPPED }
-                        }
-                    } catch (e: TimeoutCancellationException) {
-                        Log.w(TAG, "Timeout waiting for opposite service to stop")
-                    }
+                val stopped = VpnServiceManager.awaitModeStopped(activeMode, 8_000L)
+                if (!stopped) {
+                    Log.e(TAG, "Timeout waiting for opposite service cleanup: mode=$activeMode")
+                    _connectionState.value = ConnectionState.Error
+                    emitToast(
+                        getApplication<Application>().getString(
+                            R.string.node_start_failed,
+                            getApplication<Application>().getString(R.string.common_timeout)
+                        )
+                    )
+                    return@launch
                 }
-                // 原因: BoxService.close() 后端口释放可能有延迟
+                // BoxService.close() 后端口释放可能有延迟。
                 delay(500)
             }
 

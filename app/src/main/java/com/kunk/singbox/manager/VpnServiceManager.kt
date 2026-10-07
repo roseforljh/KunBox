@@ -119,6 +119,22 @@ object VpnServiceManager {
         active: Boolean
     ): Boolean = mode == TrafficCaptureMode.ROOT_TRANSPARENT && pending == "stopping" && !active
 
+    // 服务都在 :bg 进程，主进程里它们的静态标志恒为 false；只能读跨进程的 VpnStateStore。
+    // 各服务只在清理确认后才把 mode 改掉并清空 pending。
+    internal fun isModeStopped(
+        mode: VpnStateStore.CoreMode,
+        storedMode: VpnStateStore.CoreMode = VpnStateStore.getMode(),
+        pending: String = VpnStateStore.getPending()
+    ): Boolean = mode == VpnStateStore.CoreMode.NONE || (storedMode != mode && pending != "stopping")
+
+    suspend fun awaitModeStopped(
+        mode: VpnStateStore.CoreMode,
+        timeoutMs: Long
+    ): Boolean = withTimeoutOrNull(timeoutMs) {
+        while (!isModeStopped(mode)) delay(50L)
+        true
+    } ?: false
+
     fun isStarting(): Boolean {
         return SingBoxRemote.isStarting.value
     }

@@ -103,6 +103,17 @@ class VpnServiceManagerTest {
     }
 
     @Test
+    fun modeSwitchWaitsForCrossProcessCleanupState() {
+        val root = VpnStateStore.CoreMode.ROOT
+        assertTrue(VpnServiceManager.isModeStopped(VpnStateStore.CoreMode.NONE, root, "stopping"))
+        assertFalse(VpnServiceManager.isModeStopped(root, root, ""))
+        assertFalse(VpnServiceManager.isModeStopped(root, root, "stopping"))
+        assertFalse(VpnServiceManager.isModeStopped(root, VpnStateStore.CoreMode.NONE, "stopping"))
+        assertTrue(VpnServiceManager.isModeStopped(root, VpnStateStore.CoreMode.NONE, ""))
+        assertTrue(VpnServiceManager.isModeStopped(root, VpnStateStore.CoreMode.VPN, "starting"))
+    }
+
+    @Test
     fun runtimeStateDoesNotReadLegacyVpnPreferences() {
         val source = File("src/main/java/com/kunk/singbox/manager/VpnServiceManager.kt").readText()
 

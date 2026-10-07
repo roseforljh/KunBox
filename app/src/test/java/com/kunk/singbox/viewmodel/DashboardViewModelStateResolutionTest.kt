@@ -83,6 +83,16 @@ class DashboardViewModelStateResolutionTest {
     }
 
     @Test
+    fun modeSwitchDoesNotStartUntilOppositeServiceCleanupCompletes() {
+        val source = File("src/main/java/com/kunk/singbox/viewmodel/DashboardViewModel.kt")
+            .readText(Charsets.UTF_8)
+        assertTrue(source.contains("VpnServiceManager.awaitModeStopped(activeMode, 8_000L)"))
+        assertTrue(source.contains("Timeout waiting for opposite service cleanup"))
+        assertTrue(source.contains("return@launch"))
+        assertFalse(source.contains("SingBoxRemote.state\n                                .drop(1)"))
+    }
+
+    @Test
     fun stopReturnsToIdleWithoutWaitingForServiceConfirmation() {
         val runtime = File("src/main/java/com/kunk/singbox/viewmodel/DashboardConnectionRuntime.kt")
             .readText(Charsets.UTF_8)

@@ -73,7 +73,7 @@ class SingBoxIpcService : Service() {
 
     override fun onDestroy() {
         serviceScope.cancel()
-        SingBoxIpcHub.unregisterService()
+        SingBoxIpcHub.unregisterService(this)
         super.onDestroy()
     }
 
