@@ -2,10 +2,14 @@
 
 import android.app.ActivityManager
 import android.app.Application
+import android.content.Intent
+import android.content.IntentFilter
 import android.net.ConnectivityManager
 import android.os.Process
+import androidx.core.content.ContextCompat
 import androidx.work.Configuration
 import com.kunk.singbox.lifecycle.AppLifecycleObserver
+import com.kunk.singbox.receiver.PackageRemovedReceiver
 import com.kunk.singbox.repository.LogRepository
 import com.kunk.singbox.repository.SettingsRepository
 import com.kunk.singbox.service.RuleSetAutoUpdateWorker
@@ -67,6 +71,21 @@ class SingBoxApplication : Application(), Configuration.Provider {
                     }
                 }
                 NetworkAutoSwitchManager.start(this@SingBoxApplication)
+
+                // PACKAGE_ADDED/REMOVED 是隐式广播，targetSdk>=26 时 Manifest 静态注册收不到，必须动态注册。
+                // ponytail: 只在主进程存活时同步（与原 Manifest receiver 同进程，避免 :bg 跨进程写设置）。
+                // 主进程被省电策略杀掉期间的卸载由 InstalledAppsRepository 加载时对账清理；新装应用自动加入会漏掉，
+                // 需要时用 PackageManager.getChangedPackages 做启动补偿。
+                ContextCompat.registerReceiver(
+                    this@SingBoxApplication,
+                    PackageRemovedReceiver(),
+                    IntentFilter().apply {
+                        addAction(Intent.ACTION_PACKAGE_ADDED)
+                        addAction(Intent.ACTION_PACKAGE_REMOVED)
+                        addDataScheme("package")
+                    },
+                    ContextCompat.RECEIVER_NOT_EXPORTED
+                )
 
                 SubscriptionAutoUpdateWorker.rescheduleAll(this@SingBoxApplication)
                 RuleSetAutoUpdateWorker.rescheduleAll(this@SingBoxApplication)
