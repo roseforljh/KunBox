@@ -20,6 +20,64 @@ import kotlinx.coroutines.channels.Channel
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.selects.select
 
+internal suspend fun awaitCommandLogAttemptReady(
+    signals: CommandManager.CommandLogAttemptSignals,
+    timeoutMs: Long = CommandManager.COMMAND_LOG_READY_TIMEOUT_MS
+) {
+    val ready = withTimeoutOrNull(timeoutMs) {
+        select<Boolean> {
+            signals.ready.onAwait { true }
+            signals.disconnected.onAwait { reason ->
+                error("Command log disconnected before ready: ${reason.orEmpty()}")
+            }
+        }
+    }
+    check(ready == true) { "Command log readiness timeout" }
+}
+
+internal fun CommandManager.requestControlChannelRecovery(generation: Long, reason: String) {
+    callbacks?.onControlChannelRecoveryRequired(reason)
+    val recovery = synchronized(runtimeAccess) {
+        if (controlRecoveryStopped || generation != activeCommandSessionGeneration || commandFdProvider != null) return
+        if (localControlRecoveryJob != null || runtimeHandle == null) return
+        val server = commandServer ?: return
+        serviceScope.launch(Dispatchers.IO, start = CoroutineStart.LAZY) {
+            recoverLocalControlChannels(generation, server, reason)
+        }.also { localControlRecoveryJob = it }
+    }
+    recovery.invokeOnCompletion {
+        synchronized(runtimeAccess) {
+            if (localControlRecoveryJob === recovery) localControlRecoveryJob = null
+        }
+    }
+    recovery.start()
+}
+
+internal suspend fun CommandManager.recoverLocalControlChannels(
+    generation: Long,
+    server: CommandServer,
+    reason: String
+) {
+    var expectedGeneration = generation
+    // 失败后旧 runtime 已拆除且不再有心跳触发恢复，故持续退避重试；停止时由 prepareControlRecoveryStop 取消。
+    var attempt = 0
+    do {
+        attempt += 1
+        delay(CommandManager.commandLogReconnectDelay(attempt))
+        if (getCommandServer() !== server || currentRuntimeGeneration() != expectedGeneration) return
+        val result = reconnectControlClients(expectedGeneration = expectedGeneration)
+        currentCoroutineContext().ensureActive()
+        expectedGeneration = currentRuntimeGeneration()
+        if (result.isSuccess || attempt <= 3 || attempt % 30 == 0) {
+            val outcome = if (result.isSuccess) "INFO [COMMAND_CONTROL] recovery=succeeded" else
+                "WARN [COMMAND_CONTROL] recovery=failed"
+            LogRepository.getInstance().addAlwaysLog(
+                "$outcome attempt=$attempt reason=$reason error=${result.exceptionOrNull()?.message.orEmpty()}"
+            )
+        }
+    } while (result.isFailure)
+}
+
 internal fun CommandManager.createLogClientHandler(
     delegate: CommandClientHandler,
     generation: Long,
@@ -155,7 +213,8 @@ internal fun CommandManager.requireBaseCommandHeartbeats(generation: Long) {
                 stale.forEach(baseCommandHeartbeatAtMs::remove)
                 commandBaseHealthy = false
                 notifyCombinedCommandHealthLocked()
-                callbacks?.onControlChannelRecoveryRequired(
+                requestControlChannelRecovery(
+                    generation,
                     "heartbeat_timeout_${stale.joinToString("_") { it.name.lowercase() }}"
                 )
             }
@@ -222,7 +281,7 @@ internal fun CommandManager.markBaseCommandHealth(generation: Long, channel: Com
         commandBaseHealthy = readyBaseCommandChannels.size == CommandManager.BASE_COMMAND_CLIENT_COUNT
         completeCommandControlReadyLocked()
         notifyCombinedCommandHealthLocked()
-        if (!ready) callbacks?.onControlChannelRecoveryRequired("${channel.name.lowercase()}_disconnected")
+        if (!ready) requestControlChannelRecovery(generation, "${channel.name.lowercase()}_disconnected")
     }
 }
 

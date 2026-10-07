@@ -23,6 +23,7 @@ import com.kunk.singbox.repository.NodeProtectionStore
 import com.kunk.singbox.repository.RootGenerationStore
 import com.kunk.singbox.repository.SettingsRepository
 import com.kunk.singbox.service.ServiceState
+import com.kunk.singbox.service.manager.CommandManager
 import com.kunk.singbox.service.manager.controlChannelDiagnosticSnapshot
 import com.kunk.singbox.service.VpnTileService
 import com.kunk.singbox.service.resolveNotificationNodeLabel
@@ -429,56 +430,60 @@ internal fun RootTransparentForegroundService.scheduleControlChannelRecovery(rea
     val token = lifecycle.snapshot().generation
     serviceScope.launch {
         try {
-            lifecycleMutex.withLock {
-                ensureRunningRequest(token)
-                val diagnostic = commandManager.controlChannelDiagnosticSnapshot(token)
-                Log.w(
-                    RootTransparentForegroundService.TAG,
-                    "[ROOT_CONTROL] event=recovery_requested reason=$reason $diagnostic"
-                )
-                LogRepository.getInstance().addAlwaysLog(
-                    "WARN [ROOT_CONTROL] event=recovery_requested reason=$reason $diagnostic"
-                )
-                repeat(3) { attempt ->
-                    if (attempt > 0) delay(500L * attempt)
-                    ensureRunningRequest(token)
-                    val recovery = commandManager.reconnectControlClientsWithFd {
-                        rootConnection.service?.openCommandConnection()
-                    }
-                    ensureRunningRequest(token)
-                    recovery.onSuccess {
-                        SelectorManager.updateCommandClient(commandManager.getCommandClient())
-                        // readiness 由 CommandManager 的实际通道健康回调发布，不能强行设为 ready。
-                        LogRepository.getInstance().addAlwaysLog(
-                            "INFO [ROOT_CONTROL] event=recovery_succeeded mode=control_only attempt=${attempt + 1}"
-                        )
-                        return@withLock
-                    }.onFailure { error ->
-                        Log.w(
-                            RootTransparentForegroundService.TAG,
-                            "[ROOT_CONTROL] event=recovery_failed mode=control_only attempt=${attempt + 1}",
-                            error
-                        )
-                        LogRepository.getInstance().addAlwaysLog(
-                            "WARN [ROOT_CONTROL] event=recovery_failed mode=control_only " +
-                                "attempt=${attempt + 1} error=${error.message.orEmpty()}"
-                        )
-                    }
-                }
-                val rootSnapshot = runCatching {
-                    RootRuntimeSnapshot.fromBundle(rootConnection.service?.snapshot)
-                }.getOrNull()
-                LogRepository.getInstance().addAlwaysLog(
-                    "ERROR [ROOT_CONTROL] event=recovery_exhausted " +
-                        "rootPhase=${rootSnapshot?.phase ?: "unreadable"} " +
-                        "rootPid=${rootSnapshot?.rootPid ?: 0} " +
-                        "rootFd=${rootSnapshot?.rootFdCount ?: -1}"
-                )
-            }
+            val diagnostic = commandManager.controlChannelDiagnosticSnapshot(token)
+            Log.w(
+                RootTransparentForegroundService.TAG,
+                "[ROOT_CONTROL] event=recovery_requested reason=$reason $diagnostic"
+            )
+            LogRepository.getInstance().addAlwaysLog(
+                "WARN [ROOT_CONTROL] event=recovery_requested reason=$reason $diagnostic"
+            )
+            // 失败后旧 runtime 已拆除，不会再有心跳触发恢复；因此退避重试直到成功或运行代次失效。
+            // 延迟在锁外进行，避免阻塞 reload、UID 刷新和切换节点。
+            var attempt = 0
+            do {
+                attempt += 1
+                if (attempt > 1) delay(CommandManager.commandLogReconnectDelay(attempt - 1))
+            } while (!lifecycleMutex.withLock { attemptControlChannelRecovery(token, attempt) })
         } finally {
             controlRecoveryScheduled.set(false)
         }
     }
+}
+
+/** 返回 true 表示不再重试：已恢复，或 Root 已不处于可恢复的运行态。 */
+private suspend fun RootTransparentForegroundService.attemptControlChannelRecovery(token: Long, attempt: Int): Boolean {
+    ensureRunningRequest(token)
+    if (!RootTransparentForegroundService.isRunning || lastRootSnapshot.phase != RootRuntimePhase.RUNNING ||
+        VpnStateStore.isManuallyStopped()
+    ) return true
+    val recovery = commandManager.reconnectControlClientsWithFd {
+        rootConnection.service?.openCommandConnection()
+    }
+    ensureRunningRequest(token)
+    recovery.onSuccess {
+        SelectorManager.updateCommandClient(commandManager.getCommandClient())
+        // readiness 由 CommandManager 的实际通道健康回调发布，不能强行设为 ready。
+        LogRepository.getInstance().addAlwaysLog(
+            "INFO [ROOT_CONTROL] event=recovery_succeeded mode=control_only attempt=$attempt"
+        )
+        return true
+    }
+    val error = recovery.exceptionOrNull()
+    Log.w(RootTransparentForegroundService.TAG, "[ROOT_CONTROL] event=recovery_failed attempt=$attempt", error)
+    if (attempt <= 3 || attempt % 30 == 0) {
+        val rootSnapshot = runCatching {
+            RootRuntimeSnapshot.fromBundle(rootConnection.service?.snapshot)
+        }.getOrNull()
+        LogRepository.getInstance().addAlwaysLog(
+            "WARN [ROOT_CONTROL] event=recovery_failed mode=control_only " +
+                "attempt=$attempt error=${error?.message.orEmpty()} " +
+                "rootPhase=${rootSnapshot?.phase ?: "unreadable"} " +
+                "rootPid=${rootSnapshot?.rootPid ?: 0} " +
+                "rootFd=${rootSnapshot?.rootFdCount ?: -1}"
+        )
+    }
+    return false
 }
 
 internal fun RootTransparentForegroundService.recordSelector(configPath: String) {

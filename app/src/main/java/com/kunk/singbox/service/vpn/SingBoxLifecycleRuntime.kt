@@ -201,6 +201,16 @@ internal fun SingBoxService.onStartCommandRuntime(intent: Intent?, flags: Int, s
 
             // P0 Optimization: If config path is missing (Shortcut/Headless), generate it inside Service
             if (configPath == null) {
+                // startForegroundService 要求限时内进入前台，配置生成耗时不可控，先挂前台通知
+                if (!startForegroundForVpnStart()) {
+                    if (clearStartCommandFailureState(recoveryLease) {
+                            SingBoxService.setLastError("Failed to start foreground service")
+                        }
+                    ) {
+                        stopSelf()
+                    }
+                    return START_NOT_STICKY
+                }
                 Log.i(SingBoxService.TAG, "SingBoxService.ACTION_START received without config path, generating config...")
                 startVpnJob?.cancel()
                 startVpnJob = serviceScope.launch {

@@ -329,6 +329,10 @@ class RootTransparentForegroundService : Service() {
                 .onFailure { error -> Log.e(TAG, "Could not stop RootService during foreground destroy", error) }
         }
         serviceScope.cancel()
+        // 静态标志描述的是已销毁的实例；若销毁时仍是 STOPPING/FAILED，不复位会让 :bg 进程永久显示“断开中”。
+        isRunning = false
+        isStarting = false
+        isStopping = false
         super.onDestroy()
     }
 

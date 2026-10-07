@@ -16,6 +16,14 @@ import com.kunk.singbox.utils.NetworkClient
 import kotlinx.coroutines.*
 import java.util.concurrent.atomic.AtomicLong
 
+internal suspend fun awaitControlRecoveryStopAndSnapshot(
+    recoveryJob: Job?,
+    snapshot: () -> Long
+): Long {
+    recoveryJob?.join()
+    return snapshot()
+}
+
 internal suspend fun stopTrafficProducerThenFlush(
     stopProducer: suspend () -> Unit,
     stopUpdatesAndWait: () -> Unit,
@@ -150,7 +158,7 @@ class ShutdownManager(
         val recoveryIntentLease = options.recoveryIntentLease
         val resourceRecoveryAttemptId = options.resourceRecoveryAttemptId
         val operationToken = operationGeneration.incrementAndGet()
-        val commandRuntimeGeneration = commandManager.currentRuntimeGeneration()
+        val controlRecoveryJob = commandManager.prepareControlRecoveryStop()
         val coreRuntimeGeneration = coreManager.currentRuntimeGeneration()
 
         callbacks.cancelStartVpnJob()
@@ -185,6 +193,9 @@ class ShutdownManager(
 
         val cleanupJob = cleanupScope.launch {
             withContext(NonCancellable) {
+                val commandRuntimeGeneration = awaitControlRecoveryStopAndSnapshot(controlRecoveryJob) {
+                    commandManager.currentRuntimeGeneration()
+                }
                 Log.i(TAG, "stop phase=core")
                 stopTrafficProducerThenFlush(
                     stopProducer = {

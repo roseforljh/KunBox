@@ -550,7 +550,8 @@ class RootRuntimeStateMachineTest {
             .substringBefore("internal fun RootTransparentForegroundService.recordSelector")
 
         assertTrue(recovery.contains("reconnectControlClientsWithFd"))
-        assertTrue(recovery.contains("repeat(3)"))
+        assertTrue(recovery.contains("commandLogReconnectDelay("))
+        assertFalse(recovery.contains("repeat(3)"))
         assertFalse(recovery.contains("restartRuntime(configPathOverride"))
         assertFalse(recovery.contains("requestStopRuntime"))
     }
