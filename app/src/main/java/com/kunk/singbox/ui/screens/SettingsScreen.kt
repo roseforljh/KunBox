@@ -296,7 +296,7 @@ fun SettingsScreen(
                     trailing = {
                         if (isUpdatingRuleSets) {
                             CircularProgressIndicator(
-                                modifier = Modifier.size(18.dp).padding(end = 8.dp),
+                                modifier = Modifier.padding(end = 8.dp).size(18.dp),
                                 color = liquidGlassProgressColor(MaterialTheme.colorScheme.primary),
                                 strokeWidth = 2.dp,
                                 trackColor = liquidGlassProgressTrackColor(Color.Transparent)

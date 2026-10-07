@@ -726,6 +726,11 @@ fun RuleSetsScreen(
                             },
                             onEditClick = { editingRuleSet = ruleSet },
                             onDeleteClick = { settingsViewModel.deleteRuleSet(ruleSet.id) },
+                            outboundDisplayName = when (ruleSet.outboundMode) {
+                                RuleSetOutboundMode.NODE -> resolveNodeByStoredValue(ruleSet.outboundValue)?.name
+                                RuleSetOutboundMode.PROFILE -> profiles.find { it.id == ruleSet.outboundValue }?.name
+                                else -> null
+                            },
                             onOutboundClick = {
                                 outboundEditingRuleSet = ruleSet
                                 showOutboundModeDialog = true
