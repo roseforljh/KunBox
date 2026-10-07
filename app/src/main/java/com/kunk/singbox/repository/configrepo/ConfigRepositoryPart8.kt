@@ -419,6 +419,10 @@ internal fun ConfigRepository.buildRunOutbounds(
             .sortedWith(compareBy<NodeUi> { if (it.id == rememberedNodeId) 0 else 1 }.thenBy { it.id })
         val nodeIds = profileNodes.map { it.id }
         val nodeTags = nodeIds.mapNotNull { nodeTagMap[it] }.distinct()
+        val autoCandidateTags = profileNodes
+            .filter { isNodeAutoSelectionEligible(it.id) && !it.meteredProtected }
+            .mapNotNull { nodeTagMap[it.id] }
+            .distinct()
         val eligibleNodeTags = profileNodes
             .filter {
                 (isNodeAutoSelectionEligible(it.id) && !it.meteredProtected) ||
@@ -434,7 +438,7 @@ internal fun ConfigRepository.buildRunOutbounds(
                 nodeTags = nodeTags,
                 eligibleNodeTags = eligibleNodeTags,
                 testUrl = settings.latencyTestUrl,
-                autoSelectionEnabled = isProfileAutoSelectionEnabled,
+                autoCandidateTags = autoCandidateTags,
                 preferredNodeTag = rememberedNodeId?.let { nodeTagMap[it] }
             )
             if (routeGroupOutbounds.isNotEmpty()) {

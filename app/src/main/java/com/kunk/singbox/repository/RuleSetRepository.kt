@@ -123,14 +123,16 @@ class RuleSetRepository(private val context: Context) {
         }
 
         internal fun ruleSetSourceKey(ruleSet: RuleSet): String {
+            // 镜像只是下载入口；来源按规范 raw URL 计算，切换镜像不能让已校验缓存失效。
+            val canonicalUrl = normalizeRuleSetUrl(ruleSet.url, RAW_GITHUB_PREFIX)
             return MessageDigest.getInstance("SHA-256")
-                .digest("${ruleSet.url}\n${ruleSet.format}".toByteArray(Charsets.UTF_8))
+                .digest("$canonicalUrl\n${ruleSet.format}".toByteArray(Charsets.UTF_8))
                 .joinToString("") { "%02x".format(it) }
         }
 
         internal fun canUseLegacyRuleSetCache(ruleSet: RuleSet, previous: RuleSet?): Boolean =
             previous?.enabled == true && previous.tag == ruleSet.tag && previous.type == ruleSet.type &&
-                previous.url == ruleSet.url && previous.format == ruleSet.format
+                ruleSetSourceKey(previous) == ruleSetSourceKey(ruleSet)
 
         internal fun isRemoteRuleSetCacheReady(ruleSet: RuleSet, file: File, requireSource: Boolean = false): Boolean {
             return try {

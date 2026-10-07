@@ -35,7 +35,6 @@ abstract class ConfigRepositoryTestPart8 : ConfigRepositoryTestPart7() {
             groupTag = "P:HK",
             nodeTags = listOf("node-a", "node-b"),
             testUrl = "https://probe.example/204",
-            autoSelectionEnabled = true,
             preferredNodeTag = "node-a"
         )
 
@@ -64,7 +63,6 @@ abstract class ConfigRepositoryTestPart8 : ConfigRepositoryTestPart7() {
             nodeTags = listOf("regular", "metered"),
             eligibleNodeTags = listOf("regular"),
             testUrl = "https://probe.example/204",
-            autoSelectionEnabled = true,
             preferredNodeTag = "metered"
         )
 
@@ -97,7 +95,6 @@ abstract class ConfigRepositoryTestPart8 : ConfigRepositoryTestPart7() {
             nodeTags = listOf("metered"),
             eligibleNodeTags = emptyList(),
             testUrl = "https://probe.example/204",
-            autoSelectionEnabled = true,
             preferredNodeTag = "metered"
         )
 
@@ -105,19 +102,35 @@ abstract class ConfigRepositoryTestPart8 : ConfigRepositoryTestPart7() {
     }
 
     @Test
-    fun buildProfileRouteGroupOutboundsOmitsUrlTestInManualMode() {
+    fun buildProfileRouteGroupOutboundsAlwaysAutoSelectsAndKeepsManualOnlyNodeOutOfUrlTest() {
         val outbounds = ConfigRepository.buildProfileRouteGroupOutbounds(
             groupTag = "P:HK",
-            nodeTags = listOf("node-b", "node-a"),
+            nodeTags = listOf("node-b", "node-a", "manual-only"),
+            eligibleNodeTags = listOf("node-b", "node-a", "manual-only"),
             testUrl = "https://probe.example/204",
-            autoSelectionEnabled = false,
+            autoCandidateTags = listOf("node-b", "node-a"),
             preferredNodeTag = "node-a"
+        )
+
+        assertEquals(listOf("node-b", "node-a"), outbounds.first { it.type == "urltest" }.outbounds)
+        val selector = outbounds.first { it.type == "selector" }
+        assertEquals(listOf("P:HK#AUTO", "node-b", "node-a", "manual-only"), selector.outbounds)
+        assertEquals("P:HK#AUTO", selector.default)
+    }
+
+    @Test
+    fun buildProfileRouteGroupOutboundsFallsBackToSelectorWithoutAutoCandidates() {
+        val outbounds = ConfigRepository.buildProfileRouteGroupOutbounds(
+            groupTag = "P:HK",
+            nodeTags = listOf("manual-only"),
+            testUrl = "https://probe.example/204",
+            autoCandidateTags = emptyList()
         )
 
         assertEquals(1, outbounds.size)
         assertEquals("selector", outbounds.single().type)
-        assertEquals(listOf("node-b", "node-a"), outbounds.single().outbounds)
-        assertEquals("node-a", outbounds.single().default)
+        assertEquals(listOf("manual-only"), outbounds.single().outbounds)
+        assertEquals("manual-only", outbounds.single().default)
     }
 
     @Test
