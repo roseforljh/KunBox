@@ -386,17 +386,14 @@ internal fun SingBoxService.handleKernelLogForHealthSignal(message: String) {
     if (runningConfig != null) {
         notifySingleNodeRouteFailureIfNeeded(signal, currentProxyTag, runningConfig)
     }
-    if (runningConfig == null ||
+    val isMainProxyFailure = runningConfig == null ||
         SingBoxService.shouldSubmitMainAutoFailoverForDnsSignal(
             dnsServerTag = signal.dnsServerTag,
             currentProxyTag = currentProxyTag,
             config = runningConfig
         )
-    ) {
-        submitSameNodeRecovery(
-            layer = SameNodeFailureLayer.DNS,
-            trigger = "dns_remote_timeout"
-        )
+    if (isMainProxyFailure) {
+        notifyMainNodeFailureIfNeeded(currentProxyTag)
     }
 }
 
@@ -407,10 +404,7 @@ internal fun SingBoxService.handleActiveOutboundFailure(signal: HealthSignal) {
     if (failureTag.isBlank() || runningConfig == null ||
         SingBoxService.shouldRecoverMainOutboundFailure(failureTag, currentProxyTag, runningConfig)
     ) {
-        submitSameNodeRecovery(
-            layer = SameNodeFailureLayer.PROXY,
-            trigger = "active_probe_failed:$failureTag"
-        )
+        notifyMainNodeFailureIfNeeded(currentProxyTag ?: failureTag)
         return
     }
 
@@ -472,6 +466,30 @@ internal fun SingBoxService.notifySingleNodeRouteFailureIfNeeded(failureTag: Str
     LogRepository.getInstance().addLog("WARN: $message")
 
     val notificationId = 2600 + (failureTag.hashCode().absoluteValue % 500)
+    val notification = notificationManager.createStartingNotification(message)
+    notificationManager.showTemporaryNotification(notificationId, notification)
+    serviceScope.launch {
+        delay(8000)
+        notificationManager.cancelNotification(VpnNotificationManager.NOTIFICATION_ID + notificationId)
+    }
+}
+
+internal fun SingBoxService.notifyMainNodeFailureIfNeeded(nodeTag: String?) {
+    val safeTag = nodeTag?.trim()?.takeIf { it.isNotBlank() } ?: "PROXY"
+    val notificationKey = "main:$safeTag"
+    val now = SystemClock.elapsedRealtime()
+    val lastNotifyAt = singleNodeRouteFailureNotificationTimes[notificationKey] ?: 0L
+    if (!SingBoxService.shouldNotifySingleNodeRouteFailure(notificationKey, lastNotifyAt, now)) {
+        return
+    }
+    singleNodeRouteFailureNotificationTimes[notificationKey] = now
+
+    val configRepository = ConfigRepository.getInstance(this@notifyMainNodeFailureIfNeeded)
+    val displayName = configRepository.resolveNodeNameFromOutboundTag(safeTag) ?: safeTag
+    val message = SingBoxService.buildMainNodeFailureNotificationText(displayName)
+    LogRepository.getInstance().addAlwaysLog("ERROR: $message")
+
+    val notificationId = 3100 + (notificationKey.hashCode().absoluteValue % 500)
     val notification = notificationManager.createStartingNotification(message)
     notificationManager.showTemporaryNotification(notificationId, notification)
     serviceScope.launch {

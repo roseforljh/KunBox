@@ -695,6 +695,7 @@ class SingBoxService : VpnService() {
             config: SingBoxConfig
         ): Boolean {
             val normalizedFailure = UrlTestTagMatcher.normalizeTag(failureTag.trim())
+            if (normalizedFailure == "proxy") return true
             if (normalizedFailure.isBlank() || currentProxyTag.isNullOrBlank()) return true
             return resolveMainConcreteOutboundTags(currentProxyTag, config).any { tag ->
                 UrlTestTagMatcher.normalizeTag(tag) == normalizedFailure
@@ -775,6 +776,11 @@ class SingBoxService : VpnService() {
         internal fun buildSingleNodeRouteFailureNotificationText(displayName: String): String {
             val safeName = displayName.trim().ifBlank { "未知节点" }
             return "单节点分流节点 $safeName 连接异常"
+        }
+
+        internal fun buildMainNodeFailureNotificationText(displayName: String): String {
+            val safeName = displayName.trim().ifBlank { "未知节点" }
+            return "主节点 $safeName 连接异常"
         }
 
         internal fun shouldRecordMeaningfulTrafficForAutoFailover(totalSpeed: Long): Boolean {
