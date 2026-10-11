@@ -99,6 +99,9 @@ internal fun resolveUpdatedRuntimeLastError(
     previousError: String
 ): String = explicitError ?: if (state == ServiceState.STARTING) "" else previousError
 
+internal fun VpnStateStore.RuntimeStateSnapshot.persistenceKey(): String =
+    "$stateOrdinal:${readiness.status}:$lastError:$manuallyStopped:$activeLabel"
+
 @Suppress("TooManyFunctions")
 object SingBoxIpcHub {
     private const val TAG = "SingBoxIpcHub"
@@ -521,8 +524,8 @@ object SingBoxIpcHub {
             scheduleBroadcastIfNeededLocked()
         }
         val now = SystemClock.elapsedRealtime()
-        val safetyKey = "${snapshot.stateOrdinal}:${snapshot.readiness.status}:${snapshot.lastError}:" +
-            snapshot.manuallyStopped
+        // 节点确认也依赖持久快照，不能等到下一次 30 秒心跳才写入。
+        val safetyKey = snapshot.persistenceKey()
         if (safetyKey != lastPersistedSafetyKey ||
             now - lastPersistedAtMs.get() >= DataPlaneReadinessSnapshot.PERSIST_HEARTBEAT_INTERVAL_MS
         ) {
