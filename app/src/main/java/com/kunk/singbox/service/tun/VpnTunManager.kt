@@ -280,7 +280,7 @@ class VpnTunManager(
             return when (policy.mode) {
                 VpnAppMode.ALL -> PerAppVpnPlan(
                     allowedPackages = emptyList(),
-                    disallowedPackages = listOf(selfPackage)
+                    disallowedPackages = emptyList()
                 )
                 VpnAppMode.ALLOWLIST -> PerAppVpnPlan(
                     allowedPackages = allowPkgs,
@@ -288,7 +288,7 @@ class VpnTunManager(
                 )
                 VpnAppMode.BLOCKLIST -> PerAppVpnPlan(
                     allowedPackages = emptyList(),
-                    disallowedPackages = listOf(selfPackage) + blockPkgs
+                    disallowedPackages = blockPkgs
                 )
             }
         }
@@ -559,6 +559,9 @@ class VpnTunManager(
         if (!hasUsablePerAppAllowlist(settings, addedAllowedCount)) {
             throw IllegalStateException("VPN allowlist contains no installed applications")
         }
+        // system/mixed 栈的 TCP 监听端属于本应用，回包必须走 VPN 路由；
+        // 本应用不在 VPN uid 范围内时，部分 ROM（ColorOS）会把 SYN-ACK 从物理网卡发出，握手永远失败
+        if (addedAllowedCount > 0) builder.addAllowedApplication(context.packageName)
 
         plan.disallowedPackages.forEach { pkg ->
             try {
