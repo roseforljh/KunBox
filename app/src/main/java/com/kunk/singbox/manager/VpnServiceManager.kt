@@ -88,11 +88,13 @@ object VpnServiceManager {
         val pending = VpnStateStore.getPending()
         if (pending != "stopping") return false
         val runtime = VpnStateStore.getRuntimeStateSnapshot()
-        val recover = shouldRecoverInactiveRootStop(
-            mode = mode,
-            pending = pending,
-            active = VpnStateStore.getActive()
-        )
+        val active = VpnStateStore.getActive()
+        // 停止已收尾但 pending 残留 "stopping"（持久化状态可能是旧进程留下的 STOPPING），
+        // 以已绑定 IPC 的实时状态为准：服务端报 STOPPED 即视为过期标记放行
+        val liveStopped = SingBoxRemote.isBound() && SingBoxRemote.state.value == ServiceState.STOPPED
+        val recover = shouldRecoverInactiveRootStop(mode = mode, pending = pending, active = active) ||
+            isTerminalStoppingState(pending, active, runtime.stateOrdinal) ||
+            liveStopped
         if (!recover) {
             Log.e(
                 TAG,
