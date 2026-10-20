@@ -88,11 +88,13 @@ object VpnServiceManager {
         val pending = VpnStateStore.getPending()
         if (pending != "stopping") return false
         val runtime = VpnStateStore.getRuntimeStateSnapshot()
-        val recover = shouldRecoverInactiveRootStop(
-            mode = mode,
-            pending = pending,
-            active = VpnStateStore.getActive()
-        )
+        val active = VpnStateStore.getActive()
+        // 停止已收尾但 pending 残留 "stopping"（持久化状态可能是旧进程留下的 STOPPING），
+        // 以已绑定 IPC 的实时状态为准：服务端报 STOPPED 即视为过期标记放行
+        val liveStopped = SingBoxRemote.isBound() && SingBoxRemote.state.value == ServiceState.STOPPED
+        val recover = shouldRecoverInactiveRootStop(mode = mode, pending = pending, active = active) ||
+            isTerminalStoppingState(pending, active, runtime.stateOrdinal) ||
+            liveStopped
         if (!recover) {
             Log.e(
                 TAG,
@@ -118,6 +120,22 @@ object VpnServiceManager {
         pending: String,
         active: Boolean
     ): Boolean = mode == TrafficCaptureMode.ROOT_TRANSPARENT && pending == "stopping" && !active
+
+    // 服务都在 :bg 进程，主进程里它们的静态标志恒为 false；只能读跨进程的 VpnStateStore。
+    // 各服务只在清理确认后才把 mode 改掉并清空 pending。
+    internal fun isModeStopped(
+        mode: VpnStateStore.CoreMode,
+        storedMode: VpnStateStore.CoreMode = VpnStateStore.getMode(),
+        pending: String = VpnStateStore.getPending()
+    ): Boolean = mode == VpnStateStore.CoreMode.NONE || (storedMode != mode && pending != "stopping")
+
+    suspend fun awaitModeStopped(
+        mode: VpnStateStore.CoreMode,
+        timeoutMs: Long
+    ): Boolean = withTimeoutOrNull(timeoutMs) {
+        while (!isModeStopped(mode)) delay(50L)
+        true
+    } ?: false
 
     fun isStarting(): Boolean {
         return SingBoxRemote.isStarting.value

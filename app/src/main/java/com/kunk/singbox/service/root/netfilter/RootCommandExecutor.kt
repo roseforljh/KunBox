@@ -53,16 +53,17 @@ internal fun extractIptablesSaveTable(output: String, table: String): String? {
 
 internal fun rootStateSnapshotCommands(
     netfilterBinaries: Collection<String> = emptyList(),
-    includePolicyRouting: Boolean = true
+    includePolicyRouting: Boolean = true,
+    chainQueries: Map<String, Collection<Pair<String, String>>> = emptyMap()
 ): List<List<String>> =
     buildList {
         if ("iptables" in netfilterBinaries) {
             add(rootStateMarkerCommand(ROOT_STATE_IPTABLES4))
-            add(listOf("iptables-save"))
+            addAll(rootNetfilterChainQueries("iptables", chainQueries["iptables"].orEmpty()))
         }
         if ("ip6tables" in netfilterBinaries) {
             add(rootStateMarkerCommand(ROOT_STATE_IPTABLES6))
-            add(listOf("ip6tables-save"))
+            addAll(rootNetfilterChainQueries("ip6tables", chainQueries["ip6tables"].orEmpty()))
         }
         if (includePolicyRouting) {
             add(rootStateMarkerCommand(ROOT_STATE_RULE4))
@@ -75,6 +76,26 @@ internal fun rootStateSnapshotCommands(
             add(listOf("ip", "-6", "route", "show", "table", RootNetfilterPlanner.ROUTE_TABLE))
         }
     }
+
+private fun rootNetfilterChainQueries(
+    binary: String,
+    requested: Collection<Pair<String, String>>
+): List<List<String>> {
+    val queries = requested.distinct()
+    if (queries.isEmpty()) {
+        return listOf(if (binary == "iptables") listOf("iptables-save") else listOf("ip6tables-save"))
+    }
+
+    // ponytail: query each table once instead of spawning one xtables process per chain;
+    // the table output is still scoped to KunBox's table, and downstream verification
+    // only hashes/checks the owned chains.
+    return queries.groupBy(Pair<String, String>::first).map { (table, _) ->
+        // Table-wide -S emits only the chains that really exist. Do not append
+        // synthetic -N lines: deletion verification must be able to observe a
+        // chain that is genuinely absent.
+        listOf(binary, "-t", table, "-S")
+    }
+}
 
 internal fun parseRootStateSnapshot(output: String): Map<String, String>? {
     val sections = linkedMapOf<String, StringBuilder>()
@@ -267,17 +288,27 @@ class ProcessRootCommandExecutor internal constructor(
             .forEach(xtablesWaitMs::addAndGet)
     }
 
-    internal fun cancelActiveCommands() {
-        cancelAllActiveCommands()
+    internal fun cancelActiveCommands(beforeCancel: () -> Boolean = { true }): Boolean {
+        val processes = synchronized(activeProcesses) { activeProcesses.filter(Process::isAlive) }
+        if (!beforeCancel()) return false
+        processes.forEach { process ->
+            runCatching { process.destroyForcibly() }
+                .onFailure { error -> Log.w(TAG, "Cannot cancel Root command", error) }
+        }
+        return true
     }
 
-    private companion object {
-        val activeProcesses = Collections.synchronizedSet(mutableSetOf<Process>())
+    internal companion object {
+        private val activeProcesses = Collections.synchronizedSet(mutableSetOf<Process>())
+        private val cleanupCommand = ThreadLocal<Boolean>()
 
-        internal fun cancelAllActiveCommands() {
-            val processes = synchronized(activeProcesses) { activeProcesses.filter(Process::isAlive) }
-            processes.forEach { process ->
-                runCatching { process.destroyForcibly() }
+        internal fun <T> withCleanupCommands(block: () -> T): T {
+            val previous = cleanupCommand.get()
+            cleanupCommand.set(true)
+            return try {
+                block()
+            } finally {
+                cleanupCommand.set(previous)
             }
         }
 
@@ -290,7 +321,10 @@ class ProcessRootCommandExecutor internal constructor(
 
     private fun startProcess(command: List<String>): Process = ProcessBuilder(command)
         .start()
-        .also(activeProcesses::add)
+        .also { process ->
+            // Stop preemption must not kill cleanup, which can leave an unreleased shell lock behind.
+            if (cleanupCommand.get() != true) activeProcesses.add(process)
+        }
 
     @Suppress("CyclomaticComplexMethod", "CognitiveComplexMethod")
     private fun collectProcess(process: Process, commandTimeoutMs: Long = timeoutMs): RootCommandResult {
@@ -357,6 +391,7 @@ class ProcessRootCommandExecutor internal constructor(
 internal fun buildRootNetfilterRestoreScript(commands: List<List<String>>): String? {
     data class TableRestore(
         val chains: MutableList<String> = mutableListOf(),
+        val chainNames: MutableList<String> = mutableListOf(),
         val rules: MutableList<String> = mutableListOf()
     )
 
@@ -382,6 +417,7 @@ internal fun buildRootNetfilterRestoreScript(commands: List<List<String>>): Stri
             "-N" -> {
                 val chain = command.getOrNull(tableIndex + 3)?.takeIf(::isSafeRestoreToken) ?: return null
                 restore.chains += ":$chain - [0:0]"
+                restore.chainNames += chain
             }
             "-A" -> {
                 val arguments = command.drop(tableIndex + 2)
@@ -394,6 +430,26 @@ internal fun buildRootNetfilterRestoreScript(commands: List<List<String>>): Stri
     if (restores.isEmpty()) return null
 
     val (ipCommands, otherPolicyCommands) = policyCommands.partition { it.firstOrNull() == "ip" }
+    val chainQueries = linkedMapOf<String, MutableSet<Pair<String, String>>>()
+    restores.forEach { (binary, tables) ->
+        val queries = chainQueries.getOrPut(binary) { linkedSetOf() }
+        tables.forEach { (table, restore) ->
+            restore.chainNames.forEach { chain -> queries += table to chain }
+        }
+    }
+    activationCommands.forEach { command ->
+        val binary = command.firstOrNull() ?: return@forEach
+        val tableIndex = command.indexOf("-t")
+        val operationIndex = tableIndex + 2
+        if (command.getOrNull(operationIndex) != "-I") return@forEach
+        val table = command.getOrNull(tableIndex + 1) ?: return@forEach
+        val hook = command.getOrNull(operationIndex + 1) ?: return@forEach
+        val jumpIndex = command.indexOf("-j")
+        val target = command.getOrNull(jumpIndex + 1).takeIf { jumpIndex >= 0 }
+        val queries = chainQueries.getOrPut(binary) { linkedSetOf() }
+        queries += table to hook
+        if (target != null) queries += table to target
+    }
 
     return buildString {
         append(xtablesRetryShellFunction())
@@ -416,7 +472,10 @@ internal fun buildRootNetfilterRestoreScript(commands: List<List<String>>): Stri
         }
         append(buildRootIpBatchScript(ipCommands))
         append(buildRootCommandBatchScript(otherPolicyCommands + activationCommands))
-        append(buildRootCommandBatchScript(rootStateSnapshotCommands(restores.keys)))
+        append(buildRootCommandBatchScript(rootStateSnapshotCommands(
+            netfilterBinaries = restores.keys,
+            chainQueries = chainQueries.mapValues { it.value.toList() }
+        )))
     }
 }
 
@@ -426,7 +485,7 @@ internal fun buildRootNetfilterTransitionScript(commands: List<List<String>>): S
 internal fun buildRootNetfilterCleanupScript(commands: List<List<String>>): String? =
     buildRootNetfilterMutationScript(commands, setOf("-D", "-F", "-X"), "CLEANUP")
 
-@Suppress("CognitiveComplexMethod")
+@Suppress("CognitiveComplexMethod", "CyclomaticComplexMethod", "LongMethod")
 private fun buildRootNetfilterMutationScript(
     commands: List<List<String>>,
     allowedOperations: Set<String>,
@@ -439,6 +498,18 @@ private fun buildRootNetfilterMutationScript(
         return null
     }
     if (parsedCommands.isEmpty()) return null
+    val chainQueries = linkedMapOf<String, MutableSet<Pair<String, String>>>()
+    parsedCommands.forEach { (binary, table, arguments) ->
+        val tokens = arguments.split(' ')
+        val operation = tokens.firstOrNull()
+        val hook = tokens.getOrNull(1)
+        if (hook != null && operation in setOf("-I", "-D")) {
+            val queries = chainQueries.getOrPut(binary) { linkedSetOf() }
+            queries += table to hook
+            val jumpIndex = tokens.indexOf("-j")
+            tokens.getOrNull(jumpIndex + 1)?.let { target -> queries += table to target }
+        }
+    }
     val phases = if ("-I" in allowedOperations) {
         listOf(
             "${marker}_ACTIVATE" to parsedCommands.filter { it.third.startsWith("-I ") },
@@ -474,7 +545,11 @@ private fun buildRootNetfilterMutationScript(
             }
         }
         append(buildRootIpBatchScript(policyCommands))
-        append(buildRootCommandBatchScript(rootStateSnapshotCommands(parsedCommands.map { it.first }.distinct())))
+        append(buildRootCommandBatchScript(rootStateSnapshotCommands(
+            netfilterBinaries = parsedCommands.map { it.first }.distinct(),
+            includePolicyRouting = marker == "CLEANUP" || policyCommands.isNotEmpty(),
+            chainQueries = chainQueries.mapValues { it.value.toList() }
+        )))
     }
 }
 

@@ -409,23 +409,7 @@ internal fun SingBoxService.startVpn(
     initializeStartupNodeLabel(configPath)
 
     // 启动前台通知（必须在协程前调用）
-    var foregroundStarted = false
-    try {
-        val notification = createNotification()
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            startForeground(
-                VpnNotificationManager.NOTIFICATION_ID,
-                notification,
-                android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
-            )
-        } else {
-            startForeground(VpnNotificationManager.NOTIFICATION_ID, notification)
-        }
-        notificationManager.markForegroundStarted()
-        foregroundStarted = true
-    } catch (e: Exception) {
-        Log.e(SingBoxService.TAG, "Failed to call startForeground", e)
-    }
+    val foregroundStarted = startForegroundForVpnStart()
     if (!SingBoxService.shouldContinueCoreStartAfterForegroundResult(foregroundStarted)) {
         val recoveryAttemptId = recoveryLease.attemptId
         if (recoveryAttemptId == null) {
@@ -450,6 +434,26 @@ internal fun SingBoxService.startVpn(
         }
     } else {
         continueStartVpnAfterForeground(configPath, startToken, recoveryLease)
+    }
+}
+
+internal fun SingBoxService.startForegroundForVpnStart(): Boolean {
+    return try {
+        val notification = createNotification()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            startForeground(
+                VpnNotificationManager.NOTIFICATION_ID,
+                notification,
+                android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
+            )
+        } else {
+            startForeground(VpnNotificationManager.NOTIFICATION_ID, notification)
+        }
+        notificationManager.markForegroundStarted()
+        true
+    } catch (e: Exception) {
+        Log.e(SingBoxService.TAG, "Failed to call startForeground", e)
+        false
     }
 }
 

@@ -121,7 +121,8 @@ class RootNetfilterOwnershipTest {
                         0,
                         commands.joinToString("\n") { command ->
                             val chain = command.last()
-                            "-N $chain\n-A $chain -j RETURN"
+                            // Android's iptables -S <chain> may omit the -N declaration.
+                            "-A $chain -j RETURN"
                         }
                     )
                 }
@@ -271,7 +272,7 @@ class RootNetfilterOwnershipTest {
     }
 
     @Test
-    fun startupLegacyCleanupUsesThreeSecondDeadline() {
+    fun startupLegacyCleanupAllowsTheFullCleanupScriptDeadline() {
         val directory = Files.createTempDirectory("root-owner-start-deadline-test").toFile()
         var cleanupTimeoutMs = 0L
         val fallback = RootCommandExecutor { command ->
@@ -297,7 +298,7 @@ class RootNetfilterOwnershipTest {
             )
 
             assertTrue(manager.prepareForStart(staleRuntimePresent = true).isSuccess)
-            assertEquals(3_000L, cleanupTimeoutMs)
+            assertEquals(15_000L, cleanupTimeoutMs)
         } finally {
             directory.deleteRecursively()
         }

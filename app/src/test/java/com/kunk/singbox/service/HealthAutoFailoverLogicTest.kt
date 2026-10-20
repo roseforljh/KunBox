@@ -301,6 +301,28 @@ class HealthAutoFailoverLogicTest {
                 config = config
             )
         )
+        assertFalse(
+            SingBoxService.shouldRecoverMainOutboundFailure(
+                failureTag = "P:HK",
+                currentProxyTag = "node-a",
+                config = config
+            )
+        )
+    }
+
+    @Test
+    fun proxySelectorFailureUsesMainRecoveryAfterNodeSwitch() {
+        val config = routeFailureConfig()
+
+        for (failureTag in listOf("PROXY", " proxy ")) {
+            assertTrue(
+                SingBoxService.shouldRecoverMainOutboundFailure(
+                    failureTag = failureTag,
+                    currentProxyTag = "node-b",
+                    config = config
+                )
+            )
+        }
     }
 
     @Test
@@ -314,6 +336,40 @@ class HealthAutoFailoverLogicTest {
 
         assertTrue(body.contains("commandManager.handleOutboundFailureBurst"))
         assertFalse(body.contains("BoxWrapperManager.resetNetwork()"))
+    }
+
+    @Test
+    fun mainProxyFailuresReportWithoutStartingAutomaticFailover() {
+        val source = File(
+            "src/main/java/com/kunk/singbox/service/vpn/SingBoxStartupRuntime.kt"
+        ).readText()
+        val start = source.indexOf("internal fun SingBoxService.handleActiveOutboundFailure")
+        val end = source.indexOf("internal fun SingBoxService.handleResourceExhaustionSignal", start)
+        val body = source.substring(start, end)
+
+        assertTrue(body.contains("notifyMainNodeFailureIfNeeded"))
+        assertFalse(body.contains("submitSameNodeRecovery"))
+    }
+
+    @Test
+    fun mainDnsFailuresReportWithoutStartingAutomaticFailover() {
+        val source = File(
+            "src/main/java/com/kunk/singbox/service/vpn/SingBoxStartupRuntime.kt"
+        ).readText()
+        val start = source.indexOf("internal fun SingBoxService.handleKernelLogForHealthSignal")
+        val end = source.indexOf("internal fun SingBoxService.handleActiveOutboundFailure", start)
+        val body = source.substring(start, end)
+
+        assertTrue(body.contains("notifyMainNodeFailureIfNeeded"))
+        assertFalse(body.contains("submitSameNodeRecovery"))
+    }
+
+    @Test
+    fun mainNodeFailureNotificationHasMainNodeLabel() {
+        assertEquals(
+            "主节点 美国节点 连接异常",
+            SingBoxService.buildMainNodeFailureNotificationText(" 美国节点 ")
+        )
     }
 
     private fun routeFailureConfig(): SingBoxConfig {

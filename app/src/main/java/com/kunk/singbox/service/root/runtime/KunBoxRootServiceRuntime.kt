@@ -182,7 +182,8 @@ internal fun KunBoxRootService.hotReloadLocked(
             candidateNetfilterConfig == previousNetfilterConfig
         ) {
             inPlaceReloadAttempted = true
-            reloadCommandServer(artifacts)
+            reloadCommandServer(artifacts, runtimeSessionId)
+            throwIfStopRequested(runtimeSessionId)
             val reloadedResolved = previousResolved.copy(
                 resolvedPlanSha256 = RootAppRoutingCanonical.resolvedPlanSha256(
                     artifacts.plan,
@@ -295,7 +296,9 @@ internal fun KunBoxRootService.hotReloadLocked(
             )
         } else {
             if (inPlaceReloadAttempted && !oldCoreStopped) {
-                val rollbackError = runCatching { reloadCommandServer(previousArtifacts) }.exceptionOrNull()
+                val rollbackError = runCatching {
+                    reloadCommandServer(previousArtifacts, runtimeSessionId)
+                }.exceptionOrNull()
                 if (rollbackError != null) {
                     Log.e(KunBoxRootService.TAG, "Root in-place reload rollback failed", rollbackError)
                     runCatching { closeCommandServer(candidateArtifacts?.plan) }
@@ -463,6 +466,7 @@ internal fun KunBoxRootService.stopLocked(runtimeSessionId: String): RootRuntime
 }
 
 internal fun KunBoxRootService.rollbackLocked(): Throwable? {
+    updateSnapshot(phase = RootRuntimePhase.ROLLBACK)
     stopUidMonitor()
     val commandError = runCatching { closeCommandServer(activeRoutingArtifacts?.plan) }.exceptionOrNull()
     val cleanupError = cleanupRulesVerified()
@@ -484,6 +488,7 @@ internal fun KunBoxRootService.markStopped(): RootRuntimeSnapshot {
         phase = RootRuntimePhase.STOPPED,
         generation = snapshot.generation + 1,
         rootPid = Process.myPid(),
+        rootStartTime = currentRootProcessStartTime(),
         tproxyIpv4 = capabilityReport.tproxyIpv4,
         tproxyIpv6 = capabilityReport.tproxyIpv6
     )
@@ -780,6 +785,7 @@ internal fun KunBoxRootService.updateSnapshot(
         ruleRevision = ruleRevision,
         routingGeneration = routingGeneration,
         rootPid = Process.myPid(),
+        rootStartTime = currentRootProcessStartTime(),
         tproxyIpv4 = tproxyIpv4,
         tproxyIpv6 = tproxyIpv6,
         configFileSha256 = configFileSha256,

@@ -59,9 +59,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.withTimeout
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class DashboardViewModel(application: Application) : AndroidViewModel(application) {
@@ -90,6 +88,9 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                 serviceState == ServiceState.STOPPED &&
                 (observedActiveState || elapsedMs >= START_STOPPED_CONFIRM_MS)
         }
+
+        internal fun shouldApplyConnectionState(newState: ConnectionState, stopRequested: Boolean): Boolean =
+            !stopRequested || newState !in setOf(ConnectionState.Connecting, ConnectionState.Connected)
 
         internal fun hasStartMonitorTimedOut(elapsedMs: Long): Boolean {
             return elapsedMs >= START_MONITOR_TIMEOUT_MS
@@ -326,12 +327,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                     apiLevel = Build.VERSION.SDK_INT,
                     nowElapsedMs = SystemClock.elapsedRealtime()
                 )
-                if (trustedInitialState == ConnectionState.Connected) {
-                    _connectionState.value = ConnectionState.Connected
-                    _connectedAtElapsedMs.value = SystemClock.elapsedRealtime()
-                } else {
-                    _connectionState.value = trustedInitialState
-                }
+                setConnectionState(trustedInitialState)
             }
 
             // 第三阶段：确保状态收集器启动（关键修复）
@@ -390,15 +386,12 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         val stateFlow = SingBoxRemote.state
         viewModelScope.launch {
             stateFlow.collect { state ->
-                if (stopRequestedByUser && state != ServiceState.STOPPED) return@collect
                 when (resolveDashboardConnectionState(state)) {
                     ConnectionState.Connected -> {
-                        if (stopRequestedByUser) return@collect
                         systemVpnDetectedOnBoot = false
                         setConnectionState(ConnectionState.Connected)
                     }
                     ConnectionState.Connecting -> {
-                        if (stopRequestedByUser) return@collect
                         systemVpnDetectedOnBoot = false
                         setConnectionState(ConnectionState.Connecting)
                     }
@@ -416,9 +409,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         viewModelScope.launch {
             SingBoxRemote.readiness.collect {
                 val state = SingBoxRemote.state.value
-                if (!stopRequestedByUser || state == ServiceState.STOPPED) {
-                    setConnectionState(resolveDashboardConnectionState(state))
-                }
+                setConnectionState(resolveDashboardConnectionState(state))
             }
         }
 
@@ -439,11 +430,14 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     internal fun setConnectionState(newState: ConnectionState) {
-        if (newState == ConnectionState.Disconnecting && _connectionState.value == ConnectionState.Connecting) {
-            val graceUntil = startGraceUntilElapsedMs
-            if (graceUntil != null && SystemClock.elapsedRealtime() < graceUntil) {
-                return
-            }
+        // 所有服务同步入口（含 refreshState 和冷启动）都必须尊重用户的停止请求。
+        if (!shouldApplyConnectionState(newState, stopRequestedByUser)) return
+        if (_connectionState.value != newState) {
+            LogRepository.getInstance().addAlwaysLog(
+                "INFO [Dashboard] state=${_connectionState.value} requested=$newState " +
+                    "service=${SingBoxRemote.state.value} readiness=${SingBoxRemote.readiness.value.status} " +
+                    "reason=${SingBoxRemote.readiness.value.lastReadinessReason} stopRequested=$stopRequestedByUser"
+            )
         }
         when (newState) {
             ConnectionState.Connected -> {
@@ -510,7 +504,9 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                 // 其他状态（Connecting/Disconnecting/Error）直接更新
                 pendingIdleJob?.cancel()
                 if (newState == ConnectionState.Connecting) {
-                    startGraceUntilElapsedMs = SystemClock.elapsedRealtime() + START_MONITOR_TIMEOUT_MS
+                    if (_connectionState.value != ConnectionState.Connecting) {
+                        startGraceUntilElapsedMs = SystemClock.elapsedRealtime() + START_MONITOR_TIMEOUT_MS
+                    }
                 } else {
                     startGraceUntilElapsedMs = null
                 }
@@ -575,11 +571,23 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
     fun toggleConnection() {
         viewModelScope.launch {
             when (_connectionState.value) {
-                ConnectionState.Idle, ConnectionState.Error -> {
+                ConnectionState.Idle -> {
                     // P0 Optimization: Optimistic UI
                     startGraceUntilElapsedMs = SystemClock.elapsedRealtime() + START_MONITOR_TIMEOUT_MS
                     _connectionState.value = ConnectionState.Connecting
                     startCore()
+                }
+                ConnectionState.Error -> {
+                    if (SingBoxRemote.state.value == ServiceState.STOPPING) {
+                        startGraceUntilElapsedMs = null
+                        _connectionState.value = ConnectionState.Disconnecting
+                        stopVpn()
+                    } else {
+                        // P0 Optimization: Optimistic UI
+                        startGraceUntilElapsedMs = SystemClock.elapsedRealtime() + START_MONITOR_TIMEOUT_MS
+                        _connectionState.value = ConnectionState.Connecting
+                        startCore()
+                    }
                 }
                 ConnectionState.Connecting -> {
                     // P0 Optimization: Optimistic UI
@@ -838,24 +846,21 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                 VpnServiceManager.stopVpn(context, VpnStopInitiator.MODE_SWITCH)
             }
 
-            // 如果需要停止对立服务，等待其完全停止
+            // 如果需要停止对立服务，等待服务自身完成异步清理；IPC 的 STOPPED 可能提前发布。
             if (needToStopOpposite) {
-                // 先检查对立服务是否正在运行
-                val oppositeWasRunning = SingBoxRemote.isRunning.value || SingBoxRemote.isStarting.value
-                if (oppositeWasRunning) {
-                    try {
-                        // 增加超时时间：BoxService.close() 可能需要较长时间释放端口
-                        withTimeout(8000L) {
-                            // 使用 drop(1) 跳过当前值，等待真正的状态变化
-                            SingBoxRemote.state
-                                .drop(1)
-                                .first { it == ServiceState.STOPPED }
-                        }
-                    } catch (e: TimeoutCancellationException) {
-                        Log.w(TAG, "Timeout waiting for opposite service to stop")
-                    }
+                val stopped = VpnServiceManager.awaitModeStopped(activeMode, 8_000L)
+                if (!stopped) {
+                    Log.e(TAG, "Timeout waiting for opposite service cleanup: mode=$activeMode")
+                    _connectionState.value = ConnectionState.Error
+                    emitToast(
+                        getApplication<Application>().getString(
+                            R.string.node_start_failed,
+                            getApplication<Application>().getString(R.string.common_timeout)
+                        )
+                    )
+                    return@launch
                 }
-                // 原因: BoxService.close() 后端口释放可能有延迟
+                // BoxService.close() 后端口释放可能有延迟。
                 delay(500)
             }
 
@@ -915,8 +920,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                             com.kunk.singbox.repository.LogRepository.getInstance().addAlwaysLog(
                                 "INFO [Startup] ui_ready service_wait_ms=$elapsed"
                             )
-                            _connectionState.value = ConnectionState.Connected
-                            startTrafficMonitor()
+                            setConnectionState(ConnectionState.Connected)
                             return@launch
                         }
 

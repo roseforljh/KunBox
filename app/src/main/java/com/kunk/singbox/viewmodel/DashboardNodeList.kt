@@ -18,11 +18,15 @@ internal fun resolveTrustedDashboardConnectionState(
     apiLevel: Int = 0,
     nowElapsedMs: Long = 0L
 ): ConnectionState {
-    return when (serviceState) {
-        ServiceState.STARTING -> ConnectionState.Connecting
-        ServiceState.STOPPING -> ConnectionState.Disconnecting
-        ServiceState.STOPPED -> ConnectionState.Idle
-        ServiceState.RUNNING -> when {
+    return when {
+        serviceState == ServiceState.STARTING -> ConnectionState.Connecting
+        serviceState == ServiceState.STOPPING && (
+            readiness.status == DataPlaneStatus.FAILED_BLOCKED ||
+                readiness.status == DataPlaneStatus.FAILED_UNPROTECTED
+            ) -> ConnectionState.Error
+        serviceState == ServiceState.STOPPING -> ConnectionState.Disconnecting
+        serviceState == ServiceState.STOPPED -> ConnectionState.Idle
+        else -> when {
             !ipcBound -> if (mode != VpnStateStore.CoreMode.NONE) {
                 ConnectionState.Connecting
             } else {

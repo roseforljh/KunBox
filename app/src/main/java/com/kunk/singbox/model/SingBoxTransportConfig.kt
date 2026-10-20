@@ -363,6 +363,7 @@ data class ExperimentalConfig(
 data class CacheFileConfig(
     @SerializedName("enabled") val enabled: Boolean? = null,
     @SerializedName("path") val path: String? = null,
+    @SerializedName("cache_id") val cacheId: String? = null,
     @SerializedName("store_fakeip") val storeFakeip: Boolean? = null
 )
 

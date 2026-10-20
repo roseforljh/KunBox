@@ -10,6 +10,7 @@ import com.kunk.singbox.aidl.ISingBoxServiceCallback
 import com.kunk.singbox.repository.*
 import com.kunk.singbox.repository.LogRepository
 import com.kunk.singbox.service.ProxyOnlyService
+import com.kunk.singbox.service.SingBoxService
 import com.kunk.singbox.service.root.RootTransparentForegroundService
 import com.kunk.singbox.service.ServiceState
 import com.kunk.singbox.service.manager.BackgroundPowerManager
@@ -97,6 +98,9 @@ internal fun resolveUpdatedRuntimeLastError(
     explicitError: String?,
     previousError: String
 ): String = explicitError ?: if (state == ServiceState.STARTING) "" else previousError
+
+internal fun VpnStateStore.RuntimeStateSnapshot.persistenceKey(): String =
+    "$stateOrdinal:${readiness.status}:$lastError:$manuallyStopped:$activeLabel"
 
 @Suppress("TooManyFunctions")
 object SingBoxIpcHub {
@@ -256,8 +260,9 @@ object SingBoxIpcHub {
         )
     }
 
-    fun unregisterService() {
+    fun unregisterService(service: SingBoxIpcService) {
         synchronized(this) {
+            if (serviceRef?.get() !== service) return
             serviceRef?.clear()
             serviceRef = null
         }
@@ -318,15 +323,27 @@ object SingBoxIpcHub {
     private fun currentLiveCoreState(): ServiceState? {
         val vpnService = ServiceStateHolder.instance
         val vpnState = vpnService?.currentServiceState()
-        return when {
-            RootTransparentForegroundService.isStopping -> ServiceState.STOPPING
-            vpnState != null && vpnState != ServiceState.STOPPED -> vpnState
-            ProxyOnlyService.isRunning -> ServiceState.RUNNING
-            RootTransparentForegroundService.isRunning -> ServiceState.RUNNING
-            ProxyOnlyService.isStarting -> ServiceState.STARTING
-            RootTransparentForegroundService.isStarting -> ServiceState.STARTING
-            vpnState != null -> vpnState
-            else -> null
+        val owner = VpnStateStore.getStopOwnerMode() ?: VpnStateStore.getMode()
+        return when (owner) {
+            VpnStateStore.CoreMode.VPN -> vpnState?.takeIf { it != ServiceState.STOPPED }
+                ?: when {
+                    vpnState == ServiceState.STOPPING -> ServiceState.STOPPING
+                    SingBoxService.isStarting -> ServiceState.STARTING
+                    SingBoxService.isRunning -> ServiceState.RUNNING
+                    else -> null
+                }
+            VpnStateStore.CoreMode.ROOT -> when {
+                RootTransparentForegroundService.isStopping -> ServiceState.STOPPING
+                RootTransparentForegroundService.isStarting -> ServiceState.STARTING
+                RootTransparentForegroundService.isRunning -> ServiceState.RUNNING
+                else -> null
+            }
+            VpnStateStore.CoreMode.PROXY -> when {
+                ProxyOnlyService.isStarting -> ServiceState.STARTING
+                ProxyOnlyService.isRunning -> ServiceState.RUNNING
+                else -> null
+            }
+            VpnStateStore.CoreMode.NONE -> null
         }
     }
 
@@ -512,8 +529,8 @@ object SingBoxIpcHub {
             scheduleBroadcastIfNeededLocked()
         }
         val now = SystemClock.elapsedRealtime()
-        val safetyKey = "${snapshot.stateOrdinal}:${snapshot.readiness.status}:${snapshot.lastError}:" +
-            snapshot.manuallyStopped
+        // 节点确认也依赖持久快照，不能等到下一次 30 秒心跳才写入。
+        val safetyKey = snapshot.persistenceKey()
         if (safetyKey != lastPersistedSafetyKey ||
             now - lastPersistedAtMs.get() >= DataPlaneReadinessSnapshot.PERSIST_HEARTBEAT_INTERVAL_MS
         ) {

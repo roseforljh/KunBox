@@ -417,7 +417,7 @@ internal fun ConfigRepository.Companion.buildProfileRouteGroupOutbounds(
     nodeTags: List<String>,
     eligibleNodeTags: List<String> = nodeTags,
     testUrl: String,
-    autoSelectionEnabled: Boolean = false,
+    autoCandidateTags: List<String> = eligibleNodeTags,
     preferredNodeTag: String? = null
 ): List<Outbound> {
     val distinctNodeTags = nodeTags
@@ -435,7 +435,13 @@ internal fun ConfigRepository.Companion.buildProfileRouteGroupOutbounds(
     val autoTag = buildRouteGroupAutoTag(groupTag)
     val preferred = preferredNodeTag?.takeIf { it in distinctEligibleNodeTags }
         ?: distinctEligibleNodeTags.first()
-    val automaticSelectionAvailable = autoSelectionEnabled
+    // “配置”分流语义是“用该配置里可用的节点”，始终由 urltest 选节点；
+    // 不能跟随该配置首页的手动/自动开关，否则手动模式下会被钉死在一个可能已失效的节点上。
+    val distinctAutoCandidateTags = autoCandidateTags
+        .map { it.trim() }
+        .filter { it in distinctEligibleNodeTags }
+        .distinct()
+    val automaticSelectionAvailable = distinctAutoCandidateTags.isNotEmpty()
     val selector = Outbound(
         type = "selector",
         tag = groupTag,
@@ -454,7 +460,7 @@ internal fun ConfigRepository.Companion.buildProfileRouteGroupOutbounds(
         Outbound(
             type = "urltest",
             tag = autoTag,
-            outbounds = distinctEligibleNodeTags,
+            outbounds = distinctAutoCandidateTags,
             url = AppSettings.requireLatencyTestUrl(testUrl),
             interval = ROUTE_GROUP_AUTO_TEST_INTERVAL,
             tolerance = ROUTE_GROUP_AUTO_TEST_TOLERANCE,

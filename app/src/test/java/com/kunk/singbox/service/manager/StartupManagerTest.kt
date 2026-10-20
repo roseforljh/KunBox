@@ -148,6 +148,8 @@ class StartupManagerTest {
             .substringBefore("internal fun SingBoxService.launchPostStartTasks(configContent: String)")
 
         assertTrue(body.contains("commandManager.getSelectedOutbound(\"PROXY\")"))
+        assertTrue(body.contains("withTimeoutOrNull<String>(SelectorManager.SELECTION_CONFIRMATION_TIMEOUT_MS)"))
+        assertTrue(body.contains("SelectorManager.switchNode(preferredTag)"))
         assertTrue(body.contains("equals(preferredTag, ignoreCase = true)"))
     }
 

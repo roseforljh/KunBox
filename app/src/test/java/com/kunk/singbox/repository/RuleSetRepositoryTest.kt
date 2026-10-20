@@ -152,6 +152,19 @@ class RuleSetRepositoryTest {
     }
 
     @Test
+    fun cacheSourceKeyIgnoresGithubMirror() {
+        val raw = RuleSet(
+            tag = "geosite-google",
+            type = RuleSetType.REMOTE,
+            url = "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-google.srs"
+        )
+        val cdn = raw.copy(url = "https://cdn.jsdelivr.net/gh/SagerNet/sing-geosite@rule-set/geosite-google.srs")
+
+        assertEquals(RuleSetRepository.ruleSetSourceKey(raw), RuleSetRepository.ruleSetSourceKey(cdn))
+        assertTrue(RuleSetRepository.canUseLegacyRuleSetCache(cdn, raw))
+    }
+
+    @Test
     fun missingOrInvalidCacheCannotBeEnabled() {
         val dir = java.nio.file.Files.createTempDirectory("ruleset_cache_").toFile()
         try {

@@ -136,13 +136,17 @@ internal object RootNetfilterOwnership {
         check(result.success) { "Cannot read owned Root chains: ${result.diagnosticOutput}" }
         val outputLines = result.output.lineSequence().map(String::trim).filter(String::isNotBlank).toList()
         val fingerprints = chains.associate { record ->
+            // Some Android iptables implementations omit the synthetic -N line
+            // when `-S <chain>` targets a specific chain. The successful command
+            // already proves that the chain can be read; normalize the declaration
+            // before hashing so ownership persistence is implementation-independent.
             val declaration = "-N ${record.chain}"
             val rulePrefix = "-A ${record.chain} "
-            val live = outputLines.filter { it == declaration || it.startsWith(rulePrefix) }
-            check(live.firstOrNull() == declaration) {
-                "Cannot read owned Root chain ${record.chain}"
-            }
-            record.sortKey to sha256(live.joinToString("\n"))
+            val liveRules = outputLines.filter { it.startsWith(rulePrefix) }
+            record.sortKey to sha256(buildList {
+                add(declaration)
+                addAll(liveRules)
+            }.joinToString("\n"))
         }
         val refreshed = manifest.records.map { record ->
             if (record !is RootNetfilterOwnerRecord.Chain) return@map record
@@ -160,10 +164,10 @@ internal object RootNetfilterOwnership {
             val section = snapshot[if (record.family == "6") ROOT_STATE_IPTABLES6 else ROOT_STATE_IPTABLES4]
                 ?: error("Root netfilter snapshot is missing for IPv${record.family}")
             val lines = section.lineSequence().map(String::trim).filter(String::isNotBlank).toList()
-            check(lines.any { it.startsWith(":${record.chain} ") }) {
-                "Cannot read owned Root chain ${record.chain}"
-            }
             val live = buildList {
+                // Fast chain snapshots may contain the normalized -N line emitted
+                // after a successful `-S <chain>` query, or the :chain form from
+                // iptables-save. Always hash one canonical declaration.
                 add("-N ${record.chain}")
                 addAll(lines.filter { it.startsWith("-A ${record.chain} ") })
             }
@@ -203,6 +207,73 @@ internal object RootNetfilterOwnership {
         add(CLEANUP_SCRIPT)
         add("cleanup")
         expectedSessionId?.takeIf(String::isNotBlank)?.let(::add)
+    }
+
+    fun cleanupCommands(manifest: RootNetfilterOwnerManifest): List<List<String>> = buildList {
+        val chains = manifest.records.filterIsInstance<RootNetfilterOwnerRecord.Chain>()
+        chains.filter { it.hook.isNotBlank() }.forEach { record ->
+            add(
+                listOf(
+                    if (record.family == "6") "ip6tables" else "iptables",
+                    "-t",
+                    record.table,
+                    "-D",
+                    record.hook,
+                    "-j",
+                    record.chain
+                )
+            )
+        }
+        manifest.records.forEach { record ->
+            when (record) {
+                is RootNetfilterOwnerRecord.Rule -> add(
+                    rootIpCommand(
+                        record.family,
+                        listOf(
+                            "rule", "del", "fwmark", "${record.mark}/${record.mask}",
+                            "table", record.table.toString(), "pref", record.priority.toString()
+                        ),
+                        record.protocol
+                    )
+                )
+                is RootNetfilterOwnerRecord.UidRule -> add(
+                    rootIpCommand(
+                        record.family,
+                        listOf(
+                            "rule", "del", "uidrange", record.uidRange,
+                            "table", record.table.toString(), "pref", record.priority.toString()
+                        ),
+                        record.protocol
+                    )
+                )
+                is RootNetfilterOwnerRecord.Route -> add(
+                    rootIpCommand(
+                        record.family,
+                        listOf(
+                            "route", "del", "local", record.prefix,
+                            "dev", record.device, "table", record.table.toString()
+                        ),
+                        record.protocol
+                    )
+                )
+                is RootNetfilterOwnerRecord.Chain -> Unit
+            }
+        }
+        chains.forEach { record ->
+            val binary = if (record.family == "6") "ip6tables" else "iptables"
+            add(listOf(binary, "-t", record.table, "-F", record.chain))
+            add(listOf(binary, "-t", record.table, "-X", record.chain))
+        }
+    }
+
+    private fun rootIpCommand(family: String, arguments: List<String>, protocol: Int): List<String> = buildList {
+        add("ip")
+        if (family == "6") add("-6")
+        addAll(arguments)
+        if (protocol > 0) {
+            add("protocol")
+            add(protocol.toString())
+        }
     }
 
     fun reservedPolicyTuples(): List<Pair<Int, Int>> = buildList {
@@ -481,7 +552,7 @@ internal class RootNetfilterOwnershipStore(
     private val rootDirectory: File = File(RootNetfilterOwnership.RUNTIME_DIR)
 ) {
     private companion object {
-        const val STARTUP_CLEANUP_TIMEOUT_MS = 3_000L
+        const val STARTUP_CLEANUP_TIMEOUT_MS = 15_000L
         const val TAG = "RootNetfilterOwnership"
     }
 
@@ -564,7 +635,9 @@ internal class RootNetfilterOwnershipStore(
         val command = RootNetfilterOwnership.cleanupCommand(owner?.context?.sessionId).toMutableList().apply {
             this[1] = cleanupScript.absolutePath
         }
-        val result = timeoutMs?.let { executor.executeWithTimeout(command, it) } ?: executor.execute(command)
+        val result = ProcessRootCommandExecutor.withCleanupCommands {
+            timeoutMs?.let { executor.executeWithTimeout(command, it) } ?: executor.execute(command)
+        }
         if (!result.success) cleanupFailed("owned", result)
         check(!ownerFile.exists() || ownerFile.delete()) { "Cannot remove Root owner file" }
         check(!stagingFile.exists() || stagingFile.delete()) { "Cannot remove Root owner staging file" }
@@ -572,7 +645,9 @@ internal class RootNetfilterOwnershipStore(
 
     fun cleanupLegacy(timeoutMs: Long? = null): Result<Unit> = runCatching {
         val command = listOf("/system/bin/sh", cleanupScript.absolutePath, "legacy-cleanup")
-        val result = timeoutMs?.let { executor.executeWithTimeout(command, it) } ?: executor.execute(command)
+        val result = ProcessRootCommandExecutor.withCleanupCommands {
+            timeoutMs?.let { executor.executeWithTimeout(command, it) } ?: executor.execute(command)
+        }
         if (!result.success) cleanupFailed("legacy", result)
     }
 

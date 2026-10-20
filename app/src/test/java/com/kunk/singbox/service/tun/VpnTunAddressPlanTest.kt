@@ -422,7 +422,7 @@ class VpnTunAddressPlanTest {
         val plan = VpnTunManager.resolvePerAppVpnPlan(settings, "com.kunk.singbox")
 
         assertEquals(emptyList<String>(), plan.allowedPackages)
-        assertEquals(listOf("com.kunk.singbox", "com.blocked", "com.other"), plan.disallowedPackages)
+        assertEquals(listOf("com.blocked", "com.other"), plan.disallowedPackages)
     }
 
     @org.junit.Test

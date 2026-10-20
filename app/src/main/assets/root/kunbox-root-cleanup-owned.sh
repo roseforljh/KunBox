@@ -8,7 +8,9 @@ STAGING_FILE="$RUNTIME_DIR/netfilter-owner.staging"
 CONFLICT_FILE="$RUNTIME_DIR/cleanup_conflict"
 ROUTE_TABLE="20231"
 LOCK_DIR="$RUNTIME_DIR/.netfilter-lock"
+LOCK_OWNER_FILE="$LOCK_DIR/pid"
 WAIT_SECONDS=2
+LOCK_WAIT_ATTEMPTS=100
 
 TABLE_SPECS="iptables|mangle iptables|nat iptables|filter ip6tables|mangle ip6tables|nat ip6tables|filter"
 CHAIN_SPECS="\
@@ -47,14 +49,27 @@ record_failure() {
 acquire_lock() {
     attempt=0
     while ! mkdir "$LOCK_DIR" 2>/dev/null; do
+        owner="$(cat "$LOCK_OWNER_FILE" 2>/dev/null)"
+        case "$owner" in
+            ''|*[!0-9]*) ;;
+            *)
+                if ! kill -0 "$owner" 2>/dev/null; then
+                    rm -f "$LOCK_OWNER_FILE"
+                    rmdir "$LOCK_DIR" 2>/dev/null || true
+                fi
+                ;;
+        esac
         attempt=$((attempt + 1))
-        [ "$attempt" -ge 20 ] && {
+        [ "$attempt" -ne 1 ] || printf 'cleanup_lock=waiting owner=%s\n' "$owner" >&2
+        [ "$attempt" -ge "$LOCK_WAIT_ATTEMPTS" ] && {
             printf 'cleanup_conflict=netfilter_serialization_timeout\n' > "$CONFLICT_FILE"
+            printf 'cleanup_conflict=netfilter_serialization_timeout owner=%s\n' "$owner" >&2
             return 75
         }
         sleep 0.1
     done
-    trap 'rmdir "$LOCK_DIR" 2>/dev/null' EXIT HUP INT TERM
+    printf '%s\n' "$$" > "$LOCK_OWNER_FILE"
+    trap 'rm -f "$LOCK_OWNER_FILE"; rmdir "$LOCK_DIR" 2>/dev/null' EXIT HUP INT TERM
 }
 
 xtables_run() {
@@ -298,12 +313,16 @@ validate_session() {
     owner="$STAGING_FILE"
     [ -f "$owner" ] || owner="$OWNER_FILE"
     actual="$(sed -n 's/^session=//p' "$owner" 2>/dev/null | head -n 1)"
-    [ "$actual" = "$expected" ] || exit 0
+    # Missing ownership is not proof of a clean network: still delete and verify owned state.
+    [ -n "$actual" ] || actual="$(cat "$RUNTIME_DIR/session" 2>/dev/null)"
+    [ -z "$actual" ] || [ "$actual" = "$expected" ] || exit 0
 }
 
 cleanup() {
     validate_session "$1"
     acquire_lock || exit $?
+    # A competing cleanup or a new session may have completed while we waited.
+    validate_session "$1"
     FAILURES=""
     for spec in $TABLE_SPECS; do
         split_spec "$spec"

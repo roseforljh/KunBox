@@ -6,6 +6,7 @@ import android.content.Intent
 import android.content.ServiceConnection
 import android.os.IBinder
 import android.util.Log
+import androidx.annotation.MainThread
 import com.kunk.singbox.aidl.IRootSingBoxService
 import com.kunk.singbox.ipc.VpnStateStore
 import com.kunk.singbox.model.TrafficCaptureMode
@@ -13,6 +14,7 @@ import com.kunk.singbox.repository.SettingsRepository
 import com.topjohnwu.superuser.ipc.RootService
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.sync.Mutex
@@ -74,17 +76,30 @@ class RootServiceConnection(
         }
     }
 
-    fun unbind() {
+    suspend fun unbind() = withContext(NonCancellable + Dispatchers.Main.immediate) {
+        unbindOnMainThread()
+    }
+
+    private fun unbindOnMainThread() {
         if (!bound) return
-        runCatching { RootService.unbind(this) }
+        RootService.unbind(this)
         bound = false
         service = null
         if (!pending.isCompleted) pending.cancel()
     }
 
-    fun stopRootService() {
-        runCatching { RootService.stop(Intent(context, KunBoxRootService::class.java)) }
-        unbind()
+    suspend fun stopRootService() = withContext(NonCancellable + Dispatchers.Main.immediate) {
+        stopRootServiceOnMainThread()
+    }
+
+    @MainThread
+    internal fun stopRootServiceOnMainThread() {
+        // libsu enforces main-thread lifecycle calls; finish release before recovery can bind again.
+        try {
+            RootService.stop(Intent(context, KunBoxRootService::class.java))
+        } finally {
+            unbindOnMainThread()
+        }
     }
 
     internal fun transferDisconnectedCallback(callback: () -> Unit): RootServiceConnection {
@@ -230,7 +245,7 @@ object RootServicePrewarmer {
         return accepted
     }
 
-    fun stopIdle() {
+    suspend fun stopIdle() {
         val idle = synchronized(this) {
             connection?.also { connection = null }
         } ?: return

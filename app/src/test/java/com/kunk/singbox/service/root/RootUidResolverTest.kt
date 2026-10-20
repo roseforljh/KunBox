@@ -8,7 +8,10 @@ import com.kunk.singbox.model.VpnAppMode
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertThrows
+import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 
 class RootUidResolverTest {
     private val executor = RootCommandExecutor { command ->
@@ -32,6 +35,62 @@ class RootUidResolverTest {
             )
             else -> RootCommandResult(1, "unexpected")
         }
+    }
+
+    @Test
+    fun snapshotQueriesUsersConcurrentlyAndPreservesUserOrder() {
+        val entered = CountDownLatch(2)
+        val parallelExecutor = RootCommandExecutor { command ->
+            if (command == listOf("cmd", "user", "list")) {
+                RootCommandResult(0, "UserInfo{10:Work:30}\nUserInfo{0:Owner:13}")
+            } else {
+                entered.countDown()
+                check(entered.await(2, TimeUnit.SECONDS)) { "Package inventories ran serially" }
+                val userId = command.last().toInt()
+                RootCommandResult(0, "package:com.example.proxy uid:${userId * 100_000 + 10123}")
+            }
+        }
+
+        val snapshot = RootUidResolver(parallelExecutor).captureSnapshot()
+
+        assertEquals(listOf(0, 10), snapshot.users)
+        assertEquals(listOf(10123, 1010123), snapshot.packages.map { it.uid })
+    }
+
+    @Test
+    fun snapshotRejectsPartialInventoryWhenOneUserQueryFails() {
+        val failingExecutor = RootCommandExecutor { command ->
+            when {
+                command == listOf("cmd", "user", "list") ->
+                    RootCommandResult(0, "UserInfo{0:Owner:13}\nUserInfo{10:Work:30}")
+                command.last() == "0" -> RootCommandResult(0, "package:com.example.proxy uid:10123")
+                else -> RootCommandResult(1, "package service unavailable")
+            }
+        }
+
+        val error = assertThrows(IllegalStateException::class.java) {
+            RootUidResolver(failingExecutor).captureSnapshot()
+        }
+
+        assertTrue(error.message.orEmpty().contains("Android user 10"))
+    }
+
+    @Test
+    fun snapshotDoesNotReuseInventoryFromPreviousCapture() {
+        var packageUid = 10123
+        val freshExecutor = RootCommandExecutor { command ->
+            if (command == listOf("cmd", "user", "list")) {
+                RootCommandResult(0, "UserInfo{0:Owner:13}")
+            } else {
+                RootCommandResult(0, "package:com.example.proxy uid:$packageUid")
+            }
+        }
+        val resolver = RootUidResolver(freshExecutor)
+        assertEquals(10123, resolver.captureSnapshot().packages.single().uid)
+
+        packageUid = 10133
+
+        assertEquals(10133, resolver.captureSnapshot().packages.single().uid)
     }
 
     @Test

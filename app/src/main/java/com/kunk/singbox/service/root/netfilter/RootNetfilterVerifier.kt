@@ -71,7 +71,9 @@ internal class RootNetfilterVerifier(
     private fun verifyForbiddenChains(snapshots: Map<String, String>, forbiddenChains: Set<String>) {
         val lines = snapshots.values.asSequence().flatMap { it.lineSequence() }.map(String::trim).toList()
         forbiddenChains.forEach { chain ->
-            check(lines.none { line -> line.startsWith(":$chain ") || "-j $chain" in line }) {
+            check(lines.none { line ->
+                line.startsWith(":$chain ") || line == "-N $chain" || "-j $chain" in line
+            }) {
                 "Root forbidden chain remains after transition: $chain"
             }
         }
@@ -80,7 +82,9 @@ internal class RootNetfilterVerifier(
     private fun verifyFamily(binary: String, commands: List<List<String>>, snapshot: String) {
         val lines = snapshot.lineSequence().map(String::trim).filter(String::isNotEmpty).toList()
         commands.mapNotNull { command -> operationValue(command, "-N") }.toSet().forEach { chain ->
-            check(lines.any { it.startsWith(":$chain ") }) { "Root chain is missing after restore: $chain" }
+            check(lines.any { it.startsWith(":$chain ") || it == "-N $chain" }) {
+                "Root chain is missing after restore: $chain"
+            }
         }
         commands.mapNotNull { command -> operationValue(command, "-A") }
             .groupingBy { it }

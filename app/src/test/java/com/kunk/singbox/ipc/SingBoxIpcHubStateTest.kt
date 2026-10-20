@@ -10,6 +10,27 @@ import java.io.File
 class SingBoxIpcHubStateTest {
 
     @Test
+    fun `node confirmation bypasses persistence heartbeat after readiness is published`() {
+        val readyWithOldLabel = VpnStateStore.RuntimeStateSnapshot(
+            generation = 10L,
+            stateOrdinal = ServiceState.RUNNING.ordinal,
+            activeLabel = "old-node",
+            readiness = DataPlaneReadinessSnapshot(status = DataPlaneStatus.READY)
+        )
+        val confirmed = readyWithOldLabel.copy(generation = 11L, activeLabel = "target-node")
+
+        assertFalse(readyWithOldLabel.persistenceKey() == confirmed.persistenceKey())
+        assertFalse(confirmed.persistenceKey() == confirmed.copy(activeLabel = "").persistenceKey())
+        assertEquals(
+            confirmed.persistenceKey(),
+            confirmed.copy(
+                generation = 12L,
+                readiness = confirmed.readiness.copy(updatedAtElapsedMs = 500L)
+            ).persistenceKey()
+        )
+    }
+
+    @Test
     fun `starting a new runtime clears the previous terminal error`() {
         assertEquals(
             "",

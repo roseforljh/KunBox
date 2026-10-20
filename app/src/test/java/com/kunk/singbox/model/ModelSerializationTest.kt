@@ -82,6 +82,22 @@ class ModelSerializationTest {
     }
 
     @Test
+    fun cacheFileCacheIdIsSerializedForProfileIsolation() {
+        val cache = CacheFileConfig(
+            enabled = true,
+            path = "cache.db",
+            cacheId = "profile-a",
+            storeFakeip = true
+        )
+
+        val json = gson.toJson(cache)
+        val decoded = gson.fromJson(json, CacheFileConfig::class.java)
+
+        assertTrue(json.contains("\"cache_id\":\"profile-a\""))
+        assertEquals("profile-a", decoded.cacheId)
+    }
+
+    @Test
     fun testSingBoxConfigSerialization() {
         val config = SingBoxConfig(
             outbounds = listOf(

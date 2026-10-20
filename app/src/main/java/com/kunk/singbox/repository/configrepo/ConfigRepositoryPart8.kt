@@ -419,6 +419,10 @@ internal fun ConfigRepository.buildRunOutbounds(
             .sortedWith(compareBy<NodeUi> { if (it.id == rememberedNodeId) 0 else 1 }.thenBy { it.id })
         val nodeIds = profileNodes.map { it.id }
         val nodeTags = nodeIds.mapNotNull { nodeTagMap[it] }.distinct()
+        val autoCandidateTags = profileNodes
+            .filter { isNodeAutoSelectionEligible(it.id) && !it.meteredProtected }
+            .mapNotNull { nodeTagMap[it.id] }
+            .distinct()
         val eligibleNodeTags = profileNodes
             .filter {
                 (isNodeAutoSelectionEligible(it.id) && !it.meteredProtected) ||
@@ -434,7 +438,7 @@ internal fun ConfigRepository.buildRunOutbounds(
                 nodeTags = nodeTags,
                 eligibleNodeTags = eligibleNodeTags,
                 testUrl = settings.latencyTestUrl,
-                autoSelectionEnabled = isProfileAutoSelectionEnabled,
+                autoCandidateTags = autoCandidateTags,
                 preferredNodeTag = rememberedNodeId?.let { nodeTagMap[it] }
             )
             if (routeGroupOutbounds.isNotEmpty()) {
@@ -446,7 +450,8 @@ internal fun ConfigRepository.buildRunOutbounds(
     }
     val routeOnlyRuntimeTags = routeOnlyProtectedNodeIds.mapNotNullTo(mutableSetOf()) { nodeTagMap[it] }
     val proxyTags = fixedOutbounds.filter {
-        it.tag !in routeOnlyRuntimeTags && it.type in listOf(
+        it.tag !in routeOnlyRuntimeTags &&
+            it.type in listOf(
             "vless", "vmess", "trojan", "shadowsocks",
             "hysteria2", "hysteria", "anytls", "tuic",
             "ssh", "shadowtls", "http", "socks", "naive"
@@ -469,18 +474,25 @@ internal fun ConfigRepository.buildRunOutbounds(
         proxyTags.add("direct")
     }
 
-    val selectorDefault = activeAutoTag ?: activeNode
-        ?.let { nodeTagMap[it.id] ?: it.name }
-        ?.takeIf { it in proxyTags }
-        ?: proxyTags.firstOrNull()
+    val selectedNodeTag = activeNode?.let { nodeTagMap[it.id] ?: it.name }
     if (activeNode != null) {
         val mappedTag = nodeTagMap[activeNode.id]
-        Log.d(ConfigRepository.TAG, "Selector default: activeNode=${activeNode.name}, id=${activeNode.id}, mappedTag=$mappedTag, selectorDefault=$selectorDefault, inProxyTags=${selectorDefault in proxyTags}")
-        if (mappedTag == null && activeNode.name !in proxyTags) {
-            Log.w(ConfigRepository.TAG, "WARNING: Active node not in nodeTagMap and name not in proxyTags! Node may not be selected correctly.")
-            Log.w(ConfigRepository.TAG, "  Available proxyTags (first 10): ${proxyTags.take(10)}")
-            Log.w(ConfigRepository.TAG, "  nodeTagMap keys (first 10): ${nodeTagMap.keys.take(10)}")
+        Log.d(
+            ConfigRepository.TAG,
+            "Selector target: activeNode=${activeNode.name}, id=${activeNode.id}, " +
+                "mappedTag=$mappedTag, mappedTagInProxyTags=${mappedTag in proxyTags}"
+        )
+    }
+    val selectorDefault = when {
+        activeAutoTag != null -> activeAutoTag
+        selectedNodeTag != null -> {
+            check(selectedNodeTag in proxyTags) {
+                "Selected node is not available in PROXY selector: " +
+                    "${activeNode?.name ?: selectedNodeTag} (tag=$selectedNodeTag)"
+            }
+            selectedNodeTag
         }
+        else -> proxyTags.firstOrNull()
     }
 
     val selectorOutbound = Outbound(

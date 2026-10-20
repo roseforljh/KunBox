@@ -6,6 +6,7 @@ import android.os.SystemClock
 import android.os.ParcelFileDescriptor
 import android.util.Log
 import com.kunk.singbox.core.BoxWrapperManager
+import com.kunk.singbox.core.SelectorManager
 import com.kunk.singbox.ipc.SingBoxIpcHub
 import com.kunk.singbox.repository.LogRepository
 import com.kunk.singbox.service.notification.VpnNotificationManager
@@ -17,7 +18,6 @@ import java.net.InetSocketAddress
 import java.net.ServerSocket
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicLong
-import kotlinx.coroutines.selects.select
 
 internal class TrafficStatusGate {
     internal val lock = Any()
@@ -177,6 +177,8 @@ class CommandManager(
     internal var commandLogReconnectEnabled = false
 
     internal var commandLogReconnectJob: Job? = null
+    internal var localControlRecoveryJob: Job? = null
+    internal var controlRecoveryStopped = false
 
     internal var activeCommandSessionGeneration = 0L
     internal var commandSessionStartedAtMs = 0L
@@ -348,7 +350,7 @@ class CommandManager(
         if (started.isFailure) return started
         val generation = currentRuntimeGeneration()
         return runCatching { awaitCommandLogReady(generation) }.onFailure {
-            if (isCommandSessionActive(generation)) stop(closeServer = !preserveServerOnFailure)
+            stop(closeServer = !preserveServerOnFailure, expectedRuntimeGeneration = generation)
         }
     }
 
@@ -365,31 +367,47 @@ class CommandManager(
 
     suspend fun reconnectControlClientsWithFd(
         fdProvider: () -> ParcelFileDescriptor?
+    ): Result<Unit> = withContext(Dispatchers.IO) { reconnectControlClients(fdProvider) }
+
+    internal suspend fun reconnectControlClients(
+        fdProvider: (() -> ParcelFileDescriptor?)? = null,
+        expectedGeneration: Long? = null
     ): Result<Unit> = runCatching {
-        val detached = detachCommandRuntime()
-            ?: error("Control runtime is not active")
-        val handle = detached.handle
-            ?: error("Command runtime handle is unavailable")
-        val server = handle.server
-            ?: error("Command server is unavailable")
+        val (detached, generation) = synchronized(runtimeAccess) {
+            check(!controlRecoveryStopped) { "Control recovery stopped" }
+            check(expectedGeneration == null || expectedGeneration == currentRuntimeGeneration()) {
+                "Control runtime changed before recovery"
+            }
+            check(fdProvider != null || commandServer != null) { "Command server is unavailable" }
+            val previous = requireNotNull(detachCommandRuntime(preserveServer = true))
+            previous to beginCommandRuntime(fdProvider)
+        }
         detached.logSupervisor?.cancel()
         detached.logReady?.cancel()
         stopTrafficUpdatesAndWait()
-        handle.statusClient?.disconnect()
-        handle.groupClient?.disconnect()
-        handle.logClient?.disconnect()
-        handle.connectionsClient?.disconnect()
-        connectionsSnapshot = null
-        synchronized(runtimeAccess) { commandServer = server }
-        runCatching {
-            startClientsWithFd(fdProvider, preserveServerOnFailure = true).getOrThrow()
-        }.onFailure {
-            synchronized(runtimeAccess) {
-                if (commandServer == null) commandServer = server
+        val handle = detached.handle
+        listOfNotNull(handle?.statusClient, handle?.groupClient, handle?.logClient, handle?.connectionsClient)
+            .forEach { client ->
+                runCatching { client.disconnect() }
+                    .onFailure { Log.w(TAG, "Failed to disconnect stale control client", it) }
             }
-            throw it
+        connectionsSnapshot = null
+        try {
+            currentCoroutineContext().ensureActive()
+            startCommandClients(generation, fdProvider, preserveServerOnFailure = true).getOrThrow()
+            awaitCommandLogReady(generation)
+        } catch (error: Exception) {
+            stop(closeServer = false, expectedRuntimeGeneration = generation)
+            throw error
+        }
+        synchronized(runtimeAccess) {
+            check(generation == activeCommandSessionGeneration) { "Control runtime changed after recovery" }
+            SelectorManager.updateCommandClient(commandClient)
         }
         Log.i(TAG, "Control clients reconnected without restarting CommandServer")
+        Unit
+    }.onFailure { error ->
+        if (error is CancellationException) throw error
     }
 
     @Suppress("LongMethod")
@@ -398,6 +416,7 @@ class CommandManager(
         fdProvider: (() -> ParcelFileDescriptor?)?,
         preserveServerOnFailure: Boolean = false
     ): Result<Unit> = runCatching {
+        check(isCommandSessionActive(generation)) { "Command runtime changed before client startup" }
         trafficMonitor.reset()
         connectionStormGuard.clear()
         trafficStatusGate.start()
@@ -460,10 +479,7 @@ class CommandManager(
         }
         Unit
     }.onFailure {
-        val stillOwnsStartup = synchronized(runtimeAccess) {
-            generation == activeCommandSessionGeneration
-        }
-        if (stillOwnsStartup) stop(closeServer = !preserveServerOnFailure)
+        stop(closeServer = !preserveServerOnFailure, expectedRuntimeGeneration = generation)
     }
 
     @Suppress("CognitiveComplexMethod", "CyclomaticComplexMethod", "LongMethod")
@@ -536,8 +552,12 @@ class CommandManager(
         }
     }
 
-    fun stop(closeServer: Boolean = true): Result<Unit> = runCatching {
-        val detached = requireNotNull(detachCommandRuntime())
+    fun stop(
+        closeServer: Boolean = true,
+        expectedRuntimeGeneration: Long = 0L
+    ): Result<Unit> = runCatching {
+        val detached = detachCommandRuntime(expectedRuntimeGeneration, preserveServer = !closeServer)
+            ?: return@runCatching
         val capturedHandle = detached.handle
         detached.logSupervisor?.cancel()
         detached.logReady?.cancel()
@@ -558,6 +578,11 @@ class CommandManager(
             capturedHandle?.server?.close()
         }
         Log.i(TAG, "Command Server/Client stopped")
+    }
+
+    internal fun prepareControlRecoveryStop(): Job? = synchronized(runtimeAccess) {
+        controlRecoveryStopped = true
+        localControlRecoveryJob?.also { it.cancel() }
     }
 
     fun stopTrafficUpdatesAndWait() {
@@ -670,6 +695,7 @@ class CommandManager(
             commandLogReconnectJob?.cancel()
             val generation = runtimeGeneration.incrementAndGet()
             activeCommandSessionGeneration = generation
+            controlRecoveryStopped = false
             commandSessionStartedAtMs = SystemClock.uptimeMillis()
             commandFdProvider = fdProvider
             commandLogReconnectEnabled = true
@@ -689,7 +715,10 @@ class CommandManager(
         }
 
     @Suppress("ComplexCondition")
-    internal fun detachCommandRuntime(expectedGeneration: Long = 0L): DetachedCommandRuntime? =
+    internal fun detachCommandRuntime(
+        expectedGeneration: Long = 0L,
+        preserveServer: Boolean = false
+    ): DetachedCommandRuntime? =
         synchronized(runtimeAccess) {
             val observedGeneration = runtimeHandle?.generation ?: activeCommandSessionGeneration
             if (expectedGeneration > 0L && observedGeneration != expectedGeneration) {
@@ -713,6 +742,11 @@ class CommandManager(
             }
             val supervisor = commandLogReconnectJob
             val logReady = commandLogSessionReady
+            if (!preserveServer) {
+                controlRecoveryStopped = true
+                localControlRecoveryJob?.cancel()
+                localControlRecoveryJob = null
+            }
             activeCommandSessionGeneration = 0L
             commandLogReconnectEnabled = false
             commandLogReconnectJob = null
@@ -727,7 +761,7 @@ class CommandManager(
             lastPublishedControlHealth = null
             commandFdProvider = null
             runtimeHandle = null
-            commandServer = null
+            commandServer = handle?.server.takeIf { preserveServer }
             commandClient = null
             commandClientGroup = null
             commandClientLogs = null
@@ -743,7 +777,12 @@ class CommandManager(
             }
             commandLogSessionReady ?: error("Command log readiness is unavailable")
         }
-        withTimeout(COMMAND_LOG_READY_TIMEOUT_MS) { ready.await() }
+        check(withTimeoutOrNull(COMMAND_LOG_READY_TIMEOUT_MS) {
+            ready.await()
+            true
+        } == true) {
+            "Command control readiness timeout"
+        }
         check(synchronized(runtimeAccess) {
             generation == activeCommandSessionGeneration && commandBaseHealthy && commandLogHealthy
         }) { "Command control channels are not ready" }
@@ -857,14 +896,7 @@ class CommandManager(
         try {
             connectClient(client, fdProvider)
             currentCoroutineContext().ensureActive()
-            withTimeout(COMMAND_LOG_READY_TIMEOUT_MS) {
-                select {
-                    signals.ready.onAwait { }
-                    signals.disconnected.onAwait { reason ->
-                        error("Command log disconnected before ready: ${reason.orEmpty()}")
-                    }
-                }
-            }
+            awaitCommandLogAttemptReady(signals)
             currentCoroutineContext().ensureActive()
             synchronized(runtimeAccess) {
                 check(isCommandLogSessionActiveLocked(generation) && pendingCommandLogClientToken == token) {

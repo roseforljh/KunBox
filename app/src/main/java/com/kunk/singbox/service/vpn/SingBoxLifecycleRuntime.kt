@@ -201,6 +201,16 @@ internal fun SingBoxService.onStartCommandRuntime(intent: Intent?, flags: Int, s
 
             // P0 Optimization: If config path is missing (Shortcut/Headless), generate it inside Service
             if (configPath == null) {
+                // startForegroundService 要求限时内进入前台，配置生成耗时不可控，先挂前台通知
+                if (!startForegroundForVpnStart()) {
+                    if (clearStartCommandFailureState(recoveryLease) {
+                            SingBoxService.setLastError("Failed to start foreground service")
+                        }
+                    ) {
+                        stopSelf()
+                    }
+                    return START_NOT_STICKY
+                }
                 Log.i(SingBoxService.TAG, "SingBoxService.ACTION_START received without config path, generating config...")
                 startVpnJob?.cancel()
                 startVpnJob = serviceScope.launch {
@@ -443,16 +453,17 @@ internal fun SingBoxService.onStartCommandRuntime(intent: Intent?, flags: Int, s
                 SingBoxService.EXTRA_PER_APP_POLICY_REVISION,
                 0L
             ).coerceAtLeast(0L)
-            val manuallyStopped = isPerAppRuleRestart && VpnStateStore.isManuallyStopped()
+            // 手动停止后到达的 FULL_RESTART 都是过期请求：放行会顶掉 STOP 的恢复租约，
+            // 收尾转去重启又被 isManuallyStopped 拒绝，pending 永久卡在 "stopping"。
+            val manuallyStopped = VpnStateStore.isManuallyStopped()
             val mode = if (isPerAppRuleRestart) {
                 VpnStateStore.getMode()
             } else {
                 VpnStateStore.CoreMode.VPN
             }
-            val shouldRejectPerAppRuleRestart = isPerAppRuleRestart && (
+            val shouldRejectPerAppRuleRestart = manuallyStopped || isPerAppRuleRestart && (
                 !SingBoxService.isRunning ||
                     isStopping ||
-                    manuallyStopped ||
                     mode != VpnStateStore.CoreMode.VPN
                 )
             if (shouldRejectPerAppRuleRestart) {

@@ -33,7 +33,10 @@ internal fun ConfigRepository.getOrCreateClashApiSecret(): String {
     return secret
 }
 
-internal fun ConfigRepository.buildRunExperimentalConfig(settings: AppSettings): ExperimentalConfig {
+internal fun ConfigRepository.buildRunExperimentalConfig(
+    settings: AppSettings,
+    activeProfileId: String
+): ExperimentalConfig {
     val singboxDataDir = File(context.filesDir, "singbox_data").also { it.mkdirs() }
 
     val clashApiPort = findAvailablePort(9090)
@@ -47,6 +50,7 @@ internal fun ConfigRepository.buildRunExperimentalConfig(settings: AppSettings):
         cacheFile = CacheFileConfig(
             enabled = true,
             path = File(singboxDataDir, "cache.db").absolutePath,
+            cacheId = activeProfileId,
             storeFakeip = settings.fakeDnsEnabled
         ),
         clashApi = clashApi

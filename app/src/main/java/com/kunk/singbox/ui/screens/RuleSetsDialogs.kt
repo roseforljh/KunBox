@@ -3,6 +3,7 @@ package com.kunk.singbox.ui.screens
 import com.kunk.singbox.R
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.horizontalScroll
@@ -73,11 +74,12 @@ private fun ruleSetBadgeContentColor(defaultColor: Color): Color {
 private fun RuleSetBadge(
     text: String,
     backgroundColor: Color,
-    contentColor: Color
+    contentColor: Color,
+    modifier: Modifier = Modifier
 ) {
     val shape = RoundedCornerShape(4.dp)
     Box(
-        modifier = Modifier
+        modifier = modifier
             .then(
                 if (isLiquidGlassTheme()) {
                     Modifier.liquidGlassPanel(shape = shape, selected = true, shadowElevation = 4.dp)
@@ -90,7 +92,9 @@ private fun RuleSetBadge(
         Text(
             text = text,
             color = ruleSetBadgeContentColor(contentColor),
-            style = MaterialTheme.typography.labelSmall
+            style = MaterialTheme.typography.labelSmall,
+            maxLines = 1,
+            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
         )
     }
 }
@@ -108,23 +112,26 @@ fun RuleSetItem(
     onDeleteClick: () -> Unit = {},
     onOutboundClick: () -> Unit = {},
     onInboundClick: () -> Unit = {},
+    outboundDisplayName: String? = null,
     modifier: Modifier = Modifier
 ) {
-    var showMenu by remember { mutableStateOf(false) }
     var showDeleteConfirm by remember { mutableStateOf(false) }
+    var showOutboundName by remember { mutableStateOf(false) }
 
-    if (showDeleteConfirm) {
-        ConfirmDialog(
-            title = stringResource(R.string.rulesets_delete_title),
-            message = stringResource(R.string.rulesets_delete_confirm, ruleSet.tag),
-            confirmText = stringResource(R.string.common_delete),
-            onConfirm = {
-                onDeleteClick()
-                showDeleteConfirm = false
-            },
-            onDismiss = { showDeleteConfirm = false }
-        )
-    }
+    RuleSetOutboundNameDialogIfVisible(
+        show = showOutboundName,
+        displayName = outboundDisplayName,
+        onDismiss = { showOutboundName = false }
+    )
+    RuleSetDeleteConfirmDialogIfVisible(
+        show = showDeleteConfirm,
+        ruleSetTag = ruleSet.tag,
+        onConfirm = {
+            onDeleteClick()
+            showDeleteConfirm = false
+        },
+        onDismiss = { showDeleteConfirm = false }
+    )
 
     StandardCard(modifier = modifier) {
         Row(
@@ -142,177 +149,272 @@ fun RuleSetItem(
                     colors = liquidGlassCheckboxColors()
                 )
             }
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = ruleSet.tag,
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    fontWeight = FontWeight.Bold
+            RuleSetItemDetails(
+                ruleSet = ruleSet,
+                isDownloading = isDownloading,
+                outboundDisplayName = outboundDisplayName,
+                onOutboundNameClick = { showOutboundName = true },
+                modifier = Modifier.weight(1f)
+            )
+            if (!isSelectionMode) {
+                RuleSetItemActions(
+                    ruleSet = ruleSet,
+                    onToggle = onToggle,
+                    onMenuAction = { action ->
+                        when (action) {
+                            RuleSetMenuAction.EDIT -> onEditClick()
+                            RuleSetMenuAction.DELETE -> showDeleteConfirm = true
+                            RuleSetMenuAction.OUTBOUND -> onOutboundClick()
+                            RuleSetMenuAction.INBOUND -> onInboundClick()
+                        }
+                    }
                 )
-                Spacer(modifier = Modifier.height(4.dp))
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .horizontalScroll(rememberScrollState())
-                ) {
-                    if (isDownloading) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(14.dp),
-                            strokeWidth = 2.dp,
-                            color = liquidGlassProgressColor(MaterialTheme.colorScheme.primary),
-                            trackColor = liquidGlassProgressTrackColor(Color.Transparent)
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(
-                            text = stringResource(R.string.settings_updating),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    } else {
-                        RuleSetBadge(
-                            text = stringResource(R.string.common_ready),
-                            backgroundColor = Color(0xFF2E7D32).copy(alpha = 0.8f),
-                            contentColor = Color.White
-                        )
-                    }
-                    Spacer(modifier = Modifier.width(6.dp))
-                    val outboundMode = ruleSet.outboundMode ?: RuleSetOutboundMode.DIRECT
-                    val outboundText = stringResource(outboundMode.displayNameRes)
-                    val outboundColor = when (outboundMode) {
-                        RuleSetOutboundMode.DIRECT -> Color(0xFF1565C0)
-                        RuleSetOutboundMode.BLOCK -> Color(0xFFC62828)
-                        RuleSetOutboundMode.PROXY -> Color(0xFF7B1FA2)
-                        RuleSetOutboundMode.NODE -> Color(0xFFE65100)
-                        RuleSetOutboundMode.PROFILE -> Color(0xFF00838F)
-                    }
-                    RuleSetBadge(
-                        text = outboundText,
-                        backgroundColor = outboundColor.copy(alpha = 0.8f),
-                        contentColor = Color.White
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    val inbounds = ruleSet.inbounds ?: emptyList()
-                    val inboundText = if (inbounds.isEmpty()) {
-                        stringResource(R.string.common_all)
-                    } else {
-                        inbounds.joinToString(",")
-                    }
-                    RuleSetBadge(
-                        text = inboundText,
-                        backgroundColor = Color(0xFFFF8F00).copy(alpha = 0.8f),
-                        contentColor = Color.White
-                    )
-                }
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = "${stringResource(ruleSet.type.displayNameRes)} - ${ruleSet.format}",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                if (ruleSet.type == RuleSetType.REMOTE) {
-                    Text(
-                        text = ruleSet.url,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1
-                    )
-                } else {
-                    Text(
-                        text = ruleSet.path,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1
-                    )
+            }
+        }
+    }
+}
+
+@Composable
+private fun RuleSetOutboundNameDialogIfVisible(
+    show: Boolean,
+    displayName: String?,
+    onDismiss: () -> Unit
+) {
+    if (show && !displayName.isNullOrBlank()) {
+        AlertDialog(
+            onDismissRequest = onDismiss,
+            title = { Text(stringResource(R.string.common_outbound)) },
+            text = { Text(displayName) },
+            confirmButton = {
+                TextButton(onClick = onDismiss) {
+                    Text(stringResource(R.string.common_close))
                 }
             }
-            if (!isSelectionMode) {
-                if (defaultRuleSetTags.contains(ruleSet.tag)) {
-                    Switch(
-                        checked = ruleSet.enabled,
-                        onCheckedChange = onToggle,
-                        modifier = Modifier
-                            .scale(0.8f)
-                            .padding(end = 8.dp),
-                        colors = liquidGlassSwitchColors()
-                    )
-                } else {
-                    Box(modifier = Modifier.wrapContentSize(Alignment.TopStart)) {
-                        IconButton(
-                            modifier = Modifier.liquidGlassIconButtonPanel(),
-                            onClick = { showMenu = true }
-                        ) {
-                            Icon(
-                                imageVector = Icons.Rounded.MoreVert,
-                                contentDescription = "More actions",
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                        MaterialTheme(
-                            shapes = MaterialTheme.shapes.copy(extraSmall = RoundedCornerShape(12.dp))
-                        ) {
-                            LiquidGlassDropdownMenu(
-                                expanded = showMenu,
-                                onDismissRequest = { showMenu = false },
-                                modifier = Modifier
-                                    .width(100.dp)
-                                    .ruleSetMenuPanel()
-                            ) {
-                                DropdownMenuItem(
-                                    text = {
-                                        Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                                            Text(stringResource(R.string.common_edit), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                        }
-                                    },
-                                    onClick = {
-                                        showMenu = false
-                                        onEditClick()
-                                    },
-                                    colors = liquidGlassDropdownMenuItemColors()
-                                )
-                                DropdownMenuItem(
-                                    text = {
-                                        Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                                            Text(stringResource(R.string.common_delete), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                        }
-                                    },
-                                    onClick = {
-                                        showMenu = false
-                                        showDeleteConfirm = true
-                                    },
-                                    colors = liquidGlassDropdownMenuItemColors()
-                                )
-                                DropdownMenuItem(
-                                    text = {
-                                        Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                                            Text(stringResource(R.string.common_outbound), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                        }
-                                    },
-                                    onClick = {
-                                        showMenu = false
-                                        onOutboundClick()
-                                    },
-                                    colors = liquidGlassDropdownMenuItemColors()
-                                )
-                                DropdownMenuItem(
-                                    text = {
-                                        Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                                            Text(stringResource(R.string.common_inbound), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                        }
-                                    },
-                                    onClick = {
-                                        showMenu = false
-                                        onInboundClick()
-                                    },
-                                    colors = liquidGlassDropdownMenuItemColors()
-                                )
-                            }
-                        }
-                    }
+        )
+    }
+}
+
+@Composable
+private fun RuleSetDeleteConfirmDialogIfVisible(
+    show: Boolean,
+    ruleSetTag: String,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    if (show) {
+        ConfirmDialog(
+            title = stringResource(R.string.rulesets_delete_title),
+            message = stringResource(R.string.rulesets_delete_confirm, ruleSetTag),
+            confirmText = stringResource(R.string.common_delete),
+            onConfirm = onConfirm,
+            onDismiss = onDismiss
+        )
+    }
+}
+
+@Composable
+private fun RuleSetItemDetails(
+    ruleSet: RuleSet,
+    isDownloading: Boolean,
+    outboundDisplayName: String?,
+    onOutboundNameClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(modifier = modifier) {
+        Text(
+            text = ruleSet.tag,
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.onSurface,
+            fontWeight = FontWeight.Bold
+        )
+        Spacer(modifier = Modifier.height(4.dp))
+        RuleSetItemBadges(
+            ruleSet = ruleSet,
+            isDownloading = isDownloading,
+            outboundDisplayName = outboundDisplayName,
+            onOutboundNameClick = onOutboundNameClick
+        )
+        Spacer(modifier = Modifier.height(4.dp))
+        Text(
+            text = "${stringResource(ruleSet.type.displayNameRes)} - ${ruleSet.format}",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Text(
+            text = if (ruleSet.type == RuleSetType.REMOTE) ruleSet.url else ruleSet.path,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1
+        )
+    }
+}
+
+@Composable
+private fun RuleSetItemBadges(
+    ruleSet: RuleSet,
+    isDownloading: Boolean,
+    outboundDisplayName: String?,
+    onOutboundNameClick: () -> Unit
+) {
+    val outboundMode = ruleSet.outboundMode ?: RuleSetOutboundMode.DIRECT
+    val outboundText = stringResource(outboundMode.displayNameRes)
+    val inboundText = ruleSet.inbounds
+        ?.takeIf { it.isNotEmpty() }
+        ?.joinToString(",")
+        ?: stringResource(R.string.common_all)
+
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState())
+    ) {
+        RuleSetStatusBadge(isDownloading = isDownloading, isEnabled = ruleSet.enabled)
+        Spacer(modifier = Modifier.width(6.dp))
+        RuleSetBadge(
+            text = outboundDisplayName ?: outboundText,
+            backgroundColor = ruleSetOutboundColor(outboundMode).copy(alpha = 0.8f),
+            contentColor = Color.White,
+            modifier = Modifier
+                .widthIn(max = 180.dp)
+                .clickable(enabled = !outboundDisplayName.isNullOrBlank(), onClick = onOutboundNameClick)
+        )
+        Spacer(modifier = Modifier.width(6.dp))
+        RuleSetBadge(
+            text = inboundText,
+            backgroundColor = Color(0xFFFF8F00).copy(alpha = 0.8f),
+            contentColor = Color.White
+        )
+    }
+}
+
+@Composable
+private fun RuleSetStatusBadge(isDownloading: Boolean, isEnabled: Boolean) {
+    if (isDownloading) {
+        CircularProgressIndicator(
+            modifier = Modifier.size(14.dp),
+            strokeWidth = 2.dp,
+            color = liquidGlassProgressColor(MaterialTheme.colorScheme.primary),
+            trackColor = liquidGlassProgressTrackColor(Color.Transparent)
+        )
+        Spacer(modifier = Modifier.width(4.dp))
+        Text(
+            text = stringResource(R.string.settings_updating),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    } else {
+        RuleSetBadge(
+            text = stringResource(if (isEnabled) R.string.common_ready else R.string.common_disabled),
+            backgroundColor = if (isEnabled) {
+                Color(0xFF2E7D32).copy(alpha = 0.8f)
+            } else {
+                Color(0xFF757575).copy(alpha = 0.8f)
+            },
+            contentColor = Color.White
+        )
+    }
+}
+
+private fun ruleSetOutboundColor(mode: RuleSetOutboundMode): Color = when (mode) {
+    RuleSetOutboundMode.DIRECT -> Color(0xFF1565C0)
+    RuleSetOutboundMode.BLOCK -> Color(0xFFC62828)
+    RuleSetOutboundMode.PROXY -> Color(0xFF7B1FA2)
+    RuleSetOutboundMode.NODE -> Color(0xFFE65100)
+    RuleSetOutboundMode.PROFILE -> Color(0xFF00838F)
+}
+
+private enum class RuleSetMenuAction {
+    EDIT,
+    DELETE,
+    OUTBOUND,
+    INBOUND
+}
+
+@Composable
+private fun RuleSetItemActions(
+    ruleSet: RuleSet,
+    onToggle: (Boolean) -> Unit,
+    onMenuAction: (RuleSetMenuAction) -> Unit
+) {
+    var showMenu by remember { mutableStateOf(false) }
+
+    Switch(
+        checked = ruleSet.enabled,
+        onCheckedChange = onToggle,
+        modifier = Modifier
+            .scale(0.8f)
+            .padding(end = 8.dp),
+        colors = liquidGlassSwitchColors()
+    )
+    if (!defaultRuleSetTags.contains(ruleSet.tag)) {
+        RuleSetItemMenu(
+            showMenu = showMenu,
+            onMenuStateChange = { showMenu = it },
+            onMenuAction = onMenuAction
+        )
+    }
+}
+
+@Composable
+private fun RuleSetItemMenu(
+    showMenu: Boolean,
+    onMenuStateChange: (Boolean) -> Unit,
+    onMenuAction: (RuleSetMenuAction) -> Unit
+) {
+    Box(modifier = Modifier.wrapContentSize(Alignment.TopStart)) {
+        IconButton(
+            modifier = Modifier.liquidGlassIconButtonPanel(),
+            onClick = { onMenuStateChange(true) }
+        ) {
+            Icon(
+                imageVector = Icons.Rounded.MoreVert,
+                contentDescription = "More actions",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        MaterialTheme(
+            shapes = MaterialTheme.shapes.copy(extraSmall = RoundedCornerShape(12.dp))
+        ) {
+            LiquidGlassDropdownMenu(
+                expanded = showMenu,
+                onDismissRequest = { onMenuStateChange(false) },
+                modifier = Modifier
+                    .width(100.dp)
+                    .ruleSetMenuPanel()
+            ) {
+                RuleSetMenuItem(R.string.common_edit) {
+                    onMenuStateChange(false)
+                    onMenuAction(RuleSetMenuAction.EDIT)
+                }
+                RuleSetMenuItem(R.string.common_delete) {
+                    onMenuStateChange(false)
+                    onMenuAction(RuleSetMenuAction.DELETE)
+                }
+                RuleSetMenuItem(R.string.common_outbound) {
+                    onMenuStateChange(false)
+                    onMenuAction(RuleSetMenuAction.OUTBOUND)
+                }
+                RuleSetMenuItem(R.string.common_inbound) {
+                    onMenuStateChange(false)
+                    onMenuAction(RuleSetMenuAction.INBOUND)
                 }
             }
         }
     }
+}
+
+@Composable
+private fun RuleSetMenuItem(textRes: Int, onClick: () -> Unit) {
+    DropdownMenuItem(
+        text = {
+            Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                Text(stringResource(textRes), color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        },
+        onClick = onClick,
+        colors = liquidGlassDropdownMenuItemColors()
+    )
 }
 
 @Composable
