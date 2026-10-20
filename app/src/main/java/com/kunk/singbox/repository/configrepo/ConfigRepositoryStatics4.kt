@@ -371,7 +371,8 @@ internal fun ConfigRepository.Companion.isDnsRuleValidForModernRuntime(
     rule: DnsRule,
     availableServerTags: Set<String>,
     ipOnlyRuleSetTags: Set<String> = emptySet(),
-    nested: Boolean = false
+    nested: Boolean = false,
+    availableRuleSetTags: Set<String>? = null
 ): Boolean {
     if (dnsRuleOutboundValues(rule).isNotEmpty()) return false
     if (!rule.strategy.isNullOrBlank() ||
@@ -387,10 +388,16 @@ internal fun ConfigRepository.Companion.isDnsRuleValidForModernRuntime(
     ) {
         return false
     }
+    if (availableRuleSetTags != null && rule.ruleSet.orEmpty().any { it !in availableRuleSetTags }) {
+        return false
+    }
     if (rule.type.equals("logical", ignoreCase = true)) {
         val nestedRules = rule.rules.orEmpty()
         return !nested && nestedRules.isNotEmpty() && nestedRules.all {
-            isDnsRuleValidForModernRuntime(it, availableServerTags, ipOnlyRuleSetTags, nested = true)
+            isDnsRuleValidForModernRuntime(
+                it, availableServerTags, ipOnlyRuleSetTags, nested = true,
+                availableRuleSetTags = availableRuleSetTags
+            )
         } && isDnsRuleActionValidForRuntime(rule, availableServerTags)
     }
     if (nested) {
@@ -413,10 +420,13 @@ internal fun ConfigRepository.Companion.isDnsRuleActionValidForRuntime(
 internal fun ConfigRepository.Companion.sanitizeDnsRulesForRuntime(
     rules: List<DnsRule>,
     availableServerTags: Set<String>,
-    ipOnlyRuleSetTags: Set<String> = emptySet()
+    ipOnlyRuleSetTags: Set<String> = emptySet(),
+    availableRuleSetTags: Set<String>? = null
 ): List<DnsRule> {
     return rules.map(::normalizeDnsOverrideRule).filter { rule ->
-        isDnsRuleValidForModernRuntime(rule, availableServerTags, ipOnlyRuleSetTags)
+        isDnsRuleValidForModernRuntime(
+            rule, availableServerTags, ipOnlyRuleSetTags, availableRuleSetTags = availableRuleSetTags
+        )
     }
 }
 

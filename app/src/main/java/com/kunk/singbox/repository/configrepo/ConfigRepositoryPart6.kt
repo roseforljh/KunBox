@@ -26,7 +26,8 @@ internal fun ConfigRepository.stripInternalMetadata(config: SingBoxConfig): Sing
         servers = runtimeDnsServers,
         rules = ConfigRepository.sanitizeDnsRulesForRuntime(
             config.dns.rules.orEmpty(),
-            runtimeDnsServers.mapNotNullTo(mutableSetOf()) { it.tag }
+            runtimeDnsServers.mapNotNullTo(mutableSetOf()) { it.tag },
+            availableRuleSetTags = config.route?.ruleSet.orEmpty().mapNotNullTo(mutableSetOf()) { it.tag }
         ),
         independentCache = null,
         fakeip = null

@@ -503,7 +503,8 @@ internal fun ConfigRepository.buildRunDns(
         rules = ConfigRepository.sanitizeDnsRulesForRuntime(
             runtimeDns.rules.orEmpty(),
             runtimeServerTags,
-            ipOnlyRuleSetTags
+            ipOnlyRuleSetTags,
+            availableRuleSetTags = validRuleSetTags
         ),
         independentCache = null,
         fakeip = null
