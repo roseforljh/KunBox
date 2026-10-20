@@ -1,5 +1,21 @@
 # Changelog
 
+## [2.24.3](https://github.com/roseforljh/KunBox/compare/v2.24.2...v2.24.3) (2026-10-20)
+
+
+### Bug Fixes
+
+* 优化VPN停止状态残留恢复与手动停止重启拦截 ([1bc39ce](https://github.com/roseforljh/KunBox/commit/1bc39ce60449a8b2bfe164e6899fbdc2594c2f7e))
+* 优化主节点连接异常通知与故障上报逻辑 ([018a936](https://github.com/roseforljh/KunBox/commit/018a936381dce459ce1c71ab6a08796f36c5de2c))
+* 优化规则集源标识计算与配置分流出站选择 ([a33cf68](https://github.com/roseforljh/KunBox/commit/a33cf68547c47460f216c33334af9f412fd5f318))
+* 修复mixed和system栈因排除自身导致TCP握手失败的问题 ([1ca83be](https://github.com/roseforljh/KunBox/commit/1ca83be5990eec7c972df86e7c37d38870b5072d))
+* 完善多进程服务模式状态判定与切模式停止等待 ([372e937](https://github.com/roseforljh/KunBox/commit/372e937d768dd0f2cf699c7ebd7784a6fd560b4d))
+* 将应用安装卸载广播调整为动态注册并更新忽略文件 ([bb0a011](https://github.com/roseforljh/KunBox/commit/bb0a0115b2a3157abf042fe38e3648f20ce70eb1))
+* 将活动节点确认纳入IPC状态持久化键并及时写入 ([f1ff323](https://github.com/roseforljh/KunBox/commit/f1ff323cbe6707962d8f1042756676af827413e8))
+* 强化控制通道自动恢复与前台保活启动机制 ([c833edd](https://github.com/roseforljh/KunBox/commit/c833edd175ff19a23eb207e02d6e494ab6c32337))
+* 清理运行时 DNS 中缺失规则集的引用 ([3d47a76](https://github.com/roseforljh/KunBox/commit/3d47a76d0b02d7d9852b1049bf97651a40361924))
+* 重构规则集列表弹窗展示与出站名称交互 ([d3390aa](https://github.com/roseforljh/KunBox/commit/d3390aac35bbb28e5a1772f01310ef3906e5dcec))
+
 ## [2.24.2](https://github.com/roseforljh/KunBox/compare/v2.24.1...v2.24.2) (2026-09-28)
 
 
