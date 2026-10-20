@@ -49,7 +49,8 @@ internal fun SingBoxCore.stripLatencyRuntimeMetadata(config: SingBoxConfig): Sin
         servers = runtimeDnsServers,
         rules = ConfigRepository.sanitizeDnsRulesForRuntime(
             config.dns.rules.orEmpty(),
-            runtimeDnsServers.mapNotNullTo(mutableSetOf()) { it.tag }
+            runtimeDnsServers.mapNotNullTo(mutableSetOf()) { it.tag },
+            availableRuleSetTags = config.route?.ruleSet.orEmpty().mapNotNullTo(mutableSetOf()) { it.tag }
         ),
         independentCache = null,
         fakeip = null

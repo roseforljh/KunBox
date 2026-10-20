@@ -218,7 +218,8 @@ class SingBoxCore private constructor(internal val context: Context) {
                     action = "route",
                     server = LATENCY_LOCAL_DNS_TAG
                 ),
-                serverTags
+                serverTags,
+                availableRuleSetTags = emptySet()
             )
 
             return DnsConfig(
