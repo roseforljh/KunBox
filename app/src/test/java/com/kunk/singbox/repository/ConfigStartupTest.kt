@@ -78,6 +78,68 @@ class ConfigStartupTest {
     }
 
     @Test
+    fun qualifiedDetoursSurvivePreValidationAndResolveForAppRouting() {
+        val node = Outbound(type = "trojan", tag = "app-node", detour = "profile-b::front")
+        val front = Outbound(type = "socks", tag = "front", detour = "profile-c::hop")
+        val hop = Outbound(type = "http", tag = "hop")
+        val sourceProfiles = mapOf(
+            "profile-a" to listOf(node),
+            "profile-b" to listOf(front),
+            "profile-c" to listOf(hop)
+        )
+        val resolution = ConfigRepository.resolveRuntimeOutboundDependencies(
+            rootReferences = listOf("profile-a" to node.tag),
+            reservedTags = setOf("PROXY", "direct", "front")
+        ) { profileId ->
+            sourceProfiles[profileId]?.let { outbounds ->
+                filterRuntimeOutbounds(outbounds) { candidates ->
+                    candidates.all { it.detour == null || candidates.any { target -> target.tag == it.detour } }
+                }
+            }
+        }
+
+        val targetTag = resolution.runtimeTags.getValue("profile-a" to node.tag)
+        val frontTag = resolution.runtimeTags.getValue("profile-b" to front.tag)
+        val hopTag = resolution.runtimeTags.getValue("profile-c" to hop.tag)
+        assertEquals(frontTag, resolution.outbounds.first { it.tag == targetTag }.detour)
+        assertEquals(hopTag, resolution.outbounds.first { it.tag == frontTag }.detour)
+        assertTrue(resolution.outbounds.any { it.tag == hopTag })
+        assertEquals("profile-b::front", node.detour)
+    }
+
+    @Test
+    fun fallbackValidationPreservesSameProfileQualifiedDetourButStillDropsInvalidNode() {
+        val hop = Outbound(type = "socks", tag = "hop")
+        val node = Outbound(type = "trojan", tag = "node", detour = "profile-a::hop")
+        val bad = Outbound(type = "trojan", tag = "bad")
+        val result = filterRuntimeOutbounds(listOf(node, hop, bad)) { candidates ->
+            candidates.none { it.tag == "bad" } && candidates.all { candidate ->
+                candidate.detour == null || candidates.any { it.tag == candidate.detour }
+            }
+        }
+
+        assertEquals(listOf(node, hop), result)
+    }
+
+    @Test
+    fun missingQualifiedDetourStillRejectsRoutingTargetAfterPreValidation() {
+        val node = Outbound(type = "trojan", tag = "app-node", detour = "missing-profile::front")
+        val resolution = ConfigRepository.resolveRuntimeOutboundDependencies(
+            rootReferences = listOf("profile-a" to node.tag),
+            reservedTags = setOf("PROXY", "direct")
+        ) { profileId ->
+            if (profileId == "profile-a") {
+                filterRuntimeOutbounds(listOf(node)) { candidates -> candidates.all { it.detour == null } }
+            } else {
+                null
+            }
+        }
+
+        assertTrue(resolution.outbounds.isEmpty())
+        assertTrue(resolution.runtimeTags.isEmpty())
+    }
+
+    @Test
     fun startupUsesSavedProfileAndValidatesCompleteConfigBeforeWriting() {
         val body = File("src/main/java/com/kunk/singbox/repository/configrepo/ConfigRepositoryPart5.kt")
             .readText(Charsets.UTF_8)
