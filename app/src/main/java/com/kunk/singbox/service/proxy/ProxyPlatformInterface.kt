@@ -22,7 +22,6 @@ import io.nekohasekai.libbox.PlatformInterface
 import io.nekohasekai.libbox.ShellSession
 import io.nekohasekai.libbox.TunOptions
 import io.nekohasekai.libbox.WIFIState
-import java.io.File
 import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.NetworkInterface
@@ -45,28 +44,6 @@ internal fun ProxyOnlyService.createProxyOnlyPlatformInterface(): PlatformInterf
     }
 
     override fun usePlatformAutoDetectInterfaceControl(): Boolean = true
-
-    override fun useProcFS(): Boolean {
-        val procPaths = listOf(
-            "/proc/net/tcp",
-            "/proc/net/tcp6",
-            "/proc/net/udp",
-            "/proc/net/udp6"
-        )
-
-        fun hasUidHeader(path: String): Boolean {
-            return try {
-                val file = File(path)
-                if (!file.exists() || !file.canRead()) return false
-                val header = file.bufferedReader().use { it.readLine() } ?: return false
-                header.contains("uid")
-            } catch (_: Exception) {
-                false
-            }
-        }
-
-        return procPaths.all { path -> hasUidHeader(path) }
-    }
 
     override fun findConnectionOwner(
         ipProtocol: Int,

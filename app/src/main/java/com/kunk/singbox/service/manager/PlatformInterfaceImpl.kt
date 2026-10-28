@@ -448,20 +448,6 @@ class PlatformInterfaceImpl(
         return readable
     }
 
-    override fun useProcFS(): Boolean {
-        val procFsReadable = getProcFsReadable()
-        val settings = callbacks.getCurrentSettings()
-        val forceOwnerRouting = resolveForceConnectionOwnerRouting(
-            callbacks.forceConnectionOwnerRouting(),
-            settings
-        )
-        val exposeProcFs = procFsReadable && !forceOwnerRouting
-        if (!exposeProcFs && procFsReadable && forceOwnerRouting) {
-            callbacks.setConnectionOwnerLastEvent("app_routing_force_findConnectionOwner")
-        }
-        return exposeProcFs
-    }
-
     @Suppress("LongMethod", "CyclomaticComplexMethod", "CognitiveComplexMethod", "ReturnCount")
     override fun findConnectionOwner(
         ipProtocol: Int,

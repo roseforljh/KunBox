@@ -124,7 +124,6 @@ internal class TestPlatformInterface(private val context: Context) : PlatformInt
     }
 
     override fun usePlatformAutoDetectInterfaceControl(): Boolean = true
-    override fun useProcFS(): Boolean = false
 
     override fun findConnectionOwner(
         p0: Int,

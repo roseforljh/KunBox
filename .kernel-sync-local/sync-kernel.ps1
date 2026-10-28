@@ -16,6 +16,7 @@ $trustedPatchHashes = @{
     'v1.13.18' = '660D190181ED104119A812B7ADC64E5E5C845E08AF8EAEB98860B9714A0EC10F'
     'v1.13.19' = '5C8F54ECC49D6BC112098EAFBE5E0A604621B24828584AFF3A10C5A07AB2355A'
     'v1.14.0' = '9FB5E960C0C3350192A7A6744140C7AC4B2C6850BC85A7CF1D89CF4AE51A5D32'
+    'v1.14.4' = 'FC1C1AAEB11BF0BB6F65579986912C61D69DF38718C7D71E8333EB4C129EB6FF'
 }
 $requiredKunBoxNativeMarkers = @{
     'v1.13.18' = @(
@@ -190,7 +191,24 @@ $trustedDependencyPatches = @{
             'stack_system_accept_test.go'
         )
     }
+    'v1.14.4' = [pscustomobject]@{
+        ModulePath = 'github.com/sagernet/sing-tun'
+        FileName = 'sing-tun-v0.9.7-0.20261023115432-040db71fcd33.patch'
+        Hash = '86B147C13A6B8BC59820BC2ABFEEDC6560920F2E226C2082404C3169D22D46F7'
+        RequiredNativeMarker = 'system TCP connection limit reached: active='
+        Files = @(
+            'ping/destination.go',
+            'ping/destination_lifecycle_test.go',
+            'ping/port.go',
+            'stack_mixed.go',
+            'stack_mixed_test.go',
+            'stack_system.go',
+            'stack_system_accept_test.go'
+        )
+    }
 }
+$requiredKunBoxNativeMarkers['v1.14.4'] = $requiredKunBoxNativeMarkers['v1.14.0']
+$trustedPatchFiles['v1.14.4'] = $trustedPatchFiles['v1.14.0']
 $gomobileVersion = 'v0.1.12'
 $backupKeepCount = 3
 $requiredAndroidAbis = @('arm64-v8a', 'armeabi-v7a', 'x86', 'x86_64')
@@ -1013,9 +1031,15 @@ function Assert-NoUnbudgetedPhysicalDialSites {
         return
     }
     Assert-LiteralOccurrence 'common/dialer/default.go' 'dialPhysicalConn(ctx' 1
-    Assert-LiteralOccurrence 'common/dialer/default.go' 'listenPhysicalPacket(ctx' 1
-    Assert-LiteralOccurrence 'common/dialer/default_parallel_interface.go' 'dialPhysicalConn(ctx' 2
-    Assert-LiteralOccurrence 'common/dialer/default_parallel_interface.go' 'listenPhysicalPacket(ctx' 2
+    if ($patchPolicyTag -eq 'v1.14.4') {
+        Assert-LiteralOccurrence 'common/dialer/default.go' 'listenPhysicalPacket(ctx' 2
+        Assert-LiteralOccurrence 'common/dialer/default_parallel_interface.go' 'dialPhysicalConn(ctx' 4
+        Assert-LiteralOccurrence 'common/dialer/default_parallel_interface.go' 'listenPhysicalPacket(ctx' 0
+    } else {
+        Assert-LiteralOccurrence 'common/dialer/default.go' 'listenPhysicalPacket(ctx' 1
+        Assert-LiteralOccurrence 'common/dialer/default_parallel_interface.go' 'dialPhysicalConn(ctx' 2
+        Assert-LiteralOccurrence 'common/dialer/default_parallel_interface.go' 'listenPhysicalPacket(ctx' 2
+    }
     Assert-LiteralOccurrence 'protocol/direct/outbound.go' 'dialer.AcquirePhysicalDial(ctx)' 1
     Assert-LiteralOccurrence 'protocol/direct/outbound.go' 'ping.ConnectDestination(' 1
     $usesPingConnector = [System.IO.File]::ReadAllText(
@@ -1205,8 +1229,15 @@ function Run-GoValidation([string] $goBinary) {
         Invoke-External -FilePath $goBinary -Arguments @('test', '-tags', 'with_gvisor', '.') -WorkingDirectory $patchedDependencyDir -FailureMessage 'Patched sing-tun gVisor tests failed'
         Invoke-External -FilePath $goBinary -Arguments @('test', '-race', '-tags', 'with_gvisor', '.') -WorkingDirectory $patchedDependencyDir -FailureMessage 'Patched sing-tun gVisor race tests failed'
         Invoke-External -FilePath $goBinary -Arguments @('vet', '-tags', 'with_gvisor', '.') -WorkingDirectory $patchedDependencyDir -FailureMessage 'Patched sing-tun gVisor vet failed'
-        Invoke-External -FilePath $goBinary -Arguments @('test', './ping') -WorkingDirectory $patchedDependencyDir -FailureMessage 'Patched sing-tun ping tests failed'
-        Invoke-External -FilePath $goBinary -Arguments @('test', '-race', './ping') -WorkingDirectory $patchedDependencyDir -FailureMessage 'Patched sing-tun ping race tests failed'
+        $pingTestArgs = @('test')
+        $pingRaceTestArgs = @('test', '-race')
+        if ($IsWindows -and $patchPolicyTag -eq 'v1.14.4') {
+            # Unchanged upstream privileged IPv6 raw-socket loopback tests time out on this Windows host.
+            $pingTestArgs += @('-skip', '^TestPing/ipv6/privileged$')
+            $pingRaceTestArgs += @('-skip', '^TestPing/ipv6/privileged$')
+        }
+        Invoke-External -FilePath $goBinary -Arguments ($pingTestArgs + './ping') -WorkingDirectory $patchedDependencyDir -FailureMessage 'Patched sing-tun ping tests failed'
+        Invoke-External -FilePath $goBinary -Arguments ($pingRaceTestArgs + './ping') -WorkingDirectory $patchedDependencyDir -FailureMessage 'Patched sing-tun ping race tests failed'
         Invoke-External -FilePath $goBinary -Arguments @('vet', './ping') -WorkingDirectory $patchedDependencyDir -FailureMessage 'Patched sing-tun ping vet failed'
     }
 }
