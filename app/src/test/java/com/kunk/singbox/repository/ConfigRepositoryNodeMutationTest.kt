@@ -1,5 +1,6 @@
 package com.kunk.singbox.repository
 
+import com.google.gson.Gson
 import com.kunk.singbox.model.DnsConfig
 import com.kunk.singbox.model.DnsRule
 import com.kunk.singbox.model.DnsServer
@@ -16,6 +17,47 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ConfigRepositoryNodeMutationTest {
+
+    @Test
+    fun subscriptionUpdatePreservesDetoursAndRefreshesOtherNodeFields() {
+        val previous = SingBoxConfig(outbounds = listOf(
+            Outbound(type = "socks", tag = "same-profile", detour = "profile-a::front"),
+            Outbound(type = "socks", tag = "cross-profile", detour = "profile-b::front"),
+            Outbound(type = "socks", tag = "bare-tag", detour = "front"),
+            Outbound(type = "socks", tag = "removed", detour = "profile-b::front")
+        ))
+        val updated = SingBoxConfig(outbounds = listOf(
+            Outbound(type = "socks", tag = "same-profile", server = "new.example", serverPort = 2080),
+            Outbound(type = "socks", tag = "cross-profile", detour = "subscription-front"),
+            Outbound(type = "socks", tag = "bare-tag"),
+            Outbound(type = "socks", tag = "added", detour = "new-front")
+        ))
+
+        val merged = preserveSubscriptionDetours(previous, updated)
+        val nodes = merged.outbounds.orEmpty().associateBy(Outbound::tag)
+        assertEquals("profile-a::front", nodes.getValue("same-profile").detour)
+        assertEquals("new.example", nodes.getValue("same-profile").server)
+        assertEquals(2080, nodes.getValue("same-profile").serverPort)
+        assertEquals("profile-b::front", nodes.getValue("cross-profile").detour)
+        assertEquals("front", nodes.getValue("bare-tag").detour)
+        assertEquals("new-front", nodes.getValue("added").detour)
+        assertFalse(nodes.containsKey("removed"))
+
+        val gson = Gson()
+        val reloaded = gson.fromJson(gson.toJson(merged), SingBoxConfig::class.java)
+        assertEquals(merged, preserveSubscriptionDetours(reloaded, updated))
+    }
+
+    @Test
+    fun subscriptionUpdateUsesIncomingDetourWhenNoSavedDetourExists() {
+        val updated = SingBoxConfig(outbounds = listOf(
+            Outbound(type = "socks", tag = "node", detour = "new-front")
+        ))
+        val previous = SingBoxConfig(outbounds = listOf(Outbound(type = "socks", tag = "node")))
+
+        assertEquals(updated, preserveSubscriptionDetours(null, updated))
+        assertEquals(updated, preserveSubscriptionDetours(previous, updated))
+    }
 
     @Test
     fun renameUsesFinalUniqueTagAndRewritesEveryOutboundReference() {

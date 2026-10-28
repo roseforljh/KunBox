@@ -28,7 +28,9 @@ data class SingBoxConfig(
     @SerializedName("services") val services: List<JsonElement>? = null,
     @SerializedName("experimental") val experimental: ExperimentalConfig? = null,
     // Add default outbounds for compatibility with non-standard config formats where outbounds are in a different field or handled differently
-    @SerializedName("proxies") val proxies: List<Outbound>? = null
+    @SerializedName("proxies") val proxies: List<Outbound>? = null,
+    // 本地来源记录，只保存到配置文件，不传给内核。
+    @SerializedName("_kunbox_subscription_outbound_tags") val subscriptionOutboundTags: List<String>? = null
 )
 
 @Keep

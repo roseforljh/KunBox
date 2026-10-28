@@ -443,7 +443,7 @@ internal suspend fun ConfigRepository.importFromSubscriptionUpdate(
         val config = fetchResult.config
         val userInfo = fetchResult.userInfo
 
-        val deduplicatedConfig = deduplicateTags(config)
+        val deduplicatedConfig = mergeSubscriptionConfig(loadConfig(profile.id), deduplicateTags(config))
         val newNodes = extractNodesFromConfig(deduplicatedConfig, profile.id)
         val newNodeNames = newNodes.map { it.name }.toSet()
         val addedNodes = newNodeNames - oldNodeNames

@@ -382,7 +382,7 @@ internal fun ConfigRepository.parseSubscriptionResponse(
             terminalError = error
         )
     }
-    val config = parsedConfig?.let(::deduplicateTags)
+    val config = parsedConfig?.let(::deduplicateTags)?.let { mergeSubscriptionConfig(null, it) }
     if (config == null || config.outbounds.isNullOrEmpty()) {
         Log.w(ConfigRepository.TAG, "Failed to parse subscription response with UA '$userAgent'")
         return ConfigRepositorySubscriptionAttemptResult()
