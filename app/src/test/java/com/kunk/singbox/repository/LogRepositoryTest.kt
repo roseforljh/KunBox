@@ -146,4 +146,19 @@ class LogRepositoryTest {
 
         assertTrue(repository.getLogsAsText().contains("resource_fd process=bg count=32700"))
     }
+
+    @Test
+    fun diagnosticSaturationStillKeepsRecentRequestWindow() {
+        repository.setEnabled(true)
+        repository.clearLogs()
+        repeat(2_000) { repository.addAlwaysLog("METRIC resource_fd sample=$it") }
+        repeat(2_100) { repository.addLog("INFO request index=$it") }
+
+        val lines = repository.getLogsAsText().lines()
+        assertEquals(1_000, lines.count { it.contains("METRIC resource_fd ") })
+        assertEquals(
+            (1_100 until 2_100).map { "INFO request index=$it" },
+            lines.filter { it.contains("INFO request index=") }.map { it.substringAfter("] ") }
+        )
+    }
 }
