@@ -32,6 +32,22 @@ jobs:
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
 
+      - name: Fetch pinned RayBox source
+        uses: actions/checkout@v4
+        with:
+          repository: roseforljh/RayBox-rx
+          ref: 8d7fac540fd5a8f74fe844f406fe435631e09294
+          path: raybox-source
+          fetch-depth: 0
+
+      - name: Install verified RayBox release
+        shell: bash
+        run: |
+          python3 -I tools/sync_raybox.py \
+            --source "$GITHUB_WORKSPACE/raybox-source" \
+            --release-lock docs/raybox-unification/raybox-android.lock.json \
+            --project "$GITHUB_WORKSPACE"
+
       - name: Normalize and grant execute permission for gradlew
         run: |
           sed -i 's/\r$//' ./gradlew
