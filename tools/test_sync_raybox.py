@@ -152,7 +152,7 @@ class CandidateInstallChecks(unittest.TestCase):
     def test_release_rejects_mismatched_remote_tag_before_download(self):
         with patch.object(sync.subprocess, "check_output", return_value="c" * 40), \
                 patch.object(sync.subprocess, "run") as download:
-            with self.assertRaisesRegex(ValueError, "tag"):
+            with self.assertRaisesRegex(ValueError, "[Cc]hecked out RayBox source"):
                 sync.install_release(self.source, self.project, self.release_lock())
             download.assert_not_called()
         self.assertEqual((self.libs / "raybox.aar").read_bytes(), b"original core")
