@@ -16,7 +16,14 @@ def sha256(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def install_candidate(source, project, allow_dirty=False, directory=None, phone_arm64=False):
+def install_candidate(
+    source,
+    project,
+    allow_dirty=False,
+    directory=None,
+    phone_arm64=False,
+    strict_source_digest=True,
+):
     checker_path = source / "tools/check_android_artifacts.py"
     spec = importlib.util.spec_from_file_location("raybox_artifacts", checker_path)
     checker = importlib.util.module_from_spec(spec)
@@ -33,8 +40,11 @@ def install_candidate(source, project, allow_dirty=False, directory=None, phone_
     if manifest.get("schemaVersion") != 1 or manifest.get("repository") != "roseforljh/RayBox-rx":
         raise ValueError("Unexpected RayBox manifest source")
     for key in ("commit", "dirty", "sourceDigest", "sourceDigestAlgorithm"):
-        if key not in manifest or manifest[key] != identity[key]:
+        if key not in manifest:
             raise ValueError("Candidate does not match current source: " + key)
+        if key != "sourceDigest" or strict_source_digest:
+            if manifest[key] != identity[key]:
+                raise ValueError("Candidate does not match current source: " + key)
     expected_tag = None if identity["dirty"] else "android-" + identity["commit"]
     if "tag" not in manifest or manifest["tag"] != expected_tag:
         raise ValueError("Unexpected candidate tag")
@@ -161,7 +171,7 @@ def install_release(source, project, lock_path):
             if source_name is None:
                 raise ValueError("Downloaded release is missing " + entry["name"])
             shutil.copyfile(directory / source_name, canonical)
-        return install_candidate(source, project, directory=directory)
+        return install_candidate(source, project, directory=directory, strict_source_digest=False)
 
 
 if __name__ == "__main__":

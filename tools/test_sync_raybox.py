@@ -157,6 +157,22 @@ class CandidateInstallChecks(unittest.TestCase):
             download.assert_not_called()
         self.assertEqual((self.libs / "raybox.aar").read_bytes(), b"original core")
 
+    def test_clean_release_allows_generated_source_digest_difference(self):
+        self.identity["dirty"] = False
+        self.manifest["dirty"] = False
+        self.manifest["tag"] = "android-" + self.identity["commit"]
+        self.manifest["sourceDigest"] = "c" * 64
+        self.write_manifest()
+        def download(command, check):
+            destination = Path(command[command.index("--dir") + 1])
+            (destination / "build.json").write_text(json.dumps(self.manifest), encoding="utf-8")
+            for name in ("raybox.aar", "raybox-legacy.aar"):
+                (destination / name).write_bytes(name.encode())
+        with patch.object(sync.subprocess, "check_output", return_value=self.identity["commit"]), \
+                patch.object(sync.subprocess, "run", side_effect=download):
+            result = sync.install_release(self.source, self.project, self.release_lock())
+        self.assertFalse(result["dirty"])
+
     def test_release_rejects_changed_checksums_without_replacement(self):
         self.manifest["dirty"] = False
         def download(command, check):
