@@ -36,7 +36,7 @@ import com.kunk.singbox.service.notification.VpnNotificationManager
 import com.kunk.singbox.utils.LocaleHelper
 import com.kunk.singbox.utils.NetworkClient
 import com.kunk.singbox.utils.perf.ResourceGuardRegistration
-import io.nekohasekai.libbox.*
+import io.raybox.raybox.*
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean

@@ -18,6 +18,24 @@ import org.junit.Test
 
 class DiagnosticConnectionSafetyTest {
     @Test
+    fun redactorHidesNestedXrayCredentials() {
+        val source = """
+            {"outbounds":[{"type":"xray","outbound":{"protocol":"vless",
+            "settings":{"vnext":[{"users":[{"id":"CANARY_ID","encryption":"CANARY_ENCRYPTION"}]}]},
+            "streamSettings":{"realitySettings":{"publicKey":"CANARY_PUBLIC","shortId":"CANARY_SHORT",
+            "public_key":"CANARY_PUBLIC_SNAKE","short_id":"CANARY_SHORT_SNAKE"},
+            "xhttpSettings":{"extra":{"rx":{"authKey":"CANARY_AUTH","sessionId":"CANARY_SESSION",
+            "auth_key":"CANARY_AUTH_SNAKE","session_id":"CANARY_SESSION_SNAKE"}}}}}}]}
+        """.trimIndent()
+        val redacted = DiagnosticRedactor("test-salt".toByteArray()).redactJson(source)
+        assertTrue(JsonParser.parseString(redacted).asJsonObject.has("outbounds"))
+        listOf(
+            "CANARY_ID", "CANARY_ENCRYPTION", "CANARY_PUBLIC", "CANARY_SHORT", "CANARY_AUTH", "CANARY_SESSION",
+            "CANARY_PUBLIC_SNAKE", "CANARY_SHORT_SNAKE", "CANARY_AUTH_SNAKE", "CANARY_SESSION_SNAKE"
+        )
+            .forEach { assertFalse("未脱敏: $it", redacted.contains(it)) }
+    }
+    @Test
     fun diagnosticArchiveEntriesIncludeRedactedConnectionIncidents() {
         val canaryPackage = "com.private.connectionstorm"
         val canarySource = "203.0.113.42:54321"

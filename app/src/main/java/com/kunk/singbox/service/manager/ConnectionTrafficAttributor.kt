@@ -32,7 +32,7 @@ internal data class AttributedConnectionTraffic(
 
 internal object ConnectionTrafficEventReader {
     @Suppress("CognitiveComplexMethod")
-    fun read(events: io.nekohasekai.libbox.ConnectionEvents): List<ConnectionTrafficEventData> {
+    fun read(events: io.raybox.raybox.ConnectionEvents): List<ConnectionTrafficEventData> {
         val iterator = events.iterator()
         return buildList {
             while (iterator.hasNext()) {
@@ -88,7 +88,7 @@ internal object ConnectionTrafficEventReader {
         }
     }
 
-    private fun readIterator(iterator: io.nekohasekai.libbox.StringIterator?): List<String> {
+    private fun readIterator(iterator: io.raybox.raybox.StringIterator?): List<String> {
         iterator ?: return emptyList()
         return buildList {
             while (iterator.hasNext()) {

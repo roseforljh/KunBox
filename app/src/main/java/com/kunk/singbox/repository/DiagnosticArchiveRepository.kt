@@ -224,6 +224,10 @@ internal class DiagnosticArchiveRepository(
                 addProperty("device_model", Build.MODEL)
                 addProperty("android_version", Build.VERSION.RELEASE)
                 addProperty("android_api", Build.VERSION.SDK_INT)
+                addProperty("raybox_commit", com.kunk.singbox.BuildConfig.RAYBOX_COMMIT)
+                addProperty("raybox_source_digest", com.kunk.singbox.BuildConfig.RAYBOX_SOURCE_DIGEST)
+                addProperty("raybox_aar_sha256", com.kunk.singbox.BuildConfig.RAYBOX_AAR_SHA256)
+                addProperty("raybox_dirty", com.kunk.singbox.BuildConfig.RAYBOX_DIRTY)
                 addProperty("resource_sample_count", samples.size)
                 addProperty("resource_current_version_sample_count", resourceSummary.currentVersionSampleCount)
                 addProperty("resource_historical_sample_count", resourceSummary.historicalSampleCount)
@@ -440,6 +444,14 @@ internal class DiagnosticRedactor(private val salt: ByteArray) {
             "authorization",
             "client_key",
             "client_secret",
+            "encryption",
+            "publickey",
+            "shortid",
+            "authkey",
+            "auth_key",
+            "sessionid",
+            "session_id",
+            "id",
             "cookie",
             "passphrase",
             "password",

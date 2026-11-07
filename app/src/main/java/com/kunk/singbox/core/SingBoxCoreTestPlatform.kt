@@ -5,7 +5,7 @@ import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.util.Log
 import com.kunk.singbox.utils.DefaultNetworkListener
-import io.nekohasekai.libbox.*
+import io.raybox.raybox.*
 import java.net.NetworkInterface
 import java.util.Collections
 
@@ -97,9 +97,9 @@ internal class TestPlatformInterface(private val context: Context) : PlatformInt
             object : NetworkInterfaceIterator {
                 private val iterator = interfaces.filter { it.isUp && !it.isLoopback }.iterator()
                 override fun hasNext(): Boolean = iterator.hasNext()
-                override fun next(): io.nekohasekai.libbox.NetworkInterface {
+                override fun next(): io.raybox.raybox.NetworkInterface {
                     val iface = iterator.next()
-                    return io.nekohasekai.libbox.NetworkInterface().apply {
+                    return io.raybox.raybox.NetworkInterface().apply {
                         name = iface.name
                         index = iface.index
                         mtu = iface.mtu
@@ -125,6 +125,8 @@ internal class TestPlatformInterface(private val context: Context) : PlatformInt
 
     override fun usePlatformAutoDetectInterfaceControl(): Boolean = true
 
+    override fun useProcFS(): Boolean = false
+
     override fun findConnectionOwner(
         p0: Int,
         p1: String?,
@@ -139,7 +141,7 @@ internal class TestPlatformInterface(private val context: Context) : PlatformInt
     override fun includeAllNetworks(): Boolean = false
     override fun readWIFIState(): WIFIState? = null
     override fun clearDNSCache() {}
-    override fun sendNotification(p0: io.nekohasekai.libbox.Notification?) {}
+    override fun sendNotification(p0: io.raybox.raybox.Notification?) {}
     override fun cancelNotification(identifier: String?, typeID: Int) {}
     override fun startNeighborMonitor(listener: NeighborUpdateListener?) =
         throw UnsupportedOperationException("Platform neighbor monitor is unavailable")
@@ -164,15 +166,15 @@ internal class TestPlatformInterface(private val context: Context) : PlatformInt
     override fun usePlatformBridge(): Boolean = false
     override fun createBridge(options: BridgeOptions?): BridgeSession =
         throw UnsupportedOperationException("Platform bridge is unavailable")
-    override fun localDNSTransport(): io.nekohasekai.libbox.LocalDNSTransport {
+    override fun localDNSTransport(): io.raybox.raybox.LocalDNSTransport {
         return com.kunk.singbox.core.LocalResolverImpl
     }
 }
 
-internal class TestCommandServerHandler : io.nekohasekai.libbox.CommandServerHandler {
+internal class TestCommandServerHandler : io.raybox.raybox.CommandServerHandler {
     override fun serviceStop() {}
     override fun serviceReload() {}
-    override fun getSystemProxyStatus(): io.nekohasekai.libbox.SystemProxyStatus? = null
+    override fun getSystemProxyStatus(): io.raybox.raybox.SystemProxyStatus? = null
     override fun setSystemProxyEnabled(isEnabled: Boolean) {}
     override fun triggerNativeCrash() = Unit
     override fun connectSSHAgent(): Int = -1

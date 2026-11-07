@@ -60,9 +60,15 @@ buildScript/
 app/libs/*.zip
 app/libs/classes_check/
 app/libs/libbox_check/
+app/libs/raybox-build.json
+app/libs/raybox.aar
+app/libs/raybox-backup/
+tools/__pycache__/
 docs/
 !docs/
 docs/*
+!docs/raybox-unification/
+!docs/raybox-unification/**
 !docs/plans/
 docs/plans/*
 !docs/plans/ROOT_TRANSPARENT_PROXY_IMPLEMENTATION_PLAN.md

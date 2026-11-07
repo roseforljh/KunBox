@@ -23,6 +23,66 @@ class NodeLinkExporterTest {
     private val gson = Gson()
 
     @Test
+    fun exportVlessPreservesPacketEncodingAndReality() {
+        val outbound = Outbound(
+            type = "vless",
+            tag = "Reality packet",
+            server = "example.com",
+            serverPort = 443,
+            uuid = "uuid",
+            packetEncoding = "",
+            tls = TlsConfig(
+                enabled = true,
+                serverName = "target.example.com",
+                reality = com.kunk.singbox.model.RealityConfig(
+                    enabled = true,
+                    publicKey = "public+key",
+                    shortId = "short/id"
+                )
+            )
+        )
+
+        val parsed = NodeLinkExporter.export(outbound, gson)?.let { NodeLinkParser(gson).parse(it) }
+
+        assertEquals("", parsed?.packetEncoding)
+        assertEquals(true, parsed?.tls?.reality?.enabled)
+        assertEquals("public+key", parsed?.tls?.reality?.publicKey)
+        assertEquals("short/id", parsed?.tls?.reality?.shortId)
+    }
+
+    @Test
+    fun exportAnyTlsPreservesRealityAndCaCertificateFields() {
+        val ca = "-----BEGIN CERTIFICATE-----\nA+B/C==\n-----END CERTIFICATE-----"
+        val outbound = Outbound(
+            type = "anytls",
+            tag = "AnyTLS cert",
+            server = "example.com",
+            serverPort = 443,
+            password = "p@ss word",
+            tls = TlsConfig(
+                enabled = true,
+                serverName = "target.example.com",
+                alpn = listOf("h2", "http/1.1"),
+                utls = com.kunk.singbox.model.UtlsConfig(enabled = true, fingerprint = "chrome"),
+                reality = com.kunk.singbox.model.RealityConfig(
+                    enabled = true,
+                    publicKey = "public-key",
+                    shortId = "sid"
+                ),
+                ca = listOf(ca)
+            )
+        )
+
+        val parsed = NodeLinkExporter.export(outbound, gson)?.let { NodeLinkParser(gson).parse(it) }
+
+        assertEquals("p@ss word", parsed?.password)
+        assertEquals(true, parsed?.tls?.reality?.enabled)
+        assertEquals("public-key", parsed?.tls?.reality?.publicKey)
+        assertEquals(outbound.tls?.utls, parsed?.tls?.utls)
+        assertEquals(outbound.tls?.alpn, parsed?.tls?.alpn)
+        assertEquals(listOf(ca), parsed?.tls?.ca)
+    }
+    @Test
     fun exportNaivePreservesMultiValueExtraHeaders() {
         val outbound = gson.fromJson(
             """
@@ -127,8 +187,7 @@ class NodeLinkExporterTest {
         val link = NodeLinkExporter.export(outbound, gson)
 
         assertNotNull(link)
-        assertTrue(link!!.contains("encryption=none"))
-        assertFalse(link.contains("mlkem768x25519plus.native.0rtt.sample"))
+        assertTrue(link!!.contains("encryption=mlkem768x25519plus.native.0rtt.sample"))
         assertTrue(link.contains("type=ws"))
         assertTrue(link.contains("flow=xtls-rprx-vision"))
     }
@@ -181,7 +240,21 @@ class NodeLinkExporterTest {
             transport = TransportConfig(type = "xhttp", path = "/private")
         )
 
-        assertNull(NodeLinkExporter.export(outbound, gson))
+        val parsed = NodeLinkExporter.export(outbound, gson)?.let { NodeLinkParser(gson).parse(it) }
+        assertEquals(outbound.encryption, parsed?.encryption)
+    }
+
+    @Test
+    fun xhttpExtraRoundTripsForAllThreeProtocols() {
+        val extra = JsonParser.parseString("""{"rx":{"enabled":true},"xmux":{"maxConcurrency":"1-4"}}""").asJsonObject
+        listOf("vless", "vmess", "trojan").forEach { type ->
+            val outbound = Outbound(
+                type = type, tag = type, server = "example.com", serverPort = 443,
+                uuid = "uuid", password = "secret", transport = TransportConfig(type = "xhttp", extra = extra)
+            )
+            val parsed = NodeLinkExporter.export(outbound, gson)?.let { NodeLinkParser(gson).parse(it) }
+            assertEquals(extra, parsed?.transport?.extra)
+        }
     }
 
     @Test
@@ -301,7 +374,10 @@ class NodeLinkExporterTest {
             obfs = ObfsConfig(type = "salamander", password = "obfs-secret"),
             serverPorts = listOf("20000-21000"),
             hopInterval = "30s",
+            hopIntervalMax = "60s",
             network = listOf("udp"),
+            bbrProfile = "conservative",
+            disableChromeParrot = false,
             disableMtuDiscovery = true,
             tls = TlsConfig(enabled = true, serverName = "edge.example.com", alpn = listOf("h3"))
         )
@@ -315,6 +391,9 @@ class NodeLinkExporterTest {
         assertEquals("obfs-secret", parsed?.obfs?.password)
         assertEquals(listOf("20000-21000"), parsed?.serverPorts)
         assertEquals("30s", parsed?.hopInterval)
+        assertEquals("60s", parsed?.hopIntervalMax)
+        assertEquals("conservative", parsed?.bbrProfile)
+        assertEquals(false, parsed?.disableChromeParrot)
         assertEquals(listOf("udp"), parsed?.network)
         assertFalse(link.orEmpty().contains("disable_mtu_discovery"))
         assertNull(parsed?.disableMtuDiscovery)
@@ -381,6 +460,45 @@ class NodeLinkExporterTest {
         assertEquals(true, parsed?.zeroRttHandshake)
         assertEquals("10s", parsed?.heartbeat)
         assertEquals(listOf("udp"), parsed?.network)
+    }
+
+    @Test
+    fun exportTuicShouldPreserveTlsCertificates() {
+        val ca = "-----BEGIN CERTIFICATE-----\nCA+A/B==\n-----END CERTIFICATE-----"
+        val certificate = "-----BEGIN CERTIFICATE-----\nCLIENT+C/D==\n-----END CERTIFICATE-----"
+        val key = "-----BEGIN PRIVATE KEY-----\nKEY+E/F==\n-----END PRIVATE KEY-----"
+        val tls = TlsConfig(
+            enabled = true,
+            serverName = "tuic.example.com",
+            alpn = listOf("h3"),
+            ca = listOf(ca),
+            caPath = "/data/user/0/test/ca + root.pem",
+            certificate = listOf(certificate),
+            certificatePath = "/data/user/0/test/client + cert.pem",
+            key = listOf(key),
+            keyPath = "/data/user/0/test/client + key.pem"
+        )
+        val outbound = Outbound(
+            type = "tuic",
+            tag = "TUIC certificates",
+            server = "tuic.example.com",
+            serverPort = 443,
+            uuid = "uuid",
+            password = "secret",
+            tls = tls
+        )
+
+        val parsed = NodeLinkExporter.export(outbound, gson)?.let { NodeLinkParser(gson).parse(it) }
+
+        assertNotNull(parsed)
+        assertEquals(tls.ca, parsed?.tls?.ca)
+        assertEquals(tls.caPath, parsed?.tls?.caPath)
+        assertEquals(tls.certificate, parsed?.tls?.certificate)
+        assertEquals(tls.certificatePath, parsed?.tls?.certificatePath)
+        assertEquals(tls.key, parsed?.tls?.key)
+        assertEquals(tls.keyPath, parsed?.tls?.keyPath)
+        assertEquals(tls.serverName, parsed?.tls?.serverName)
+        assertEquals(tls.alpn, parsed?.tls?.alpn)
     }
 
     @Test

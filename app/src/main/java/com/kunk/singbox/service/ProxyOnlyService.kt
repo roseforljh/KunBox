@@ -39,10 +39,10 @@ import com.kunk.singbox.utils.NetworkClient
 import com.kunk.singbox.utils.VersionInfo
 import com.kunk.singbox.utils.perf.ResourceGuardRegistration
 import com.kunk.singbox.utils.perf.readProcessStartedAtEpochMs
-import io.nekohasekai.libbox.CommandServer
-import io.nekohasekai.libbox.CommandClient
-import io.nekohasekai.libbox.InterfaceUpdateListener
-import io.nekohasekai.libbox.PlatformInterface
+import io.raybox.raybox.CommandServer
+import io.raybox.raybox.CommandClient
+import io.raybox.raybox.InterfaceUpdateListener
+import io.raybox.raybox.PlatformInterface
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext

@@ -1,5 +1,7 @@
 import java.util.Properties
 import java.util.zip.ZipFile
+import java.security.MessageDigest
+import groovy.json.JsonSlurper
 import com.android.build.api.dsl.ApplicationExtension
 
 plugins {
@@ -10,8 +12,72 @@ plugins {
     id("androidx.room")
 }
 
-val libboxInputAar = file("libs/libbox.aar")
+val libboxInputAar = file("libs/raybox.aar")
 val libboxStrippedAar = layout.buildDirectory.file("stripped-libs/libbox-stripped.aar")
+val rayboxBuildMetadata = file("libs/raybox-build.json")
+val rayboxMetadata = if (rayboxBuildMetadata.isFile) {
+    JsonSlurper().parse(rayboxBuildMetadata) as? Map<*, *>
+        ?: throw GradleException("Invalid RayBox metadata object")
+} else throw GradleException("Missing RayBox metadata; install a verified core with tools/sync_raybox.py")
+val rayboxCoreCommit = rayboxMetadata["commit"] as? String ?: ""
+val rayboxCoreDigest = rayboxMetadata["sourceDigest"] as? String ?: ""
+val rayboxCoreAarSha256 = (rayboxMetadata["outputs"] as? List<*>)
+    ?.filterIsInstance<Map<*, *>>()?.firstOrNull { it["name"] == "raybox.aar" }?.get("sha256") as? String ?: ""
+val verifyRayboxCore = tasks.register("verifyRayboxCore") {
+    inputs.file(libboxInputAar)
+    if (rayboxBuildMetadata.isFile) inputs.file(rayboxBuildMetadata)
+    doLast {
+        if (providers.gradleProperty("enableSfaLibboxReplacement").orNull?.toBoolean() == true) {
+            throw GradleException("RayBox cannot use unverified SFA native replacements")
+        }
+        if (rayboxMetadata["repository"] != "roseforljh/RayBox-rx" ||
+            !Regex("[0-9a-f]{40}").matches(rayboxCoreCommit) ||
+            !Regex("[0-9a-f]{64}").matches(rayboxCoreDigest) ||
+            !Regex("[0-9a-f]{64}").matches(rayboxCoreAarSha256)
+        ) throw GradleException("Invalid RayBox source identity")
+        val dirty = rayboxMetadata["dirty"] as? Boolean
+            ?: throw GradleException("RayBox metadata must declare dirty explicitly")
+        val expectedTag = if (dirty) null else "android-$rayboxCoreCommit"
+        val output = (rayboxMetadata["outputs"] as? List<*>)?.filterIsInstance<Map<*, *>>()
+            ?.singleOrNull { it["name"] == "raybox.aar" }
+        val phoneCandidate = dirty &&
+            providers.gradleProperty("abiOnly").orNull == "arm64-v8a" &&
+            (rayboxMetadata["architectures"] as? List<*>) == listOf("arm64-v8a")
+        val expectedAbis = if (phoneCandidate) setOf("arm64-v8a") else {
+            setOf("arm64-v8a", "armeabi-v7a", "x86", "x86_64")
+        }
+        if (rayboxMetadata["schemaVersion"] != 1 || !rayboxMetadata.containsKey("tag") ||
+            rayboxMetadata["tag"] != expectedTag ||
+            (rayboxMetadata["architectures"] as? List<*>)?.toSet() != expectedAbis ||
+            (output?.get("size") as? Number)?.toLong() != libboxInputAar.length() ||
+            rayboxMetadata["sourceDigestAlgorithm"] != "sha256-git-path-kind-content-v1" ||
+            (rayboxMetadata["source"] as? Map<*, *>)?.get("url") !=
+                "https://github.com/roseforljh/RayBox-rx/tree/$rayboxCoreCommit" ||
+            (rayboxMetadata["source"] as? Map<*, *>)?.get("runtimeLicense") != "docs/reference/runtime/LICENSE" ||
+            (rayboxMetadata["source"] as? Map<*, *>)?.get("protocolLicense") != "docs/reference/protocol/LICENSE" ||
+            (rayboxMetadata["buildTags"] as? Map<*, *>)?.get("raybox.aar") !is List<*> ||
+            ((rayboxMetadata["buildTags"] as? Map<*, *>)?.get("raybox.aar") as? List<*>)
+                ?.contains("with_tailscale") == true ||
+            !(rayboxMetadata["go"] as? String).orEmpty().startsWith("go version go1.27.3 ") ||
+            rayboxMetadata["ndk"] != "29.0.14206865" || rayboxMetadata["gomobile"] != "v0.1.13" ||
+            availableLibboxAbis != expectedAbis ||
+            rayboxMetadata["rxDefault"] != false || rayboxMetadata["oobDefault"] != false
+        ) throw GradleException("RayBox metadata tag, architecture, size or defaults are invalid")
+        if (dirty && gradle.taskGraph.allTasks.any { it.name.contains("release", ignoreCase = true) }
+        ) throw GradleException("Dirty RayBox candidates are allowed only in local debug builds")
+        val digest = MessageDigest.getInstance("SHA-256")
+        libboxInputAar.inputStream().use { stream ->
+            val buffer = ByteArray(65536)
+            while (true) {
+                val count = stream.read(buffer)
+                if (count < 0) break
+                digest.update(buffer, 0, count)
+            }
+        }
+        val actual = digest.digest().joinToString("") { "%02x".format(it) }
+        if (actual != rayboxCoreAarSha256) throw GradleException("RayBox AAR SHA-256 differs from metadata")
+    }
+}
 val composeBomVersion = "2026.06.00"
 
 fun gitOutput(vararg args: String): String? = runCatching {
@@ -36,7 +102,7 @@ fun detectLibboxAbis(libboxAar: File): Set<String> {
     if (!libboxAar.isFile) {
         return emptySet()
     }
-    val abiRegex = Regex("^jni/([^/]+)/libbox\\.so$")
+    val abiRegex = Regex("^jni/([^/]+)/libraybox\\.so$")
     ZipFile(libboxAar).use { zip ->
         return zip.entries().asSequence()
             .mapNotNull { entry -> abiRegex.matchEntire(entry.name)?.groupValues?.get(1) }
@@ -47,7 +113,7 @@ fun detectLibboxAbis(libboxAar: File): Set<String> {
 val availableLibboxAbis = detectLibboxAbis(libboxInputAar)
 if (!abiOnly.isNullOrBlank() && abiOnly !in availableLibboxAbis) {
     throw GradleException(
-        "Requested abiOnly=$abiOnly, but app/libs/libbox.aar does not contain it. " +
+        "Requested abiOnly=$abiOnly, but app/libs/raybox.aar does not contain it. " +
             "Available: ${availableLibboxAbis.sorted()}. " +
             "Rebuild libbox.aar with android/arm platform support first."
     )
@@ -57,7 +123,7 @@ val preferredDefaultAbis = listOf("arm64-v8a", "armeabi-v7a")
 val missingDefaultAbis = preferredDefaultAbis.filterNot { it in availableLibboxAbis }
 if (abiOnly.isNullOrBlank() && missingDefaultAbis.isNotEmpty()) {
     throw GradleException(
-        "app/libs/libbox.aar is missing required default ABIs: $missingDefaultAbis. " +
+        "app/libs/raybox.aar is missing required default ABIs: $missingDefaultAbis. " +
             "Available: ${availableLibboxAbis.sorted()}. Run the pinned kernel sync first."
     )
 }
@@ -225,7 +291,7 @@ val stripLibboxAar = tasks.register("stripLibboxAar") {
         val jniDir = File(workDir, "jni")
         if (jniDir.isDirectory) {
             jniDir.walkTopDown()
-                .filter { it.isFile && it.name == "libbox.so" }
+                .filter { it.isFile && it.name == "libraybox.so" }
                 .forEach { so ->
                     providers.exec {
                         commandLine(stripExe.absolutePath, "--strip-unneeded", so.absolutePath)
@@ -264,6 +330,16 @@ configure<ApplicationExtension> {
         minSdk = 24
         targetSdk = 37
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        buildConfigField("String", "RAYBOX_COMMIT", "\"$rayboxCoreCommit\"")
+        buildConfigField("String", "RAYBOX_SOURCE_DIGEST", "\"$rayboxCoreDigest\"")
+        buildConfigField("String", "RAYBOX_AAR_SHA256", "\"$rayboxCoreAarSha256\"")
+        buildConfigField("boolean", "RAYBOX_DIRTY", (rayboxMetadata["dirty"] == true).toString())
+        val coreTags = (rayboxMetadata["buildTags"] as? Map<*, *>)?.get("raybox.aar") as? List<*>
+        buildConfigField(
+            "boolean",
+            "RAYBOX_NAIVE_QUIC_SUPPORTED",
+            (coreTags?.contains("with_naive_outbound") == true).toString()
+        )
 
         // Dynamic versioning
         val envVersionCode = System.getenv("VERSION_CODE")?.toIntOrNull()
@@ -351,6 +427,7 @@ configure<ApplicationExtension> {
     buildFeatures {
         aidl = true
         compose = true
+        buildConfig = true
     }
     packaging {
         resources {
@@ -394,6 +471,8 @@ room {
 
 // 如果 libbox.aar 已经是精简版（只包含目标架构），可以跳过 strip 任务
 val skipLibboxStrip = providers.gradleProperty("skipLibboxStrip").orNull?.toBoolean() ?: true
+
+tasks.named("preBuild") { dependsOn(verifyRayboxCore) }
 
 if (!skipLibboxStrip) {
     tasks.named("preBuild") {

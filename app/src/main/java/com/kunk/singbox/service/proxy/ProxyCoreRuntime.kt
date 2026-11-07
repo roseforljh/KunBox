@@ -23,11 +23,11 @@ import com.kunk.singbox.service.manager.CommandManager
 import com.kunk.singbox.utils.LocalNetworkPermission
 import com.kunk.singbox.utils.NetworkClient
 import com.kunk.singbox.utils.perf.BackgroundResourceGuard
-import io.nekohasekai.libbox.CommandServer
-import io.nekohasekai.libbox.CommandServerHandler
-import io.nekohasekai.libbox.CommandClient
-import io.nekohasekai.libbox.OverrideOptions
-import io.nekohasekai.libbox.Libbox
+import io.raybox.raybox.CommandServer
+import io.raybox.raybox.CommandServerHandler
+import io.raybox.raybox.CommandClient
+import io.raybox.raybox.OverrideOptions
+import io.raybox.raybox.Raybox as Libbox
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.currentCoroutineContext
@@ -216,7 +216,7 @@ internal fun ProxyOnlyService.startCore(configPath: String, recoveryIntentLease:
                 override fun serviceReload() {
                     Log.i(TAG, "serviceReload requested")
                 }
-                override fun getSystemProxyStatus(): io.nekohasekai.libbox.SystemProxyStatus? = null
+                override fun getSystemProxyStatus(): io.raybox.raybox.SystemProxyStatus? = null
                 override fun setSystemProxyEnabled(isEnabled: Boolean) {}
                 override fun triggerNativeCrash() = Unit
                 override fun connectSSHAgent(): Int = -1

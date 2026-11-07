@@ -22,8 +22,8 @@ import com.kunk.singbox.model.VpnAppMode
 import com.kunk.singbox.model.VpnRouteMode
 import com.kunk.singbox.repository.LogRepository
 import com.kunk.singbox.utils.DefaultNetworkListener
-import io.nekohasekai.libbox.RoutePrefixIterator
-import io.nekohasekai.libbox.TunOptions
+import io.raybox.raybox.RoutePrefixIterator
+import io.raybox.raybox.TunOptions
 import java.net.InetAddress
 import java.net.Inet6Address
 import java.util.concurrent.CancellationException

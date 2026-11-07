@@ -327,6 +327,29 @@ class NodeLinkParserTest : NodeLinkParserProxyAndEdgeTest() {
     // ==================== VLESS ====================
 
     @Test
+    fun testParseVLessPreservesExplicitEmptyPacketEncoding() {
+        val outbound = parser.parse(
+            "vless://uuid@example.com:443?security=tls&type=tcp&packetEncoding=#EmptyPacketEncoding"
+        )
+
+        assertEquals("", outbound?.packetEncoding)
+    }
+
+    @Test
+    fun testParseAnyTlsPreservesRealityAndCertificateWithPlus() {
+        val ca = "-----BEGIN CERTIFICATE-----\nA+B/C==\n-----END CERTIFICATE-----"
+        val encodedCa = java.net.URLEncoder.encode(ca, "UTF-8").replace("+", "%20")
+        val outbound = parser.parse(
+            "anytls://p%40ss%20word@example.com:443?security=reality&sni=target.example.com" +
+                "&pbk=public-key&sid=sid&certificate=$encodedCa#AnyTLS"
+        )
+
+        assertEquals("p@ss word", outbound?.password)
+        assertEquals(true, outbound?.tls?.reality?.enabled)
+        assertEquals("public-key", outbound?.tls?.reality?.publicKey)
+        assertEquals(listOf(ca), outbound?.tls?.ca)
+    }
+    @Test
     fun testParseVLessWebSocketEarlyDataFromPathQuery() {
         val link =
             "vless://uuid@125.140.145.188:21272?type=ws&encryption=none&security=tls" +
@@ -466,7 +489,7 @@ class NodeLinkParserTest : NodeLinkParserProxyAndEdgeTest() {
             "&type=ws&path=b6fd6867-c239-4d95-8a98-cb036d34fc21-vw#vl-ws-enc"
 
         val outbound = parser.parse(link)
-        assertNull(outbound)
+        assertEquals("mlkem768x25519plus.native.0rtt.sample", outbound?.encryption)
     }
 
     @Test
@@ -531,7 +554,7 @@ class NodeLinkParserTest : NodeLinkParserProxyAndEdgeTest() {
 
         val outbound = parser.parse(link)
 
-        assertNull(outbound)
+        assertEquals("mlkem768x25519plus.native.0rtt.sample", outbound?.encryption)
     }
 
     @Test
@@ -559,7 +582,7 @@ class NodeLinkParserTest : NodeLinkParserProxyAndEdgeTest() {
             "&packetEncoding=xudp&path=%2F2edd765b-a895-46ab-a01c-c4719947546b-xh&mode=auto" +
             "#TW-GCP-xhttp"
         val outbound = parser.parse(link)
-        assertNull(outbound)
+        assertEquals("mlkem768x25519plus.native.0rtt.sample", outbound?.encryption)
     }
 
     @Test
@@ -846,6 +869,19 @@ class NodeLinkParserTest : NodeLinkParserProxyAndEdgeTest() {
         assertEquals("native", outbound?.udpRelayMode)
         assertEquals("tuic.example.com", outbound?.tls?.serverName)
         assertNull(outbound?.tls?.disableSni)
+    }
+
+    @Test
+    fun testParseTuicCertificateAliasesDecodeOnce() {
+        val ca = "-----BEGIN CERTIFICATE-----\nA+B/C==%2B\n-----END CERTIFICATE-----"
+        val encodedCa = java.net.URLEncoder.encode(ca, "UTF-8")
+        val link = "tuic://uuid:password@tuic.example.com:443?ca=$encodedCa&ca_path=%2Fdata%2Fca%2Broot.pem"
+
+        val outbound = parser.parse(link)
+
+        assertNotNull(outbound)
+        assertEquals(listOf(ca), outbound?.tls?.ca)
+        assertEquals("/data/ca+root.pem", outbound?.tls?.caPath)
     }
 
     @Test

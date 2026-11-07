@@ -14,7 +14,7 @@ import com.kunk.singbox.service.manager.PlatformInterfaceImpl
 import com.kunk.singbox.service.manager.RecoveryIntentLease
 import com.kunk.singbox.service.manager.ServiceStateHolder
 import com.kunk.singbox.service.manager.ShutdownManager
-import io.nekohasekai.libbox.*
+import io.raybox.raybox.*
 import kotlinx.coroutines.*
 
 private const val STOP_FOREGROUND_REMOVE = android.app.Service.STOP_FOREGROUND_REMOVE

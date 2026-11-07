@@ -1,4 +1,4 @@
-﻿package com.kunk.singbox.service.manager
+package com.kunk.singbox.service.manager
 
 import android.content.Context
 import android.net.ConnectivityManager
@@ -15,17 +15,17 @@ import com.kunk.singbox.model.AppSettings
 import com.kunk.singbox.model.PerAppVpnPolicy
 import com.kunk.singbox.model.RoutingMode
 import com.kunk.singbox.utils.DefaultNetworkListener
-import io.nekohasekai.libbox.ConnectionOwner
-import io.nekohasekai.libbox.BridgeOptions
-import io.nekohasekai.libbox.BridgeSession
-import io.nekohasekai.libbox.InterfaceUpdateListener
-import io.nekohasekai.libbox.NeighborUpdateListener
-import io.nekohasekai.libbox.NetworkInterfaceIterator
-import io.nekohasekai.libbox.PlatformUser
-import io.nekohasekai.libbox.PlatformInterface
-import io.nekohasekai.libbox.ShellSession
-import io.nekohasekai.libbox.TunOptions
-import io.nekohasekai.libbox.WIFIState
+import io.raybox.raybox.ConnectionOwner
+import io.raybox.raybox.BridgeOptions
+import io.raybox.raybox.BridgeSession
+import io.raybox.raybox.InterfaceUpdateListener
+import io.raybox.raybox.NeighborUpdateListener
+import io.raybox.raybox.NetworkInterfaceIterator
+import io.raybox.raybox.PlatformUser
+import io.raybox.raybox.PlatformInterface
+import io.raybox.raybox.ShellSession
+import io.raybox.raybox.TunOptions
+import io.raybox.raybox.WIFIState
 import kotlinx.coroutines.CoroutineScope
 import java.io.File
 import java.io.IOException
@@ -97,10 +97,11 @@ class PlatformInterfaceImpl(
             settings: AppSettings?
         ): Boolean = override ?: shouldForceConnectionOwnerRouting(settings)
 
-        internal fun shouldExposeProcFsToLibbox(procFsReadable: Boolean, settings: AppSettings?): Boolean {
-            if (!procFsReadable) return false
-            return !shouldForceConnectionOwnerRouting(settings)
-        }
+        internal fun shouldExposeProcFsToLibbox(
+            procFsReadable: Boolean,
+            settings: AppSettings?,
+            forceConnectionOwnerRouting: Boolean? = null
+        ): Boolean = procFsReadable && !resolveForceConnectionOwnerRouting(forceConnectionOwnerRouting, settings)
 
         internal fun resolvePackageNames(
             uid: Int,
@@ -352,7 +353,7 @@ class PlatformInterfaceImpl(
     @Volatile private var cachedProcFsReadable: Boolean? = null
     private val procFsCheckIntervalMs: Long = 5 * 60_000L
 
-    override fun localDNSTransport(): io.nekohasekai.libbox.LocalDNSTransport {
+    override fun localDNSTransport(): io.raybox.raybox.LocalDNSTransport {
         return com.kunk.singbox.core.LocalResolverImpl
     }
 
@@ -410,6 +411,12 @@ class PlatformInterfaceImpl(
     }
 
     override fun usePlatformAutoDetectInterfaceControl(): Boolean = true
+
+    override fun useProcFS(): Boolean = shouldExposeProcFsToLibbox(
+        procFsReadable = getProcFsReadable(),
+        settings = callbacks.getCurrentSettings(),
+        forceConnectionOwnerRouting = callbacks.forceConnectionOwnerRouting()
+    )
 
     private fun getProcFsReadable(): Boolean {
         val now = SystemClock.elapsedRealtime()
@@ -762,9 +769,9 @@ class PlatformInterfaceImpl(
 
                 override fun hasNext(): Boolean = iterator.hasNext()
 
-                override fun next(): io.nekohasekai.libbox.NetworkInterface {
+                override fun next(): io.raybox.raybox.NetworkInterface {
                     val iface = iterator.next()
-                    return io.nekohasekai.libbox.NetworkInterface().apply {
+                    return io.raybox.raybox.NetworkInterface().apply {
                         name = iface.name
                         index = iface.index
                         mtu = iface.mtu
@@ -803,7 +810,7 @@ class PlatformInterfaceImpl(
 
     override fun clearDNSCache() {}
 
-    override fun sendNotification(notification: io.nekohasekai.libbox.Notification?) {}
+    override fun sendNotification(notification: io.raybox.raybox.Notification?) {}
 
     override fun cancelNotification(identifier: String?, typeID: Int) {}
 
@@ -822,7 +829,7 @@ class PlatformInterfaceImpl(
     override fun openShellSession(
         user: PlatformUser?,
         command: String?,
-        environ: io.nekohasekai.libbox.StringIterator?,
+        environ: io.raybox.raybox.StringIterator?,
         term: String?,
         rows: Int,
         cols: Int

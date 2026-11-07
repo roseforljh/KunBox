@@ -14,7 +14,8 @@ import com.kunk.singbox.repository.NodeProtectionStore
 import com.kunk.singbox.repository.RuntimeNodeRef
 import com.kunk.singbox.repository.TrafficRepository
 import com.kunk.singbox.service.resolveRuntimeNodeLabel
-import io.nekohasekai.libbox.*
+import io.raybox.raybox.*
+import io.raybox.raybox.Raybox as Libbox
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.Channel
 import java.util.concurrent.atomic.AtomicBoolean
@@ -642,7 +643,7 @@ internal fun CommandManager.updateResolvedProxySelection(): Boolean {
 @Suppress("LongMethod", "CyclomaticComplexMethod", "CognitiveComplexMethod", "NestedBlockDepth")
 internal fun CommandManager.processConnections(connections: Connections) {
     val iterator = connections.iterator()
-    var newestConnection: io.nekohasekai.libbox.Connection? = null
+    var newestConnection: io.raybox.raybox.Connection? = null
     val ids = ArrayList<String>(64)
     val egressCounts = LinkedHashMap<String, Int>()
     val configRepo = ConfigRepository.getInstance(context)

@@ -21,7 +21,8 @@ import com.kunk.singbox.repository.SettingsRepository
 import com.kunk.singbox.repository.TrafficRepository
 import com.kunk.singbox.ipc.VpnStateStore
 import kotlinx.coroutines.flow.first
-import io.nekohasekai.libbox.*
+import io.raybox.raybox.*
+import io.raybox.raybox.Raybox as Libbox
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.delay
@@ -376,7 +377,14 @@ class SingBoxCore private constructor(internal val context: Context) {
 
     internal fun initLibbox(): Boolean {
         return try {
-            Log.i(TAG, "Libbox version=${Libbox.version()}")
+            Log.i(
+                TAG,
+                "RayBox version=${Libbox.version()} " +
+                    "commit=${com.kunk.singbox.BuildConfig.RAYBOX_COMMIT} " +
+                    "dirty=${com.kunk.singbox.BuildConfig.RAYBOX_DIRTY} " +
+                    "source=${com.kunk.singbox.BuildConfig.RAYBOX_SOURCE_DIGEST} " +
+                    "aar=${com.kunk.singbox.BuildConfig.RAYBOX_AAR_SHA256}"
+            )
             ensureLibboxSetup(context)
             true
         } catch (e: Exception) {
@@ -556,7 +564,7 @@ class SingBoxCore private constructor(internal val context: Context) {
             )
 
             val configJson = gson.toJson(stripLatencyRuntimeMetadata(config))
-            var commandServer: io.nekohasekai.libbox.CommandServer? = null
+            var commandServer: io.raybox.raybox.CommandServer? = null
             var trafficRecorder: TemporaryProbeTrafficRecorder? = null
             try {
                 ensureLibboxSetup(context)

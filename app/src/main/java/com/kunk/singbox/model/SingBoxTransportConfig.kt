@@ -20,6 +20,8 @@ import java.lang.reflect.Type
 data class ObfsConfig(
     @SerializedName("type") val type: String? = null,
     @SerializedName("password") val password: String? = null,
+    @SerializedName("min_packet_size") val minPacketSize: Int? = null,
+    @SerializedName("max_packet_size") val maxPacketSize: Int? = null,
     @Transient val stringValue: Boolean = false
 )
 
@@ -35,6 +37,8 @@ class ObfsConfigJsonAdapter : JsonSerializer<ObfsConfig>, JsonDeserializer<ObfsC
         return JsonObject().apply {
             src.type?.takeIf { it.isNotBlank() }?.let { addProperty("type", it) }
             src.password?.takeIf { it.isNotBlank() }?.let { addProperty("password", it) }
+            src.minPacketSize?.let { addProperty("min_packet_size", it) }
+            src.maxPacketSize?.let { addProperty("max_packet_size", it) }
         }
     }
 
@@ -52,7 +56,9 @@ class ObfsConfigJsonAdapter : JsonSerializer<ObfsConfig>, JsonDeserializer<ObfsC
         val value = json.asJsonObject
         return ObfsConfig(
             type = value.get("type")?.takeIf { it.isJsonPrimitive }?.asString,
-            password = value.get("password")?.takeIf { it.isJsonPrimitive }?.asString
+            password = value.get("password")?.takeIf { it.isJsonPrimitive }?.asString,
+            minPacketSize = value.get("min_packet_size")?.takeIf { it.isJsonPrimitive }?.asInt,
+            maxPacketSize = value.get("max_packet_size")?.takeIf { it.isJsonPrimitive }?.asInt
         )
     }
 }
@@ -143,7 +149,8 @@ data class TransportConfig(
     @SerializedName("sc_max_buffered_posts") val scMaxBufferedPosts: Long? = null,
     @SerializedName("x_padding_bytes") val xPaddingBytes: String? = null,
     @SerializedName("no_grpc_header") val noGRPCHeader: Boolean? = null,
-    @SerializedName("no_sse_header") val noSSEHeader: Boolean? = null
+    @SerializedName("no_sse_header") val noSSEHeader: Boolean? = null,
+    @SerializedName("extra") val extra: JsonObject? = null
 )
 
 internal class HttpHeaderMap(

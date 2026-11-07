@@ -1,0 +1,168 @@
+{
+  "schemaVersion": 1,
+  "kind": "local-debug-candidate-verification",
+  "commit": "c8349f9ea677d56bc107b34349c4d4ebb5a5aa7e",
+  "dirty": true,
+  "tag": null,
+  "sourceDigest": "3d77f9554e5d4b2f95dbbca37f05717c6a75a72121e0db8a92ffa70d27b55bec",
+  "sourceDigestAlgorithm": "sha256-git-path-kind-content-v1",
+  "android": [
+    {
+      "name": "libbox.aar",
+      "size": 124567764,
+      "sha256": "65afc02a5a401cef0ed87724500fea43a36e0c7a85d07eee347ef1227db9567d",
+      "nativeLibraries": [
+        {
+          "abi": "arm64-v8a",
+          "machine": 183,
+          "loadAlignments": [
+            16384,
+            16384,
+            16384
+          ],
+          "size": 81345344,
+          "sha256": "7150f989d92bdf8d1b28338fca46bcc59d4226e20ef24877d07618ac6f0fdbe1"
+        },
+        {
+          "abi": "armeabi-v7a",
+          "machine": 40,
+          "loadAlignments": [
+            4096,
+            4096,
+            4096
+          ],
+          "size": 74680592,
+          "sha256": "0204e6e5b90c62c5cef7b0b62d03713464b2f64239e5a3ae4eee19393af86a38"
+        },
+        {
+          "abi": "x86",
+          "machine": 3,
+          "loadAlignments": [
+            4096,
+            4096,
+            4096
+          ],
+          "size": 79413932,
+          "sha256": "a6e47973ef3381c119441d51af2921c43890b3aa97c0bb44482fc175a315a42b"
+        },
+        {
+          "abi": "x86_64",
+          "machine": 62,
+          "loadAlignments": [
+            16384,
+            16384,
+            16384
+          ],
+          "size": 86349632,
+          "sha256": "58e865ae6a6cb9485a02389c4b4b39c577c6243cdcb9269534aa3fe523f6fe5d"
+        }
+      ]
+    },
+    {
+      "name": "libbox-legacy.aar",
+      "size": 104544451,
+      "sha256": "be5f64417d11b1c3ba9fa36b1717cf6e3549fccb16d4bbf9a1d6b1184c03a0da",
+      "nativeLibraries": [
+        {
+          "abi": "arm64-v8a",
+          "machine": 183,
+          "loadAlignments": [
+            16384,
+            16384,
+            16384
+          ],
+          "size": 70668480,
+          "sha256": "005bbb1477c7440df6cbe8ae4cb686adafc9b1e54154612cecd6f5b60bfc77f9"
+        },
+        {
+          "abi": "armeabi-v7a",
+          "machine": 40,
+          "loadAlignments": [
+            4096,
+            4096,
+            4096
+          ],
+          "size": 67535300,
+          "sha256": "0325aaa45e52e8f2e4ea7e3b23b8dc73d7ae3cfd52fe0dd8b26df44b03f5c100"
+        },
+        {
+          "abi": "x86",
+          "machine": 3,
+          "loadAlignments": [
+            4096,
+            4096,
+            4096
+          ],
+          "size": 67982900,
+          "sha256": "d54794fef5b073d98708033192b45dde016fec0f0f9fbf915893249b9e57fe93"
+        },
+        {
+          "abi": "x86_64",
+          "machine": 62,
+          "loadAlignments": [
+            16384,
+            16384,
+            16384
+          ],
+          "size": 75286176,
+          "sha256": "48946dbd7cd8837820ea4729e77dab7b09782aabd017b401efb1e8fb2b61c462"
+        }
+      ]
+    }
+  ],
+  "windows": {
+    "sing-box-windows-amd64.exe": {
+      "file": "sing-box-windows-amd64.exe",
+      "size": 78738944,
+      "sha256": "5b1a1dcec19d05d83a1c7580afd8214f7268186207f1002b610ff2f06fc5c521"
+    },
+    "LICENSE": {
+      "file": "LICENSE",
+      "size": 791,
+      "sha256": "650d5e3b99a446fb38e820fa87a49562e0c79eab868fff58618ac487a58e554c"
+    },
+    "Xray-LICENSE": {
+      "file": "Xray-LICENSE",
+      "size": 17098,
+      "sha256": "2684de17300e0a434686f1ec7f8af6045207a4b457a3fe04b2b9ce655e7c5d50"
+    },
+    "SOURCE.txt": {
+      "file": "SOURCE.txt",
+      "size": 2486,
+      "sha256": "4df306133f53d76e101c16fdf15ee2247ebcfb365356bf4e1ab899c75abff9a8"
+    }
+  },
+  "server": {
+    "amd64": {
+      "file": "xray-linux-amd64",
+      "size": 32309372,
+      "sha256": "813f2163907444ba728a2d48984bb8cd76def735551357d87e63264472cca914"
+    },
+    "arm64": {
+      "file": "xray-linux-arm64",
+      "size": 30081148,
+      "sha256": "6c18498cac1991e4938494fbf263e08976db91b0490f5c6bd1bb1d6e9bda46df"
+    },
+    "armv7": {
+      "file": "xray-linux-armv7",
+      "size": 30736508,
+      "sha256": "02cc188e74f741a3f356e1e11c081ee580b3fa826ca386639cf04103bd4cefb5"
+    }
+  },
+  "checks": {
+    "sameFrozenSnapshot": true,
+    "androidFourAbisSafetyApiAlignment": true,
+    "windowsPeAndDualVersion": true,
+    "windowsCheckRunAndSelectorSwitches": 2,
+    "windowsManagedProcessStopped": true,
+    "linuxAmd64VersionAndConfigTest": true,
+    "linuxThreeElfArchitectures": true,
+    "dispatchTamperTestPassed": 1
+  },
+  "remaining": [
+    "client configuration and compilation verification",
+    "real Android device TUN/Root/Proxy-only",
+    "real Windows TUN",
+    "clean committed release identity requires explicit user authorization"
+  ]
+}

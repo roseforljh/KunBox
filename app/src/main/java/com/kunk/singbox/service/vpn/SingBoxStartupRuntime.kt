@@ -38,7 +38,7 @@ import com.kunk.singbox.utils.perf.BackgroundResourceGuard
 import com.kunk.singbox.utils.perf.ResourceGuardRegistration
 import com.kunk.singbox.utils.perf.ResourceGuardOwner
 import com.kunk.singbox.utils.perf.isResourceRecoveryBudgetError
-import io.nekohasekai.libbox.*
+import io.raybox.raybox.*
 import java.io.File
 import kotlin.math.absoluteValue
 import kotlinx.coroutines.*

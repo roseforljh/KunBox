@@ -33,7 +33,7 @@ import com.kunk.singbox.utils.DefaultNetworkListener
 import com.kunk.singbox.utils.LocalNetworkPermission
 import com.kunk.singbox.utils.perf.PerfTracer
 import com.kunk.singbox.utils.perf.BackgroundResourceGuard
-import io.nekohasekai.libbox.*
+import io.raybox.raybox.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map

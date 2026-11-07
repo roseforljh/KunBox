@@ -197,7 +197,11 @@ open class ClashYamlParserPart2 : ClashYamlParserPart1() {
         )
     }
 
-    protected override fun parseHysteria(map: Map<*, *>, name: String, server: String?, port: Int?, globalFingerprint: String?, globalTlsMinVersion: String?): Outbound? {
+    @Suppress("CyclomaticComplexMethod", "CognitiveComplexMethod", "LongMethod")
+    protected override fun parseHysteria(
+        map: Map<*, *>, name: String, server: String?, port: Int?, globalFingerprint: String?,
+        globalTlsMinVersion: String?
+    ): Outbound? {
         if (server == null || port == null) return null
         val authStr = asString(map["auth-str"]) ?: asString(map["auth_str"]) ?: asString(map["auth"])
         val upMbps = asInt(map["up"]) ?: asInt(map["up-mbps"])

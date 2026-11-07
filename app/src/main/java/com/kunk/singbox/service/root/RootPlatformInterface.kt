@@ -12,8 +12,8 @@ import android.system.OsConstants
 import android.util.Log
 import com.kunk.singbox.model.AppSettings
 import com.kunk.singbox.service.manager.PlatformInterfaceImpl
-import io.nekohasekai.libbox.CommandServer
-import io.nekohasekai.libbox.TunOptions
+import io.raybox.raybox.CommandServer
+import io.raybox.raybox.TunOptions
 import java.io.FileDescriptor
 import java.lang.reflect.Method
 import java.util.concurrent.ConcurrentHashMap

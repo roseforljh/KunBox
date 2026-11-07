@@ -366,7 +366,7 @@ fun NodeDetailScreen(
                     // --- Server Info (Address/Port) ---
                     StandardCard {
                         // Most protocols have server/port
-                        if (type != "wireguard") {
+                        if (type != "wireguard" && !(type == "hysteria2" && outbound.realm != null)) {
                             EditableTextItem(
                                 title = stringResource(R.string.node_detail_server_address),
                                 value = outbound.server ?: "",

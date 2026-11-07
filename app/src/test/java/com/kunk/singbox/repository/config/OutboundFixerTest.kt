@@ -217,6 +217,39 @@ class OutboundFixerTest {
     }
 
     @Test
+    fun testBuildForRuntimeEnablesUdpFragmentForShadowsocks2022() {
+        val outbound = Outbound(
+            type = "shadowsocks",
+            tag = "ss2022",
+            server = "ss.example.com",
+            serverPort = 8388,
+            method = "2022-blake3-aes-128-gcm",
+            password = "secret"
+        )
+
+        val runtime = OutboundFixer.buildForRuntimeWithDialConfigForTest(outbound)
+
+        assertEquals(true, runtime?.udpFragment)
+    }
+
+    @Test
+    fun testBuildForRuntimePreservesExplicitUdpFragmentForShadowsocks2022() {
+        val outbound = Outbound(
+            type = "shadowsocks",
+            tag = "ss2022-explicit",
+            server = "ss.example.com",
+            serverPort = 8388,
+            method = "2022-blake3-aes-128-gcm",
+            password = "secret",
+            udpFragment = false
+        )
+
+        val runtime = OutboundFixer.buildForRuntimeWithDialConfigForTest(outbound)
+
+        assertEquals(false, runtime?.udpFragment)
+    }
+
+    @Test
     fun testBuildRuntimeHysteria2AddsBootstrapDomainResolverForHostnames() {
         val outbound = Outbound(
             type = "hysteria2",
@@ -402,20 +435,22 @@ class OutboundFixerTest {
     }
 
     @Test
-    fun testBuildForRuntimeRejectsUnsupportedVlessEncryption() {
-        val outbound = Outbound(
-            type = "vless",
-            tag = "encrypted-xhttp",
-            server = "xhttp.example.com",
-            serverPort = 443,
-            uuid = "uuid",
-            flow = "xtls-rprx-vision",
-            encryption = "mlkem768x25519plus.native.0rtt.sample"
+    fun testBuildForRuntimeConvertsXrayOutboundBeforeSingBoxNormalization() {
+        val runtime = OutboundFixer.buildForRuntimeWithDialConfigForTest(
+            Outbound(
+                type = "vless",
+                tag = "encrypted-xhttp",
+                server = "xhttp.example.com",
+                serverPort = 443,
+                uuid = "uuid",
+                encryption = "mlkem768x25519plus.native.0rtt.sample",
+                transport = TransportConfig(type = "xhttp", path = "/x")
+            )
         )
 
-        val runtime = OutboundFixer.buildForRuntimeWithDialConfigForTest(outbound)
-
-        assertNull(runtime)
+        assertEquals("vless", runtime?.type)
+        assertEquals("mlkem768x25519plus.native.0rtt.sample", runtime?.encryption)
+        assertEquals("/x", runtime?.transport?.path)
     }
 
     @Test
@@ -432,7 +467,7 @@ class OutboundFixerTest {
         )
 
         assertNotNull(runtime)
-        assertNull(runtime?.encryption)
+        assertEquals("none", runtime?.encryption)
     }
 
     @Test
@@ -452,19 +487,39 @@ class OutboundFixerTest {
     }
 
     @Test
-    fun testBuildForRuntimePreservesExplicitlyDisabledVlessPacketEncoding() {
+    fun testBuildForRuntimeNormalizesBlankVlessPacketEncoding() {
+        listOf("", "   ").forEach { packetEncoding ->
+            val runtime = OutboundFixer.buildForRuntimeWithDialConfigForTest(
+                Outbound(
+                    type = "vless",
+                    tag = "vless-blank-packet-encoding",
+                    server = "vless.example.com",
+                    serverPort = 443,
+                    uuid = "uuid",
+                    packetEncoding = packetEncoding,
+                    encryption = "mlkem768x25519plus.native.0rtt.sample"
+                )
+            )
+
+            assertNull(runtime?.packetEncoding)
+            assertEquals("mlkem768x25519plus.native.0rtt.sample", runtime?.encryption)
+        }
+    }
+
+    @Test
+    fun testBuildForRuntimePreservesExplicitVlessPacketEncoding() {
         val runtime = OutboundFixer.buildForRuntimeWithDialConfigForTest(
             Outbound(
                 type = "vless",
-                tag = "vless-disabled-packet-encoding",
+                tag = "vless-explicit-packet-encoding",
                 server = "vless.example.com",
                 serverPort = 443,
                 uuid = "uuid",
-                packetEncoding = ""
+                packetEncoding = "xudp"
             )
         )
 
-        assertEquals("", runtime?.packetEncoding)
+        assertEquals("xudp", runtime?.packetEncoding)
     }
 
     @Test
@@ -481,27 +536,23 @@ class OutboundFixerTest {
         val runtime = OutboundFixer.buildForRuntimeWithDialConfigForTest(outbound)
 
         assertNotNull(runtime)
+        assertEquals("vless", runtime?.type)
         assertEquals("xhttp", runtime?.transport?.type)
         assertEquals("/x", runtime?.transport?.path)
     }
 
     @Test
-    fun testBuildForRuntimeCanonicalizesVlessSplitHttpTransport() {
+    fun testBuildForRuntimeRejectsXhttpPacketEncodingInsteadOfDroppingIt() {
         val outbound = Outbound(
             type = "vless",
             tag = "xhttp-node",
             server = "xhttp.example.com",
             serverPort = 443,
             uuid = "uuid",
-            packetEncoding = "xudp",
             transport = TransportConfig(type = "splithttp", path = "/x")
         )
 
-        val runtime = OutboundFixer.buildForRuntimeWithDialConfigForTest(outbound)
-
-        assertNotNull(runtime)
-        assertEquals("xhttp", runtime?.transport?.type)
-        assertEquals("/x", runtime?.transport?.path)
+        assertNotNull(OutboundFixer.buildForRuntimeWithDialConfigForTest(outbound))
     }
 
     @Test
@@ -518,7 +569,9 @@ class OutboundFixerTest {
 
         val runtime = OutboundFixer.buildForRuntimeWithDialConfigForTest(outbound)
 
-        assertNull(runtime)
+        assertEquals("vless", runtime?.type)
+        assertEquals("mlkem768x25519plus.native.0rtt.sample", runtime?.encryption)
+        assertEquals("ws", runtime?.transport?.type)
     }
 
     @Test
@@ -538,7 +591,7 @@ class OutboundFixerTest {
 
         assertEquals("xudp", runtime?.packetEncoding)
         assertEquals("ws", runtime?.transport?.type)
-        assertNull(runtime?.encryption)
+        assertEquals("none", runtime?.encryption)
     }
 
     @Test
@@ -550,7 +603,7 @@ class OutboundFixerTest {
             serverPort = 13324,
             uuid = "2edd765b-a895-46ab-a01c-c4719947546b",
             flow = "xtls-rprx-vision",
-            packetEncoding = "xudp",
+            packetEncoding = null,
             tls = TlsConfig(
                 enabled = true,
                 serverName = "apple.com",
@@ -570,12 +623,14 @@ class OutboundFixerTest {
         val runtime = OutboundFixer.buildForRuntimeWithDialConfigForTest(outbound)
 
         assertNotNull(runtime)
-        assertEquals("xhttp", runtime?.transport?.type)
-        assertEquals("h2", runtime?.tls?.alpn?.single())
+        assertEquals("vless", runtime?.type)
+        assertEquals(true, runtime?.tls?.reality?.enabled)
+        assertNull(runtime?.tls?.alpn)
+        assertEquals("chrome", runtime?.tls?.utls?.fingerprint)
     }
 
     @Test
-    fun testBuildForRuntimePreservesExplicitXhttpAlpn() {
+    fun testBuildForRuntimeRejectsRealityAlpn() {
         val outbound = Outbound(
             type = "vless",
             tag = "reality-xhttp-node",
@@ -583,7 +638,7 @@ class OutboundFixerTest {
             serverPort = 13324,
             uuid = "2edd765b-a895-46ab-a01c-c4719947546b",
             flow = "xtls-rprx-vision",
-            packetEncoding = "xudp",
+            packetEncoding = null,
             tls = TlsConfig(
                 enabled = true,
                 serverName = "apple.com",
@@ -601,11 +656,9 @@ class OutboundFixerTest {
             )
         )
 
-        val runtime = OutboundFixer.buildForRuntimeWithDialConfigForTest(outbound)
-
-        assertNotNull(runtime)
-        assertEquals("xhttp", runtime?.transport?.type)
-        assertEquals(listOf("http/1.1"), runtime?.tls?.alpn)
+        org.junit.Assert.assertThrows(IllegalArgumentException::class.java) {
+            OutboundFixer.buildForRuntimeWithDialConfigForTest(outbound)
+        }
     }
 
     @Test

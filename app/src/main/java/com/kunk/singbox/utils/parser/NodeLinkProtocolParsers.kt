@@ -118,6 +118,7 @@ internal fun NodeLinkParser.parseVMessLink(link: String): Outbound? {
             uuid = id,
             alterId = if (aid > 0) aid else null,
             security = "auto",
+            rayboxCloudflare = parseBooleanFlag(json["raybox_cloudflare"]?.toString()),
             tls = tlsConfig,
             transport = transport
         )
@@ -137,13 +138,7 @@ internal fun NodeLinkParser.parseVLessLink(link: String): Outbound? {
         val port = if (uri.port > 0) uri.port else 443
         if (!hasRequiredLinkFields("VLESS", server, uuid, port)) return null
 
-        val params = mutableMapOf<String, String>()
-        uri.query?.split("&")?.forEach { param ->
-            val parts = param.split("=", limit = 2)
-            if (parts.size == 2) {
-                params[parts[0]] = java.net.URLDecoder.decode(parts[1], "UTF-8")
-            }
-        }
+        val params = parseQueryParams(uri.rawQuery)
 
         val hostParam = firstParam(params, "host")
         val explicitSni = firstParam(params, "sni")?.takeIf { it.isNotBlank() }
@@ -176,26 +171,19 @@ internal fun NodeLinkParser.parseVLessLink(link: String): Outbound? {
         val alpnList = firstParam(params, "alpn")?.split(",")?.filter { it.isNotBlank() }
         val flow = firstParam(params, "flow")?.takeIf { it.isNotBlank() }
         val packetEncoding = firstParam(params, "packetEncoding", "packet-encoding")
-            ?.takeIf { it.isNotBlank() }
         val encryption = firstParam(params, "encryption")?.trim()
-        if (!encryption.isNullOrEmpty() && !encryption.equals("none", ignoreCase = true)) {
-            Log.w("NodeLinkParser", "Ignoring VLESS node with unsupported private encryption")
-            return null
-        }
 
         val echConfig = parseEchConfig(params)
 
         val tlsConfig = when (security) {
-            "tls" -> TlsConfig(
-                enabled = true,
+            "tls" -> buildHttpTlsConfig(true, server.orEmpty(), params)?.copy(
                 serverName = sni,
                 insecure = insecure,
                 alpn = alpnList,
                 utls = (fingerprint ?: "chrome").let { UtlsConfig(enabled = true, fingerprint = it) },
                 ech = echConfig
             )
-            "reality" -> TlsConfig(
-                enabled = true,
+            "reality" -> buildHttpTlsConfig(true, server.orEmpty(), params)?.copy(
                 serverName = sni,
                 insecure = insecure,
                 alpn = alpnList,
@@ -258,6 +246,8 @@ internal fun NodeLinkParser.parseVLessLink(link: String): Outbound? {
             serverPort = port,
             uuid = uuid,
             flow = flow,
+            encryption = encryption?.takeIf { it.isNotEmpty() && !it.equals("none", ignoreCase = true) },
+            rayboxCloudflare = parseBooleanFlag(firstParam(params, "raybox_cloudflare")),
             tls = tlsConfig,
             transport = transport,
             packetEncoding = packetEncoding
@@ -278,7 +268,7 @@ internal fun NodeLinkParser.parseTrojanLink(link: String): Outbound? {
         val port = if (uri.port > 0) uri.port else 443
         if (!hasRequiredLinkFields("Trojan", server, password, port)) return null
 
-        val params = parseQueryParams(uri.query)
+        val params = parseQueryParams(uri.rawQuery)
         val transportType = firstParam(params, "type")
             ?.trim()
             ?.lowercase()
@@ -318,6 +308,7 @@ internal fun NodeLinkParser.parseTrojanLink(link: String): Outbound? {
             server = server,
             serverPort = port,
             password = password,
+            rayboxCloudflare = parseBooleanFlag(firstParam(params, "raybox_cloudflare")),
             tls = tlsConfig,
             transport = transport
         )
@@ -416,10 +407,22 @@ internal fun NodeLinkParser.parseHysteria2Link(link: String): Outbound? {
                 alpn = parseCsvQueryParam(params["alpn"]),
                 certificatePublicKeySha256 = params["pinSHA256"]?.let { listOf(it) }
             ),
-            obfs = params["obfs"]?.let { ObfsConfig(type = it, password = params["obfs-password"]) },
+            obfs = params["obfs"]?.let {
+                ObfsConfig(
+                    type = it,
+                    password = firstParam(params, "obfs-password", "obfs_password"),
+                    minPacketSize = firstParam(params, "obfs-min-packet-size", "obfs_min_packet_size")?.toIntOrNull(),
+                    maxPacketSize = firstParam(params, "obfs-max-packet-size", "obfs_max_packet_size")?.toIntOrNull()
+                )
+            },
             serverPorts = parseServerPorts(firstParam(params, "mport", "server_ports")),
             hopInterval = firstParam(params, "hop_interval", "hop-interval"),
+            hopIntervalMax = firstParam(params, "hop_interval_max", "hop-interval-max"),
             network = firstParam(params, "network")?.let(::listOf),
+            bbrProfile = firstParam(params, "bbr_profile", "bbr-profile"),
+            disableChromeParrot = parseBooleanFlag(
+                firstParam(params, "disable_chrome_parrot", "disable-chrome-parrot")
+            ),
             disableMtuDiscovery = parseBooleanFlag(
                 firstParam(params, "disable_mtu_discovery", "disable-mtu-discovery")
             )
@@ -510,25 +513,30 @@ internal fun NodeLinkParser.parseAnyTLSLink(link: String): Outbound? {
         val server = uri.host
         val port = if (uri.port > 0) uri.port else 443
 
-        val params = mutableMapOf<String, String>()
-        uri.query?.split("&")?.forEach { param ->
-            val parts = param.split("=", limit = 2)
-            if (parts.size == 2) {
-                try {
-                    params[parts[0]] = java.net.URLDecoder.decode(parts[1], "UTF-8")
-                } catch (e: Exception) {
-                    params[parts[0]] = parts[1]
-                }
-            }
-        }
+        val params = parseQueryParams(uri.rawQuery)
 
         val sni = defaultTlsServerName(
             explicitServerName = params["sni"],
             server = server
         )
         val insecure = params["insecure"] == "1" || params["allowInsecure"] == "1"
-        val alpnList = params["alpn"]?.split(",")?.filter { it.isNotBlank() }
-        val fingerprint = params["fp"]?.takeIf { it.isNotBlank() }
+        val alpnList = firstParam(params, "alpn")?.split(",")?.filter { it.isNotBlank() }
+        val fingerprint = firstParam(params, "fp")?.takeIf { it.isNotBlank() }
+        val tls = buildHttpTlsConfig(true, server.orEmpty(), params)?.copy(
+            serverName = sni,
+            insecure = insecure,
+            alpn = alpnList,
+            utls = fingerprint?.let { UtlsConfig(enabled = true, fingerprint = it) },
+            reality = if (firstParam(params, "security")?.equals("reality", ignoreCase = true) == true) {
+                RealityConfig(
+                    enabled = true,
+                    publicKey = firstParam(params, "pbk"),
+                    shortId = firstParam(params, "sid")
+                )
+            } else {
+                null
+            }
+        )
 
         val idleSessionCheckInterval = params["idle_session_check_interval"]
         val idleSessionTimeout = params["idle_session_timeout"]
@@ -543,13 +551,7 @@ internal fun NodeLinkParser.parseAnyTLSLink(link: String): Outbound? {
             idleSessionCheckInterval = idleSessionCheckInterval,
             idleSessionTimeout = idleSessionTimeout,
             minIdleSession = minIdleSession,
-            tls = TlsConfig(
-                enabled = true,
-                serverName = sni,
-                insecure = insecure,
-                alpn = alpnList,
-                utls = fingerprint?.let { UtlsConfig(enabled = true, fingerprint = it) }
-            )
+            tls = tls,
         )
     } catch (e: Exception) {
         Log.e("NodeLinkParser", "Failed to parse AnyTLS link", e)
@@ -657,7 +659,7 @@ internal fun NodeLinkParser.parseTuicLink(link: String): Outbound? {
         val name = java.net.URLDecoder.decode(uri.fragment ?: "TUIC Node", "UTF-8")
         val server = uri.host
         val port = if (uri.port > 0) uri.port else 443
-        val params = parseQueryParams(uri.query)
+        val params = parseQueryParams(uri.rawQuery)
         val credentials = parseTuicCredentials(uri.userInfo ?: "", params)
         val tlsOptions = buildTuicTlsOptions(server, params)
         val transportOptions = buildTuicTransportOptions(params)
@@ -683,7 +685,13 @@ internal fun NodeLinkParser.parseTuicLink(link: String): Outbound? {
                 alpn = tlsOptions.alpn,
                 utls = tlsOptions.fingerprint?.let {
                     UtlsConfig(enabled = true, fingerprint = it)
-                }
+                },
+                ca = tlsOptions.ca,
+                caPath = tlsOptions.caPath,
+                certificate = tlsOptions.certificate,
+                certificatePath = tlsOptions.certificatePath,
+                key = tlsOptions.key,
+                keyPath = tlsOptions.keyPath
             )
         )
     } catch (e: Exception) {

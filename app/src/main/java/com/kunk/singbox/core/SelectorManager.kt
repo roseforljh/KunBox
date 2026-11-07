@@ -1,7 +1,7 @@
 package com.kunk.singbox.core
 
 import android.util.Log
-import io.nekohasekai.libbox.CommandClient
+import io.raybox.raybox.CommandClient
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive

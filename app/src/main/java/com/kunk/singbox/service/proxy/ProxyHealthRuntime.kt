@@ -47,16 +47,16 @@ import com.kunk.singbox.utils.perf.BackgroundResourceGuard
 import com.kunk.singbox.utils.perf.ResourceGuardRegistration
 import com.kunk.singbox.utils.perf.ResourceGuardOwner
 import com.kunk.singbox.utils.perf.isResourceRecoveryBudgetError
-import io.nekohasekai.libbox.CommandClientHandler
-import io.nekohasekai.libbox.CommandClientOptions
-import io.nekohasekai.libbox.ConnectionEvents
-import io.nekohasekai.libbox.OverrideOptions
-import io.nekohasekai.libbox.OutboundGroupIterator
-import io.nekohasekai.libbox.OutboundGroupItemIterator
-import io.nekohasekai.libbox.LogIterator
-import io.nekohasekai.libbox.StatusMessage
-import io.nekohasekai.libbox.StringIterator
-import io.nekohasekai.libbox.Libbox
+import io.raybox.raybox.CommandClientHandler
+import io.raybox.raybox.CommandClientOptions
+import io.raybox.raybox.ConnectionEvents
+import io.raybox.raybox.OverrideOptions
+import io.raybox.raybox.OutboundGroupIterator
+import io.raybox.raybox.OutboundGroupItemIterator
+import io.raybox.raybox.LogIterator
+import io.raybox.raybox.StatusMessage
+import io.raybox.raybox.StringIterator
+import io.raybox.raybox.Raybox as Libbox
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
