@@ -36,7 +36,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: roseforljh/RayBox-rx
-          ref: 729248f1a99bed5658aa210df5a8f432ea17733c
+          ref: ba64d85ef5ff5e9ef740a1558defa465fee7583c
           path: raybox-source
           fetch-depth: 0
 
