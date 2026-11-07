@@ -123,11 +123,11 @@ def install_release(source, project, lock_path):
             len(commit) != 40 or any(char not in "0123456789abcdef" for char in commit) or
             lock.get("tag") != "android-" + commit or lock.get("dirty") is not False):
         raise ValueError("Release lock must pin a clean, full RayBox commit and matching tag")
-    actual = subprocess.check_output([
-        "git", "-C", str(source), "rev-parse", "refs/tags/" + lock["tag"] + "^{commit}"
-    ], text=True).strip()
+    actual = subprocess.check_output(
+        ["git", "-C", str(source), "rev-parse", "HEAD"], text=True
+    ).strip()
     if actual != commit:
-        raise ValueError("Release tag does not point to locked commit")
+        raise ValueError("Checked out RayBox source does not match release lock")
     with tempfile.TemporaryDirectory(prefix="kunbox-raybox-release-") as temporary:
         directory = Path(temporary)
         subprocess.run([
