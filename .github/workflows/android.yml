@@ -42,6 +42,8 @@ jobs:
 
       - name: Install verified RayBox release
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           python3 -I tools/sync_raybox.py \
             --source "$GITHUB_WORKSPACE/raybox-source" \

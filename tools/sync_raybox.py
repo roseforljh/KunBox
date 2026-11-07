@@ -124,7 +124,7 @@ def install_release(source, project, lock_path):
             lock.get("tag") != "android-" + commit or lock.get("dirty") is not False):
         raise ValueError("Release lock must pin a clean, full RayBox commit and matching tag")
     actual = subprocess.check_output([
-        "gh", "api", "repos/roseforljh/RayBox-rx/commits/" + lock["tag"], "--jq", ".sha"
+        "git", "-C", str(source), "rev-parse", "refs/tags/" + lock["tag"] + "^{commit}"
     ], text=True).strip()
     if actual != commit:
         raise ValueError("Release tag does not point to locked commit")
