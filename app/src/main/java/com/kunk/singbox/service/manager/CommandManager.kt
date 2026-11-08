@@ -11,7 +11,8 @@ import com.kunk.singbox.ipc.SingBoxIpcHub
 import com.kunk.singbox.repository.LogRepository
 import com.kunk.singbox.service.notification.VpnNotificationManager
 import com.kunk.singbox.service.network.TrafficMonitor
-import io.nekohasekai.libbox.*
+import io.raybox.raybox.*
+import io.raybox.raybox.Raybox as Libbox
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.Channel
 import java.net.InetSocketAddress
@@ -287,11 +288,23 @@ class CommandManager(
     }
 
     fun startServer(server: CommandServer): Result<Unit> = runCatching {
+        removeStaleCommandSocket()
         server.start()
         Log.i(TAG, "CommandServer started")
 
         // BoxWrapperManager.init 延迟到 libbox 启动后调用
         // 避免 Libbox.hasSelector() 在 box 未运行时超时阻塞 ~1.5s
+    }
+
+    /** Unix socket files survive an abrupt stop; a leftover file makes the next bind fail with EADDRINUSE. */
+    private fun removeStaleCommandSocket() {
+        val socket = java.io.File(
+            java.io.File(context.filesDir, "libbox_${android.os.Process.myPid()}"),
+            "command.sock"
+        )
+        if (socket.exists() && socket.delete()) {
+            Log.w(TAG, "Removed stale command socket before start")
+        }
     }
 
     fun clearStaleServerForStartup(): Result<Boolean> = runCatching {

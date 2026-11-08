@@ -6,8 +6,8 @@ import android.os.Build
 import android.os.CancellationSignal
 import android.system.ErrnoException
 import com.kunk.singbox.utils.DefaultNetworkListener
-import io.nekohasekai.libbox.ExchangeContext
-import io.nekohasekai.libbox.LocalDNSTransport
+import io.raybox.raybox.ExchangeContext
+import io.raybox.raybox.LocalDNSTransport
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.asExecutor
 import kotlinx.coroutines.runBlocking

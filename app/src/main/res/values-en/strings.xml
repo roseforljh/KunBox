@@ -411,6 +411,15 @@
     <string name="node_detail_username_optional">Username (Optional)</string>
     <string name="node_detail_password_optional">Password (Optional)</string>
     <string name="node_detail_shadowtls_version">ShadowTLS Version</string>
+    <string name="node_hy2_bbr_profile">BBR Profile</string>
+    <string name="node_hy2_chrome_parrot">Chrome QUIC Simulation</string>
+    <string name="node_hy2_hop_min">Minimum Hop Interval (e.g. 30s)</string>
+    <string name="node_hy2_hop_max">Maximum Hop Interval (e.g. 60s)</string>
+    <string name="node_hy2_packet_min">Gecko Minimum Packet Size (default 512)</string>
+    <string name="node_hy2_packet_max">Gecko Maximum Packet Size (default 1200)</string>
+    <string name="node_hy2_realm_json">Realm Configuration JSON</string>
+    <string name="node_hy2_realm_replace">Enabling Realm clears the direct address, port and port hopping settings. Continue?</string>
+    <string name="node_hy2_realm_remove">Disabling Realm clears its configuration. A direct address will be required. Continue?</string>
     <string name="node_detail_hop_interval">Hop Interval (s)</string>
     <string name="node_detail_ws_host">WebSocket Host</string>
     <string name="node_detail_ws_path">WebSocket Path</string>

@@ -33,6 +33,7 @@ internal fun ConfigRepository.stripInternalMetadata(config: SingBoxConfig): Sing
         fakeip = null
     )
     return config.copy(
+        subscriptionOutboundTags = null,
         dns = runtimeDns,
         outbounds = runtimeOutbounds,
         endpoints = config.endpoints?.map(ConfigRepository::normalizeEndpointDomainResolverForRuntime),

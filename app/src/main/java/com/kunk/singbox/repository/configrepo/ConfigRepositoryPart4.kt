@@ -49,7 +49,9 @@ internal fun ConfigRepository.setActiveProfile(profileId: String, targetNodeId: 
     persistMainProcessSelection(profileId, selectedNodeId, selectedNodeName)
 
     fun updateState(nodes: List<NodeUi>) {
-        applyActiveProfileNodes(profileId, nodes, targetNodeId)
+        if (_activeProfileId.value == profileId) {
+            applyActiveProfileNodes(profileId, nodes, targetNodeId)
+        }
     }
 
     if (cached != null) {
@@ -67,7 +69,7 @@ internal fun ConfigRepository.setActiveProfile(profileId: String, targetNodeId: 
 
             updateState(nodesWithLatency)
 
-            if (allNodesUiActiveCount.get() > 0) {
+            if (_activeProfileId.value == profileId && allNodesUiActiveCount.get() > 0) {
                 updateAllNodesAndGroups()
             }
         }

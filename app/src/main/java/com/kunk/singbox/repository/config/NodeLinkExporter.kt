@@ -3,16 +3,19 @@ package com.kunk.singbox.repository.config
 import android.util.Base64
 import com.google.gson.Gson
 import com.kunk.singbox.model.Outbound
+import com.kunk.singbox.model.SingBoxConfig
 import com.kunk.singbox.model.UInt32JsonAdapter
 import com.kunk.singbox.model.V2RAY_TRANSPORT_PROTOCOLS
 import com.kunk.singbox.model.V2RAY_TRANSPORT_TYPES
-import com.kunk.singbox.model.V2RAY_XHTTP_TRANSPORT_TYPES
 import com.kunk.singbox.model.VMessLinkConfig
 import com.kunk.singbox.model.allHeaderValues
 
 object NodeLinkExporter {
 
     fun export(outbound: Outbound, gson: Gson): String? {
+        if (outbound.type == "hysteria2" && outbound.realm != null) {
+            return gson.toJson(SingBoxConfig(outbounds = listOf(outbound)))
+        }
         if (hasInvalidV2RayTransport(outbound)) return null
         return when (outbound.type) {
             "vless" -> generateVLessLink(outbound)
@@ -37,9 +40,6 @@ object NodeLinkExporter {
         val transport = outbound.transport ?: return false
         val type = transport.type?.trim()?.lowercase().orEmpty()
         if (type.isNotEmpty() && type !in V2RAY_TRANSPORT_TYPES) return true
-        if (type in V2RAY_XHTTP_TRANSPORT_TYPES && outbound.encryption?.let {
-                it.isNotBlank() && !it.equals("none", ignoreCase = true)
-            } == true) return true
         return type == "ws" && transport.maxEarlyData?.let { value ->
             runCatching { UInt32JsonAdapter.requireValue(value) }.isFailure
         } == true
@@ -68,6 +68,21 @@ object NodeLinkExporter {
         return if (query.isNotEmpty()) "?$query" else ""
     }
 
+    private fun appendTlsCertificates(params: MutableList<String>, tls: com.kunk.singbox.model.TlsConfig?) {
+        tls?.ca?.takeIf { it.isNotEmpty() }?.let {
+            params.add("certificate=${encodeUrlComponent(it.joinToString("\n"))}")
+        }
+        tls?.caPath?.let { params.add("certificate_path=${encodeUrlComponent(it)}") }
+        tls?.certificate?.takeIf { it.isNotEmpty() }?.let {
+            params.add("client_certificate=${encodeUrlComponent(it.joinToString("\n"))}")
+        }
+        tls?.certificatePath?.let { params.add("client_certificate_path=${encodeUrlComponent(it)}") }
+        tls?.key?.takeIf { it.isNotEmpty() }?.let {
+            params.add("client_key=${encodeUrlComponent(it.joinToString("\n"))}")
+        }
+        tls?.keyPath?.let { params.add("client_key_path=${encodeUrlComponent(it)}") }
+    }
+
     private fun buildUserInfo(username: String?, password: String?): String {
         val user = username?.takeIf { it.isNotBlank() } ?: return ""
         val encodedUser = encodeUrlComponent(user)
@@ -92,7 +107,8 @@ object NodeLinkExporter {
         val params = mutableListOf<String>()
 
         params.add("type=${outbound.transport?.type ?: "tcp"}")
-        params.add("encryption=none")
+        params.add("encryption=${encodeUrlComponent(outbound.encryption?.takeIf { it.isNotBlank() } ?: "none")}")
+        outbound.rayboxCloudflare?.let { params.add("raybox_cloudflare=$it") }
 
         outbound.flow?.let { params.add("flow=$it") }
 
@@ -113,9 +129,10 @@ object NodeLinkExporter {
             outbound.tls.alpn?.let {
                 if (it.isNotEmpty()) params.add("alpn=${encodeUrlComponent(it.joinToString(","))}")
             }
+            appendTlsCertificates(params, outbound.tls)
         }
 
-        outbound.packetEncoding?.let { params.add("packetEncoding=$it") }
+        outbound.packetEncoding?.let { params.add("packetEncoding=${encodeUrlComponent(it)}") }
 
         when (outbound.transport?.type) {
             "ws" -> {
@@ -155,6 +172,7 @@ object NodeLinkExporter {
                 joinTransportHosts(outbound.transport.host)
                     ?.let { params.add("host=${encodeUrlComponent(it)}") }
                 outbound.transport.mode?.let { params.add("mode=${encodeUrlComponent(it)}") }
+                outbound.transport.extra?.let { params.add("extra=${encodeUrlComponent(it.toString())}") }
                 outbound.transport.xPaddingBytes?.let {
                     params.add("xPaddingBytes=${encodeUrlComponent(it)}")
                 }
@@ -197,7 +215,10 @@ object NodeLinkExporter {
                 noGRPCHeader = outbound.transport?.noGRPCHeader,
                 noSSEHeader = outbound.transport?.noSSEHeader
             )
-            val jsonStr = gson.toJson(json)
+            val jsonObject = gson.toJsonTree(json).asJsonObject
+            outbound.rayboxCloudflare?.let { jsonObject.addProperty("raybox_cloudflare", it) }
+            outbound.transport?.extra?.let { jsonObject.add("extra", it.deepCopy()) }
+            val jsonStr = gson.toJson(jsonObject)
             val base64 = encodeBase64NoWrap(jsonStr.toByteArray())
             "vmess://$base64"
         } catch (_: Exception) {
@@ -234,6 +255,7 @@ object NodeLinkExporter {
         val name = encodeUrlComponent(outbound.tag)
 
         val params = mutableListOf<String>()
+        outbound.rayboxCloudflare?.let { params.add("raybox_cloudflare=$it") }
         if (outbound.tls?.enabled == true) {
             params.add("security=tls")
             outbound.tls.serverName?.let { params.add("sni=${encodeUrlComponent(it)}") }
@@ -270,6 +292,7 @@ object NodeLinkExporter {
                     joinTransportHosts(transport.host)?.let { params.add("host=${encodeUrlComponent(it)}") }
                     transport.path?.let { params.add("path=${encodeUrlComponent(it)}") }
                     transport.mode?.let { params.add("mode=${encodeUrlComponent(it)}") }
+                    transport.extra?.let { params.add("extra=${encodeUrlComponent(it.toString())}") }
                     transport.xPaddingBytes?.let {
                         params.add("xPaddingBytes=${encodeUrlComponent(it)}")
                     }
@@ -413,6 +436,8 @@ object NodeLinkExporter {
         outbound.obfs?.let { obfs ->
             obfs.type?.let { params.add("obfs=${encodeUrlComponent(it)}") }
             obfs.password?.let { params.add("obfs-password=${encodeUrlComponent(it)}") }
+            obfs.minPacketSize?.let { params.add("obfs-min-packet-size=$it") }
+            obfs.maxPacketSize?.let { params.add("obfs-max-packet-size=$it") }
         }
         outbound.upMbps?.let { params.add("upmbps=$it") }
         outbound.downMbps?.let { params.add("downmbps=$it") }
@@ -420,7 +445,12 @@ object NodeLinkExporter {
             params.add("mport=${encodeUrlComponent(it.joinToString(","))}")
         }
         outbound.hopInterval?.let { params.add("hop_interval=${encodeUrlComponent(it)}") }
+        outbound.hopIntervalMax?.let { params.add("hop_interval_max=${encodeUrlComponent(it)}") }
         outbound.network?.firstOrNull()?.let { params.add("network=${encodeUrlComponent(it)}") }
+        outbound.bbrProfile?.let { params.add("bbr_profile=${encodeUrlComponent(it)}") }
+        outbound.disableChromeParrot?.let {
+            params.add("disable_chrome_parrot=${if (it) 1 else 0}")
+        }
 
         val queryPart = buildOptionalQuery(params)
         return "hysteria2://$password@$server:$port$queryPart#$name"
@@ -462,6 +492,7 @@ object NodeLinkExporter {
         return "hysteria://$server:$port$queryPart#$name"
     }
 
+    @Suppress("CyclomaticComplexMethod")
     private fun generateAnyTLSLink(outbound: Outbound): String {
         val password = encodeUrlComponent(outbound.password ?: "")
         val server = outbound.server?.let { formatServerHost(it) } ?: return ""
@@ -471,11 +502,17 @@ object NodeLinkExporter {
         val params = mutableListOf<String>()
 
         outbound.tls?.serverName?.let { params.add("sni=${encodeUrlComponent(it)}") }
-        if (outbound.tls?.insecure == true) params.add("insecure=1")
-        outbound.tls?.alpn?.let {
-            if (it.isNotEmpty()) params.add("alpn=${encodeUrlComponent(it.joinToString(","))}")
+        if (outbound.tls?.reality?.enabled == true) {
+            params.add("security=reality")
+            outbound.tls.reality.publicKey?.let { params.add("pbk=${encodeUrlComponent(it)}") }
+            outbound.tls.reality.shortId?.let { params.add("sid=${encodeUrlComponent(it)}") }
         }
+        if (outbound.tls?.insecure == true) params.add("insecure=1")
         outbound.tls?.utls?.fingerprint?.let { params.add("fp=${encodeUrlComponent(it)}") }
+        outbound.tls?.alpn?.joinToString(",")?.takeIf(String::isNotEmpty)?.let {
+            params.add("alpn=${encodeUrlComponent(it)}")
+        }
+        appendTlsCertificates(params, outbound.tls)
 
         outbound.idleSessionCheckInterval?.let { params.add("idle_session_check_interval=$it") }
         outbound.idleSessionTimeout?.let { params.add("idle_session_timeout=$it") }
@@ -535,6 +572,7 @@ object NodeLinkExporter {
             if (it.isNotEmpty()) params.add("alpn=${encodeUrlComponent(it.joinToString(","))}")
         }
         outbound.tls?.utls?.fingerprint?.let { params.add("fp=${encodeUrlComponent(it)}") }
+        appendTlsCertificates(params, outbound.tls)
 
         val queryPart = buildOptionalQuery(params)
         return "tuic://$uuid:$password@$server:$port$queryPart#$name"

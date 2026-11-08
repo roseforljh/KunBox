@@ -1,6 +1,6 @@
 package com.kunk.singbox.core
 
-import io.nekohasekai.libbox.StringIterator
+import io.raybox.raybox.StringIterator
 
 /** libbox StringIterator 的最小实现，供平台适配复用。 */
 internal class StringIteratorImpl(private val list: List<String>) : StringIterator {

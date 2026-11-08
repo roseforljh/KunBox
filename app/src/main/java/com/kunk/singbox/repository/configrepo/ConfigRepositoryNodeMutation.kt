@@ -7,6 +7,38 @@ import com.kunk.singbox.model.Endpoint
 import com.kunk.singbox.model.Outbound
 import com.kunk.singbox.model.SingBoxConfig
 
+internal fun mergeSubscriptionConfig(previous: SingBoxConfig?, updated: SingBoxConfig): SingBoxConfig {
+    val incomingTags = updated.outbounds.orEmpty().mapTo(mutableSetOf(), Outbound::tag) +
+        updated.endpoints.orEmpty().map(Endpoint::tag)
+    // ponytail: 旧配置没有来源记录，首次更新保留缺失节点；记录基线后仅保留手动新增节点。
+    val subscriptionTags = previous?.subscriptionOutboundTags?.toSet() ?: incomingTags
+    val localOutbounds = previous?.outbounds.orEmpty().filter {
+        it.tag !in subscriptionTags && it.type !in setOf("direct", "block", "dns", "selector", "urltest")
+    }
+    var merged = updated
+    for (local in localOutbounds) {
+        if (local.tag in incomingTags) {
+            val reserved = merged.copy(outbounds = merged.outbounds.orEmpty() + localOutbounds)
+            val newTag = resolveUpdatedOutboundTag(reserved, null, local.tag)
+            merged = rewriteOutboundTagReferences(merged, local.tag, newTag)
+        }
+    }
+    val subscriptionOutbounds = preserveSubscriptionDetours(previous, merged).outbounds.orEmpty()
+    return merged.copy(
+        outbounds = subscriptionOutbounds + localOutbounds,
+        subscriptionOutboundTags = subscriptionOutbounds.map(Outbound::tag)
+    )
+}
+
+internal fun preserveSubscriptionDetours(previous: SingBoxConfig?, updated: SingBoxConfig): SingBoxConfig {
+    val savedDetours = previous?.outbounds.orEmpty().mapNotNull { outbound ->
+        outbound.detour?.takeIf(String::isNotBlank)?.let { outbound.tag to it }
+    }.toMap()
+    return updated.copy(outbounds = updated.outbounds?.map { outbound ->
+        savedDetours[outbound.tag]?.let { outbound.copy(detour = it) } ?: outbound
+    })
+}
+
 private fun rewriteTagReference(value: String?, oldTag: String, newTag: String?): String? =
     if (value == oldTag) newTag else value
 
@@ -94,13 +126,15 @@ internal fun rewriteOutboundTagReferences(
         proxies = proxies,
         endpoints = endpoints,
         dns = dns,
-        route = route
+        route = route,
+        subscriptionOutboundTags = config.subscriptionOutboundTags
+            ?.mapNotNull { rewriteTagReference(it, oldTag, newTag) }?.distinct()
     )
 }
 
 internal fun resolveUpdatedOutboundTag(
     config: SingBoxConfig,
-    oldTag: String,
+    oldTag: String?,
     requestedTag: String
 ): String {
     val base = requestedTag.trim().ifBlank { "unnamed" }

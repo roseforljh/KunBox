@@ -22,8 +22,8 @@
 
 # sing-box (libbox) - 核心 VPN 库
 # 必须保留所有成员,JNI 调用需要完整的类/方法签名
--keep class io.nekohasekai.libbox.** { *; }
--dontwarn io.nekohasekai.libbox.**
+-keep class io.raybox.raybox.** { *; }
+-dontwarn io.raybox.raybox.**
 
 # ====================================================================
 # Android Components (必须保留,系统通过反射调用)
@@ -132,6 +132,65 @@
 -dontwarn org.conscrypt.**
 -dontwarn org.bouncycastle.**
 -dontwarn org.openjsse.**
+
+# Instrumentation entry points must survive optimization across the APK boundary.
+-keep class com.kunk.singbox.repository.ConfigRepository { *; }
+-keep class com.kunk.singbox.repository.ConfigRepository$Companion { *; }
+-keep class com.kunk.singbox.repository.ConfigRepository$ConfigGenerationResult { *; }
+-keep class com.kunk.singbox.repository.ConfigRepositoryPart*Kt {
+    *** awaitInitialProfilesLoaded*(...);
+    *** saveProfilesImmediate*(...);
+    *** loadConfig*(...);
+    *** importFromContent*(...);
+    *** parseNodeLink*(...);
+    *** setActiveProfileAndWait*(...);
+    *** generateConfigFile*(...);
+    *** testAllNodesLatency*(...);
+    *** deleteProfile*(...);
+    *** addSingleNode*(...);
+    *** updateNode*(...);
+    *** exportNode*(...);
+    *** deleteNode*(...);
+    *** importFromSubscription*(...);
+    *** updateProfile*(...);
+}
+-keep class com.kunk.singbox.repository.DataExportRepository** { *; }
+-keep class com.kunk.singbox.repository.SettingsRepository** { *; }
+-keep class com.kunk.singbox.repository.RuleSetRepository** { *; }
+-keep class com.kunk.singbox.repository.ConfigRepositoryPart*Kt { *; }
+-keep class com.kunk.singbox.repository.ConfigRepositoryStatics*Kt { *; }
+-keep class com.kunk.singbox.repository.ConfigRepository$ConfigGenerationResult { *; }
+-keep class com.kunk.singbox.model.RuleSet { *; }
+-keep class com.kunk.singbox.model.RuleSetType { *; }
+-keep class com.kunk.singbox.model.RuleSetOutboundMode { *; }
+-keep class com.kunk.singbox.model.AppSettings { *; }
+-keep class com.kunk.singbox.model.Outbound { *; }
+-keep class com.kunk.singbox.repository.store.SettingsStore** { *; }
+-keep class com.kunk.singbox.repository.config.OutboundFixer** { *; }
+-keep class com.kunk.singbox.core.SingBoxCore** { *; }
+-keep class com.kunk.singbox.core.TestCommandServerHandler** { *; }
+-keep class com.kunk.singbox.core.TestPlatformInterface** { *; }
+-keep class com.kunk.singbox.ipc.VpnStateStore** { *; }
+-keep class com.kunk.singbox.ipc.VpnStateStore$RuntimeStateSnapshot { *; }
+-keepclassmembers class com.kunk.singbox.ipc.VpnStateStore {
+    <methods>;
+}
+-keep class com.kunk.singbox.ipc.DataPlaneReadinessSnapshot { *; }
+-keep class com.kunk.singbox.ipc.DataPlaneStatus { *; }
+-keep class com.kunk.singbox.ipc.VpnOwnerStatus { *; }
+-keep class com.kunk.singbox.ipc.VpnLockdownStatus { *; }
+-keep class com.kunk.singbox.ipc.SingBoxRemote** { *; }
+-keep class com.kunk.singbox.manager.VpnServiceManager** { *; }
+-keep class com.kunk.singbox.service.ServiceState { *; }
+-keep class com.kunk.singbox.service.manager.VpnStopInitiator { *; }
+-keep class com.kunk.singbox.utils.dns.DnsResolveStore** { *; }
+
+# Kotlin runtime APIs are loaded by AndroidX Test in the target process
+-keep class kotlin.** { *; }
+-keep class kotlinx.coroutines.** { *; }
+
+# AndroidX Test runner loads tracing APIs inside the target process
+-keep class androidx.tracing.** { *; }
 
 # ====================================================================
 # Suppress Warnings (已知安全的警告)

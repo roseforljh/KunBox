@@ -21,7 +21,8 @@ import com.kunk.singbox.repository.SettingsRepository
 import com.kunk.singbox.repository.TrafficRepository
 import com.kunk.singbox.ipc.VpnStateStore
 import kotlinx.coroutines.flow.first
-import io.nekohasekai.libbox.*
+import io.raybox.raybox.*
+import io.raybox.raybox.Raybox as Libbox
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.delay
@@ -49,10 +50,14 @@ internal fun filterRuntimeOutbounds(
     outbounds: List<Outbound>,
     validate: (List<Outbound>) -> Boolean
 ): List<Outbound> {
+    // 配置限定引用尚未转换为运行 tag；这里只校验节点字段，完整依赖由启动前配置校验检查。
+    fun validateCandidates(candidates: List<Outbound>): Boolean = validate(candidates.map { outbound ->
+        if (outbound.detour?.contains("::") == true) outbound.copy(detour = null) else outbound
+    })
     val uncheckedTypes = setOf("direct", "block", "dns", "selector", "urltest", "url-test")
     val candidates = outbounds.filterNot { it.type in uncheckedTypes }
     // ponytail: 正常订阅只做一次批量校验；有坏节点时才回退到逐个过滤。
-    if (candidates.isEmpty() || validate(candidates)) return outbounds
+    if (candidates.isEmpty() || validateCandidates(candidates)) return outbounds
     val byTag = outbounds.associateBy(Outbound::tag)
     fun withDetours(outbound: Outbound): List<Outbound> {
         val required = linkedMapOf<String, Outbound>()
@@ -64,7 +69,7 @@ internal fun filterRuntimeOutbounds(
         add(outbound)
         return required.values.toList()
     }
-    return outbounds.filter { it.type in uncheckedTypes || validate(withDetours(it)) }
+    return outbounds.filter { it.type in uncheckedTypes || validateCandidates(withDetours(it)) }
 }
 
 enum class LatencyProbeTrafficKind {
@@ -372,7 +377,14 @@ class SingBoxCore private constructor(internal val context: Context) {
 
     internal fun initLibbox(): Boolean {
         return try {
-            Log.i(TAG, "Libbox version=${Libbox.version()}")
+            Log.i(
+                TAG,
+                "RayBox version=${Libbox.version()} " +
+                    "commit=${com.kunk.singbox.BuildConfig.RAYBOX_COMMIT} " +
+                    "dirty=${com.kunk.singbox.BuildConfig.RAYBOX_DIRTY} " +
+                    "source=${com.kunk.singbox.BuildConfig.RAYBOX_SOURCE_DIGEST} " +
+                    "aar=${com.kunk.singbox.BuildConfig.RAYBOX_AAR_SHA256}"
+            )
             ensureLibboxSetup(context)
             true
         } catch (e: Exception) {
@@ -552,7 +564,7 @@ class SingBoxCore private constructor(internal val context: Context) {
             )
 
             val configJson = gson.toJson(stripLatencyRuntimeMetadata(config))
-            var commandServer: io.nekohasekai.libbox.CommandServer? = null
+            var commandServer: io.raybox.raybox.CommandServer? = null
             var trafficRecorder: TemporaryProbeTrafficRecorder? = null
             try {
                 ensureLibboxSetup(context)

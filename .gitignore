@@ -60,9 +60,15 @@ buildScript/
 app/libs/*.zip
 app/libs/classes_check/
 app/libs/libbox_check/
+app/libs/raybox-build.json
+app/libs/raybox.aar
+app/libs/raybox-backup/
+tools/__pycache__/
 docs/
 !docs/
 docs/*
+!docs/raybox-unification/
+!docs/raybox-unification/**
 !docs/plans/
 docs/plans/*
 !docs/plans/ROOT_TRANSPARENT_PROXY_IMPLEMENTATION_PLAN.md
@@ -90,9 +96,11 @@ Kkunbox/
 !.kernel-sync-local/patches/kunbox-v1.13.18.patch
 !.kernel-sync-local/patches/kunbox-v1.13.19.patch
 !.kernel-sync-local/patches/kunbox-v1.14.0.patch
+!.kernel-sync-local/patches/kunbox-v1.14.4.patch
 !.kernel-sync-local/patches/sing-tun-v0.8.12-0.20260727151122-3a09076491df.patch
 !.kernel-sync-local/patches/sing-tun-v0.8.12-0.20260810140523-7c73233bd0fb.patch
 !.kernel-sync-local/patches/sing-tun-v0.9.0-beta.4.patch
+!.kernel-sync-local/patches/sing-tun-v0.9.7-0.20261023115432-040db71fcd33.patch
 OPENWORLD_MIGRATION_PLAN.md
 .factory/settings.json
 .gstack/

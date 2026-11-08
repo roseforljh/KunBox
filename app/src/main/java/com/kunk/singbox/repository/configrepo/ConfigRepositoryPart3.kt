@@ -358,7 +358,7 @@ internal fun ConfigRepository.createNodeUi(
 
     // 订阅信息位（剩余流量/套餐到期）常写成 127.0.0.1，不当作可测节点
     val server = outbound.server?.trim().orEmpty()
-    if (isPlaceholderNodeServer(server)) {
+    if (outbound.realm == null && isPlaceholderNodeServer(server)) {
         return null
     }
 

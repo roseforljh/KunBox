@@ -218,12 +218,9 @@ abstract class ClashYamlParserPart1 : ClashYamlParserBase() {
             ?: map["splithttp-opts"] as? Map<*, *>
             ?: return null
         val extra = asNestedMap(opts["extra"])
-        val encryption = asString(extra?.get("encryption"))
-        if (!encryption.isNullOrBlank() && !encryption.equals("none", ignoreCase = true)) {
-            return null
-        }
         return TransportConfig(
             type = "xhttp",
+            extra = extra?.let { com.google.gson.Gson().toJsonTree(it).asJsonObject },
             path = asString(opts["path"]) ?: "/",
             host = asStringList(opts["host"]),
             mode = asString(opts["mode"]),
@@ -350,6 +347,8 @@ abstract class ClashYamlParserPart1 : ClashYamlParserBase() {
             serverPort = port,
             uuid = uuid,
             flow = flow,
+            encryption = asString(map["encryption"])?.takeIf { it.isNotBlank() && !it.equals("none", true) },
+            rayboxCloudflare = asBool(map["raybox_cloudflare"]),
             tls = tlsConfig,
             transport = transport,
             packetEncoding = packetEncoding,
@@ -451,6 +450,7 @@ abstract class ClashYamlParserPart1 : ClashYamlParserBase() {
             alterId = if (alterId > 0) alterId else null,
 
             security = cipher,
+            rayboxCloudflare = asBool(map["raybox_cloudflare"]),
             tls = tlsConfig,
             transport = transport,
             packetEncoding = packetEncoding,
@@ -630,6 +630,7 @@ abstract class ClashYamlParserPart1 : ClashYamlParserBase() {
             server = server,
             serverPort = port,
             password = password,
+            rayboxCloudflare = asBool(map["raybox_cloudflare"]),
             tls = tlsConfig,
             transport = transport,
             multiplex = multiplex
@@ -680,16 +681,24 @@ abstract class ClashYamlParserPart1 : ClashYamlParserBase() {
         }
     }
 
-    protected override fun parseHysteria2(map: Map<*, *>, name: String, server: String?, port: Int?, globalFingerprint: String?, globalTlsMinVersion: String?): Outbound? {
-        if (server == null || port == null) return null
+    @Suppress("CyclomaticComplexMethod")
+    protected override fun parseHysteria2(
+        map: Map<*, *>, name: String, server: String?, port: Int?, globalFingerprint: String?,
+        globalTlsMinVersion: String?
+    ): Outbound? {
+        val realmMap = asNestedMap(map["realm"])
+        if ((server == null || port == null) && realmMap == null) return null
         val password = asString(map["password"]) ?: return null
         val sni = asString(map["sni"]) ?: server
         val insecure = asBool(map["skip-cert-verify"]) == true
         val alpn = asStringList(map["alpn"])
 
         val fingerprint = asString(map["client-fingerprint"]) ?: globalFingerprint
-        val obfs = asString(map["obfs"])
-        val obfsPassword = asString(map["obfs-password"])
+        val obfsMap = asNestedMap(map["obfs"])
+        val obfs = asString(map["obfs"]) ?: asString(obfsMap?.get("type"))
+        val obfsPassword = asString(map["obfs-password"]) ?: asString(obfsMap?.get("password"))
+        val obfsMinPacketSize = asInt(obfsMap?.get("min_packet_size") ?: obfsMap?.get("min-packet-size"))
+        val obfsMaxPacketSize = asInt(obfsMap?.get("max_packet_size") ?: obfsMap?.get("max-packet-size"))
 
         val tlsMinVersion = asString(map["tls-version"]) ?: asString(map["min-tls-version"]) ?: globalTlsMinVersion
 
@@ -701,6 +710,11 @@ abstract class ClashYamlParserPart1 : ClashYamlParserBase() {
         val portsStr = asString(map["ports"])?.takeIf { it.isNotBlank() }
         val serverPorts = portsStr?.let { listOf(it) }
         val hopInterval = asString(map["hop-interval"])?.takeIf { it.isNotBlank() }
+        val hopIntervalMax = asString(map["hop-interval-max"] ?: map["hop_interval_max"])
+            ?.takeIf { it.isNotBlank() }
+        val bbrProfile = asString(map["bbr-profile"] ?: map["bbr_profile"])
+        val disableChromeParrot = asBool(map["disable-chrome-parrot"] ?: map["disable_chrome_parrot"])
+        val realm = realmMap?.let { com.google.gson.Gson().toJsonTree(it).asJsonObject }
 
         return Outbound(
             type = "hysteria2",
@@ -713,6 +727,10 @@ abstract class ClashYamlParserPart1 : ClashYamlParserBase() {
             downMbps = downMbps,
             serverPorts = serverPorts,
             hopInterval = hopInterval,
+            hopIntervalMax = hopIntervalMax,
+            bbrProfile = bbrProfile,
+            disableChromeParrot = disableChromeParrot,
+            realm = realm,
             tls = buildTlsConfig(
                 map = map,
                 serverName = sni,
@@ -721,7 +739,12 @@ abstract class ClashYamlParserPart1 : ClashYamlParserBase() {
                 minVersion = tlsMinVersion,
                 utls = fingerprint?.let { UtlsConfig(enabled = true, fingerprint = it) }
             ),
-            obfs = if (obfs != null) com.kunk.singbox.model.ObfsConfig(type = obfs, password = obfsPassword) else null
+            obfs = if (obfs != null) com.kunk.singbox.model.ObfsConfig(
+                type = obfs,
+                password = obfsPassword,
+                minPacketSize = obfsMinPacketSize,
+                maxPacketSize = obfsMaxPacketSize
+            ) else null
         )
     }
 }

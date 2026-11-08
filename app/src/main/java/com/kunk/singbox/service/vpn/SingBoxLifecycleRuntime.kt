@@ -22,7 +22,7 @@ import com.kunk.singbox.utils.NetworkClient
 import com.kunk.singbox.utils.VersionInfo
 import com.kunk.singbox.utils.perf.PerfTracer
 import com.kunk.singbox.utils.perf.readProcessStartedAtEpochMs
-import io.nekohasekai.libbox.*
+import io.raybox.raybox.*
 import java.io.File
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.collect
@@ -216,7 +216,10 @@ internal fun SingBoxService.onStartCommandRuntime(intent: Intent?, flags: Int, s
                 startVpnJob = serviceScope.launch {
                     try {
                         val repo = ConfigRepository.getInstance(applicationContext)
-                        val result = repo.generateConfigFile()
+                        val result = repo.generateConfigFile(
+                            selectedProfileId = VpnStateStore.getSelectedProfileId(),
+                            selectedNodeId = VpnStateStore.getSelectedNodeId()
+                        )
                         if (result != null) {
                             Log.i(SingBoxService.TAG, "Config generated successfully: ${result.path}")
                             // Recursively call start command with the generated path
@@ -376,7 +379,9 @@ internal fun SingBoxService.onStartCommandRuntime(intent: Intent?, flags: Int, s
                 pendingConfigDigest = ""
                 pendingAppRoutingDigest = ""
             }
-            stopVpn(stopService = true, recoveryIntentLease = recoveryLease)
+            serviceScope.launch(Dispatchers.IO) {
+                stopVpn(stopService = true, recoveryIntentLease = recoveryLease)
+            }
             return START_NOT_STICKY
         }
         SingBoxService.ACTION_FORCE_STOP -> {

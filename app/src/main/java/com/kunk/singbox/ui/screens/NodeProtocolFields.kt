@@ -143,51 +143,7 @@ internal fun NodeProtocolFields(
 
     // 4. Hysteria 2
     if (type == "hysteria2") {
-        EditableTextItem(
-            title = stringResource(R.string.node_detail_password),
-            value = outbound.password ?: "",
-            icon = Icons.Rounded.Password,
-            onValueChange = { editingOutbound = outbound.copy(password = it) }
-        )
-        EditableTextItem(
-            title = stringResource(R.string.node_detail_ports_jumping),
-            value = outbound.serverPorts?.firstOrNull() ?: "",
-            icon = Icons.Rounded.Numbers,
-            onValueChange = {
-                editingOutbound = outbound.copy(
-                    serverPorts = if (it.isEmpty()) null else listOf(it)
-                )
-            }
-        )
-        EditableTextItem(
-            title = stringResource(R.string.node_detail_obfs_type),
-            value = outbound.obfs?.type ?: "",
-            icon = Icons.Rounded.Lock,
-            onValueChange = {
-                val newObfs = if (it.isEmpty()) null else (outbound.obfs?.copy(type = it) ?: ObfsConfig(type = it))
-                editingOutbound = outbound.copy(obfs = newObfs)
-            }
-        )
-        if (outbound.obfs?.type == "salamander") {
-            EditableTextItem(
-                title = stringResource(R.string.node_detail_obfs_password),
-                value = outbound.obfs.password ?: "",
-                icon = Icons.Rounded.Key,
-                onValueChange = { editingOutbound = outbound.copy(obfs = outbound.obfs.copy(password = it)) }
-            )
-        }
-        EditableTextItem(
-            title = stringResource(R.string.node_detail_upload_speed),
-            value = outbound.upMbps?.toString() ?: "",
-            icon = Icons.Rounded.Speed,
-            onValueChange = { editingOutbound = outbound.copy(upMbps = it.toIntOrNull()) }
-        )
-        EditableTextItem(
-            title = stringResource(R.string.node_detail_download_speed),
-            value = outbound.downMbps?.toString() ?: "",
-            icon = Icons.Rounded.Speed,
-            onValueChange = { editingOutbound = outbound.copy(downMbps = it.toIntOrNull()) }
-        )
+        NodeHysteria2Fields(outbound) { editingOutbound = it }
     }
 
     // 5. TUIC

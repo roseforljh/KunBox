@@ -414,6 +414,15 @@
     <string name="node_detail_username_optional">用户名 (可选)</string>
     <string name="node_detail_password_optional">密码 (可选)</string>
     <string name="node_detail_shadowtls_version">ShadowTLS 版本</string>
+    <string name="node_hy2_bbr_profile">BBR 模式</string>
+    <string name="node_hy2_chrome_parrot">模拟 Chrome QUIC</string>
+    <string name="node_hy2_hop_min">最小跳跃间隔（如 30s）</string>
+    <string name="node_hy2_hop_max">最大跳跃间隔（如 60s）</string>
+    <string name="node_hy2_packet_min">Gecko 最小包长（默认 512）</string>
+    <string name="node_hy2_packet_max">Gecko 最大包长（默认 1200）</string>
+    <string name="node_hy2_realm_json">Realm 配置 JSON</string>
+    <string name="node_hy2_realm_replace">启用 Realm 将清除直连地址、端口和端口跳跃设置。继续？</string>
+    <string name="node_hy2_realm_remove">关闭 Realm 将清除其配置，之后需要填写直连地址。继续？</string>
     <string name="node_detail_hop_interval">跳跃间隔 (秒)</string>
     <string name="node_detail_ws_host">WebSocket Host</string>
     <string name="node_detail_ws_path">WebSocket 路径</string>

@@ -11,8 +11,8 @@ import com.kunk.singbox.model.RootRoutingArtifactValidator
 import com.kunk.singbox.model.isRootSha256
 import com.kunk.singbox.repository.RootGenerationStore
 import com.kunk.singbox.repository.*
-import io.nekohasekai.libbox.CommandServerHandler
-import io.nekohasekai.libbox.SystemProxyStatus
+import io.raybox.raybox.CommandServerHandler
+import io.raybox.raybox.SystemProxyStatus
 import com.google.gson.Gson
 import java.io.File
 import java.nio.charset.StandardCharsets

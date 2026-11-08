@@ -17,9 +17,9 @@ import com.kunk.singbox.model.RootAppRoutingPlan
 import com.kunk.singbox.model.RootRoutingManifest
 import com.kunk.singbox.repository.config.InboundBuilder
 import com.topjohnwu.superuser.ipc.RootService
-import io.nekohasekai.libbox.CommandServer
-import io.nekohasekai.libbox.Libbox
-import io.nekohasekai.libbox.OverrideOptions
+import io.raybox.raybox.CommandServer
+import io.raybox.raybox.Raybox as Libbox
+import io.raybox.raybox.OverrideOptions
 import java.io.File
 import java.util.UUID
 import java.util.concurrent.CountDownLatch

@@ -364,6 +364,25 @@ class PlatformInterfaceImplTest {
     }
 
     @Test
+    fun rootForcedOwnerRoutingDisablesNativeProcFsWithoutUiSettings() {
+        assertFalse(PlatformInterfaceImpl.shouldExposeProcFsToLibbox(true, null, true))
+        assertTrue(PlatformInterfaceImpl.shouldExposeProcFsToLibbox(true, null, false))
+        assertFalse(PlatformInterfaceImpl.shouldExposeProcFsToLibbox(false, null, false))
+        val source = File("src/main/java/com/kunk/singbox/service/manager/PlatformInterfaceImpl.kt").readText()
+        val method = source.substringAfter("override fun useProcFS()")
+            .substringBefore("private fun getProcFsReadable()")
+        assertTrue(method.contains("callbacks.forceConnectionOwnerRouting()"))
+    }
+
+    @Test
+    fun proxyAndTestPlatformsDisableNativeProcFs() {
+        listOf("service/proxy/ProxyPlatformInterface.kt", "core/SingBoxCoreTestPlatform.kt").forEach { path ->
+            val source = File("src/main/java/com/kunk/singbox/$path").readText()
+            assertTrue(source.contains("override fun useProcFS(): Boolean = false"))
+        }
+    }
+
+    @Test
     fun nullOwnerRoutingOverrideUsesVpnApplicationRules() {
         val settings = AppSettings(
             routingMode = RoutingMode.RULE,

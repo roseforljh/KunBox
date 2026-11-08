@@ -22,7 +22,7 @@ import com.kunk.singbox.service.manager.UrlTestTagMatcher
 import com.kunk.singbox.utils.DefaultNetworkListener
 import com.kunk.singbox.utils.perf.StateCache
 import com.kunk.singbox.utils.perf.PerfTracer
-import io.nekohasekai.libbox.*
+import io.raybox.raybox.*
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.*

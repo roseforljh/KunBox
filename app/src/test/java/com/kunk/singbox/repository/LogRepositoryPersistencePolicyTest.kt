@@ -165,6 +165,56 @@ class LogRepositoryPersistencePolicyTest {
     }
 
     @Test
+    fun boundedReadAndRewriteKeepRecentRequestsAfterDiagnosticSaturation() {
+        val diagnostics = List(4) { "METRIC resource_fd sample=$it" }
+        val requests = List(8) { "INFO request index=$it" }
+        val expected = diagnostics.takeLast(2) + requests.takeLast(2)
+        val tempDir = Files.createTempDirectory("log-mixed-retention-").toFile()
+        try {
+            val logFile = File(tempDir, "running.log")
+            writeLogLinesAtomically(logFile, generation = 2L, lines = diagnostics + requests)
+
+            assertEquals(expected, readPersistedLogLines(logFile, generation = 2L, maxLines = 4))
+            assertEquals(expected, mergeLogLinesForRewrite(diagnostics, requests, maxLines = 4))
+            assertEquals(expected, selectLogReloadLines(diagnostics + requests, maxLines = 4))
+            assertEquals(diagnostics.takeLast(3), selectBoundedLogLines(diagnostics, maxLines = 3))
+            assertEquals(requests.takeLast(3), selectBoundedLogLines(requests, maxLines = 3))
+            assertEquals(requests.takeLast(1), selectBoundedLogLines(diagnostics + requests, maxLines = 1))
+            assertEquals(emptyList<String>(), selectBoundedLogLines(diagnostics + requests, maxLines = 0))
+        } finally {
+            tempDir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun pendingQueueKeepsRecentRequestsAfterDiagnosticSaturation() {
+        val queue = LogPersistenceQueue(maxPendingLines = 4)
+        val diagnostics = List(4) { "METRIC resource_fd sample=$it" }
+        val requests = List(8) { "INFO request index=$it" }
+        (diagnostics + requests).forEach { queue.enqueue(it, rewriteAll = false, generation = 1L) }
+
+        val batch = queue.drain()
+        assertEquals(diagnostics.takeLast(2) + requests.takeLast(2), batch?.lines)
+        assertTrue(batch?.rewriteAll == true)
+    }
+
+    @Test
+    fun restoringDiagnosticBatchKeepsRecentPendingRequests() {
+        val queue = LogPersistenceQueue(maxPendingLines = 4)
+        val diagnostics = List(4) { "METRIC resource_fd sample=$it" }
+        val requests = List(8) { "INFO request index=$it" }
+        diagnostics.forEach { queue.enqueue(it, rewriteAll = true, generation = 1L) }
+        val failedBatch = requireNotNull(queue.drain())
+        requests.forEach { queue.enqueue(it, rewriteAll = false, generation = 1L) }
+
+        queue.restore(failedBatch)
+
+        val batch = queue.drain()
+        assertEquals(diagnostics.takeLast(2) + requests.takeLast(2), batch?.lines)
+        assertTrue(batch?.rewriteAll == true)
+    }
+
+    @Test
     fun reloadUsesLatestDiskStateWhenQueueIsEmpty() {
         val selected = selectLogReloadLines(
             persistedLines = listOf("disk-1", "disk-2", "disk-3"),

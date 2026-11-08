@@ -100,7 +100,7 @@ fun AboutDialog(onDismiss: () -> Unit) {
         singBoxVersion = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
             try {
                 com.kunk.singbox.core.SingBoxCore.ensureLibboxSetup(context)
-                val version = io.nekohasekai.libbox.Libbox.version()
+                val version = io.raybox.raybox.Raybox.version()
 
                 when {
                     version.isNullOrBlank() -> kernelBuiltinMsg

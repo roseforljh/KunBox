@@ -832,17 +832,16 @@ internal suspend fun ConfigRepository.testRegularOutboundsLatency(
 ) {
     if (infos.isEmpty()) return
 
-    infos.groupBy { it.dnsConfig to it.allOutbounds }.forEach { (runtime, groupedInfos) ->
-        val infoByTag = groupedInfos.associateBy { ConfigRepository.buildLatencyProbeTag(it.nodeId) }
+    infos.forEach { info ->
+        val probeTag = ConfigRepository.buildLatencyProbeTag(info.nodeId)
         singBoxCore.testOutboundsLatency(
-            outbounds = groupedInfos.map { info ->
-                info.outbound.copy(tag = ConfigRepository.buildLatencyProbeTag(info.nodeId))
-            },
-            allOutbounds = runtime.second,
-            dnsConfig = runtime.first
+            outbounds = listOf(info.outbound.copy(tag = probeTag)),
+            allOutbounds = info.allOutbounds,
+            dnsConfig = info.dnsConfig
         ) { tag, latency ->
-            val info = infoByTag[tag] ?: return@testOutboundsLatency
-            recordLatencyResult(info, latency, results, onNodeComplete)
+            if (tag == probeTag) {
+                recordLatencyResult(info, latency, results, onNodeComplete)
+            }
         }
     }
 }

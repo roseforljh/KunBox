@@ -77,6 +77,11 @@ class NodeLinkParser(internal val gson: Gson) {
             path = path.orEmpty().ifBlank { "/" },
             host = parseHostList(host),
             mode = value("mode")?.toString(),
+            extra = value("extra")?.let { raw ->
+                val element = if (raw is String) com.google.gson.JsonParser.parseString(raw) else gson.toJsonTree(raw)
+                require(element.isJsonObject) { "XHTTP extra 必须是对象" }
+                element.asJsonObject
+            },
             xPaddingBytes = value("xPaddingBytes")?.toString(),
             scMaxEachPostBytes = longValue("scMaxEachPostBytes"),
             scMinPostsIntervalMs = longValue("scMinPostsIntervalMs"),
@@ -194,7 +199,13 @@ class NodeLinkParser(internal val gson: Gson) {
             serverName = serverName,
             insecure = insecure,
             alpn = alpn,
-            fingerprint = fingerprint
+            fingerprint = fingerprint,
+            ca = firstParam(params, "certificate", "ca")?.let(::listOf),
+            caPath = firstParam(params, "certificate_path", "ca_path"),
+            certificate = firstParam(params, "client_certificate")?.let(::listOf),
+            certificatePath = firstParam(params, "client_certificate_path"),
+            key = firstParam(params, "client_key")?.let(::listOf),
+            keyPath = firstParam(params, "client_key_path")
         )
     }
 

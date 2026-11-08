@@ -1,7 +1,7 @@
 package com.kunk.singbox.core
 
 import android.util.Log
-import io.nekohasekai.libbox.CommandServer
+import io.raybox.raybox.CommandServer
 
 object BoxWrapperManager {
     private const val TAG = "BoxWrapperManager"

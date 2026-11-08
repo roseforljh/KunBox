@@ -28,7 +28,9 @@ data class SingBoxConfig(
     @SerializedName("services") val services: List<JsonElement>? = null,
     @SerializedName("experimental") val experimental: ExperimentalConfig? = null,
     // Add default outbounds for compatibility with non-standard config formats where outbounds are in a different field or handled differently
-    @SerializedName("proxies") val proxies: List<Outbound>? = null
+    @SerializedName("proxies") val proxies: List<Outbound>? = null,
+    // 本地来源记录，只保存到配置文件，不传给内核。
+    @SerializedName("_kunbox_subscription_outbound_tags") val subscriptionOutboundTags: List<String>? = null
 )
 
 @Keep
@@ -297,6 +299,8 @@ data class Outbound(
 
     @SerializedName("server") val server: String? = null,
     @SerializedName("server_port") val serverPort: Int? = null,
+    @SerializedName("outbound") val xrayOutbound: JsonObject? = null,
+    @SerializedName("raybox_cloudflare") val rayboxCloudflare: Boolean? = null,
     @SerializedName("bind_interface") val bindInterface: String? = null,
     @SerializedName("inet4_bind_address") val inet4BindAddress: String? = null,
     @SerializedName("inet6_bind_address") val inet6BindAddress: String? = null,
@@ -356,8 +360,12 @@ data class Outbound(
     @SerializedName("recv_window") val recvWindow: BigInteger? = null,
     @SerializedName("disable_mtu_discovery") val disableMtuDiscovery: Boolean? = null,
     @SerializedName("hop_interval") val hopInterval: String? = null,
+    @SerializedName("hop_interval_max") val hopIntervalMax: String? = null,
     @JsonAdapter(StringListJsonAdapter::class)
     @SerializedName("server_ports") val serverPorts: List<String>? = null,
+    @SerializedName("bbr_profile") val bbrProfile: String? = null,
+    @SerializedName("disable_chrome_parrot") val disableChromeParrot: Boolean? = null,
+    @SerializedName("realm") val realm: JsonObject? = null,
     @SerializedName("brutal_debug") val brutalDebug: Boolean? = null,
 
     @SerializedName("idle_session_check_interval") val idleSessionCheckInterval: String? = null,

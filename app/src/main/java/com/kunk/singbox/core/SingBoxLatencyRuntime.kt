@@ -10,7 +10,8 @@ import com.kunk.singbox.model.Outbound
 import com.kunk.singbox.model.SingBoxConfig
 import com.kunk.singbox.repository.*
 import com.kunk.singbox.repository.config.OutboundFixer
-import io.nekohasekai.libbox.*
+import io.raybox.raybox.*
+import io.raybox.raybox.Raybox as Libbox
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll

@@ -197,6 +197,7 @@ fun InputDialog(
     minLines: Int = 1,
     maxLines: Int = if (singleLine) 1 else 6,
     isConfirmEnabled: (String) -> Boolean = { true },
+    errorMessage: String? = null,
     onConfirm: (String) -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -241,6 +242,7 @@ fun InputDialog(
                         value = text,
                         innerTextField = innerTextField,
                         enabled = true,
+                        isError = errorMessage != null,
                         singleLine = singleLine,
                         visualTransformation = VisualTransformation.None,
                         interactionSource = interactionSource,
@@ -263,7 +265,7 @@ fun InputDialog(
                         container = {
                             OutlinedTextFieldDefaults.Container(
                                 enabled = true,
-                                isError = false,
+                                isError = errorMessage != null,
                                 interactionSource = interactionSource,
                                 colors = liquidGlassOutlinedTextFieldColors(
                                     focusedBorderColor = liquidGlassTextFieldBorderColor(
@@ -282,6 +284,13 @@ fun InputDialog(
                 }
             )
 
+            if (errorMessage != null) {
+                Text(
+                    text = errorMessage,
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
             Spacer(modifier = Modifier.height(24.dp))
 
             Button(

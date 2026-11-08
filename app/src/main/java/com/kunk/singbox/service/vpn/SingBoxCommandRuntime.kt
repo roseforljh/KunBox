@@ -27,7 +27,7 @@ import com.kunk.singbox.service.manager.RecoveryIntentLease
 import com.kunk.singbox.service.manager.ScreenStateManager
 import com.kunk.singbox.service.manager.ServiceStateHolder
 import com.kunk.singbox.service.network.TrafficMonitor
-import io.nekohasekai.libbox.*
+import io.raybox.raybox.*
 import java.io.File
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.first

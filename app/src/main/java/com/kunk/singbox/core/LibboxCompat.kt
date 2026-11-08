@@ -1,9 +1,8 @@
 package com.kunk.singbox.core
 
 import android.util.Log
-import io.nekohasekai.libbox.ConnectionOwner
-import io.nekohasekai.libbox.Libbox
-import io.nekohasekai.libbox.StringIterator
+import io.raybox.raybox.ConnectionOwner
+import io.raybox.raybox.StringIterator
 
 object LibboxCompat {
     private const val TAG = "LibboxCompat"
@@ -22,19 +21,7 @@ object LibboxCompat {
         }
     }
 
-    fun isNaiveQuicSupported(): Boolean {
-        val normalized = getVersion().removePrefix("v")
-        val parts = normalized.substringBefore('-').split(".")
-        val major = parts.getOrNull(0)?.toIntOrNull()
-        val minor = parts.getOrNull(1)?.toIntOrNull()
-
-        return parts.size < 3 || major == null || minor == null ||
-            major > 1 || (major == 1 && minor >= 13)
-    }
-
-    private fun getVersion(): String {
-        return runCatching { Libbox.version() }.getOrDefault("unknown")
-    }
+    fun isNaiveQuicSupported(): Boolean = com.kunk.singbox.BuildConfig.RAYBOX_NAIVE_QUIC_SUPPORTED
 
     private fun stringIterator(values: List<String>): StringIterator {
         return object : StringIterator {

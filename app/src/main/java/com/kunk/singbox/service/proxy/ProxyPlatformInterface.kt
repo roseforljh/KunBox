@@ -11,18 +11,17 @@ import android.util.Log
 import com.kunk.singbox.core.LibboxCompat
 import com.kunk.singbox.core.StringIteratorImpl
 import com.kunk.singbox.repository.*
-import io.nekohasekai.libbox.ConnectionOwner
-import io.nekohasekai.libbox.BridgeOptions
-import io.nekohasekai.libbox.BridgeSession
-import io.nekohasekai.libbox.InterfaceUpdateListener
-import io.nekohasekai.libbox.NeighborUpdateListener
-import io.nekohasekai.libbox.NetworkInterfaceIterator
-import io.nekohasekai.libbox.PlatformUser
-import io.nekohasekai.libbox.PlatformInterface
-import io.nekohasekai.libbox.ShellSession
-import io.nekohasekai.libbox.TunOptions
-import io.nekohasekai.libbox.WIFIState
-import java.io.File
+import io.raybox.raybox.ConnectionOwner
+import io.raybox.raybox.BridgeOptions
+import io.raybox.raybox.BridgeSession
+import io.raybox.raybox.InterfaceUpdateListener
+import io.raybox.raybox.NeighborUpdateListener
+import io.raybox.raybox.NetworkInterfaceIterator
+import io.raybox.raybox.PlatformUser
+import io.raybox.raybox.PlatformInterface
+import io.raybox.raybox.ShellSession
+import io.raybox.raybox.TunOptions
+import io.raybox.raybox.WIFIState
 import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.NetworkInterface
@@ -32,7 +31,7 @@ private const val TAG = "ProxyOnlyService"
 private fun setLastError(message: String?) = ProxyOnlyService.setLastError(message)
 
 internal fun ProxyOnlyService.createProxyOnlyPlatformInterface(): PlatformInterface = object : PlatformInterface {
-    override fun localDNSTransport(): io.nekohasekai.libbox.LocalDNSTransport {
+    override fun localDNSTransport(): io.raybox.raybox.LocalDNSTransport {
         return com.kunk.singbox.core.LocalResolverImpl
     }
 
@@ -46,27 +45,7 @@ internal fun ProxyOnlyService.createProxyOnlyPlatformInterface(): PlatformInterf
 
     override fun usePlatformAutoDetectInterfaceControl(): Boolean = true
 
-    override fun useProcFS(): Boolean {
-        val procPaths = listOf(
-            "/proc/net/tcp",
-            "/proc/net/tcp6",
-            "/proc/net/udp",
-            "/proc/net/udp6"
-        )
-
-        fun hasUidHeader(path: String): Boolean {
-            return try {
-                val file = File(path)
-                if (!file.exists() || !file.canRead()) return false
-                val header = file.bufferedReader().use { it.readLine() } ?: return false
-                header.contains("uid")
-            } catch (_: Exception) {
-                false
-            }
-        }
-
-        return procPaths.all { path -> hasUidHeader(path) }
-    }
+    override fun useProcFS(): Boolean = false
 
     override fun findConnectionOwner(
         ipProtocol: Int,
@@ -195,9 +174,9 @@ internal fun ProxyOnlyService.createProxyOnlyPlatformInterface(): PlatformInterf
 
                 override fun hasNext(): Boolean = iterator.hasNext()
 
-                override fun next(): io.nekohasekai.libbox.NetworkInterface {
+                override fun next(): io.raybox.raybox.NetworkInterface {
                     val iface = iterator.next()
-                    return io.nekohasekai.libbox.NetworkInterface().apply {
+                    return io.raybox.raybox.NetworkInterface().apply {
                         name = iface.name
                         index = iface.index
                         mtu = iface.mtu
@@ -236,7 +215,7 @@ internal fun ProxyOnlyService.createProxyOnlyPlatformInterface(): PlatformInterf
     override fun clearDNSCache() {
     }
 
-    override fun sendNotification(notification: io.nekohasekai.libbox.Notification?) {
+    override fun sendNotification(notification: io.raybox.raybox.Notification?) {
     }
 
     override fun cancelNotification(identifier: String?, typeID: Int) {
@@ -259,7 +238,7 @@ internal fun ProxyOnlyService.createProxyOnlyPlatformInterface(): PlatformInterf
     override fun openShellSession(
         user: PlatformUser?,
         command: String?,
-        environ: io.nekohasekai.libbox.StringIterator?,
+        environ: io.raybox.raybox.StringIterator?,
         term: String?,
         rows: Int,
         cols: Int

@@ -9,7 +9,6 @@ import com.kunk.singbox.model.TransportConfig
 import com.kunk.singbox.model.UInt32JsonAdapter
 import com.kunk.singbox.model.V2RAY_TRANSPORT_PROTOCOLS
 import com.kunk.singbox.model.V2RAY_TRANSPORT_TYPES
-import com.kunk.singbox.model.V2RAY_XHTTP_TRANSPORT_TYPES
 import com.kunk.singbox.model.allHeaderValues
 import com.kunk.singbox.model.asHttpHeaderMap
 import com.kunk.singbox.repository.SettingsRepository
@@ -59,8 +58,20 @@ object OutboundFixer {
     private val REGEX_IPV4 = Regex("^\\d{1,3}(\\.\\d{1,3}){3}$")
     private val REGEX_IPV6 = Regex("^[0-9a-fA-F:]+$")
 
+    private fun requireHysteria2RealmExclusivity(outbound: Outbound) {
+        if (outbound.type != "hysteria2" || outbound.realm == null) return
+        require(outbound.server.isNullOrBlank()) { "hysteria2 realm conflicts with server" }
+        require(outbound.serverPort == null) { "hysteria2 realm conflicts with server_port" }
+        require(outbound.serverPorts.isNullOrEmpty()) { "hysteria2 realm conflicts with server_ports" }
+        require(outbound.hopInterval.isNullOrBlank()) { "hysteria2 realm conflicts with hop_interval" }
+    }
+
     fun fix(outbound: Outbound): Outbound {
+        requireHysteria2RealmExclusivity(outbound)
         var result = normalizeTransport(outbound)
+        if (result.type == "vless" && result.packetEncoding.isNullOrBlank()) {
+            result = result.copy(packetEncoding = null)
+        }
 
         // Fix interval
         normalizeDuration(result.interval)?.let { fixedInterval ->
@@ -130,7 +141,8 @@ object OutboundFixer {
         val tlsAfterSni = result.tls
         val needsWsAlpn = result.transport?.type == "ws" &&
             tlsAfterSni?.enabled == true &&
-            tlsAfterSni.ech?.enabled != true
+            tlsAfterSni.ech?.enabled != true &&
+            tlsAfterSni.reality?.enabled != true
         if (needsWsAlpn && (tlsAfterSni.alpn == null || tlsAfterSni.alpn.isEmpty())) {
             result = result.copy(tls = tlsAfterSni.copy(alpn = listOf("http/1.1")))
         }
@@ -187,7 +199,8 @@ object OutboundFixer {
                 !xhttpHost.isNullOrBlank() &&
                 !isIpLiteral(xhttpHost) &&
                 (xhttpSni.isBlank() || isIpLiteral(xhttpSni) || (server.isNotBlank() && xhttpSni.equals(server, true)))
-            val shouldFixXhttpAlpn = tlsForXhttp != null && tlsForXhttp.alpn.isNullOrEmpty()
+            val shouldFixXhttpAlpn = tlsForXhttp != null && tlsForXhttp.reality?.enabled != true &&
+                tlsForXhttp.alpn.isNullOrEmpty()
 
             if (normalizedPath != rawPath || shouldFixXhttpSni || shouldFixXhttpAlpn) {
                 var updated = result.copy(
@@ -360,7 +373,6 @@ object OutboundFixer {
                 type = type,
                 method = null,
                 serviceName = null,
-                headers = null,
                 idleTimeout = null,
                 pingTimeout = null,
                 permitWithoutStream = null,
@@ -402,8 +414,11 @@ object OutboundFixer {
 
     @Suppress("LongMethod")
     fun buildForRuntime(context: android.content.Context, outbound: Outbound): Outbound? {
-        if (hasInvalidV2RayTransport(outbound)) return null
-        val fixed = applyNaiveRuntimeCompatibility(fix(outbound))
+        val converted = RayBoxOutboundConverter.prepareRuntime(outbound)
+        if (converted.type != "xray" && hasInvalidV2RayTransport(converted)) return null
+        val fixed = applyNaiveRuntimeCompatibility(
+            if (converted.type == "xray") converted else fix(converted)
+        )
 
         val (tcpKeepAliveEnabled, tcpKeepAliveInterval, connectTimeout) = getTcpKeepAliveConfig(context)
 
@@ -421,8 +436,11 @@ object OutboundFixer {
         tcpKeepAliveInterval: String? = null,
         connectTimeout: String? = null
     ): Outbound? {
-        if (hasInvalidV2RayTransport(outbound)) return null
-        val fixed = applyNaiveRuntimeCompatibility(fix(outbound))
+        val converted = RayBoxOutboundConverter.prepareRuntime(outbound)
+        if (converted.type != "xray" && hasInvalidV2RayTransport(converted)) return null
+        val fixed = applyNaiveRuntimeCompatibility(
+            if (converted.type == "xray") converted else fix(converted)
+        )
         return buildForRuntimeWithDialConfig(
             fixed = fixed,
             tcpKeepAliveEnabled = tcpKeepAliveEnabled,
@@ -472,6 +490,8 @@ object OutboundFixer {
                 return null
             }
 
+            "xray" -> fixed
+
             "vmess" -> Outbound(
                 type = fixed.type,
                 tag = fixed.tag,
@@ -495,11 +515,6 @@ object OutboundFixer {
             )
 
             "vless" -> {
-                val encryption = fixed.encryption?.trim()
-                if (!encryption.isNullOrEmpty() && !encryption.equals("none", ignoreCase = true)) {
-                    Log.w(TAG, "Skipping unsupported VLESS encryption for '${fixed.tag}': $encryption")
-                    return null
-                }
                 Outbound(
                     type = fixed.type,
                     tag = fixed.tag,
@@ -508,7 +523,7 @@ object OutboundFixer {
                     uuid = fixed.uuid,
                     flow = fixed.flow,
                     packetEncoding = fixed.packetEncoding,
-                    encryption = null,
+                    encryption = fixed.encryption,
                     tls = fixed.tls,
                     transport = fixed.transport,
                     network = fixed.network,
@@ -551,6 +566,8 @@ object OutboundFixer {
                 multiplex = fixed.multiplex,
                 detour = fixed.detour,
                 network = fixed.network,
+                udpFragment = fixed.udpFragment
+                    ?: fixed.method?.startsWith("2022-blake3-", ignoreCase = true)?.takeIf { it },
                 domainResolver = resolveDomainResolver(fixed),
 
                 tcpKeepAlive = tcpKeepAliveInterval,
@@ -700,7 +717,11 @@ object OutboundFixer {
             recvWindow = fixed.recvWindow,
             disableMtuDiscovery = fixed.disableMtuDiscovery.takeIf { fixed.type == "hysteria" },
             hopInterval = fixed.hopInterval,
+            hopIntervalMax = fixed.hopIntervalMax.takeIf { fixed.type == "hysteria2" },
             serverPorts = serverPorts,
+            bbrProfile = fixed.bbrProfile.takeIf { fixed.type == "hysteria2" },
+            disableChromeParrot = fixed.disableChromeParrot.takeIf { fixed.type == "hysteria2" },
+            realm = fixed.realm.takeIf { fixed.type == "hysteria2" },
             brutalDebug = fixed.brutalDebug.takeIf { fixed.type == "hysteria2" },
             tls = fixed.tls,
             network = fixed.network,
@@ -795,6 +816,7 @@ object OutboundFixer {
     }
 
     private fun resolveDomainResolver(outbound: Outbound): com.kunk.singbox.model.DomainResolveConfig? {
+        if (outbound.realm != null) return outbound.domainResolver
         val existing = outbound.domainResolver
         if (existing?.server.isNullOrBlank().not()) return existing
 
@@ -829,11 +851,6 @@ object OutboundFixer {
             transportType.isEmpty() || transportType == "tcp" -> false
             normalizedType !in V2RAY_TRANSPORT_TYPES -> rejectTransport(
                 "Skipping unknown V2Ray transport '$transportType' for '${outbound.tag}'"
-            )
-            normalizedType in V2RAY_XHTTP_TRANSPORT_TYPES && outbound.encryption?.let {
-                it.isNotBlank() && !it.equals("none", ignoreCase = true)
-            } == true -> rejectTransport(
-                "Skipping XHTTP with unsupported private VLESS encryption for '${outbound.tag}'"
             )
             normalizedType == "ws" && hasInvalidWebSocketEarlyData(transport) -> rejectTransport(
                 "Skipping WebSocket transport with invalid max_early_data for '${outbound.tag}'"

@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "repository": "roseforljh/RayBox-rx",
+  "commit": "ba64d85ef5ff5e9ef740a1558defa465fee7583c",
+  "tag": "android-ba64d85ef5ff5e9ef740a1558defa465fee7583c",
+  "dirty": false,
+  "sourceDigest": "7dd19bdd63b28aea92f1d9de976f5e8b0c34beda383d1b3f23d643e6a81d1c1f",
+  "sourceDigestAlgorithm": "sha256-git-path-kind-content-v1",
+  "manifestSha256": "cb8ee3880fdfb79710a59fa3251a49e38984c101f936da70653e7ec332783853",
+  "sha256": {
+    "raybox.aar": "47ea06fefe5dcced04eb5e4cebca48b4c76bc45d4a9f540ae8b81eca1b9fc846",
+    "raybox-legacy.aar": "9ead06e7f01acaa326b0a73fc2470720c4362ef923ab5629b61199bd633ebe22"
+  },
+  "sizes": {
+    "raybox.aar": 126734634,
+    "raybox-legacy.aar": 106715947
+  },
+  "singBoxVersion": "1.0.0-ba64d85ef5ff",
+  "xrayVersion": ""
+}

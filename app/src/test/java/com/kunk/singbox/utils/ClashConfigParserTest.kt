@@ -470,7 +470,7 @@ class ClashConfigParserTest {
         val config = ClashConfigParser.parse(yaml)
         val vless = config?.outbounds?.find { it.tag == "xhttp-vless" }
 
-        assertNull(vless)
+        assertEquals("mlkem768x25519plus.native.0rtt.test", vless?.transport?.extra?.get("encryption")?.asString)
     }
 
     @Test
