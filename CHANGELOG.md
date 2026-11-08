@@ -1,5 +1,27 @@
 # Changelog
 
+## [2.25.0](https://github.com/roseforljh/KunBox/compare/v2.24.3...v2.25.0) (2026-11-08)
+
+
+### Features
+
+* publish unified RayBox Android artifacts ([06f9d1d](https://github.com/roseforljh/KunBox/commit/06f9d1d564a3b0679cb56ebb0219c3b58369f1cc))
+
+
+### Bug Fixes
+
+* accept clean release binding digest ([f3daf14](https://github.com/roseforljh/KunBox/commit/f3daf14a95186f55a46b32a5f129afadd4807d4e))
+* align KunBox CI with published RayBox release ([e515490](https://github.com/roseforljh/KunBox/commit/e5154907d2c9bc5bbde8c604f6742eccd6bbab66))
+* allow offline verification of fetched RayBox source ([26a9555](https://github.com/roseforljh/KunBox/commit/26a9555665dd1d12941e0eff9727865975e18504))
+* **config:** 避免预校验误删跨配置链式代理节点 ([a0ed292](https://github.com/roseforljh/KunBox/commit/a0ed2923b08ba870948affbd86ec77f2e9f5538a))
+* fetch pinned RayBox release in CI ([d329d4f](https://github.com/roseforljh/KunBox/commit/d329d4f0a9d682be8d369c96ccc9578a08434159))
+* **logs:** 为普通请求日志保留窗口以避免诊断日志挤占 ([807bd54](https://github.com/roseforljh/KunBox/commit/807bd54b2ea3cb89b379c529077e94e6571093f7))
+* pair release instrumentation and stabilize phone acceptance ([f5bc552](https://github.com/roseforljh/KunBox/commit/f5bc552ca2b629c331e565efc1a42a0132662673))
+* pin latest RayBox build fix in CI ([10f3801](https://github.com/roseforljh/KunBox/commit/10f380179aada55d48972cb63d75dafeb86c606e))
+* pin published RayBox Android release ([9cad31d](https://github.com/roseforljh/KunBox/commit/9cad31d09098750e943998deb6eccc59817ce6a7))
+* **subscription:** 更新配置时保留手动节点和链式代理设置 ([0de087c](https://github.com/roseforljh/KunBox/commit/0de087c71d4d1bab13e4916e7f00c5883fc988fb))
+* validate checked out RayBox commit directly ([93dc188](https://github.com/roseforljh/KunBox/commit/93dc1882faef0bae5807077f3701c64e75982c2c))
+
 ## [2.24.3](https://github.com/roseforljh/KunBox/compare/v2.24.2...v2.24.3) (2026-10-20)
 
 
