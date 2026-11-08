@@ -45,7 +45,7 @@ class PhoneRuleSetAcceptanceTest {
             check(config.route?.rules.orEmpty().any { it.ruleSet?.contains(saved.tag) == true }) {
                 "enabled rule set has no route match"
             }
-            File(context.cacheDir, requireArgument("resultFile")).writeText(
+            File(context.externalCacheDir, requireArgument("resultFile")).writeText(
                 gson.toJson(mapOf(
                     "tag" to saved.tag,
                     "enabled" to saved.enabled,

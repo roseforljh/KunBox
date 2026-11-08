@@ -8,8 +8,11 @@ import android.content.IntentFilter
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry
+import androidx.test.runner.lifecycle.Stage
 import com.google.gson.GsonBuilder
 import com.google.gson.JsonObject
+import com.kunk.singbox.MainActivity
 import com.kunk.singbox.ipc.SingBoxRemote
 import com.kunk.singbox.ipc.VpnStateStore
 import com.kunk.singbox.manager.VpnServiceManager
@@ -97,9 +100,10 @@ class PhoneLifecycleAcceptanceTest {
         val runId = requireArgument("runId")
         val repository = ConfigRepository.getInstance(context)
         repository.awaitInitialProfilesLoaded()
-        val runDir = File(context.cacheDir, runId).also { it.mkdirs() }
+        val runDir = File(context.externalCacheDir, runId).also { it.mkdirs() }
         val results = JsonObject()
         try {
+            foregroundApp()
             VpnServiceManager.stopVpn(context, VpnStopInitiator.UNKNOWN).getOrThrow()
             check(awaitStopped()) { "VPN did not stop before doze" }
             repository.setActiveProfileAndWait(
@@ -115,10 +119,16 @@ class PhoneLifecycleAcceptanceTest {
             results.add("after", awaitPhase(runDir, "wake.flag", requireArgument("probePackage")))
         } finally {
             VpnServiceManager.stopVpn(context, VpnStopInitiator.UNKNOWN).getOrThrow()
-            awaitStopped()
+            results.addProperty("stopped", awaitStopped() && VpnStateStore.getPending().isEmpty())
             results.add("finalState", stateSnapshot())
             File(runDir, "doze-result.json").writeText(gson.toJson(results), Charsets.UTF_8)
         }
+        val phases = listOf("before", "idle", "after")
+        assertTrue(
+            "See ${File(runDir, "doze-result.json").absolutePath}",
+            results.get("stopped").asBoolean &&
+                phases.all { results.getAsJsonObject(it)?.get("passed")?.asBoolean == true }
+        )
     }
 
     private suspend fun awaitPhase(runDir: File, flag: String, probePackage: String): JsonObject {
@@ -142,10 +152,28 @@ class PhoneLifecycleAcceptanceTest {
                 arguments.getString("udpSizes").orEmpty()
             )
         )
+        val state = stateSnapshot()
+        // ColorOS freezes instrumentation processes without a visible activity; return KunBox to foreground.
+        foregroundApp()
         return JsonObject().apply {
             add("probe", probe)
-            add("state", stateSnapshot())
+            add("state", state)
             addProperty("passed", probe.get("passed")?.asBoolean == true)
+        }
+    }
+
+    private suspend fun foregroundApp() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        context.startActivity(Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        withTimeoutOrNull(45_000L) {
+            var resumed = false
+            while (!resumed) {
+                instrumentation.runOnMainSync {
+                    resumed = ActivityLifecycleMonitorRegistry.getInstance()
+                        .getActivitiesInStage(Stage.RESUMED).any { it is MainActivity }
+                }
+                if (!resumed) delay(250L)
+            }
         }
     }
 
@@ -172,12 +200,12 @@ class PhoneLifecycleAcceptanceTest {
     }
 
     private fun writeResult(phase: String, value: JsonObject) {
-        File(context.cacheDir, requireArgument("runId")).mkdirs()
+        File(context.externalCacheDir, requireArgument("runId")).mkdirs()
         resultFile(phase).writeText(gson.toJson(value), Charsets.UTF_8)
     }
 
     private fun resultFile(phase: String): File =
-        File(File(context.cacheDir, requireArgument("runId")), "$phase.json")
+        File(File(context.externalCacheDir, requireArgument("runId")), "$phase.json")
 
     private suspend fun awaitRunning(): Boolean = withTimeoutOrNull(45_000L) {
         var ready = false

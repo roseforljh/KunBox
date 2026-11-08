@@ -39,7 +39,7 @@ class PhoneFeatureAcceptanceTest {
         val runId = requireRunId()
         val contentPath = requireArgument("contentPath")
         val profileName = arguments.getString("profileName") ?: DEFAULT_PROFILE_NAME
-        val runDir = File(context.cacheDir, runId).also { it.mkdirs() }
+        val runDir = File(context.externalCacheDir, runId).also { it.mkdirs() }
         val repository = ConfigRepository.getInstance(context)
         repository.awaitInitialProfilesLoaded()
         check(!VpnStateStore.getActive()) { "Stop VPN before feature acceptance" }

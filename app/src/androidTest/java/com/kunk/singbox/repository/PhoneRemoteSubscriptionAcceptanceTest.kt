@@ -43,7 +43,7 @@ class PhoneRemoteSubscriptionAcceptanceTest {
         check(nodes.size == 16) { "expected 16 subscription nodes, got ${nodes.size}" }
         check(nodes.all { it.tag.startsWith("SUB · ") }) { "subscription tags were not imported" }
         if (repository.saveProfilesJob != null) repository.saveProfilesJob?.join()
-        File(context.cacheDir, requireArgument("resultFile")).writeText(
+        File(context.externalCacheDir, requireArgument("resultFile")).writeText(
             gson.toJson(mapOf("profileId" to profile.id, "nodes" to nodes.map { it.tag })),
             Charsets.UTF_8
         )
@@ -74,7 +74,7 @@ class PhoneRemoteSubscriptionAcceptanceTest {
 
         val staleNode = repository.allNodes.value.firstOrNull { it.name == "SUB · HK · wppt-early" }
         check(staleNode == null) { "removed subscription node remained in node index" }
-        File(context.cacheDir, requireArgument("resultFile")).writeText(
+        File(context.externalCacheDir, requireArgument("resultFile")).writeText(
             gson.toJson(mapOf("before" to before, "after" to after, "result" to result.toString())),
             Charsets.UTF_8
         )
@@ -93,8 +93,8 @@ class PhoneRemoteSubscriptionAcceptanceTest {
         val exporter = DataExportRepository.getInstance(context)
         val backup = exporter.exportAllData().getOrThrow()
         val originalConfigs = originalIds.associateWith { repository.loadConfig(it) }
-        val resultFile = File(context.cacheDir, requireArgument("resultFile"))
-        File(context.cacheDir, "${resultFile.name}-backup.json").writeText(backup)
+        val resultFile = File(context.externalCacheDir, requireArgument("resultFile"))
+        File(context.externalCacheDir, "${resultFile.name}-backup.json").writeText(backup)
         var testId: String? = null
         val result = linkedMapOf<String, Any>()
         try {

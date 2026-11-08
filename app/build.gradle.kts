@@ -330,6 +330,7 @@ configure<ApplicationExtension> {
         minSdk = 24
         targetSdk = 37
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        testBuildType = "release"
         buildConfigField("String", "RAYBOX_COMMIT", "\"$rayboxCoreCommit\"")
         buildConfigField("String", "RAYBOX_SOURCE_DIGEST", "\"$rayboxCoreDigest\"")
         buildConfigField("String", "RAYBOX_AAR_SHA256", "\"$rayboxCoreAarSha256\"")

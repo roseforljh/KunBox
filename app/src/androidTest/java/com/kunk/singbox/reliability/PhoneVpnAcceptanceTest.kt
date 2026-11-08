@@ -49,7 +49,7 @@ class PhoneVpnAcceptanceTest {
     fun realVpnMatrix() = runBlocking {
         val runId = requireArgument("runId")
         val profileId = requireArgument("profileId")
-        val runDir = File(context.cacheDir, runId).also { it.mkdirs() }
+        val runDir = File(context.externalCacheDir, runId).also { it.mkdirs() }
         val repository = ConfigRepository.getInstance(context)
         repository.awaitInitialProfilesLoaded()
         foregroundApp()
@@ -65,7 +65,8 @@ class PhoneVpnAcceptanceTest {
             ?.let { repository.setActiveProfileAndWait(it.id); repository.nodes.value.toList() }
             .orEmpty()
         require(nodes.size == 16) { "Expected 16 HK nodes, got ${nodes.size}" }
-        val selectedNodes = arguments.getString("nodeId")?.let { id -> nodes.filter { it.id == id } } ?: nodes
+        val selectedNodes = arguments.getString("nodeId")?.split(',')
+            ?.let { ids -> nodes.filter { it.id in ids } } ?: nodes
         require(selectedNodes.isNotEmpty()) { "No matching node" }
         val results = mutableListOf<NodeVpnResult>()
         val failures = mutableListOf<String>()
@@ -113,7 +114,7 @@ class PhoneVpnAcceptanceTest {
         val originalNode = repository.activeNodeId.value
         val settings = SettingsRepository.getInstance(context).settings.value
         val store = SettingsStore.getInstance(context)
-        val runDir = File(context.cacheDir, requireArgument("runId")).also { it.mkdirs() }
+        val runDir = File(context.externalCacheDir, requireArgument("runId")).also { it.mkdirs() }
         File(runDir, "backup.json").writeText(DataExportRepository.getInstance(context).exportAllData().getOrThrow())
         val source = File(runDir, "rules.json").apply {
             writeText("""{"version":3,"rules":[{"domain":["www.cloudflare.com"]}]}""")

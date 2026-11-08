@@ -51,6 +51,24 @@ jobs:
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
 
+      - name: Fetch pinned RayBox source
+        uses: actions/checkout@v4
+        with:
+          repository: roseforljh/RayBox-rx
+          ref: ba64d85ef5ff5e9ef740a1558defa465fee7583c
+          path: raybox-source
+          fetch-depth: 0
+
+      - name: Install verified RayBox release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 -I tools/sync_raybox.py \
+            --source "$GITHUB_WORKSPACE/raybox-source" \
+            --release-lock docs/raybox-unification/raybox-android.lock.json \
+            --project "$GITHUB_WORKSPACE"
+
       - name: Normalize and grant execute permission for gradlew
         run: |
           sed -i 's/\r$//' ./gradlew
@@ -60,14 +78,18 @@ jobs:
         run: |
           mkdir -p dist
 
-          # Build arm64-v8a APK
-          ./gradlew assembleRelease -PabiOnly=arm64-v8a
-          find app/build/outputs/apk/release -type f -name "*.apk" -exec cp {} dist/ \;
+          build_pair() {
+            local abi="$1"
+            local suffix="${abi//-/_}"
+            ./gradlew clean :app:assembleRelease :app:assembleReleaseAndroidTest -PabiOnly="$abi"
+            cp app/build/outputs/apk/release/app-*release.apk "dist/kunbox-${suffix}-release.apk"
+            cp app/build/outputs/apk/androidTest/release/app-release-androidTest.apk \
+              "dist/kunbox-${suffix}-release-androidTest.apk"
+          }
 
-          # Build armeabi-v7a APK
-          rm -f app/build/outputs/apk/release/*.apk
-          ./gradlew assembleRelease -PabiOnly=armeabi-v7a
-          find app/build/outputs/apk/release -type f -name "*.apk" -exec cp {} dist/ \;
+          build_pair arm64-v8a
+          build_pair armeabi-v7a
+          (cd dist && sha256sum *.apk > SHA256SUMS)
         env:
           KEYSTORE_PATH: ${{ github.workspace }}/release.keystore
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
@@ -79,12 +101,12 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: sing-box-android-apk
-          path: dist/*.apk
+          path: dist/*
 
       - name: Upload Release Asset
         uses: softprops/action-gh-release@v1
         with:
           tag_name: ${{ needs.release-please.outputs.tag_name }}
-          files: dist/*.apk
+          files: dist/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

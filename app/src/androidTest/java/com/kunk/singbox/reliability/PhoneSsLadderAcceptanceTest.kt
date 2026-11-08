@@ -45,7 +45,7 @@ class PhoneSsLadderAcceptanceTest {
         val nodeIds = requireArgument("nodeIds").split(',').map(String::trim).filter(String::isNotEmpty)
         val repository = ConfigRepository.getInstance(context)
         repository.awaitInitialProfilesLoaded()
-        val runDir = File(context.cacheDir, runId).also { it.mkdirs() }
+        val runDir = File(context.externalCacheDir, runId).also { it.mkdirs() }
         val results = mutableListOf<JsonObject>()
         try {
             nodeIds.forEach { nodeId ->

@@ -47,7 +47,7 @@ class PhoneProfileAcceptanceTest {
         val imported = mutableMapOf<String, String>()
         val results = linkedMapOf<String, String>()
         val prefix = "phone-acceptance-${UUID.randomUUID()}"
-        val resultFile = File(context.cacheDir, "$prefix.json")
+        val resultFile = File(context.externalCacheDir, "$prefix.json")
         suspend fun step(name: String, action: suspend () -> Unit) {
             try {
                 action()
@@ -113,7 +113,7 @@ class PhoneProfileAcceptanceTest {
             }
             step("backup_import_restores_test_profile") {
                 val profileId = imported["json"] ?: error("JSON profile missing")
-                verifyBackupRestore(repository, profileId, File(context.cacheDir, "$prefix-backup.json"))
+                verifyBackupRestore(repository, profileId, File(context.externalCacheDir, "$prefix-backup.json"))
                 check(SettingsRepository.getInstance(context).settings.value == originalSettings)
                 check(originalConfigs.all { (id, config) -> repository.loadConfig(id) == config })
             }
