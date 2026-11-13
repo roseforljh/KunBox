@@ -1,20 +1,20 @@
 {
   "schemaVersion": 1,
   "repository": "roseforljh/RayBox-rx",
-  "commit": "ba64d85ef5ff5e9ef740a1558defa465fee7583c",
-  "tag": "android-ba64d85ef5ff5e9ef740a1558defa465fee7583c",
+  "commit": "a7271fd63a1d5946b7563f15827528e2d516f6b4",
+  "tag": "android-v0.0.1",
   "dirty": false,
-  "sourceDigest": "7dd19bdd63b28aea92f1d9de976f5e8b0c34beda383d1b3f23d643e6a81d1c1f",
+  "sourceDigest": "a05800dd1215f44d96f600c41f739fe2a8785915057f6d275d9d3c8dd52dba31",
   "sourceDigestAlgorithm": "sha256-git-path-kind-content-v1",
-  "manifestSha256": "cb8ee3880fdfb79710a59fa3251a49e38984c101f936da70653e7ec332783853",
+  "manifestSha256": "e4da35d37376b55baa3a4fd7fa79d371ed85cd69d6c5ca0575a786d6f0c46a88",
   "sha256": {
-    "raybox.aar": "47ea06fefe5dcced04eb5e4cebca48b4c76bc45d4a9f540ae8b81eca1b9fc846",
-    "raybox-legacy.aar": "9ead06e7f01acaa326b0a73fc2470720c4362ef923ab5629b61199bd633ebe22"
+    "raybox.aar": "2add780c320bc75bd78abf2c82f8c6d582bb18a03ad2897dfd6c3bc3008e430a",
+    "raybox-legacy.aar": "35f2a2e1923c4a0ae211534ccc5da2f0685a4ba89e590a8a3e78706de8b98b26"
   },
   "sizes": {
-    "raybox.aar": 126734634,
-    "raybox-legacy.aar": 106715947
+    "raybox.aar": 126735043,
+    "raybox-legacy.aar": 106675715
   },
-  "singBoxVersion": "1.0.0-ba64d85ef5ff",
-  "xrayVersion": ""
+  "product": "RayBox",
+  "version": "0.0.1"
 }
