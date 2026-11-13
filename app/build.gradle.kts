@@ -37,7 +37,10 @@ val verifyRayboxCore = tasks.register("verifyRayboxCore") {
         ) throw GradleException("Invalid RayBox source identity")
         val dirty = rayboxMetadata["dirty"] as? Boolean
             ?: throw GradleException("RayBox metadata must declare dirty explicitly")
-        val expectedTag = if (dirty) null else "android-$rayboxCoreCommit"
+        val rayboxVersion = rayboxMetadata["version"] as? String
+        val semanticVersion = rayboxVersion != null &&
+            Regex("(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)").matches(rayboxVersion)
+        val expectedTag = if (dirty) null else if (semanticVersion) "android-v$rayboxVersion" else "android-$rayboxCoreCommit"
         val output = (rayboxMetadata["outputs"] as? List<*>)?.filterIsInstance<Map<*, *>>()
             ?.singleOrNull { it["name"] == "raybox.aar" }
         val phoneCandidate = dirty &&
