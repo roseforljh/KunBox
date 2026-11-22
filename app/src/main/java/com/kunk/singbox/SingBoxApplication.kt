@@ -5,6 +5,7 @@ import android.app.Application
 import android.content.Intent
 import android.content.IntentFilter
 import android.net.ConnectivityManager
+import android.os.Build
 import android.os.Process
 import androidx.core.content.ContextCompat
 import androidx.work.Configuration
@@ -97,14 +98,41 @@ class SingBoxApplication : Application(), Configuration.Provider {
 
         applicationScope.launch(Dispatchers.IO) {
             cleanupOrphanedTempFiles()
+            cleanupOrphanedLibboxDirs()
         }
     }
 
     internal fun isMainProcess(): Boolean {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            return getProcessName() == packageName
+        }
         val pid = Process.myPid()
-        val activityManager = getSystemService(ACTIVITY_SERVICE) as ActivityManager
-        val processName = activityManager.runningAppProcesses?.find { it.pid == pid }?.processName
+        val activityManager = getSystemService(ACTIVITY_SERVICE) as? ActivityManager
+        val processName = activityManager?.runningAppProcesses?.find { it.pid == pid }?.processName
         return processName == packageName
+    }
+
+    private fun cleanupOrphanedLibboxDirs() {
+        try {
+            val activityManager = getSystemService(ACTIVITY_SERVICE) as? ActivityManager
+            val alivePids = activityManager?.runningAppProcesses?.mapTo(mutableSetOf()) { it.pid }
+                ?: mutableSetOf()
+            alivePids.add(Process.myPid())
+
+            var cleanedCount = 0
+            filesDir.listFiles()?.forEach { dir ->
+                if (!dir.isDirectory || !dir.name.startsWith("libbox_")) return@forEach
+                val dirPid = dir.name.removePrefix("libbox_").toIntOrNull() ?: return@forEach
+                if (dirPid !in alivePids && dir.deleteRecursively()) {
+                    cleanedCount++
+                }
+            }
+            if (cleanedCount > 0) {
+                android.util.Log.i("SingBoxApp", "Cleaned $cleanedCount orphaned libbox dirs")
+            }
+        } catch (e: Exception) {
+            android.util.Log.w("SingBoxApp", "Failed to cleanup orphaned libbox dirs", e)
+        }
     }
 
     private fun cleanupOrphanedTempFiles() {

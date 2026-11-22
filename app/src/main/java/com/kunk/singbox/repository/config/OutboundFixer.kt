@@ -287,6 +287,8 @@ object OutboundFixer {
 
         if (result.type == "hysteria" || result.type == "hysteria2") {
             val cleanedServerPorts = result.serverPorts
+                ?.flatMap { it.split(",") }
+                ?.map { it.trim() }
                 ?.filter { it.isNotBlank() }
                 ?.map { convertPortRangeFormat(it) }
                 ?.takeIf { it.isNotEmpty() }
@@ -575,7 +577,7 @@ object OutboundFixer {
                 connectTimeout = connectTimeout
             )
 
-            "hysteria", "hysteria2" -> buildRuntimeHysteriaOutbound(fixed)
+            "hysteria", "hysteria2" -> buildRuntimeHysteriaOutbound(fixed, connectTimeout)
 
             "tuic" -> Outbound(
                 type = fixed.type,
@@ -589,6 +591,7 @@ object OutboundFixer {
                 udpOverStream = fixed.udpOverStream,
                 zeroRttHandshake = fixed.zeroRttHandshake,
                 heartbeat = fixed.heartbeat,
+                disableSni = fixed.disableSni,
                 tls = fixed.tls,
                 network = fixed.network,
                 domainResolver = resolveDomainResolver(fixed),
@@ -615,6 +618,7 @@ object OutboundFixer {
                 idleSessionTimeout = fixed.idleSessionTimeout,
                 minIdleSession = fixed.minIdleSession,
                 tls = fixed.tls,
+                network = fixed.network,
                 domainResolver = resolveDomainResolver(fixed),
 
                 tcpKeepAlive = tcpKeepAliveInterval,
@@ -698,7 +702,10 @@ object OutboundFixer {
         }, fixed)
     }
 
-    internal fun buildRuntimeHysteriaOutbound(fixed: Outbound): Outbound {
+    internal fun buildRuntimeHysteriaOutbound(
+        fixed: Outbound,
+        connectTimeout: String? = null
+    ): Outbound {
         val serverPorts = fixed.serverPorts?.takeIf { it.isNotEmpty() }
         return Outbound(
             type = fixed.type,
@@ -725,7 +732,8 @@ object OutboundFixer {
             brutalDebug = fixed.brutalDebug.takeIf { fixed.type == "hysteria2" },
             tls = fixed.tls,
             network = fixed.network,
-            domainResolver = resolveDomainResolver(fixed)
+            domainResolver = resolveDomainResolver(fixed),
+            connectTimeout = connectTimeout
         )
     }
 

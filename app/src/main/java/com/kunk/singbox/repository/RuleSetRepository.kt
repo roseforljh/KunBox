@@ -12,7 +12,12 @@ import com.kunk.singbox.model.RuleSetType
 import com.kunk.singbox.utils.NetworkClient
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import okhttp3.Request
 import okhttp3.OkHttpClient
@@ -387,42 +392,57 @@ class RuleSetRepository(private val context: Context) {
         onProgress: (String) -> Unit = {}
     ): Boolean = withContext(Dispatchers.IO) {
         val settings = settingsRepository.settings.first()
-        var allReady = true
+        val enabledRuleSets = settings.ruleSets.filter { it.enabled }
+        val downloadSemaphore = Semaphore(4)
 
-        settings.ruleSets.filter { it.enabled }.forEach { ruleSet ->
-            when (ruleSet.type) {
-                RuleSetType.LOCAL -> {
-                    if (!File(ruleSet.path).isFile) {
-                        allReady = false
-                        Log.w(TAG, "Local rule set ${ruleSet.tag} is missing: ${ruleSet.path}")
-                    }
-                }
-                RuleSetType.REMOTE -> {
-                    val file = getRuleSetFile(ruleSet.tag)
-                    val cacheReady = isRemoteRuleSetCacheReady(ruleSet, file)
-                    val shouldUpdate = shouldDownloadRemoteRuleSet(
-                        fileExists = cacheReady,
-                        allowNetwork = allowNetwork,
-                        forceUpdate = forceUpdate,
-                        isExpired = file.isFile && isExpired(file)
-                    )
-
-                    if (shouldUpdate) {
-                        onProgress("Updating rule set ${ruleSet.tag}...")
-                        val success = downloadCustomRuleSet(ruleSet, settings)
-                        if (!success && !isRemoteRuleSetReadyAfterDownloadFailure(cacheReady, forceUpdate)) {
-                            allReady = false
-                            Log.e(TAG, "Failed to download rule set ${ruleSet.tag} and no valid cache available")
+        val results = coroutineScope {
+            enabledRuleSets.map { ruleSet ->
+                async {
+                    when (ruleSet.type) {
+                        RuleSetType.LOCAL -> {
+                            val exists = File(ruleSet.path).isFile
+                            if (!exists) {
+                                Log.w(TAG, "Local rule set ${ruleSet.tag} is missing: ${ruleSet.path}")
+                            }
+                            exists
                         }
-                    } else if (!cacheReady) {
-                        allReady = false
-                        Log.w(TAG, "Rule set ${ruleSet.tag} is not downloaded or invalid")
+                        RuleSetType.REMOTE -> {
+                            val file = getRuleSetFile(ruleSet.tag)
+                            val cacheReady = isRemoteRuleSetCacheReady(ruleSet, file)
+                            val shouldUpdate = shouldDownloadRemoteRuleSet(
+                                fileExists = cacheReady,
+                                allowNetwork = allowNetwork,
+                                forceUpdate = forceUpdate,
+                                isExpired = file.isFile && isExpired(file)
+                            )
+
+                            if (shouldUpdate) {
+                                downloadSemaphore.withPermit {
+                                    onProgress("Updating rule set ${ruleSet.tag}...")
+                                    val success = downloadCustomRuleSet(ruleSet, settings)
+                                    val ready = success ||
+                                        isRemoteRuleSetReadyAfterDownloadFailure(cacheReady, forceUpdate)
+                                    if (!ready) {
+                                        Log.e(
+                                            TAG,
+                                            "Failed to download rule set ${ruleSet.tag} and no valid cache available"
+                                        )
+                                    }
+                                    ready
+                                }
+                            } else if (!cacheReady) {
+                                Log.w(TAG, "Rule set ${ruleSet.tag} is not downloaded or invalid")
+                                false
+                            } else {
+                                true
+                            }
+                        }
                     }
                 }
-            }
+            }.awaitAll()
         }
 
-        allReady
+        results.all { it }
     }
 
     suspend fun prefetchRuleSet(

@@ -41,5 +41,6 @@ class SubscriptionAutoUpdateWorkerTest {
         assertTrue(source.contains("val constraints = Constraints.Builder()"))
         assertTrue(source.contains(".setRequiredNetworkType(NetworkType.CONNECTED)"))
         assertTrue(source.contains(".setConstraints(constraints)"))
+        assertTrue(source.contains("ExistingPeriodicWorkPolicy.KEEP"))
     }
 }

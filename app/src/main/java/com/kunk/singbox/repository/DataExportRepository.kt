@@ -394,6 +394,11 @@ class DataExportRepository(private val context: Context) {
                 ?.takeIf { existingById == null && it.id != profile.id }
                 ?.id
             if (oldProfileId != null) {
+                settingsRepository.migrateProfileRoutingReferences(
+                    oldProfileId = oldProfileId,
+                    newProfileId = profile.id,
+                    nodeIdMapping = buildReplacedProfileNodeIdMapping(oldProfileId, profile.id)
+                )
                 configRepository.deleteProfile(oldProfileId)
             }
         }
@@ -407,6 +412,22 @@ class DataExportRepository(private val context: Context) {
         } ?: 0
 
         return nodeCount
+    }
+
+    private fun buildReplacedProfileNodeIdMapping(
+        oldProfileId: String,
+        newProfileId: String
+    ): Map<String, String> {
+        val allNodes = configRepository.allNodes.value
+        val newNodesByName = allNodes
+            .filter { it.sourceProfileId == newProfileId }
+            .associateBy { it.name }
+        return allNodes
+            .filter { it.sourceProfileId == oldProfileId }
+            .mapNotNull { oldNode ->
+                newNodesByName[oldNode.name]?.let { newNode -> oldNode.id to newNode.id }
+            }
+            .toMap()
     }
 
     private fun validateImportPayloadSize(jsonData: String) {

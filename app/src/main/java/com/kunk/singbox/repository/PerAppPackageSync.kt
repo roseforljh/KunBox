@@ -124,6 +124,57 @@ internal fun migrateNodeRoutingReferences(
     )
 }
 
+/** 导入按名称替换配置时，把旧配置 ID 的分流指向改到新 ID，避免规则目标失效。 */
+@Suppress("CyclomaticComplexMethod")
+internal fun migrateProfileRoutingReferences(
+    settings: AppSettings,
+    oldProfileId: String,
+    newProfileId: String,
+    nodeIdMapping: Map<String, String> = emptyMap()
+): AppSettings {
+    val oldId = oldProfileId.trim()
+    val newId = newProfileId.trim()
+    if (oldId.isEmpty() || newId.isEmpty() || oldId == newId) return settings
+
+    fun migrate(mode: RuleSetOutboundMode?, value: String?): Pair<RuleSetOutboundMode?, String?> {
+        val target = value?.trim().orEmpty()
+        val remappedNodeId = if (mode == RuleSetOutboundMode.NODE) nodeIdMapping[target] else null
+        return when {
+            target.isEmpty() -> mode to value
+            remappedNodeId != null -> mode to remappedNodeId
+            mode == RuleSetOutboundMode.PROFILE && target == oldId -> RuleSetOutboundMode.PROFILE to newId
+            mode == RuleSetOutboundMode.NODE && target.startsWith("$oldId::") ->
+                mode to "$newId${target.removePrefix(oldId)}"
+            target.startsWith("P:") && target.substringAfterLast('#', "").trim() == oldId ->
+                RuleSetOutboundMode.PROFILE to newId
+            else -> mode to value
+        }
+    }
+
+    return settings.copy(
+        appRules = settings.appRules.map { rule ->
+            migrate(rule.outboundMode, rule.outboundValue).let { (mode, value) ->
+                rule.copy(outboundMode = mode, outboundValue = value)
+            }
+        },
+        appGroups = settings.appGroups.map { group ->
+            migrate(group.outboundMode, group.outboundValue).let { (mode, value) ->
+                group.copy(outboundMode = mode, outboundValue = value)
+            }
+        },
+        customRules = settings.customRules.map { rule ->
+            migrate(rule.outboundMode, rule.outboundValue).let { (mode, value) ->
+                rule.copy(outboundMode = mode, outboundValue = value)
+            }
+        },
+        ruleSets = settings.ruleSets.map { ruleSet ->
+            migrate(ruleSet.outboundMode, ruleSet.outboundValue).let { (mode, value) ->
+                ruleSet.copy(outboundMode = mode, outboundValue = value)
+            }
+        }
+    )
+}
+
 @Suppress("CyclomaticComplexMethod", "CognitiveComplexMethod")
 internal fun removeDeletedRoutingReferences(
     settings: AppSettings,
@@ -149,19 +200,31 @@ internal fun removeDeletedRoutingReferences(
         }
     }
 
+    // ponytail: 目标失效只清空指向，不删除规则本身；删规则会让用户的分流配置凭空消失。
+    fun cleared(mode: RuleSetOutboundMode?, value: String?): Pair<RuleSetOutboundMode?, String?> =
+        if (isDeletedReference(mode, value)) RuleSetOutboundMode.PROXY to null else mode to value
+
     return settings.copy(
         customNodeOrder = settings.customNodeOrder.filterNot { it.trim() in nodeIds },
-        appRules = settings.appRules.filterNot { rule ->
-            isDeletedReference(rule.outboundMode, rule.outboundValue)
+        appRules = settings.appRules.map { rule ->
+            cleared(rule.outboundMode, rule.outboundValue).let { (mode, value) ->
+                rule.copy(outboundMode = mode, outboundValue = value)
+            }
         },
-        appGroups = settings.appGroups.filterNot { group ->
-            isDeletedReference(group.outboundMode, group.outboundValue)
+        appGroups = settings.appGroups.map { group ->
+            cleared(group.outboundMode, group.outboundValue).let { (mode, value) ->
+                group.copy(outboundMode = mode, outboundValue = value)
+            }
         },
-        customRules = settings.customRules.filterNot { rule ->
-            isDeletedReference(rule.outboundMode, rule.outboundValue)
+        customRules = settings.customRules.map { rule ->
+            cleared(rule.outboundMode, rule.outboundValue).let { (mode, value) ->
+                rule.copy(outboundMode = mode, outboundValue = value)
+            }
         },
-        ruleSets = settings.ruleSets.filterNot { ruleSet ->
-            isDeletedReference(ruleSet.outboundMode, ruleSet.outboundValue)
+        ruleSets = settings.ruleSets.map { ruleSet ->
+            cleared(ruleSet.outboundMode, ruleSet.outboundValue).let { (mode, value) ->
+                ruleSet.copy(outboundMode = mode, outboundValue = value)
+            }
         }
     )
 }
@@ -182,7 +245,7 @@ internal fun removeInvalidRoutingReferences(
     fun normalize(
         mode: RuleSetOutboundMode?,
         value: String?
-    ): Pair<RuleSetOutboundMode?, String?>? {
+    ): Pair<RuleSetOutboundMode?, String?> {
         val target = value?.trim().orEmpty()
         return when (mode) {
             RuleSetOutboundMode.NODE -> if (
@@ -190,19 +253,21 @@ internal fun removeInvalidRoutingReferences(
             ) {
                 mode to value
             } else {
-                null
+                // ponytail: 目标失效只清空指向，保留规则；删规则会让用户的分流配置凭空消失。
+                RuleSetOutboundMode.PROXY to null
             }
             RuleSetOutboundMode.PROFILE -> {
                 val profileId = target.takeIf(validProfileIds::contains)
                     ?: legacyProfileId(target)?.takeIf(validProfileIds::contains)
                 profileId?.let { RuleSetOutboundMode.PROFILE to it }
+                    ?: (RuleSetOutboundMode.PROXY to null)
             }
             RuleSetOutboundMode.PROXY -> {
                 val legacyProfileId = legacyProfileId(target)
                 when {
                     legacyProfileId == null -> mode to value
                     legacyProfileId in validProfileIds -> RuleSetOutboundMode.PROFILE to legacyProfileId
-                    else -> null
+                    else -> RuleSetOutboundMode.PROXY to null
                 }
             }
             else -> mode to value
@@ -211,23 +276,23 @@ internal fun removeInvalidRoutingReferences(
 
     return settings.copy(
         customNodeOrder = settings.customNodeOrder.filter { it.trim() in validNodeIds },
-        appRules = settings.appRules.mapNotNull { rule ->
-            normalize(rule.outboundMode, rule.outboundValue)?.let { (mode, value) ->
+        appRules = settings.appRules.map { rule ->
+            normalize(rule.outboundMode, rule.outboundValue).let { (mode, value) ->
                 rule.copy(outboundMode = mode, outboundValue = value)
             }
         },
-        appGroups = settings.appGroups.mapNotNull { group ->
-            normalize(group.outboundMode, group.outboundValue)?.let { (mode, value) ->
+        appGroups = settings.appGroups.map { group ->
+            normalize(group.outboundMode, group.outboundValue).let { (mode, value) ->
                 group.copy(outboundMode = mode, outboundValue = value)
             }
         },
-        customRules = settings.customRules.mapNotNull { rule ->
-            normalize(rule.outboundMode, rule.outboundValue)?.let { (mode, value) ->
+        customRules = settings.customRules.map { rule ->
+            normalize(rule.outboundMode, rule.outboundValue).let { (mode, value) ->
                 rule.copy(outboundMode = mode, outboundValue = value)
             }
         },
-        ruleSets = settings.ruleSets.mapNotNull { ruleSet ->
-            normalize(ruleSet.outboundMode, ruleSet.outboundValue)?.let { (mode, value) ->
+        ruleSets = settings.ruleSets.map { ruleSet ->
+            normalize(ruleSet.outboundMode, ruleSet.outboundValue).let { (mode, value) ->
                 ruleSet.copy(outboundMode = mode, outboundValue = value)
             }
         }

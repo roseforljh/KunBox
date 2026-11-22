@@ -711,16 +711,6 @@ internal fun ConfigRepository.buildRunRoute(
     val defaultResolverTag = "dns-bootstrap"
 
     val normalizedRules = normalizeRunRouteRules(allRules)
-    normalizedRules.withIndex()
-        .filter { (_, rule) -> "org.telegram.messenger" in rule.packageName.orEmpty() }
-        .forEach { (index, rule) ->
-            val trace = "[APP_ROUTE_TRACE] config ruleIndex=$index " +
-                "packages=${rule.packageName.orEmpty().joinToString("|")} " +
-                "outbound=${rule.outbound.orEmpty()} action=${rule.action.orEmpty()} " +
-                "selector=$selectorTag available=${outbounds.joinToString("|") { it.tag }}"
-            Log.i(ConfigRepository.TAG, trace)
-            LogRepository.getInstance().addAlwaysLog("INFO $trace")
-        }
 
     return RouteConfig(
         ruleSet = validRuleSets,

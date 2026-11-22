@@ -246,7 +246,7 @@ fun AppRoutingScreen(
                         )
                     }
                 } else {
-                    items(settings.appGroups) { group ->
+                    items(settings.appGroups, key = { it.id }) { group ->
                         val effectiveGroup = group.copy(
                             apps = if (inventoryAvailable) {
                                 group.apps.filter { it.packageName in capturedPackages }

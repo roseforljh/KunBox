@@ -419,11 +419,14 @@ internal object ConnectionInfoUiPolicy {
         }
     }
 
+    private val shortOffsetZoneRegex = Regex("""[+-]\d{2}$""")
+    private val compactOffsetZoneRegex = Regex("""[+-]\d{4}$""")
+
     private fun normalizeZone(zone: String): String {
         return when {
             zone.equals("Z", ignoreCase = true) -> "Z"
-            zone.matches(Regex("""[+-]\d{2}$""")) -> "$zone:00"
-            zone.matches(Regex("""[+-]\d{4}$""")) -> {
+            shortOffsetZoneRegex.matches(zone) -> "$zone:00"
+            compactOffsetZoneRegex.matches(zone) -> {
                 "${zone.substring(0, 3)}:${zone.substring(3)}"
             }
             else -> zone

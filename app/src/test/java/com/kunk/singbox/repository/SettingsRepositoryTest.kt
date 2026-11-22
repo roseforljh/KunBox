@@ -5,10 +5,13 @@ import com.kunk.singbox.model.AppSettings
 import com.kunk.singbox.model.AppThemeStyle
 import com.kunk.singbox.model.BackgroundPowerSavingDelay
 import com.kunk.singbox.model.CustomRule
+import com.kunk.singbox.model.DefaultRule
 import com.kunk.singbox.model.IpVersionMode
+import com.kunk.singbox.model.RoutingMode
 import com.kunk.singbox.model.RuleSet
 import com.kunk.singbox.model.RuleSetType
 import com.kunk.singbox.model.RuleType
+import com.kunk.singbox.model.VpnAppMode
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -88,12 +91,22 @@ class SettingsRepositoryTest {
 
         val result = SettingsRepository.buildImportedSettings(
             current = AppSettings(
+                routingMode = RoutingMode.RULE,
+                defaultRule = DefaultRule.DIRECT,
+                vpnAppMode = VpnAppMode.ALLOWLIST,
+                vpnAllowlist = "com.keep.app",
+                vpnBlocklist = "com.block.app",
                 customRules = currentRules,
                 ruleSets = currentRuleSets,
                 ruleSetAutoUpdateEnabled = true,
                 ruleSetAutoUpdateInterval = 60
             ),
             imported = AppSettings(
+                routingMode = RoutingMode.GLOBAL_PROXY,
+                defaultRule = DefaultRule.PROXY,
+                vpnAppMode = VpnAppMode.BLOCKLIST,
+                vpnAllowlist = "com.imported.app",
+                vpnBlocklist = "com.imported.block",
                 customRules = importedRules,
                 ruleSets = importedRuleSets,
                 ruleSetAutoUpdateEnabled = false,
@@ -102,6 +115,11 @@ class SettingsRepositoryTest {
             importRules = false
         )
 
+        assertEquals(RoutingMode.RULE, result.routingMode)
+        assertEquals(DefaultRule.DIRECT, result.defaultRule)
+        assertEquals(VpnAppMode.ALLOWLIST, result.vpnAppMode)
+        assertEquals("com.keep.app", result.vpnAllowlist)
+        assertEquals("com.block.app", result.vpnBlocklist)
         assertEquals(currentRules, result.customRules)
         assertEquals(currentRuleSets, result.ruleSets)
         assertEquals(true, result.ruleSetAutoUpdateEnabled)

@@ -442,13 +442,33 @@ class SettingsRepository(private val context: Context) {
         return persisted
     }
 
+    suspend fun migrateProfileRoutingReferences(
+        oldProfileId: String,
+        newProfileId: String,
+        nodeIdMapping: Map<String, String> = emptyMap()
+    ): Boolean {
+        var changed = false
+        val persisted = settingsStore.updateSettingsAndWait { current ->
+            val updated = com.kunk.singbox.repository.migrateProfileRoutingReferences(
+                settings = current,
+                oldProfileId = oldProfileId,
+                newProfileId = newProfileId,
+                nodeIdMapping = nodeIdMapping
+            )
+            changed = updated != current
+            updated
+        }
+        if (persisted && changed) notifyRestartRequired()
+        return persisted
+    }
+
     suspend fun removeInvalidRoutingReferences(
         validProfileIds: Set<String>,
         validNodeIds: Set<String>,
         validQualifiedNodeReferences: Set<String>,
         validBareNodeNames: Set<String>
     ): Boolean {
-        var removed = 0
+        var cleared = 0
         val persisted = settingsStore.updateSettingsAndWait { current ->
             val updated = com.kunk.singbox.repository.removeInvalidRoutingReferences(
                 settings = current,
@@ -457,13 +477,20 @@ class SettingsRepository(private val context: Context) {
                 validQualifiedNodeReferences = validQualifiedNodeReferences,
                 validBareNodeNames = validBareNodeNames
             )
-            removed = current.appRules.size + current.appGroups.size + current.customRules.size +
-                current.ruleSets.size - updated.appRules.size - updated.appGroups.size -
-                updated.customRules.size - updated.ruleSets.size
+            cleared = (
+                current.appRules.count { it.outboundValue != null } -
+                    updated.appRules.count { it.outboundValue != null } +
+                    current.appGroups.count { it.outboundValue != null } -
+                    updated.appGroups.count { it.outboundValue != null } +
+                    current.customRules.count { it.outboundValue != null } -
+                    updated.customRules.count { it.outboundValue != null } +
+                    current.ruleSets.count { it.outboundValue != null } -
+                    updated.ruleSets.count { it.outboundValue != null }
+                ).coerceAtLeast(0)
             updated
         }
-        if (persisted && removed > 0) {
-            Log.w("SettingsRepository", "Removed $removed invalid routing reference(s)")
+        if (persisted && cleared > 0) {
+            Log.w("SettingsRepository", "Cleared $cleared invalid routing target(s); rules kept")
         }
         return persisted
     }
@@ -765,6 +792,11 @@ class SettingsRepository(private val context: Context) {
                 normalized
             } else {
                 normalized.copy(
+                    routingMode = current.routingMode,
+                    defaultRule = current.defaultRule,
+                    vpnAppMode = current.vpnAppMode,
+                    vpnAllowlist = current.vpnAllowlist,
+                    vpnBlocklist = current.vpnBlocklist,
                     customRules = current.customRules,
                     ruleSets = current.ruleSets,
                     appRules = current.appRules,

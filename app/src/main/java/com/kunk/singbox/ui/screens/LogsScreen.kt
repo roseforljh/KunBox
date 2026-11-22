@@ -131,6 +131,7 @@ fun LogsScreen(navController: NavController, viewModel: LogViewModel = viewModel
             contentWindowInsets = WindowInsets(0, 0, 0, 0),
             containerColor = liquidGlassTopAppBarContainerColor(MaterialTheme.colorScheme.background)
         ) { padding ->
+            val reversedLogs = remember(logs) { logs.asReversed() }
             LazyColumn(
                 state = listState,
                 modifier = Modifier
@@ -157,7 +158,7 @@ fun LogsScreen(navController: NavController, viewModel: LogViewModel = viewModel
                         onCategorySelected = { viewModel.setCategory(it) }
                     )
                 }
-                items(logs.asReversed()) { log ->
+                items(reversedLogs) { log ->
                     Text(
                         text = log,
                         color = when {

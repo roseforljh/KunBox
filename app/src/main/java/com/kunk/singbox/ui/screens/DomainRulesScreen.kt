@@ -279,7 +279,7 @@ fun DomainRulesScreen(
                         }
                     }
                 } else {
-                    items(domainRules) { rule ->
+                    items(domainRules, key = { it.id }) { rule ->
                         val mode = rule.outboundMode ?: when (rule.outbound) {
                             OutboundTag.DIRECT -> RuleSetOutboundMode.DIRECT
                             OutboundTag.BLOCK -> RuleSetOutboundMode.BLOCK

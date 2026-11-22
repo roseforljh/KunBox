@@ -245,7 +245,12 @@ object SingBoxIpcHub {
         if (!heartbeatStarted.compareAndSet(false, true)) return
         broadcastScheduler.scheduleWithFixedDelay(
             {
-                if (currentLiveCoreState() != null) {
+                if (currentLiveCoreState() == null) return@scheduleWithFixedDelay
+                val hasActiveListeners = callbacks.registeredCallbackCount > 0
+                val persistDue = SystemClock.elapsedRealtime() - lastPersistedAtMs.get() >=
+                    DataPlaneReadinessSnapshot.PERSIST_HEARTBEAT_INTERVAL_MS
+                // 无前端 IPC 监听时仅按持久化周期刷新快照，降低后台定时唤醒开销
+                if (hasActiveListeners || persistDue) {
                     updateReadiness { it }
                 }
             },

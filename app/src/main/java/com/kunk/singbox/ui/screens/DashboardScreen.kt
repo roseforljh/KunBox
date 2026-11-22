@@ -42,7 +42,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.derivedStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -115,21 +114,13 @@ fun DashboardScreen(
     val settings by settingsViewModel.settings.collectAsStateWithLifecycle()
     val runtimeNodeLabel by SingBoxRemote.activeLabel.collectAsStateWithLifecycle()
 
-    val nodesForSelector by nodesViewModel.nodes.collectAsStateWithLifecycle()
-    val rawNodesForSelector by nodesViewModel.rawNodes.collectAsStateWithLifecycle()
-    val testingNodeIds by nodesViewModel.testingNodeIds.collectAsStateWithLifecycle()
-
-    val activeProfileName by remember {
-        derivedStateOf {
-            profiles.find { it.id == activeProfileId }?.name
-        }
+    val activeProfileName = remember(profiles, activeProfileId) {
+        profiles.find { it.id == activeProfileId }?.name
     }
 
     // 连接态优先显示运行态标签，避免自动切换后主页仍显示手选旧节点
-    val activeNodeName by remember(activeNodeId, nodes, connectionState, runtimeNodeLabel) {
-        derivedStateOf {
-            viewModel.getActiveNodeName()
-        }
+    val activeNodeName = remember(activeNodeId, nodes, connectionState, runtimeNodeLabel) {
+        viewModel.getActiveNodeName()
     }
     val autoSelectionSubtitle = when {
         !isAutoSelectionEnabled -> stringResource(R.string.nodes_auto_selection_disabled)
@@ -254,19 +245,11 @@ fun DashboardScreen(
     }
 
     if (showNodeDialog) {
-        NodePickerPage(
-            title = stringResource(R.string.dashboard_select_node),
+        DashboardNodePickerDialog(
+            dashboardViewModel = viewModel,
+            nodesViewModel = nodesViewModel,
             profiles = profiles,
-            allNodes = rawNodesForSelector,
-            displayedNodes = nodesForSelector,
-            selectedNodeId = activeNodeId,
-            isAutoSelectionEnabled = isAutoSelectionEnabled,
             autoSelectionSubtitle = autoSelectionSubtitle,
-            testingNodeIds = testingNodeIds,
-            onSelectAuto = viewModel::enableAutoSelection,
-            onSelectNode = { node ->
-                viewModel.setActiveNode(node.id)
-            },
             onDismiss = { showNodeDialog = false }
         )
     }
@@ -278,88 +261,25 @@ fun DashboardScreen(
 
     // Background Animation
     val isRunning = connectionState == ConnectionState.Connected || connectionState == ConnectionState.Connecting
-    val infiniteTransition = rememberInfiniteTransition(label = "BackgroundAnimation")
-
-    val pulseScale by infiniteTransition.animateFloat(
-        initialValue = 1f,
-        targetValue = if (isRunning) 1.05f else 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(1500, easing = androidx.compose.animation.core.FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "PulseScale"
-    )
-
-    val pulseAlpha by infiniteTransition.animateFloat(
-        initialValue = 0.3f,
-        targetValue = if (isRunning) 0.6f else 0.3f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(1500, easing = androidx.compose.animation.core.FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "PulseAlpha"
-    )
-
     val defaultBaseColor = MaterialTheme.colorScheme.onSurface
     val useLiquidGlass = isLiquidGlassTheme()
     val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
     val primaryColor = MaterialTheme.colorScheme.primary
+    val cageBaseColor = if (useLiquidGlass) primaryColor else defaultBaseColor
+    val cageAlphaMultiplier = when {
+        !useLiquidGlass -> 1f
+        isDark -> 1.5f
+        else -> 1.6f
+    }
 
     Box(modifier = Modifier.fillMaxSize()) {
         // Background Decoration - 3D Box Cage (Back Face & Connections)
-        androidx.compose.foundation.Canvas(modifier = Modifier.fillMaxSize()) {
-            val center = center
-            val baseSize = size.minDimension * 0.55f * pulseScale
-
-            val baseAlpha = if (isRunning) pulseAlpha * 0.5f else 0.15f
-            val color = if (useLiquidGlass) {
-                primaryColor.copy(alpha = if (isDark) baseAlpha * 1.5f else baseAlpha * 1.6f)
-            } else {
-                defaultBaseColor.copy(alpha = baseAlpha)
-            }
-            val strokeWidth = if (isRunning) 2.dp.toPx() else 1.dp.toPx()
-
-            val rotationX = Math.toRadians(15.0).toFloat()
-            val rotationY = Math.toRadians(35.0).toFloat()
-
-            fun project(x: Float, y: Float, z: Float): Offset {
-                val y1 = y * cos(rotationX) - z * sin(rotationX)
-                val z1 = y * sin(rotationX) + z * cos(rotationX)
-                val x2 = x * cos(rotationY) + z1 * sin(rotationY)
-                return Offset(center.x + x2, center.y + y1)
-            }
-
-            val s = baseSize / 1.5f
-
-            val p1 = project(-s, -s, -s)
-            val p2 = project(s, -s, -s)
-            val p3 = project(s, s, -s)
-            val p4 = project(-s, s, -s)
-            val p5 = project(-s, -s, s)
-            val p6 = project(s, -s, s)
-            val p7 = project(s, s, s)
-            val p8 = project(-s, s, s)
-
-            val path = Path()
-            // Back Face (p5-p8)
-            path.moveTo(p5.x, p5.y)
-            path.lineTo(p6.x, p6.y)
-            path.lineTo(p7.x, p7.y)
-            path.lineTo(p8.x, p8.y)
-            path.close()
-
-            // Connections
-            path.moveTo(p1.x, p1.y); path.lineTo(p5.x, p5.y)
-            path.moveTo(p2.x, p2.y); path.lineTo(p6.x, p6.y)
-            path.moveTo(p3.x, p3.y); path.lineTo(p7.x, p7.y)
-            path.moveTo(p4.x, p4.y); path.lineTo(p8.x, p8.y)
-
-            drawPath(
-                path = path,
-                color = color,
-                style = Stroke(width = strokeWidth)
-            )
-        }
+        DashboardCageLayer(
+            isRunning = isRunning,
+            isFrontFace = false,
+            baseColor = cageBaseColor,
+            alphaMultiplier = cageAlphaMultiplier
+        )
 
         Column(
             modifier = Modifier
@@ -466,7 +386,6 @@ fun DashboardScreen(
                     )
                 }
 
-                val noProfileMsg = stringResource(R.string.dashboard_no_profiles_available)
                 val noNodeMsg = stringResource(R.string.dashboard_no_nodes_available)
 
                 Row(
@@ -479,7 +398,13 @@ fun DashboardScreen(
                             if (profiles.isNotEmpty()) {
                                 showProfileDialog = true
                             } else {
-                                AppNotificationManager.showMessage(context, noProfileMsg)
+                                navController.navigate(AppScreen.Profiles.route) {
+                                    popUpTo(navController.graph.startDestinationId) {
+                                        saveState = true
+                                    }
+                                    launchSingleTop = true
+                                    restoreState = true
+                                }
                             }
                         }
                     )
@@ -489,6 +414,14 @@ fun DashboardScreen(
                         onClick = {
                             if (nodes.isNotEmpty()) {
                                 showNodeDialog = true
+                            } else if (profiles.isEmpty()) {
+                                navController.navigate(AppScreen.Profiles.route) {
+                                    popUpTo(navController.graph.startDestinationId) {
+                                        saveState = true
+                                    }
+                                    launchSingleTop = true
+                                    restoreState = true
+                                }
                             } else {
                                 AppNotificationManager.showMessage(context, noNodeMsg)
                             }
@@ -591,51 +524,159 @@ fun DashboardScreen(
 
         // Foreground Decoration - 3D Box Cage (Front Face)
         // Drawn on top of Column to create "Trapped" effect
-        androidx.compose.foundation.Canvas(modifier = Modifier.fillMaxSize()) {
-            val center = center
-            val baseSize = size.minDimension * 0.55f * pulseScale
-
-            val baseAlpha = if (isRunning) pulseAlpha * 0.5f else 0.15f
-            val color = if (useLiquidGlass) {
-                primaryColor.copy(alpha = if (isDark) baseAlpha * 1.5f else baseAlpha * 1.6f)
-            } else {
-                defaultBaseColor.copy(alpha = baseAlpha)
-            }
-            val strokeWidth = if (isRunning) 2.dp.toPx() else 1.dp.toPx()
-
-            val rotationX = Math.toRadians(15.0).toFloat()
-            val rotationY = Math.toRadians(35.0).toFloat()
-
-            fun project(x: Float, y: Float, z: Float): Offset {
-                val y1 = y * cos(rotationX) - z * sin(rotationX)
-                val z1 = y * sin(rotationX) + z * cos(rotationX)
-                val x2 = x * cos(rotationY) + z1 * sin(rotationY)
-                return Offset(center.x + x2, center.y + y1)
-            }
-
-            val s = baseSize / 1.5f
-
-            // Only need p1-p4 for front face
-            val p1 = project(-s, -s, -s)
-            val p2 = project(s, -s, -s)
-            val p3 = project(s, s, -s)
-            val p4 = project(-s, s, -s)
-
-            val path = Path()
-            // Front Face
-            path.moveTo(p1.x, p1.y)
-            path.lineTo(p2.x, p2.y)
-            path.lineTo(p3.x, p3.y)
-            path.lineTo(p4.x, p4.y)
-            path.close()
-
-            drawPath(
-                path = path,
-                color = color,
-                style = Stroke(width = strokeWidth)
-            )
-        }
+        DashboardCageLayer(
+            isRunning = isRunning,
+            isFrontFace = true,
+            baseColor = cageBaseColor,
+            alphaMultiplier = cageAlphaMultiplier
+        )
     }
+}
+
+@Composable
+private fun DashboardNodePickerDialog(
+    dashboardViewModel: DashboardViewModel,
+    nodesViewModel: NodesViewModel,
+    profiles: List<com.kunk.singbox.model.ProfileUi>,
+    autoSelectionSubtitle: String,
+    onDismiss: () -> Unit
+) {
+    val activeNodeId by dashboardViewModel.activeNodeId.collectAsStateWithLifecycle()
+    val isAutoSelectionEnabled by dashboardViewModel.isAutoSelectionEnabled.collectAsStateWithLifecycle()
+    val nodesForSelector by nodesViewModel.nodes.collectAsStateWithLifecycle()
+    val rawNodesForSelector by nodesViewModel.rawNodes.collectAsStateWithLifecycle()
+    val testingNodeIds by nodesViewModel.testingNodeIds.collectAsStateWithLifecycle()
+
+    NodePickerPage(
+        title = stringResource(R.string.dashboard_select_node),
+        profiles = profiles,
+        allNodes = rawNodesForSelector,
+        displayedNodes = nodesForSelector,
+        selectedNodeId = activeNodeId,
+        isAutoSelectionEnabled = isAutoSelectionEnabled,
+        autoSelectionSubtitle = autoSelectionSubtitle,
+        testingNodeIds = testingNodeIds,
+        onSelectAuto = dashboardViewModel::enableAutoSelection,
+        onSelectNode = { node ->
+            dashboardViewModel.setActiveNode(node.id)
+        },
+        onDismiss = onDismiss
+    )
+}
+
+@Composable
+private fun DashboardCageLayer(
+    isRunning: Boolean,
+    isFrontFace: Boolean,
+    baseColor: Color,
+    alphaMultiplier: Float
+) {
+    val (pulseScaleState, pulseAlphaState) = rememberCagePulseStates(isRunning, isFrontFace)
+    val reusablePath = remember { Path() }
+
+    androidx.compose.foundation.Canvas(modifier = Modifier.fillMaxSize()) {
+        val baseSize = size.minDimension * 0.55f * pulseScaleState.value
+        val baseAlpha = if (isRunning) pulseAlphaState.value * 0.5f else 0.15f
+        val color = baseColor.copy(alpha = (baseAlpha * alphaMultiplier).coerceIn(0f, 1f))
+        val strokeWidth = if (isRunning) 2.dp.toPx() else 1.dp.toPx()
+
+        buildCagePath(
+            path = reusablePath,
+            center = center,
+            halfSize = baseSize / 1.5f,
+            isFrontFace = isFrontFace
+        )
+        drawPath(
+            path = reusablePath,
+            color = color,
+            style = Stroke(width = strokeWidth)
+        )
+    }
+}
+
+@Composable
+private fun rememberCagePulseStates(
+    isRunning: Boolean,
+    isFrontFace: Boolean
+): Pair<androidx.compose.runtime.State<Float>, androidx.compose.runtime.State<Float>> {
+    if (!isRunning) {
+        return remember { mutableStateOf(1f) } to remember { mutableStateOf(0.3f) }
+    }
+    val infiniteTransition = rememberInfiniteTransition(
+        label = if (isFrontFace) "CageFrontAnimation" else "CageBackAnimation"
+    )
+    val scale = infiniteTransition.animateFloat(
+        initialValue = 1f,
+        targetValue = 1.05f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1500, easing = androidx.compose.animation.core.FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "PulseScale"
+    )
+    val alpha = infiniteTransition.animateFloat(
+        initialValue = 0.3f,
+        targetValue = 0.6f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1500, easing = androidx.compose.animation.core.FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "PulseAlpha"
+    )
+    return scale to alpha
+}
+
+private val cageCosX = cos(Math.toRadians(15.0).toFloat())
+private val cageSinX = sin(Math.toRadians(15.0).toFloat())
+private val cageCosY = cos(Math.toRadians(35.0).toFloat())
+private val cageSinY = sin(Math.toRadians(35.0).toFloat())
+
+private fun buildCagePath(
+    path: Path,
+    center: Offset,
+    halfSize: Float,
+    isFrontFace: Boolean
+) {
+    fun project(x: Float, y: Float, z: Float): Offset {
+        val y1 = y * cageCosX - z * cageSinX
+        val z1 = y * cageSinX + z * cageCosX
+        val x2 = x * cageCosY + z1 * cageSinY
+        return Offset(center.x + x2, center.y + y1)
+    }
+
+    val p1 = project(-halfSize, -halfSize, -halfSize)
+    val p2 = project(halfSize, -halfSize, -halfSize)
+    val p3 = project(halfSize, halfSize, -halfSize)
+    val p4 = project(-halfSize, halfSize, -halfSize)
+
+    path.reset()
+    if (isFrontFace) {
+        path.moveTo(p1.x, p1.y)
+        path.lineTo(p2.x, p2.y)
+        path.lineTo(p3.x, p3.y)
+        path.lineTo(p4.x, p4.y)
+        path.close()
+        return
+    }
+
+    val p5 = project(-halfSize, -halfSize, halfSize)
+    val p6 = project(halfSize, -halfSize, halfSize)
+    val p7 = project(halfSize, halfSize, halfSize)
+    val p8 = project(-halfSize, halfSize, halfSize)
+    path.moveTo(p5.x, p5.y)
+    path.lineTo(p6.x, p6.y)
+    path.lineTo(p7.x, p7.y)
+    path.lineTo(p8.x, p8.y)
+    path.close()
+
+    path.moveTo(p1.x, p1.y)
+    path.lineTo(p5.x, p5.y)
+    path.moveTo(p2.x, p2.y)
+    path.lineTo(p6.x, p6.y)
+    path.moveTo(p3.x, p3.y)
+    path.lineTo(p7.x, p7.y)
+    path.moveTo(p4.x, p4.y)
+    path.lineTo(p8.x, p8.y)
 }
 
 @Composable
