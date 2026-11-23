@@ -14,7 +14,7 @@ import com.kunk.singbox.repository.SettingsRepository
 import com.kunk.singbox.repository.deleteProfile
 import com.kunk.singbox.repository.ConfigRepository
 import com.kunk.singbox.repository.DataExportRepository
-import com.kunk.singbox.repository.addSingleNode
+import com.kunk.singbox.repository.addNodesFromLinks
 import com.kunk.singbox.repository.deleteNode
 import com.kunk.singbox.repository.awaitInitialProfilesLoaded
 import com.kunk.singbox.repository.exportNode
@@ -92,8 +92,12 @@ class PhoneProfileAcceptanceTest {
             }
             step("add_edit_export_roundtrip") {
                 val profileId = imported["json"] ?: error("JSON profile missing")
-                val node = repository.addSingleNode(link1, targetProfileId = profileId).getOrThrow()
-                val original = repository.loadConfig(profileId)?.outbounds.orEmpty().first { it.tag == node.name }
+                val added = repository.addNodesFromLinks("$link1\r\nvmess://invalid\r\n$link2", profileId).getOrThrow()
+                check(added.map { it.name } == listOf("accept-one", "accept-two"))
+                val stored = repository.loadConfig(profileId)?.outbounds.orEmpty()
+                check(added.all { node -> stored.any { it.tag == node.name } })
+                val node = added.first()
+                val original = stored.first { it.tag == node.name }
                 repository.updateNode(node.id, original.copy(server = "192.0.2.21", serverPort = 8443))
                 val updated = repository.loadConfig(profileId)?.outbounds.orEmpty().first { it.tag == node.name }
                 check(updated.server == "192.0.2.21" && updated.serverPort == 8443)
@@ -101,8 +105,9 @@ class PhoneProfileAcceptanceTest {
                 val parsed = repository.parseNodeLink(repository.exportNode(node.id) ?: error("export failed"))
                     ?: error("roundtrip parse failed")
                 check(parsed.type == updated.type && parsed.server == updated.server && parsed.serverPort == updated.serverPort)
-                repository.deleteNode(node.id)
-                check(repository.loadConfig(profileId)?.outbounds.orEmpty().none { it.tag == node.name })
+                added.forEach { repository.deleteNode(it.id) }
+                val remaining = repository.loadConfig(profileId)?.outbounds.orEmpty()
+                check(remaining.none { outbound -> added.any { it.name == outbound.tag } })
             }
             step("invalid_input_preserves_profiles") {
                 val before = repository.profiles.value.associateBy { it.id }
