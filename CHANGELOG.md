@@ -1,5 +1,19 @@
 # Changelog
 
+## [2.26.0](https://github.com/roseforljh/KunBox/compare/v2.25.0...v2.26.0) (2026-11-23)
+
+
+### Features
+
+* **raybox:** accept semantic version tag for RayBox core identity ([0db8b4f](https://github.com/roseforljh/KunBox/commit/0db8b4f66f44bd499c2757ca1e56d6b0ba3f02dc))
+
+
+### Bug Fixes
+
+* 优化前后端性能、协议解析完整性与分流配置保护 ([7faa2b9](https://github.com/roseforljh/KunBox/commit/7faa2b9253c8fe0efe75f8bbd989f39c43cdf04d))
+* 修复跨进程测速未保护 socket 与恢复误判流量阻断问题 ([9173ed1](https://github.com/roseforljh/KunBox/commit/9173ed19b61f0f8b93a417fa11371e4ab023d873))
+* 合并 origin/main 并解决 SingBoxIpcService 冲突 ([bd0f980](https://github.com/roseforljh/KunBox/commit/bd0f9808f2f8433892dfd0d07b6a081daebbbb2e))
+
 ## [2.25.0](https://github.com/roseforljh/KunBox/compare/v2.24.3...v2.25.0) (2026-11-08)
 
 
