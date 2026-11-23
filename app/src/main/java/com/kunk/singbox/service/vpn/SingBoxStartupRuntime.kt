@@ -117,6 +117,11 @@ internal fun SingBoxService.forceStopProcess(reason: String) {
     Process.killProcess(Process.myPid())
 }
 
+internal fun shouldMarkFailedBlockedOnSkippedProcessReclaim(
+    isServiceRunning: Boolean,
+    isCoreRunning: Boolean
+): Boolean = !isServiceRunning || !isCoreRunning
+
 @Suppress("CognitiveComplexMethod")
 internal fun SingBoxService.startResourceGuard() {
     val registration = ResourceGuardRegistration(
@@ -160,14 +165,20 @@ internal fun SingBoxService.startResourceGuard() {
                     com.kunk.singbox.ipc.VpnLockdownStatus.ENABLED
                 ) {
                     publishBudgetExhausted("process_reclaim_blocked_without_lockdown:$reason")
-                    SingBoxIpcHub.updateReadiness { readiness ->
-                        readiness.copy(
-                            status = com.kunk.singbox.ipc.DataPlaneStatus.FAILED_BLOCKED,
-                            coreReady = false,
-                            selectorReady = false,
-                            recoveryActive = false,
-                            lastReadinessReason = "process_reclaim_requires_lockdown"
+                    if (shouldMarkFailedBlockedOnSkippedProcessReclaim(
+                            isServiceRunning = SingBoxService.isRunning,
+                            isCoreRunning = coreManager.isServiceRunning()
                         )
+                    ) {
+                        SingBoxIpcHub.updateReadiness { readiness ->
+                            readiness.copy(
+                                status = com.kunk.singbox.ipc.DataPlaneStatus.FAILED_BLOCKED,
+                                coreReady = false,
+                                selectorReady = false,
+                                recoveryActive = false,
+                                lastReadinessReason = "process_reclaim_requires_lockdown"
+                            )
+                        }
                     }
                     return
                 }

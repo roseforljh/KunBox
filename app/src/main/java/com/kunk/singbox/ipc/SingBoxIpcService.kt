@@ -4,8 +4,10 @@ import android.app.Service
 import android.content.Intent
 import android.os.Bundle
 import android.os.IBinder
+import android.os.ParcelFileDescriptor
 import com.kunk.singbox.aidl.ISingBoxService
 import com.kunk.singbox.aidl.ISingBoxServiceCallback
+import com.kunk.singbox.service.SingBoxService
 import com.kunk.singbox.service.root.RootTransparentForegroundService
 import com.kunk.singbox.service.root.RootServicePrewarmer
 import kotlinx.coroutines.CoroutineScope
@@ -53,6 +55,13 @@ class SingBoxIpcService : Service() {
                 return
             }
             SingBoxIpcHub.requestUrlTestNodeDelay(requestId, groupTag, nodeTag, timeoutMs)
+        }
+
+        override fun protectFd(fd: ParcelFileDescriptor?): Boolean {
+            if (fd == null) return false
+            return fd.use { descriptor ->
+                SingBoxService.instance?.protect(descriptor.fd) == true
+            }
         }
     }
 

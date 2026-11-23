@@ -188,4 +188,31 @@ class SingBoxCoreLatencyPathTest {
             prepared?.domainResolver?.server
         )
     }
+
+    @Test
+    fun protectLatencySocketPrefersInProcessVpnAndFallsBackToIpc() {
+        var ipcCalled = false
+        val inProcessProtected = protectLatencySocket(
+            fd = 42,
+            protectInProcess = { true },
+            protectViaIpc = {
+                ipcCalled = true
+                true
+            }
+        )
+        assertTrue(inProcessProtected)
+        assertFalse(ipcCalled)
+
+        var ipcFd = -1
+        val ipcProtected = protectLatencySocket(
+            fd = 77,
+            protectInProcess = { null },
+            protectViaIpc = { fd ->
+                ipcFd = fd
+                true
+            }
+        )
+        assertTrue(ipcProtected)
+        assertEquals(77, ipcFd)
+    }
 }

@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.util.Log
+import com.kunk.singbox.ipc.SingBoxRemote
 import com.kunk.singbox.utils.DefaultNetworkListener
 import io.raybox.raybox.*
 import java.net.NetworkInterface
@@ -13,22 +14,38 @@ private const val TEST_PLATFORM_TAG = "SingBoxCore"
 
 // --- Inner Classes for Platform Interface ---
 
+internal fun protectLatencySocket(
+    fd: Int,
+    protectInProcess: (Int) -> Boolean?,
+    protectViaIpc: (Int) -> Boolean
+): Boolean {
+    val inProcessResult = protectInProcess(fd)
+    if (inProcessResult != null) {
+        return inProcessResult
+    }
+    return protectViaIpc(fd)
+}
+
 internal class TestPlatformInterface(private val context: Context) : PlatformInterface {
     private val connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
 
     override fun autoDetectInterfaceControl(fd: Int) {
-        val service = com.kunk.singbox.service.SingBoxService.instance
-        if (service != null) {
-            try {
-                val protected = service.protect(fd)
-                if (!protected) {
-                    Log.w(TEST_PLATFORM_TAG, "Failed to protect socket fd=$fd, continuing anyway")
-                } else {
-                    Log.d(TEST_PLATFORM_TAG, "autoDetectInterfaceControl: protected fd=$fd")
-                }
-            } catch (e: Exception) {
-                Log.w(TEST_PLATFORM_TAG, "Socket protection error for fd=$fd: ${e.message}")
-            }
+        val protected = try {
+            protectLatencySocket(
+                fd = fd,
+                protectInProcess = { descriptor ->
+                    com.kunk.singbox.service.SingBoxService.instance?.protect(descriptor)
+                },
+                protectViaIpc = SingBoxRemote::protectFd
+            )
+        } catch (e: Exception) {
+            Log.w(TEST_PLATFORM_TAG, "Socket protection error for fd=$fd: ${e.message}")
+            false
+        }
+        if (protected) {
+            Log.d(TEST_PLATFORM_TAG, "autoDetectInterfaceControl: protected fd=$fd")
+        } else if (com.kunk.singbox.service.SingBoxService.instance != null || SingBoxRemote.isRunning.value) {
+            Log.w(TEST_PLATFORM_TAG, "Failed to protect socket fd=$fd, continuing anyway")
         }
 
         try {
