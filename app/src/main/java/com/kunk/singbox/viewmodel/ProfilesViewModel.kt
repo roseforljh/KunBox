@@ -217,18 +217,16 @@ class ProfilesViewModel(application: Application) : AndroidViewModel(application
         _customDraftOutbounds.update { it + outbound }
     }
 
-    fun addCustomDraftNodeLink(content: String): Boolean {
-        return configRepository.parseNodeLinkForCustomProfile(content).fold(
-            onSuccess = { outbound ->
-                addCustomDraftOutbound(outbound)
-                emitToast(getApplication<Application>().getString(R.string.common_add) + ": ${outbound.tag}")
-                true
-            },
-            onFailure = { error ->
-                emitToast(error.message ?: getApplication<Application>().getString(R.string.nodes_add_failed))
-                false
-            }
-        )
+    fun addCustomDraftNodeLinks(content: String) {
+        val outbounds = configRepository.parseNodeLinks(content)
+        val application = getApplication<Application>()
+        if (outbounds.isEmpty()) {
+            emitToast(application.getString(R.string.nodes_no_valid_found))
+        } else {
+            _customDraftOutbounds.update { it + outbounds }
+            val summary = outbounds.singleOrNull()?.tag ?: outbounds.size.toString()
+            emitToast(application.getString(R.string.profiles_import_success, summary))
+        }
     }
 
     fun removeCustomDraftOutbound(index: Int) {

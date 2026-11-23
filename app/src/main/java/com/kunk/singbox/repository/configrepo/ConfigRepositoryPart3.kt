@@ -6,7 +6,6 @@ import android.util.Base64
 import android.util.Log
 import com.kunk.singbox.R
 import com.kunk.singbox.model.*
-import com.kunk.singbox.utils.parser.NodeLinkParser
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.*
@@ -243,16 +242,7 @@ internal fun ConfigRepository.parseNodeLink(link: String): Outbound? {
     return nodeLinkParser.parse(link)
 }
 
-internal fun ConfigRepository.parseNodeLinkForCustomProfile(link: String): Result<Outbound> {
-    val normalizedLink = link.trim()
-    if (!NodeLinkParser.isSupportedLink(normalizedLink)) {
-        return Result.failure(Exception(context.getString(R.string.nodes_unsupported_format)))
-    }
-    return runCatching {
-        parseNodeLink(normalizedLink)
-            ?: throw IllegalArgumentException(context.getString(R.string.nodes_add_failed))
-    }
-}
+internal fun ConfigRepository.parseNodeLinks(content: String): List<Outbound> = nodeLinkParser.parseLinks(content)
 
 internal suspend fun ConfigRepository.extractNodesFromConfig(
     config: SingBoxConfig,

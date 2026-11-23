@@ -217,6 +217,7 @@ fun SettingsScreen(
                     icon = Icons.Rounded.Palette,
                     onClick = { showThemeStyleDialog = true }
                 )
+                DashboardMascotSetting()
                 SettingItem(
                     title = stringResource(R.string.settings_app_language),
                     value = stringResource(settings.appLanguage.displayNameRes),

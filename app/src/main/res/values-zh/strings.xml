@@ -94,6 +94,16 @@
     <string name="settings_about">关于</string>
     <string name="settings_app_theme">应用主题</string>
     <string name="settings_theme_style">主题样式</string>
+    <string name="settings_dashboard_mascot">更换首页图标</string>
+    <string name="settings_dashboard_mascot_subtitle">从相册选图，替换首页连接按钮上的耿鬼</string>
+    <string name="settings_dashboard_mascot_choose">从相册选择</string>
+    <string name="settings_dashboard_mascot_restore">恢复默认</string>
+    <string name="settings_dashboard_mascot_failed">无法更换首页图标</string>
+    <string name="settings_dashboard_mascot_updated">首页图标已更新</string>
+    <string name="settings_dashboard_mascot_restored">已恢复默认耿鬼</string>
+    <string name="settings_dashboard_mascot_preview">预览首页图标</string>
+    <string name="settings_dashboard_mascot_crop_hint">拖动调整位置，双指缩放</string>
+    <string name="settings_dashboard_mascot_transparent_hint">透明背景和原轮廓会保留</string>
     <string name="settings_app_language">应用语言</string>
     <string name="settings_connection_startup">连接与启动</string>
     <string name="settings_connection_startup_subtitle">自动连接、断线重连</string>
