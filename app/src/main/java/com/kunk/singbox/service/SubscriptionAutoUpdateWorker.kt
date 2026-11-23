@@ -32,7 +32,12 @@ class SubscriptionAutoUpdateWorker(
         /**
          * @param context Context
          */
-        fun schedule(context: Context, profileId: String, intervalMinutes: Int) {
+        fun schedule(
+            context: Context,
+            profileId: String,
+            intervalMinutes: Int,
+            existingPolicy: ExistingPeriodicWorkPolicy = ExistingPeriodicWorkPolicy.UPDATE
+        ) {
             val workManager = WorkManager.getInstance(context)
             val workName = "$WORK_NAME_PREFIX$profileId"
             val normalizedInterval = normalizeIntervalMinutes(intervalMinutes)
@@ -67,7 +72,7 @@ class SubscriptionAutoUpdateWorker(
 
             workManager.enqueueUniquePeriodicWork(
                 workName,
-                ExistingPeriodicWorkPolicy.REPLACE,
+                existingPolicy,
                 workRequest
             )
         }
@@ -92,7 +97,12 @@ class SubscriptionAutoUpdateWorker(
                     if (profile.type == ProfileType.Subscription &&
                         profile.enabled &&
                         profile.autoUpdateInterval > 0) {
-                        schedule(context, profile.id, profile.autoUpdateInterval)
+                        schedule(
+                            context,
+                            profile.id,
+                            profile.autoUpdateInterval,
+                            ExistingPeriodicWorkPolicy.KEEP
+                        )
                     }
                 }
             } catch (e: Exception) {

@@ -1,4 +1,9 @@
-## Android 正式内核规则修正（2026-11-06，最新）
+## RayBox 0.0.1 正式内核（2026-11-08，最新）
+
+- 内核版本改为语义版本 0.0.1；正式发布 `android-v0.0.1`（commit `a7271fd63a1d5946b7563f15827528e2d516f6b4`），标准 AAR SHA-256 `2add780c320bc75bd78abf2c82f8c6d582bb18a03ad2897dfd6c3bc3008e430a`，legacy `35f2a2e1923c4a0ae211534ccc5da2f0685a4ba89e590a8a3e78706de8b98b26`，manifest SHA-256 `e4da35d37376b55baa3a4fd7fa79d371ed85cd69d6c5ca0575a786d6f0c46a88`。
+- lock 已更新为 `android-v0.0.1` + `version 0.0.1`；`tools/sync_raybox.py` 与 `app/build.gradle.kts` 同时接受旧 SHA 标签和新区语义标签两种身份。安装备份：`app/libs/raybox-backup/ec84bc1baf734209959e741a3a835f6c/`。
+
+## Android 正式内核规则修正（2026-11-06）
 
 - 上一版正式 AAR 对应的 RayBox 提交含四个 Wintun DLL，违反 RayBox 仓库禁止提交二进制的规则，已作废，不再使用。
 - 修正后的正式双 AAR 已从 `8d7fac540fd5a8f74fe844f406fe435631e09294` 重建并严格安装；旧提交因包含 Wintun 二进制而作废。当前标准 AAR SHA-256 `6aef7b39e65cf6598abcddbcbdefc7173c3f5b4f43038274c1d94b731728205a`，legacy SHA-256 `f7d65c976af3c258ead70d7a557cf30ed5b1c97887fdd25e45d80e77a6278b6f`，manifest SHA-256 `51300df4e19c8e23b084a00b498732346f67bf961b7be8edddd1e62b5e3dd84f`。

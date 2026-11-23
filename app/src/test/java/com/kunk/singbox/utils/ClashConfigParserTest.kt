@@ -590,7 +590,7 @@ class ClashConfigParserTest {
         assertEquals(listOf("udp"), hy2?.network)
         assertEquals(100, hy2?.upMbps)
         assertEquals(200, hy2?.downMbps)
-        assertEquals(listOf("20000,20001"), hy2?.serverPorts)
+        assertEquals(listOf("20000", "20001"), hy2?.serverPorts)
         assertEquals("30s", hy2?.hopInterval)
         assertEquals(true, hy2?.tls?.enabled)
         assertEquals("edge.example.com", hy2?.tls?.serverName)

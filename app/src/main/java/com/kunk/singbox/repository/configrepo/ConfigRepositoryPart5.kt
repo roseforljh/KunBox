@@ -469,12 +469,7 @@ internal suspend fun ConfigRepository.importFromSubscriptionUpdate(
 
         cacheConfig(profile.id, deduplicatedConfig)
         if (removedNodeIds.isNotEmpty()) {
-            check(
-                settingsRepository.removeDeletedRoutingReferences(
-                    deletedNodeIds = removedNodeIds,
-                    deletedNodeReferences = removedNodeReferences
-                )
-            ) { "Failed to remove routing references for deleted subscription nodes" }
+            // 订阅更新节点可能只是临时维护下线或改名，保留用户分流指向不永久抹除。
             removeNodeLatencies(removedNodeIds)
             removedNodeIds.forEach { nodeId ->
                 nodeAutoSelectionMmkv.removeValueForKey(nodeId)
@@ -612,22 +607,35 @@ internal suspend fun ConfigRepository.generateConfigFile(
         val activeProfileAutoSelectionEnabled =
             !forceManualSelection && isProfileAutoSelectionEnabled(activeId)
 
-        val allNodesSnapshot = _allNodes.value.takeIf { it.isNotEmpty() } ?: loadAllNodesSnapshot()
+        val allProfiles = _profiles.value
+        val hasCompleteNodeInventory = allProfiles.isNotEmpty() &&
+            allProfiles.all { p -> profileNodes.containsKey(p.id) }
+        val allNodesSnapshot = if (hasCompleteNodeInventory && _allNodes.value.isNotEmpty()) {
+            _allNodes.value
+        } else {
+            loadAllNodesSnapshot()
+        }
         val activeNode = _nodes.value.find {
             it.id == activeNodeId && it.sourceProfileId == activeId
         } ?: allNodesSnapshot.find {
             it.id == activeNodeId && it.sourceProfileId == activeId
         }
-        check(
-            settingsRepository.removeInvalidRoutingReferences(
-                validProfileIds = _profiles.value.mapTo(mutableSetOf(), ProfileUi::id),
-                validNodeIds = allNodesSnapshot.mapTo(mutableSetOf(), NodeUi::id),
-                validQualifiedNodeReferences = allNodesSnapshot.mapTo(mutableSetOf()) { node ->
-                    "${node.sourceProfileId}::${node.name}"
-                },
-                validBareNodeNames = allNodesSnapshot.mapTo(mutableSetOf(), NodeUi::name)
-            )
-        ) { "Failed to repair invalid routing references" }
+        // 仅在全部配置的节点均已成功加载时才清理历史无效引用，防止半加载快照误清其他配置的分流指向。
+        val loadedProfileIds = allNodesSnapshot.mapTo(mutableSetOf(), NodeUi::sourceProfileId)
+        val allProfilesLoadedForCleanup = allProfiles.isNotEmpty() &&
+            allProfiles.all { p -> p.id in loadedProfileIds || loadConfig(p.id)?.outbounds.isNullOrEmpty() }
+        if (allProfilesLoadedForCleanup) {
+            check(
+                settingsRepository.removeInvalidRoutingReferences(
+                    validProfileIds = allProfiles.mapTo(mutableSetOf(), ProfileUi::id),
+                    validNodeIds = allNodesSnapshot.mapTo(mutableSetOf(), NodeUi::id),
+                    validQualifiedNodeReferences = allNodesSnapshot.mapTo(mutableSetOf()) { node ->
+                        "${node.sourceProfileId}::${node.name}"
+                    },
+                    validBareNodeNames = allNodesSnapshot.mapTo(mutableSetOf(), NodeUi::name)
+                )
+            ) { "Failed to repair invalid routing references" }
+        }
         val sanitizedSettings = settingsRepository.settings.first()
         val telegramCapturedPackages = filterVpnCapturedPackages(
             sanitizedSettings,

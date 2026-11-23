@@ -32,7 +32,11 @@ class RuleSetAutoUpdateWorker(
         /**
          * @param context Context
          */
-        fun schedule(context: Context, intervalMinutes: Int) {
+        fun schedule(
+            context: Context,
+            intervalMinutes: Int,
+            existingPolicy: ExistingPeriodicWorkPolicy = ExistingPeriodicWorkPolicy.UPDATE
+        ) {
             val workManager = WorkManager.getInstance(context)
             val normalizedInterval = normalizeIntervalMinutes(intervalMinutes)
 
@@ -60,7 +64,7 @@ class RuleSetAutoUpdateWorker(
 
             workManager.enqueueUniquePeriodicWork(
                 WORK_NAME,
-                ExistingPeriodicWorkPolicy.REPLACE,
+                existingPolicy,
                 workRequest
             )
         }
@@ -76,7 +80,11 @@ class RuleSetAutoUpdateWorker(
                 val settings = settingsRepository.settings.first()
 
                 if (settings.ruleSetAutoUpdateEnabled && settings.ruleSetAutoUpdateInterval > 0) {
-                    schedule(context, settings.ruleSetAutoUpdateInterval)
+                    schedule(
+                        context,
+                        settings.ruleSetAutoUpdateInterval,
+                        ExistingPeriodicWorkPolicy.KEEP
+                    )
                 } else {
                     cancel(context)
                 }

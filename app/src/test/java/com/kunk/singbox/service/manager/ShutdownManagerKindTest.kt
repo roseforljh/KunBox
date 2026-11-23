@@ -1,5 +1,6 @@
 package com.kunk.singbox.service.manager
 
+import com.kunk.singbox.service.shouldMarkFailedBlockedOnSkippedProcessReclaim
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -43,6 +44,28 @@ class ShutdownManagerKindTest {
             ShutdownManager.requiresEscalatedFinalCleanup(
                 ShutdownManager.ShutdownKind.FINAL_STOP,
                 completionStop = true
+            )
+        )
+    }
+
+    @Test
+    fun `skipped process reclaim marks failed blocked only when core is not running`() {
+        assertFalse(
+            shouldMarkFailedBlockedOnSkippedProcessReclaim(
+                isServiceRunning = true,
+                isCoreRunning = true
+            )
+        )
+        assertTrue(
+            shouldMarkFailedBlockedOnSkippedProcessReclaim(
+                isServiceRunning = false,
+                isCoreRunning = true
+            )
+        )
+        assertTrue(
+            shouldMarkFailedBlockedOnSkippedProcessReclaim(
+                isServiceRunning = true,
+                isCoreRunning = false
             )
         )
     }

@@ -73,8 +73,10 @@ import android.content.ComponentName
 import android.service.quicksettings.TileService
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.withTimeoutOrNull
 import com.kunk.singbox.ui.scanner.QrScannerActivity
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
@@ -171,26 +173,21 @@ fun SingBoxApp() {
         prefs.edit().putString("app_language_cache", language.name).apply()
     }
 
-    val isVpnRunningForUpdate by SingBoxRemote.isRunning.collectAsStateWithLifecycle()
     var updateChecked by remember { mutableStateOf(false) }
 
-    LaunchedEffect(settings.autoCheckUpdate, isVpnRunningForUpdate) {
+    LaunchedEffect(settings.autoCheckUpdate) {
         if (!settings.autoCheckUpdate || updateChecked) return@LaunchedEffect
 
-        if (isVpnRunningForUpdate) {
-
-            kotlinx.coroutines.delay(1000L)
-            updateChecked = true
-            com.kunk.singbox.utils.AppUpdateChecker.checkAndNotify(context)
+        // 等待 VPN 就绪（最多 10 秒）后检查更新，避免连接状态波动中途取消请求
+        val vpnReady = withTimeoutOrNull(10_000L) {
+            SingBoxRemote.isRunning.first { it }
+        } == true
+        if (vpnReady) {
+            delay(1_000L)
         }
-    }
-
-    LaunchedEffect(settings.autoCheckUpdate) {
-        if (!settings.autoCheckUpdate) return@LaunchedEffect
-        kotlinx.coroutines.delay(10000L)
-        if (!updateChecked) {
+        val result = com.kunk.singbox.utils.AppUpdateChecker.checkAndNotify(context)
+        if (result !is com.kunk.singbox.utils.UpdateCheckResult.Error) {
             updateChecked = true
-            com.kunk.singbox.utils.AppUpdateChecker.checkAndNotify(context)
         }
     }
 

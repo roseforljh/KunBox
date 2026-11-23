@@ -156,11 +156,7 @@ class InstalledAppsRepository private constructor(private val context: Context) 
                         )
                     }.sortedBy(InstalledAppUi::packageName)
                 }
-                SettingsRepository.getInstance(context)
-                    .removeUninstalledPerAppPackages(installedPackages)
-                    .onFailure { error ->
-                        android.util.Log.w(TAG, "[APP_INVENTORY] stale_assignment_cleanup_failed", error)
-                    }
+                // 不在扫描应用列表时自动删改持久化分流规则，避免 ROM 限权或恢复备份后误删用户配置。
 
                 val total = allApps.size
                 val result = mutableListOf<InstalledAppUi>()

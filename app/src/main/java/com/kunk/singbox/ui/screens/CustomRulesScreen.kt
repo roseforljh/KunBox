@@ -131,7 +131,7 @@ fun CustomRulesScreen(
                         }
                     }
                 } else {
-                    items(settings.customRules) { rule ->
+                    items(settings.customRules, key = { it.id }) { rule ->
                         CustomRuleItem(
                             rule = rule,
                             onClick = { editingRule = rule }

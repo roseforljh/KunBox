@@ -155,7 +155,7 @@ abstract class ClashYamlParserPart1 : ClashYamlParserBase() {
         if (type == "ss" || type == "shadowsocks") {
             val outbounds = parseShadowsocksWithPlugin(proxyMap, name, server, port, globalFingerprint)
             if (outbounds != null && outbounds.isNotEmpty()) {
-                return outbounds
+                return applyCommonClashDialFields(outbounds, proxyMap)
             }
             return null
         }
@@ -181,7 +181,65 @@ abstract class ClashYamlParserPart1 : ClashYamlParserBase() {
             android.util.Log.w("ClashYamlParser", "Failed to parse $type node '$name'. Server: $server, Port: $port, Map: $proxyMap")
         }
 
-        return outbound?.let { listOf(it) }
+        return outbound?.let { applyCommonClashDialFields(listOf(it), proxyMap) }
+    }
+
+    private fun applyCommonClashDialFields(outbounds: List<Outbound>, map: Map<*, *>): List<Outbound> {
+        val dialerProxy = asString(map["dialer-proxy"])?.trim()?.takeIf { it.isNotEmpty() }
+        val tfo = asBool(map["tfo"])
+        val mptcp = asBool(map["mptcp"])
+        val domainStrategy = mapClashIpVersion(asString(map["ip-version"]))
+        val hasDialOverrides = listOf(dialerProxy, tfo, mptcp, domainStrategy).any { it != null }
+        if (!hasDialOverrides) return outbounds
+        // 多节点链（如 SS + ShadowTLS）时，dialer-proxy 挂在最外层实际拨号节点上
+        val dialTargetIndex = outbounds.indexOfLast { it.detour.isNullOrBlank() }.takeIf { it >= 0 } ?: 0
+        return outbounds.mapIndexed { index, item ->
+            if (index != dialTargetIndex) {
+                item
+            } else {
+                item.copy(
+                    detour = item.detour ?: dialerProxy,
+                    tcpFastOpen = item.tcpFastOpen ?: tfo,
+                    tcpMultiPath = item.tcpMultiPath ?: mptcp,
+                    domainStrategy = item.domainStrategy ?: domainStrategy
+                )
+            }
+        }
+    }
+
+    private fun mapClashIpVersion(raw: String?): String? {
+        return when (raw?.trim()?.lowercase()) {
+            "ipv4" -> "ipv4_only"
+            "ipv6" -> "ipv6_only"
+            "ipv4-prefer" -> "prefer_ipv4"
+            "ipv6-prefer" -> "prefer_ipv6"
+            else -> null
+        }
+    }
+
+    private fun parseBandwidthMbps(value: Any?): Int? {
+        val direct = asInt(value)?.takeIf { it > 0 }
+        if (direct != null) return direct
+        val text = asString(value)?.trim()?.lowercase()
+        val match = text?.let { Regex("""^(\d+(?:\.\d+)?)\s*(gbps|g|mbps|m|kbps|k)?$""").matchEntire(it) }
+        val number = match?.groupValues?.get(1)?.toDoubleOrNull()
+        return number?.let {
+            when (match.groupValues[2]) {
+                "gbps", "g" -> (it * 1000.0).toInt()
+                "kbps", "k" -> (it / 1000.0).toInt().coerceAtLeast(1)
+                else -> it.toInt()
+            }.takeIf { mbps -> mbps > 0 }
+        }
+    }
+
+    private fun parseRealityConfig(map: Map<*, *>): com.kunk.singbox.model.RealityConfig? {
+        val realityOpts = asNestedMap(map["reality-opts"])
+        val realityPublicKey = asString(realityOpts?.get("public-key")) ?: return null
+        return com.kunk.singbox.model.RealityConfig(
+            enabled = true,
+            publicKey = realityPublicKey,
+            shortId = asString(realityOpts?.get("short-id"))
+        )
     }
 
     private fun buildDirectHttpUpgradeTransport(
@@ -267,13 +325,15 @@ abstract class ClashYamlParserPart1 : ClashYamlParserBase() {
         val tlsMinVersion = asString(map["tls-version"]) ?: asString(map["min-tls-version"]) ?: globalTlsMinVersion
 
         // Reality support
-        val realityOpts = asNestedMap(map["reality-opts"])
-        val realityPublicKey = asString(realityOpts?.get("public-key"))
-        val realityShortId = asString(realityOpts?.get("short-id"))
+        val realityConfig = parseRealityConfig(map)
+        val effectiveTlsEnabled = tlsEnabled || realityConfig != null
+        val finalAlpn = if (effectiveTlsEnabled && network == "ws" && alpn.isNullOrEmpty()) {
+            listOf("http/1.1")
+        } else {
+            alpn
+        }
 
-        val finalAlpn = if (tlsEnabled && network == "ws" && (alpn == null || alpn.isEmpty())) listOf("http/1.1") else alpn
-
-        val tlsConfig = if (tlsEnabled) {
+        val tlsConfig = if (effectiveTlsEnabled) {
             buildTlsConfig(
                 map = map,
                 serverName = serverName,
@@ -281,13 +341,7 @@ abstract class ClashYamlParserPart1 : ClashYamlParserBase() {
                 alpn = finalAlpn,
                 minVersion = tlsMinVersion,
                 utls = fingerprint?.let { UtlsConfig(enabled = true, fingerprint = it) },
-                reality = if (realityPublicKey != null) {
-                    com.kunk.singbox.model.RealityConfig(
-                        enabled = true,
-                        publicKey = realityPublicKey,
-                        shortId = realityShortId
-                    )
-                } else null
+                reality = realityConfig
             )
         } else null
 
@@ -492,6 +546,9 @@ abstract class ClashYamlParserPart1 : ClashYamlParserBase() {
 
         val multiplex = parseSmux(map)
         val udpEnabled = asBool(map["udp"]) != false
+        val udpOverTcp = (asBool(map["udp-over-tcp"]) == true || asBool(map["uot"]) == true)
+            .takeIf { it }
+            ?.let { com.kunk.singbox.model.UdpOverTcpConfig(enabled = true) }
 
         when (plugin) {
             "shadow-tls", "shadowtls" -> {
@@ -530,6 +587,7 @@ abstract class ClashYamlParserPart1 : ClashYamlParserBase() {
                     password = password,
                     detour = shadowTlsTag,
                     multiplex = multiplex,
+                    udpOverTcp = udpOverTcp,
                     network = if (!udpEnabled) listOf("tcp") else null
                 )
 
@@ -545,6 +603,7 @@ abstract class ClashYamlParserPart1 : ClashYamlParserBase() {
                     method = cipher,
                     password = password,
                     multiplex = multiplex,
+                    udpOverTcp = udpOverTcp,
                     plugin = plugin,
                     pluginOpts = serializedPluginOpts,
                     network = if (!udpEnabled) listOf("tcp") else null
@@ -560,6 +619,7 @@ abstract class ClashYamlParserPart1 : ClashYamlParserBase() {
                     method = cipher,
                     password = password,
                     multiplex = multiplex,
+                    udpOverTcp = udpOverTcp,
                     plugin = plugin,
                     pluginOpts = serializedPluginOpts,
                     network = if (!udpEnabled) listOf("tcp") else null
@@ -575,6 +635,7 @@ abstract class ClashYamlParserPart1 : ClashYamlParserBase() {
                     method = cipher,
                     password = password,
                     multiplex = multiplex,
+                    udpOverTcp = udpOverTcp,
                     plugin = plugin,
                     pluginOpts = serializedPluginOpts,
                     network = if (!udpEnabled) listOf("tcp") else null
@@ -591,6 +652,7 @@ abstract class ClashYamlParserPart1 : ClashYamlParserBase() {
                     method = cipher,
                     password = password,
                     multiplex = multiplex,
+                    udpOverTcp = udpOverTcp,
                     network = if (!udpEnabled) listOf("tcp") else null
                 ))
             }
@@ -616,7 +678,8 @@ abstract class ClashYamlParserPart1 : ClashYamlParserBase() {
             insecure = insecure,
             alpn = alpn,
             minVersion = tlsMinVersion,
-            utls = fingerprint?.let { UtlsConfig(enabled = true, fingerprint = it) }
+            utls = fingerprint?.let { UtlsConfig(enabled = true, fingerprint = it) },
+            reality = parseRealityConfig(map)
         )
 
         val transport = parseTrojanTransport(network, map, sni, fingerprint)
@@ -649,8 +712,14 @@ abstract class ClashYamlParserPart1 : ClashYamlParserBase() {
                 val path = asString(wsOpts?.get("path")) ?: "/"
                 val headersRaw = wsOpts?.get("headers") as? Map<*, *>
                 val headers = mutableMapOf<String, String>()
-                headersRaw?.forEach { (k, v) -> headers[asString(k) ?: ""] = asString(v) ?: "" }
-                if (!headers.containsKey("Host")) headers["Host"] = sni
+                headersRaw?.forEach { (k, v) ->
+                    val key = asString(k)?.takeIf { it.isNotBlank() } ?: return@forEach
+                    val value = asString(v) ?: return@forEach
+                    headers[key] = value
+                }
+                if (headers.keys.none { it.equals("Host", ignoreCase = true) }) {
+                    headers["Host"] = sni
+                }
                 if (!headers.containsKey("User-Agent")) {
                     headers["User-Agent"] = getUserAgent(fingerprint)
                 }
@@ -704,11 +773,14 @@ abstract class ClashYamlParserPart1 : ClashYamlParserBase() {
 
         val network = asString(map["network"])
 
-        val upMbps = asInt(map["up"]) ?: asInt(map["up-mbps"])
-        val downMbps = asInt(map["down"]) ?: asInt(map["down-mbps"])
+        val upMbps = parseBandwidthMbps(map["up"]) ?: parseBandwidthMbps(map["up-mbps"])
+        val downMbps = parseBandwidthMbps(map["down"]) ?: parseBandwidthMbps(map["down-mbps"])
 
-        val portsStr = asString(map["ports"])?.takeIf { it.isNotBlank() }
-        val serverPorts = portsStr?.let { listOf(it) }
+        val serverPorts = asString(map["ports"])
+            ?.split(",")
+            ?.map { it.trim() }
+            ?.filter { it.isNotEmpty() }
+            ?.takeIf { it.isNotEmpty() }
         val hopInterval = asString(map["hop-interval"])?.takeIf { it.isNotBlank() }
         val hopIntervalMax = asString(map["hop-interval-max"] ?: map["hop_interval_max"])
             ?.takeIf { it.isNotBlank() }

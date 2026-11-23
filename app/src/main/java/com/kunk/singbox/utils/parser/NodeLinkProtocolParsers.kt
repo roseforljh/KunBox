@@ -48,12 +48,26 @@ internal fun NodeLinkParser.parseVMessLink(link: String): Outbound? {
         val sni = json["sni"] as? String ?: ""
         val ps = json["ps"] as? String ?: "VMess Node"
         val fp = json["fp"] as? String ?: ""
+        val scy = (json["scy"] as? String)?.trim()?.takeIf { it.isNotEmpty() } ?: "auto"
+        val alpnList = (json["alpn"] as? String)
+            ?.split(",")
+            ?.map { it.trim() }
+            ?.filter { it.isNotEmpty() }
+            ?.takeIf { it.isNotEmpty() }
+        val insecure = parseBooleanFlag(
+            (json["allowInsecure"] ?: json["insecure"] ?: json["skip-cert-verify"])?.toString()
+        )
+        val echRaw = (json["ech"] as? String)?.trim()?.takeIf { it.isNotEmpty() }
+        val echConfig = echRaw?.let { parseEchConfig(mapOf("ech" to it)) }
 
         val tlsConfig = if (tls == "tls") {
             TlsConfig(
                 enabled = true,
                 serverName = if (sni.isNotBlank()) sni else if (host.isNotBlank()) host else add,
-                utls = if (fp.isNotBlank()) UtlsConfig(enabled = true, fingerprint = fp) else null
+                insecure = insecure,
+                alpn = alpnList,
+                utls = if (fp.isNotBlank()) UtlsConfig(enabled = true, fingerprint = fp) else null,
+                ech = echConfig
             )
         } else null
 
@@ -117,7 +131,7 @@ internal fun NodeLinkParser.parseVMessLink(link: String): Outbound? {
             serverPort = port,
             uuid = id,
             alterId = if (aid > 0) aid else null,
-            security = "auto",
+            security = scy,
             rayboxCloudflare = parseBooleanFlag(json["raybox_cloudflare"]?.toString()),
             tls = tlsConfig,
             transport = transport
@@ -519,14 +533,18 @@ internal fun NodeLinkParser.parseAnyTLSLink(link: String): Outbound? {
             explicitServerName = params["sni"],
             server = server
         )
-        val insecure = params["insecure"] == "1" || params["allowInsecure"] == "1"
+        val insecure = parseBooleanFlag(
+            firstParam(params, "insecure", "allowInsecure", "skip-cert-verify")
+        ) == true
         val alpnList = firstParam(params, "alpn")?.split(",")?.filter { it.isNotBlank() }
         val fingerprint = firstParam(params, "fp")?.takeIf { it.isNotBlank() }
+        val echConfig = parseEchConfig(params)
         val tls = buildHttpTlsConfig(true, server.orEmpty(), params)?.copy(
             serverName = sni,
             insecure = insecure,
             alpn = alpnList,
             utls = fingerprint?.let { UtlsConfig(enabled = true, fingerprint = it) },
+            ech = echConfig,
             reality = if (firstParam(params, "security")?.equals("reality", ignoreCase = true) == true) {
                 RealityConfig(
                     enabled = true,
@@ -561,7 +579,10 @@ internal fun NodeLinkParser.parseAnyTLSLink(link: String): Outbound? {
 
 internal fun NodeLinkParser.parseNaiveLink(link: String): Outbound? {
     try {
-        val normalizedLink = link.replace("naive+https://", "naive://")
+        val isExplicitQuicScheme = link.startsWith("naive+quic://", ignoreCase = true)
+        val normalizedLink = link
+            .replace("naive+https://", "naive://")
+            .replace("naive+quic://", "naive://")
         val uri = java.net.URI(sanitizeUri(normalizedLink))
         val name = java.net.URLDecoder.decode(uri.fragment ?: "Naive Node", "UTF-8")
         val server = uri.host ?: return null
@@ -578,11 +599,11 @@ internal fun NodeLinkParser.parseNaiveLink(link: String): Outbound? {
                 .takeIf { it.isNotBlank() }
         }
 
-        val params = parseQueryParams(uri.query)
+        val params = parseQueryParams(uri.rawQuery)
         val network = firstParam(params, "network")
             ?: firstParam(params, "proto")
             ?: firstParam(params, "type")
-            ?: "h2"
+            ?: if (isExplicitQuicScheme) "quic" else "h2"
         val sni = defaultTlsServerName(
             explicitServerName = firstParam(params, "sni"),
             server = server

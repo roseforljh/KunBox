@@ -11,10 +11,11 @@ import io.raybox.raybox.LocalDNSTransport
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.asExecutor
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.suspendCancellableCoroutine
 import java.net.InetAddress
 import java.net.UnknownHostException
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.coroutines.resume
-import kotlin.coroutines.suspendCoroutine
 
 object LocalResolverImpl : LocalDNSTransport {
     private const val RCODE_SERVFAIL = 2
@@ -57,28 +58,55 @@ object LocalResolverImpl : LocalDNSTransport {
     }
 
     @TargetApi(Build.VERSION_CODES.Q)
+    private suspend fun awaitDnsResolver(
+        ctx: ExchangeContext,
+        startQuery: (CancellationSignal, (() -> Unit) -> Unit) -> Unit
+    ) {
+        suspendCancellableCoroutine { continuation ->
+            val signal = CancellationSignal()
+            val completed = AtomicBoolean(false)
+            fun finish(action: () -> Unit = {}) {
+                if (!completed.compareAndSet(false, true)) return
+                action()
+                if (continuation.isActive) {
+                    continuation.resume(Unit)
+                }
+            }
+            ctx.onCancel {
+                signal.cancel()
+                finish()
+            }
+            continuation.invokeOnCancellation {
+                signal.cancel()
+                completed.set(true)
+            }
+            startQuery(signal, ::finish)
+        }
+    }
+
+    @TargetApi(Build.VERSION_CODES.Q)
     private suspend fun lookupWithDnsResolver(
         ctx: ExchangeContext,
         defaultNetwork: android.net.Network,
         network: String,
         domain: String
     ) {
-        suspendCoroutine { continuation ->
-            val signal = CancellationSignal()
-            ctx.onCancel(signal::cancel)
+        awaitDnsResolver(ctx) { signal, finish ->
             val callback = object : DnsResolver.Callback<Collection<InetAddress>> {
                 override fun onAnswer(answer: Collection<InetAddress>, rcode: Int) {
-                    if (rcode == 0) {
-                        ctx.success(answer.mapNotNull { it.hostAddress }.joinToString("\n"))
-                    } else {
-                        ctx.errorCode(rcode)
+                    finish {
+                        if (rcode == 0) {
+                            ctx.success(answer.mapNotNull { it.hostAddress }.joinToString("\n"))
+                        } else {
+                            ctx.errorCode(rcode)
+                        }
                     }
-                    continuation.resume(Unit)
                 }
 
                 override fun onError(error: DnsResolver.DnsException) {
-                    handleDnsError(ctx, error)
-                    continuation.resume(Unit)
+                    finish {
+                        handleDnsError(ctx, error)
+                    }
                 }
             }
             val queryType = when {
@@ -129,22 +157,22 @@ object LocalResolverImpl : LocalDNSTransport {
         defaultNetwork: android.net.Network,
         message: ByteArray
     ) {
-        suspendCoroutine { continuation ->
-            val signal = CancellationSignal()
-            ctx.onCancel(signal::cancel)
+        awaitDnsResolver(ctx) { signal, finish ->
             val callback = object : DnsResolver.Callback<ByteArray> {
                 override fun onAnswer(answer: ByteArray, rcode: Int) {
-                    if (rcode == 0) {
-                        ctx.rawSuccess(answer)
-                    } else {
-                        ctx.errorCode(rcode)
+                    finish {
+                        if (rcode == 0) {
+                            ctx.rawSuccess(answer)
+                        } else {
+                            ctx.errorCode(rcode)
+                        }
                     }
-                    continuation.resume(Unit)
                 }
 
                 override fun onError(error: DnsResolver.DnsException) {
-                    handleDnsError(ctx, error)
-                    continuation.resume(Unit)
+                    finish {
+                        handleDnsError(ctx, error)
+                    }
                 }
             }
             DnsResolver.getInstance().rawQuery(

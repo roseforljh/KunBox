@@ -405,7 +405,7 @@ class VpnTunManager(
         configureSecuritySettings(builder)
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            builder.setMetered(false)
+            builder.setMetered(resolveUnderlyingNetworkMetered())
             configureHttpProxy(builder, settings)
         }
         val dnsAddresses = readKernelDnsServerAddresses(options)
@@ -419,6 +419,13 @@ class VpnTunManager(
             browserCoverage = configuredPerAppVpnPlan?.let { resolveBrowserCoverage(browserPackage, it) }
                 ?: "unknown"
         )
+    }
+
+    private fun resolveUnderlyingNetworkMetered(): Boolean {
+        val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager ?: return false
+        val physicalNetwork = DefaultNetworkListener.selectBestPhysicalNetwork(cm) ?: return false
+        val caps = cm.getNetworkCapabilities(physicalNetwork) ?: return false
+        return !caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED)
     }
 
     private fun logEffectiveMtuIfNeeded(options: TunOptions?, settings: AppSettings?, effectiveMtu: Int) {

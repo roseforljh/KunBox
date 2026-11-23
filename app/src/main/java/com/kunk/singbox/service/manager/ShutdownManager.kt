@@ -54,7 +54,7 @@ class ShutdownManager(
     companion object {
         private const val TAG = "ShutdownManager"
         private const val FAST_PORT_RELEASE_WAIT_MS = 1500L
-        private const val STOP_WATCHDOG_TIMEOUT_MS = 6_000L
+        private const val STOP_WATCHDOG_TIMEOUT_MS = 12_000L
 
         internal fun shouldRetainTun(kind: ShutdownKind): Boolean = kind != ShutdownKind.FINAL_STOP
 
@@ -200,6 +200,9 @@ class ShutdownManager(
                 stopTrafficProducerThenFlush(
                     stopProducer = {
                         val serviceCloseStart = SystemClock.elapsedRealtime()
+                        if (shutdownKind != ShutdownKind.FINAL_STOP) {
+                            runCatching { commandManager.closeConnections() }
+                        }
                         val stopResult = when (shutdownKind) {
                             ShutdownKind.CORE_RECOVERY ->
                                 coreManager.stopCorePreservingTun(coreRuntimeGeneration)

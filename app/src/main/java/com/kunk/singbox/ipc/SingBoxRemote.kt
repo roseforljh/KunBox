@@ -986,4 +986,18 @@ object SingBoxRemote {
             HotReloadResult.IPC_ERROR
         }
     }
+
+    fun protectFd(fd: Int): Boolean {
+        val s = service
+        if (s == null || !connectionActive || !bound) {
+            return false
+        }
+        return runCatching {
+            android.os.ParcelFileDescriptor.fromFd(fd).use { pfd ->
+                s.protectFd(pfd)
+            }
+        }.onFailure { e ->
+            Log.w(TAG, "protectFd IPC failed for fd=$fd: ${e.message}")
+        }.getOrDefault(false)
+    }
 }

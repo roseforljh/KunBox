@@ -45,7 +45,10 @@ def install_candidate(
         if key != "sourceDigest" or strict_source_digest:
             if manifest[key] != identity[key]:
                 raise ValueError("Candidate does not match current source: " + key)
-    expected_tag = None if identity["dirty"] else "android-" + identity["commit"]
+    version = manifest.get("version")
+    semantic = isinstance(version, str) and re.fullmatch(r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)", version)
+    expected_tag = None if identity["dirty"] else (
+        "android-v" + version if semantic else "android-" + identity["commit"])
     if "tag" not in manifest or manifest["tag"] != expected_tag:
         raise ValueError("Unexpected candidate tag")
     if not identity["dirty"]:
@@ -129,9 +132,12 @@ def install_candidate(
 def install_release(source, project, lock_path):
     lock = json.loads(lock_path.read_text(encoding="utf-8-sig"))
     commit = lock.get("commit")
+    version = lock.get("version")
+    semantic = isinstance(version, str) and re.fullmatch(r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)", version)
+    expected_tag = "android-v" + version if semantic else "android-" + commit if isinstance(commit, str) else ""
     if (lock.get("repository") != "roseforljh/RayBox-rx" or not isinstance(commit, str) or
             len(commit) != 40 or any(char not in "0123456789abcdef" for char in commit) or
-            lock.get("tag") != "android-" + commit or lock.get("dirty") is not False):
+            lock.get("tag") != expected_tag or lock.get("dirty") is not False):
         raise ValueError("Release lock must pin a clean, full RayBox commit and matching tag")
     actual = subprocess.check_output(
         ["git", "-C", str(source), "rev-parse", "HEAD"], text=True

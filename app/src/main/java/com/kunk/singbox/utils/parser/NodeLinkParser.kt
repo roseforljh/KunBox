@@ -288,7 +288,8 @@ class NodeLinkParser(internal val gson: Gson) {
             normalizedLink.startsWith("hysteria://") -> parseHysteriaLink(normalizedLink)
             normalizedLink.startsWith("anytls://") -> parseAnyTLSLink(normalizedLink)
             normalizedLink.startsWith("naive://") ||
-                normalizedLink.startsWith("naive+https://") -> parseNaiveLink(normalizedLink)
+                normalizedLink.startsWith("naive+https://") ||
+                normalizedLink.startsWith("naive+quic://") -> parseNaiveLink(normalizedLink)
             normalizedLink.startsWith("tuic://") -> parseTuicLink(normalizedLink)
             normalizedLink.startsWith("https://") -> parseHttpLink(normalizedLink, useTls = true)
             normalizedLink.startsWith("http://") -> parseHttpLink(normalizedLink, useTls = false)
