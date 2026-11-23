@@ -13,7 +13,6 @@ import com.kunk.singbox.model.ProfileUi
 import com.kunk.singbox.model.PingResultCode
 import com.kunk.singbox.repository.*
 import com.kunk.singbox.repository.SettingsRepository
-import com.kunk.singbox.utils.parser.NodeLinkParser
 import com.kunk.singbox.viewmodel.shared.NodeDisplaySettings
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.Dispatchers
@@ -332,23 +331,16 @@ class NodesViewModel(application: Application) : AndroidViewModel(application) {
         onResult: (Boolean) -> Unit = {}
     ) {
         viewModelScope.launch {
-            val trimmedContent = content.trim()
-
-            if (!NodeLinkParser.isSupportedLink(trimmedContent)) {
-                val msg = getApplication<Application>().getString(R.string.nodes_unsupported_format)
-                emitToast(msg)
-                onResult(false)
-                return@launch
-            }
-
-            val result = configRepository.addSingleNode(
-                link = trimmedContent,
+            val result = configRepository.addNodesFromLinks(
+                content = content,
                 targetProfileId = targetProfileId,
                 newProfileName = newProfileName
             )
-            result.onSuccess { node ->
-                val msg = getApplication<Application>().getString(R.string.common_add) + ": ${node.displayName}"
-                emitToast(msg)
+            result.onSuccess { added ->
+                val app = getApplication<Application>()
+                val summary = added.singleOrNull()?.displayName
+                    ?: app.getString(R.string.rulesets_nodes_count, added.size)
+                emitToast("${app.getString(R.string.common_add)}: $summary")
                 onResult(true)
             }.onFailure { e ->
                 val msg = e.message ?: getApplication<Application>().getString(R.string.nodes_add_failed)

@@ -347,14 +347,15 @@ internal fun ConfigRepository.applyDeletedNodeSnapshot(profileId: String, delete
     persistMainProcessSelection(profileId, _activeNodeId.value, selectedName)
 }
 
-internal suspend fun ConfigRepository.addSingleNode(
-    link: String,
+internal suspend fun ConfigRepository.addNodesFromLinks(
+    content: String,
     targetProfileId: String? = null,
-    newProfileName: String? = null): Result<NodeUi> = withContext(Dispatchers.IO) {
+    newProfileName: String? = null
+): Result<List<NodeUi>> = withContext(Dispatchers.IO) {
     var createdProfileId: String? = null
     try {
-        val outbound = parseNodeLink(link.trim())
-            ?: return@withContext Result.failure(Exception("Failed to parse node link"))
+        val outbounds = parseNodeLinks(content)
+        require(outbounds.isNotEmpty()) { context.getString(R.string.nodes_no_valid_found) }
 
         val profileId: String
         val existingConfig: SingBoxConfig?
@@ -362,12 +363,9 @@ internal suspend fun ConfigRepository.addSingleNode(
 
         when {
             targetProfileId != null -> {
-                val profile = _profiles.value.find { it.id == targetProfileId }
-                if (profile == null) {
-                    return@withContext Result.failure(Exception("Profile not found"))
-                }
+                require(_profiles.value.any { it.id == targetProfileId }) { "Profile not found" }
                 profileId = targetProfileId
-                existingConfig = loadConfig(profileId)
+                existingConfig = checkNotNull(loadConfig(profileId)) { "Config not found" }
             }
             newProfileName != null -> {
                 profileId = UUID.randomUUID().toString()
@@ -380,7 +378,7 @@ internal suspend fun ConfigRepository.addSingleNode(
                 val manualProfile = _profiles.value.find { it.name == manualProfileName && it.type == ProfileType.Imported }
                 if (manualProfile != null) {
                     profileId = manualProfile.id
-                    existingConfig = loadConfig(profileId)
+                    existingConfig = checkNotNull(loadConfig(profileId)) { "Config not found" }
                 } else {
                     profileId = UUID.randomUUID().toString()
                     existingConfig = null
@@ -390,31 +388,23 @@ internal suspend fun ConfigRepository.addSingleNode(
             }
         }
 
-        val newOutbounds = mutableListOf<Outbound>()
-        existingConfig?.outbounds?.let { existing ->
-            newOutbounds.addAll(existing.filter { it.type !in listOf("direct", "block", "dns") })
-        }
-
-        var finalTag = outbound.tag
-        var counter = 1
-        while (newOutbounds.any { it.tag == finalTag }) {
-            finalTag = "${outbound.tag}_$counter"
-            counter++
-        }
-        val finalOutbound = if (finalTag != outbound.tag) outbound.copy(tag = finalTag) else outbound
-        newOutbounds.add(finalOutbound)
-
+        val normalizedConfig = existingConfig?.let { ConfigRepository.normalizeWireGuardEndpointsForInternalUse(it) }
+        val existingOutbounds = (normalizedConfig?.outbounds ?: normalizedConfig?.proxies).orEmpty()
+        val newOutbounds = (existingOutbounds + outbounds).toMutableList()
         if (newOutbounds.none { it.tag == "direct" }) {
             newOutbounds.add(Outbound(type = "direct", tag = "direct"))
         }
         val newConfig = deduplicateTags(
-            ConfigRepository.buildConfigWithOutboundsPreservingProfileSettings(existingConfig, newOutbounds)
+            ConfigRepository.buildConfigWithOutboundsPreservingProfileSettings(normalizedConfig, newOutbounds)
         )
+        val nodes = extractNodesFromConfig(newConfig, profileId)
+        val nodesByTag = nodes.associateBy(NodeUi::name)
+        val addedNodes = newConfig.outbounds.orEmpty().drop(existingOutbounds.size).take(outbounds.size)
+            .mapNotNull { nodesByTag[it.tag] }
+        require(addedNodes.isNotEmpty()) { context.getString(R.string.nodes_no_valid_found) }
 
         writeConfigFileOrThrow(profileId, newConfig)
-
         cacheConfig(profileId, newConfig)
-        val nodes = extractNodesFromConfig(newConfig, profileId)
         profileNodes[profileId] = nodes
 
         if (isNewProfile || existingConfig == null) {
@@ -435,10 +425,9 @@ internal suspend fun ConfigRepository.addSingleNode(
             }
         }
 
-        val addedNode = nodes.find { it.name == finalTag }
         if (ConfigRepository.shouldActivateCreatedNode(_activeProfileId.value)) {
             _activeProfileId.value = profileId
-            applyActiveProfileNodes(profileId, nodes, addedNode?.id)
+            applyActiveProfileNodes(profileId, nodes, addedNodes.first().id)
         } else if (_activeProfileId.value == profileId) {
             applyActiveProfileNodes(profileId, nodes)
         }
@@ -446,12 +435,11 @@ internal suspend fun ConfigRepository.addSingleNode(
 
         saveProfiles()
 
-        Log.i(ConfigRepository.TAG, "Added single node: $finalTag to profile $profileId")
-
-        Result.success(addedNode ?: nodes.last())
+        Log.i(ConfigRepository.TAG, "Added ${addedNodes.size} nodes to profile $profileId")
+        Result.success(addedNodes)
     } catch (e: Exception) {
         createdProfileId?.let { rollbackTransientProfileFile(it) }
-        Log.e(ConfigRepository.TAG, "Failed to add single node", e)
+        Log.e(ConfigRepository.TAG, "Failed to add nodes from links", e)
         Result.failure(Exception(context.getString(R.string.nodes_add_failed) + ": ${e.message}"))
     }
 }

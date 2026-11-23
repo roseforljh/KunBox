@@ -22,18 +22,18 @@ class ConfigRepositoryNodeAddPolicyTest {
             source.indexOf("fun ConfigRepository.createNode("),
             source.indexOf("suspend fun ConfigRepository.deleteNode(")
         )
-        val addSingleNodeBody = source.substring(
-            source.indexOf("suspend fun ConfigRepository.addSingleNode("),
+        val addLinksBody = source.substring(
+            source.indexOf("suspend fun ConfigRepository.addNodesFromLinks("),
             source.indexOf("suspend fun ConfigRepository.updateNode(")
         )
 
         assertTrue(createNodeBody.contains("shouldActivateCreatedNode"))
-        assertTrue(addSingleNodeBody.contains("shouldActivateCreatedNode"))
+        assertTrue(addLinksBody.contains("shouldActivateCreatedNode"))
         assertTrue(createNodeBody.contains("applyActiveProfileNodes(profileId, nodes)"))
-        assertTrue(addSingleNodeBody.contains("applyActiveProfileNodes(profileId, nodes)"))
+        assertTrue(addLinksBody.contains("applyActiveProfileNodes(profileId, nodes)"))
         assertFalse(createNodeBody.contains("setActiveProfile(profileId)"))
-        assertFalse(addSingleNodeBody.contains("setActiveProfile(profileId)"))
+        assertFalse(addLinksBody.contains("setActiveProfile(profileId)"))
         assertFalse(createNodeBody.contains("_nodes.value = nodes"))
-        assertFalse(addSingleNodeBody.contains("_nodes.value = nodes"))
+        assertFalse(addLinksBody.contains("_nodes.value = nodes"))
     }
 }

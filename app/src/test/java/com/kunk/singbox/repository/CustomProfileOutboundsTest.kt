@@ -33,6 +33,13 @@ class CustomProfileOutboundsTest {
     }
 
     @Test
+    fun pastedLinksWithInvisibleSeparatorsAreAllAdded() {
+        val content = "$vless\r\n\uFEFF$trojan\u200B${vless.replace("#one", "#three")}"
+
+        assertEquals(listOf("one", "two", "three"), parser.parseLinks(content).map(Outbound::tag))
+    }
+
+    @Test
     fun singleLinkStillWorksAndInvalidInputAddsNothing() {
         assertEquals(listOf(requireNotNull(parser.parse(vless))), parser.parseLinks("  `$vless`  "))
         assertTrue(parser.parseLinks("\nvmess://not-base64 https://example.com/subscription\n").isEmpty())

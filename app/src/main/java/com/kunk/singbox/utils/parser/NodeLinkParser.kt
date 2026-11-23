@@ -13,7 +13,9 @@ import com.kunk.singbox.model.V2RAY_TRANSPORT_TYPES
 @Suppress("TooManyFunctions", "LargeClass")
 class NodeLinkParser(internal val gson: Gson) {
     companion object {
-        private val linkSeparators = Regex("""[\s\p{Z}]+|[,，;；](?=[A-Za-z][A-Za-z0-9+.-]*://)""")
+        private val linkSeparators = Regex(
+            """[\s\p{Z}]+|(?<![,，;；\p{Cf}])[,，;；\p{Cf}]++(?=[A-Za-z][A-Za-z0-9+.-]*://)"""
+        )
 
         internal val SUPPORTED_LINK_PREFIXES = listOf(
             "vmess://", "vless://", "ss://", "trojan://",
