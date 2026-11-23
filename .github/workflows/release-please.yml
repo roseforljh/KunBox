@@ -4,6 +4,12 @@ on:
   push:
     branches:
       - main
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing KunBox release tag (e.g. v2.26.0)
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -11,6 +17,7 @@ permissions:
 
 jobs:
   release-please:
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     outputs:
       release_created: ${{ steps.release.outputs.release_created }}
@@ -25,14 +32,33 @@ jobs:
 
   build-release:
     needs: release-please
-    if: ${{ needs.release-please.outputs.release_created }}
+    if: >-
+      ${{ !cancelled() && (needs.release-please.outputs.release_created == 'true' ||
+          (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')) }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    env:
+      RELEASE_TAG: ${{ inputs.tag || needs.release-please.outputs.tag_name }}
 
     steps:
+      - name: Verify existing release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [[ ! "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo 'Expected a KunBox release tag (vMAJOR.MINOR.PATCH)' >&2
+            exit 1
+          fi
+          draft=$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)
+          if [[ "$draft" != false ]]; then
+            echo 'Release must already be published' >&2
+            exit 1
+          fi
+
       - uses: actions/checkout@v4
         with:
+          ref: refs/tags/${{ env.RELEASE_TAG }}
           lfs: true
           fetch-depth: 0
 
@@ -51,11 +77,17 @@ jobs:
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
 
+      - name: Read RayBox lock
+        id: raybox
+        run: |
+          jq -er '.commit | select(type == "string" and test("^[0-9a-f]{40}$")) | "commit=" + .' \
+            docs/raybox-unification/raybox-android.lock.json >> "$GITHUB_OUTPUT"
+
       - name: Fetch pinned RayBox source
         uses: actions/checkout@v4
         with:
           repository: roseforljh/RayBox-rx
-          ref: ba64d85ef5ff5e9ef740a1558defa465fee7583c
+          ref: ${{ steps.raybox.outputs.commit }}
           path: raybox-source
           fetch-depth: 0
 
@@ -95,7 +127,7 @@ jobs:
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-          VERSION_NAME: ${{ needs.release-please.outputs.tag_name }}
+          VERSION_NAME: ${{ env.RELEASE_TAG }}
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
@@ -103,10 +135,7 @@ jobs:
           name: sing-box-android-apk
           path: dist/*
 
-      - name: Upload Release Asset
-        uses: softprops/action-gh-release@v1
-        with:
-          tag_name: ${{ needs.release-please.outputs.tag_name }}
-          files: dist/*
+      - name: Upload Release Assets
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" dist/*

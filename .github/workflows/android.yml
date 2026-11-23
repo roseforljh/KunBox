@@ -33,11 +33,17 @@ jobs:
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
 
+      - name: Read RayBox lock
+        id: raybox
+        run: |
+          jq -er '.commit | select(type == "string" and test("^[0-9a-f]{40}$")) | "commit=" + .' \
+            docs/raybox-unification/raybox-android.lock.json >> "$GITHUB_OUTPUT"
+
       - name: Fetch pinned RayBox source
         uses: actions/checkout@v4
         with:
           repository: roseforljh/RayBox-rx
-          ref: ba64d85ef5ff5e9ef740a1558defa465fee7583c
+          ref: ${{ steps.raybox.outputs.commit }}
           path: raybox-source
           fetch-depth: 0
 
