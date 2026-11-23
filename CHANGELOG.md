@@ -1,5 +1,18 @@
 # Changelog
 
+## [2.27.0](https://github.com/roseforljh/KunBox/compare/v2.26.0...v2.27.0) (2026-11-23)
+
+
+### Features
+
+* 支持首页图标裁剪与批量粘贴节点 ([d8c1830](https://github.com/roseforljh/KunBox/commit/d8c1830c68a194df12f07bfcc899f8a90ddaecea))
+
+
+### Bug Fixes
+
+* **ci:** sync RayBox checkout with release lock ([1cc043b](https://github.com/roseforljh/KunBox/commit/1cc043bc88381609f3ed2071fed51bec020dae25))
+* 添加节点时批量保存粘贴的链接 ([35e7637](https://github.com/roseforljh/KunBox/commit/35e7637b9adbaaa25e4cefd7c5bf05e26addb809))
+
 ## [2.26.0](https://github.com/roseforljh/KunBox/compare/v2.25.0...v2.26.0) (2026-11-23)
 
 
