@@ -13,6 +13,8 @@ import com.kunk.singbox.model.V2RAY_TRANSPORT_TYPES
 @Suppress("TooManyFunctions", "LargeClass")
 class NodeLinkParser(internal val gson: Gson) {
     companion object {
+        private val linkSeparators = Regex("""[\s\p{Z}]+|[,，;；](?=[A-Za-z][A-Za-z0-9+.-]*://)""")
+
         internal val SUPPORTED_LINK_PREFIXES = listOf(
             "vmess://", "vless://", "ss://", "trojan://",
             "hysteria2://", "hy2://", "hysteria://", "tuic://", "anytls://",
@@ -275,6 +277,10 @@ class NodeLinkParser(internal val gson: Gson) {
             ?: trimmed
         return prefixMatch.trimEnd(',', '，', ';', '；', '。')
     }
+
+    internal fun parseLinks(content: String): List<Outbound> = linkSeparators.splitToSequence(content)
+        .mapNotNull(::parse)
+        .toList()
 
     fun parse(link: String): Outbound? {
         val normalizedLink = normalizeInputLink(link)

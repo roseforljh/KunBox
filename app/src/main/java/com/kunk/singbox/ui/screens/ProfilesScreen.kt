@@ -2,6 +2,7 @@ package com.kunk.singbox.ui.screens
 
 import com.kunk.singbox.R
 import android.Manifest
+import android.content.ClipboardManager
 import android.content.pm.PackageManager
 import android.net.Uri
 import com.kunk.singbox.utils.parser.NodeLinkParser
@@ -554,11 +555,17 @@ fun ProfilesScreen(
             onNameChange = { customProfileName = it },
             onSelectedNodeIdsChange = { customSelectedNodeIds = it },
             onPasteNodeLink = {
-                val content = clipboardManager.getText()?.text.orEmpty()
+                val clip = context.getSystemService(ClipboardManager::class.java)?.primaryClip
+                val content = clip?.let {
+                    (0 until it.itemCount).joinToString("\n") { index ->
+                        val item = it.getItemAt(index)
+                        item.text ?: item.uri?.toString().orEmpty()
+                    }
+                }.orEmpty()
                 if (content.isBlank()) {
                     AppNotificationManager.showMessage(context, clipboardEmptyMessage)
                 } else {
-                    viewModel.addCustomDraftNodeLink(content)
+                    viewModel.addCustomDraftNodeLinks(content)
                 }
             },
             onManualAddNode = {

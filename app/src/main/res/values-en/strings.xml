@@ -94,6 +94,16 @@
     <string name="settings_about">About</string>
     <string name="settings_app_theme">App Theme</string>
     <string name="settings_theme_style">Theme Style</string>
+    <string name="settings_dashboard_mascot">Change Dashboard Icon</string>
+    <string name="settings_dashboard_mascot_subtitle">Replace Gengar on the dashboard connection button with a photo.</string>
+    <string name="settings_dashboard_mascot_choose">Choose a Photo</string>
+    <string name="settings_dashboard_mascot_restore">Restore Default</string>
+    <string name="settings_dashboard_mascot_failed">Could not change the dashboard icon</string>
+    <string name="settings_dashboard_mascot_updated">Dashboard icon updated</string>
+    <string name="settings_dashboard_mascot_restored">Default Gengar restored</string>
+    <string name="settings_dashboard_mascot_preview">Preview Dashboard Icon</string>
+    <string name="settings_dashboard_mascot_crop_hint">Drag to reposition. Pinch to zoom.</string>
+    <string name="settings_dashboard_mascot_transparent_hint">The transparent background and original outline will be kept.</string>
     <string name="settings_app_language">Language</string>
     <string name="settings_connection_startup">Connection &amp; Startup</string>
     <string name="settings_connection_startup_subtitle">Auto connect, reconnect</string>

@@ -26,6 +26,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -33,11 +34,16 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.painter.BitmapPainter
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.IntOffset
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.kunk.singbox.R
+import com.kunk.singbox.repository.DashboardMascotStore
 import kotlinx.coroutines.launch
 import kotlin.random.Random
 
@@ -49,6 +55,11 @@ fun BigToggle(
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
+    val context = LocalContext.current
+    val mascotRevision by DashboardMascotStore.revision.collectAsStateWithLifecycle()
+    val customMascot by produceState<BitmapPainter?>(null, context, mascotRevision) {
+        value = DashboardMascotStore.load(context)?.let { BitmapPainter(it.asImageBitmap()) }
+    }
 
     // Scale animation on press
     val scale by animateFloatAsState(
@@ -184,14 +195,15 @@ fun BigToggle(
                     },
                     label = "IconCrossfade"
                 ) { running ->
+                    val mascot = customMascot
                     val res = if (running) R.drawable.gengar_awake else R.drawable.gengar_sleep
-                    val imageScale = if (running) 0.75f else 0.75f
+                    val imageModifier = if (mascot == null) Modifier else Modifier.size(200.dp)
 
                     Image(
-                        painter = painterResource(id = res),
+                        painter = mascot ?: painterResource(id = res),
                         contentDescription = if (running) "Running" else "Idle",
-                        modifier = Modifier
-                            .scale(imageScale)
+                        modifier = imageModifier
+                            .scale(0.75f)
                             .offset(x = 0.dp, y = 32.dp)
                             .graphicsLayer {
                                 rotationZ = rotation.value
