@@ -1,4 +1,4 @@
-﻿package com.kunk.singbox
+package com.kunk.singbox
 
 import android.app.ActivityManager
 import android.app.Application
@@ -18,6 +18,7 @@ import com.kunk.singbox.service.SubscriptionAutoUpdateWorker
 import com.kunk.singbox.service.VpnKeepaliveWorker
 import com.kunk.singbox.service.manager.NetworkAutoSwitchManager
 import com.kunk.singbox.utils.DefaultNetworkListener
+import com.kunk.singbox.utils.LocaleHelper
 import com.tencent.mmkv.MMKV
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -35,6 +36,10 @@ class SingBoxApplication : Application(), Configuration.Provider {
             .setDefaultProcessName(packageName)
             .setMinimumLoggingLevel(android.util.Log.INFO)
             .build()
+
+    override fun attachBaseContext(newBase: android.content.Context) {
+        super.attachBaseContext(LocaleHelper.wrapFromCache(newBase))
+    }
 
     override fun onCreate() {
         super.onCreate()

@@ -1,0 +1,860 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">KunBox</string>
+
+    <!-- App Shortcuts -->
+    <string name="shortcut_toggle_vpn">开启/关闭 VPN</string>
+    <string name="shortcut_toggle_vpn_short">开关</string>
+    <string name="shortcut_switch_node">切换节点</string>
+    <string name="shortcut_switch_node_short">节点</string>
+
+    <!-- Update Notification -->
+    <string name="update_channel_name">版本更新</string>
+    <string name="update_channel_description">新版本发布通知</string>
+    <string name="update_notification_title">发现新版本</string>
+    <string name="update_notification_content">KunBox %s 已发布，点击查看详情</string>
+
+    <!-- Common -->
+    <string name="common_confirm">确认</string>
+    <string name="common_cancel">取消</string>
+    <string name="common_save">保存</string>
+    <string name="common_delete">删除</string>
+    <string name="common_delete_confirm">确定要删除“%s”吗？此操作无法撤销。</string>
+    <string name="common_edit">编辑</string>
+    <string name="common_edit_title">修改 %s</string>
+    <string name="common_select_title">选择 %s</string>
+    <string name="common_add">添加</string>
+    <string name="common_ok">确定</string>
+    <string name="common_close">关闭</string>
+    <string name="common_back">返回</string>
+    <string name="common_retry">重试</string>
+    <string name="common_search">搜索</string>
+    <string name="common_refresh">刷新</string>
+    <string name="common_export">导出</string>
+    <string name="common_import">导入</string>
+    <string name="common_update">更新</string>
+    <string name="common_enable">启用</string>
+    <string name="common_disable">禁用</string>
+    <string name="common_enabled">已启用</string>
+    <string name="common_disabled">已禁用</string>
+    <string name="common_clear">清空</string>
+    <string name="common_copy">复制</string>
+    <string name="common_latency">延迟</string>
+    <string name="common_timeout">超时</string>
+    <string name="common_ipv6_only">仅IPv6可用</string>
+    <string name="common_unavailable">不可用</string>
+    <string name="common_loading">加载中...</string>
+    <string name="common_unknown">未知</string>
+    <string name="common_none">无</string>
+    <string name="common_all">全部</string>
+    <string name="common_yes">是</string>
+    <string name="common_no">否</string>
+    <string name="common_auto">自动</string>
+    <string name="common_menu">菜单</string>
+    <string name="common_layout">布局</string>
+    <string name="common_view">查看</string>
+    <string name="common_downloaded">已下载</string>
+    <string name="common_ready">已就绪</string>
+    <string name="common_system">系统</string>
+    <string name="common_background">后台</string>
+    <string name="common_inbound">入站</string>
+    <string name="common_outbound">出站</string>
+
+    <!-- Connection Status -->
+    <string name="connection_idle">未连接</string>
+    <string name="connection_connecting">连接中...</string>
+    <string name="connection_connected">已连接</string>
+    <string name="connection_disconnecting">断开中...</string>
+    <string name="connection_error">错误</string>
+
+    <!-- Dashboard -->
+    <string name="dashboard_routing_mode">路由模式</string>
+    <string name="dashboard_update_subscription">更新订阅</string>
+    <string name="dashboard_update_subscription_confirm">确定要更新所有订阅吗？</string>
+    <string name="dashboard_latency_test">延迟测试</string>
+    <string name="dashboard_latency_test_confirm">确定要测试所有节点延迟吗？</string>
+    <string name="dashboard_start_test">开始测试</string>
+    <string name="dashboard_logs">运行日志</string>
+    <string name="dashboard_diagnostics">网络诊断</string>
+    <string name="dashboard_select_profile">选择配置</string>
+    <string name="dashboard_select_node">选择节点</string>
+    <string name="dashboard_no_profile_selected">未选择配置</string>
+    <string name="dashboard_no_node_selected">未选择节点</string>
+    <string name="dashboard_no_profiles_available">暂无可用配置</string>
+    <string name="dashboard_no_nodes_available">暂无可用节点</string>
+    <string name="dashboard_test_complete">测试完成</string>
+    <string name="dashboard_config_generation_failed">配置生成失败</string>
+
+    <!-- Settings -->
+    <string name="settings_title">设置</string>
+    <string name="settings_general">通用</string>
+    <string name="settings_network">网络</string>
+    <string name="settings_tools">工具</string>
+    <string name="settings_data_management">数据管理</string>
+    <string name="settings_about">关于</string>
+    <string name="settings_app_theme">应用主题</string>
+    <string name="settings_theme_style">主题样式</string>
+    <string name="settings_app_language">应用语言</string>
+    <string name="settings_connection_startup">连接与启动</string>
+    <string name="settings_connection_startup_subtitle">自动连接、断线重连</string>
+    <string name="settings_routing">路由设置</string>
+    <string name="settings_routing_subtitle">模式、规则集、默认规则</string>
+    <string name="settings_dns">DNS 设置</string>
+    <string name="settings_dns_auto">自动</string>
+    <string name="settings_local_dns">本地 DNS</string>
+    <string name="settings_remote_dns">远程 DNS</string>
+    <string name="settings_tun_vpn">TUN / VPN</string>
+    <string name="settings_tun_vpn_subtitle">堆栈、MTU、分应用代理</string>
+    <string name="settings_update_rulesets">更新规则集</string>
+    <string name="settings_update_rulesets_subtitle">手动更新广告与路由规则</string>
+    <string name="settings_updating">正在下载...</string>
+    <string name="settings_preparing_update">准备更新...</string>
+    <string name="settings_update_success">更新成功</string>
+    <string name="settings_update_failed">更新失败</string>
+    <string name="settings_ruleset_update_success">规则集更新成功</string>
+    <string name="settings_ruleset_update_failed">规则集更新失败</string>
+    <string name="settings_ruleset_auto_update">规则集定时更新</string>
+    <string name="settings_ruleset_auto_update_enabled">每 %d 分钟自动更新</string>
+    <string name="settings_ruleset_auto_update_disabled">开启后自动更新所有远程规则集</string>
+    <string name="settings_update_interval">更新间隔</string>
+    <string name="settings_update_interval_value">%d 分钟</string>
+    <string name="settings_update_interval_min">更新间隔至少为 15 分钟</string>
+    <string name="settings_debug_mode">调试模式</string>
+    <string name="settings_debug_mode_subtitle">开启后记录详细日志（需重启服务）</string>
+    <string name="settings_logs">运行日志</string>
+    <string name="settings_network_diagnostics">网络诊断</string>
+    <string name="settings_export_data">导出数据</string>
+    <string name="settings_export_data_subtitle">备份所有配置和设置到文件</string>
+    <string name="settings_import_data">导入数据</string>
+    <string name="settings_import_data_subtitle">从备份文件恢复配置和设置</string>
+    <string name="settings_about_app">关于应用</string>
+    <string name="settings_about_kunbox">关于 KunBox</string>
+    <string name="settings_restart_needed">设置已修改，重启后生效</string>
+
+    <!-- Connection Settings -->
+    <string name="connection_settings_title">连接与启动</string>
+    <string name="connection_settings_auto_connect">自动连接</string>
+    <string name="connection_settings_auto_connect_subtitle">启动应用时自动连接 VPN</string>
+    <string name="connection_settings_network_auto_switch">按网络自动切换</string>
+    <string name="connection_settings_network_auto_switch_subtitle">连接指定 WiFi 自动断开，切换到移动数据自动开启</string>
+    <string name="connection_settings_network_auto_switch_permission_denied">需要 WiFi 名称读取权限</string>
+    <string name="connection_settings_trusted_wifi_ssids">自动断开的 WiFi</string>
+    <string name="connection_settings_trusted_wifi_ssids_subtitle">每行一个 WiFi 名称</string>
+    <string name="connection_settings_trusted_wifi_ssids_placeholder">Home WiFi&#10;Office WiFi</string>
+    <string name="connection_settings_hide_recent">在最近任务中隐藏</string>
+    <string name="connection_settings_hide_recent_subtitle">开启后，应用将不会出现在手机的最近任务列表中</string>
+    <string name="connection_settings_proxy_port">代理端口</string>
+    <string name="connection_settings_proxy_port_subtitle">本地混合代理端口 (Mixed Port)</string>
+    <string name="connection_settings_allow_lan">允许来自局域网的连接</string>
+    <string name="connection_settings_allow_lan_subtitle">开启后，局域网内的其他设备可以通过该端口使用代理</string>
+    <string name="connection_settings_local_network_permission_denied">需要本地网络权限才能允许局域网连接</string>
+    <string name="connection_settings_append_http_proxy">追加 HTTP 代理至 VPN</string>
+    <string name="connection_settings_append_http_proxy_subtitle">将本地 HTTP 代理设置为系统代理 (Android 10+)</string>
+    <string name="connection_settings_latency_concurrency">延迟测试并发数</string>
+    <string name="connection_settings_latency_concurrency_subtitle">批量延迟测试的并发请求数 (默认: 10)</string>
+    <string name="connection_settings_latency_timeout">延迟超时时间 (ms)</string>
+    <string name="connection_settings_latency_timeout_subtitle">单次延迟测试的超时时间 (默认: 2000ms)</string>
+
+    <!-- Routing Settings -->
+    <string name="routing_settings_title">路由设置</string>
+    <string name="routing_settings_mode">路由模式</string>
+    <string name="routing_settings_default_rule">默认规则</string>
+    <string name="routing_settings_latency_test_method">延迟测试方式</string>
+    <string name="routing_settings_latency_test_url">延迟测试地址</string>
+    <string name="routing_settings_latency_test_timeout_s">%d 秒</string>
+    <string name="routing_settings_subscription_timeout">订阅更新超时</string>
+    <string name="routing_settings_github_mirror">GitHub 镜像加速</string>
+    <string name="routing_settings_block_quic">屏蔽 QUIC</string>
+    <string name="routing_settings_block_quic_subtitle">部分网络 QUIC 不稳定可开启；关闭可提升 HTTP/3 吞吐</string>
+    <string name="routing_settings_bypass_lan">绕过局域网</string>
+    <string name="routing_settings_bypass_lan_subtitle">局域网流量不经过代理</string>
+    <string name="routing_settings_icmp_echo_routing">ICMP Echo 分流</string>
+    <string name="routing_settings_icmp_echo_routing_subtitle">启用后按 sing-box 1.13 的 ICMP 规则处理 ping 流量</string>
+    <string name="routing_settings_app_routing">应用分流</string>
+    <string name="routing_settings_app_routing_rules">%d 条规则</string>
+    <string name="routing_settings_domain_routing">域名分流</string>
+    <string name="routing_settings_manage_rulesets">管理规则集</string>
+
+    <!-- TUN Settings -->
+    <string name="tun_settings_title">流量接管设置</string>
+    <string name="tun_settings_enable">启用 TUN</string>
+    <string name="tun_settings_enable_subtitle">开启后接管系统流量和经典 DNS；关闭后仅提供本地代理，系统 DNS 不受保护</string>
+    <string name="tun_settings_capture_mode">流量接管模式</string>
+    <string name="traffic_capture_mode_vpn">Android VPN</string>
+    <string name="traffic_capture_mode_root">Root 透明代理</string>
+    <string name="traffic_capture_mode_proxy_only">仅代理</string>
+    <string name="root_mode_channel">Root 透明代理</string>
+    <string name="root_mode_starting">正在启动 Root 透明代理</string>
+    <string name="root_mode_running">Root 透明代理运行中</string>
+    <string name="root_mode_dns_title">系统 DNS</string>
+    <string name="root_mode_dns_subtitle">Root 模式会统一接管系统 DNS；绕过应用的业务流量仍直连</string>
+    <string name="root_mode_capability_failed">Root 能力不可用</string>
+    <string name="tun_settings_stack">堆栈</string>
+    <string name="tun_settings_ip_version_mode">IP 版本模式</string>
+    <string name="tun_settings_mtu">MTU</string>
+    <string name="tun_settings_mtu_auto">自动 MTU</string>
+    <string name="tun_settings_mtu_auto_subtitle">按当前物理链路 MTU 自动预留隧道封装空间</string>
+    <string name="tun_settings_auto_route">自动路由</string>
+    <string name="tun_settings_auto_route_subtitle">自动配置系统路由表</string>
+    <string name="tun_settings_strict_route">严格路由</string>
+    <string name="tun_settings_strict_route_subtitle">限制系统路由绕过；DNS 安全仍依赖 TUN、劫持规则和系统 VPN 策略</string>
+    <string name="tun_settings_route_mode">接管模式</string>
+    <string name="tun_settings_route_cidrs">接管网段</string>
+    <string name="tun_settings_route_cidrs_configured">已设置 %d 条</string>
+    <string name="tun_settings_app_mode">分应用模式</string>
+    <string name="tun_settings_allowlist">仅允许列表</string>
+    <string name="tun_settings_allowlist_configured">已设置 %d 个</string>
+    <string name="tun_settings_blocklist">排除列表</string>
+    <string name="tun_settings_blocklist_configured">已设置 %d 个</string>
+    <string name="tun_settings_follow_new_apps">新安装应用跟随当前规则</string>
+    <string name="tun_settings_follow_new_apps_subtitle">仅允许模式自动加入仅允许列表；排除模式自动加入排除列表</string>
+    <string name="tun_settings_follow_allowlist_subtitle">新安装应用自动加入仅允许列表并由当前模式接管</string>
+    <string name="tun_settings_follow_blocklist_subtitle">新安装应用自动加入排除列表并绕过当前模式</string>
+    <string name="tun_settings_effective_scope">实际应用范围</string>
+    <string name="tun_settings_all_apps_captured">全部应用由当前模式接管</string>
+    <string name="tun_settings_policy_applying">正在应用应用范围</string>
+    <string name="tun_settings_policy_apply_failed">应用失败，点此重试</string>
+    <string name="tun_settings_select_allowlist_apps">仅接管这些应用</string>
+    <string name="tun_settings_select_blocklist_apps">这些应用绕过接管</string>
+
+    <!-- DNS Settings -->
+    <string name="dns_settings_title">DNS 设置</string>
+    <string name="dns_settings_fake_dns">Fake DNS</string>
+    <string name="dns_settings_fake_dns_subtitle">返回虚假 IP 以加速域名解析</string>
+    <string name="dns_settings_fake_ip_range">虚假 IP 段</string>
+    <string name="dns_settings_strategy">解析策略</string>
+    <string name="dns_settings_remote_strategy">远程域名策略</string>
+    <string name="dns_settings_direct_strategy">直连域名策略</string>
+    <string name="dns_settings_server_strategy">服务器地址策略</string>
+    <string name="dns_settings_cache">DNS 缓存</string>
+
+    <!-- Profiles -->
+    <string name="profiles_title">配置管理</string>
+    <string name="profiles_search">搜索配置</string>
+    <string name="profiles_deep_link_import_title">确认导入订阅</string>
+    <string name="profiles_deep_link_import_message">将导入以下订阅：
+%1$s
+
+%2$s</string>
+    <string name="profiles_import_content_too_large">导入内容过大，请缩小内容后再试</string>
+    <string name="profiles_search_hint">输入关键词...</string>
+    <string name="profiles_add_subscription">添加订阅</string>
+    <string name="profiles_edit_profile">编辑配置</string>
+    <string name="profiles_subscription_link">订阅链接</string>
+    <string name="profiles_local_file">本地文件</string>
+    <string name="profiles_local_file_subtitle">从 JSON/YAML 文件导入</string>
+    <string name="profiles_clipboard">剪贴板</string>
+    <string name="profiles_clipboard_subtitle">从剪贴板内容导入</string>
+    <string name="profiles_import_clipboard">导入剪贴板</string>
+    <string name="profiles_import_clipboard_hint">配置名称</string>
+    <string name="profiles_scan_qrcode">扫描二维码</string>
+    <string name="profiles_scan_qrcode_subtitle">使用相机扫描</string>
+    <string name="profiles_qrcode_import">扫码导入</string>
+    <string name="profiles_qrcode_subscription">扫码订阅</string>
+    <string name="profiles_file_import">文件导入</string>
+    <string name="profiles_clipboard_import">剪贴板导入</string>
+    <string name="rulesets_select_target">选择目标</string>
+    <string name="rulesets_tap_to_select">点击选择...</string>
+    <string name="rulesets_rule_set_tag">规则集标签</string>
+    <string name="profiles_file_empty">文件内容为空</string>
+    <string name="profiles_read_file_failed">读取文件失败: %s</string>
+    <string name="profiles_clipboard_empty">剪贴板为空</string>
+    <string name="profiles_name_invalid">配置名称不能包含链接</string>
+    <string name="profiles_camera_permission_required">需要相机权限才能扫描二维码</string>
+    <string name="profiles_import_success">导入成功: %s</string>
+    <string name="profiles_import_failed">导入失败: %s</string>
+    <string name="profiles_add_config">添加配置</string>
+    <string name="profiles_custom_config">自定义配置</string>
+    <string name="profiles_custom_config_subtitle">添加或组合节点</string>
+    <string name="profiles_imported_subscription_default_name">导入的订阅</string>
+    <string name="subscription_import_fetching">正在获取订阅内容...</string>
+    <string name="subscription_import_requesting">正在尝试订阅请求（User-Agent %1$d/%2$d）...</string>
+    <string name="subscription_import_parsing">正在解析订阅响应...</string>
+    <string name="subscription_import_empty_response">订阅响应内容为空</string>
+    <string name="subscription_import_http_error">订阅请求失败（HTTP %1$d：%2$s）</string>
+    <string name="subscription_import_timeout">连接超时，请检查网络</string>
+    <string name="subscription_import_dns_failed">域名解析失败，请检查订阅链接</string>
+    <string name="subscription_import_ssl_failed">SSL 证书校验失败</string>
+    <string name="subscription_import_failed_generic">订阅导入失败</string>
+    <string name="custom_profile_name_required">名称不能为空</string>
+    <string name="custom_profile_name_hint">请输入配置名称</string>
+    <string name="custom_profile_selected_nodes">共 %d 个节点</string>
+    <string name="custom_profile_nodes_optional">至少添加或选择一个节点</string>
+    <string name="custom_profile_no_available_nodes">暂无可复制的订阅节点</string>
+    <string name="profiles_no_safe_node">配置中没有可安全选择的节点</string>
+    <string name="custom_profile_paste_link">粘贴连接</string>
+    <string name="custom_profile_paste_link_subtitle">从剪贴板快速添加</string>
+    <string name="custom_profile_manual_add_subtitle">选择协议并填写参数</string>
+    <string name="custom_profile_added_nodes">已添加节点</string>
+    <string name="custom_profile_creating">正在创建自定义配置...</string>
+    <string name="custom_profile_create_failed">创建自定义配置失败</string>
+    <string name="custom_profile_nodes_required">未选择可用节点</string>
+    <string name="custom_profile_extract_failed">无法提取节点配置</string>
+    <string name="profiles_parse_failed">无法解析内容</string>
+    <string name="profiles_content_empty">内容为空</string>
+    <string name="profiles_updated">配置已更新</string>
+    <string name="profiles_custom_no_update">自定义配置无需更新</string>
+    <string name="profiles_deleted">已删除配置</string>
+    <string name="profiles_auto_update">自动更新</string>
+    <string name="profiles_auto_update_interval">更新间隔（分钟）</string>
+    <string name="profiles_auto_update_hint">建议设置 30 分钟以上</string>
+    <string name="profiles_dns_preresolve">DNS 预解析</string>
+    <string name="profiles_dns_preresolve_hint">将节点域名预解析为 IP，绕过 DNS 污染</string>
+    <string name="profiles_dns_server">DNS 服务器</string>
+    <string name="profiles_dns_server_cloudflare">Cloudflare (1.1.1.1)</string>
+    <string name="profiles_dns_server_google">Google (8.8.8.8)</string>
+    <string name="profiles_dns_server_alidns">阿里 DNS (223.5.5.5)</string>
+    <string name="profiles_dns_override">DNS 覆写</string>
+    <string name="profiles_dns_override_hint">追加自定义 DNS 配置（JSON 格式，包含 servers 和 rules 字段）</string>
+    <string name="profiles_name_label">名称</string>
+    <string name="profiles_url_label">订阅链接</string>
+    <string name="profiles_subscription_node_warning">禁止在订阅链接中填入单节点，请使用\'剪贴板\'导入或\'添加节点\'功能</string>
+    <string name="profiles_extracting_nodes">正在提取节点 (%1$d/%2$d)...</string>
+
+    <!-- Nodes -->
+    <string name="nodes_title">节点列表</string>
+    <string name="nodes_count_suffix">个节点</string>
+    <string name="nodes_sort">排序</string>
+    <string name="nodes_filter">筛选</string>
+    <string name="nodes_add">添加节点</string>
+    <string name="nodes_add_hint">输入节点链接 (vmess://, vless://, ss://, etc)...</string>
+    <string name="nodes_add_to_profile">添加到配置</string>
+    <string name="nodes_add_create_new_profile">创建新配置</string>
+    <string name="nodes_add_new_profile_name_hint">输入新配置名称...</string>
+    <string name="nodes_export_link">导出链接</string>
+    <string name="nodes_copied_to_clipboard">已复制到剪贴板</string>
+    <string name="nodes_clear_latency">清空延迟</string>
+    <string name="nodes_clear_latency_confirm">确定要清空全部节点延迟记录吗？此操作无法撤销。</string>
+    <string name="nodes_latency_cleared">已清空延迟</string>
+    <string name="nodes_test_latency">测试延迟</string>
+    <string name="nodes_testing_progress">测速中...</string>
+    <string name="nodes_test_complete_stats">测速完成: %1$d 成功, %2$d 超时</string>
+    <string name="nodes_test_complete_stats_v6">测速完成: %1$d 成功, %2$d 超时, %3$d 仅IPv6可用</string>
+    <string name="nodes_stop_test">停止测试</string>
+    <string name="nodes_unknown_node">未知节点</string>
+    <string name="nodes_test_failed">%s 测速失败/超时</string>
+    <string name="nodes_metered_select_to_test">高价节点需选中后测速</string>
+    <string name="nodes_filter_applied">筛选已应用</string>
+    <string name="nodes_filter_cleared">已清除筛选</string>
+    <string name="nodes_unsupported_format">不支持的链接格式</string>
+    <string name="nodes_add_failed">添加失败</string>
+
+    <!-- Node Sort -->
+    <string name="nodes_sort_default">默认</string>
+    <string name="nodes_sort_latency">延迟 (低 -> 高)</string>
+    <string name="nodes_sort_name">名称 (A -> Z)</string>
+
+    <!-- Node Filter -->
+    <string name="node_filter_title">节点筛选</string>
+    <string name="node_filter_mode">过滤模式</string>
+    <string name="node_filter_none">不过滤</string>
+    <string name="node_filter_include">只显示包含</string>
+    <string name="node_filter_exclude">排除包含</string>
+    <string name="node_filter_keywords_hint">多个关键字用逗号分隔，如：香港, HK, 港</string>
+    <string name="node_filter_keywords_tip">提示：关键字匹配节点名称，不区分大小写</string>
+
+    <!-- Node Detail -->
+    <string name="node_detail_title">服务器配置</string>
+    <string name="node_detail_saved">配置已保存</string>
+    <string name="node_create_title">创建节点</string>
+    <string name="node_created">节点已创建</string>
+    <string name="nodes_manual_create">手动创建</string>
+    <string name="nodes_select_protocol">选择协议类型</string>
+    <string name="node_detail_config_name">配置名称</string>
+    <string name="node_detail_server_settings">服务器设置</string>
+    <string name="node_detail_server_address">服务器地址</string>
+    <string name="node_detail_server_port">服务器端口</string>
+    <string name="node_detail_encryption">加密方式</string>
+    <string name="node_detail_password">密码</string>
+    <string name="node_detail_plugin_options">插件参数</string>
+    <string name="node_detail_packet_encoding">包编码</string>
+    <string name="node_detail_obfs_type">混淆类型</string>
+    <string name="node_detail_obfs_password">混淆密码</string>
+    <string name="node_detail_congestion_control">拥塞控制</string>
+    <string name="node_detail_username">用户名</string>
+    <string name="node_detail_private_key">私钥</string>
+    <string name="node_detail_idle_session_check">空闲会话检查间隔</string>
+    <string name="node_detail_idle_session_timeout">空闲会话超时</string>
+    <string name="node_detail_min_idle_sessions">最小空闲会话数</string>
+    <string name="node_detail_auth_string">认证字符串</string>
+    <string name="node_detail_transport_settings">传输配置</string>
+    <string name="node_detail_transport_protocol">传输协议</string>
+    <string name="node_detail_transport_path">路径</string>
+    <string name="node_detail_transport_security">传输层加密</string>
+    <string name="node_detail_mux_settings">多路复用设置</string>
+    <string name="node_detail_mux_enable">启用多路复用</string>
+    <string name="node_detail_mux_subtitle">优化并发连接性能</string>
+    <string name="node_detail_mux_max_connections">最大并发连接数</string>
+    <string name="node_detail_common_settings">通用设置</string>
+    <string name="node_detail_plugin">插件 (可选)</string>
+    <string name="node_detail_udp_over_tcp">UDP over TCP</string>
+    <string name="node_detail_uuid">UUID</string>
+    <string name="node_detail_flow">Flow</string>
+    <string name="node_detail_ports_jumping">端口跳跃</string>
+    <string name="node_detail_upload_speed">上传速度 (Mbps)</string>
+    <string name="node_detail_download_speed">下载速度 (Mbps)</string>
+    <string name="node_detail_udp_relay_mode">UDP 中继模式</string>
+    <string name="node_detail_heartbeat">心跳</string>
+    <string name="node_detail_zero_rtt">Zero RTT</string>
+    <string name="node_detail_disable_sni">禁用 SNI</string>
+    <string name="node_detail_host">Host</string>
+    <string name="node_detail_insecure_concurrency">不安全并发</string>
+    <string name="node_detail_extra_headers">额外请求头</string>
+    <string name="node_detail_extra_headers_hint">每行一个请求头，格式：Key: Value</string>
+    <string name="node_detail_peer_public_key">对端公钥</string>
+    <string name="node_detail_pre_shared_key">预共享密钥</string>
+    <string name="node_detail_local_address">本地地址 (CIDR)</string>
+    <string name="node_detail_allowed_ips">AllowedIPs</string>
+    <string name="node_detail_persistent_keepalive">Keepalive (秒)</string>
+    <string name="node_detail_mtu">MTU</string>
+    <string name="node_detail_reserved">Reserved (WARP)</string>
+    <string name="node_detail_passphrase">密码短语</string>
+    <string name="node_detail_host_key">主机密钥</string>
+    <string name="node_detail_socks_version">SOCKS 版本</string>
+    <string name="node_detail_username_optional">用户名 (可选)</string>
+    <string name="node_detail_password_optional">密码 (可选)</string>
+    <string name="node_detail_shadowtls_version">ShadowTLS 版本</string>
+    <string name="node_detail_hop_interval">跳跃间隔 (秒)</string>
+    <string name="node_detail_ws_host">WebSocket Host</string>
+    <string name="node_detail_ws_path">WebSocket 路径</string>
+    <string name="node_detail_max_early_data">Max Early Data</string>
+    <string name="node_detail_early_data_header">Early Data Header</string>
+    <string name="node_detail_service_name">服务名称</string>
+    <string name="node_detail_xhttp_mode">XHTTP 模式</string>
+    <string name="node_detail_xpadding_bytes">XPaddingBytes</string>
+    <string name="node_detail_sc_max_each_post_bytes">scMaxEachPostBytes</string>
+    <string name="node_detail_sc_min_posts_interval_ms">scMinPostsIntervalMs</string>
+    <string name="node_detail_sc_max_buffered_posts">scMaxBufferedPosts</string>
+    <string name="node_detail_no_grpc_header">No GRPC Header</string>
+    <string name="node_detail_no_sse_header">No SSE Header</string>
+    <string name="node_detail_tls_settings">TLS 设置</string>
+    <string name="node_detail_sni">SNI (服务器名称指示)</string>
+    <string name="node_detail_alpn">ALPN</string>
+    <string name="node_detail_allow_insecure">允许不安全</string>
+    <string name="node_detail_allow_insecure_subtitle">禁用证书验证</string>
+    <string name="node_detail_ca_cert">CA 证书 (PEM)</string>
+    <string name="node_detail_client_cert">客户端证书 (PEM)</string>
+    <string name="node_detail_client_key">客户端密钥 (PEM)</string>
+    <string name="node_detail_utls_fingerprint">uTLS 指纹</string>
+    <string name="node_detail_reality_public_key">Reality 公钥</string>
+    <string name="node_detail_reality_short_id">Reality ShortId</string>
+    <string name="node_detail_enable_ech">启用 ECH</string>
+    <string name="node_detail_ech_config">ECH 配置 (Base64)</string>
+    <string name="node_detail_ech_key">ECH 密钥 (Base64)</string>
+    <string name="node_detail_mux_protocol">多路复用协议</string>
+    <string name="node_detail_min_streams">最小流数</string>
+    <string name="node_detail_max_streams">最大流数</string>
+    <string name="node_detail_padding">填充</string>
+    <string name="node_detail_detour_proxy">前置代理</string>
+    <string name="node_detail_detour_proxy_subtitle">从所有配置中选择一个代理节点</string>
+    <string name="node_detail_detour_tag">前置代理标签 (高级)</string>
+    <string name="node_detail_detour_tag_subtitle">手动填写出站标签；留空禁用</string>
+    <string name="node_detail_auto_selection_eligible">参与自动探测与切换</string>
+    <string name="node_detail_auto_selection_eligible_subtitle">关闭后不会被后台探测或自动切换选中，仍可手动选择和测速</string>
+    <string name="node_detail_metered_protection">高价计费节点保护</string>
+    <string name="node_detail_metered_protection_subtitle">仅在明确手动选中时进入运行配置；阻止分流、DNS、链式代理和后台探测偷跑流量</string>
+    <string name="traffic_unattributed">未归属流量</string>
+    <string name="traffic_background_probe">后台测速流量</string>
+    <string name="traffic_health_check">健康检查流量</string>
+    <string name="node_detail_tcp_fast_open">TCP Fast Open</string>
+    <string name="node_detail_select_detour_node">选择前置代理节点</string>
+    <string name="node_picker_no_detour">不使用前置代理</string>
+    <string name="node_detail_unknown_profile">未知配置 (%s)</string>
+
+    <!-- Rule Sets -->
+    <string name="rulesets_title">规则集管理</string>
+    <string name="rulesets_empty">暂无规则集</string>
+    <string name="rulesets_add">添加规则集</string>
+    <string name="rulesets_edit">编辑规则集</string>
+    <string name="rulesets_delete_title">删除规则集</string>
+    <string name="rulesets_delete_confirm">确定要删除规则集 \"%s\" 吗？</string>
+    <string name="rulesets_delete_batch_confirm">确定要删除选中的 %d 个规则集吗？</string>
+    <string name="rulesets_select_outbound">选择出站模式</string>
+    <string name="rulesets_select_profile">选择配置</string>
+    <string name="rulesets_select_node">选择节点</string>
+    <string name="rulesets_select_inbound">选择入站</string>
+    <string name="rulesets_type">类型</string>
+    <string name="rulesets_format">格式</string>
+    <string name="rulesets_url">URL</string>
+    <string name="rulesets_local_path">本地路径</string>
+    <string name="rulesets_nodes_count">%d 个节点</string>
+    <string name="rulesets_unknown_profile">未知配置(%s)</string>
+    <string name="rulesets_exists">规则集 \"%s\" 已存在</string>
+    <string name="rulesets_added_downloaded">已添加规则集 \"%s\"，并完成下载</string>
+    <string name="rulesets_added_failed">已添加规则集 \"%s\"，但下载失败，未启用</string>
+    <string name="rulesets_enable_failed">规则集 \"%s\" 下载或校验失败，未应用本次更改</string>
+
+    <!-- Rule Set Hub -->
+    <string name="ruleset_hub_title">规则集中心</string>
+
+    <!-- Rule Set Default Configs -->
+    <string name="rulesets_add_default">添加默认规则集</string>
+
+    <!-- App Rules -->
+    <string name="app_rules_title">应用分流</string>
+    <string name="app_rules_not_selected">未选择</string>
+    <string name="app_rules_unknown_profile">未知配置</string>
+    <string name="app_rules_empty_groups">暂无应用分组</string>
+    <string name="app_rules_empty_groups_hint">点击右上角 + 创建分组</string>
+    <string name="app_rules_click_to_select">点击选择...</string>
+    <string name="app_rules_select_target">选择目标</string>
+
+    <!-- App Groups -->
+    <string name="app_groups_create">创建分组</string>
+    <string name="app_groups_edit">编辑分组</string>
+    <string name="app_groups_delete_title">删除分组</string>
+    <string name="app_groups_delete_confirm">确定要删除 \"%1$s\" 分组吗？包含 %2$d 个应用。</string>
+    <string name="app_groups_name">分组名称</string>
+    <string name="app_groups_select_apps">选择应用</string>
+    <string name="app_groups_selected_count">已选应用 (%d)</string>
+    <string name="app_groups_click_to_add">点击上方按钮选择应用</string>
+    <string name="app_groups_remove">移除</string>
+    <string name="app_routing_proxy_only_unsupported">纯代理模式不支持应用分流</string>
+    <string name="app_routing_proxy_only_unsupported_hint">切换到 VPN 或 Root 透明代理后，才能识别应用并按应用选择出站。</string>
+
+    <!-- Domain Rules -->
+    <string name="domain_rules_title">域名分流</string>
+    <string name="domain_rules_placeholder">google.com / =exact.com / *keyword*</string>
+    <string name="domain_rules_detected_type">检测到的类型: %s</string>
+    <string name="domain_rules_type_exact">精准匹配</string>
+    <string name="domain_rules_type_keyword">关键字匹配</string>
+    <string name="domain_rules_type_suffix">后缀匹配 (包含子域名)</string>
+    <string name="domain_rules_empty">暂无域名分流规则</string>
+    <string name="domain_rules_add">添加规则</string>
+    <string name="domain_rules_edit">编辑规则</string>
+    <string name="domain_rules_delete_title">删除规则</string>
+    <string name="domain_rules_delete_confirm">确定要删除规则 \"%s\" 吗？</string>
+
+    <!-- Custom Rules -->
+    <string name="custom_rules_title">自定义规则</string>
+    <string name="custom_rules_empty">暂无自定义规则</string>
+    <string name="custom_rules_add">添加规则</string>
+    <string name="custom_rules_edit">编辑规则</string>
+    <string name="custom_rules_delete_title">删除规则</string>
+    <string name="custom_rules_delete_confirm">确定要删除规则 \"%s\" 吗？</string>
+    <string name="custom_rules_name">名称</string>
+    <string name="custom_rules_name_hint">我的规则</string>
+    <string name="custom_rules_type">规则类型</string>
+    <string name="custom_rules_content">规则内容</string>
+    <string name="custom_rules_content_hint">内容</string>
+
+    <!-- Logs -->
+    <string name="logs_title">运行日志</string>
+    <string name="logs_export">导出</string>
+    <string name="logs_clear">清空</string>
+    <string name="logs_clear_confirm">确定要清空全部运行日志吗？此操作无法撤销。</string>
+    <string name="logs_search_hint">搜索关键词（域名、错误等）</string>
+
+    <!-- Diagnostics -->
+    <string name="diagnostics_title">网络诊断</string>
+    <string name="diagnostics_view_config">查看运行配置摘要</string>
+    <string name="diagnostics_view_config_subtitle">检查 package_name 规则是否生成</string>
+    <string name="diagnostics_view_config_loading">正在生成...</string>
+    <string name="diagnostics_export_config">导出运行配置</string>
+    <string name="diagnostics_export_config_subtitle">导出 running_config.json 到外部存储目录</string>
+    <string name="diagnostics_export_config_loading">正在导出...</string>
+    <string name="diagnostics_resource_sampling">资源周期采样</string>
+    <string name="diagnostics_resource_sampling_subtitle">每 15 秒采样主进程与 VPN 进程，最多保留 4096 条</string>
+    <string name="diagnostics_resource_sampling_active">采样中，已记录 %1$d 条</string>
+    <string name="diagnostics_resource_sampling_stopped">已停止，保留 %1$d 条</string>
+    <string name="diagnostics_export_package">导出脱敏诊断包</string>
+    <string name="diagnostics_export_package_subtitle">导出脱敏日志、运行配置和资源采样 ZIP</string>
+    <string name="diagnostics_export_package_loading">正在生成诊断包...</string>
+    <string name="diagnostics_export_package_success">诊断包已导出到：\n%1$s\n\n大小：%2$d KiB\n资源记录：%3$d 条</string>
+    <string name="diagnostics_export_package_failed">诊断包导出失败：%1$s</string>
+    <string name="diagnostics_app_routing">应用分流诊断</string>
+    <string name="diagnostics_app_routing_subtitle">检查 /proc/net 可读性（影响 package_name 生效）</string>
+    <string name="diagnostics_app_routing_loading">正在检测...</string>
+    <string name="diagnostics_conn_owner">连接归属统计</string>
+    <string name="diagnostics_conn_owner_subtitle">查看 findConnectionOwner 成功/失败计数</string>
+    <string name="diagnostics_conn_owner_loading">正在读取...</string>
+    <string name="diagnostics_reset_conn_owner">重置连接归属统计</string>
+    <string name="diagnostics_reset_conn_owner_subtitle">清零计数器（便于复现问题）</string>
+    <string name="diagnostics_node_line_query">节点线路查询</string>
+    <string name="diagnostics_node_line_query_subtitle">查看当前全局节点的线路与出口观测</string>
+    <string name="diagnostics_node_line_query_loading">正在查询...</string>
+    <string name="diagnostics_connectivity">连通性检查</string>
+    <string name="diagnostics_connectivity_subtitle">连接测试（使用已配置的延迟测试地址）</string>
+    <string name="diagnostics_connectivity_loading">正在检查...</string>
+    <string name="diagnostics_ping_test">Ping 测试</string>
+    <string name="diagnostics_ping_test_subtitle">TCP 连接测试（使用已配置的延迟测试地址）</string>
+    <string name="diagnostics_dns_query">DNS 查询</string>
+    <string name="diagnostics_dns_query_subtitle">域名解析（使用已配置的延迟测试域名）</string>
+    <string name="diagnostics_dns_leak_check">DNS 泄露检测</string>
+    <string name="diagnostics_dns_leak_check_subtitle">静态检查当前运行配置中的 DNS 泄露风险</string>
+    <string name="diagnostics_dns_leak_check_loading">正在检测...</string>
+    <string name="diagnostics_routing_test">路由测试</string>
+    <string name="diagnostics_routing_test_subtitle">规则匹配模拟 (baidu.com)</string>
+    <string name="diagnostics_routing_test_loading">正在测试...</string>
+
+    <!-- Profile Editor -->
+    <string name="profile_editor_title">编辑配置</string>
+
+    <!-- Export/Import -->
+    <string name="export_success">导出成功</string>
+    <string name="export_success_message">数据已保存到选择的位置</string>
+    <string name="export_failed">导出失败</string>
+    <string name="data_validation_failed">数据验证失败</string>
+    <string name="import_confirm_title">确认导入</string>
+    <string name="import_confirm_button">确认导入</string>
+    <string name="import_export_time">导出时间</string>
+    <string name="import_app_version">应用版本</string>
+    <string name="import_data_version">数据版本</string>
+    <string name="import_profile_count">配置数量</string>
+    <string name="import_node_count">节点总数</string>
+    <string name="import_has_settings">包含设置</string>
+    <string name="import_has_custom_rules">自定义规则</string>
+    <string name="import_has_rulesets">规则集</string>
+    <string name="import_has_app_rules">应用分流</string>
+    <string name="import_overwrite_warning">导入将覆盖现有的同名配置和设置</string>
+    <string name="import_count_items">%d 个</string>
+    <string name="import_success">导入成功</string>
+    <string name="import_failed">导入失败</string>
+    <string name="import_settings_restored">设置已恢复</string>
+    <string name="import_success_detail">导入成功: %1$d 个配置, %2$d 个节点</string>
+
+    <!-- App List -->
+    <string name="app_list_loading">正在加载应用列表...</string>
+    <string name="app_list_loaded">已加载 %1$d / %2$d 个应用</string>
+    <string name="app_list_search_hint">搜索应用或包名</string>
+    <string name="app_list_show_system">显示系统应用</string>
+    <string name="app_list_show_no_launcher">显示无启动入口应用</string>
+    <string name="app_list_quick_select">常见</string>
+
+    <!-- QR Scanner -->
+    <string name="qr_scanner_no_qr_found">未发现二维码</string>
+    <string name="qr_scanner_cannot_read_image">无法读取图片</string>
+    <string name="qr_scanner_flash_on">闪光灯已开启</string>
+    <string name="qr_scanner_flash_off">闪光灯已关闭</string>
+    <string name="qr_scanner_gallery">相册</string>
+    <string name="qr_scanner_flash">闪光灯</string>
+    <string name="qr_scanner_hint">将二维码放入框内，即可自动扫描</string>
+
+    <!-- Profile Card -->
+    <string name="profile_card_no_expiry">无限期</string>
+    <string name="profile_card_never_updated">从未更新</string>
+    <string name="profile_card_traffic_unlimited">不限量</string>
+    <string name="profile_card_traffic_remaining">剩余:%s</string>
+    <string name="profile_card_updated_at">更新:</string>
+
+    <!-- Service Notifications -->
+    <string name="notification_switch_node">切换节点</string>
+    <string name="notification_reset_connections">重置连接</string>
+    <string name="notification_disconnect">断开</string>
+    <string name="notification_speed_format">↑ %1$s  ↓ %2$s</string>
+    <string name="proxy_only_channel_name">KunBox 代理服务</string>
+    <string name="proxy_only_notification_text">仅代理模式运行中</string>
+
+    <!-- Connection Settings -->
+    <string name="connection_settings_show_notification_speed">通知栏显示速度</string>
+    <string name="connection_settings_show_notification_speed_subtitle">在通知栏实时显示上传和下载速度</string>
+    <!-- About Dialog -->
+    <string name="about_version">应用版本: %1$s (%2$d)</string>
+    <string name="about_kernel_version">内核版本: %s</string>
+    <string name="about_kernel_loading">加载中...</string>
+    <string name="about_kernel_builtin">sing-box (内置)</string>
+    <string name="about_address">地址:</string>
+    <string name="about_based_on">基于 Sing-box 内核构建。</string>
+    <string name="about_designed_by">Designed by KunK.</string>
+
+    <!-- MainActivity -->
+    <string name="main_restart">重启</string>
+
+    <!-- Enum: RoutingMode -->
+    <string name="routing_mode_rule">规则模式</string>
+    <string name="routing_mode_global_proxy">全局代理</string>
+    <string name="routing_mode_global_direct">全局直连</string>
+
+    <!-- Enum: DefaultRule -->
+    <string name="default_rule_direct">直连</string>
+    <string name="default_rule_proxy">代理</string>
+    <string name="default_rule_block">拦截</string>
+
+    <!-- Enum: AppThemeMode -->
+    <string name="theme_system">跟随系统</string>
+    <string name="theme_light">亮色模式</string>
+    <string name="theme_dark">暗色模式</string>
+
+    <!-- Enum: AppThemeStyle -->
+    <string name="theme_style_default">默认</string>
+    <string name="theme_style_liquid_glass">液态玻璃</string>
+
+    <!-- Enum: AppLanguage -->
+    <string name="language_system">跟随系统</string>
+    <string name="language_chinese">简体中文</string>
+    <string name="language_english">English</string>
+
+    <!-- Enum: TunStack -->
+    <string name="tun_stack_system">System</string>
+    <string name="tun_stack_gvisor">gVisor</string>
+    <string name="tun_stack_mixed">Mixed</string>
+
+    <!-- Enum: IpVersionMode -->
+    <string name="ip_version_mode_ipv4_only">仅 IPv4</string>
+    <string name="ip_version_mode_dual_stack">双栈</string>
+    <string name="ip_version_mode_prefer_ipv6">双栈，优先 IPv6</string>
+    <string name="ip_version_mode_ipv6_only">仅 IPv6</string>
+
+    <!-- Enum: VpnRouteMode -->
+    <string name="vpn_route_mode_global">全局接管</string>
+    <string name="vpn_route_mode_custom">自定义接管</string>
+
+    <!-- Enum: VpnAppMode -->
+    <string name="vpn_app_mode_all">全部应用</string>
+    <string name="vpn_app_mode_allowlist">仅允许列表</string>
+    <string name="vpn_app_mode_blocklist">排除列表</string>
+
+    <!-- Enum: DnsStrategy -->
+    <string name="dns_strategy_auto">Auto</string>
+    <string name="dns_strategy_prefer_ipv4">优先 IPv4</string>
+    <string name="dns_strategy_prefer_ipv6">优先 IPv6</string>
+    <string name="dns_strategy_only_ipv4">仅 IPv4</string>
+    <string name="dns_strategy_only_ipv6">仅 IPv6</string>
+
+    <!-- Enum: LatencyTestMethod -->
+    <string name="latency_test_tcp">TCP 延迟</string>
+    <string name="latency_test_rtt">真实延迟 (RTT)</string>
+    <string name="latency_test_handshake">HTTP 握手延迟</string>
+    <string name="latency_test_url_test">URL Test</string>
+
+    <!-- Enum: GhProxyMirror -->
+    <string name="gh_mirror_sagernet">SagerNet (官方)</string>
+    <string name="gh_mirror_jsdelivr">jsDelivr (CDN)</string>
+
+    <!-- Enum: RuleType -->
+    <string name="rule_type_domain">域名</string>
+    <string name="rule_type_domain_suffix">域名后缀</string>
+    <string name="rule_type_domain_keyword">域名关键字</string>
+    <string name="rule_type_ip_cidr">IP CIDR</string>
+    <string name="rule_type_geoip">GeoIP</string>
+    <string name="rule_type_geosite">GeoSite</string>
+    <string name="rule_type_port">端口</string>
+    <string name="rule_type_process_name">进程名</string>
+
+    <!-- Enum: OutboundTag -->
+    <string name="outbound_tag_direct">直连</string>
+    <string name="outbound_tag_proxy">代理</string>
+    <string name="outbound_tag_block">拦截</string>
+
+    <!-- Enum: RuleSetType -->
+    <string name="ruleset_type_remote">远程</string>
+    <string name="ruleset_type_local">本地</string>
+
+    <!-- Enum: RuleSetOutboundMode -->
+    <string name="ruleset_outbound_direct">直连</string>
+    <string name="ruleset_outbound_block">拦截</string>
+    <string name="ruleset_outbound_proxy">代理</string>
+    <string name="ruleset_outbound_node">单节点</string>
+    <string name="ruleset_outbound_profile">配置</string>
+
+    <!-- Update Status Messages -->
+    <string name="update_status_no_subscription">没有可更新的订阅</string>
+    <string name="update_status_failed">更新失败</string>
+    <string name="update_status_success_changes">更新成功，%d个订阅有变化</string>
+    <string name="update_status_success_no_changes">更新完成，无变化</string>
+    <string name="update_status_partial">更新完成，%1$d个成功，%2$d个失败</string>
+    <string name="update_status_complete">更新完成</string>
+
+    <!-- Enum: BackgroundPowerSavingDelay -->
+    <string name="power_saving_delay_5min">5 分钟</string>
+    <string name="power_saving_delay_15min">15 分钟</string>
+    <string name="power_saving_delay_30min">30 分钟</string>
+    <string name="power_saving_delay_1hour">1 小时</string>
+    <string name="power_saving_delay_2hours">2 小时</string>
+    <string name="power_saving_delay_never">永不</string>
+
+    <!-- Connection Settings - Power Saving -->
+    <string name="connection_settings_power_saving">后台省电延迟</string>
+    <string name="connection_settings_power_saving_subtitle">应用进入后台多久后暂停非核心进程</string>
+
+    <!-- Node Switch Messages -->
+    <string name="node_switch_success">已切换到 %s</string>
+    <string name="node_switch_failed">切换到 %s 失败</string>
+    <string name="node_metered_hot_reload_unsupported">高价保护节点不支持热重载</string>
+    <string name="node_start_failed">启动失败: %s</string>
+    <string name="nodes_no_valid_found">未找到有效节点</string>
+
+    <!-- Subscription Update Messages -->
+    <string name="subscription_update_success_with_changes">更新成功 (%1$s, %2$d 个节点)</string>
+    <string name="subscription_update_success_no_changes">更新完成，无变化 (%d 个节点)</string>
+    <string name="subscription_update_stage_requesting">请求中</string>
+    <string name="subscription_update_stage_parsing">解析中</string>
+    <string name="subscription_update_stage_saving">保存中</string>
+    <string name="subscription_update_stage_dns_background">后台 DNS 预解析中</string>
+    <string name="ruleset_update_network_error">更新失败，请检查网络</string>
+
+    <!-- App Groups -->
+    <string name="app_groups_name_placeholder">例如: 社交, 游戏</string>
+
+    <!-- RuleSets Screen -->
+    <string name="rulesets_selection_mode">已选择 %d 个</string>
+
+    <!-- Traffic Stats -->
+    <string name="traffic_stats_title">流量统计</string>
+    <string name="traffic_stats_clear_title">清除流量统计</string>
+    <string name="traffic_stats_clear_message">确定要清除所有流量统计数据吗？此操作不可撤销。</string>
+    <string name="traffic_stats_clear_button">清除</string>
+    <string name="traffic_stats_period_today">今天</string>
+    <string name="traffic_stats_period_this_week">本周</string>
+    <string name="traffic_stats_period_this_month">本月</string>
+    <string name="traffic_stats_period_all">全部</string>
+    <string name="traffic_stats_total_traffic">总流量</string>
+    <string name="traffic_stats_upload">上传</string>
+    <string name="traffic_stats_download">下载</string>
+    <string name="traffic_stats_total_format">总计: %s</string>
+    <string name="traffic_stats_distribution">流量分布</string>
+    <string name="traffic_stats_unknown_node">未知</string>
+    <string name="traffic_stats_top_nodes">节点排行</string>
+    <string name="traffic_stats_upload_short">↑ %s</string>
+    <string name="traffic_stats_download_short">↓ %s</string>
+    <string name="traffic_stats_no_data">暂无流量数据</string>
+    <string name="traffic_stats_no_data_hint">连接 VPN 并使用后，返回此页面查看统计。</string>
+    <string name="traffic_stats_settings_title">流量统计</string>
+    <string name="traffic_stats_settings_subtitle">按时段和节点查看上传下载用量</string>
+
+    <!-- InfoCard -->
+    <string name="info_card_upload">上传</string>
+    <string name="info_card_download">下载</string>
+    <string name="info_card_ping">延迟</string>
+
+    <!-- Connection Info -->
+    <string name="settings_connection_info">连接信息</string>
+    <string name="settings_connection_info_subtitle">查看当前活跃网络连接详情</string>
+    <string name="connection_info_title">连接信息</string>
+    <string name="connection_info_no_connections">暂无活跃的连接</string>
+    <string name="connection_info_vpn_not_running">VPN 服务未运行</string>
+    <string name="connection_info_close_all">关闭所有连接</string>
+    <string name="connection_info_close_all_confirm">确定要切断当前所有连接吗？</string>
+    <string name="connection_info_pause">暂停刷新</string>
+    <string name="connection_info_resume">恢复刷新</string>
+    <string name="connection_info_total_upload">总上传</string>
+    <string name="connection_info_total_download">总下载</string>
+    <string name="connection_info_active_count">活跃连接数</string>
+    <string name="connection_info_no_match_title">无匹配连接</string>
+    <string name="connection_info_no_match">未找到匹配该关键词的连接</string>
+    <string name="connection_info_no_active">当前没有活跃的网络连接</string>
+    <string name="connection_info_close_connection">关闭连接</string>
+
+    <string name="nodes_auto_selection">自动选择</string>
+    <string name="nodes_auto_selection_disabled">未启用</string>
+    <string name="nodes_auto_selection_enabled">自动选择已启用</string>
+    <string name="nodes_auto_selection_failed">启用自动选择失败</string>
+    <string name="nodes_auto_selection_selecting">正在选择可用节点</string>
+    <string name="nodes_auto_selection_current">当前：%1$s</string>
+    <string name="nodes_auto_selection_unavailable">当前没有可用节点</string>
+    <string name="nodes_auto_selection_label">自动选择 · %1$s</string>
+    <string name="vpn_status_blocking">正在保护网络</string>
+    <string name="vpn_status_recovering">恢复中，流量已阻断</string>
+    <string name="vpn_status_failed_blocked">恢复失败，流量仍被阻断</string>
+    <string name="vpn_status_failed_unprotected">VPN 已断开，可能直接联网</string>
+    <string name="dashboard_status_protecting">保护中</string>
+    <string name="dashboard_status_recovering">恢复中</string>
+    <string name="dashboard_status_blocked">已阻断</string>
+    <string name="vpn_browser_not_covered">默认浏览器未被 VPN 接管，网页可能直接联网</string>
+    <string name="settings_root_check_failed">Root 权限检测失败</string>
+    <string name="settings_per_app_apply_failed">分应用代理策略应用失败</string>
+    <string name="settings_per_app_persist_failed">分应用代理策略保存失败</string>
+    <string name="diagnostics_config_generation_failed">生成运行配置失败：未选择配置或生成失败</string>
+    <string name="diagnostics_read_runtime_config_failed">读取运行配置失败：%s</string>
+    <string name="diagnostics_read_stats_failed">读取统计信息失败：%s</string>
+</resources>

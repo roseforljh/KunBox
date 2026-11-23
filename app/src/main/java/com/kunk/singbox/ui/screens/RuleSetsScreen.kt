@@ -652,12 +652,7 @@ fun RuleSetsScreen(
                                     onDragEnd = {
                                         draggingItemIndex?.let { startIdx ->
                                             val dist = if (itemHeightPx > 0f) {
-                                                val progress = draggingItemOffset / itemHeightPx
-                                                when {
-                                                    progress > 0f -> kotlin.math.ceil(progress).toInt()
-                                                    progress < 0f -> kotlin.math.floor(progress).toInt()
-                                                    else -> 0
-                                                }
+                                                kotlin.math.round(draggingItemOffset / itemHeightPx).toInt()
                                             } else {
                                                 0
                                             }
@@ -667,10 +662,19 @@ fun RuleSetsScreen(
                                             settlingItemId = settledRuleSetId
                                             suppressPlacementAnimation = true
 
+                                            val firstVisibleIndex = listState.firstVisibleItemIndex
+                                            val firstVisibleOffset = listState.firstVisibleItemScrollOffset
+
                                             if (startIdx != endIdx) {
                                                 val item = ruleSets.removeAt(startIdx)
                                                 ruleSets.add(endIdx, item)
                                                 settingsViewModel.reorderRuleSets(ruleSets.toList())
+                                            }
+
+                                            if (startIdx != endIdx) {
+                                                scope.launch {
+                                                    listState.scrollToItem(firstVisibleIndex, firstVisibleOffset)
+                                                }
                                             }
 
                                             draggingItemIndex = null
@@ -746,3 +750,4 @@ fun RuleSetsScreen(
         }
     }
 }
+

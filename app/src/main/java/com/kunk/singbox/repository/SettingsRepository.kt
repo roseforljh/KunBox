@@ -26,6 +26,7 @@ import com.kunk.singbox.model.NodeFilter
 import com.kunk.singbox.model.BackgroundPowerSavingDelay
 import com.kunk.singbox.model.PerAppVpnPolicy
 import com.kunk.singbox.repository.store.SettingsStore
+import com.kunk.singbox.utils.LocaleHelper
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -136,6 +137,7 @@ class SettingsRepository(private val context: Context) {
         if (!persisted) {
             throw IllegalStateException("Failed to persist imported settings")
         }
+        LocaleHelper.saveLanguageCache(context, safeImported.appLanguage)
         notifyRestartRequired()
     }
 
@@ -170,7 +172,9 @@ class SettingsRepository(private val context: Context) {
     }
 
     suspend fun setAppLanguage(value: AppLanguage) {
-        settingsStore.updateSettingsAndWait { it.copy(appLanguage = value) }
+        if (settingsStore.updateSettingsAndWait { it.copy(appLanguage = value) }) {
+            LocaleHelper.saveLanguageCache(context, value)
+        }
     }
 
     suspend fun setShowNotificationSpeed(value: Boolean) {
@@ -826,3 +830,4 @@ class SettingsRepository(private val context: Context) {
         }
     }
 }
+

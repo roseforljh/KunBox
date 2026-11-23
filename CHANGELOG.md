@@ -1,5 +1,269 @@
 # Changelog
 
+## [2.25.0](https://github.com/roseforljh/KunBox/compare/v2.24.3...v2.25.0) (2026-11-08)
+
+
+### Features
+
+* publish unified RayBox Android artifacts ([06f9d1d](https://github.com/roseforljh/KunBox/commit/06f9d1d564a3b0679cb56ebb0219c3b58369f1cc))
+
+
+### Bug Fixes
+
+* accept clean release binding digest ([f3daf14](https://github.com/roseforljh/KunBox/commit/f3daf14a95186f55a46b32a5f129afadd4807d4e))
+* align KunBox CI with published RayBox release ([e515490](https://github.com/roseforljh/KunBox/commit/e5154907d2c9bc5bbde8c604f6742eccd6bbab66))
+* allow offline verification of fetched RayBox source ([26a9555](https://github.com/roseforljh/KunBox/commit/26a9555665dd1d12941e0eff9727865975e18504))
+* **config:** 避免预校验误删跨配置链式代理节点 ([a0ed292](https://github.com/roseforljh/KunBox/commit/a0ed2923b08ba870948affbd86ec77f2e9f5538a))
+* fetch pinned RayBox release in CI ([d329d4f](https://github.com/roseforljh/KunBox/commit/d329d4f0a9d682be8d369c96ccc9578a08434159))
+* **logs:** 为普通请求日志保留窗口以避免诊断日志挤占 ([807bd54](https://github.com/roseforljh/KunBox/commit/807bd54b2ea3cb89b379c529077e94e6571093f7))
+* pair release instrumentation and stabilize phone acceptance ([f5bc552](https://github.com/roseforljh/KunBox/commit/f5bc552ca2b629c331e565efc1a42a0132662673))
+* pin latest RayBox build fix in CI ([10f3801](https://github.com/roseforljh/KunBox/commit/10f380179aada55d48972cb63d75dafeb86c606e))
+* pin published RayBox Android release ([9cad31d](https://github.com/roseforljh/KunBox/commit/9cad31d09098750e943998deb6eccc59817ce6a7))
+* **subscription:** 更新配置时保留手动节点和链式代理设置 ([0de087c](https://github.com/roseforljh/KunBox/commit/0de087c71d4d1bab13e4916e7f00c5883fc988fb))
+* validate checked out RayBox commit directly ([93dc188](https://github.com/roseforljh/KunBox/commit/93dc1882faef0bae5807077f3701c64e75982c2c))
+
+## [2.24.3](https://github.com/roseforljh/KunBox/compare/v2.24.2...v2.24.3) (2026-10-20)
+
+
+### Bug Fixes
+
+* 优化VPN停止状态残留恢复与手动停止重启拦截 ([1bc39ce](https://github.com/roseforljh/KunBox/commit/1bc39ce60449a8b2bfe164e6899fbdc2594c2f7e))
+* 优化主节点连接异常通知与故障上报逻辑 ([018a936](https://github.com/roseforljh/KunBox/commit/018a936381dce459ce1c71ab6a08796f36c5de2c))
+* 优化规则集源标识计算与配置分流出站选择 ([a33cf68](https://github.com/roseforljh/KunBox/commit/a33cf68547c47460f216c33334af9f412fd5f318))
+* 修复mixed和system栈因排除自身导致TCP握手失败的问题 ([1ca83be](https://github.com/roseforljh/KunBox/commit/1ca83be5990eec7c972df86e7c37d38870b5072d))
+* 完善多进程服务模式状态判定与切模式停止等待 ([372e937](https://github.com/roseforljh/KunBox/commit/372e937d768dd0f2cf699c7ebd7784a6fd560b4d))
+* 将应用安装卸载广播调整为动态注册并更新忽略文件 ([bb0a011](https://github.com/roseforljh/KunBox/commit/bb0a0115b2a3157abf042fe38e3648f20ce70eb1))
+* 将活动节点确认纳入IPC状态持久化键并及时写入 ([f1ff323](https://github.com/roseforljh/KunBox/commit/f1ff323cbe6707962d8f1042756676af827413e8))
+* 强化控制通道自动恢复与前台保活启动机制 ([c833edd](https://github.com/roseforljh/KunBox/commit/c833edd175ff19a23eb207e02d6e494ab6c32337))
+* 清理运行时 DNS 中缺失规则集的引用 ([3d47a76](https://github.com/roseforljh/KunBox/commit/3d47a76d0b02d7d9852b1049bf97651a40361924))
+* 重构规则集列表弹窗展示与出站名称交互 ([d3390aa](https://github.com/roseforljh/KunBox/commit/d3390aac35bbb28e5a1772f01310ef3906e5dcec))
+
+## [2.24.2](https://github.com/roseforljh/KunBox/compare/v2.24.1...v2.24.2) (2026-09-28)
+
+
+### Bug Fixes
+
+* correct imported language cache and rule set scroll anchor ([38dbd93](https://github.com/roseforljh/KunBox/commit/38dbd93c8ecabb671a431db47b3026f3f78d936b))
+* correct imported language cache and rule set scroll anchor ([d4f575b](https://github.com/roseforljh/KunBox/commit/d4f575ba55eb67017da3803f3c8592ead397c25c))
+* correct imported language cache and rule set scroll anchor ([620e311](https://github.com/roseforljh/KunBox/commit/620e31196aeedbdc168d63ad670499e6d3b3ce2c))
+* 优化规则集与配置拖拽交互，修复中文语言回退与磁贴状态脱节问题 ([8f5b2be](https://github.com/roseforljh/KunBox/commit/8f5b2be557351666eb882f9f3825f30b69275267))
+* 优化规则集列表间距与代理回退请求处理 ([4c6e8d4](https://github.com/roseforljh/KunBox/commit/4c6e8d4dfadc71de2b6cc323e2efd7b3e958e6c5))
+* 优化配置生成与出站节点批量校验逻辑 ([d893fb6](https://github.com/roseforljh/KunBox/commit/d893fb69be547cb5798bb23e85228228c59d3eab))
+* 出站节点过滤回退时保留前置 detour 依赖链 ([d6ca677](https://github.com/roseforljh/KunBox/commit/d6ca677516987f977ba6da1252e025ba78c46be1))
+* 完善 Root 运行失败与清理过程的状态同步及所有权管理 ([dab4241](https://github.com/roseforljh/KunBox/commit/dab4241d156d7f743ae05e654a26e63b0e98a4f1))
+* 完善 Root 运行期停止重试与断连应急清理逻辑 ([bf6465a](https://github.com/roseforljh/KunBox/commit/bf6465a552aa8923be67a94e322f82d7ac2c3821))
+* 完善启动期基础命令通道与就绪状态诊断 ([4a36b7e](https://github.com/roseforljh/KunBox/commit/4a36b7e03cf2dc0da295d1b54239d3e95bb797e3))
+* 完善规则集来源校验、缓存就绪机制与配置生成防御 ([70b3b28](https://github.com/roseforljh/KunBox/commit/70b3b28719bb50e3dbfdabb5e6a7c0a60a6f3246))
+* 将 VPN 停止分发及磁贴刷新切至 IO 调度 ([7fad5e6](https://github.com/roseforljh/KunBox/commit/7fad5e64b21cecf6b8fea9f5f7bb4c2f9e96f6e1))
+* 还原长按 1:1 双向位移交互，修正规则集过半换位阈值与重排视窗锚定 ([fcb1e78](https://github.com/roseforljh/KunBox/commit/fcb1e785f3268ade1096cee192374763dc31f04e))
+* 重构 Root 分流运行期绑定与 DNS Fake IP 防护校验 ([2e69207](https://github.com/roseforljh/KunBox/commit/2e69207e1ace6d7fd2d9306e0ce720fdd916491f))
+
+## [2.24.1](https://github.com/roseforljh/KunBox/compare/v2.24.0...v2.24.1) (2026-09-03)
+
+
+### Bug Fixes
+
+* 优化 Root 模式停止流程与配置生成状态检查 ([fa8dcf1](https://github.com/roseforljh/KunBox/commit/fa8dcf1facffd8dcf8f419607770946e4a3c4b36))
+* 升级内核同步配置与 libbox.aar 二进制依赖 ([98df8cb](https://github.com/roseforljh/KunBox/commit/98df8cb39cae38f75da8973ec9aee0db743b881f))
+* 完善后台服务平台接口实现与 Root 应急清理流程 ([93c12ed](https://github.com/roseforljh/KunBox/commit/93c12ed8691caadcf7f58adfeb465dee419f9e3c))
+* 适配新版 PlatformInterface 接口与延迟探测运行时 ([720e4b6](https://github.com/roseforljh/KunBox/commit/720e4b626a198272a846b4e21a64b420915a061b))
+* 重构配置生成规则、Endpoint 转换与运行时 DNS 规范化 ([13f5a6c](https://github.com/roseforljh/KunBox/commit/13f5a6c2f94b74375a7e25d5abfbc9e7e1142482))
+
+## [2.24.0](https://github.com/roseforljh/KunBox/compare/v2.23.1...v2.24.0) (2026-08-30)
+
+
+### Features
+
+* 实现 Root 透明代理多车道分流与快照生命周期管理 ([417ddb1](https://github.com/roseforljh/KunBox/commit/417ddb118f5f25ca4f24d860bcc1a73ac6d59e83))
+* 实现 Root 透明代理服务与内核防火墙看门狗架构 ([6143668](https://github.com/roseforljh/KunBox/commit/6143668bc8da2f1ee61d4a0c37cf5ec07a6386c4))
+* 重构模块架构降低复杂度并增强 Root 代理与服务运行时稳定性 ([7d342b5](https://github.com/roseforljh/KunBox/commit/7d342b536c0decb7b7f168f7400d8ed6a14232df))
+
+
+### Bug Fixes
+
+* 优化 IPC 状态分发与 TUN 地址规划分配 ([4a78656](https://github.com/roseforljh/KunBox/commit/4a78656a3d85e53d04cb194016b600f89e7f4975))
+* 优化 IPv6 隐私防护、节点变更处理与 Root 守护看门狗清理机制 ([44db511](https://github.com/roseforljh/KunBox/commit/44db5111418856555e7d8492011b9bb7e342fb46))
+* 优化 Root Netfilter 链归属权检查与单元测试断言 ([0eca8d2](https://github.com/roseforljh/KunBox/commit/0eca8d2f2cab859c959038b165c3e0cc88e86154))
+* 优化 Root 代理校验、状态机流转与 VPN 服务生命周期控制 ([2e683e6](https://github.com/roseforljh/KunBox/commit/2e683e64dba150699959df75c06c74bd8bbb87f7))
+* 优化 Root 服务 UID 解析、命令调度及前台运行时连接 ([13fc641](https://github.com/roseforljh/KunBox/commit/13fc641b38ddb7e903a45709d1df8cd43362b0f3))
+* 优化 Root 路由兼容性、WebRTC 泄漏防护及系统磁贴状态流转 ([6482797](https://github.com/roseforljh/KunBox/commit/64827970d559c0c105035d5ee24f91a1eee220e5))
+* 优化 VPN 与 Root 服务运行时分应用策略重载 ([3bf0524](https://github.com/roseforljh/KunBox/commit/3bf052418e4e8bfb49ee2f64da58cfe94c3ab05e))
+* 优化已安装应用快照缓存与平台连接属主解析 ([32a0a68](https://github.com/roseforljh/KunBox/commit/32a0a6828a4f77dc61f6e5ead10a089202a0592e))
+* 优化应用分流与多选弹窗图标预加载交互 ([74bdd68](https://github.com/roseforljh/KunBox/commit/74bdd68804d997a5c1296a6fef99a3a2d3daa166))
+* 优化应用多选弹窗搜索与顶部控件展开状态 ([4b50d00](https://github.com/roseforljh/KunBox/commit/4b50d001180f80291096c542251b70fb543bd2ed))
+* 优化配置生成中的节点属性处理与 Root 服务运行时生命周期 ([71bacde](https://github.com/roseforljh/KunBox/commit/71bacde1bda8282874fcf600fa8129673a0c34fa))
+* 修复资源恢复与服务停止状态 ([653cbb1](https://github.com/roseforljh/KunBox/commit/653cbb1f59e31349bc86c584982e284badac209b))
+* 修复首页节点名称显示内部标签 ([b6f9a57](https://github.com/roseforljh/KunBox/commit/b6f9a57e80b8191e2a14bb39a8105e995a0e4273))
+* 区分含前置代理的节点指示点 ([062356a](https://github.com/roseforljh/KunBox/commit/062356ac25a06e57d6fa6393ea5ea6e2a735bddf))
+* 同步 sing-box 内核至 v1.13.18 ([478c3df](https://github.com/roseforljh/KunBox/commit/478c3df5ecd02d65b0476209468ee4aed5c27c61))
+* 同步 sing-box 内核至 v1.13.18 与底层物理拨号预算控制 ([0dd44a8](https://github.com/roseforljh/KunBox/commit/0dd44a85f248ae65fac41dc41f515ddf7a93aa7b))
+* 增强 Root 透明代理自动故障转移与健康检测 ([9611e56](https://github.com/roseforljh/KunBox/commit/9611e56d3c1a9405584f27a6107c96d85013617d))
+* 增强 VPN 与 Root 服务运行时分流重载控制 ([bb5e88d](https://github.com/roseforljh/KunBox/commit/bb5e88d86b8b17f026f0a4c9d3840f5d82714253))
+* 增强分流入站构建与配置生成路由规则 ([2b0e1e2](https://github.com/roseforljh/KunBox/commit/2b0e1e23efcf96c61ec4313882c7a47d9c5f1c4d))
+* 增强服务生命周期、数据面就绪性与关闭同步 ([4b4e811](https://github.com/roseforljh/KunBox/commit/4b4e81168851c3cd44540ed3a4a27448dc460feb))
+* 完善 Root 模式 Netfilter 链归属权与看门狗清理机制 ([d15f2b2](https://github.com/roseforljh/KunBox/commit/d15f2b2e5cf8bbdef92359b02de5d969bedb60f2))
+* 完善 Root 透明代理规则链与探针检测稳定性 ([919a927](https://github.com/roseforljh/KunBox/commit/919a927c043003e19dd15a399c587a950ee1d629))
+* 完善 Root 透明代理设置交互与界面显示 ([89bc724](https://github.com/roseforljh/KunBox/commit/89bc724fbfb92c45683311fa4df36b260fce96a2))
+* 完善 VPN 服务运行时分应用策略热应用与状态同步 ([50bfbdc](https://github.com/roseforljh/KunBox/commit/50bfbdc6988b978bb8240990ad8683c7411fcb30))
+* 完善分应用 VPN 设置与应用分流界面交互 ([b0663be](https://github.com/roseforljh/KunBox/commit/b0663beaea2e89a0ef9feefe0d3675c7b3064b57))
+* 完善应用分流路由配置生成与计费节点保护 ([75610c7](https://github.com/roseforljh/KunBox/commit/75610c72cdf80b03da0aeb998f21c6fcbf410f32))
+* 完善数据平面就绪状态同步与外部VPN抢占监测 ([5dd964b](https://github.com/roseforljh/KunBox/commit/5dd964ba8ff4104937e808cef0363727f81f25e4))
+* 完善连接风暴保护与通知服务操作绑定 ([be1dbf5](https://github.com/roseforljh/KunBox/commit/be1dbf5e0ba371a456763c4146a21369f1037fef))
+* 完善首页数据面就绪提示与强制停止逻辑 ([feddd6e](https://github.com/roseforljh/KunBox/commit/feddd6eaeec09524816c5714384960915add1352))
+* 完善首页连接状态解析与计费节点路由保护 ([72d50f6](https://github.com/roseforljh/KunBox/commit/72d50f6bea5bb45702528d919dc954326b1810ca))
+* 扩展服务生命周期与命令管理器支持 Root 透明代理模式 ([1321858](https://github.com/roseforljh/KunBox/commit/13218582a79c94516b8677e75710fe9fe5049c7c))
+* 支持 Root 透明代理配置生成与入站构建 ([01da9a7](https://github.com/roseforljh/KunBox/commit/01da9a747750aa4311668703246f4f31d784eadf))
+* 更新 libbox.aar 二进制至最新构建版本 ([95a68a3](https://github.com/roseforljh/KunBox/commit/95a68a3d4a2dd0d9dd59dbb118a473cc1effdefa))
+* 更新内核 libbox 依赖并优化 Root 前台服务连接状态处理 ([1cea8d7](https://github.com/roseforljh/KunBox/commit/1cea8d775ca1329582d69a59d290ad205a8a41b7))
+* 更新内核补丁与同步脚本 ([c9ab9f1](https://github.com/roseforljh/KunBox/commit/c9ab9f19cba9885c66ef9bf3ae772a2fdd9aaffe))
+* 添加 v1.13.19 内核补丁文件 ([4d5bf08](https://github.com/roseforljh/KunBox/commit/4d5bf08713717a763f316e88a4d6e54b209f2712))
+* 迁移旧版应用单规则至应用分组并精简存储逻辑 ([c49af7d](https://github.com/roseforljh/KunBox/commit/c49af7d7588783316ad7f09ff3608e1d1f4c3164))
+* 重构分应用策略版本控制与配置生成过滤 ([f8c7477](https://github.com/roseforljh/KunBox/commit/f8c74776834cfd06119910676794f9354fd4c745))
+* 重构应用分流界面与精简相关配置视图 ([a344039](https://github.com/roseforljh/KunBox/commit/a3440392bb7361875f4191080990f4dd4594507c))
+
+## [2.23.1](https://github.com/roseforljh/KunBox/compare/v2.23.0...v2.23.1) (2026-08-08)
+
+
+### Bug Fixes
+
+* 修复应用分流及多项稳定性问题 ([bf9be22](https://github.com/roseforljh/KunBox/commit/bf9be22bc0c0f1fe6418850b213f3d7c141a2e68))
+* 修复节点切换与应用分流 ([c216ad2](https://github.com/roseforljh/KunBox/commit/c216ad2de7bc3d200f495cc1e29be58e4bd08c9c))
+
+## [2.23.0](https://github.com/roseforljh/KunBox/compare/v2.22.0...v2.23.0) (2026-08-08)
+
+
+### Features
+
+* LiquidGlass 液态玻璃全局重构 + 节点添加/选择页面重构 ([f13fe1f](https://github.com/roseforljh/KunBox/commit/f13fe1fa863c9269c28b796534c5121d9772d152))
+* 计费节点保护 + 连接流量归因 + 同节点恢复 + 手动选择事务 ([047bf4b](https://github.com/roseforljh/KunBox/commit/047bf4b0f094019c0621fe7a6230b2ae76be0c91))
+* 连接风暴防护 + 分层网络健康采样 + 事件历史诊断 ([7cc08aa](https://github.com/roseforljh/KunBox/commit/7cc08aa81cf5e8ec53fda283bbc9c126f062d41f))
+
+
+### Bug Fixes
+
+* stop 命令按当前模式分发 + 停止完成时补设 isStarting ([3f6408f](https://github.com/roseforljh/KunBox/commit/3f6408f21ae7d3a54a1bf5479323ce349a698890))
+* 修复前置代理节点测速失败 ([8f8a500](https://github.com/roseforljh/KunBox/commit/8f8a50078578dde8b69b25c5219db401ba8e9065))
+* 同步 sing-box 内核至 v1.13.16 ([f505376](https://github.com/roseforljh/KunBox/commit/f505376f125820c92a8e2904ce44aa6998b56595))
+
+## [2.22.0](https://github.com/roseforljh/KunBox/compare/v2.21.0...v2.22.0) (2026-07-31)
+
+
+### Features
+
+* BackgroundResourceGuard 重构 + ResourceRecoveryGate 门控 ([83d04e5](https://github.com/roseforljh/KunBox/commit/83d04e59fc5209be6e92e5bde1d898385427a744))
+* ProxyOnly 通知显示速度 + runtime client 重构 + VpnNotificationManager 防竞态 ([3ab9ec0](https://github.com/roseforljh/KunBox/commit/3ab9ec029324fd4b7671dc7c9331ed7c6135205b))
+* ProxyOnly/SingBox 服务适配恢复意图租约与资源恢复门控 ([a75f50c](https://github.com/roseforljh/KunBox/commit/a75f50c0772e6d70468ab543109a4980e37b3b35))
+* RecoveryIntentLease 恢复意图租约机制 ([0497597](https://github.com/roseforljh/KunBox/commit/0497597691c7da3ee85a76ef2e0ee4d6f087cae7))
+* 服务生命周期诊断 + 诊断包 manifest v2 + 资源采样版本跟踪 ([a38d76e](https://github.com/roseforljh/KunBox/commit/a38d76ec7a6f4c049e3d293a93e9131e00574baf))
+* 诊断包脱敏增强 outbound 日志标签与 selector 引用 ([432d8ae](https://github.com/roseforljh/KunBox/commit/432d8aef2c8096ae14879b1a4a2b8610d66e44b1))
+
+
+### Bug Fixes
+
+* ConfigRepository 移除过期延迟刷新 + CommandManager 节点回调 ([bea3a59](https://github.com/roseforljh/KunBox/commit/bea3a5968f5515cb33a08085167305f4c211c79a))
+* 内核依赖 sing-tun 补丁更新 + 同步脚本支持依赖补丁 ([77fc759](https://github.com/roseforljh/KunBox/commit/77fc75913cc0520ca9a2618e46d094d227dfe6bd))
+* 内核补丁更新 ([a8abe59](https://github.com/roseforljh/KunBox/commit/a8abe59304ab35e0a70cce505894e02dc3bd5cb6))
+* 内核补丁更新 PacketConn dialContext + 同步脚本调整 ([ed1690f](https://github.com/roseforljh/KunBox/commit/ed1690fe178adb70282243ca3b9a8cdbc81b5091))
+
+## [2.21.0](https://github.com/roseforljh/KunBox/compare/v2.20.0...v2.21.0) (2026-07-29)
+
+
+### Features
+
+* ConfigRepository 重构 + CommandManager 组选择解析 ([bdecebf](https://github.com/roseforljh/KunBox/commit/bdecebf21f2a335d04f7b03d3a109a3dbd61154b))
+* ProxyOnlyService CommandClient 集成 + 备份导出 profileSelection + 诊断 FD 细分 ([c0492f8](https://github.com/roseforljh/KunBox/commit/c0492f8a43e15f0f786316f63e2231d0e338ba54))
+* UI 节点自动选择标识 + 组选择显示增强 ([22f02a0](https://github.com/roseforljh/KunBox/commit/22f02a0ac57d1cf453132f98aaebf47810355b93))
+* 自动切换信号驱动重构 + 资源枯竭检测与回收 ([e92d606](https://github.com/roseforljh/KunBox/commit/e92d606d872893ed6da53cecd7bad185f778ed7e))
+
+
+### Bug Fixes
+
+* 同步内核至 v1.13.15 并更新 libbox.aar ([3320326](https://github.com/roseforljh/KunBox/commit/3320326818a2f47db5bdcca544e840ec2ba057e8))
+
+## [2.20.0](https://github.com/roseforljh/KunBox/compare/v2.19.2...v2.20.0) (2026-07-18)
+
+
+### Features
+
+* IPC 状态改用 Bundle 快照 + generation 防乱序 ([3ad54bf](https://github.com/roseforljh/KunBox/commit/3ad54bf6775d4d523bf451f7cb57a6cd0484a029))
+* PerfTracer 增加指标记录 + 关键路径埋点与网络切换防乱序 ([e43ce77](https://github.com/roseforljh/KunBox/commit/e43ce77442930f7999d23a9d16e59a4cb181fa85))
+* 新增 Android VPN 基准采集脚本 ([188d586](https://github.com/roseforljh/KunBox/commit/188d586b4ba56cb1af68bcaaa6169bd3c62671e6))
+* 新安装应用自动跟随 VPN 规则 ([56f31fb](https://github.com/roseforljh/KunBox/commit/56f31fb4275cf2a5f76e7ab7ab4e0011dea32d41))
+* 诊断资源采样与诊断包导出 ([f9b3b1f](https://github.com/roseforljh/KunBox/commit/f9b3b1fe32fd3a02c8b2dcbab73247e774267643))
+
+
+### Bug Fixes
+
+* 保留恢复诊断并异步导出日志 ([4a60e3a](https://github.com/roseforljh/KunBox/commit/4a60e3a1c37ea177edf67f0348c30d11d17c087c))
+* 修复冷启动节点恢复与自动连接守卫 ([ef03b23](https://github.com/roseforljh/KunBox/commit/ef03b23ae66565f97a9f1a8e96974f701afd4eb4))
+* 修复划掉再进二次点火与恢复叠枪 ([1b09b0e](https://github.com/roseforljh/KunBox/commit/1b09b0e5ef5ab98dc7a34321defdc9c3273aea63))
+* 修复后台语言与导入界面本地化 ([5c979cc](https://github.com/roseforljh/KunBox/commit/5c979cc4f85e5dd4467feaccbc72ea0aa9bb1c3e))
+* 修复启动应用自动连接 ([e497962](https://github.com/roseforljh/KunBox/commit/e497962bac9fef2546683551d43a91374bf843f0))
+* 修复液态玻璃点击丢失 ([e9dc401](https://github.com/roseforljh/KunBox/commit/e9dc401463ce0ce8a6a52ac4042deee2376fdd42))
+* 修复配置拖拽与恢复 DNS 预解析 ([c0b9c4a](https://github.com/roseforljh/KunBox/commit/c0b9c4a322136d4516ee7dfa9024bc27fd654953))
+* 兼容备份空值字段导入 ([d1da025](https://github.com/roseforljh/KunBox/commit/d1da02562ed6513f6280719cf85f5b5e4d201bcc))
+* 兼容状态测试换行符 ([7c4e49d](https://github.com/roseforljh/KunBox/commit/7c4e49df56f455ba3100439e34f67dba242c13b5))
+* 划掉任务时彻底停止代理 ([2e04dd2](https://github.com/roseforljh/KunBox/commit/2e04dd2736d6cf8a358ddacad55a55490a4192bb))
+* 根除进入应用自动重启VPN ([ab053e3](https://github.com/roseforljh/KunBox/commit/ab053e300345433d0d3b49c51a7cd99db04bca03))
+* 避免任务移除误停代理 ([f684af6](https://github.com/roseforljh/KunBox/commit/f684af6acb1063b2a424f3813834e94bd2229554))
+
+## [2.19.2](https://github.com/roseforljh/KunBox/compare/v2.19.1...v2.19.2) (2026-07-13)
+
+
+### Bug Fixes
+
+* 修复 WireGuard 延迟探测 endpoint 组装与 runtime 归一 ([f2ea945](https://github.com/roseforljh/KunBox/commit/f2ea945115afac5ae6eccd55a76d06eb1a3a29a0))
+* 修复启动时首页闪现旧节点 ([aa02eae](https://github.com/roseforljh/KunBox/commit/aa02eaefe96c627e9fb4e194ff41f2f604345975))
+* 修复规则模式分流与跨进程节点同步 ([b8653e6](https://github.com/roseforljh/KunBox/commit/b8653e627683bd30d7a19df04bd3bd315165398c))
+* 启动前同步本次节点标签 ([4fd9c48](https://github.com/roseforljh/KunBox/commit/4fd9c489be9b701cd1df0363bf53cf70731db8ed))
+* 启动后保持手选节点并隔离运行态切换 ([16813b4](https://github.com/roseforljh/KunBox/commit/16813b4716806852297b97b17ea920efcc8a8759))
+* 标注首页统计卡片布局复杂度 ([2ba20af](https://github.com/roseforljh/KunBox/commit/2ba20afd380aff936f43e1b7799a9865afdd8f86))
+* 清理自动切换终验冗余参数 ([101579f](https://github.com/roseforljh/KunBox/commit/101579f38d69f0139e42d0d56b10e827daa9afe4))
+* 直连 DNS 双栈默认仅 IPv4，避免国内站 AAAA 失败 ([5cb7f0c](https://github.com/roseforljh/KunBox/commit/5cb7f0c73620067feaf70e49547f4c31e83c5051))
+* 自动切换加 live 验收与升级恢复，主页显示运行态节点 ([4f30727](https://github.com/roseforljh/KunBox/commit/4f30727916ca9ee433781f40139135d491f9f9d7))
+* 远程 DNS 超时强制自动切换，空测速结果回退历史候选 ([5dfe55b](https://github.com/roseforljh/KunBox/commit/5dfe55b6c21229f6a3bbd7ac35a3bfdca10f0213))
+* 首页统计行下移对齐，延迟点击改为圆形反馈 ([fa77689](https://github.com/roseforljh/KunBox/commit/fa776893368f1e9f53c2c2bed17f6d2f2086b38d))
+
+## [2.19.1](https://github.com/roseforljh/KunBox/compare/v2.19.0...v2.19.1) (2026-07-12)
+
+
+### Bug Fixes
+
+* 修复 urltest idle_timeout、端口区间与本地假节点过滤 ([ae1d716](https://github.com/roseforljh/KunBox/commit/ae1d7165a8f5eb78cb8b0aa71e1db34a01366ca8))
+* 修复国内 DNS、配置卡灰边与延迟即时刷新 ([4a8af9c](https://github.com/roseforljh/KunBox/commit/4a8af9cbc11f6b375d4415f050d06a186a781ab4))
+* 修复节点排序时选中边框滞后 ([3d7e0fc](https://github.com/roseforljh/KunBox/commit/3d7e0fcd0d139d4fe61a3bf322ba99f1b3c0733a))
+* 清理冗余 SelectorManager/ConnectManager，提取 StringIteratorImpl，修复 WireGuard 默认路由与复杂度检测 ([4f1a89a](https://github.com/roseforljh/KunBox/commit/4f1a89ab80cef8af693942fee3ab770a4255fc3b))
+
+## [2.19.0](https://github.com/roseforljh/KunBox/compare/v2.18.1...v2.19.0) (2026-07-08)
+
+
+### Features
+
+* optimize kotlin 2.4 upgraded stack ([4e66d8e](https://github.com/roseforljh/KunBox/commit/4e66d8e2ec744c0efff9082f75c89b010b73161d))
+
+
+### Bug Fixes
+
+* adjust bottom nav safe padding ([39b26cd](https://github.com/roseforljh/KunBox/commit/39b26cd05c03ea1f89f5e6f49178cdff92819bf8))
+* adjust latency probe dns fallback ([1abdc2d](https://github.com/roseforljh/KunBox/commit/1abdc2dde26a02ddc1cdc8e44803e03564fc7b2b))
+* collapse split implementations ([c77217c](https://github.com/roseforljh/KunBox/commit/c77217c2c5f250b3018d69faf7945a1bb7cceed6))
+* improve debug config logging ([4d49620](https://github.com/roseforljh/KunBox/commit/4d49620e233edc945b5d13eba4e462fc51c21b02))
+* improve ruleset badge contrast ([20526dd](https://github.com/roseforljh/KunBox/commit/20526dd91bb392f8261a595080dda7d4bb7f4c2d))
+* merge PR [#101](https://github.com/roseforljh/KunBox/issues/101) liquid glass UI fixes ([874b97a](https://github.com/roseforljh/KunBox/commit/874b97a6547e871eafcc437789db19bba2ea234b))
+* queue vpn restart after shutdown ([3078c13](https://github.com/roseforljh/KunBox/commit/3078c13f7818f3e2918604cbde2fb11e2b314f9e))
+* refresh detekt baseline ([a80fa3b](https://github.com/roseforljh/KunBox/commit/a80fa3b9c5c58f13406fd6fcea3c7b5131b19508))
+* remove unused dependencies and obsolete files ([e2de144](https://github.com/roseforljh/KunBox/commit/e2de1445713d21901959aad663ae806df3769c6a))
+* serialize node switching ([a109540](https://github.com/roseforljh/KunBox/commit/a1095402b3f54b42859c4be954173c246faa8254))
+* strip latency runtime ECH metadata before config JSON serialization ([6e94328](https://github.com/roseforljh/KunBox/commit/6e94328f13705414fbd5163682060a3a56d51246))
+* sync vpn tile and node add state ([a3c82d8](https://github.com/roseforljh/KunBox/commit/a3c82d816c98d759fb6b0009658c2e252c738da0))
+* upgrade kotlin android dependencies ([9b077a8](https://github.com/roseforljh/KunBox/commit/9b077a8740c90f0c5d5da86c0f400d12b4b4b232))
+* 优化健康探测与自动切换 ([510ad0a](https://github.com/roseforljh/KunBox/commit/510ad0a56617029fd37ea4edda49b3d5c9049de2))
+* 优化健康探测自动切换 ([e9a0438](https://github.com/roseforljh/KunBox/commit/e9a0438142ea85407a5f96e0682f480d7da5343a))
+* 优化液态玻璃与服务状态同步 ([24d31c8](https://github.com/roseforljh/KunBox/commit/24d31c891470703b44287d83c06a392e27113d41))
+* 修复订阅更新闪退和卡片布局 ([b2fd191](https://github.com/roseforljh/KunBox/commit/b2fd19174eeb53040c4f602ec56f80aa646ab7f0))
+* 新增 URL Test 延迟测试方式 ([bcbf0dd](https://github.com/roseforljh/KunBox/commit/bcbf0dd89328d3aa358edbf6196e6b88d7b74859))
+* 更新 sing-box 内核 ([4600a64](https://github.com/roseforljh/KunBox/commit/4600a6448e2923dc02d30668a6d26a804a6a87da))
+
 ## [2.18.1](https://github.com/roseforljh/KunBox/compare/v2.18.0...v2.18.1) (2026-06-22)
 
 

@@ -169,7 +169,8 @@ class DiagnosticsViewModel(application: Application) : AndroidViewModel(applicat
                 val configResult = generateRunningConfig()
                 val realPath = configResult?.path
                 if (realPath.isNullOrBlank()) {
-                    _resultMessage.value = "Failed to generate running config: no profile selected or generation failed."
+                    val app = getApplication<Application>()
+                    _resultMessage.value = app.getString(R.string.diagnostics_config_generation_failed)
                 } else {
                     val runConfig = loadRunConfig(realPath)
 
@@ -185,7 +186,10 @@ class DiagnosticsViewModel(application: Application) : AndroidViewModel(applicat
                     )
                 }
             } catch (e: Exception) {
-                _resultMessage.value = "Failed to read runtime config: ${e.message}"
+                _resultMessage.value = getApplication<Application>().getString(
+                    R.string.diagnostics_read_runtime_config_failed,
+                    e.message.orEmpty()
+                )
             } finally {
                 _isRunConfigLoading.value = false
                 _showResultDialog.value = true
@@ -587,7 +591,10 @@ class DiagnosticsViewModel(application: Application) : AndroidViewModel(applicat
                     )
                 }
             } catch (e: Exception) {
-                _resultMessage.value = "Failed to read stats: ${e.message}"
+                _resultMessage.value = getApplication<Application>().getString(
+                    R.string.diagnostics_read_stats_failed,
+                    e.message.orEmpty()
+                )
             } finally {
                 _isConnOwnerStatsLoading.value = false
                 _showResultDialog.value = true
